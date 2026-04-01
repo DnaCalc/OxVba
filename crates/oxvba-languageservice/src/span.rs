@@ -25,8 +25,17 @@ impl TextSpan {
     }
 }
 
+/// Provenance class for a document/symbol in the language-service workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SymbolProvenanceKind {
+    SourceModule,
+    ProjectReference,
+    ImportedTypeLibraryProjection,
+    Generated,
+}
+
 /// What kind of symbol this is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
     Variable,
     Procedure,
@@ -43,6 +52,25 @@ pub enum SymbolKind {
 /// Scope identifier: 0 = module-level, N = procedure index (1-based).
 pub type ScopeId = u32;
 
+/// Stable identity for a declared symbol within the current OxVba semantic model.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SymbolIdentity {
+    pub project_name: Option<String>,
+    pub document_id: String,
+    pub normalized_name: String,
+    pub kind: SymbolKind,
+    pub scope: ScopeId,
+}
+
+/// Semantic provenance for a symbol/query result.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SemanticProvenance {
+    pub project_name: Option<String>,
+    pub document_id: String,
+    pub snapshot_version: u64,
+    pub kind: SymbolProvenanceKind,
+}
+
 /// Semantic information about a symbol.
 #[derive(Debug, Clone)]
 pub struct SymbolInfo {
@@ -51,6 +79,8 @@ pub struct SymbolInfo {
     pub bound_type: BoundType,
     pub definition_span: TextSpan,
     pub scope: ScopeId,
+    pub identity: SymbolIdentity,
+    pub provenance: SemanticProvenance,
 }
 
 /// A diagnostic with source location.

@@ -1,5 +1,8 @@
 use crate::document::DocumentId;
-use crate::span::{SpannedDiagnostic, SymbolInfo, SymbolKind, TextSpan};
+use crate::span::{
+    SemanticProvenance, SpannedDiagnostic, SymbolIdentity, SymbolInfo, SymbolKind,
+    SymbolProvenanceKind, TextSpan,
+};
 use crate::workspace::Workspace;
 
 use oxvba_compiler::ProjectManifest;
@@ -14,6 +17,8 @@ pub type Position = u32;
 pub struct Location {
     pub document: DocumentId,
     pub span: TextSpan,
+    pub symbol_identity: Option<SymbolIdentity>,
+    pub provenance: Option<SemanticProvenance>,
 }
 
 /// A completion item.
@@ -55,6 +60,8 @@ pub struct ParameterInfo {
 pub struct HoverInfo {
     pub label: String,
     pub detail: Option<String>,
+    pub symbol_identity: Option<SymbolIdentity>,
+    pub provenance: Option<SemanticProvenance>,
 }
 
 // ── VBA keyword list for completions ────────────────────────────────
@@ -265,9 +272,21 @@ pub struct LanguageService {
     pub workspace: Workspace,
 }
 
+#[derive(Debug, Clone)]
+struct ResolvedSymbol {
+    document: DocumentId,
+    symbol: SymbolInfo,
+}
+
 impl LanguageService {
     pub fn new(workspace: Workspace) -> Self {
         LanguageService { workspace }
+    }
+
+    pub fn from_project(project: ProjectManifest) -> Self {
+        LanguageService {
+            workspace: Workspace::new().with_project(project),
+        }
     }
 
     /// Get all diagnostics for a document.
@@ -474,51 +493,19 @@ impl LanguageService {
 
     /// Go to definition: find where the symbol at position is defined.
     pub fn go_to_definition(&self, module: &DocumentId, position: Position) -> Option<Location> {
-        let snap = self.workspace.snapshot(module)?;
-
-        // Find identifier at position
-        let ident = self.identifier_at_position(module, position)?;
-        let ident_lower = ident.to_ascii_lowercase();
-
-        // Search in current document's symbol table
-        for sym in &snap.symbols.symbols {
-            if sym.name.to_ascii_lowercase() == ident_lower {
-                return Some(Location {
-                    document: module.clone(),
-                    span: sym.definition_span,
-                });
-            }
-        }
-
-        // Search in cross-module exports
-        for other_id in self.workspace.document_ids() {
-            if other_id == module {
-                continue;
-            }
-            if let Some(other_snap) = self.workspace.snapshot(other_id) {
-                for sym in &other_snap.symbols.symbols {
-                    if sym.name.to_ascii_lowercase() == ident_lower && sym.scope == 0 {
-                        return Some(Location {
-                            document: other_id.clone(),
-                            span: sym.definition_span,
-                        });
-                    }
-                }
-            }
-        }
-
-        None
+        let resolved = self.resolve_symbol_at(module, position)?;
+        Some(self.location_for_symbol(&resolved.document, &resolved.symbol))
     }
 
     /// Find all references to the symbol at position.
     pub fn find_references(&self, module: &DocumentId, position: Position) -> Vec<Location> {
         let mut locations = Vec::new();
 
-        let ident = match self.identifier_at_position(module, position) {
-            Some(name) => name,
+        let target = match self.resolve_symbol_at(module, position) {
+            Some(symbol) => symbol,
             None => return locations,
         };
-        let ident_lower = ident.to_ascii_lowercase();
+        let ident_lower = target.symbol.name.to_ascii_lowercase();
 
         // Search all documents for matching identifiers
         for doc_id in self.workspace.document_ids() {
@@ -528,9 +515,21 @@ impl LanguageService {
 
                 for (kind, text, offset) in &all_tokens {
                     if *kind == SyntaxKind::Ident && text.to_ascii_lowercase() == ident_lower {
+                        let occurrence = self.resolve_symbol_at(doc_id, *offset);
+                        if let Some(occurrence) = &occurrence {
+                            if occurrence.symbol.identity != target.symbol.identity {
+                                continue;
+                            }
+                        } else if *doc_id == target.document && target.symbol.definition_span.contains(*offset)
+                        {
+                            continue;
+                        }
+
                         locations.push(Location {
                             document: doc_id.clone(),
                             span: TextSpan::new(*offset, offset + text.len() as u32),
+                            symbol_identity: Some(target.symbol.identity.clone()),
+                            provenance: Some(target.symbol.provenance.clone()),
                         });
                     }
                 }
@@ -542,33 +541,30 @@ impl LanguageService {
 
     /// Hover info for the symbol at position.
     pub fn hover(&self, module: &DocumentId, position: Position) -> Option<HoverInfo> {
-        let snap = self.workspace.snapshot(module)?;
-
-        let ident = self.identifier_at_position(module, position)?;
-        let ident_lower = ident.to_ascii_lowercase();
-
-        // Look up in symbol table
-        for sym in &snap.symbols.symbols {
-            if sym.name.to_ascii_lowercase() == ident_lower {
-                let label = match sym.kind {
-                    SymbolKind::Procedure => format!("Sub/Function {}", sym.name),
-                    SymbolKind::Property => format!("Property {}", sym.name),
-                    SymbolKind::Variable => format!("Dim {} As {:?}", sym.name, sym.bound_type),
-                    SymbolKind::Parameter => {
-                        format!("{} As {:?}", sym.name, sym.bound_type)
-                    }
-                    SymbolKind::Constant => format!("Const {}", sym.name),
-                    SymbolKind::External => format!("Declare {}", sym.name),
-                    _ => sym.name.clone(),
-                };
-                return Some(HoverInfo {
-                    label,
-                    detail: Some(format!("{:?}", sym.bound_type)),
-                });
-            }
+        if let Some(resolved) = self.resolve_symbol_at(module, position) {
+            let sym = &resolved.symbol;
+            let label = match sym.kind {
+                SymbolKind::Procedure => format!("Sub/Function {}", sym.name),
+                SymbolKind::Property => format!("Property {}", sym.name),
+                SymbolKind::Variable => format!("Dim {} As {:?}", sym.name, sym.bound_type),
+                SymbolKind::Parameter => {
+                    format!("{} As {:?}", sym.name, sym.bound_type)
+                }
+                SymbolKind::Constant => format!("Const {}", sym.name),
+                SymbolKind::External => format!("Declare {}", sym.name),
+                _ => sym.name.clone(),
+            };
+            return Some(HoverInfo {
+                label,
+                detail: Some(format!("{:?}", sym.bound_type)),
+                symbol_identity: Some(sym.identity.clone()),
+                provenance: Some(sym.provenance.clone()),
+            });
         }
 
         // Check intrinsics
+        let ident = self.identifier_at_position(module, position)?;
+        let ident_lower = ident.to_ascii_lowercase();
         if let Some(spec) = intrinsic_spec(&ident_lower) {
             return Some(HoverInfo {
                 label: format!("Intrinsic function: {ident}"),
@@ -576,6 +572,8 @@ impl LanguageService {
                     "Args: {}-{}, Surface: {:?}",
                     spec.min_arity, spec.max_arity, spec.surface
                 )),
+                symbol_identity: None,
+                provenance: None,
             });
         }
 
@@ -651,6 +649,73 @@ impl LanguageService {
             }
         }
         String::new()
+    }
+
+    fn resolve_symbol_at(&self, module: &DocumentId, position: Position) -> Option<ResolvedSymbol> {
+        let snap = self.workspace.snapshot(module)?;
+
+        if let Some(symbol) = snap.symbols.symbol_at(position) {
+            return Some(ResolvedSymbol {
+                document: module.clone(),
+                symbol: symbol.clone(),
+            });
+        }
+
+        let ident = self.identifier_at_position(module, position)?;
+        let ident_lower = ident.to_ascii_lowercase();
+        let scope = self.scope_at_position(module, position);
+
+        if let Some(symbol) = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|sym| sym.scope == scope && sym.name.to_ascii_lowercase() == ident_lower)
+        {
+            return Some(ResolvedSymbol {
+                document: module.clone(),
+                symbol: symbol.clone(),
+            });
+        }
+
+        if let Some(symbol) = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|sym| sym.scope == 0 && sym.name.to_ascii_lowercase() == ident_lower)
+        {
+            return Some(ResolvedSymbol {
+                document: module.clone(),
+                symbol: symbol.clone(),
+            });
+        }
+
+        let mut candidates = self
+            .workspace
+            .cross_module_symbols(&ident_lower)
+            .iter()
+            .filter(|sym| sym.identity.document_id != module.0)
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|sym| match sym.provenance.kind {
+            SymbolProvenanceKind::SourceModule => 0,
+            SymbolProvenanceKind::ProjectReference => 1,
+            SymbolProvenanceKind::ImportedTypeLibraryProjection => 2,
+            SymbolProvenanceKind::Generated => 3,
+        });
+
+        let symbol = (*candidates.first()?).clone();
+        Some(ResolvedSymbol {
+            document: DocumentId::new(symbol.identity.document_id.clone()),
+            symbol,
+        })
+    }
+
+    fn location_for_symbol(&self, document: &DocumentId, symbol: &SymbolInfo) -> Location {
+        Location {
+            document: document.clone(),
+            span: symbol.definition_span,
+            symbol_identity: Some(symbol.identity.clone()),
+            provenance: Some(symbol.provenance.clone()),
+        }
     }
 }
 
@@ -739,7 +804,12 @@ fn collect_tokens_recursive<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::span::SymbolProvenanceKind;
     use crate::workspace::Workspace;
+    use oxvba_compiler::{
+        ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
+        ReferenceKind, ReferencedProjectManifest,
+    };
 
     fn setup_single_module(source: &str) -> (LanguageService, DocumentId) {
         let mut ws = Workspace::new();
@@ -899,8 +969,6 @@ mod tests {
 
     #[test]
     fn language_service_provider_trait() {
-        use oxvba_compiler::{ProjectKind, ProjectManifest};
-
         let mut ws = Workspace::new();
         let id = DocumentId::new("TestModule");
         ws.open_document(id.clone(), "Sub Foo()\nEnd Sub\n");
@@ -929,8 +997,6 @@ mod tests {
 
     #[test]
     fn language_service_provider_go_to_def() {
-        use oxvba_compiler::{ProjectKind, ProjectManifest};
-
         let src = "Sub Foo()\nEnd Sub\nSub Bar()\n    Foo\nEnd Sub\n";
         let mut ws = Workspace::new();
         let id = DocumentId::new("TestModule");
@@ -950,6 +1016,142 @@ mod tests {
         let foo_pos = src.rfind("Foo").unwrap() as u32;
         let loc = provider.go_to_definition(&manifest, "TestModule", foo_pos);
         assert!(loc.is_some(), "should find Foo via trait method");
+    }
+
+    #[test]
+    fn project_aware_workspace_goes_to_definition_across_project_reference() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\n    SharedProc\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Core".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let main_id = DocumentId::new("Main");
+        let pos = "Public Sub Main()\n    SharedProc\nEnd Sub\n"
+            .find("SharedProc")
+            .expect("call site") as u32;
+        let loc = svc
+            .go_to_definition(&main_id, pos)
+            .expect("definition should resolve into reference project");
+        assert_eq!(loc.document, DocumentId::new("Core::Shared"));
+    }
+
+    #[test]
+    fn project_aware_workspace_loads_projected_typelib_references() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\n    GetBaseName\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Scripting".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Scripting".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "FileSystemObject".to_string(),
+                    module_kind: ModuleKind::Class,
+                    attributes: ModuleAttributes {
+                        vb_name: "FileSystemObject".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Attribute VB_Name = \"FileSystemObject\"\nPublic Function GetBaseName(Path As Variant) As Variant\nEnd Function\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let main_id = DocumentId::new("Main");
+        let pos = "Public Sub Main()\n    GetBaseName\nEnd Sub\n"
+            .find("GetBaseName")
+            .expect("call site") as u32;
+        let loc = svc
+            .go_to_definition(&main_id, pos)
+            .expect("typelib-projected definition should resolve");
+        assert_eq!(loc.document, DocumentId::new("Scripting::FileSystemObject"));
+        assert_eq!(
+            loc.provenance
+                .as_ref()
+                .map(|provenance| provenance.kind),
+            Some(SymbolProvenanceKind::ImportedTypeLibraryProjection)
+        );
+        assert!(loc.symbol_identity.is_some());
+    }
+
+    #[test]
+    fn go_to_definition_carries_stable_symbol_identity_across_snapshot_versions() {
+        let mut ws = Workspace::new();
+        let id = DocumentId::new("Module1");
+        ws.open_document(id.clone(), "Public Sub Foo()\nEnd Sub\n");
+
+        let svc = LanguageService::new(ws);
+        let initial = svc
+            .go_to_definition(&id, "Public Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32)
+            .expect("initial definition");
+
+        let initial_identity = initial.symbol_identity.clone().expect("symbol identity");
+        let initial_version = initial
+            .provenance
+            .as_ref()
+            .map(|provenance| provenance.snapshot_version)
+            .expect("snapshot version");
+
+        let mut ws = svc.workspace;
+        ws.change_document(&id, "\nPublic Sub Foo()\nEnd Sub\n");
+        let svc = LanguageService::new(ws);
+
+        let updated = svc
+            .go_to_definition(&id, "\nPublic Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32)
+            .expect("updated definition");
+
+        assert_eq!(
+            updated.symbol_identity.as_ref(),
+            Some(&initial_identity),
+            "definition identity should survive unrelated edits"
+        );
+        assert!(
+            updated
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.snapshot_version)
+                .expect("updated snapshot version")
+                > initial_version
+        );
     }
 
     #[test]

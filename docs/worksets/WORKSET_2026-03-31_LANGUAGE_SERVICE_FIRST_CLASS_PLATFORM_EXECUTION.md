@@ -1,7 +1,7 @@
 # Workset: First-Class Language Service Platform Execution
 
 Date: 2026-03-31  
-Status: planned  
+Status: in-progress  
 Scope: evolve OxVba from the current bounded internal language-service surface into a first-class editor-facing platform in the style of Roslyn and rust-analyzer, with direct Rust APIs first and LSP as a thin transport layer.
 
 ## 0. Current Truth
@@ -22,7 +22,14 @@ Current evidence-backed baseline:
    - find-references,
    - hover,
 3. `docs/spec/LANGUAGE_SERVICE_SPEC_V1.md` is design-locked for the current internal architecture,
-4. `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv` intentionally records this area as an `in-progress` bounded internal service surface, not as full LSP parity or a feature-complete editor platform.
+4. `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md` is the active successor contract for first-class platform execution,
+5. `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv` intentionally records this area as an `in-progress` bounded internal service surface, not as full LSP parity or a feature-complete editor platform.
+
+Current execution progress:
+1. Phase A contract lock is complete under `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md`,
+2. Phase B workspace/reference loading is complete for `ProjectManifest` ownership plus referenced-project and imported-typelib participation,
+3. Phase B symbol identity/provenance is now present in the current bounded service surface for definition/reference query results,
+4. Phase B invalidation/performance evidence remains the next closure slice.
 
 This workset is therefore an extension and elevation track.
 It must not widen current truth claims retroactively.

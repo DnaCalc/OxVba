@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use oxvba_compiler::ProjectManifest;
+use oxvba_compiler::{ProjectManifest, ReferenceKind, ReferencedProjectManifest};
 
 use crate::document::{Document, DocumentId};
-use crate::semantic::{SemanticSnapshot, build_semantic_snapshot};
-use crate::span::SymbolInfo;
+use crate::semantic::{SemanticSnapshot, build_semantic_snapshot_with_provenance};
+use crate::span::{SymbolInfo, SymbolProvenanceKind};
 
 /// The workspace model: manages a set of documents and their semantic snapshots.
 ///
@@ -35,7 +35,7 @@ impl Workspace {
     }
 
     pub fn with_project(mut self, manifest: ProjectManifest) -> Self {
-        self.project = Some(manifest);
+        self.load_project_manifest(manifest);
         self
     }
 
@@ -45,10 +45,19 @@ impl Workspace {
 
     /// Open a new document in the workspace.
     pub fn open_document(&mut self, id: DocumentId, source: &str) {
-        let doc = Document::new(id.clone(), source);
-        let snapshot = Arc::new(build_semantic_snapshot(source));
-        let doc = doc.with_snapshot(snapshot);
-        self.documents.insert(id, Arc::new(doc));
+        self.open_document_with_origin(id, source, None, SymbolProvenanceKind::SourceModule);
+    }
+
+    /// Open a new document in the workspace with explicit provenance.
+    pub fn open_document_with_origin(
+        &mut self,
+        id: DocumentId,
+        source: &str,
+        project_name: Option<String>,
+        provenance_kind: SymbolProvenanceKind,
+    ) {
+        let doc = Document::new_with_origin(id, source, project_name, provenance_kind);
+        self.insert_document(doc);
         self.rebuild_exports();
     }
 
@@ -56,7 +65,10 @@ impl Workspace {
     pub fn change_document(&mut self, id: &DocumentId, source: &str) {
         if let Some(existing) = self.documents.get(id) {
             let doc = existing.with_source(source);
-            let snapshot = Arc::new(build_semantic_snapshot(source));
+            let snapshot = Arc::new(build_semantic_snapshot_with_provenance(
+                source,
+                doc.semantic_provenance(),
+            ));
             let doc = doc.with_snapshot(snapshot);
             self.documents.insert(id.clone(), Arc::new(doc));
             self.rebuild_exports();
@@ -89,6 +101,51 @@ impl Workspace {
         self.documents.len()
     }
 
+    /// Replace the workspace contents from a real OxVba project manifest.
+    ///
+    /// Root modules keep their plain module-name document identifiers for
+    /// compatibility with the existing provider surface. Referenced-project
+    /// modules are qualified as `Project::Module` to avoid collisions while
+    /// still participating in cross-project queries.
+    pub fn load_project_manifest(&mut self, manifest: ProjectManifest) {
+        self.project = Some(manifest.clone());
+        self.documents.clear();
+
+        for module in &manifest.modules {
+            self.open_document_with_origin(
+                DocumentId::new(module.module_name.clone()),
+                &module.source,
+                Some(manifest.project_name.clone()),
+                SymbolProvenanceKind::SourceModule,
+            );
+        }
+
+        let reference_kinds: HashMap<String, ReferenceKind> = manifest
+            .references
+            .iter()
+            .map(|reference| {
+                (
+                    reference.referenced_project_name.to_ascii_lowercase(),
+                    reference.reference_kind,
+                )
+            })
+            .collect();
+
+        for reference in &manifest.reference_projects {
+            let provenance_kind = reference_kinds
+                .get(&reference.project_name.to_ascii_lowercase())
+                .copied()
+                .map(|kind| match kind {
+                    ReferenceKind::TypeLibrary => SymbolProvenanceKind::ImportedTypeLibraryProjection,
+                    _ => SymbolProvenanceKind::ProjectReference,
+                })
+                .unwrap_or(SymbolProvenanceKind::ProjectReference);
+            self.load_referenced_project(reference, provenance_kind);
+        }
+
+        self.rebuild_exports();
+    }
+
     /// Get cross-module exports for a given name (case-insensitive).
     pub fn cross_module_symbols(&self, name: &str) -> &[SymbolInfo] {
         let lower = name.to_ascii_lowercase();
@@ -116,11 +173,38 @@ impl Workspace {
             }
         }
     }
+
+    fn load_referenced_project(
+        &mut self,
+        reference: &ReferencedProjectManifest,
+        provenance_kind: SymbolProvenanceKind,
+    ) {
+        for module in &reference.modules {
+            self.open_document_with_origin(
+                DocumentId::new(format!("{}::{}", reference.project_name, module.module_name)),
+                &module.source,
+                Some(reference.project_name.clone()),
+                provenance_kind,
+            );
+        }
+    }
+
+    fn insert_document(&mut self, doc: Document) {
+        let id = doc.id.clone();
+        let snapshot = Arc::new(build_semantic_snapshot_with_provenance(
+            doc.source.as_ref(),
+            doc.semantic_provenance(),
+        ));
+        let doc = doc.with_snapshot(snapshot);
+        self.documents.insert(id, Arc::new(doc));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oxvba_compiler::{ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind};
+    use crate::span::SymbolProvenanceKind;
 
     #[test]
     fn workspace_open_and_query() {
@@ -170,5 +254,49 @@ mod tests {
 
         ws.close_document(&id);
         assert_eq!(ws.document_count(), 0);
+    }
+
+    #[test]
+    fn workspace_load_project_manifest_includes_reference_documents() {
+        let manifest = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\nEnd Sub\n".to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let ws = Workspace::new().with_project(manifest);
+
+        assert_eq!(ws.document_count(), 2);
+        assert!(ws.document(&DocumentId::new("Main")).is_some());
+        let reference = ws
+            .document(&DocumentId::new("Core::Shared"))
+            .expect("reference document should be loaded");
+        assert_eq!(
+            reference.provenance_kind,
+            SymbolProvenanceKind::ProjectReference
+        );
+        assert_eq!(reference.project_name.as_deref(), Some("Core"));
     }
 }

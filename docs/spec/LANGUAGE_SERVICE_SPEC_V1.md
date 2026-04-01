@@ -1,8 +1,10 @@
 # OxVBA Language Service Spec V1
 
-**Status:** Design-locked
+**Status:** Design-locked current bounded internal surface
 **Date:** 2026-03-23
 **Implements:** §3.1.6, §4.8 of `HOSTING_PROJECT_TOOLING_PROPOSAL.md`
+
+**Successor note:** This document remains the authority for the current bounded internal language-service surface tracked by `LSF-0001`. Forward first-class platform execution now proceeds under `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md`.
 
 ---
 

@@ -5,7 +5,8 @@ use oxvba_compiler::typecheck::check_types;
 use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode, parse};
 
 use crate::span::{
-    DiagnosticSeverity, ScopeId, SpannedDiagnostic, SymbolInfo, SymbolKind, TextSpan,
+    DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,
+    SymbolInfo, SymbolKind, SymbolProvenanceKind, TextSpan,
 };
 
 /// A table of symbols keyed by name (case-insensitive).
@@ -45,10 +46,28 @@ pub struct SemanticSnapshot {
     pub bound: Arc<BoundModule>,
     pub symbols: SymbolTable,
     pub diagnostics: Vec<SpannedDiagnostic>,
+    pub provenance: SemanticProvenance,
 }
 
 /// Build a complete semantic snapshot for a single VBA module source.
 pub fn build_semantic_snapshot(source: &str) -> SemanticSnapshot {
+    build_semantic_snapshot_with_provenance(
+        source,
+        SemanticProvenance {
+            project_name: None,
+            document_id: "<memory>".to_string(),
+            snapshot_version: 1,
+            kind: SymbolProvenanceKind::SourceModule,
+        },
+    )
+}
+
+/// Build a complete semantic snapshot for a single VBA module source with
+/// explicit document/version provenance.
+pub fn build_semantic_snapshot_with_provenance(
+    source: &str,
+    provenance: SemanticProvenance,
+) -> SemanticSnapshot {
     let source_arc: Arc<str> = source.into();
 
     // Step 1: Parse → lossless CST
@@ -87,7 +106,7 @@ pub fn build_semantic_snapshot(source: &str) -> SemanticSnapshot {
     };
 
     // Step 4: Correlation pass — build symbol table from CST + BoundModule
-    let symbols = correlate_symbols(&parse_arc, &checked);
+    let symbols = correlate_symbols(&parse_arc, &checked, &provenance);
 
     // Step 5: Map resolution diagnostics to spans
     let resolution_diags = map_resolution_diagnostics(&parse_arc, &checked);
@@ -105,20 +124,25 @@ pub fn build_semantic_snapshot(source: &str) -> SemanticSnapshot {
         bound: bound_arc,
         symbols,
         diagnostics,
+        provenance,
     }
 }
 
 /// Walk the CST and the BoundModule, matching declarations by name to build
 /// a SymbolTable with source positions.
-fn correlate_symbols(parse: &Parse, bound: &BoundModule) -> SymbolTable {
+fn correlate_symbols(
+    parse: &Parse,
+    bound: &BoundModule,
+    provenance: &SemanticProvenance,
+) -> SymbolTable {
     let mut symbols = Vec::new();
     let root = parse.syntax();
 
     // Correlate module-level declarations
-    correlate_module_declarations(&root, bound, &mut symbols);
+    correlate_module_declarations(&root, bound, provenance, &mut symbols);
 
     // Correlate procedures
-    correlate_procedures(&root, bound, &mut symbols);
+    correlate_procedures(&root, bound, provenance, &mut symbols);
 
     SymbolTable { symbols }
 }
@@ -126,6 +150,7 @@ fn correlate_symbols(parse: &Parse, bound: &BoundModule) -> SymbolTable {
 fn correlate_module_declarations(
     root: &SyntaxNode<'_>,
     bound: &BoundModule,
+    provenance: &SemanticProvenance,
     symbols: &mut Vec<SymbolInfo>,
 ) {
     for child in root.child_nodes() {
@@ -142,65 +167,68 @@ fn correlate_module_declarations(
                             .cloned()
                             .unwrap_or(BoundType::Variant);
                         let is_const = child.kind() == SyntaxKind::ConstStmt;
-                        symbols.push(SymbolInfo {
+                        let kind = if is_const {
+                            SymbolKind::Constant
+                        } else {
+                            SymbolKind::Variable
+                        };
+                        symbols.push(make_symbol(
                             name,
-                            kind: if is_const {
-                                SymbolKind::Constant
-                            } else {
-                                SymbolKind::Variable
-                            },
+                            kind,
                             bound_type,
-                            definition_span: TextSpan::new(
-                                tok.offset,
-                                tok.offset + tok.text.len() as u32,
-                            ),
-                            scope: 0, // module-level
-                        });
+                            TextSpan::new(tok.offset, tok.offset + tok.text.len() as u32),
+                            0,
+                            provenance,
+                        ));
                     }
                 }
             }
             SyntaxKind::TypeBlock => {
                 if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(SymbolInfo {
-                        name: name_tok.0.to_string(),
-                        kind: SymbolKind::TypeDef,
-                        bound_type: BoundType::Variant,
-                        definition_span: TextSpan::new(name_tok.1, name_tok.2),
-                        scope: 0,
-                    });
+                    symbols.push(make_symbol(
+                        name_tok.0.to_string(),
+                        SymbolKind::TypeDef,
+                        BoundType::Variant,
+                        TextSpan::new(name_tok.1, name_tok.2),
+                        0,
+                        provenance,
+                    ));
                 }
             }
             SyntaxKind::EnumBlock => {
                 if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(SymbolInfo {
-                        name: name_tok.0.to_string(),
-                        kind: SymbolKind::EnumDef,
-                        bound_type: BoundType::Long,
-                        definition_span: TextSpan::new(name_tok.1, name_tok.2),
-                        scope: 0,
-                    });
+                    symbols.push(make_symbol(
+                        name_tok.0.to_string(),
+                        SymbolKind::EnumDef,
+                        BoundType::Long,
+                        TextSpan::new(name_tok.1, name_tok.2),
+                        0,
+                        provenance,
+                    ));
                 }
             }
             SyntaxKind::EventDecl => {
                 if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(SymbolInfo {
-                        name: name_tok.0.to_string(),
-                        kind: SymbolKind::Event,
-                        bound_type: BoundType::Variant,
-                        definition_span: TextSpan::new(name_tok.1, name_tok.2),
-                        scope: 0,
-                    });
+                    symbols.push(make_symbol(
+                        name_tok.0.to_string(),
+                        SymbolKind::Event,
+                        BoundType::Variant,
+                        TextSpan::new(name_tok.1, name_tok.2),
+                        0,
+                        provenance,
+                    ));
                 }
             }
             SyntaxKind::DeclareStmt => {
                 if let Some(name_tok) = find_name_token(&child) {
-                    symbols.push(SymbolInfo {
-                        name: name_tok.0.to_string(),
-                        kind: SymbolKind::External,
-                        bound_type: BoundType::Variant,
-                        definition_span: TextSpan::new(name_tok.1, name_tok.2),
-                        scope: 0,
-                    });
+                    symbols.push(make_symbol(
+                        name_tok.0.to_string(),
+                        SymbolKind::External,
+                        BoundType::Variant,
+                        TextSpan::new(name_tok.1, name_tok.2),
+                        0,
+                        provenance,
+                    ));
                 }
             }
             _ => {}
@@ -208,7 +236,12 @@ fn correlate_module_declarations(
     }
 }
 
-fn correlate_procedures(root: &SyntaxNode<'_>, bound: &BoundModule, symbols: &mut Vec<SymbolInfo>) {
+fn correlate_procedures(
+    root: &SyntaxNode<'_>,
+    bound: &BoundModule,
+    provenance: &SemanticProvenance,
+    symbols: &mut Vec<SymbolInfo>,
+) {
     let proc_kinds = [
         SyntaxKind::SubDecl,
         SyntaxKind::FunctionDecl,
@@ -239,20 +272,21 @@ fn correlate_procedures(root: &SyntaxNode<'_>, bound: &BoundModule, symbols: &mu
                 _ => SymbolKind::Procedure,
             };
 
-            symbols.push(SymbolInfo {
-                name: name_tok.0.to_string(),
-                kind: sym_kind,
-                bound_type: return_type,
-                definition_span: TextSpan::new(name_tok.1, name_tok.2),
-                scope: 0, // procedure names are module-level
-            });
+            symbols.push(make_symbol(
+                name_tok.0.to_string(),
+                sym_kind,
+                return_type,
+                TextSpan::new(name_tok.1, name_tok.2),
+                0,
+                provenance,
+            ));
 
             // Correlate parameters
-            correlate_params(&child, bound, &name_lower, scope, symbols);
+            correlate_params(&child, bound, &name_lower, scope, provenance, symbols);
         }
 
         // Correlate local declarations inside the procedure body
-        correlate_local_declarations(&child, scope, symbols);
+        correlate_local_declarations(&child, scope, provenance, symbols);
     }
 }
 
@@ -261,6 +295,7 @@ fn correlate_params(
     bound: &BoundModule,
     proc_name_lower: &str,
     scope: ScopeId,
+    provenance: &SemanticProvenance,
     symbols: &mut Vec<SymbolInfo>,
 ) {
     let bound_proc = bound
@@ -284,13 +319,14 @@ fn correlate_params(
                     .map(|bp| bp.ty)
                     .unwrap_or(BoundType::Variant);
 
-                symbols.push(SymbolInfo {
-                    name: name_tok.0.to_string(),
-                    kind: SymbolKind::Parameter,
-                    bound_type: param_type,
-                    definition_span: TextSpan::new(name_tok.1, name_tok.2),
+                symbols.push(make_symbol(
+                    name_tok.0.to_string(),
+                    SymbolKind::Parameter,
+                    param_type,
+                    TextSpan::new(name_tok.1, name_tok.2),
                     scope,
-                });
+                    provenance,
+                ));
             }
         }
     }
@@ -299,6 +335,7 @@ fn correlate_params(
 fn correlate_local_declarations(
     proc_node: &SyntaxNode<'_>,
     scope: ScopeId,
+    provenance: &SemanticProvenance,
     symbols: &mut Vec<SymbolInfo>,
 ) {
     // Find the Block child inside the procedure
@@ -311,24 +348,49 @@ fn correlate_local_declarations(
                 for tok in stmt.child_tokens() {
                     if tok.kind == SyntaxKind::Ident {
                         let is_const = stmt.kind() == SyntaxKind::ConstStmt;
-                        symbols.push(SymbolInfo {
-                            name: tok.text.to_string(),
-                            kind: if is_const {
-                                SymbolKind::Constant
-                            } else {
-                                SymbolKind::Variable
-                            },
-                            bound_type: BoundType::Variant,
-                            definition_span: TextSpan::new(
-                                tok.offset,
-                                tok.offset + tok.text.len() as u32,
-                            ),
+                        let kind = if is_const {
+                            SymbolKind::Constant
+                        } else {
+                            SymbolKind::Variable
+                        };
+                        symbols.push(make_symbol(
+                            tok.text.to_string(),
+                            kind,
+                            BoundType::Variant,
+                            TextSpan::new(tok.offset, tok.offset + tok.text.len() as u32),
                             scope,
-                        });
+                            provenance,
+                        ));
                     }
                 }
             }
         }
+    }
+}
+
+fn make_symbol(
+    name: String,
+    kind: SymbolKind,
+    bound_type: BoundType,
+    definition_span: TextSpan,
+    scope: ScopeId,
+    provenance: &SemanticProvenance,
+) -> SymbolInfo {
+    let normalized_name = name.to_ascii_lowercase();
+    SymbolInfo {
+        name,
+        kind,
+        bound_type,
+        definition_span,
+        scope,
+        identity: SymbolIdentity {
+            project_name: provenance.project_name.clone(),
+            document_id: provenance.document_id.clone(),
+            normalized_name,
+            kind,
+            scope,
+        },
+        provenance: provenance.clone(),
     }
 }
 
