@@ -15,6 +15,7 @@ Today the real direct host surface is spread across two crates:
 
 This crate currently exports the direct semantic/query ladder:
 - workspace and document identity,
+- a direct host-facing workspace/document session via `HostWorkspaceSession`,
 - diagnostics,
 - document and workspace symbols,
 - semantic classification,
@@ -28,6 +29,7 @@ This crate currently exports the direct semantic/query ladder:
 - bounded diagnostics-driven code-action planning.
 
 This is the right crate for:
+- host-facing workspace/document overlay sessions,
 - live editor overlays,
 - semantic queries over in-memory source text,
 - project-aware language features.
@@ -78,6 +80,9 @@ The next OxVba-side improvements should therefore be:
 - open/update/close documents by document identity,
 - query diagnostics/symbols/completion/hover/etc. without the host manually wiring lower-level pieces each time.
 
+Status:
+- the first bounded version of this now exists as `oxvba_languageservice::HostWorkspaceSession`
+
 2. A broader direct project-authoring surface
 - inspect project/module rosters,
 - create/add/remove modules and classes,
@@ -101,6 +106,7 @@ Use:
 - `oxvba_project::load_workspace_target`
 - `oxvba_project::host_helpers::*`
 - `oxvba_languageservice::LanguageService`
+- `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`
 
 Prefer:

@@ -9,3 +9,4 @@ repository.workspace = true
 [dependencies]
 oxvba-syntax.workspace = true
 oxvba-compiler.workspace = true
+oxvba-project.workspace = true

@@ -63,6 +63,10 @@ For OxIde-class hosts, the intended public story is:
 - direct typed Rust APIs for project/module/reference authoring,
 - no required dependence on CLI output parsing for editor scenarios.
 
+Current implemented direct session anchor:
+- `oxvba_languageservice::HostWorkspaceSession`
+- this wraps canonical workspace loading plus project-backed document overlay/restore behavior
+
 Current host-helper operations live in `oxvba-project::host_helpers` and cover:
 - planned `.bas` / `.cls` module creation,
 - typed project-edit intents for modules and references,
@@ -111,6 +115,10 @@ Near-term OxIde-driven additions should include:
 - a clearer public host-facing session API over the current `LanguageService`,
 - broader typed project-authoring operations for module rosters and references,
 - typed build/run requests and results suitable for embedded IDE consumption.
+
+Current status:
+- the first bounded host-facing session API is now implemented,
+- broader project-authoring and typed build/run embedding remain follow-on work.
 
 ## Current Honest Boundary
 

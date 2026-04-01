@@ -27,6 +27,7 @@ The current repo state supports these levels:
    - invalidation stats and local editor-budget harnesses
 
 2. `LS-P1`: direct Rust query surface
+   - direct host-facing workspace/document session via `HostWorkspaceSession`
    - diagnostics
    - document symbols
    - workspace symbols
@@ -64,7 +65,7 @@ That crate is the semantic source of truth for:
 The LSP transport is intentionally layered on top of that crate and does not own a second parser or semantic model.
 
 That direct Rust API is the primary editor-integration story for OxIde-style hosts.
-The current gap is not semantic capability; it is packaging the existing capability into a clearer first-class host-facing service contract.
+The current gap is no longer the absence of a session seam. The first bounded host-facing session contract now exists as `HostWorkspaceSession`; the remaining work is to broaden authoring/build flows and have OxIde consume that contract directly.
 
 ### Thin LSP Shell
 
@@ -136,7 +137,7 @@ The important honesty rule is:
 ## Near-Term Next Steps
 
 The next likely expansion points are:
-- tighten the public direct host-facing interface for OxIde-class hosts,
+- broaden the public direct host-facing interface around the new `HostWorkspaceSession`,
 - add any missing typed workspace/document/session helpers needed by OxIde,
 - expose selected direct queries over actual LSP methods for VS Code-class hosts,
 - keep transport synchronization aligned with the real project model,

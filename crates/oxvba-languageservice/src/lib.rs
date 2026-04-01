@@ -15,12 +15,14 @@
 //! - `oxvba-lsp` should stay a thin transport layered over the same semantics.
 
 pub mod document;
+pub mod host_session;
 pub mod semantic;
 pub mod service;
 pub mod span;
 pub mod workspace;
 
 pub use document::{Document, DocumentId};
+pub use host_session::{HostSessionError, HostWorkspaceDocument, HostWorkspaceSession};
 pub use semantic::{
     SemanticSnapshot, SymbolTable, build_semantic_snapshot, build_semantic_snapshot_with_provenance,
 };
