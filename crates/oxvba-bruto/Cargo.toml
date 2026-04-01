@@ -1,0 +1,12 @@
+[package]
+name = "oxvba-bruto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+bruto-ide.workspace = true
+turbo-vision.workspace = true
+oxvba-bruto-lang = { path = "../oxvba-bruto-lang" }
