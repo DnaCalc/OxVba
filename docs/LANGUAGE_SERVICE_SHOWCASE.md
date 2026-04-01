@@ -28,6 +28,7 @@ The current repo state supports these levels:
 
 2. `LS-P1`: direct Rust query surface
    - direct host-facing workspace/document session via `HostWorkspaceSession`
+   - direct host-facing workspace-target roster/reference inspection via `inspect_workspace_target`
    - diagnostics
    - document symbols
    - workspace symbols

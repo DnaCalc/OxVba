@@ -38,6 +38,7 @@ This is the right crate for:
 
 This crate currently exports the direct project/helper ladder:
 - canonical workspace target loading,
+- typed workspace-target roster/reference inspection via `inspect_workspace_target`,
 - project discovery/loading policy,
 - module scaffolding and typed project-edit intents in `host_helpers`,
 - logical module-name inspection,
@@ -46,6 +47,7 @@ This crate currently exports the direct project/helper ladder:
 
 This is the right crate for:
 - project load/open flows,
+- typed project roster/reference panes in a direct-embed IDE,
 - module/class/reference authoring,
 - file-name versus logical-name reconciliation,
 - project-model truth that should not be reimplemented in the IDE.
@@ -89,6 +91,10 @@ Status:
 - list/add/remove project and COM references,
 - reconcile file path, logical module name, and `Attribute VB_Name` deterministically.
 
+Status:
+- typed workspace-target roster/reference inspection now exists via `oxvba_project::inspect_workspace_target`
+- mutation/apply flows remain follow-on work
+
 3. Typed build/run integration
 - keep CLI as an end-user tool,
 - but expose typed build/run requests/results suitable for an embedded IDE host.
@@ -105,6 +111,7 @@ Status:
 Use:
 - `oxvba_project::load_workspace_target`
 - `oxvba_project::host_helpers::*`
+- `oxvba_project::inspect_workspace_target`
 - `oxvba_languageservice::LanguageService`
 - `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`
