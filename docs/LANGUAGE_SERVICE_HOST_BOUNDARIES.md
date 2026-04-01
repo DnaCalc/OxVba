@@ -71,6 +71,7 @@ Current host-helper operations live in `oxvba-project::host_helpers` and cover:
 - planned `.bas` / `.cls` module creation,
 - typed project-edit intents for modules and references,
 - typed workspace-target roster/reference inspection,
+- typed COM candidate and active-selection assessment,
 - logical module-name inspection,
 - `Attribute VB_Name` redundancy/requirement detection,
 - file-name versus logical-name reconciliation.

@@ -19,11 +19,16 @@ use std::convert::TryFrom;
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
+use std::ptr::null_mut;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::CLSIDFromProgID;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CLASSES_ROOT, KEY_READ, REG_SZ, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
+    HKEY, HKEY_CLASSES_ROOT, KEY_READ, REG_SZ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
+    RegQueryValueExW,
 };
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::ERROR_NO_MORE_ITEMS;
 
 // ── ITypeLib / ITypeInfo vtable definitions ──
 
@@ -431,6 +436,79 @@ fn split_prog_id_name(prog_id_name: &str) -> Result<(String, Option<String>), St
     Ok((trimmed.to_string(), None))
 }
 
+#[cfg(target_os = "windows")]
+fn reg_enum_subkeys(subkey: &str) -> Result<Vec<String>, String> {
+    let wide_subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut key: HKEY = null_mut();
+    let open_status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CLASSES_ROOT,
+            wide_subkey.as_ptr(),
+            0,
+            KEY_READ,
+            &mut key,
+        )
+    };
+    if open_status != 0 {
+        return Err(format!(
+            "RegOpenKeyExW failed for `HKCR\\{subkey}` with status 0x{open_status:08X}"
+        ));
+    }
+
+    let mut names = Vec::new();
+    let mut index = 0u32;
+    loop {
+        let mut buffer = vec![0u16; 512];
+        let mut len = (buffer.len() - 1) as u32;
+        let status = unsafe {
+            RegEnumKeyExW(
+                key,
+                index,
+                buffer.as_mut_ptr(),
+                &mut len,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            )
+        };
+        if status == ERROR_NO_MORE_ITEMS {
+            break;
+        }
+        if status != 0 {
+            unsafe { RegCloseKey(key) };
+            return Err(format!(
+                "RegEnumKeyExW failed for `HKCR\\{subkey}` at index {index} with status 0x{status:08X}"
+            ));
+        }
+        names.push(String::from_utf16_lossy(&buffer[..len as usize]));
+        index += 1;
+    }
+
+    unsafe { RegCloseKey(key) };
+    Ok(names)
+}
+
+#[cfg(target_os = "windows")]
+fn parse_guid_canonical_or_registry(guid_text: &str) -> Option<String> {
+    crate::windows_client::parse_guid_canonical(guid_text).map(|guid| guid_to_string(&guid))
+}
+
+#[cfg(target_os = "windows")]
+fn registry_typelib_importlib_for_version(base_subkey: &str) -> Option<String> {
+    for lcid in reg_enum_subkeys(base_subkey).ok()? {
+        for platform in ["win64", "win32"] {
+            let path = format!(r"{base_subkey}\{lcid}\{platform}");
+            if let Ok(importlib) = reg_query_default_string(&path)
+                && !importlib.trim().is_empty()
+            {
+                return Some(importlib.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 // ── VT to TypeLibParamType ──
 
 #[cfg(target_os = "windows")]
@@ -623,6 +701,66 @@ pub fn resolve_typelib_identity_from_prog_id(
         lcid_hint: Some(0),
     };
     resolve_typelib_identity_from_registry(&request)
+}
+
+#[cfg(target_os = "windows")]
+pub fn discover_registered_typelib_identities_by_name(
+    reference_name: &str,
+) -> Result<Vec<TypeLibResolvedIdentity>, String> {
+    let reference_name = reference_name.trim();
+    if reference_name.is_empty() {
+        return Err("empty reference name".to_string());
+    }
+
+    let mut matches = Vec::new();
+    for libid_key in reg_enum_subkeys("TypeLib")? {
+        let Some(libid) = parse_guid_canonical_or_registry(&libid_key) else {
+            continue;
+        };
+        let version_root = format!(r"TypeLib\{libid_key}");
+        for version_key in reg_enum_subkeys(&version_root)? {
+            let version_subkey = format!(r"{version_root}\{version_key}");
+            let library_name = match reg_query_default_string(&version_subkey) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if !library_name.trim().eq_ignore_ascii_case(reference_name) {
+                continue;
+            }
+            let Some(importlib) = registry_typelib_importlib_for_version(&version_subkey) else {
+                continue;
+            };
+            let Ok((major, minor)) = parse_registry_typelib_version(&version_key) else {
+                continue;
+            };
+            matches.push(TypeLibResolvedIdentity {
+                reference_name: reference_name.to_string(),
+                requested_coclass: None,
+                importlib: importlib.clone(),
+                libid: Some(libid.clone()),
+                major_version: major,
+                minor_version: minor,
+                lcid: Some(0),
+                cache_key: format!("registry:{}:{}:{}", libid, major, minor),
+            });
+        }
+    }
+
+    matches.sort_by(|left, right| {
+        left.reference_name
+            .to_ascii_lowercase()
+            .cmp(&right.reference_name.to_ascii_lowercase())
+            .then_with(|| left.libid.cmp(&right.libid))
+            .then_with(|| left.major_version.cmp(&right.major_version))
+            .then_with(|| left.minor_version.cmp(&right.minor_version))
+            .then_with(|| {
+                left.importlib
+                    .to_ascii_lowercase()
+                    .cmp(&right.importlib.to_ascii_lowercase())
+            })
+    });
+    matches.dedup();
+    Ok(matches)
 }
 
 /// Extracts identity metadata from a loaded ITypeLib pointer.
@@ -1262,6 +1400,16 @@ pub fn resolve_typelib_identity_from_registry(
 }
 
 #[cfg(not(target_os = "windows"))]
+pub fn discover_registered_typelib_identities_by_name(
+    reference_name: &str,
+) -> Result<Vec<TypeLibResolvedIdentity>, String> {
+    Err(format!(
+        "registered typelib discovery not available on this platform for `{}`",
+        reference_name.trim()
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn enumerate_typelib_members(
     _ptlib: *mut std::ffi::c_void,
 ) -> Result<Vec<TypeLibMemberMetadata>, String> {
@@ -1326,5 +1474,19 @@ mod tests {
             assert!(identity.libid.is_some());
         }
         // It's OK if this fails on systems without scrrun
+    }
+
+    #[test]
+    fn discover_registered_typelib_identities_by_name_accepts_ole_automation() {
+        let result = discover_registered_typelib_identities_by_name("OLE Automation");
+        if let Ok(matches) = result {
+            assert!(
+                matches
+                    .iter()
+                    .any(|identity| identity.libid.as_deref() == Some("{00020430-0000-0000-C000-000000000046}")),
+                "expected stdole registry discovery to include the stdole LIBID"
+            );
+        }
+        // It's OK if this fails on hosts where stdole registry data is unavailable.
     }
 }

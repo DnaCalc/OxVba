@@ -39,6 +39,10 @@ This is the right crate for:
 This crate currently exports the direct project/helper ladder:
 - canonical workspace target loading,
 - typed workspace-target roster/reference inspection via `inspect_workspace_target`,
+- typed COM reference discovery and active-selection models via `com_selection`,
+- registered-library and ProgID-backed COM candidate discovery helpers,
+- file-backed typelib carrier discovery helpers,
+- deterministic COM add/replace/repair/remove planning helpers,
 - project discovery/loading policy,
 - module scaffolding and typed project-edit intents in `host_helpers`,
 - logical module-name inspection,
@@ -93,6 +97,10 @@ Status:
 
 Status:
 - typed workspace-target roster/reference inspection now exists via `oxvba_project::inspect_workspace_target`
+- typed COM candidate and active-selection models now exist via `oxvba_project::com_selection`
+- registered-library and ProgID candidate discovery now exist via `discover_registered_com_candidates` and `discover_prog_id_com_candidates`
+- file-backed candidate discovery now exists via `discover_file_backed_com_candidates`
+- typed active-selection repair planning now exists via `assess_project_com_selections` and `plan_*_com_*` helpers
 - mutation/apply flows remain follow-on work
 
 3. Typed build/run integration
@@ -112,6 +120,7 @@ Use:
 - `oxvba_project::load_workspace_target`
 - `oxvba_project::host_helpers::*`
 - `oxvba_project::inspect_workspace_target`
+- `oxvba_project::assess_project_com_selections`
 - `oxvba_languageservice::LanguageService`
 - `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`

@@ -17,6 +17,7 @@
 //! CompiledProject → Execution
 //! ```
 
+pub mod com_selection;
 pub mod error;
 pub mod generate;
 pub mod host_helpers;
@@ -29,6 +30,18 @@ pub mod vbp;
 pub mod workspace_target;
 
 // Re-exports for convenience
+pub use com_selection::{
+    ComProjectEditPlan, ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
+    ComSelectionCandidate,
+    ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionDiscoveryError,
+    ComSelectionIdentity, ComSelectionSourceKind, FileBackedComSelectionQuery,
+    RegisteredComSelectionQuery,
+    assess_project_com_selections, basproj_reference_from_candidate,
+    candidate_from_catalog_entry, candidate_from_project_reference, candidate_from_resolved_identity,
+    discover_file_backed_com_candidates, discover_prog_id_com_candidates,
+    discover_registered_com_candidates, plan_add_com_candidate, plan_remove_com_reference,
+    plan_repair_project_selection, plan_replace_com_reference,
+};
 pub use error::BasProjError;
 pub use generate::generate_basproj_xml;
 pub use host_helpers::{
