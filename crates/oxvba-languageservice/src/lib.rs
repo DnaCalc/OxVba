@@ -7,6 +7,12 @@
 //! The current crate is the validated bounded internal surface tracked by
 //! `LSF-0001`; it is not yet the full first-class editor platform described by
 //! `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md`.
+//!
+//! Host-facing guidance:
+//! - direct-embed hosts such as OxIde should treat this crate as the primary
+//!   semantic/query surface,
+//! - project authoring and workspace target loading live in `oxvba-project`,
+//! - `oxvba-lsp` should stay a thin transport layered over the same semantics.
 
 pub mod document;
 pub mod semantic;

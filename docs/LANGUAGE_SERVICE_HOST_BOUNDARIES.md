@@ -40,6 +40,11 @@ These hosts should prefer the direct API:
 
 These hosts do not need LSP unless they specifically want protocol interoperability.
 
+Current OxIde reality:
+- OxIde already models explicit `ProjectSession` and `DocumentSession` seams,
+- but its current `OxVbaServices` seam is still CLI-oriented and build/run-focused,
+- so the next OxVba-side work should expand the direct typed host surface rather than pushing OxIde through LSP.
+
 ## Responsibility Split
 
 ### Direct API responsibilities
@@ -52,6 +57,11 @@ The direct API owns:
 - diagnostics and semantic queries,
 - rename/reference/code-action planning,
 - host project-helper operations.
+
+For OxIde-class hosts, the intended public story is:
+- direct typed Rust APIs for workspace/document/session behavior,
+- direct typed Rust APIs for project/module/reference authoring,
+- no required dependence on CLI output parsing for editor scenarios.
 
 Current host-helper operations live in `oxvba-project::host_helpers` and cover:
 - planned `.bas` / `.cls` module creation,
@@ -97,6 +107,11 @@ For a direct-embed host, that usually means:
 - apply file/project changes,
 - refresh the in-process language-service workspace.
 
+Near-term OxIde-driven additions should include:
+- a clearer public host-facing session API over the current `LanguageService`,
+- broader typed project-authoring operations for module rosters and references,
+- typed build/run requests and results suitable for embedded IDE consumption.
+
 ## Current Honest Boundary
 
 OxVba can currently claim:
@@ -104,6 +119,11 @@ OxVba can currently claim:
 - a thin and honest LSP transport shell,
 - shared project-loading policy outside the transport,
 - explicit host-facing project-helper APIs.
+
+OxVba should now start claiming more explicitly:
+- OxIde is the intended showcase direct-embed host,
+- the direct public host surface is the primary editor integration contract,
+- VS Code is an alternate integration path over the same semantics.
 
 OxVba does not yet claim:
 - full LSP parity with the direct API,
@@ -120,4 +140,5 @@ If you are building a VS Code-class host:
 
 If you are building OxIde or another direct-embed host:
 - embed `oxvba-languageservice` and `oxvba-project` directly,
-- use `oxvba-lsp` only if you explicitly need protocol interoperability.
+- use `oxvba-lsp` only if you explicitly need protocol interoperability,
+- and prefer a typed OxVba-side host service seam over shelling out to the CLI for editor-facing behavior.

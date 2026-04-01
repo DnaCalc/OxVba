@@ -13,6 +13,9 @@ For the architectural target, see:
 For host-boundary guidance, see:
 - `docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md`
 
+For the direct public host-facing surface, see:
+- `docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md`
+
 ## Current Capability Ladder
 
 The current repo state supports these levels:
@@ -59,6 +62,9 @@ That crate is the semantic source of truth for:
 - and bounded code-action planning.
 
 The LSP transport is intentionally layered on top of that crate and does not own a second parser or semantic model.
+
+That direct Rust API is the primary editor-integration story for OxIde-style hosts.
+The current gap is not semantic capability; it is packaging the existing capability into a clearer first-class host-facing service contract.
 
 ### Thin LSP Shell
 
@@ -130,6 +136,8 @@ The important honesty rule is:
 ## Near-Term Next Steps
 
 The next likely expansion points are:
-- expose selected direct queries over actual LSP methods,
+- tighten the public direct host-facing interface for OxIde-class hosts,
+- add any missing typed workspace/document/session helpers needed by OxIde,
+- expose selected direct queries over actual LSP methods for VS Code-class hosts,
 - keep transport synchronization aligned with the real project model,
-- and publish a broader end-to-end editor showcase once the protocol surface is no longer bootstrap-only.
+- and publish a broader end-to-end editor showcase with OxIde as the direct-host reference consumer.

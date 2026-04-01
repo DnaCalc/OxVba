@@ -22,8 +22,7 @@ This README is the primary user-facing overview for evaluating and starting to u
 For deeper specifications and validation truth, see:
 - [docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md](docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
 - [docs/spec/BASPROJ_SPEC_V1.md](docs/spec/BASPROJ_SPEC_V1.md)
-- [docs/BRUTO_INTEGRATION_GUIDE.md](docs/BRUTO_INTEGRATION_GUIDE.md)
-- [docs/BRUTO_INTEGRATION_BOUNDARY.md](docs/BRUTO_INTEGRATION_BOUNDARY.md)
+- [docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md](docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md)
 - [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
 - [docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md](docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md)
 - [docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
@@ -875,9 +874,9 @@ Important boundary:
 - the thin LSP transport does not yet expose the full semantic query set over protocol methods
 
 For the honest capability ladder, current showcase, exact non-goals, and the split between LSP hosts and direct-embed hosts, see:
+- [docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md](docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md)
 - [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
 - [docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md](docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md)
-- [docs/BRUTO_INTEGRATION_GUIDE.md](docs/BRUTO_INTEGRATION_GUIDE.md)
 
 ## Current Limits
 
