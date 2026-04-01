@@ -7,6 +7,7 @@ use crate::workspace::Workspace;
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_compiler::lsp_support::intrinsic_spec;
+use oxvba_compiler::resolve::BoundProcedure;
 use oxvba_syntax::SyntaxKind;
 
 /// A position in a document (byte offset).
@@ -71,9 +72,11 @@ pub struct CompletionItem {
     pub label: String,
     pub kind: CompletionKind,
     pub detail: Option<String>,
+    pub source_document: Option<DocumentId>,
+    pub provenance: Option<SemanticProvenance>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompletionKind {
     Keyword,
     Variable,
@@ -91,6 +94,8 @@ pub struct SignatureHelp {
     pub parameters: Vec<ParameterInfo>,
     pub return_type: String,
     pub active_parameter: usize,
+    pub source_document: Option<DocumentId>,
+    pub provenance: Option<SemanticProvenance>,
 }
 
 #[derive(Debug, Clone)]
@@ -507,6 +512,8 @@ impl LanguageService {
                 label: kw.to_string(),
                 kind: CompletionKind::Keyword,
                 detail: None,
+                source_document: None,
+                provenance: None,
             });
         }
 
@@ -523,6 +530,8 @@ impl LanguageService {
                 label: name.to_string(),
                 kind: CompletionKind::Intrinsic,
                 detail,
+                source_document: None,
+                provenance: None,
             });
         }
 
@@ -546,7 +555,9 @@ impl LanguageService {
                     items.push(CompletionItem {
                         label: sym.name.clone(),
                         kind: ck,
-                        detail: Some(format!("{:?}", sym.bound_type)),
+                        detail: Some(completion_detail(sym, module)),
+                        source_document: Some(module.clone()),
+                        provenance: Some(sym.provenance.clone()),
                     });
                 }
             }
@@ -567,12 +578,16 @@ impl LanguageService {
                                 SymbolKind::Property => CompletionKind::Property,
                                 _ => CompletionKind::Variable,
                             },
-                            detail: Some(format!("{:?} ({})", sym.bound_type, id)),
+                            detail: Some(completion_detail(sym, id)),
+                            source_document: Some(id.clone()),
+                            provenance: Some(sym.provenance.clone()),
                         });
                     }
                 }
             }
         }
+
+        dedupe_completions(&mut items, module);
 
         // Filter by prefix (case-insensitive). Empty prefix returns all.
         if !prefix_lower.is_empty() {
@@ -639,15 +654,41 @@ impl LanguageService {
             }
         }
 
+        if call_name.is_none() {
+            let mut fallback_name: Option<&str> = None;
+            let mut fallback_commas: usize = 0;
+            let mut saw_argument_tokens = false;
+
+            for i in (0..=start_idx).rev() {
+                let (kind, text, _) = all_tokens[i];
+                if text.contains('\n') || text.contains('\r') {
+                    break;
+                }
+                if kind.is_trivia() {
+                    continue;
+                }
+                if kind == SyntaxKind::Comma {
+                    fallback_commas += 1;
+                    saw_argument_tokens = true;
+                    continue;
+                }
+                if kind == SyntaxKind::Ident {
+                    fallback_name = Some(text);
+                    break;
+                }
+                saw_argument_tokens = true;
+            }
+
+            if saw_argument_tokens {
+                call_name = fallback_name;
+                comma_count = fallback_commas;
+            }
+        }
+
         let name = call_name?;
         let name_lower = name.to_ascii_lowercase();
-
-        // Look up in BoundModule procedures
-        let proc = snap
-            .bound
-            .procedures
-            .iter()
-            .find(|p| p.name.to_ascii_lowercase() == name_lower)?;
+        let (document_id, display_name, proc, provenance) =
+            self.resolve_callable_signature(module, &name_lower)?;
 
         let parameters = proc
             .params
@@ -659,10 +700,12 @@ impl LanguageService {
             .collect();
 
         Some(SignatureHelp {
-            name: proc.name.clone(),
+            name: display_name,
             parameters,
             return_type: format!("{:?}", proc.return_type),
             active_parameter: comma_count,
+            source_document: Some(document_id),
+            provenance: Some(provenance),
         })
     }
 
@@ -731,7 +774,11 @@ impl LanguageService {
             };
             return Some(HoverInfo {
                 label,
-                detail: Some(format!("{:?}", sym.bound_type)),
+                detail: Some(format!(
+                    "{:?} | {}",
+                    sym.bound_type,
+                    semantic_provenance_label(&sym.provenance, &resolved.document)
+                )),
                 symbol_identity: Some(sym.identity.clone()),
                 provenance: Some(sym.provenance.clone()),
             });
@@ -892,6 +939,70 @@ impl LanguageService {
             provenance: Some(symbol.provenance.clone()),
         }
     }
+
+    fn resolve_callable_signature(
+        &self,
+        module: &DocumentId,
+        name_lower: &str,
+    ) -> Option<(DocumentId, String, BoundProcedure, SemanticProvenance)> {
+        let current = self.workspace.snapshot(module)?;
+        if let Some(proc) = current
+            .bound
+            .procedures
+            .iter()
+            .find(|proc| proc.name.to_ascii_lowercase() == name_lower)
+        {
+            let display_name = current
+                .symbols
+                .symbols
+                .iter()
+                .find(|sym| {
+                    matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
+                        && sym.name.eq_ignore_ascii_case(name_lower)
+                })
+                .map(|sym| sym.name.clone())
+                .unwrap_or_else(|| proc.name.clone());
+            let provenance = self
+                .workspace
+                .document(module)
+                .map(|document| document.semantic_provenance())?;
+            return Some((module.clone(), display_name, proc.clone(), provenance));
+        }
+
+        for document in self.workspace.document_ids() {
+            if document == module {
+                continue;
+            }
+            let snap = match self.workspace.snapshot(document) {
+                Some(snapshot) => snapshot,
+                None => continue,
+            };
+            if let Some(proc) = snap
+                .bound
+                .procedures
+                .iter()
+                .find(|proc| proc.name.to_ascii_lowercase() == name_lower)
+            {
+                let display_name = snap
+                    .symbols
+                    .symbols
+                    .iter()
+                    .find(|sym| {
+                        matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
+                            && sym.name.eq_ignore_ascii_case(name_lower)
+                    })
+                    .map(|sym| sym.name.clone())
+                    .unwrap_or_else(|| proc.name.clone());
+                let provenance = self
+                    .workspace
+                    .document(document)
+                    .map(|doc| doc.semantic_provenance())?;
+                return Some((document.clone(), display_name, proc.clone(), provenance));
+            }
+        }
+
+        None
+    }
 }
 
 // ── LanguageServiceProvider impl ──────────────────────────────
@@ -1005,6 +1116,53 @@ fn semantic_kind_for_symbol(kind: SymbolKind) -> SemanticTokenKind {
         SymbolKind::EnumDef | SymbolKind::EnumMember => SemanticTokenKind::EnumDef,
         SymbolKind::Event => SemanticTokenKind::Event,
         SymbolKind::External => SemanticTokenKind::External,
+    }
+}
+
+fn completion_detail(symbol: &SymbolInfo, document: &DocumentId) -> String {
+    format!(
+        "{:?} ({})",
+        symbol.bound_type,
+        semantic_provenance_label(&symbol.provenance, document)
+    )
+}
+
+fn semantic_provenance_label(provenance: &SemanticProvenance, document: &DocumentId) -> String {
+    let origin = match provenance.kind {
+        SymbolProvenanceKind::SourceModule => "source",
+        SymbolProvenanceKind::ProjectReference => "project-reference",
+        SymbolProvenanceKind::ImportedTypeLibraryProjection => "imported-typelib",
+        SymbolProvenanceKind::Generated => "generated",
+    };
+    format!("{} [{}]", document, origin)
+}
+
+fn dedupe_completions(items: &mut Vec<CompletionItem>, current_module: &DocumentId) {
+    let mut best_by_key = std::collections::HashMap::<(String, CompletionKind), CompletionItem>::new();
+    for item in items.drain(..) {
+        let key = (item.label.to_ascii_lowercase(), item.kind);
+        let replace = match best_by_key.get(&key) {
+            Some(existing) => completion_priority(&item, current_module)
+                < completion_priority(existing, current_module),
+            None => true,
+        };
+        if replace {
+            best_by_key.insert(key, item);
+        }
+    }
+    *items = best_by_key.into_values().collect();
+    items.sort_by(|left, right| {
+        completion_priority(left, current_module)
+            .cmp(&completion_priority(right, current_module))
+            .then_with(|| left.label.cmp(&right.label))
+    });
+}
+
+fn completion_priority(item: &CompletionItem, current_module: &DocumentId) -> u8 {
+    match item.source_document.as_ref() {
+        Some(document) if document == current_module => 0,
+        Some(_) => 1,
+        None => 2,
     }
 }
 
@@ -1185,6 +1343,54 @@ mod tests {
     }
 
     #[test]
+    fn hover_includes_provenance_for_cross_project_symbol() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\n    SharedProc\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Core".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let main_id = DocumentId::new("Main");
+        let pos = "Public Sub Main()\n    SharedProc\nEnd Sub\n"
+            .find("SharedProc")
+            .expect("call site") as u32;
+        let hover = svc.hover(&main_id, pos).expect("hover should resolve");
+        assert!(
+            hover
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("project-reference")),
+            "hover detail should surface provenance"
+        );
+    }
+
+    #[test]
     fn cross_module_go_to_definition() {
         let mut ws = Workspace::new();
         let mod1 = DocumentId::new("Module1");
@@ -1221,6 +1427,36 @@ mod tests {
         let labels: Vec<&str> = completions.iter().map(|c| c.label.as_str()).collect();
         assert!(labels.contains(&"Const"), "should include Const keyword");
         assert!(labels.contains(&"count"), "should include count variable");
+    }
+
+    #[test]
+    fn completions_deduplicate_cross_workspace_candidates() {
+        let mut ws = Workspace::new();
+        let main = DocumentId::new("Main");
+        ws.open_document(main.clone(), "Public Sub Main()\n    SharedProc\nEnd Sub\n");
+        ws.open_document(
+            DocumentId::new("Shared"),
+            "Public Sub SharedProc()\nEnd Sub\n",
+        );
+        ws.open_document(
+            DocumentId::new("SharedCopy"),
+            "Public Sub SharedProc()\nEnd Sub\n",
+        );
+        let svc = LanguageService::new(ws);
+
+        let pos = "Public Sub Main()\n    SharedProc\nEnd Sub\n"
+            .find("SharedProc")
+            .expect("call site") as u32
+            + 2;
+        let completions = svc.completions(&main, pos);
+        let shared_proc_count = completions
+            .iter()
+            .filter(|item| item.label == "SharedProc")
+            .count();
+        assert_eq!(
+            shared_proc_count, 1,
+            "completion surface should dedupe matching cross-workspace symbols"
+        );
     }
 
     #[test]
@@ -1263,6 +1499,53 @@ mod tests {
                 h.active_parameter
             );
         }
+    }
+
+    #[test]
+    fn signature_help_resolves_cross_project_callables() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\n    SharedProc 1, 2\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Core".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc(a As Long, b As Long)\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let main_id = DocumentId::new("Main");
+        let pos = "Public Sub Main()\n    SharedProc 1, 2\nEnd Sub\n"
+            .find("1, 2")
+            .expect("call arguments") as u32
+            + 1;
+        let help = svc
+            .signature_help(&main_id, pos)
+            .expect("signature help should resolve across project boundary");
+        assert_eq!(help.name, "SharedProc");
+        assert_eq!(help.parameters.len(), 2);
+        assert_eq!(help.source_document, Some(DocumentId::new("Core::Shared")));
     }
 
     #[test]

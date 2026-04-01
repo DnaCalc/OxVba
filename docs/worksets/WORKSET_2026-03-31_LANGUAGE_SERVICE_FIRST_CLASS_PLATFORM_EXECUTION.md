@@ -31,7 +31,8 @@ Current execution progress:
 3. Phase B symbol identity/provenance is now present in the current bounded service surface for definition/reference query results,
 4. Phase B invalidation/performance evidence is now present through explicit workspace stats and interactive query harness coverage in the LS test surface,
 5. Phase C tranche-A document/workspace symbol queries and semantic classification are now present in the direct API,
-6. richer completion/signature/hover context is now the next Phase C execution slice.
+6. richer completion/signature/hover context is now present in the direct API with cross-workspace/project awareness,
+7. rename preparation and safe reference-update analysis is now the next Phase C execution slice.
 
 This workset is therefore an extension and elevation track.
 It must not widen current truth claims retroactively.
