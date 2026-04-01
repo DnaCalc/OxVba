@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_languageservice::{
-    DocumentId, LanguageService, SemanticProvenance, SymbolProvenanceKind, Workspace,
+    DocumentId, LanguageService, SemanticProvenance, SpannedDiagnostic, SymbolProvenanceKind,
+    Workspace,
 };
 use tower_lsp::lsp_types::{
     ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
@@ -181,6 +182,29 @@ impl OxvbaLspCore {
             .lock()
             .expect("oxvba-lsp transport state mutex poisoned");
         state.service.workspace.document_count()
+    }
+
+    pub fn workspace_documents(&self) -> Vec<DocumentId> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        let mut documents = state
+            .service
+            .workspace
+            .document_ids()
+            .cloned()
+            .collect::<Vec<_>>();
+        documents.sort_by(|left, right| left.0.cmp(&right.0));
+        documents
+    }
+
+    pub fn document_diagnostics(&self, id: &DocumentId) -> Vec<SpannedDiagnostic> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.diagnostics(id)
     }
 
     pub fn semantic_provenance(&self, id: &DocumentId) -> Option<SemanticProvenance> {

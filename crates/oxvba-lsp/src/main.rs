@@ -109,10 +109,105 @@ fn workspace_paths(params: &InitializeParams) -> Vec<PathBuf> {
     paths
 }
 
+fn render_workspace_report(core: &OxvbaLspCore, path: &std::path::Path) -> String {
+    let mut lines = Vec::new();
+    let documents = core.workspace_documents();
+    lines.push(format!("workspace: {}", path.display()));
+    lines.push(format!("documents: {}", documents.len()));
+    for document in documents {
+        let diagnostics = core.document_diagnostics(&document);
+        lines.push(format!(
+            "{} diagnostics={}",
+            document,
+            diagnostics.len()
+        ));
+        for diagnostic in diagnostics {
+            lines.push(format!(
+                "  {:?} {}..{} {}",
+                diagnostic.severity, diagnostic.span.start, diagnostic.span.end, diagnostic.message
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+fn maybe_run_debug_harness() -> bool {
+    let args = std::env::args().collect::<Vec<_>>();
+    if args.len() <= 1 {
+        return false;
+    }
+
+    match args[1].as_str() {
+        "debug-workspace" => {
+            let Some(target) = args.get(2) else {
+                eprintln!("usage: oxvba-lsp debug-workspace <path>");
+                std::process::exit(2);
+            };
+            let path = PathBuf::from(target);
+            let core = OxvbaLspCore::new();
+            if let Err(err) = core.load_workspace_path(&path) {
+                eprintln!("oxvba-lsp: failed to load workspace: {err}");
+                std::process::exit(1);
+            }
+            println!("{}", render_workspace_report(&core, &path));
+            true
+        }
+        _ => false,
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    if maybe_run_debug_harness() {
+        return;
+    }
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_workspace_report;
+    use oxvba_lsp::OxvbaLspCore;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn debug_workspace_report_lists_documents_and_diagnostics() {
+        let temp_root = unique_temp_dir("oxvba_lsp_debug_workspace");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("Module1.bas"),
+            "Option Explicit\nSub Main()\n    x = 1\nEnd Sub\n",
+        )
+        .expect("module");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&temp_root).expect("workspace load");
+
+        let report = render_workspace_report(&core, &temp_root);
+        assert!(report.contains("workspace:"));
+        assert!(report.contains("documents: "));
+        assert!(report.contains("Module1"));
+        assert!(report.contains("use of undeclared variable"));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{nonce}"))
+    }
 }
