@@ -371,6 +371,7 @@ fn xml_escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{OxvbaLspCore, server_capabilities, server_info};
+    use std::time::{Duration, Instant};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -457,6 +458,112 @@ mod tests {
             .semantic_provenance(&module_id)
             .expect("restored document provenance");
         assert_eq!(provenance.project_name.as_deref(), Some("App"));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn workspace_load_includes_referenced_project_documents() {
+        let temp_root = unique_temp_dir("oxvba_lsp_ref_workspace");
+        let app_dir = temp_root.join("App");
+        let lib_dir = temp_root.join("Lib");
+        fs::create_dir_all(&app_dir).expect("app dir");
+        fs::create_dir_all(&lib_dir).expect("lib dir");
+
+        fs::write(
+            lib_dir.join("Helpers.bas"),
+            "Public Function DoubleIt(ByVal x As Long) As Long\n    DoubleIt = x * 2\nEnd Function\n",
+        )
+        .expect("lib module");
+        fs::write(
+            lib_dir.join("Lib.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>Lib</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Helpers.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("lib basproj");
+
+        fs::write(
+            app_dir.join("Module1.bas"),
+            "Sub Main()\n    Print DoubleIt(2)\nEnd Sub\n",
+        )
+        .expect("app module");
+        fs::write(
+            app_dir.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n    <ProjectReference Include=\"..\\Lib\\Lib.basproj\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("app basproj");
+
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&app_dir).expect("load app workspace");
+
+        let documents = core
+            .workspace_documents()
+            .into_iter()
+            .map(|document| document.0)
+            .collect::<Vec<_>>();
+        assert!(
+            documents.iter().any(|document| document == "Module1"),
+            "expected root module in workspace, got: {documents:?}"
+        );
+        assert!(
+            documents.iter().any(|document| document == "Lib::Helpers"),
+            "expected referenced-project module in workspace, got: {documents:?}"
+        );
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn sync_round_trip_stays_within_local_editor_budget() {
+        let temp_root = unique_temp_dir("oxvba_lsp_perf_workspace");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+
+        let mut modules_xml = String::new();
+        for index in 0..25 {
+            let module_name = format!("Module{index}");
+            let module_path = temp_root.join(format!("{module_name}.bas"));
+            fs::write(
+                &module_path,
+                format!("Public Function F{index}() As Long\n    F{index} = {index}\nEnd Function\n"),
+            )
+            .expect("module write");
+            modules_xml.push_str(&format!("    <Module Include=\"{module_name}.bas\" />\n"));
+        }
+        fs::write(
+            temp_root.join("Perf.basproj"),
+            format!(
+                "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>Perf</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n{modules_xml}  </ItemGroup>\n</Project>\n"
+            ),
+        )
+        .expect("basproj write");
+
+        let core = OxvbaLspCore::new();
+        let load_start = Instant::now();
+        core.load_workspace_path(&temp_root).expect("load workspace");
+        let load_elapsed = load_start.elapsed();
+
+        let uri = Url::from_file_path(temp_root.join("Module0.bas")).expect("uri");
+        let change_start = Instant::now();
+        core.open_text_document(&uri, "Public Function F0() As Long\n    F0 = 10\nEnd Function\n")
+            .expect("open");
+        core.change_text_document(
+            &uri,
+            "Public Function F0() As Long\n    F0 = 20\nEnd Function\n",
+        )
+        .expect("change");
+        core.close_text_document(&uri).expect("close");
+        let change_elapsed = change_start.elapsed();
+
+        let budget = Duration::from_secs(3);
+        assert!(
+            load_elapsed < budget,
+            "workspace load exceeded local editor budget: {:?}",
+            load_elapsed
+        );
+        assert!(
+            change_elapsed < budget,
+            "sync round-trip exceeded local editor budget: {:?}",
+            change_elapsed
+        );
 
         let _ = fs::remove_dir_all(&temp_root);
     }
