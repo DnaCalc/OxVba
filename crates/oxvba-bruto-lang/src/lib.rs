@@ -2,11 +2,10 @@ mod syntax;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bruto_ide::language::{BuildResult, Language};
-use oxvba_build::compile::{ShimOutputType, compile_shim};
 use oxvba_compiler::{
     ModuleKind, OxBundle, ProjectKind, ProjectManifest, compile_project, module_unit_from_source,
 };
@@ -74,9 +73,9 @@ fn build_bruto_program(source: &str) -> Result<BuildResult, String> {
     fs::write(&artifacts.bundle_path, bundle_bytes)
         .map_err(|err| format!("failed to write Bruto bundle: {err}"))?;
 
-    let shim_source = generate_bruto_exe_shim(&artifacts.bundle_path, &artifacts.capture_path);
-    compile_shim(&shim_source, &artifacts.exe_path, ShimOutputType::Exe)
-        .map_err(|err| format!("native shim build failed: {err}"))?;
+    let host_binary = current_host_binary()?;
+    fs::copy(&host_binary, &artifacts.exe_path)
+        .map_err(|err| format!("failed to stage Bruto host binary: {err}"))?;
 
     Ok(BuildResult {
         exe_path: artifacts.exe_path.display().to_string(),
@@ -105,87 +104,36 @@ fn exe_suffix() -> &'static str {
     if cfg!(windows) { ".exe" } else { "" }
 }
 
-fn rust_string_literal(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
+fn current_host_binary() -> Result<PathBuf, String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|err| format!("failed to resolve current executable: {err}"))?;
+    if is_bruto_host_binary(&current_exe) {
+        return Ok(current_exe);
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(parent) = current_exe.parent() {
+        candidates.push(parent.join(format!("oxvba-bruto{}", exe_suffix())));
+        if parent.file_name().and_then(|name| name.to_str()) == Some("deps") {
+            if let Some(grandparent) = parent.parent() {
+                candidates.push(grandparent.join(format!("oxvba-bruto{}", exe_suffix())));
+            }
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err("failed to locate the oxvba-bruto host binary".to_string())
 }
 
-fn generate_bruto_exe_shim(bundle_path: &Path, capture_path: &Path) -> String {
-    let bundle_literal = rust_string_literal(bundle_path);
-    let capture_literal = rust_string_literal(capture_path);
-    format!(
-        r#"//! Auto-generated OxVba Bruto executable shim.
-//! Do not edit.
-
-use oxvba_compiler::OxBundle;
-use oxvba_hal::{{HostPolicy, callbacks::HostCallbacks}};
-use oxvba_host::{{Engine, HostConfig}};
-use std::sync::{{Arc, Mutex}};
-
-const BUNDLE_BYTES: &[u8] = include_bytes!("{bundle_literal}");
-const CONSOLE_CAPTURE_PATH: &str = "{capture_literal}";
-
-struct CaptureCallbacks {{
-    write_lock: Mutex<()>,
-}}
-
-impl CaptureCallbacks {{
-    fn append_line(&self, text: &str) {{
-        let _guard = self.write_lock.lock().expect("capture callback lock poisoned");
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(CONSOLE_CAPTURE_PATH)
-            .expect("failed to open Bruto console capture");
-        use std::io::Write;
-        writeln!(file, "{{text}}").expect("failed to append Bruto console capture");
-    }}
-}}
-
-impl HostCallbacks for CaptureCallbacks {{
-    fn on_msg_box(&self, _prompt: &str, style: i32) -> i32 {{
-        style.max(1)
-    }}
-
-    fn on_input_box(&self, _prompt: &str, default: &str) -> String {{
-        default.to_string()
-    }}
-
-    fn on_status_bar(&self, _text: &str) {{}}
-
-    fn on_console_print(&self, text: &str) -> bool {{
-        self.append_line(text);
-        true
-    }}
-
-    fn on_debug_print(&self, _text: &str) {{}}
-}}
-
-fn main() {{
-    std::fs::write(CONSOLE_CAPTURE_PATH, "").expect("failed to reset Bruto console capture");
-
-    let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
-        .expect("failed to deserialize embedded bundle");
-    let callbacks = Arc::new(CaptureCallbacks {{
-        write_lock: Mutex::new(()),
-    }});
-    let mut engine = Engine::new(HostConfig {{
-        enable_jit: false,
-        root_object_name: Some("Application".to_string()),
-    }})
-    .with_host_callbacks(callbacks);
-    engine.set_host_policy(HostPolicy::interactive_dev());
-
-    match engine.execute_bundle_with_snapshot(&bundle) {{
-        Ok(_) => {{}}
-        Err(err) => {{
-            eprintln!("OxVba Bruto: execution failed: {{err}}");
-            std::process::exit(1);
-        }}
-    }}
-}}
-"#
+fn is_bruto_host_binary(path: &std::path::Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("oxvba-bruto") | Some("oxvba-bruto.exe")
     )
 }
 
@@ -194,7 +142,6 @@ mod tests {
     use super::OxvbaBrutoLanguage;
     use bruto_ide::language::Language;
     use std::fs;
-    use std::path::Path;
     use std::process::{Command, Stdio};
 
     #[test]
@@ -207,10 +154,16 @@ mod tests {
 
     #[test]
     fn build_and_run_round_trip_captures_console_output() {
+        ensure_debug_host_binary();
         let language = OxvbaBrutoLanguage;
         let result = language
             .build("Sub Main()\n    Print \"42\"\nEnd Sub\n")
             .expect("Bruto OxVba build should succeed");
+        let root = std::path::Path::new(&result.source_path)
+            .parent()
+            .expect("Bruto source path should have a parent");
+        assert!(root.join("Program.oxb").exists());
+        assert!(std::path::Path::new(&result.exe_path).exists());
 
         let status = Command::new(&result.exe_path)
             .stdout(Stdio::null())
@@ -227,7 +180,27 @@ mod tests {
     }
 
     #[test]
+    fn build_stages_current_host_binary() {
+        ensure_debug_host_binary();
+        let language = OxvbaBrutoLanguage;
+        let first = language
+            .build("Sub Main()\n    Print \"one\"\nEnd Sub\n")
+            .expect("first Bruto build should succeed");
+        let second = language
+            .build("Sub Main()\n    Print \"two\"\nEnd Sub\n")
+            .expect("second Bruto build should succeed");
+
+        let first_exe = fs::read(&first.exe_path).expect("first Bruto exe should exist");
+        let second_exe = fs::read(&second.exe_path).expect("second Bruto exe should exist");
+        assert_eq!(first_exe, second_exe);
+
+        cleanup_artifacts(&first.source_path);
+        cleanup_artifacts(&second.source_path);
+    }
+
+    #[test]
     fn build_reports_compile_errors() {
+        ensure_debug_host_binary();
         let language = OxvbaBrutoLanguage;
         let err = match language.build("") {
             Ok(_) => panic!("invalid source should not build"),
@@ -236,8 +209,18 @@ mod tests {
         assert!(err.contains("failed") || err.contains("error"));
     }
 
+    fn ensure_debug_host_binary() {
+        let status = Command::new("cargo")
+            .args(["build", "-p", "oxvba-bruto"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("should be able to build oxvba-bruto for tests");
+        assert!(status.success(), "oxvba-bruto debug build should succeed");
+    }
+
     fn cleanup_artifacts(source_path: &str) {
-        let Some(root) = Path::new(source_path).parent() else {
+        let Some(root) = std::path::Path::new(source_path).parent() else {
             return;
         };
         let _ = fs::remove_dir_all(root);

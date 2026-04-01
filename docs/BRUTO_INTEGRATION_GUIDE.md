@@ -84,12 +84,17 @@ Startup note:
 - use `Alt-X` to exit, `F9` to build, and `Ctrl-F9` to run
 - `oxvba-bruto --help` prints a short startup/keys reminder without entering the TUI
 
+Build note:
+- Bruto `F9` no longer compiles a fresh Rust shim on every build
+- the build path now writes `Program.oxb` and stages the current `oxvba-bruto` host binary as the runnable artifact
+- that keeps the return path responsive after OxVba compilation completes
+
 ## Build Evidence
 
 Windows x64 release build was produced on 2026-04-01 with:
 - command: `cargo build --release -p oxvba-bruto --target x86_64-pc-windows-msvc`
 - artifact: `target/x86_64-pc-windows-msvc/release/oxvba-bruto.exe`
-- artifact size: `2477568` bytes
+- artifact size: `2487296` bytes
 
 Linux x64 evidence in this workset is the native-host source build path:
 - script: `scripts/build-bruto.sh`

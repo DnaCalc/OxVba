@@ -10,3 +10,6 @@ repository.workspace = true
 bruto-ide.workspace = true
 turbo-vision.workspace = true
 oxvba-bruto-lang = { path = "../oxvba-bruto-lang" }
+oxvba-compiler = { path = "../oxvba-compiler" }
+oxvba-hal = { path = "../oxvba-hal" }
+oxvba-host = { path = "../oxvba-host" }
