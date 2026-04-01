@@ -77,6 +77,13 @@ After building, launch the Bruto host binary:
 target/<target-triple>/release/oxvba-bruto[.exe]
 ```
 
+Startup note:
+- `oxvba-bruto` is a full-screen TUI application
+- on successful startup it takes over the terminal and opens the editor immediately
+- this can look like a hang if you are expecting a line-oriented CLI
+- use `Alt-X` to exit, `F9` to build, and `Ctrl-F9` to run
+- `oxvba-bruto --help` prints a short startup/keys reminder without entering the TUI
+
 ## Build Evidence
 
 Windows x64 release build was produced on 2026-04-01 with:
