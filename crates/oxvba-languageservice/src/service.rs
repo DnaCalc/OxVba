@@ -803,6 +803,8 @@ fn collect_tokens_recursive<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
     use crate::span::SymbolProvenanceKind;
     use crate::workspace::Workspace;
@@ -1151,6 +1153,88 @@ mod tests {
                 .map(|provenance| provenance.snapshot_version)
                 .expect("updated snapshot version")
                 > initial_version
+        );
+    }
+
+    #[test]
+    fn interactive_query_harness_stays_within_local_editor_budget() {
+        let mut modules = Vec::new();
+        for idx in 0..24 {
+            modules.push(ModuleUnit {
+                module_name: format!("Module{idx}"),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: format!("Module{idx}"),
+                    ..ModuleAttributes::default()
+                },
+                source: if idx == 0 {
+                    "Public Sub Main()\n    SharedProc\nEnd Sub\n".to_string()
+                } else {
+                    format!("Public Sub Worker{idx}()\nEnd Sub\n")
+                },
+            });
+        }
+
+        let project = ProjectManifest {
+            project_name: "PerfHarness".to_string(),
+            project_kind: ProjectKind::Source,
+            modules,
+            references: vec![ProjectReference {
+                referenced_project_name: "Core".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let open_start = Instant::now();
+        let svc = LanguageService::from_project(project);
+        let open_elapsed = open_start.elapsed();
+
+        let main_id = DocumentId::new("Module0");
+        let def_pos = "Public Sub Main()\n    SharedProc\nEnd Sub\n"
+            .find("SharedProc")
+            .expect("call site") as u32;
+
+        let def_start = Instant::now();
+        let definition = svc.go_to_definition(&main_id, def_pos);
+        let def_elapsed = def_start.elapsed();
+        assert!(definition.is_some(), "definition query should succeed");
+
+        let refs_start = Instant::now();
+        let refs = svc.find_references(&main_id, def_pos);
+        let refs_elapsed = refs_start.elapsed();
+        assert!(
+            refs.len() >= 2,
+            "reference query should include declaration and call site"
+        );
+
+        let interactive_budget = Duration::from_secs(2);
+        assert!(
+            open_elapsed < interactive_budget,
+            "workspace open exceeded local editor budget: {:?}",
+            open_elapsed
+        );
+        assert!(
+            def_elapsed < interactive_budget,
+            "definition query exceeded local editor budget: {:?}",
+            def_elapsed
+        );
+        assert!(
+            refs_elapsed < interactive_budget,
+            "reference query exceeded local editor budget: {:?}",
+            refs_elapsed
         );
     }
 

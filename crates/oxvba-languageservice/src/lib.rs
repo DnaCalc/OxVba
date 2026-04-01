@@ -26,4 +26,4 @@ pub use span::{
     DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,
     SymbolInfo, SymbolKind, SymbolProvenanceKind, TextSpan,
 };
-pub use workspace::Workspace;
+pub use workspace::{Workspace, WorkspaceStats};

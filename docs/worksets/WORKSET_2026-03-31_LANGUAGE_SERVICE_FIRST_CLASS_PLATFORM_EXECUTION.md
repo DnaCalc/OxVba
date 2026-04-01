@@ -29,7 +29,8 @@ Current execution progress:
 1. Phase A contract lock is complete under `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md`,
 2. Phase B workspace/reference loading is complete for `ProjectManifest` ownership plus referenced-project and imported-typelib participation,
 3. Phase B symbol identity/provenance is now present in the current bounded service surface for definition/reference query results,
-4. Phase B invalidation/performance evidence remains the next closure slice.
+4. Phase B invalidation/performance evidence is now present through explicit workspace stats and interactive query harness coverage in the LS test surface,
+5. Phase C editor-capability tranche A is now the next execution slice.
 
 This workset is therefore an extension and elevation track.
 It must not widen current truth claims retroactively.
