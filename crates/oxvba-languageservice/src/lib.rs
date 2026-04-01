@@ -19,10 +19,10 @@ pub use semantic::{
     SemanticSnapshot, SymbolTable, build_semantic_snapshot, build_semantic_snapshot_with_provenance,
 };
 pub use service::{
-    CompletionItem, CompletionKind, DocumentSymbol, HoverInfo, LanguageService,
-    LanguageServiceProvider, Location, ParameterInfo, ReferenceUpdateAnalysis,
+    CodeActionKind, CodeActionPlan, CompletionItem, CompletionKind, DocumentSymbol, HoverInfo,
+    LanguageService, LanguageServiceProvider, Location, ParameterInfo, ReferenceUpdateAnalysis,
     ReferenceUpdateIssue, ReferenceUpdateIssueKind, RenamePreparation, SemanticClassification,
-    SemanticTokenKind, SignatureHelp, WorkspaceSymbol,
+    SemanticTokenKind, SignatureHelp, TextEdit, WorkspaceSymbol,
 };
 pub use span::{
     DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,

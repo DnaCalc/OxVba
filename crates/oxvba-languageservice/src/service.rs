@@ -135,6 +135,27 @@ pub struct ReferenceUpdateAnalysis {
     pub safe_to_apply: bool,
 }
 
+/// A transport-neutral planned code action over workspace text.
+#[derive(Debug, Clone)]
+pub struct CodeActionPlan {
+    pub title: String,
+    pub kind: CodeActionKind,
+    pub document: DocumentId,
+    pub edits: Vec<TextEdit>,
+    pub diagnostic: SpannedDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeActionKind {
+    QuickFix,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEdit {
+    pub span: TextSpan,
+    pub new_text: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ReferenceUpdateIssue {
     pub kind: ReferenceUpdateIssueKind,
@@ -365,6 +386,7 @@ pub trait LanguageServiceProvider {
         module: &str,
         pos: Position,
     ) -> Option<ReferenceUpdateAnalysis>;
+    fn code_actions(&self, project: &ProjectManifest, module: &str) -> Vec<CodeActionPlan>;
     fn hover(&self, project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo>;
 }
 
@@ -899,6 +921,55 @@ impl LanguageService {
         })
     }
 
+    /// Plan bounded diagnostics-driven code actions for a document.
+    pub fn code_actions(&self, module: &DocumentId) -> Vec<CodeActionPlan> {
+        let mut actions = Vec::new();
+        let Some(snapshot) = self.workspace.snapshot(module) else {
+            return actions;
+        };
+
+        for diagnostic in &snapshot.diagnostics {
+            if let Some(variable_name) = undeclared_variable_name(&diagnostic.message)
+                && let Some(reference_span) =
+                    diagnostic_anchor_span(snapshot.source.as_ref(), diagnostic.span, variable_name)
+                && let Some(insert_span) =
+                    self.local_declaration_insertion_span(module, reference_span.start)
+            {
+                let newline = preferred_newline(snapshot.source.as_ref());
+                let inserted = format!("    Dim {variable_name} As Variant{newline}");
+                actions.push(CodeActionPlan {
+                    title: format!("Declare local variable '{variable_name}'"),
+                    kind: CodeActionKind::QuickFix,
+                    document: module.clone(),
+                    edits: vec![TextEdit {
+                        span: insert_span,
+                        new_text: inserted,
+                    }],
+                    diagnostic: diagnostic.clone(),
+                });
+                continue;
+            }
+
+            if ptrsafe_required_diagnostic(&diagnostic.message)
+                && let Some(insert_span) =
+                    declare_ptrsafe_insertion_span(snapshot.source.as_ref(), &diagnostic.message)
+            {
+                actions.push(CodeActionPlan {
+                    title: "Add PtrSafe keyword".to_string(),
+                    kind: CodeActionKind::QuickFix,
+                    document: module.clone(),
+                    edits: vec![TextEdit {
+                        span: insert_span,
+                        new_text: "PtrSafe ".to_string(),
+                    }],
+                    diagnostic: diagnostic.clone(),
+                });
+            }
+        }
+
+        actions
+    }
+
     /// Hover info for the symbol at position.
     pub fn hover(&self, module: &DocumentId, position: Position) -> Option<HoverInfo> {
         if let Some(resolved) = self.resolve_symbol_at(module, position) {
@@ -1006,6 +1077,54 @@ impl LanguageService {
         }
 
         None
+    }
+
+    fn local_declaration_insertion_span(
+        &self,
+        module: &DocumentId,
+        position: Position,
+    ) -> Option<TextSpan> {
+        let snapshot = self.workspace.snapshot(module)?;
+        let scope = self.scope_at_position(module, position);
+        if scope == 0 {
+            return None;
+        }
+
+        let proc_kinds = [
+            SyntaxKind::SubDecl,
+            SyntaxKind::FunctionDecl,
+            SyntaxKind::PropertyDecl,
+        ];
+        let node = snapshot
+            .parse
+            .syntax()
+            .child_nodes()
+            .into_iter()
+            .filter(|n| proc_kinds.contains(&n.kind()))
+            .nth((scope - 1) as usize)?;
+        let (start, _) = node.text_range();
+        let source = snapshot.source.as_ref().as_bytes();
+        let mut index = start as usize;
+
+        while index < source.len() {
+            match source[index] {
+                b'\n' => {
+                    let insert_at = (index + 1) as u32;
+                    return Some(TextSpan::new(insert_at, insert_at));
+                }
+                b'\r' => {
+                    let mut insert_at = index + 1;
+                    if insert_at < source.len() && source[insert_at] == b'\n' {
+                        insert_at += 1;
+                    }
+                    let insert_at = insert_at as u32;
+                    return Some(TextSpan::new(insert_at, insert_at));
+                }
+                _ => index += 1,
+            }
+        }
+
+        Some(TextSpan::new(start, start))
     }
 
     /// Extract the partial identifier (prefix) at cursor position for
@@ -1256,6 +1375,11 @@ impl LanguageServiceProvider for LanguageService {
         self.reference_update_analysis(&id, pos)
     }
 
+    fn code_actions(&self, _project: &ProjectManifest, module: &str) -> Vec<CodeActionPlan> {
+        let id = DocumentId::new(module);
+        self.code_actions(&id)
+    }
+
     fn hover(&self, _project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo> {
         let id = DocumentId::new(module);
         self.hover(&id, pos)
@@ -1350,6 +1474,81 @@ fn first_identifier_token<'a>(node: &oxvba_syntax::SyntaxNode<'a>) -> Option<(&'
         }
     }
     None
+}
+
+fn undeclared_variable_name(message: &str) -> Option<&str> {
+    message.strip_prefix("use of undeclared variable: ")
+}
+
+fn ptrsafe_required_diagnostic(message: &str) -> bool {
+    message.contains("PtrSafe keyword is required")
+}
+
+fn preferred_newline(source: &str) -> &str {
+    if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+fn diagnostic_anchor_span(source: &str, fallback: TextSpan, identifier: &str) -> Option<TextSpan> {
+    if !fallback.is_empty() {
+        return Some(fallback);
+    }
+
+    find_identifier_span_in_source(source, identifier)
+}
+
+fn find_identifier_span_in_source(source: &str, identifier: &str) -> Option<TextSpan> {
+    let source_lower = source.to_ascii_lowercase();
+    let ident_lower = identifier.to_ascii_lowercase();
+    let source_bytes = source_lower.as_bytes();
+    let ident_bytes = ident_lower.as_bytes();
+
+    if ident_bytes.is_empty() || ident_bytes.len() > source_bytes.len() {
+        return None;
+    }
+
+    for start in 0..=(source_bytes.len() - ident_bytes.len()) {
+        let end = start + ident_bytes.len();
+        if &source_bytes[start..end] != ident_bytes {
+            continue;
+        }
+
+        if start > 0 && is_identifier_byte(source_bytes[start - 1]) {
+            continue;
+        }
+        if end < source_bytes.len() && is_identifier_byte(source_bytes[end]) {
+            continue;
+        }
+
+        return Some(TextSpan::new(start as u32, end as u32));
+    }
+
+    None
+}
+
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn declare_ptrsafe_insertion_span(source: &str, message: &str) -> Option<TextSpan> {
+    let declared_line = extract_backtick_payload(message)?;
+    let line_start = source.find(&declared_line)?;
+    let line = &source[line_start..line_start + declared_line.len()];
+    let declare_idx = line
+        .to_ascii_lowercase()
+        .find("declare ")?;
+    let insert_at = line_start + declare_idx + "Declare ".len();
+    Some(TextSpan::new(insert_at as u32, insert_at as u32))
+}
+
+fn extract_backtick_payload(message: &str) -> Option<String> {
+    let start = message.find('`')?;
+    let rest = &message[start + 1..];
+    let end = rest.find('`')?;
+    Some(rest[..end].to_string())
 }
 
 fn dedupe_completions(items: &mut Vec<CompletionItem>, current_module: &DocumentId) {
@@ -1724,6 +1923,58 @@ mod tests {
                 issue.kind == ReferenceUpdateIssueKind::ImportedTypeLibraryDocument
             }),
             "expected imported-typelib blocker in analysis"
+        );
+    }
+
+    #[test]
+    fn code_actions_offer_local_declaration_for_undeclared_variable_diagnostic() {
+        let src = "Option Explicit\nSub Main()\n    x = 1\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let actions = svc.code_actions(&id);
+        assert_eq!(actions.len(), 1, "expected one quick-fix plan");
+        let action = &actions[0];
+        assert_eq!(action.kind, CodeActionKind::QuickFix);
+        assert_eq!(action.title, "Declare local variable 'x'");
+        assert_eq!(action.document, id);
+        assert_eq!(action.edits.len(), 1);
+        assert_eq!(
+            action.edits[0].new_text,
+            "    Dim x As Variant\n",
+            "expected local declaration insertion"
+        );
+        assert!(
+            action.diagnostic.message.contains("undeclared variable"),
+            "expected diagnostic-driven quick fix"
+        );
+    }
+
+    #[test]
+    fn code_actions_stay_empty_without_matching_fix_family() {
+        let src = "Sub Main()\n    Dim x As Long\n    x = 1\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let actions = svc.code_actions(&id);
+        assert!(actions.is_empty(), "expected no quick fixes for a clean document");
+    }
+
+    #[test]
+    fn code_actions_offer_ptrsafe_insertion_for_declare_diagnostic() {
+        let src = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let actions = svc.code_actions(&id);
+        assert_eq!(actions.len(), 1, "expected one PtrSafe quick-fix plan");
+        let action = &actions[0];
+        assert_eq!(action.title, "Add PtrSafe keyword");
+        assert_eq!(action.kind, CodeActionKind::QuickFix);
+        assert_eq!(action.edits.len(), 1);
+        assert_eq!(action.edits[0].new_text, "PtrSafe ");
+        let insert_at = "Declare ".len() as u32;
+        assert_eq!(action.edits[0].span, TextSpan::new(insert_at, insert_at));
+        assert!(
+            action.diagnostic.message.contains("PtrSafe keyword is required"),
+            "expected PtrSafe diagnostic-driven quick fix"
         );
     }
 
