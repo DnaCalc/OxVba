@@ -21,6 +21,50 @@ pub struct Location {
     pub provenance: Option<SemanticProvenance>,
 }
 
+/// A document-level symbol entry suitable for outline/navigation views.
+#[derive(Debug, Clone)]
+pub struct DocumentSymbol {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub span: TextSpan,
+    pub detail: Option<String>,
+    pub container_name: Option<String>,
+    pub symbol_identity: SymbolIdentity,
+    pub provenance: SemanticProvenance,
+}
+
+/// A workspace-level symbol result.
+#[derive(Debug, Clone)]
+pub struct WorkspaceSymbol {
+    pub document: DocumentId,
+    pub symbol: DocumentSymbol,
+}
+
+/// Semantic token/classification kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticTokenKind {
+    Keyword,
+    Procedure,
+    Property,
+    Variable,
+    Parameter,
+    Constant,
+    TypeDef,
+    EnumDef,
+    Event,
+    External,
+    Intrinsic,
+}
+
+/// A semantic token/classification entry over a source span.
+#[derive(Debug, Clone)]
+pub struct SemanticClassification {
+    pub span: TextSpan,
+    pub kind: SemanticTokenKind,
+    pub symbol_identity: Option<SymbolIdentity>,
+    pub provenance: Option<SemanticProvenance>,
+}
+
 /// A completion item.
 #[derive(Debug, Clone)]
 pub struct CompletionItem {
@@ -236,6 +280,13 @@ const INTRINSIC_NAMES: &[&str] = &[
 pub trait LanguageServiceProvider {
     fn diagnostics(&self, project: &ProjectManifest, module: &str) -> Vec<SpannedDiagnostic>;
     fn symbols(&self, project: &ProjectManifest, module: &str) -> Vec<SymbolInfo>;
+    fn document_symbols(&self, project: &ProjectManifest, module: &str) -> Vec<DocumentSymbol>;
+    fn workspace_symbols(&self, project: &ProjectManifest, query: &str) -> Vec<WorkspaceSymbol>;
+    fn semantic_classifications(
+        &self,
+        project: &ProjectManifest,
+        module: &str,
+    ) -> Vec<SemanticClassification>;
     fn completions(
         &self,
         project: &ProjectManifest,
@@ -303,6 +354,130 @@ impl LanguageService {
             .snapshot(module)
             .map(|s| s.symbols.symbols.clone())
             .unwrap_or_default()
+    }
+
+    /// Get document symbols for a single document.
+    pub fn document_symbols(&self, module: &DocumentId) -> Vec<DocumentSymbol> {
+        let mut symbols = self
+            .workspace
+            .snapshot(module)
+            .map(|s| {
+                let procedure_names = s
+                    .symbols
+                    .symbols
+                    .iter()
+                    .filter(|sym| {
+                        matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
+                    })
+                    .map(|sym| (sym.scope + 1, sym.name.clone()))
+                    .collect::<std::collections::HashMap<_, _>>();
+                let mut items = s
+                    .symbols
+                    .symbols
+                    .iter()
+                    .map(|sym| {
+                        DocumentSymbol {
+                            name: sym.name.clone(),
+                            kind: sym.kind,
+                            span: sym.definition_span,
+                            detail: Some(format!("{:?}", sym.bound_type)),
+                            container_name: if sym.scope == 0 {
+                                None
+                            } else {
+                                procedure_names.get(&sym.scope).cloned()
+                            },
+                            symbol_identity: sym.identity.clone(),
+                            provenance: sym.provenance.clone(),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                items.sort_by_key(|sym| sym.span.start);
+                items
+            })
+            .unwrap_or_default();
+        symbols.sort_by_key(|sym| sym.span.start);
+        symbols
+    }
+
+    /// Get workspace symbols, optionally filtered by a case-insensitive prefix.
+    pub fn workspace_symbols(&self, query: &str) -> Vec<WorkspaceSymbol> {
+        let query_lower = query.to_ascii_lowercase();
+        let mut items = Vec::new();
+
+        for document in self.workspace.document_ids() {
+            for symbol in self.document_symbols(document) {
+                if query_lower.is_empty()
+                    || symbol.name.to_ascii_lowercase().starts_with(&query_lower)
+                {
+                    items.push(WorkspaceSymbol {
+                        document: document.clone(),
+                        symbol,
+                    });
+                }
+            }
+        }
+
+        items.sort_by(|left, right| {
+            left.symbol
+                .name
+                .cmp(&right.symbol.name)
+                .then_with(|| left.document.0.cmp(&right.document.0))
+        });
+        items
+    }
+
+    /// Get semantic classifications for a document.
+    pub fn semantic_classifications(&self, module: &DocumentId) -> Vec<SemanticClassification> {
+        let snap = match self.workspace.snapshot(module) {
+            Some(snapshot) => snapshot,
+            None => return Vec::new(),
+        };
+
+        let mut classifications = Vec::new();
+        for (kind, text, offset) in collect_all_tokens(&snap.parse.syntax()) {
+            if kind.is_trivia() {
+                continue;
+            }
+
+            let span = TextSpan::new(offset, offset + text.len() as u32);
+            let token_lower = text.to_ascii_lowercase();
+
+            if VBA_KEYWORDS
+                .iter()
+                .any(|keyword| keyword.eq_ignore_ascii_case(text))
+            {
+                classifications.push(SemanticClassification {
+                    span,
+                    kind: SemanticTokenKind::Keyword,
+                    symbol_identity: None,
+                    provenance: None,
+                });
+                continue;
+            }
+
+            if kind == SyntaxKind::Ident {
+                if let Some(resolved) = self.resolve_symbol_at(module, offset) {
+                    classifications.push(SemanticClassification {
+                        span,
+                        kind: semantic_kind_for_symbol(resolved.symbol.kind),
+                        symbol_identity: Some(resolved.symbol.identity.clone()),
+                        provenance: Some(resolved.symbol.provenance.clone()),
+                    });
+                    continue;
+                }
+
+                if intrinsic_spec(&token_lower).is_some() {
+                    classifications.push(SemanticClassification {
+                        span,
+                        kind: SemanticTokenKind::Intrinsic,
+                        symbol_identity: None,
+                        provenance: None,
+                    });
+                }
+            }
+        }
+
+        classifications
     }
 
     /// Get all symbols across all documents.
@@ -732,6 +907,24 @@ impl LanguageServiceProvider for LanguageService {
         self.symbols(&id)
     }
 
+    fn document_symbols(&self, _project: &ProjectManifest, module: &str) -> Vec<DocumentSymbol> {
+        let id = DocumentId::new(module);
+        self.document_symbols(&id)
+    }
+
+    fn workspace_symbols(&self, _project: &ProjectManifest, query: &str) -> Vec<WorkspaceSymbol> {
+        self.workspace_symbols(query)
+    }
+
+    fn semantic_classifications(
+        &self,
+        _project: &ProjectManifest,
+        module: &str,
+    ) -> Vec<SemanticClassification> {
+        let id = DocumentId::new(module);
+        self.semantic_classifications(&id)
+    }
+
     fn completions(
         &self,
         _project: &ProjectManifest,
@@ -801,6 +994,20 @@ fn collect_tokens_recursive<'a>(
     }
 }
 
+fn semantic_kind_for_symbol(kind: SymbolKind) -> SemanticTokenKind {
+    match kind {
+        SymbolKind::Procedure => SemanticTokenKind::Procedure,
+        SymbolKind::Property => SemanticTokenKind::Property,
+        SymbolKind::Variable => SemanticTokenKind::Variable,
+        SymbolKind::Parameter => SemanticTokenKind::Parameter,
+        SymbolKind::Constant => SemanticTokenKind::Constant,
+        SymbolKind::TypeDef => SemanticTokenKind::TypeDef,
+        SymbolKind::EnumDef | SymbolKind::EnumMember => SemanticTokenKind::EnumDef,
+        SymbolKind::Event => SemanticTokenKind::Event,
+        SymbolKind::External => SemanticTokenKind::External,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
@@ -839,6 +1046,95 @@ mod tests {
         assert!(labels.contains(&"Sub"), "should include keyword Sub");
         assert!(labels.contains(&"Abs"), "should include intrinsic Abs");
         assert!(labels.contains(&"Foo"), "should include procedure Foo");
+    }
+
+    #[test]
+    fn document_symbols_include_container_context() {
+        let src = "Public Sub Foo()\n    Dim counter As Long\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let symbols = svc.document_symbols(&id);
+        assert!(
+            symbols.iter().any(|sym| sym.name == "Foo" && sym.kind == SymbolKind::Procedure),
+            "expected procedure symbol in document outline"
+        );
+        assert!(
+            symbols.iter().any(|sym| {
+                sym.name == "counter"
+                    && sym.kind == SymbolKind::Variable
+                    && sym.container_name.as_deref() == Some("Foo")
+            }),
+            "expected local variable to carry containing procedure name"
+        );
+    }
+
+    #[test]
+    fn workspace_symbols_filter_across_loaded_workspace() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Core".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Core".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let symbols = svc.workspace_symbols("Sh");
+        assert!(
+            symbols.iter().any(|item| {
+                item.document == DocumentId::new("Core::Shared")
+                    && item.symbol.name == "SharedProc"
+            }),
+            "expected workspace symbol search to include referenced-project exports"
+        );
+    }
+
+    #[test]
+    fn semantic_classifications_cover_keywords_symbols_and_intrinsics() {
+        let src = "Sub Foo()\n    Dim count As Long\n    count = Abs(1)\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let classifications = svc.semantic_classifications(&id);
+
+        assert!(
+            classifications.iter().any(|entry| entry.kind == SemanticTokenKind::Keyword),
+            "expected keyword classifications"
+        );
+        assert!(
+            classifications.iter().any(|entry| {
+                entry.kind == SemanticTokenKind::Variable && entry.symbol_identity.is_some()
+            }),
+            "expected resolved variable classification"
+        );
+        assert!(
+            classifications
+                .iter()
+                .any(|entry| entry.kind == SemanticTokenKind::Intrinsic),
+            "expected intrinsic classification"
+        );
     }
 
     #[test]

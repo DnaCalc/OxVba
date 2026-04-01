@@ -19,8 +19,9 @@ pub use semantic::{
     SemanticSnapshot, SymbolTable, build_semantic_snapshot, build_semantic_snapshot_with_provenance,
 };
 pub use service::{
-    CompletionItem, CompletionKind, HoverInfo, LanguageService, LanguageServiceProvider, Location,
-    ParameterInfo, SignatureHelp,
+    CompletionItem, CompletionKind, DocumentSymbol, HoverInfo, LanguageService,
+    LanguageServiceProvider, Location, ParameterInfo, SemanticClassification, SemanticTokenKind,
+    SignatureHelp, WorkspaceSymbol,
 };
 pub use span::{
     DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,

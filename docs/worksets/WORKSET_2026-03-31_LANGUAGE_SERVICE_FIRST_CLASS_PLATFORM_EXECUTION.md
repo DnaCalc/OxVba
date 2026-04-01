@@ -30,7 +30,8 @@ Current execution progress:
 2. Phase B workspace/reference loading is complete for `ProjectManifest` ownership plus referenced-project and imported-typelib participation,
 3. Phase B symbol identity/provenance is now present in the current bounded service surface for definition/reference query results,
 4. Phase B invalidation/performance evidence is now present through explicit workspace stats and interactive query harness coverage in the LS test surface,
-5. Phase C editor-capability tranche A is now the next execution slice.
+5. Phase C tranche-A document/workspace symbol queries and semantic classification are now present in the direct API,
+6. richer completion/signature/hover context is now the next Phase C execution slice.
 
 This workset is therefore an extension and elevation track.
 It must not widen current truth claims retroactively.
