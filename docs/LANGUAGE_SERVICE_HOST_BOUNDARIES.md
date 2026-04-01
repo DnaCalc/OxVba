@@ -32,7 +32,6 @@ Current OxVba status:
 
 Examples:
 - OxIde,
-- Bruto-style IDE integrations,
 - custom Rust hosts that embed OxVba directly.
 
 These hosts should prefer the direct API:
@@ -119,6 +118,6 @@ If you are building a VS Code-class host:
 - keep project creation and project editing in extension commands or CLI-backed flows,
 - use the direct project-helper semantics as the source of truth.
 
-If you are building OxIde or a Bruto-style host:
+If you are building OxIde or another direct-embed host:
 - embed `oxvba-languageservice` and `oxvba-project` directly,
 - use `oxvba-lsp` only if you explicitly need protocol interoperability.

@@ -20,7 +20,7 @@ It is to tighten transport discipline and separate host-authoring helpers from L
 This workset therefore owns:
 1. cleanup of recent `oxvba-lsp` layering drift,
 2. lock-in of the transport discipline that should govern all future LSP work,
-3. definition and introduction of explicit host-side project helper APIs for OxIde/Bruto-style hosts.
+3. definition and introduction of explicit host-side project helper APIs for OxIde/direct-embed hosts.
 
 ## 2. Problem Statement
 
@@ -54,7 +54,7 @@ That API should own:
 The direct API should be clean enough that:
 1. `oxvba-lsp` can be a thin adapter over it,
 2. OxIde can embed it directly,
-3. Bruto-style hosts can embed it directly,
+3. direct-embed hosts can embed it directly,
 4. future non-LSP transports can reuse it unchanged.
 
 ### 3.2 Thin transport discipline
@@ -132,7 +132,7 @@ This workset is complete when:
 3. URI/document synchronization no longer fabricates detached project shadows,
 4. project discovery/loading policy is shared rather than duplicated in `oxvba-lsp`,
 5. a host-facing project-helper API exists for module/class/reference authoring and logical-name inspection,
-6. the docs describe the boundary clearly for VS Code-style hosts and direct-embed hosts like OxIde or Bruto-style IDEs.
+6. the docs describe the boundary clearly for VS Code-style hosts and direct-embed hosts like OxIde.
 
 ## 5. Execution Plan
 

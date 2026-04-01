@@ -15,8 +15,6 @@ members = [
     "crates/oxvba-build",
     "crates/oxvba-languageservice",
     "crates/oxvba-lsp",
-    "crates/oxvba-bruto-lang",
-    "crates/oxvba-bruto",
 ]
 resolver = "2"
 
@@ -47,5 +45,3 @@ proptest = { version = "1", default-features = false, features = ["std", "bit-se
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
-bruto-ide = "0.2.0"
-turbo-vision = "=1.0.7"
