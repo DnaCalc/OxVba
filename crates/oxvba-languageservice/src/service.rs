@@ -930,8 +930,12 @@ impl LanguageService {
 
         for diagnostic in &snapshot.diagnostics {
             if let Some(variable_name) = undeclared_variable_name(&diagnostic.message)
-                && let Some(reference_span) =
-                    diagnostic_anchor_span(snapshot.source.as_ref(), diagnostic.span, variable_name)
+                && let Some(reference_span) = self.undeclared_variable_anchor_span(
+                    module,
+                    snapshot.source.as_ref(),
+                    diagnostic.span,
+                    variable_name,
+                )
                 && let Some(insert_span) =
                     self.local_declaration_insertion_span(module, reference_span.start)
             {
@@ -1125,6 +1129,31 @@ impl LanguageService {
         }
 
         Some(TextSpan::new(start, start))
+    }
+
+    fn undeclared_variable_anchor_span(
+        &self,
+        module: &DocumentId,
+        source: &str,
+        fallback: TextSpan,
+        identifier: &str,
+    ) -> Option<TextSpan> {
+        if !fallback.is_empty() {
+            return Some(fallback);
+        }
+
+        let snapshot = self.workspace.snapshot(module)?;
+        for (kind, text, offset) in collect_all_tokens(&snapshot.parse.syntax()) {
+            if kind != SyntaxKind::Ident || !text.eq_ignore_ascii_case(identifier) {
+                continue;
+            }
+
+            if self.resolve_symbol_at(module, offset).is_none() {
+                return Some(TextSpan::new(offset, offset + text.len() as u32));
+            }
+        }
+
+        find_identifier_span_in_source(source, identifier)
     }
 
     /// Extract the partial identifier (prefix) at cursor position for
@@ -1490,14 +1519,6 @@ fn preferred_newline(source: &str) -> &str {
     } else {
         "\n"
     }
-}
-
-fn diagnostic_anchor_span(source: &str, fallback: TextSpan, identifier: &str) -> Option<TextSpan> {
-    if !fallback.is_empty() {
-        return Some(fallback);
-    }
-
-    find_identifier_span_in_source(source, identifier)
 }
 
 fn find_identifier_span_in_source(source: &str, identifier: &str) -> Option<TextSpan> {
@@ -1975,6 +1996,21 @@ mod tests {
         assert!(
             action.diagnostic.message.contains("PtrSafe keyword is required"),
             "expected PtrSafe diagnostic-driven quick fix"
+        );
+    }
+
+    #[test]
+    fn undeclared_variable_quick_fix_targets_unresolved_occurrence_not_first_name_match() {
+        let src = "Sub First()\n    Dim x As Long\n    x = 1\nEnd Sub\nOption Explicit\nSub Second()\n    x = 2\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let actions = svc.code_actions(&id);
+        assert_eq!(actions.len(), 1, "expected one undeclared-variable quick fix");
+        let insert_at = "Sub First()\n    Dim x As Long\n    x = 1\nEnd Sub\nOption Explicit\nSub Second()\n".len() as u32;
+        assert_eq!(
+            actions[0].edits[0].span,
+            TextSpan::new(insert_at, insert_at),
+            "expected declaration insertion in the second procedure, not at the first matching identifier"
         );
     }
 
