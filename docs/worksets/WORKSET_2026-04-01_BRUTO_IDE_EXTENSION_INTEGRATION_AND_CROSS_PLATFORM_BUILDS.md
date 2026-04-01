@@ -4,9 +4,9 @@ Date: 2026-04-01
 
 ## 1. Purpose
 
-This workset defines the execution path for adding a Bruto-IDE integration as an extension project inside the OxVba repository, then building that integration for:
-- Windows x64
-- Linux x64
+This workset defines the execution path for adding a Bruto-IDE integration as an extension project inside the OxVba repository, then providing:
+- a native Windows x64 release build
+- a simple native Linux x64 source-build path
 
 The goal is not to route Bruto through LSP.
 The goal is to use the direct OxVba project and language-service APIs in the host style that Bruto actually expects.
@@ -40,7 +40,7 @@ We now have:
 But we do not yet have:
 1. a Bruto-compatible integration crate,
 2. a direct-host sample that exercises OxVba through Bruto’s language trait,
-3. packaged Windows/Linux x64 builds of that integration.
+3. a packaged Windows x64 build plus a simple Linux x64 native-host build path.
 
 Without this work, the direct-host story remains documented but not demonstrated in a real external host shell.
 
@@ -81,11 +81,14 @@ Expected shape:
 
 ### 4.4 Cross-platform build target
 
-This workset owns buildability for:
+This workset owns native buildability for:
 1. `x86_64-pc-windows-msvc`
 2. `x86_64-unknown-linux-gnu`
 
-The acceptance target is successful release builds for both targets, with explicit notes on any runtime or packaging caveats.
+The acceptance target is:
+1. a successful Windows x64 release build produced in this repo,
+2. a simple Linux x64 native-host build path published in-repo,
+3. explicit notes on runtime or packaging caveats.
 
 ## 5. Desired End State
 
@@ -94,7 +97,7 @@ This workset is complete when:
 2. a Bruto/OxVba binary exists in-repo,
 3. the extension uses direct OxVba APIs rather than LSP,
 4. the bounded supported feature set is documented honestly,
-5. release builds succeed for Windows x64 and Linux x64,
+5. a Windows x64 release build exists and the Linux x64 native-host build path is published,
 6. usage/build notes are published for evaluating the integration.
 
 ## 6. Execution Plan
@@ -121,8 +124,9 @@ This workset is complete when:
 ### Phase D. Cross-platform build execution
 
 1. add build instructions / scripts for Windows x64 and Linux x64,
-2. run release builds for both targets,
-3. document any target-specific caveats or missing runtime affordances.
+2. run the Windows x64 release build,
+3. publish the Linux x64 native-host source build path,
+4. document any target-specific caveats or missing runtime affordances.
 
 ### Phase E. Documentation and evidence
 
@@ -140,7 +144,7 @@ Initial intended shape:
 3. `bd-br1.3` scaffold the Bruto/OxVba extension and binary crates,
 4. `bd-br1.4` implement the first build/diagnostic path over direct OxVba APIs,
 5. `bd-br1.5` add highlighting, sample program, and host polish,
-6. `bd-br1.6` produce Windows x64 and Linux x64 release builds,
+6. `bd-br1.6` produce a Windows x64 release build and publish the Linux x64 native-host build path,
 7. `bd-br1.7` publish docs and build evidence.
 
 ## 8. Acceptance Statement
@@ -149,7 +153,7 @@ At the end of this workset, OxVba should be able to say:
 
 1. there is an in-repo Bruto integration project,
 2. it uses the direct OxVba host/language-service/project surfaces rather than LSP,
-3. it is buildable for Windows x64 and Linux x64,
+3. it has a produced Windows x64 release build and a simple Linux x64 native-host build path,
 4. its supported scope is documented honestly.
 
 ## 9. Current Boundary Note
