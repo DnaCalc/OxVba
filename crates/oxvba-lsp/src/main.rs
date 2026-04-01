@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use oxvba_lsp::{OxvbaLspCore, server_capabilities, server_info};
+use tower_lsp::jsonrpc::Error;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -25,8 +26,10 @@ impl Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        for path in workspace_paths(&params) {
-            let _ = self.core.load_workspace_path(&path);
+        if let Some(path) = workspace_path(&params).map_err(Error::invalid_params)? {
+            self.core
+                .load_workspace_path(&path)
+                .map_err(Error::invalid_params)?;
         }
         Ok(InitializeResult {
             capabilities: server_capabilities(),
@@ -91,22 +94,41 @@ impl LanguageServer for Backend {
     }
 }
 
-fn workspace_paths(params: &InitializeParams) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
+fn workspace_path(params: &InitializeParams) -> std::result::Result<Option<PathBuf>, String> {
     if let Some(folders) = &params.workspace_folders {
-        for folder in folders {
-            if let Ok(path) = folder.uri.to_file_path() {
-                paths.push(path);
+        match folders.as_slice() {
+            [] => {}
+            [folder] => {
+                let path = folder.uri.to_file_path().map_err(|_| {
+                    format!(
+                        "oxvba-lsp only supports local file workspaces; `{}` is not a file uri",
+                        folder.uri
+                    )
+                })?;
+                return Ok(Some(path));
+            }
+            _ => {
+                let names = folders
+                    .iter()
+                    .map(|folder| folder.name.clone())
+                    .collect::<Vec<_>>();
+                return Err(format!(
+                    "oxvba-lsp currently supports exactly one workspace folder, but received {} ({})",
+                    folders.len(),
+                    names.join(", ")
+                ));
             }
         }
     }
-    if paths.is_empty()
-        && let Some(root_uri) = &params.root_uri
-        && let Ok(path) = root_uri.to_file_path()
-    {
-        paths.push(path);
+
+    if let Some(root_uri) = &params.root_uri {
+        let path = root_uri.to_file_path().map_err(|_| {
+            format!("oxvba-lsp only supports local file workspaces; `{root_uri}` is not a file uri")
+        })?;
+        return Ok(Some(path));
     }
-    paths
+
+    Ok(None)
 }
 
 fn render_workspace_report(core: &OxvbaLspCore, path: &std::path::Path) -> String {
@@ -116,11 +138,7 @@ fn render_workspace_report(core: &OxvbaLspCore, path: &std::path::Path) -> Strin
     lines.push(format!("documents: {}", documents.len()));
     for document in documents {
         let diagnostics = core.document_diagnostics(&document);
-        lines.push(format!(
-            "{} diagnostics={}",
-            document,
-            diagnostics.len()
-        ));
+        lines.push(format!("{} diagnostics={}", document, diagnostics.len()));
         for diagnostic in diagnostics {
             lines.push(format!(
                 "  {:?} {}..{} {}",
@@ -170,11 +188,12 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::render_workspace_report;
+    use super::{render_workspace_report, workspace_path};
     use oxvba_lsp::OxvbaLspCore;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tower_lsp::lsp_types::{InitializeParams, Url, WorkspaceFolder};
 
     #[test]
     fn debug_workspace_report_lists_documents_and_diagnostics() {
@@ -192,7 +211,8 @@ mod tests {
         .expect("basproj");
 
         let core = OxvbaLspCore::new();
-        core.load_workspace_path(&temp_root).expect("workspace load");
+        core.load_workspace_path(&temp_root)
+            .expect("workspace load");
 
         let report = render_workspace_report(&core, &temp_root);
         assert!(report.contains("workspace:"));
@@ -201,6 +221,57 @@ mod tests {
         assert!(report.contains("use of undeclared variable"));
 
         let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn workspace_path_accepts_single_workspace_folder() {
+        let path = PathBuf::from(r"C:\Temp\OxVba");
+        let params = InitializeParams {
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: Url::from_file_path(&path).expect("workspace uri"),
+                name: "OxVba".to_string(),
+            }]),
+            ..InitializeParams::default()
+        };
+
+        let selected = workspace_path(&params).expect("single workspace");
+        assert_eq!(selected, Some(path));
+    }
+
+    #[test]
+    fn workspace_path_rejects_multiple_workspace_folders() {
+        let first = PathBuf::from(r"C:\Temp\OxVbaOne");
+        let second = PathBuf::from(r"C:\Temp\OxVbaTwo");
+        let params = InitializeParams {
+            workspace_folders: Some(vec![
+                WorkspaceFolder {
+                    uri: Url::from_file_path(&first).expect("first workspace uri"),
+                    name: "One".to_string(),
+                },
+                WorkspaceFolder {
+                    uri: Url::from_file_path(&second).expect("second workspace uri"),
+                    name: "Two".to_string(),
+                },
+            ]),
+            ..InitializeParams::default()
+        };
+
+        let err = workspace_path(&params).expect_err("multiple workspaces should fail");
+        assert!(err.contains("exactly one workspace folder"));
+        assert!(err.contains("One"));
+        assert!(err.contains("Two"));
+    }
+
+    #[test]
+    fn workspace_path_falls_back_to_root_uri_when_workspace_folders_absent() {
+        let path = PathBuf::from(r"C:\Temp\OxVbaRoot");
+        let params = InitializeParams {
+            root_uri: Some(Url::from_file_path(&path).expect("root uri")),
+            ..InitializeParams::default()
+        };
+
+        let selected = workspace_path(&params).expect("root uri fallback");
+        assert_eq!(selected, Some(path));
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {

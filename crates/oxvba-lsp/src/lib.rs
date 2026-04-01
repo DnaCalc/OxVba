@@ -88,6 +88,7 @@ impl OxvbaLspCore {
             .lock()
             .expect("oxvba-lsp transport state mutex poisoned");
         state.service = LanguageService::from_project(manifest);
+        state.uri_documents.clear();
         state.refresh_baseline_documents();
     }
 
@@ -290,7 +291,10 @@ fn uri_module_candidate(uri: &Url) -> Option<String> {
             (!path.is_empty()).then_some(path)
         })?;
 
-    let stem = segment.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(segment);
+    let stem = segment
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(segment);
     (!stem.is_empty()).then(|| stem.to_string())
 }
 
@@ -332,22 +336,20 @@ fn discover_project_file_in_dir(dir: &Path, extension: &str) -> Result<Option<Pa
     match matches.len() {
         0 => Ok(None),
         1 => Ok(matches.into_iter().next()),
-        _ => Err(
-            oxvba_project::BasProjError::ProjectDiscoveryAmbiguous {
-                directory: dir.display().to_string(),
-                kind: extension.to_string(),
-                candidates: matches
-                    .into_iter()
-                    .map(|path| {
-                        path.file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or_default()
-                            .to_string()
-                    })
-                    .collect(),
-            }
-            .to_string(),
-        ),
+        _ => Err(oxvba_project::BasProjError::ProjectDiscoveryAmbiguous {
+            directory: dir.display().to_string(),
+            kind: extension.to_string(),
+            candidates: matches
+                .into_iter()
+                .map(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default()
+                        .to_string()
+                })
+                .collect(),
+        }
+        .to_string()),
     }
 }
 
@@ -371,9 +373,9 @@ fn xml_escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{OxvbaLspCore, server_capabilities, server_info};
-    use std::time::{Duration, Instant};
     use std::fs;
     use std::path::PathBuf;
+    use std::time::{Duration, Instant};
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower_lsp::lsp_types::{TextDocumentSyncCapability, TextDocumentSyncKind, Url};
 
@@ -436,7 +438,8 @@ mod tests {
         .expect("basproj write");
 
         let core = OxvbaLspCore::new();
-        core.load_workspace_path(&temp_root).expect("load workspace");
+        core.load_workspace_path(&temp_root)
+            .expect("load workspace");
         let uri = Url::from_file_path(&module_path).expect("module uri");
 
         let module_id = core
@@ -458,6 +461,58 @@ mod tests {
             .semantic_provenance(&module_id)
             .expect("restored document provenance");
         assert_eq!(provenance.project_name.as_deref(), Some("App"));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn reload_clears_stale_uri_document_mappings() {
+        let temp_root = unique_temp_dir("oxvba_lsp_reload_workspace");
+        let first_dir = temp_root.join("First");
+        let second_dir = temp_root.join("Second");
+        fs::create_dir_all(&first_dir).expect("first dir");
+        fs::create_dir_all(&second_dir).expect("second dir");
+
+        let first_module_path = first_dir.join("Module1.bas");
+        fs::write(&first_module_path, "Sub Main()\nEnd Sub\n").expect("first module");
+        fs::write(
+            first_dir.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>First</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("first basproj");
+
+        fs::write(second_dir.join("Module2.bas"), "Sub Main()\nEnd Sub\n").expect("second module");
+        fs::write(
+            second_dir.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>Second</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module2.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("second basproj");
+
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&first_dir)
+            .expect("first workspace load");
+        let first_uri = Url::from_file_path(&first_module_path).expect("first uri");
+        core.open_text_document(&first_uri, "Sub Main()\n    Print 1\nEnd Sub\n")
+            .expect("open first module");
+        assert!(core.synchronized_document_id(&first_uri).is_some());
+
+        core.load_workspace_path(&second_dir)
+            .expect("second workspace load");
+        assert!(core.synchronized_document_id(&first_uri).is_none());
+
+        let documents = core
+            .workspace_documents()
+            .into_iter()
+            .map(|document| document.0)
+            .collect::<Vec<_>>();
+        assert!(
+            documents.iter().any(|document| document == "Module2"),
+            "expected reloaded workspace document set to include Module2, got: {documents:?}"
+        );
+        assert!(
+            documents.iter().all(|document| document != "Module1"),
+            "expected reloaded workspace document set to drop Module1, got: {documents:?}"
+        );
 
         let _ = fs::remove_dir_all(&temp_root);
     }
@@ -493,7 +548,8 @@ mod tests {
         .expect("app basproj");
 
         let core = OxvbaLspCore::new();
-        core.load_workspace_path(&app_dir).expect("load app workspace");
+        core.load_workspace_path(&app_dir)
+            .expect("load app workspace");
 
         let documents = core
             .workspace_documents()
@@ -523,7 +579,9 @@ mod tests {
             let module_path = temp_root.join(format!("{module_name}.bas"));
             fs::write(
                 &module_path,
-                format!("Public Function F{index}() As Long\n    F{index} = {index}\nEnd Function\n"),
+                format!(
+                    "Public Function F{index}() As Long\n    F{index} = {index}\nEnd Function\n"
+                ),
             )
             .expect("module write");
             modules_xml.push_str(&format!("    <Module Include=\"{module_name}.bas\" />\n"));
@@ -538,13 +596,17 @@ mod tests {
 
         let core = OxvbaLspCore::new();
         let load_start = Instant::now();
-        core.load_workspace_path(&temp_root).expect("load workspace");
+        core.load_workspace_path(&temp_root)
+            .expect("load workspace");
         let load_elapsed = load_start.elapsed();
 
         let uri = Url::from_file_path(temp_root.join("Module0.bas")).expect("uri");
         let change_start = Instant::now();
-        core.open_text_document(&uri, "Public Function F0() As Long\n    F0 = 10\nEnd Function\n")
-            .expect("open");
+        core.open_text_document(
+            &uri,
+            "Public Function F0() As Long\n    F0 = 10\nEnd Function\n",
+        )
+        .expect("open");
         core.change_text_document(
             &uri,
             "Public Function F0() As Long\n    F0 = 20\nEnd Function\n",
