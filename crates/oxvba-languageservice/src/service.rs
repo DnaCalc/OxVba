@@ -113,6 +113,43 @@ pub struct HoverInfo {
     pub provenance: Option<SemanticProvenance>,
 }
 
+/// Rename preparation at a given cursor position.
+#[derive(Debug, Clone)]
+pub struct RenamePreparation {
+    pub current_name: String,
+    pub placeholder: TextSpan,
+    pub declaration: Location,
+    pub symbol_identity: SymbolIdentity,
+    pub provenance: SemanticProvenance,
+    pub reference_analysis: ReferenceUpdateAnalysis,
+}
+
+/// Safety analysis for updating all references of a symbol.
+#[derive(Debug, Clone)]
+pub struct ReferenceUpdateAnalysis {
+    pub declaration: Location,
+    pub references: Vec<Location>,
+    pub writable_documents: Vec<DocumentId>,
+    pub blocked_documents: Vec<DocumentId>,
+    pub issues: Vec<ReferenceUpdateIssue>,
+    pub safe_to_apply: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReferenceUpdateIssue {
+    pub kind: ReferenceUpdateIssueKind,
+    pub document: Option<DocumentId>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceUpdateIssueKind {
+    GeneratedDocument,
+    ProjectReferenceDocument,
+    ImportedTypeLibraryDocument,
+    MissingDocument,
+}
+
 // ── VBA keyword list for completions ────────────────────────────────
 
 const VBA_KEYWORDS: &[&str] = &[
@@ -316,6 +353,18 @@ pub trait LanguageServiceProvider {
         module: &str,
         pos: Position,
     ) -> Vec<Location>;
+    fn prepare_rename(
+        &self,
+        project: &ProjectManifest,
+        module: &str,
+        pos: Position,
+    ) -> Option<RenamePreparation>;
+    fn reference_update_analysis(
+        &self,
+        project: &ProjectManifest,
+        module: &str,
+        pos: Position,
+    ) -> Option<ReferenceUpdateAnalysis>;
     fn hover(&self, project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo>;
 }
 
@@ -367,15 +416,7 @@ impl LanguageService {
             .workspace
             .snapshot(module)
             .map(|s| {
-                let procedure_names = s
-                    .symbols
-                    .symbols
-                    .iter()
-                    .filter(|sym| {
-                        matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
-                    })
-                    .map(|sym| (sym.scope + 1, sym.name.clone()))
-                    .collect::<std::collections::HashMap<_, _>>();
+                let procedure_names = procedure_names_by_scope(&s.parse.syntax());
                 let mut items = s
                     .symbols
                     .symbols
@@ -733,21 +774,19 @@ impl LanguageService {
 
                 for (kind, text, offset) in &all_tokens {
                     if *kind == SyntaxKind::Ident && text.to_ascii_lowercase() == ident_lower {
-                        let occurrence = self.resolve_symbol_at(doc_id, *offset);
-                        if let Some(occurrence) = &occurrence {
-                            if occurrence.symbol.identity != target.symbol.identity {
-                                continue;
-                            }
-                        } else if *doc_id == target.document && target.symbol.definition_span.contains(*offset)
-                        {
+                        let occurrence = match self.resolve_symbol_at(doc_id, *offset) {
+                            Some(occurrence) => occurrence,
+                            None => continue,
+                        };
+                        if occurrence.symbol.identity != target.symbol.identity {
                             continue;
                         }
 
                         locations.push(Location {
                             document: doc_id.clone(),
                             span: TextSpan::new(*offset, offset + text.len() as u32),
-                            symbol_identity: Some(target.symbol.identity.clone()),
-                            provenance: Some(target.symbol.provenance.clone()),
+                            symbol_identity: Some(occurrence.symbol.identity.clone()),
+                            provenance: Some(occurrence.symbol.provenance.clone()),
                         });
                     }
                 }
@@ -755,6 +794,109 @@ impl LanguageService {
         }
 
         locations
+    }
+
+    /// Prepare a rename operation around the current symbol occurrence.
+    pub fn prepare_rename(
+        &self,
+        module: &DocumentId,
+        position: Position,
+    ) -> Option<RenamePreparation> {
+        let occurrence_span = self.identifier_span_at_position(module, position)?;
+        let resolved = self.resolve_symbol_at(module, position)?;
+        let declaration = self.location_for_symbol(&resolved.document, &resolved.symbol);
+        let reference_analysis = self.reference_update_analysis(module, position)?;
+
+        Some(RenamePreparation {
+            current_name: resolved.symbol.name.clone(),
+            placeholder: occurrence_span,
+            declaration,
+            symbol_identity: resolved.symbol.identity.clone(),
+            provenance: resolved.symbol.provenance.clone(),
+            reference_analysis,
+        })
+    }
+
+    /// Analyze whether all references for the symbol at the given position can
+    /// be updated safely by an editor/host.
+    pub fn reference_update_analysis(
+        &self,
+        module: &DocumentId,
+        position: Position,
+    ) -> Option<ReferenceUpdateAnalysis> {
+        let resolved = self.resolve_symbol_at(module, position)?;
+        let declaration = self.location_for_symbol(&resolved.document, &resolved.symbol);
+        let references = self.find_references(module, position);
+
+        let mut writable_documents = std::collections::BTreeSet::new();
+        let mut blocked_documents = std::collections::BTreeSet::new();
+        let mut issues = Vec::new();
+
+        for document_id in references
+            .iter()
+            .map(|location| location.document.clone())
+            .chain(std::iter::once(declaration.document.clone()))
+        {
+            let Some(document) = self.workspace.document(&document_id) else {
+                blocked_documents.insert(document_id.0.clone());
+                issues.push(ReferenceUpdateIssue {
+                    kind: ReferenceUpdateIssueKind::MissingDocument,
+                    document: Some(document_id),
+                    message: "workspace document is no longer available".to_string(),
+                });
+                continue;
+            };
+
+            match document.provenance_kind {
+                SymbolProvenanceKind::SourceModule => {
+                    writable_documents.insert(document_id.0.clone());
+                }
+                SymbolProvenanceKind::Generated => {
+                    blocked_documents.insert(document_id.0.clone());
+                    issues.push(ReferenceUpdateIssue {
+                        kind: ReferenceUpdateIssueKind::GeneratedDocument,
+                        document: Some(document_id),
+                        message: "generated documents are not safe direct rename targets"
+                            .to_string(),
+                    });
+                }
+                SymbolProvenanceKind::ProjectReference => {
+                    blocked_documents.insert(document_id.0.clone());
+                    issues.push(ReferenceUpdateIssue {
+                        kind: ReferenceUpdateIssueKind::ProjectReferenceDocument,
+                        document: Some(document_id),
+                        message: "referenced-project documents require explicit multi-project edit ownership"
+                            .to_string(),
+                    });
+                }
+                SymbolProvenanceKind::ImportedTypeLibraryProjection => {
+                    blocked_documents.insert(document_id.0.clone());
+                    issues.push(ReferenceUpdateIssue {
+                        kind: ReferenceUpdateIssueKind::ImportedTypeLibraryDocument,
+                        document: Some(document_id),
+                        message: "imported-typelib projections are not writable rename targets"
+                            .to_string(),
+                    });
+                }
+            }
+        }
+
+        let safe_to_apply = blocked_documents.is_empty();
+
+        Some(ReferenceUpdateAnalysis {
+            declaration,
+            references,
+            writable_documents: writable_documents
+                .into_iter()
+                .map(DocumentId::new)
+                .collect(),
+            blocked_documents: blocked_documents
+                .into_iter()
+                .map(DocumentId::new)
+                .collect(),
+            safe_to_apply,
+            issues,
+        })
     }
 
     /// Hover info for the symbol at position.
@@ -849,6 +991,23 @@ impl LanguageService {
         None
     }
 
+    fn identifier_span_at_position(&self, module: &DocumentId, position: Position) -> Option<TextSpan> {
+        let snap = self.workspace.snapshot(module)?;
+        let root = snap.parse.syntax();
+        let all_tokens = collect_all_tokens(&root);
+
+        for (kind, text, offset) in &all_tokens {
+            if *kind == SyntaxKind::Ident {
+                let end = offset + text.len() as u32;
+                if position >= *offset && position <= end {
+                    return Some(TextSpan::new(*offset, end));
+                }
+            }
+        }
+
+        None
+    }
+
     /// Extract the partial identifier (prefix) at cursor position for
     /// completion filtering. Returns empty string if cursor is not
     /// inside or right after an identifier.
@@ -917,11 +1076,12 @@ impl LanguageService {
             .iter()
             .filter(|sym| sym.identity.document_id != module.0)
             .collect::<Vec<_>>();
-        candidates.sort_by_key(|sym| match sym.provenance.kind {
-            SymbolProvenanceKind::SourceModule => 0,
-            SymbolProvenanceKind::ProjectReference => 1,
-            SymbolProvenanceKind::ImportedTypeLibraryProjection => 2,
-            SymbolProvenanceKind::Generated => 3,
+        candidates.sort_by(|left, right| {
+            symbol_provenance_priority(&left.provenance)
+                .cmp(&symbol_provenance_priority(&right.provenance))
+                .then_with(|| left.identity.document_id.cmp(&right.identity.document_id))
+                .then_with(|| left.identity.scope.cmp(&right.identity.scope))
+                .then_with(|| left.name.cmp(&right.name))
         });
 
         let symbol = (*candidates.first()?).clone();
@@ -1076,6 +1236,26 @@ impl LanguageServiceProvider for LanguageService {
         self.find_references(&id, pos)
     }
 
+    fn prepare_rename(
+        &self,
+        _project: &ProjectManifest,
+        module: &str,
+        pos: Position,
+    ) -> Option<RenamePreparation> {
+        let id = DocumentId::new(module);
+        self.prepare_rename(&id, pos)
+    }
+
+    fn reference_update_analysis(
+        &self,
+        _project: &ProjectManifest,
+        module: &str,
+        pos: Position,
+    ) -> Option<ReferenceUpdateAnalysis> {
+        let id = DocumentId::new(module);
+        self.reference_update_analysis(&id, pos)
+    }
+
     fn hover(&self, _project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo> {
         let id = DocumentId::new(module);
         self.hover(&id, pos)
@@ -1137,13 +1317,47 @@ fn semantic_provenance_label(provenance: &SemanticProvenance, document: &Documen
     format!("{} [{}]", document, origin)
 }
 
+fn symbol_provenance_priority(provenance: &SemanticProvenance) -> u8 {
+    match provenance.kind {
+        SymbolProvenanceKind::SourceModule => 0,
+        SymbolProvenanceKind::ProjectReference => 1,
+        SymbolProvenanceKind::ImportedTypeLibraryProjection => 2,
+        SymbolProvenanceKind::Generated => 3,
+    }
+}
+
+fn procedure_names_by_scope(root: &oxvba_syntax::SyntaxNode<'_>) -> std::collections::HashMap<u32, String> {
+    let proc_kinds = [
+        SyntaxKind::SubDecl,
+        SyntaxKind::FunctionDecl,
+        SyntaxKind::PropertyDecl,
+    ];
+
+    root.child_nodes()
+        .into_iter()
+        .filter(|node| proc_kinds.contains(&node.kind()))
+        .enumerate()
+        .filter_map(|(idx, node)| {
+            first_identifier_token(&node).map(|(name, _, _)| ((idx + 1) as u32, name.to_string()))
+        })
+        .collect()
+}
+
+fn first_identifier_token<'a>(node: &oxvba_syntax::SyntaxNode<'a>) -> Option<(&'a str, u32, u32)> {
+    for token in node.child_tokens() {
+        if token.kind == SyntaxKind::Ident {
+            return Some((token.text, token.offset, token.offset + token.text.len() as u32));
+        }
+    }
+    None
+}
+
 fn dedupe_completions(items: &mut Vec<CompletionItem>, current_module: &DocumentId) {
     let mut best_by_key = std::collections::HashMap::<(String, CompletionKind), CompletionItem>::new();
     for item in items.drain(..) {
         let key = (item.label.to_ascii_lowercase(), item.kind);
         let replace = match best_by_key.get(&key) {
-            Some(existing) => completion_priority(&item, current_module)
-                < completion_priority(existing, current_module),
+            Some(existing) => is_better_completion_candidate(&item, existing, current_module),
             None => true,
         };
         if replace {
@@ -1164,6 +1378,19 @@ fn completion_priority(item: &CompletionItem, current_module: &DocumentId) -> u8
         Some(_) => 1,
         None => 2,
     }
+}
+
+fn is_better_completion_candidate(
+    candidate: &CompletionItem,
+    existing: &CompletionItem,
+    current_module: &DocumentId,
+) -> bool {
+    completion_priority(candidate, current_module)
+        < completion_priority(existing, current_module)
+        || (completion_priority(candidate, current_module)
+            == completion_priority(existing, current_module)
+            && candidate.source_document.as_ref().map(|doc| &doc.0)
+                < existing.source_document.as_ref().map(|doc| &doc.0))
 }
 
 #[cfg(test)]
@@ -1223,6 +1450,28 @@ mod tests {
                     && sym.container_name.as_deref() == Some("Foo")
             }),
             "expected local variable to carry containing procedure name"
+        );
+    }
+
+    #[test]
+    fn document_symbols_match_local_container_in_multi_procedure_module() {
+        let src = "Public Sub Foo()\n    Dim firstLocal As Long\nEnd Sub\nPublic Sub Bar()\n    Dim secondLocal As Long\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let symbols = svc.document_symbols(&id);
+        assert!(
+            symbols.iter().any(|sym| {
+                sym.name == "firstLocal"
+                    && sym.container_name.as_deref() == Some("Foo")
+            }),
+            "expected first local variable to stay attached to Foo"
+        );
+        assert!(
+            symbols.iter().any(|sym| {
+                sym.name == "secondLocal"
+                    && sym.container_name.as_deref() == Some("Bar")
+            }),
+            "expected second local variable to stay attached to Bar"
         );
     }
 
@@ -1321,6 +1570,22 @@ mod tests {
     }
 
     #[test]
+    fn find_references_excludes_unresolved_same_name_tokens() {
+        let src = "Sub Foo()\nEnd Sub\nSub Bar()\n    Foo\nEnd Sub\nSub Baz()\n    Dim Foo As Long\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let foo_pos = src.find("Foo").unwrap() as u32;
+        let refs = svc.find_references(&id, foo_pos);
+        let baz_local = src.rfind("Foo").unwrap() as u32;
+
+        assert!(
+            refs.iter().all(|location| location.span.start != baz_local),
+            "expected unrelated local variable with the same name to be excluded from procedure references"
+        );
+        assert_eq!(refs.len(), 2, "expected only declaration and call-site references");
+    }
+
+    #[test]
     fn hover_shows_type_info() {
         let src = "Sub Test()\n    Dim count As Long\nEnd Sub\n";
         let (svc, id) = setup_single_module(src);
@@ -1387,6 +1652,78 @@ mod tests {
                 .as_deref()
                 .is_some_and(|detail| detail.contains("project-reference")),
             "hover detail should surface provenance"
+        );
+    }
+
+    #[test]
+    fn prepare_rename_returns_placeholder_and_safe_local_reference_analysis() {
+        let src = "Public Sub Foo()\nEnd Sub\nPublic Sub Bar()\n    Foo\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let foo_call = src.rfind("Foo").unwrap() as u32;
+        let preparation = svc.prepare_rename(&id, foo_call).expect("rename preparation");
+
+        assert_eq!(preparation.current_name, "Foo");
+        assert_eq!(preparation.placeholder.start, foo_call);
+        assert!(preparation.reference_analysis.safe_to_apply);
+        assert_eq!(preparation.reference_analysis.references.len(), 2);
+        assert_eq!(
+            preparation.reference_analysis.writable_documents,
+            vec![id.clone()]
+        );
+    }
+
+    #[test]
+    fn reference_update_analysis_blocks_imported_typelib_projections() {
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..ModuleAttributes::default()
+                },
+                source: "Public Sub Main()\n    SharedProc\nEnd Sub\n".to_string(),
+            }],
+            references: vec![ProjectReference {
+                referenced_project_name: "Lib".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Lib".to_string(),
+                modules: vec![ModuleUnit {
+                    module_name: "Shared".to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes {
+                        vb_name: "Shared".to_string(),
+                        ..ModuleAttributes::default()
+                    },
+                    source: "Public Sub SharedProc()\nEnd Sub\n".to_string(),
+                }],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let svc = LanguageService::from_project(project);
+        let main_id = DocumentId::new("Main");
+        let call_pos = "Public Sub Main()\n    SharedProc\nEnd Sub\n"
+            .find("SharedProc")
+            .expect("call site") as u32;
+
+        let analysis = svc
+            .reference_update_analysis(&main_id, call_pos)
+            .expect("reference update analysis");
+        assert!(
+            !analysis.safe_to_apply,
+            "imported typelib projections should not be treated as writable rename targets"
+        );
+        assert!(
+            analysis.issues.iter().any(|issue| {
+                issue.kind == ReferenceUpdateIssueKind::ImportedTypeLibraryDocument
+            }),
+            "expected imported-typelib blocker in analysis"
         );
     }
 

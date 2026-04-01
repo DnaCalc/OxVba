@@ -20,8 +20,9 @@ pub use semantic::{
 };
 pub use service::{
     CompletionItem, CompletionKind, DocumentSymbol, HoverInfo, LanguageService,
-    LanguageServiceProvider, Location, ParameterInfo, SemanticClassification, SemanticTokenKind,
-    SignatureHelp, WorkspaceSymbol,
+    LanguageServiceProvider, Location, ParameterInfo, ReferenceUpdateAnalysis,
+    ReferenceUpdateIssue, ReferenceUpdateIssueKind, RenamePreparation, SemanticClassification,
+    SemanticTokenKind, SignatureHelp, WorkspaceSymbol,
 };
 pub use span::{
     DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,
