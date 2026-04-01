@@ -279,7 +279,15 @@ fn resolve_document_id(state: &TransportState, uri: &Url) -> Result<DocumentId, 
         return Ok(suffix_matches.remove(0));
     }
 
-    Ok(DocumentId::new(candidate))
+    if exact_matches.is_empty() && suffix_matches.is_empty() {
+        return Err(format!(
+            "uri `{uri}` does not map to a loaded workspace document; add the file to the project or load the correct workspace first"
+        ));
+    }
+
+    Err(format!(
+        "uri `{uri}` is ambiguous within the loaded workspace for candidate `{candidate}`"
+    ))
 }
 
 fn uri_module_candidate(uri: &Url) -> Option<String> {
@@ -398,30 +406,71 @@ mod tests {
     }
 
     #[test]
-    fn open_change_close_tracks_unsaved_document() {
+    fn open_change_close_tracks_loaded_workspace_document() {
+        let temp_root = unique_temp_dir("oxvba_lsp_sync_loaded_workspace");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        let module_path = temp_root.join("Module1.bas");
+        fs::write(&module_path, "Sub Main()\nEnd Sub\n").expect("module write");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj write");
+
         let core = OxvbaLspCore::new();
-        let uri = Url::parse("file:///workspace/Module1.bas").expect("uri");
+        core.load_workspace_path(&temp_root)
+            .expect("load workspace");
+        let uri = Url::from_file_path(&module_path).expect("uri");
 
         let opened = core
-            .open_text_document(&uri, "Sub Main()\nEnd Sub\n")
+            .open_text_document(&uri, "Sub Main()\n    Print 1\nEnd Sub\n")
             .expect("open");
         assert_eq!(opened.0, "Module1");
-        assert_eq!(core.document_count(), 1);
-        assert_eq!(
-            core.document_source(&opened).as_deref(),
-            Some("Sub Main()\nEnd Sub\n")
-        );
-
-        core.change_text_document(&uri, "Sub Main()\n    Print 1\nEnd Sub\n")
-            .expect("change");
+        assert_eq!(core.document_count(), 2);
         assert_eq!(
             core.document_source(&opened).as_deref(),
             Some("Sub Main()\n    Print 1\nEnd Sub\n")
         );
 
+        core.change_text_document(&uri, "Sub Main()\n    Print 2\nEnd Sub\n")
+            .expect("change");
+        assert_eq!(
+            core.document_source(&opened).as_deref(),
+            Some("Sub Main()\n    Print 2\nEnd Sub\n")
+        );
+
         core.close_text_document(&uri).expect("close");
-        assert_eq!(core.document_count(), 0);
+        assert_eq!(
+            core.document_source(&opened).as_deref(),
+            Some("Sub Main()\nEnd Sub\n")
+        );
         assert!(core.synchronized_document_id(&uri).is_none());
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn open_rejects_uri_outside_loaded_workspace() {
+        let temp_root = unique_temp_dir("oxvba_lsp_sync_reject");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(temp_root.join("Module1.bas"), "Sub Main()\nEnd Sub\n").expect("module write");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj write");
+
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&temp_root)
+            .expect("load workspace");
+
+        let stray_uri = Url::from_file_path(temp_root.join("Module2.bas")).expect("stray uri");
+        let err = core
+            .open_text_document(&stray_uri, "Sub Main()\nEnd Sub\n")
+            .expect_err("untracked document should fail");
+        assert!(err.contains("does not map to a loaded workspace document"));
+
+        let _ = fs::remove_dir_all(&temp_root);
     }
 
     #[test]
