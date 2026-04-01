@@ -18,7 +18,10 @@ use oxvba_com::windows_typelib_loader::{
 use oxvba_host::TypeLibraryCatalogEntry;
 use thiserror::Error;
 
-use crate::{BasProjComReference, HostProjectEdit};
+use crate::{
+    BasProjComReference, BasProjError, HostProjectEdit, HostProjectReferenceKind,
+    HostWorkspaceTargetKind, inspect_workspace_target,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComSelectionIdentity {
@@ -129,6 +132,19 @@ pub struct ComProjectEditPlan {
     pub candidate: Option<ComSelectionCandidate>,
     pub edits: Vec<HostProjectEdit>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostComProjectSelectionSurface {
+    pub workspace_kind: HostWorkspaceTargetKind,
+    pub workspace_target: PathBuf,
+    pub project_file: Option<PathBuf>,
+    pub project_name: String,
+    pub active_references: Vec<BasProjComReference>,
+    pub selections: Vec<ComProjectSelection>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ComSelectionService;
 
 pub fn candidate_from_catalog_entry(
     entry: &TypeLibraryCatalogEntry,
@@ -466,6 +482,95 @@ pub fn plan_repair_project_selection(
     }
 }
 
+impl ComSelectionService {
+    pub fn discover_registered_candidates(
+        &self,
+        query: &RegisteredComSelectionQuery,
+    ) -> Result<Vec<ComSelectionCandidate>, ComSelectionDiscoveryError> {
+        discover_registered_com_candidates(query)
+    }
+
+    pub fn discover_prog_id_candidates(
+        &self,
+        prog_id_name: &str,
+    ) -> Result<Vec<ComSelectionCandidate>, ComSelectionDiscoveryError> {
+        discover_prog_id_com_candidates(prog_id_name)
+    }
+
+    pub fn discover_file_backed_candidates(
+        &self,
+        query: &FileBackedComSelectionQuery,
+    ) -> Result<Vec<ComSelectionCandidate>, ComSelectionDiscoveryError> {
+        discover_file_backed_com_candidates(query)
+    }
+
+    pub fn inspect_workspace_project_state(
+        &self,
+        path: &Path,
+        discovered: &[ComSelectionCandidate],
+    ) -> Result<HostComProjectSelectionSurface, BasProjError> {
+        inspect_workspace_com_project_state(path, discovered)
+    }
+
+    pub fn plan_add_candidate(
+        &self,
+        candidate: &ComSelectionCandidate,
+        include_override: Option<&str>,
+    ) -> ComProjectEditPlan {
+        plan_add_com_candidate(candidate, include_override)
+    }
+
+    pub fn plan_replace_reference(
+        &self,
+        reference: &BasProjComReference,
+        candidate: &ComSelectionCandidate,
+    ) -> ComProjectEditPlan {
+        plan_replace_com_reference(reference, candidate)
+    }
+
+    pub fn plan_repair_selection(
+        &self,
+        selection: &ComProjectSelection,
+        candidate: &ComSelectionCandidate,
+    ) -> ComProjectEditPlan {
+        plan_repair_project_selection(selection, candidate)
+    }
+
+    pub fn plan_remove_reference(&self, reference: &BasProjComReference) -> ComProjectEditPlan {
+        plan_remove_com_reference(reference)
+    }
+}
+
+pub fn inspect_workspace_com_project_state(
+    path: &Path,
+    discovered: &[ComSelectionCandidate],
+) -> Result<HostComProjectSelectionSurface, BasProjError> {
+    let surface = inspect_workspace_target(path)?;
+    let active_references = surface
+        .references
+        .iter()
+        .filter(|reference| reference.kind == HostProjectReferenceKind::Com)
+        .map(|reference| BasProjComReference {
+            include: reference.include.clone(),
+            guid: reference.guid.clone(),
+            version_major: reference.version_major,
+            version_minor: reference.version_minor,
+            lcid: reference.lcid,
+            import_lib: reference.import_lib.clone(),
+        })
+        .collect::<Vec<_>>();
+    let selections = assess_project_com_selections(&active_references, discovered);
+
+    Ok(HostComProjectSelectionSurface {
+        workspace_kind: surface.workspace_kind,
+        workspace_target: surface.workspace_target,
+        project_file: surface.project_file,
+        project_name: surface.project_name,
+        active_references,
+        selections,
+    })
+}
+
 fn selection_status_for_reference(
     reference: &BasProjComReference,
     candidates: &[ComSelectionCandidate],
@@ -678,16 +783,20 @@ fn sort_candidates_deterministically(candidates: &mut [ComSelectionCandidate]) {
 mod tests {
     use super::{
         ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
+        ComSelectionService,
         ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionSourceKind,
         FileBackedComSelectionQuery, RegisteredComSelectionQuery, assess_project_com_selections,
         basproj_reference_from_candidate, candidate_from_catalog_entry,
         candidate_from_project_reference, discover_file_backed_com_candidates,
         discover_prog_id_com_candidates, discover_registered_com_candidates,
-        plan_add_com_candidate, plan_repair_project_selection, plan_replace_com_reference,
+        inspect_workspace_com_project_state, plan_add_com_candidate,
+        plan_repair_project_selection, plan_replace_com_reference,
     };
     use crate::{BasProjComReference, HostProjectEdit};
     use oxvba_host::TypeLibraryCatalogEntry;
+    use std::fs;
     use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn candidate_from_catalog_entry_preserves_typelib_identity_and_carrier() {
@@ -991,5 +1100,74 @@ mod tests {
         let reference = basproj_reference_from_candidate(&candidate, Some("Scripting"));
         assert_eq!(reference.include, "Scripting");
         assert_eq!(reference.import_lib.as_deref(), Some("scrrun.dll"));
+    }
+
+    #[test]
+    fn inspect_workspace_com_project_state_reports_active_selection_status() {
+        let temp_root = unique_temp_dir("oxvba_com_selection_surface");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("Widget.cls"),
+            "Attribute VB_Name = \"Widget\"\nOption Explicit\n",
+        )
+        .expect("class module");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <ClassModule Include=\"Widget.cls\" />\n    <COMReference Include=\"Scripting\">\n      <Guid>{420B2830-E718-11CF-893D-00A0C9054228}</Guid>\n      <VersionMajor>1</VersionMajor>\n      <VersionMinor>0</VersionMinor>\n      <ImportLib>scrrun.dll</ImportLib>\n    </COMReference>\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let discovered = vec![candidate_from_project_reference(&BasProjComReference {
+            include: "Scripting".to_string(),
+            guid: Some("{420B2830-E718-11CF-893D-00A0C9054228}".to_string()),
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("scrrun.dll".to_string()),
+        })];
+        let state =
+            inspect_workspace_com_project_state(&temp_root, &discovered).expect("state surface");
+
+        assert_eq!(state.project_name, "App");
+        assert_eq!(state.active_references.len(), 1);
+        assert!(matches!(
+            state.selections[0].status,
+            ComProjectSelectionStatus::ResolvedUnique { .. }
+        ));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn service_wraps_project_state_and_plans() {
+        let service = ComSelectionService;
+        let candidate = candidate_from_project_reference(&BasProjComReference {
+            include: "Scripting Runtime".to_string(),
+            guid: Some("{420B2830-E718-11CF-893D-00A0C9054228}".to_string()),
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: Some(0),
+            import_lib: Some("scrrun.dll".to_string()),
+        });
+        let add_plan = service.plan_add_candidate(&candidate, Some("Scripting"));
+        assert_eq!(add_plan.kind, ComProjectEditPlanKind::Add);
+
+        let remove_plan = service.plan_remove_reference(&BasProjComReference {
+            include: "Scripting".to_string(),
+            guid: None,
+            version_major: None,
+            version_minor: None,
+            lcid: None,
+            import_lib: None,
+        });
+        assert_eq!(remove_plan.kind, ComProjectEditPlanKind::Remove);
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{nonce}"))
     }
 }

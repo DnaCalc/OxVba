@@ -79,6 +79,8 @@ Current implementation anchor:
   - `ComProjectSelectionStatus`
   - `ComProjectEditPlan`
   - `ComProjectEditPlanKind`
+  - `HostComProjectSelectionSurface`
+  - `ComSelectionService`
   - `FileBackedComSelectionQuery`
   - `RegisteredComSelectionQuery`
   - `basproj_reference_from_candidate`
@@ -137,4 +139,7 @@ Status:
 - lane 3 now exists in bounded form:
   - active project COM selection assessment over discovered candidates
   - deterministic typed add/replace/repair/remove edit plans without implicit project mutation
-- CLI and OxIde consumption layers remain the next execution slices
+- lane 5 now exists in bounded form:
+  - direct OxIde-facing `ComSelectionService`
+  - typed workspace/project COM state surface via `inspect_workspace_com_project_state`
+- the remaining delivery slice is the CLI command surface

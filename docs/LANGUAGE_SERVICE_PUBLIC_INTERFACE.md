@@ -43,6 +43,7 @@ This crate currently exports the direct project/helper ladder:
 - registered-library and ProgID-backed COM candidate discovery helpers,
 - file-backed typelib carrier discovery helpers,
 - deterministic COM add/replace/repair/remove planning helpers,
+- a direct OxIde-facing COM selection service and project-state surface,
 - project discovery/loading policy,
 - module scaffolding and typed project-edit intents in `host_helpers`,
 - logical module-name inspection,
@@ -101,6 +102,7 @@ Status:
 - registered-library and ProgID candidate discovery now exist via `discover_registered_com_candidates` and `discover_prog_id_com_candidates`
 - file-backed candidate discovery now exists via `discover_file_backed_com_candidates`
 - typed active-selection repair planning now exists via `assess_project_com_selections` and `plan_*_com_*` helpers
+- a direct OxIde-facing COM helper surface now exists via `ComSelectionService` and `inspect_workspace_com_project_state`
 - mutation/apply flows remain follow-on work
 
 3. Typed build/run integration
