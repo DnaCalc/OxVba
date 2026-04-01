@@ -19,6 +19,7 @@
 
 pub mod error;
 pub mod generate;
+pub mod host_helpers;
 pub mod load;
 pub mod model;
 pub mod parse;
@@ -30,6 +31,12 @@ pub mod workspace_target;
 // Re-exports for convenience
 pub use error::BasProjError;
 pub use generate::generate_basproj_xml;
+pub use host_helpers::{
+    HostProjectEdit, ModuleIdentityInfo, ModuleIdentityRewrite, PlannedModule,
+    VbNameAttributeAction, add_com_reference_edit, add_module_edit, add_project_reference_edit,
+    inspect_module_identity, plan_new_module, reconcile_module_identity, remove_com_reference_edit,
+    remove_module_edit, remove_project_reference_edit,
+};
 pub use load::{
     LoadedProject, infer_project_name_from_path, load_basproj, load_basproj_from_str,
     override_loaded_project_entry_point,
