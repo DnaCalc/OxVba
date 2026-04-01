@@ -22,6 +22,7 @@ This README is the primary user-facing overview for evaluating and starting to u
 For deeper specifications and validation truth, see:
 - [docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md](docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
 - [docs/spec/BASPROJ_SPEC_V1.md](docs/spec/BASPROJ_SPEC_V1.md)
+- [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
 - [docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
 - [docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv](docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv)
 - [docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv](docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv)
@@ -846,6 +847,31 @@ Current architecture truth:
 So the right expectation is:
 - OxVBA as a language/runtime/project platform is cross-platform
 - OxVBA as a Windows Office COM compatibility layer is currently strongest on Windows
+
+## Language Services
+
+OxVBA now has a first-class language-service core plus an initial transport shell.
+
+Current direct language-service surfaces include:
+- diagnostics
+- document and workspace symbols
+- semantic classification
+- completion, signature help, and hover
+- go to definition and find references
+- rename preparation and safe reference-update analysis
+- bounded diagnostics-driven code-action planning
+
+Current transport/runtime surfaces include:
+- `oxvba-lsp` stdio bootstrap server
+- full-text `didOpen` / `didChange` / `didClose` synchronization
+- workspace loading through the real `.basproj` / `.vbp` / convention project model
+- `oxvba-lsp debug-workspace <path>` as a host/debug harness
+
+Important boundary:
+- the direct Rust API is the current rich language-service surface
+- the thin LSP transport does not yet expose the full semantic query set over protocol methods
+
+For the honest capability ladder, current showcase, and exact non-goals, see [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md).
 
 ## Current Limits
 
