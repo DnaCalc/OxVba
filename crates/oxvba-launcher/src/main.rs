@@ -31,7 +31,10 @@ fn main() {
     });
 
     let bundle_data = fs::read(&args.bundle_path).unwrap_or_else(|err| {
-        eprintln!("oxvba-run: cannot read {}: {err}", args.bundle_path.display());
+        eprintln!(
+            "oxvba-run: cannot read {}: {err}",
+            args.bundle_path.display()
+        );
         process::exit(1);
     });
 
@@ -130,7 +133,8 @@ fn parse_args(args: Vec<String>) -> Option<LauncherArgs> {
             }
             "--ui-virtualization" => {
                 i += 1;
-                bootstrap.overrides.ui_virtualization = Some(parse_ui_virtualization(args.get(i)?)?);
+                bootstrap.overrides.ui_virtualization =
+                    Some(parse_ui_virtualization(args.get(i)?)?);
             }
             "--unsupported-mode" => {
                 i += 1;
@@ -230,7 +234,10 @@ mod tests {
         assert!(parsed.use_jit);
         assert!(parsed.dump_bootstrap);
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
-        assert_eq!(parsed.bootstrap.policy_preset.as_deref(), Some("interactive-dev"));
+        assert_eq!(
+            parsed.bootstrap.policy_preset.as_deref(),
+            Some("interactive-dev")
+        );
         assert_eq!(parsed.bootstrap.overrides.allow_dynamic_link, Some(false));
     }
 }

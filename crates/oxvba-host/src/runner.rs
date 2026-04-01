@@ -175,11 +175,7 @@ pub fn resolve_runner_bootstrap(
     options: &RunnerBootstrapOptions,
     env_get: impl Fn(&str) -> Option<String>,
 ) -> Result<ResolvedRunnerBootstrap, String> {
-    resolve_runner_bootstrap_with_fallbacks(
-        options,
-        &RunnerBootstrapFallbacks::default(),
-        env_get,
-    )
+    resolve_runner_bootstrap_with_fallbacks(options, &RunnerBootstrapFallbacks::default(), env_get)
 }
 
 pub fn resolve_runner_bootstrap_with_fallbacks(
@@ -257,15 +253,16 @@ pub fn resolve_runner_bootstrap_with_fallbacks(
         );
     }
 
-    let platform_default_profile = RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
-        HalProfileId::Windows
-    } else if cfg!(target_os = "linux") {
-        HalProfileId::Linux
-    } else if cfg!(target_os = "macos") {
-        HalProfileId::MacOs
-    } else {
-        HalProfileId::Null
-    });
+    let platform_default_profile =
+        RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
+            HalProfileId::Windows
+        } else if cfg!(target_os = "linux") {
+            HalProfileId::Linux
+        } else if cfg!(target_os = "macos") {
+            HalProfileId::MacOs
+        } else {
+            HalProfileId::Null
+        });
     let runtime_profile = match merged
         .get("profile")
         .map(String::as_str)
@@ -579,8 +576,8 @@ profile = "windows-headless"
 
     #[test]
     fn bootstrap_defaults_to_interactive_dev_when_no_value_is_supplied() {
-        let resolved =
-            resolve_runner_bootstrap(&RunnerBootstrapOptions::default(), |_| None).expect("resolve");
+        let resolved = resolve_runner_bootstrap(&RunnerBootstrapOptions::default(), |_| None)
+            .expect("resolve");
         assert_eq!(resolved.policy_preset, HostPolicyPreset::InteractiveDev);
         assert_eq!(
             resolved.runtime_profile,

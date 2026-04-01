@@ -161,7 +161,9 @@ impl Workspace {
                 .get(&reference.project_name.to_ascii_lowercase())
                 .copied()
                 .map(|kind| match kind {
-                    ReferenceKind::TypeLibrary => SymbolProvenanceKind::ImportedTypeLibraryProjection,
+                    ReferenceKind::TypeLibrary => {
+                        SymbolProvenanceKind::ImportedTypeLibraryProjection
+                    }
                     _ => SymbolProvenanceKind::ProjectReference,
                 })
                 .unwrap_or(SymbolProvenanceKind::ProjectReference);
@@ -207,7 +209,10 @@ impl Workspace {
     ) {
         for module in &reference.modules {
             self.open_document_with_origin(
-                DocumentId::new(format!("{}::{}", reference.project_name, module.module_name)),
+                DocumentId::new(format!(
+                    "{}::{}",
+                    reference.project_name, module.module_name
+                )),
                 &module.source,
                 Some(reference.project_name.clone()),
                 provenance_kind,
@@ -232,10 +237,10 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    use crate::span::SymbolProvenanceKind;
     use oxvba_compiler::{
         ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ReferencedProjectManifest,
     };
-    use crate::span::SymbolProvenanceKind;
 
     #[test]
     fn workspace_open_and_query() {

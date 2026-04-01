@@ -5,8 +5,8 @@ use oxvba_compiler::typecheck::check_types;
 use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode, parse};
 
 use crate::span::{
-    DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity,
-    SymbolInfo, SymbolKind, SymbolProvenanceKind, TextSpan,
+    DiagnosticSeverity, ScopeId, SemanticProvenance, SpannedDiagnostic, SymbolIdentity, SymbolInfo,
+    SymbolKind, SymbolProvenanceKind, TextSpan,
 };
 
 /// A table of symbols keyed by name (case-insensitive).

@@ -443,20 +443,18 @@ impl LanguageService {
                     .symbols
                     .symbols
                     .iter()
-                    .map(|sym| {
-                        DocumentSymbol {
-                            name: sym.name.clone(),
-                            kind: sym.kind,
-                            span: sym.definition_span,
-                            detail: Some(format!("{:?}", sym.bound_type)),
-                            container_name: if sym.scope == 0 {
-                                None
-                            } else {
-                                procedure_names.get(&sym.scope).cloned()
-                            },
-                            symbol_identity: sym.identity.clone(),
-                            provenance: sym.provenance.clone(),
-                        }
+                    .map(|sym| DocumentSymbol {
+                        name: sym.name.clone(),
+                        kind: sym.kind,
+                        span: sym.definition_span,
+                        detail: Some(format!("{:?}", sym.bound_type)),
+                        container_name: if sym.scope == 0 {
+                            None
+                        } else {
+                            procedure_names.get(&sym.scope).cloned()
+                        },
+                        symbol_identity: sym.identity.clone(),
+                        provenance: sym.provenance.clone(),
                     })
                     .collect::<Vec<_>>();
                 items.sort_by_key(|sym| sym.span.start);
@@ -912,10 +910,7 @@ impl LanguageService {
                 .into_iter()
                 .map(DocumentId::new)
                 .collect(),
-            blocked_documents: blocked_documents
-                .into_iter()
-                .map(DocumentId::new)
-                .collect(),
+            blocked_documents: blocked_documents.into_iter().map(DocumentId::new).collect(),
             safe_to_apply,
             issues,
         })
@@ -1066,7 +1061,11 @@ impl LanguageService {
         None
     }
 
-    fn identifier_span_at_position(&self, module: &DocumentId, position: Position) -> Option<TextSpan> {
+    fn identifier_span_at_position(
+        &self,
+        module: &DocumentId,
+        position: Position,
+    ) -> Option<TextSpan> {
         let snap = self.workspace.snapshot(module)?;
         let root = snap.parse.syntax();
         let all_tokens = collect_all_tokens(&root);
@@ -1479,7 +1478,9 @@ fn symbol_provenance_priority(provenance: &SemanticProvenance) -> u8 {
     }
 }
 
-fn procedure_names_by_scope(root: &oxvba_syntax::SyntaxNode<'_>) -> std::collections::HashMap<u32, String> {
+fn procedure_names_by_scope(
+    root: &oxvba_syntax::SyntaxNode<'_>,
+) -> std::collections::HashMap<u32, String> {
     let proc_kinds = [
         SyntaxKind::SubDecl,
         SyntaxKind::FunctionDecl,
@@ -1499,7 +1500,11 @@ fn procedure_names_by_scope(root: &oxvba_syntax::SyntaxNode<'_>) -> std::collect
 fn first_identifier_token<'a>(node: &oxvba_syntax::SyntaxNode<'a>) -> Option<(&'a str, u32, u32)> {
     for token in node.child_tokens() {
         if token.kind == SyntaxKind::Ident {
-            return Some((token.text, token.offset, token.offset + token.text.len() as u32));
+            return Some((
+                token.text,
+                token.offset,
+                token.offset + token.text.len() as u32,
+            ));
         }
     }
     None
@@ -1583,7 +1588,8 @@ fn extract_backtick_payload(message: &str) -> Option<String> {
 }
 
 fn dedupe_completions(items: &mut Vec<CompletionItem>, current_module: &DocumentId) {
-    let mut best_by_key = std::collections::HashMap::<(String, CompletionKind), CompletionItem>::new();
+    let mut best_by_key =
+        std::collections::HashMap::<(String, CompletionKind), CompletionItem>::new();
     for item in items.drain(..) {
         let key = (item.label.to_ascii_lowercase(), item.kind);
         let replace = match best_by_key.get(&key) {
@@ -1615,8 +1621,7 @@ fn is_better_completion_candidate(
     existing: &CompletionItem,
     current_module: &DocumentId,
 ) -> bool {
-    completion_priority(candidate, current_module)
-        < completion_priority(existing, current_module)
+    completion_priority(candidate, current_module) < completion_priority(existing, current_module)
         || (completion_priority(candidate, current_module)
             == completion_priority(existing, current_module)
             && candidate.source_document.as_ref().map(|doc| &doc.0)
@@ -1670,7 +1675,9 @@ mod tests {
 
         let symbols = svc.document_symbols(&id);
         assert!(
-            symbols.iter().any(|sym| sym.name == "Foo" && sym.kind == SymbolKind::Procedure),
+            symbols
+                .iter()
+                .any(|sym| sym.name == "Foo" && sym.kind == SymbolKind::Procedure),
             "expected procedure symbol in document outline"
         );
         assert!(
@@ -1691,15 +1698,13 @@ mod tests {
         let symbols = svc.document_symbols(&id);
         assert!(
             symbols.iter().any(|sym| {
-                sym.name == "firstLocal"
-                    && sym.container_name.as_deref() == Some("Foo")
+                sym.name == "firstLocal" && sym.container_name.as_deref() == Some("Foo")
             }),
             "expected first local variable to stay attached to Foo"
         );
         assert!(
             symbols.iter().any(|sym| {
-                sym.name == "secondLocal"
-                    && sym.container_name.as_deref() == Some("Bar")
+                sym.name == "secondLocal" && sym.container_name.as_deref() == Some("Bar")
             }),
             "expected second local variable to stay attached to Bar"
         );
@@ -1742,8 +1747,7 @@ mod tests {
         let symbols = svc.workspace_symbols("Sh");
         assert!(
             symbols.iter().any(|item| {
-                item.document == DocumentId::new("Core::Shared")
-                    && item.symbol.name == "SharedProc"
+                item.document == DocumentId::new("Core::Shared") && item.symbol.name == "SharedProc"
             }),
             "expected workspace symbol search to include referenced-project exports"
         );
@@ -1757,7 +1761,9 @@ mod tests {
         let classifications = svc.semantic_classifications(&id);
 
         assert!(
-            classifications.iter().any(|entry| entry.kind == SemanticTokenKind::Keyword),
+            classifications
+                .iter()
+                .any(|entry| entry.kind == SemanticTokenKind::Keyword),
             "expected keyword classifications"
         );
         assert!(
@@ -1812,7 +1818,11 @@ mod tests {
             refs.iter().all(|location| location.span.start != baz_local),
             "expected unrelated local variable with the same name to be excluded from procedure references"
         );
-        assert_eq!(refs.len(), 2, "expected only declaration and call-site references");
+        assert_eq!(
+            refs.len(),
+            2,
+            "expected only declaration and call-site references"
+        );
     }
 
     #[test]
@@ -1891,7 +1901,9 @@ mod tests {
         let (svc, id) = setup_single_module(src);
 
         let foo_call = src.rfind("Foo").unwrap() as u32;
-        let preparation = svc.prepare_rename(&id, foo_call).expect("rename preparation");
+        let preparation = svc
+            .prepare_rename(&id, foo_call)
+            .expect("rename preparation");
 
         assert_eq!(preparation.current_name, "Foo");
         assert_eq!(preparation.placeholder.start, foo_call);
@@ -1970,8 +1982,7 @@ mod tests {
         assert_eq!(action.document, id);
         assert_eq!(action.edits.len(), 1);
         assert_eq!(
-            action.edits[0].new_text,
-            "    Dim x As Variant\n",
+            action.edits[0].new_text, "    Dim x As Variant\n",
             "expected local declaration insertion"
         );
         assert!(
@@ -1986,7 +1997,10 @@ mod tests {
         let (svc, id) = setup_single_module(src);
 
         let actions = svc.code_actions(&id);
-        assert!(actions.is_empty(), "expected no quick fixes for a clean document");
+        assert!(
+            actions.is_empty(),
+            "expected no quick fixes for a clean document"
+        );
     }
 
     #[test]
@@ -2004,7 +2018,10 @@ mod tests {
         let insert_at = "Declare ".len() as u32;
         assert_eq!(action.edits[0].span, TextSpan::new(insert_at, insert_at));
         assert!(
-            action.diagnostic.message.contains("PtrSafe keyword is required"),
+            action
+                .diagnostic
+                .message
+                .contains("PtrSafe keyword is required"),
             "expected PtrSafe diagnostic-driven quick fix"
         );
     }
@@ -2015,8 +2032,14 @@ mod tests {
         let (svc, id) = setup_single_module(src);
 
         let actions = svc.code_actions(&id);
-        assert_eq!(actions.len(), 1, "expected one undeclared-variable quick fix");
-        let insert_at = "Sub First()\n    Dim x As Long\n    x = 1\nEnd Sub\nOption Explicit\nSub Second()\n".len() as u32;
+        assert_eq!(
+            actions.len(),
+            1,
+            "expected one undeclared-variable quick fix"
+        );
+        let insert_at =
+            "Sub First()\n    Dim x As Long\n    x = 1\nEnd Sub\nOption Explicit\nSub Second()\n"
+                .len() as u32;
         assert_eq!(
             actions[0].edits[0].span,
             TextSpan::new(insert_at, insert_at),
@@ -2338,9 +2361,7 @@ mod tests {
             .expect("typelib-projected definition should resolve");
         assert_eq!(loc.document, DocumentId::new("Scripting::FileSystemObject"));
         assert_eq!(
-            loc.provenance
-                .as_ref()
-                .map(|provenance| provenance.kind),
+            loc.provenance.as_ref().map(|provenance| provenance.kind),
             Some(SymbolProvenanceKind::ImportedTypeLibraryProjection)
         );
         assert!(loc.symbol_identity.is_some());
@@ -2354,7 +2375,10 @@ mod tests {
 
         let svc = LanguageService::new(ws);
         let initial = svc
-            .go_to_definition(&id, "Public Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32)
+            .go_to_definition(
+                &id,
+                "Public Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32,
+            )
             .expect("initial definition");
 
         let initial_identity = initial.symbol_identity.clone().expect("symbol identity");
@@ -2369,7 +2393,10 @@ mod tests {
         let svc = LanguageService::new(ws);
 
         let updated = svc
-            .go_to_definition(&id, "\nPublic Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32)
+            .go_to_definition(
+                &id,
+                "\nPublic Sub Foo()\nEnd Sub\n".find("Foo").unwrap() as u32,
+            )
             .expect("updated definition");
 
         assert_eq!(

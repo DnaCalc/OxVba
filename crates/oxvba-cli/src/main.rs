@@ -4,8 +4,8 @@ use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
 use oxvba_host::{
-    Engine, HostConfig, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
-    TypeLibraryCatalogEntry, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+    Engine, HostConfig, RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
+    resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{RuntimeValue, bstr::BStr, value_tags::EMPTY_TAG};
 use std::path::{Path, PathBuf};
@@ -182,13 +182,12 @@ fn run_project(args: Vec<String>) {
     };
     let mut engine = Engine::new(config);
 
-    let resolved = resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| {
-        env::var(key).ok()
-    })
-    .unwrap_or_else(|err| {
-        eprintln!("oxvba run-project: bootstrap failed: {err}");
-        std::process::exit(2);
-    });
+    let resolved =
+        resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba run-project: bootstrap failed: {err}");
+                std::process::exit(2);
+            });
     engine.set_runtime_profile(resolved.runtime_profile);
     engine.set_host_policy(resolved.policy.clone());
     if parsed.dump_bootstrap {
@@ -327,14 +326,18 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
             }
             "--com-ref" => {
                 i += 1;
-                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+                references
+                    .com_refs
+                    .push(parse_cli_com_reference(collected.get(i)?)?);
             }
             "--native-ref" => {
                 i += 1;
-                references.native_refs.push(oxvba_project::BasProjNativeReference {
-                    include: collected.get(i)?.clone(),
-                    path: Some(collected.get(i)?.clone()),
-                });
+                references
+                    .native_refs
+                    .push(oxvba_project::BasProjNativeReference {
+                        include: collected.get(i)?.clone(),
+                        path: Some(collected.get(i)?.clone()),
+                    });
             }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
@@ -769,8 +772,10 @@ impl DiscoveredProjectLane {
 
 fn discover_run_project_lane(
     input_path: Option<PathBuf>,
-) -> Result<(oxvba_project::LoadedProject, DiscoveredProjectLane, PathBuf), oxvba_project::BasProjError>
-{
+) -> Result<
+    (oxvba_project::LoadedProject, DiscoveredProjectLane, PathBuf),
+    oxvba_project::BasProjError,
+> {
     let input = input_path.unwrap_or_else(|| PathBuf::from("."));
     if input.is_dir() {
         if let Some(basproj) = discover_basproj_in_dir(&input)? {
@@ -781,7 +786,11 @@ fn discover_run_project_lane(
             ));
         }
         if let Some(vbp) = discover_vbp_in_dir(&input)? {
-            return Ok((oxvba_project::load_vbp(&vbp)?, DiscoveredProjectLane::VbpDir, input));
+            return Ok((
+                oxvba_project::load_vbp(&vbp)?,
+                DiscoveredProjectLane::VbpDir,
+                input,
+            ));
         }
         return Ok((
             load_convention_project(&input)?,
@@ -790,7 +799,11 @@ fn discover_run_project_lane(
         ));
     }
     if input.extension().and_then(|ext| ext.to_str()) == Some("vbp") {
-        return Ok((oxvba_project::load_vbp(&input)?, DiscoveredProjectLane::VbpFile, input));
+        return Ok((
+            oxvba_project::load_vbp(&input)?,
+            DiscoveredProjectLane::VbpFile,
+            input,
+        ));
     }
     Ok((
         oxvba_project::load_basproj(&input)?,
@@ -854,14 +867,18 @@ fn parse_build_args(args: Vec<String>) -> Option<BuildArgs> {
             }
             "--com-ref" => {
                 i += 1;
-                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+                references
+                    .com_refs
+                    .push(parse_cli_com_reference(collected.get(i)?)?);
             }
             "--native-ref" => {
                 i += 1;
-                references.native_refs.push(oxvba_project::BasProjNativeReference {
-                    include: collected.get(i)?.clone(),
-                    path: Some(collected.get(i)?.clone()),
-                });
+                references
+                    .native_refs
+                    .push(oxvba_project::BasProjNativeReference {
+                        include: collected.get(i)?.clone(),
+                        path: Some(collected.get(i)?.clone()),
+                    });
             }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
@@ -961,14 +978,18 @@ fn parse_explain_args_from(args: Vec<String>) -> Option<ExplainArgs> {
             }
             "--com-ref" => {
                 i += 1;
-                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+                references
+                    .com_refs
+                    .push(parse_cli_com_reference(collected.get(i)?)?);
             }
             "--native-ref" => {
                 i += 1;
-                references.native_refs.push(oxvba_project::BasProjNativeReference {
-                    include: collected.get(i)?.clone(),
-                    path: Some(collected.get(i)?.clone()),
-                });
+                references
+                    .native_refs
+                    .push(oxvba_project::BasProjNativeReference {
+                        include: collected.get(i)?.clone(),
+                        path: Some(collected.get(i)?.clone()),
+                    });
             }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
@@ -1057,11 +1078,8 @@ fn apply_cli_reference_overrides(
     }
 
     if !references.native_refs.is_empty() {
-        oxvba_project::resolve::resolve_native_references(
-            &references.native_refs,
-            Path::new("."),
-        )
-        .map_err(|err| err.to_string())?;
+        oxvba_project::resolve::resolve_native_references(&references.native_refs, Path::new("."))
+            .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -1191,8 +1209,8 @@ fn run_explain(args: Vec<String>) {
         );
         std::process::exit(2);
     });
-    let (mut loaded, lane, resolved_input) =
-        discover_run_project_lane(parsed.input_path.clone()).unwrap_or_else(|err| {
+    let (mut loaded, lane, resolved_input) = discover_run_project_lane(parsed.input_path.clone())
+        .unwrap_or_else(|err| {
             eprintln!("oxvba explain: {err}");
             std::process::exit(1);
         });
@@ -1207,13 +1225,12 @@ fn run_explain(args: Vec<String>) {
         eprintln!("oxvba explain: {err}");
         std::process::exit(2);
     });
-    let resolved = resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| {
-        env::var(key).ok()
-    })
-    .unwrap_or_else(|err| {
-        eprintln!("oxvba explain: bootstrap failed: {err}");
-        std::process::exit(2);
-    });
+    let resolved =
+        resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba explain: bootstrap failed: {err}");
+                std::process::exit(2);
+            });
     print_explain_report(
         &resolved_input,
         lane,
@@ -2440,11 +2457,8 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&temp_root).expect("create temp dir");
-        std::fs::write(
-            temp_root.join("Main.bas"),
-            "Public Sub Main()\nEnd Sub\n",
-        )
-        .expect("write main");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main");
         std::fs::write(
             temp_root.join("Helpers.bas"),
             "Public Function AddOne(value As Long) As Long\n    AddOne = value + 1\nEnd Function\n",

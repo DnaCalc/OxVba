@@ -1156,7 +1156,10 @@ mod tests {
 
     #[test]
     fn inferred_project_name_sanitizes_common_directory_names() {
-        assert_eq!(infer_project_name_from_path(Path::new("math-tool")), "math_tool");
+        assert_eq!(
+            infer_project_name_from_path(Path::new("math-tool")),
+            "math_tool"
+        );
         assert_eq!(
             infer_project_name_from_path(Path::new("123-demo")),
             "Project_123_demo"
