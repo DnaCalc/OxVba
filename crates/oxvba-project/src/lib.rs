@@ -25,6 +25,7 @@ pub mod parse;
 pub mod resolve;
 pub mod validate;
 pub mod vbp;
+pub mod workspace_target;
 
 // Re-exports for convenience
 pub use error::BasProjError;
@@ -41,3 +42,6 @@ pub use model::{
 pub use parse::parse_basproj_xml;
 pub use validate::{ComClassExportDescriptor, DispatchMemberInfo};
 pub use vbp::{generate_basproj_from_vbp, load_vbp, load_vbp_from_str, parse_vbp};
+pub use workspace_target::{
+    discover_project_file_in_dir, load_convention_project, load_workspace_target,
+};

@@ -56,6 +56,9 @@ pub enum BasProjError {
         candidates: Vec<String>,
     },
 
+    #[error("unsupported workspace target `{path}` with extension `.{extension}`")]
+    UnsupportedPath { path: String, extension: String },
+
     #[error("duplicate native export name: {0}")]
     DuplicateExportName(String),
 

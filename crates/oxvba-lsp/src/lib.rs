@@ -4,8 +4,7 @@
 //! parsing, binding, and query behavior remain in `oxvba-languageservice`.
 
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use oxvba_compiler::ProjectManifest;
@@ -13,6 +12,7 @@ use oxvba_languageservice::{
     DocumentId, LanguageService, SemanticProvenance, SpannedDiagnostic, SymbolProvenanceKind,
     Workspace,
 };
+use oxvba_project::load_workspace_target as load_project_workspace_target;
 use tower_lsp::lsp_types::{
     ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, Url,
@@ -307,75 +307,7 @@ fn uri_module_candidate(uri: &Url) -> Option<String> {
 }
 
 fn load_workspace_target(path: &Path) -> Result<oxvba_project::LoadedProject, String> {
-    if path.is_dir() {
-        if let Some(basproj) = discover_project_file_in_dir(path, "basproj")? {
-            return oxvba_project::load_basproj(&basproj).map_err(|err| err.to_string());
-        }
-        if let Some(vbp) = discover_project_file_in_dir(path, "vbp")? {
-            return oxvba_project::load_vbp(&vbp).map_err(|err| err.to_string());
-        }
-        return load_convention_project(path);
-    }
-
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("vbp") => oxvba_project::load_vbp(path).map_err(|err| err.to_string()),
-        Some("basproj") | None => oxvba_project::load_basproj(path).map_err(|err| err.to_string()),
-        Some(other) => Err(format!(
-            "unsupported workspace target `{}` with extension `.{other}`",
-            path.display()
-        )),
-    }
-}
-
-fn discover_project_file_in_dir(dir: &Path, extension: &str) -> Result<Option<PathBuf>, String> {
-    let entries = fs::read_dir(dir).map_err(|source| {
-        oxvba_project::BasProjError::Io {
-            path: dir.display().to_string(),
-            source,
-        }
-        .to_string()
-    })?;
-    let mut matches = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(extension))
-        .collect::<Vec<_>>();
-    matches.sort();
-    match matches.len() {
-        0 => Ok(None),
-        1 => Ok(matches.into_iter().next()),
-        _ => Err(oxvba_project::BasProjError::ProjectDiscoveryAmbiguous {
-            directory: dir.display().to_string(),
-            kind: extension.to_string(),
-            candidates: matches
-                .into_iter()
-                .map(|path| {
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .collect(),
-        }
-        .to_string()),
-    }
-}
-
-fn load_convention_project(project_dir: &Path) -> Result<oxvba_project::LoadedProject, String> {
-    let project_name = oxvba_project::infer_project_name_from_path(project_dir);
-    let xml = format!(
-        "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>{}</ProjectName>\n  </PropertyGroup>\n</Project>\n",
-        xml_escape(&project_name)
-    );
-    oxvba_project::load_basproj_from_str(&xml, project_dir).map_err(|err| err.to_string())
-}
-
-fn xml_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    load_project_workspace_target(path).map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
