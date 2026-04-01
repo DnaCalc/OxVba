@@ -23,6 +23,7 @@ For deeper specifications and validation truth, see:
 - [docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md](docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
 - [docs/spec/BASPROJ_SPEC_V1.md](docs/spec/BASPROJ_SPEC_V1.md)
 - [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
+- [docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md](docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md)
 - [docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
 - [docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv](docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv)
 - [docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv](docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv)
@@ -871,7 +872,9 @@ Important boundary:
 - the direct Rust API is the current rich language-service surface
 - the thin LSP transport does not yet expose the full semantic query set over protocol methods
 
-For the honest capability ladder, current showcase, and exact non-goals, see [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md).
+For the honest capability ladder, current showcase, exact non-goals, and the split between LSP hosts and direct-embed hosts, see:
+- [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
+- [docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md](docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md)
 
 ## Current Limits
 

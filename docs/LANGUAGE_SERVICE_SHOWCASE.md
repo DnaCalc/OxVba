@@ -10,6 +10,9 @@ It is intentionally narrower than the platform specs:
 For the architectural target, see:
 - `docs/spec/LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md`
 
+For host-boundary guidance, see:
+- `docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md`
+
 ## Current Capability Ladder
 
 The current repo state supports these levels:
