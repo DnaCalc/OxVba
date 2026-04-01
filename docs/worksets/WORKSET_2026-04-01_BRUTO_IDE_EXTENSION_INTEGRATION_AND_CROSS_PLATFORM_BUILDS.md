@@ -151,3 +151,14 @@ At the end of this workset, OxVba should be able to say:
 2. it uses the direct OxVba host/language-service/project surfaces rather than LSP,
 3. it is buildable for Windows x64 and Linux x64,
 4. its supported scope is documented honestly.
+
+## 9. Current Boundary Note
+
+The first bounded Bruto integration surface is documented in:
+- `docs/BRUTO_INTEGRATION_BOUNDARY.md`
+
+That document is the design lock for:
+1. using direct APIs rather than LSP,
+2. starting with `.bas` as the primary extension,
+3. treating Bruto build integration as a one-file build/diagnostic path first,
+4. deferring broader multi-file/project-depth/editor-parity claims until separately implemented.
