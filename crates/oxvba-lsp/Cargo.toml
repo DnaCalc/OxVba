@@ -1,0 +1,13 @@
+[package]
+name = "oxvba-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxvba-languageservice.workspace = true
+tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread"] }
+tower-lsp = "0.20"
+

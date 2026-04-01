@@ -14,6 +14,7 @@ members = [
     "crates/oxvba-project",
     "crates/oxvba-build",
     "crates/oxvba-languageservice",
+    "crates/oxvba-lsp",
 ]
 resolver = "2"
 
