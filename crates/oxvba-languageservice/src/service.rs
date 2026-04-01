@@ -929,28 +929,28 @@ impl LanguageService {
         };
 
         for diagnostic in &snapshot.diagnostics {
-            if let Some(variable_name) = undeclared_variable_name(&diagnostic.message)
-                && let Some(reference_span) = self.undeclared_variable_anchor_span(
+            if let Some(variable_name) = undeclared_variable_name(&diagnostic.message) {
+                if let Some(reference_span) = self.undeclared_variable_anchor_span(
                     module,
                     snapshot.source.as_ref(),
                     diagnostic.span,
                     variable_name,
-                )
-                && let Some(insert_span) =
+                ) && let Some(insert_span) =
                     self.local_declaration_insertion_span(module, reference_span.start)
-            {
-                let newline = preferred_newline(snapshot.source.as_ref());
-                let inserted = format!("    Dim {variable_name} As Variant{newline}");
-                actions.push(CodeActionPlan {
-                    title: format!("Declare local variable '{variable_name}'"),
-                    kind: CodeActionKind::QuickFix,
-                    document: module.clone(),
-                    edits: vec![TextEdit {
-                        span: insert_span,
-                        new_text: inserted,
-                    }],
-                    diagnostic: diagnostic.clone(),
-                });
+                {
+                    let newline = preferred_newline(snapshot.source.as_ref());
+                    let inserted = format!("    Dim {variable_name} As Variant{newline}");
+                    actions.push(CodeActionPlan {
+                        title: format!("Declare local variable '{variable_name}'"),
+                        kind: CodeActionKind::QuickFix,
+                        document: module.clone(),
+                        edits: vec![TextEdit {
+                            span: insert_span,
+                            new_text: inserted,
+                        }],
+                        diagnostic: diagnostic.clone(),
+                    });
+                }
                 continue;
             }
 
@@ -1556,13 +1556,23 @@ fn is_identifier_byte(byte: u8) -> bool {
 
 fn declare_ptrsafe_insertion_span(source: &str, message: &str) -> Option<TextSpan> {
     let declared_line = extract_backtick_payload(message)?;
-    let line_start = source.find(&declared_line)?;
-    let line = &source[line_start..line_start + declared_line.len()];
-    let declare_idx = line
-        .to_ascii_lowercase()
-        .find("declare ")?;
-    let insert_at = line_start + declare_idx + "Declare ".len();
-    Some(TextSpan::new(insert_at as u32, insert_at as u32))
+    let mut offset = 0usize;
+    for line in source.split_inclusive(['\n']) {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.trim_start() != declared_line {
+            offset += line.len();
+            continue;
+        }
+
+        let leading_ws = trimmed.len() - trimmed.trim_start().len();
+        let declare_idx = trimmed[leading_ws..]
+            .to_ascii_lowercase()
+            .find("declare ")?;
+        let insert_at = offset + leading_ws + declare_idx + "Declare ".len();
+        return Some(TextSpan::new(insert_at as u32, insert_at as u32));
+    }
+
+    None
 }
 
 fn extract_backtick_payload(message: &str) -> Option<String> {
@@ -2011,6 +2021,24 @@ mod tests {
             actions[0].edits[0].span,
             TextSpan::new(insert_at, insert_at),
             "expected declaration insertion in the second procedure, not at the first matching identifier"
+        );
+    }
+
+    #[test]
+    fn ptrsafe_quick_fix_ignores_comment_line_with_matching_text() {
+        let src = "' Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nDeclare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+
+        let actions = svc.code_actions(&id);
+        assert_eq!(actions.len(), 1, "expected one PtrSafe quick-fix plan");
+        let commented_len =
+            "' Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\n"
+                .len() as u32;
+        let insert_at = commented_len + "Declare ".len() as u32;
+        assert_eq!(
+            actions[0].edits[0].span,
+            TextSpan::new(insert_at, insert_at),
+            "expected PtrSafe insertion on the real declaration line, not the commented text"
         );
     }
 
