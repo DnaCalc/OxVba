@@ -96,17 +96,18 @@ First-slice behavior:
 3. return build success/failure and diagnostics
 
 Near-term note:
-- this is a build/diagnostic path first
-- automatic full run/debug integration should not be claimed unless Bruto’s build result contract and OxVba runtime wiring are actually implemented and proved together
+- this begins as a build/diagnostic path first
+- bounded run wiring may be added only when it is implemented through the same direct-host boundary and proved end-to-end
 
 ## First Supported Slice
 
 The first honest Bruto/OxVba slice should support:
 1. launching Bruto with an OxVba language integration
 2. editing `.bas` source
-3. syntax highlighting
+3. lexical syntax highlighting for core OxVba/VBA token categories
 4. sample program generation
 5. deterministic build diagnostics for a single-file executable-style source
+6. bounded single-file run execution via the Bruto build contract, with captured console output
 
 ## Explicit Non-Goals For The First Slice
 

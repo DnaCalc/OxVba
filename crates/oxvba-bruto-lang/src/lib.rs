@@ -1,3 +1,5 @@
+mod syntax;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,7 +10,8 @@ use oxvba_build::compile::{ShimOutputType, compile_shim};
 use oxvba_compiler::{
     ModuleKind, OxBundle, ProjectKind, ProjectManifest, compile_project, module_unit_from_source,
 };
-use turbo_vision::views::syntax::{PlainTextHighlighter, SyntaxHighlighter};
+use syntax::OxvbaHighlighter;
+use turbo_vision::views::syntax::SyntaxHighlighter;
 
 static BRUTO_BUILD_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -28,7 +31,7 @@ impl Language for OxvbaBrutoLanguage {
     }
 
     fn create_highlighter(&self) -> Box<dyn SyntaxHighlighter> {
-        Box::new(PlainTextHighlighter)
+        Box::new(OxvbaHighlighter::new())
     }
 
     fn build(&self, source: &str) -> Result<BuildResult, String> {
