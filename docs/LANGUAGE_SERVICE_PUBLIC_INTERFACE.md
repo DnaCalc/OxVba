@@ -103,7 +103,7 @@ Status:
 - file-backed candidate discovery now exists via `discover_file_backed_com_candidates`
 - typed active-selection repair planning now exists via `assess_project_com_selections` and `plan_*_com_*` helpers
 - a direct OxIde-facing COM helper surface now exists via `ComSelectionService` and `inspect_workspace_com_project_state`
-- mutation/apply flows remain follow-on work
+- canonical `.basproj` mutation/apply flows now exist via `apply_host_project_edits_to_basproj` and `apply_host_project_edits_to_basproj_path`
 
 3. Typed build/run integration
 - keep CLI as an end-user tool,

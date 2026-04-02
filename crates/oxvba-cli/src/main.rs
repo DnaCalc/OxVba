@@ -18,6 +18,7 @@ fn main() {
     match subcommand {
         Some("compile") => run_compile(cli_args),
         Some("build") => run_build(cli_args),
+        Some("com-ref") => run_com_ref(cli_args),
         Some("run-project") => run_project(cli_args),
         Some("explain") | Some("host-check") => run_explain(cli_args),
         Some("init") => run_init(cli_args),
@@ -380,6 +381,30 @@ struct BuildArgs {
 }
 
 #[derive(Debug, Clone)]
+struct ComRefQueryArgs {
+    reference_name: Option<String>,
+    prog_id: Option<String>,
+    carrier_path: Option<PathBuf>,
+    coclass: Option<String>,
+    include_override: Option<String>,
+    reference_include: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum ComRefCommand {
+    List,
+    Add,
+    Repair,
+}
+
+#[derive(Debug, Clone)]
+struct ComRefArgs {
+    command: ComRefCommand,
+    target_path: Option<PathBuf>,
+    query: ComRefQueryArgs,
+}
+
+#[derive(Debug, Clone)]
 struct ExplainArgs {
     input_path: Option<PathBuf>,
     bootstrap: RunnerBootstrapOptions,
@@ -683,6 +708,358 @@ fn run_import_vbp(args: Vec<String>) {
     });
 
     println!("imported {} → {}", input_path.display(), out.display());
+}
+
+fn run_com_ref(args: Vec<String>) {
+    let parsed = parse_com_ref_args(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba com-ref <list|add|repair> [path] [--name <library> | --progid <progid> | --file <carrier>] [--coclass <name>] [--include <logical-name>] [--reference <active-include>]"
+        );
+        std::process::exit(2);
+    });
+
+    let service = oxvba_project::ComSelectionService;
+    let target_path = parsed
+        .target_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."));
+    let discovered = discover_com_ref_candidates(&service, &parsed).unwrap_or_else(|err| {
+        eprintln!("oxvba com-ref: {err}");
+        std::process::exit(1);
+    });
+
+    match parsed.command {
+        ComRefCommand::List => {
+            let surface = service
+                .inspect_workspace_project_state(&target_path, &discovered)
+                .unwrap_or_else(|err| {
+                    eprintln!("oxvba com-ref: {err}");
+                    std::process::exit(1);
+                });
+            print_com_ref_surface(&surface, &discovered);
+        }
+        ComRefCommand::Add => {
+            let project_file = resolve_mutable_basproj_target(&target_path).unwrap_or_else(|err| {
+                eprintln!("oxvba com-ref: {err}");
+                std::process::exit(1);
+            });
+            let candidate = choose_single_com_candidate(&discovered).unwrap_or_else(|err| {
+                eprintln!("oxvba com-ref: {err}");
+                std::process::exit(2);
+            });
+            let plan =
+                service.plan_add_candidate(&candidate, parsed.query.include_override.as_deref());
+            oxvba_project::apply_host_project_edits_to_basproj_path(&project_file, &plan.edits)
+                .unwrap_or_else(|err| {
+                    eprintln!("oxvba com-ref: {err}");
+                    std::process::exit(1);
+                });
+            println!(
+                "added COM reference `{}` to {}",
+                plan.include,
+                project_file.display()
+            );
+        }
+        ComRefCommand::Repair => {
+            let project_file = resolve_mutable_basproj_target(&target_path).unwrap_or_else(|err| {
+                eprintln!("oxvba com-ref: {err}");
+                std::process::exit(1);
+            });
+            let candidate = choose_single_com_candidate(&discovered).unwrap_or_else(|err| {
+                eprintln!("oxvba com-ref: {err}");
+                std::process::exit(2);
+            });
+            let surface = service
+                .inspect_workspace_project_state(&project_file, &discovered)
+                .unwrap_or_else(|err| {
+                    eprintln!("oxvba com-ref: {err}");
+                    std::process::exit(1);
+                });
+            let reference_include = parsed
+                .query
+                .reference_include
+                .as_deref()
+                .expect("repair parser requires --reference");
+            let selection = surface
+                .selections
+                .iter()
+                .find(|selection| {
+                    selection
+                        .reference
+                        .include
+                        .eq_ignore_ascii_case(reference_include)
+                })
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "oxvba com-ref: active COM reference `{reference_include}` was not found in {}",
+                        project_file.display()
+                    );
+                    std::process::exit(1);
+                });
+            let plan = service.plan_repair_selection(selection, &candidate);
+            oxvba_project::apply_host_project_edits_to_basproj_path(&project_file, &plan.edits)
+                .unwrap_or_else(|err| {
+                    eprintln!("oxvba com-ref: {err}");
+                    std::process::exit(1);
+                });
+            println!(
+                "repaired COM reference `{}` in {}",
+                plan.include,
+                project_file.display()
+            );
+        }
+    }
+}
+
+fn parse_com_ref_args(args: Vec<String>) -> Option<ComRefArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "com-ref" {
+        return None;
+    }
+    let subcommand = iter.next()?;
+    let command = match subcommand.as_str() {
+        "list" => ComRefCommand::List,
+        "add" => ComRefCommand::Add,
+        "repair" => ComRefCommand::Repair,
+        _ => return None,
+    };
+
+    let collected: Vec<String> = iter.collect();
+    let mut target_path: Option<PathBuf> = None;
+    let mut query = ComRefQueryArgs {
+        reference_name: None,
+        prog_id: None,
+        carrier_path: None,
+        coclass: None,
+        include_override: None,
+        reference_include: None,
+    };
+
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--name" => {
+                i += 1;
+                query.reference_name = Some(collected.get(i)?.clone());
+            }
+            "--progid" => {
+                i += 1;
+                query.prog_id = Some(collected.get(i)?.clone());
+            }
+            "--file" => {
+                i += 1;
+                query.carrier_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--coclass" => {
+                i += 1;
+                query.coclass = Some(collected.get(i)?.clone());
+            }
+            "--include" => {
+                i += 1;
+                query.include_override = Some(collected.get(i)?.clone());
+            }
+            "--reference" => {
+                i += 1;
+                query.reference_include = Some(collected.get(i)?.clone());
+            }
+            value if !value.starts_with('-') && target_path.is_none() => {
+                target_path = Some(PathBuf::from(value));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    let selector_count = usize::from(query.reference_name.is_some())
+        + usize::from(query.prog_id.is_some())
+        + usize::from(query.carrier_path.is_some());
+    match command {
+        ComRefCommand::List => {
+            if selector_count > 1 {
+                return None;
+            }
+            if query.include_override.is_some() || query.reference_include.is_some() {
+                return None;
+            }
+        }
+        ComRefCommand::Add => {
+            if selector_count != 1 || query.reference_include.is_some() {
+                return None;
+            }
+        }
+        ComRefCommand::Repair => {
+            if selector_count != 1 || query.reference_include.is_none() {
+                return None;
+            }
+        }
+    }
+
+    Some(ComRefArgs {
+        command,
+        target_path,
+        query,
+    })
+}
+
+fn discover_com_ref_candidates(
+    service: &oxvba_project::ComSelectionService,
+    parsed: &ComRefArgs,
+) -> Result<Vec<oxvba_project::ComSelectionCandidate>, String> {
+    if let Some(reference_name) = parsed.query.reference_name.as_deref() {
+        let query = oxvba_project::RegisteredComSelectionQuery {
+            reference_name: reference_name.to_string(),
+            requested_coclass: parsed.query.coclass.clone(),
+            import_lib: None,
+            guid: None,
+            version_major: None,
+            version_minor: None,
+            lcid: None,
+        };
+        return service
+            .discover_registered_candidates(&query)
+            .map_err(|err| err.to_string());
+    }
+
+    if let Some(prog_id) = parsed.query.prog_id.as_deref() {
+        return service
+            .discover_prog_id_candidates(prog_id)
+            .map_err(|err| err.to_string());
+    }
+
+    if let Some(carrier_path) = parsed.query.carrier_path.as_ref() {
+        let query = oxvba_project::FileBackedComSelectionQuery {
+            carrier_path: carrier_path.clone(),
+            reference_name: None,
+            requested_coclass: parsed.query.coclass.clone(),
+        };
+        return service
+            .discover_file_backed_candidates(&query)
+            .map_err(|err| err.to_string());
+    }
+
+    Ok(Vec::new())
+}
+
+fn choose_single_com_candidate(
+    candidates: &[oxvba_project::ComSelectionCandidate],
+) -> Result<oxvba_project::ComSelectionCandidate, String> {
+    match candidates {
+        [] => Err("no COM selection candidates matched the query".to_string()),
+        [single] => Ok(single.clone()),
+        many => {
+            let strongest = many
+                .iter()
+                .map(|candidate| candidate.confidence)
+                .min()
+                .expect("non-empty candidates");
+            let best = many
+                .iter()
+                .filter(|candidate| candidate.confidence == strongest)
+                .cloned()
+                .collect::<Vec<_>>();
+            if best.len() == 1 {
+                Ok(best[0].clone())
+            } else {
+                Err(format!(
+                    "COM selection query is ambiguous; refine it with --progid, --file, or --coclass ({} candidates matched)",
+                    many.len()
+                ))
+            }
+        }
+    }
+}
+
+fn resolve_mutable_basproj_target(path: &Path) -> Result<PathBuf, String> {
+    let surface = oxvba_project::inspect_workspace_target(path).map_err(|err| err.to_string())?;
+    if surface.workspace_kind != oxvba_project::HostWorkspaceTargetKind::BasProj {
+        return Err(format!(
+            "COM reference edits require a real .basproj target; `{}` resolved to {:?}",
+            path.display(),
+            surface.workspace_kind
+        ));
+    }
+    surface.project_file.ok_or_else(|| {
+        format!(
+            "COM reference edits require a concrete .basproj file for `{}`",
+            path.display()
+        )
+    })
+}
+
+fn print_com_ref_surface(
+    surface: &oxvba_project::HostComProjectSelectionSurface,
+    discovered: &[oxvba_project::ComSelectionCandidate],
+) {
+    println!("project: {}", surface.project_name);
+    println!("workspace-kind: {:?}", surface.workspace_kind);
+    if let Some(project_file) = surface.project_file.as_ref() {
+        println!("project-file: {}", project_file.display());
+    }
+    println!("active-com-references:");
+    if surface.selections.is_empty() {
+        println!("  - <none>");
+    } else {
+        for (index, selection) in surface.selections.iter().enumerate() {
+            println!(
+                "  {}. {} [{}]",
+                index + 1,
+                selection.reference.include,
+                com_selection_status_name(&selection.status)
+            );
+            if let Some(guid) = selection.reference.guid.as_deref() {
+                println!("     guid: {guid}");
+            }
+            if let (Some(major), Some(minor)) = (
+                selection.reference.version_major,
+                selection.reference.version_minor,
+            ) {
+                println!("     version: {major}.{minor}");
+            }
+            if let Some(import_lib) = selection.reference.import_lib.as_deref() {
+                println!("     importlib: {import_lib}");
+            }
+        }
+    }
+
+    if !discovered.is_empty() {
+        println!("discovered-candidates:");
+        for (index, candidate) in discovered.iter().enumerate() {
+            println!(
+                "  {}. {} ({:?}, {:?})",
+                index + 1,
+                candidate.identity.library_name,
+                candidate.source_kind,
+                candidate.confidence
+            );
+            if let Some(description) = candidate.friendly_description.as_deref() {
+                println!("     description: {description}");
+            }
+            if let Some(guid) = candidate.identity.guid.as_deref() {
+                println!("     guid: {guid}");
+            }
+            if let (Some(major), Some(minor)) = (
+                candidate.identity.version_major,
+                candidate.identity.version_minor,
+            ) {
+                println!("     version: {major}.{minor}");
+            }
+            if let Some(import_lib) = candidate.identity.import_lib.as_deref() {
+                println!("     importlib: {import_lib}");
+            }
+            if !candidate.prog_ids.is_empty() {
+                println!("     progids: {}", candidate.prog_ids.join(", "));
+            }
+        }
+    }
+}
+
+fn com_selection_status_name(status: &oxvba_project::ComProjectSelectionStatus) -> &'static str {
+    match status {
+        oxvba_project::ComProjectSelectionStatus::ResolvedUnique { .. } => "resolved",
+        oxvba_project::ComProjectSelectionStatus::Ambiguous { .. } => "ambiguous",
+        oxvba_project::ComProjectSelectionStatus::Missing => "missing",
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1644,7 +2021,7 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 mod tests {
     use super::{
         apply_cli_reference_overrides, default_build_output_path, load_run_project_target,
-        parse_cli_com_reference, parse_init_args_from, parse_run_args_from,
+        parse_cli_com_reference, parse_com_ref_args, parse_init_args_from, parse_run_args_from,
         parse_run_project_args_from, resolve_project_runner_bootstrap, run_init,
     };
     use oxvba_hal::model::{HostPolicyPreset, UnsupportedFeatureMode};
@@ -1793,6 +2170,58 @@ mod tests {
                 importlib: Some("scrrun.dll".to_string())
             })
         );
+    }
+
+    #[test]
+    fn parse_com_ref_add_args_supports_prog_id_and_include_override() {
+        let args = vec![
+            "com-ref".to_string(),
+            "add".to_string(),
+            ".\\App.basproj".to_string(),
+            "--progid".to_string(),
+            "Scripting.FileSystemObject".to_string(),
+            "--include".to_string(),
+            "Scripting".to_string(),
+        ];
+
+        let parsed = parse_com_ref_args(args).expect("args should parse");
+        assert!(matches!(parsed.command, super::ComRefCommand::Add));
+        assert_eq!(parsed.target_path, Some(PathBuf::from(".\\App.basproj")));
+        assert_eq!(
+            parsed.query.prog_id.as_deref(),
+            Some("Scripting.FileSystemObject")
+        );
+        assert_eq!(parsed.query.include_override.as_deref(), Some("Scripting"));
+    }
+
+    #[test]
+    fn parse_com_ref_repair_args_require_reference_and_single_selector() {
+        let args = vec![
+            "com-ref".to_string(),
+            "repair".to_string(),
+            ".\\App.basproj".to_string(),
+            "--reference".to_string(),
+            "Scripting".to_string(),
+            "--file".to_string(),
+            ".\\refs\\scrrun.dll".to_string(),
+        ];
+
+        let parsed = parse_com_ref_args(args).expect("args should parse");
+        assert!(matches!(parsed.command, super::ComRefCommand::Repair));
+        assert_eq!(parsed.query.reference_include.as_deref(), Some("Scripting"));
+        assert_eq!(
+            parsed.query.carrier_path,
+            Some(PathBuf::from(".\\refs\\scrrun.dll"))
+        );
+
+        let invalid = vec![
+            "com-ref".to_string(),
+            "repair".to_string(),
+            ".\\App.basproj".to_string(),
+            "--name".to_string(),
+            "Scripting".to_string(),
+        ];
+        assert!(parse_com_ref_args(invalid).is_none());
     }
 
     #[test]

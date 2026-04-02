@@ -32,24 +32,24 @@ pub mod workspace_target;
 // Re-exports for convenience
 pub use com_selection::{
     ComProjectEditPlan, ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
-    ComSelectionCandidate, ComSelectionService, HostComProjectSelectionSurface,
-    ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionDiscoveryError,
-    ComSelectionIdentity, ComSelectionSourceKind, FileBackedComSelectionQuery,
-    RegisteredComSelectionQuery,
-    assess_project_com_selections, basproj_reference_from_candidate,
-    candidate_from_catalog_entry, candidate_from_project_reference, candidate_from_resolved_identity,
+    ComSelectionCandidate, ComSelectionCarrierKind, ComSelectionConfidence,
+    ComSelectionDiscoveryError, ComSelectionIdentity, ComSelectionService, ComSelectionSourceKind,
+    FileBackedComSelectionQuery, HostComProjectSelectionSurface, RegisteredComSelectionQuery,
+    assess_project_com_selections, basproj_reference_from_candidate, candidate_from_catalog_entry,
+    candidate_from_project_reference, candidate_from_resolved_identity,
     discover_file_backed_com_candidates, discover_prog_id_com_candidates,
     discover_registered_com_candidates, inspect_workspace_com_project_state,
     plan_add_com_candidate, plan_remove_com_reference, plan_repair_project_selection,
     plan_replace_com_reference,
 };
 pub use error::BasProjError;
-pub use generate::generate_basproj_xml;
+pub use generate::{generate_basproj_xml, serialize_basproj_xml};
 pub use host_helpers::{
     HostProjectEdit, HostProjectModuleInfo, HostProjectReferenceInfo, HostProjectReferenceKind,
     HostProjectSurface, HostWorkspaceTargetKind, ModuleIdentityInfo, ModuleIdentityRewrite,
     PlannedModule, VbNameAttributeAction, add_com_reference_edit, add_module_edit,
-    add_project_reference_edit, inspect_module_identity, inspect_workspace_target,
+    add_project_reference_edit, apply_host_project_edits_to_basproj,
+    apply_host_project_edits_to_basproj_path, inspect_module_identity, inspect_workspace_target,
     plan_new_module, reconcile_module_identity, remove_com_reference_edit, remove_module_edit,
     remove_project_reference_edit,
 };

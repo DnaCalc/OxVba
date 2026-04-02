@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Purpose
 
@@ -177,3 +177,9 @@ This workset is complete only when:
 - CLI can list/add/repair COM references through that service,
 - OxIde has a direct service surface it can bind a dialog to,
 - and the earlier blocked COM helper planning lane is fully replaced by executed slices.
+
+Status evidence:
+- typed COM selection and active-selection models landed in `oxvba-project::com_selection`
+- direct host-facing `ComSelectionService` and workspace/project COM state inspection landed
+- canonical `.basproj` apply helpers landed via `apply_host_project_edits_to_basproj*`
+- CLI `oxvba com-ref list|add|repair` landed over the shared service

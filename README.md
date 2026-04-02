@@ -564,7 +564,7 @@ Unsupported `.vbp` reference/dependency surfaces include:
 
 OxVBA now has a direct COM reference-selection helper surface intended for:
 - host tools such as OxIde
-- future richer CLI/project-edit workflows
+- CLI project-edit workflows
 - deterministic repair/planning around active `.basproj` COM references
 
 The model stays strict:
@@ -581,6 +581,7 @@ Current planning lanes:
 - inspect active project COM references against a discovered candidate set
 - classify each active selection as unique, ambiguous, or missing
 - plan add, replace, repair, and remove edits against the canonical `.basproj` list
+- apply bounded COM edit plans back to a real `.basproj`
 
 Rust host example: discover a library by friendly name
 
@@ -649,15 +650,44 @@ let maybe_repair_plan = surface
     .map(|selection| service.plan_repair_selection(selection, &discovered[0]));
 ```
 
-Today’s CLI reference helper lane is still the bounded ad hoc override surface:
+CLI helper examples:
+
+List current project COM references and, optionally, matching candidates:
+
+```powershell
+oxvba com-ref list .\App.basproj
+oxvba com-ref list .\App.basproj --name Scripting
+oxvba com-ref list .\App.basproj --progid Scripting.FileSystemObject
+oxvba com-ref list .\App.basproj --file C:\Windows\System32\scrrun.dll
+```
+
+Add a canonical `.basproj` COM reference by friendly name, ProgID, or file-backed carrier:
+
+```powershell
+oxvba com-ref add .\App.basproj --name Scripting
+oxvba com-ref add .\App.basproj --progid Scripting.FileSystemObject --include Scripting
+oxvba com-ref add .\App.basproj --file C:\Windows\System32\scrrun.dll --include Scripting
+```
+
+Repair an active `.basproj` COM reference deterministically:
+
+```powershell
+oxvba com-ref repair .\App.basproj --reference Scripting --progid Scripting.FileSystemObject
+oxvba com-ref repair .\App.basproj --reference Scripting --file C:\Windows\System32\scrrun.dll
+```
+
+Notes:
+- `com-ref add` and `com-ref repair` only mutate real `.basproj` targets; they do not rewrite `.vbp` or convention directories
+- ProgID lookup is a discovery convenience, not durable project truth by itself; OxVBA still serializes a canonical `<COMReference>` identity into `.basproj`
+- file-backed discovery remains capability-bounded by what OxVBA can resolve from the selected carrier on the current platform
+
+Ad hoc invocation-time COM overrides still exist separately:
 
 ```powershell
 oxvba run-project .\scratch-app --com-ref Scripting=scrrun.dll
 oxvba build .\scratch-app --com-ref Scripting=scrrun.dll
 oxvba host-check .\scratch-app --com-ref Scripting=scrrun.dll
 ```
-
-A richer CLI list/add/repair flow is the next step; the current typed helper surface already exists for direct hosts.
 
 ## Language Features and Expected Parity
 

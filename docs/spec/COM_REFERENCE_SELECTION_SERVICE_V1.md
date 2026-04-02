@@ -142,4 +142,31 @@ Status:
 - lane 5 now exists in bounded form:
   - direct OxIde-facing `ComSelectionService`
   - typed workspace/project COM state surface via `inspect_workspace_com_project_state`
-- the remaining delivery slice is the CLI command surface
+- lane 4 now exists in bounded form:
+  - `oxvba com-ref list [path] [--name <library> | --progid <progid> | --file <carrier>]`
+  - `oxvba com-ref add [path] (--name <library> | --progid <progid> | --file <carrier>) [--include <logical-name>]`
+  - `oxvba com-ref repair [path] --reference <active-include> (--name <library> | --progid <progid> | --file <carrier>)`
+- project-edit apply now exists in bounded form:
+  - `apply_host_project_edits_to_basproj`
+  - `apply_host_project_edits_to_basproj_path`
+
+## CLI Notes
+
+The CLI surface is intentionally bounded:
+- `list` can inspect active project COM references and optionally show discovered candidates
+- `add` and `repair` mutate only real `.basproj` targets
+- `.vbp` and convention directories remain inspection-only for this lane
+- ProgID lookup is a candidate-discovery convenience, not the canonical serialized identity
+
+## Validation Evidence
+
+Current evidence for the shipped surface includes:
+- `cargo test -p oxvba-project -- --nocapture`
+- `cargo test -p oxvba-cli -- --nocapture`
+- `cargo check -p oxvba-cli -p oxvba-project -p oxvba-com`
+
+Notable regression coverage includes:
+- project-active selection assessment
+- deterministic add/replace/repair planning
+- `.basproj` apply/round-trip for COM edits
+- CLI parsing for `com-ref add` and `com-ref repair`

@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{
-    BasProjComReference, BasProjError, BasProjModule, BasProjModuleKind,
-    BasProjProjectReference, OutputType, discover_project_file_in_dir, infer_project_name_from_path,
-    parse_basproj_xml, parse_vbp,
-};
 use crate::vbp::VbpReference;
+use crate::{
+    BasProj, BasProjComReference, BasProjError, BasProjModule, BasProjModuleKind,
+    BasProjProjectReference, OutputType, discover_project_file_in_dir,
+    infer_project_name_from_path, parse_basproj_xml, parse_vbp, serialize_basproj_xml,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleIdentityInfo {
@@ -289,6 +289,53 @@ pub fn remove_com_reference_edit(include: impl Into<String>) -> HostProjectEdit 
     }
 }
 
+pub fn apply_host_project_edits_to_basproj(basproj: &mut BasProj, edits: &[HostProjectEdit]) {
+    for edit in edits {
+        match edit {
+            HostProjectEdit::AddModule(module) => {
+                upsert_by_include(&mut basproj.modules, module, |item| &item.include);
+            }
+            HostProjectEdit::RemoveModule { include } => {
+                remove_by_include(&mut basproj.modules, include, |item| &item.include);
+            }
+            HostProjectEdit::AddProjectReference(reference) => {
+                upsert_by_include(&mut basproj.project_references, reference, |item| {
+                    &item.include
+                });
+            }
+            HostProjectEdit::RemoveProjectReference { include } => {
+                remove_by_include(&mut basproj.project_references, include, |item| {
+                    &item.include
+                });
+            }
+            HostProjectEdit::AddComReference(reference) => {
+                upsert_by_include(&mut basproj.com_references, reference, |item| &item.include);
+            }
+            HostProjectEdit::RemoveComReference { include } => {
+                remove_by_include(&mut basproj.com_references, include, |item| &item.include);
+            }
+        }
+    }
+}
+
+pub fn apply_host_project_edits_to_basproj_path(
+    project_file: &Path,
+    edits: &[HostProjectEdit],
+) -> Result<BasProj, BasProjError> {
+    let xml = fs::read_to_string(project_file).map_err(|source| BasProjError::Io {
+        path: project_file.display().to_string(),
+        source,
+    })?;
+    let mut basproj = parse_basproj_xml(&xml)?;
+    apply_host_project_edits_to_basproj(&mut basproj, edits);
+    let rewritten = serialize_basproj_xml(&basproj);
+    fs::write(project_file, rewritten).map_err(|source| BasProjError::Io {
+        path: project_file.display().to_string(),
+        source,
+    })?;
+    Ok(basproj)
+}
+
 fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, BasProjError> {
     let xml = fs::read_to_string(project_file).map_err(|source| BasProjError::Io {
         path: project_file.display().to_string(),
@@ -317,22 +364,19 @@ fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, Ba
     modules.sort_by(|left, right| left.include.cmp(&right.include));
 
     let mut references = Vec::new();
-    references.extend(
-        basproj
-            .project_references
-            .iter()
-            .map(|reference| HostProjectReferenceInfo {
-                kind: HostProjectReferenceKind::Project,
-                include: reference.include.clone(),
-                guid: None,
-                version_major: None,
-                version_minor: None,
-                lcid: None,
-                import_lib: None,
-                path: None,
-                referenced_project_name: None,
-            }),
-    );
+    references.extend(basproj.project_references.iter().map(|reference| {
+        HostProjectReferenceInfo {
+            kind: HostProjectReferenceKind::Project,
+            include: reference.include.clone(),
+            guid: None,
+            version_major: None,
+            version_minor: None,
+            lcid: None,
+            import_lib: None,
+            path: None,
+            referenced_project_name: None,
+        }
+    }));
     references.extend(
         basproj
             .com_references
@@ -366,11 +410,9 @@ fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, Ba
             }),
     );
     references.sort_by(|left, right| {
-        left.include
-            .cmp(&right.include)
-            .then_with(|| {
-                host_reference_sort_key(left.kind).cmp(&host_reference_sort_key(right.kind))
-            })
+        left.include.cmp(&right.include).then_with(|| {
+            host_reference_sort_key(left.kind).cmp(&host_reference_sort_key(right.kind))
+        })
     });
 
     Ok(HostProjectSurface {
@@ -446,11 +488,9 @@ fn inspect_vbp_surface(project_file: &Path) -> Result<HostProjectSurface, BasPro
         }
     }
     references.sort_by(|left, right| {
-        left.include
-            .cmp(&right.include)
-            .then_with(|| {
-                host_reference_sort_key(left.kind).cmp(&host_reference_sort_key(right.kind))
-            })
+        left.include.cmp(&right.include).then_with(|| {
+            host_reference_sort_key(left.kind).cmp(&host_reference_sort_key(right.kind))
+        })
     });
 
     Ok(HostProjectSurface {
@@ -595,6 +635,28 @@ fn module_file_stem(path: &Path, include: &str) -> Result<String, BasProjError> 
         })
 }
 
+fn upsert_by_include<T, F>(items: &mut Vec<T>, new_item: &T, include: F)
+where
+    T: Clone,
+    F: Fn(&T) -> &str,
+{
+    if let Some(index) = items
+        .iter()
+        .position(|item| include(item).eq_ignore_ascii_case(include(new_item)))
+    {
+        items[index] = new_item.clone();
+    } else {
+        items.push(new_item.clone());
+    }
+}
+
+fn remove_by_include<T, F>(items: &mut Vec<T>, target_include: &str, include: F)
+where
+    F: Fn(&T) -> &str,
+{
+    items.retain(|item| !include(item).eq_ignore_ascii_case(target_include));
+}
+
 fn declared_vb_name_for_source(source: &str) -> Option<String> {
     parse_vb_name_attribute(source)
 }
@@ -618,10 +680,11 @@ fn vb_name_attribute_line_index(source: &str) -> Option<usize> {
 mod tests {
     use super::{
         HostProjectReferenceKind, HostWorkspaceTargetKind, VbNameAttributeAction,
-        add_com_reference_edit, add_project_reference_edit, inspect_module_identity,
+        add_com_reference_edit, add_project_reference_edit, apply_host_project_edits_to_basproj,
+        apply_host_project_edits_to_basproj_path, inspect_module_identity,
         inspect_workspace_target, plan_new_module, reconcile_module_identity,
     };
-    use crate::BasProjModuleKind;
+    use crate::{BasProjModuleKind, parse_basproj_xml};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -779,7 +842,12 @@ mod tests {
         let vbp_surface = inspect_workspace_target(&vbp_dir).expect("vbp surface");
         assert_eq!(vbp_surface.workspace_kind, HostWorkspaceTargetKind::Vbp);
         assert_eq!(vbp_surface.modules.len(), 2);
-        assert!(vbp_surface.modules.iter().any(|module| module.include == "Main.bas"));
+        assert!(
+            vbp_surface
+                .modules
+                .iter()
+                .any(|module| module.include == "Main.bas")
+        );
         assert!(vbp_surface.references.iter().any(|reference| {
             reference.kind == HostProjectReferenceKind::Project
                 && reference.include == "../LibScale/LibScale.vbp"
@@ -798,6 +866,61 @@ mod tests {
                 && module.kind == BasProjModuleKind::Module
                 && module.identity.effective_name == "Widget"
         }));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn apply_host_project_edits_updates_com_references_in_memory() {
+        let mut basproj = parse_basproj_xml(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <COMReference Include=\"Legacy\">\n      <Guid>{11111111-1111-1111-1111-111111111111}</Guid>\n      <VersionMajor>1</VersionMajor>\n      <VersionMinor>0</VersionMinor>\n      <ImportLib>legacy.tlb</ImportLib>\n    </COMReference>\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("parse basproj");
+
+        apply_host_project_edits_to_basproj(
+            &mut basproj,
+            &[
+                add_com_reference_edit("Scripting"),
+                super::HostProjectEdit::RemoveComReference {
+                    include: "Legacy".to_string(),
+                },
+            ],
+        );
+
+        assert_eq!(basproj.com_references.len(), 1);
+        assert_eq!(basproj.com_references[0].include, "Scripting");
+    }
+
+    #[test]
+    fn apply_host_project_edits_to_basproj_path_round_trips_com_reference_xml() {
+        let temp_root = unique_temp_dir("oxvba_project_apply_com_edits");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        let project_file = temp_root.join("App.basproj");
+        fs::write(
+            &project_file,
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let edited = apply_host_project_edits_to_basproj_path(
+            &project_file,
+            &[super::HostProjectEdit::AddComReference(
+                crate::BasProjComReference {
+                    include: "Scripting".to_string(),
+                    guid: Some("{420B2830-E718-11CF-893D-00A0C9054228}".to_string()),
+                    version_major: Some(1),
+                    version_minor: Some(0),
+                    lcid: Some(0),
+                    import_lib: Some("scrrun.dll".to_string()),
+                },
+            )],
+        )
+        .expect("apply edits");
+
+        assert_eq!(edited.com_references.len(), 1);
+        let written = fs::read_to_string(&project_file).expect("read rewritten basproj");
+        assert!(written.contains("<COMReference Include=\"Scripting\">"));
+        assert!(written.contains("<ImportLib>scrrun.dll</ImportLib>"));
 
         let _ = fs::remove_dir_all(&temp_root);
     }
