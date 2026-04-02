@@ -1154,6 +1154,18 @@ mod tests {
         assert!(main.entry_pc < bytecode.instructions.len());
         assert!(foo.entry_pc < bytecode.instructions.len());
         assert_eq!(foo.param_slots.len(), 1);
+        assert_eq!(main.procedure_name, "main");
+        assert_eq!(main.source_line_start, 1);
+        assert_eq!(main.source_line_end, 5);
+        assert_eq!(main.statement_line_numbers, vec![2, 3, 4]);
+        assert_eq!(main.statement_entry_pcs.len(), 2);
+        assert_eq!(main.statement_entry_pcs[0], main.entry_pc + 1);
+        assert_eq!(foo.procedure_name, "foo");
+        assert_eq!(foo.source_line_start, 6);
+        assert_eq!(foo.source_line_end, 9);
+        assert_eq!(foo.statement_line_numbers, vec![7, 8]);
+        assert_eq!(foo.statement_entry_pcs.len(), 1);
+        assert_eq!(foo.statement_entry_pcs[0], foo.entry_pc + 1);
     }
 
     #[test]

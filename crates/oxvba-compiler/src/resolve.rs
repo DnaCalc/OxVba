@@ -283,6 +283,9 @@ pub struct BoundModule {
 #[derive(Debug, Clone)]
 pub struct BoundProcedure {
     pub name: String,
+    pub source_line_start: usize,
+    pub source_line_end: usize,
+    pub statement_line_numbers: Vec<usize>,
     pub return_type: BoundType,
     pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
@@ -419,6 +422,9 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .cloned()
         .unwrap_or(BoundProcedure {
             name: "main".to_string(),
+            source_line_start: 1,
+            source_line_end: lines.len().max(1),
+            statement_line_numbers: Vec::new(),
             return_type: BoundType::Variant,
             params: Vec::new(),
             declarations: Vec::new(),
@@ -467,6 +473,9 @@ fn build_whole_file_main_procedure(
     build_mainline_procedure_from_lines(
         lines,
         lines,
+        1,
+        lines.len().max(1),
+        collect_candidate_statement_line_numbers(lines, 1),
         option_explicit,
         option_base,
         default_type_table,
@@ -477,6 +486,9 @@ fn build_whole_file_main_procedure(
     )
     .unwrap_or(BoundProcedure {
         name: "main".to_string(),
+        source_line_start: 1,
+        source_line_end: lines.len().max(1),
+        statement_line_numbers: collect_candidate_statement_line_numbers(lines, 1),
         return_type: BoundType::Variant,
         params: Vec::new(),
         declarations: Vec::new(),
@@ -501,9 +513,18 @@ fn build_top_level_mainline_procedure(
     if mainline_lines.is_empty() {
         return None;
     }
+    let statement_line_numbers = collect_top_level_mainline_line_numbers(lines);
+    let source_line_start = statement_line_numbers.first().copied().unwrap_or(1);
+    let source_line_end = statement_line_numbers
+        .last()
+        .copied()
+        .unwrap_or(source_line_start);
     build_mainline_procedure_from_lines(
         lines,
         &mainline_lines,
+        source_line_start,
+        source_line_end,
+        statement_line_numbers,
         option_explicit,
         option_base,
         default_type_table,
@@ -517,6 +538,9 @@ fn build_top_level_mainline_procedure(
 fn build_mainline_procedure_from_lines(
     module_lines: &[String],
     lines: &[String],
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
@@ -573,6 +597,9 @@ fn build_mainline_procedure_from_lines(
     let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
     Some(BoundProcedure {
         name: "main".to_string(),
+        source_line_start,
+        source_line_end,
+        statement_line_numbers,
         return_type: BoundType::Variant,
         params: Vec::new(),
         declarations,
@@ -581,6 +608,75 @@ fn build_mainline_procedure_from_lines(
         duplicate_declarations,
         body,
     })
+}
+
+fn collect_top_level_mainline_line_numbers(lines: &[String]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut active_proc_end: Option<&'static str> = None;
+    let mut active_decl_block_end: Option<&'static str> = None;
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        if let Some(end_term) = active_proc_end {
+            if lower == end_term {
+                active_proc_end = None;
+            }
+            continue;
+        }
+
+        if let Some(end_term) = active_decl_block_end {
+            if lower == end_term {
+                active_decl_block_end = None;
+            }
+            continue;
+        }
+
+        if trimmed.is_empty()
+            || trimmed.starts_with('\'')
+            || trimmed
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("rem "))
+        {
+            continue;
+        }
+        if let Some(kind) = detect_proc_kind(&lower) {
+            active_proc_end = Some(kind.end_term());
+            continue;
+        }
+        if lower.starts_with("type ") {
+            active_decl_block_end = Some("end type");
+            continue;
+        }
+        if lower.starts_with("enum ") {
+            active_decl_block_end = Some("end enum");
+            continue;
+        }
+        if lower.starts_with("attribute ") {
+            continue;
+        }
+        out.push(index + 1);
+    }
+
+    out
+}
+
+fn collect_candidate_statement_line_numbers(lines: &[String], start_line_number: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (offset, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('\'')
+            || trimmed
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("rem "))
+        {
+            continue;
+        }
+        out.push(start_line_number + offset);
+    }
+    out
 }
 
 fn extract_top_level_mainline_lines(lines: &[String]) -> Vec<String> {
@@ -1301,6 +1397,7 @@ fn parse_procedures(
             continue;
         };
 
+        let source_line_start = index + 1;
         index += 1;
         let mut declarations: Vec<String> = module_declarations.clone();
         let mut declaration_types: HashMap<String, BoundType> = module_declaration_types.clone();
@@ -1363,12 +1460,27 @@ fn parse_procedures(
         );
         body.splice(0..0, build_const_prelude(module_constants));
         let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+        let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
+            index + 1
+        } else {
+            index.max(source_line_start)
+        };
+        let mut statement_line_numbers = collect_candidate_statement_line_numbers(
+            &lines[source_line_start..index],
+            source_line_start + 1,
+        );
+        if statement_line_numbers.is_empty() {
+            statement_line_numbers.push(source_line_start);
+        }
         if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
             index += 1;
         }
 
         procedures.push(BoundProcedure {
             name,
+            source_line_start,
+            source_line_end,
+            statement_line_numbers,
             return_type,
             params,
             declarations,
@@ -1717,6 +1829,9 @@ fn collect_declared_external_procedures(
         let external_params = params.clone();
         procedures.push(BoundProcedure {
             name,
+            source_line_start: 1,
+            source_line_end: 1,
+            statement_line_numbers: vec![1],
             return_type,
             params,
             declarations,

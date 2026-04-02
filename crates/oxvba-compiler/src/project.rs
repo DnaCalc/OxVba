@@ -643,7 +643,7 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals_class(
+    let (bytecode, mut procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals_class(
         &rewritten_source,
         &forced_object_locals_by_proc,
         has_class_modules,
@@ -654,6 +654,10 @@ fn compile_project_with_strategy(
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
+    decorate_project_procedure_runtime_metadata(
+        &mut procedure_runtime_metadata,
+        &procedure_index,
+    );
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
     let project_com_withevents_routes =
         build_project_com_withevents_routes(manifest, &event_dispatch_plan);
@@ -680,6 +684,18 @@ fn compile_project_with_strategy(
         project_com_withevents_routes,
         project_dynamic_objects,
     })
+}
+
+fn decorate_project_procedure_runtime_metadata(
+    runtime_metadata: &mut BTreeMap<String, ProcedureRuntimeMetadata>,
+    procedures: &[ProcedureDecl],
+) {
+    for decl in procedures {
+        if let Some(metadata) = runtime_metadata.get_mut(&decl.lowered_name) {
+            metadata.module_name = decl.module_name.clone();
+            metadata.procedure_name = decl.procedure_name.clone();
+        }
+    }
 }
 
 fn projected_typelib_reference_cache() -> &'static Mutex<BTreeMap<String, ReferencedProjectManifest>>
@@ -7818,6 +7834,19 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("call pmr_projecta_mathmodule_add(1, 2)")
         );
+        let add_metadata = compiled
+            .procedure_runtime_metadata
+            .get("pmr_projecta_mathmodule_add")
+            .expect("project procedure metadata");
+        assert_eq!(add_metadata.module_name, "mathmodule");
+        assert_eq!(add_metadata.procedure_name, "add");
+        assert!(add_metadata.source_line_start >= 1);
+        assert!(add_metadata.source_line_end >= add_metadata.source_line_start);
+        assert_eq!(
+            add_metadata.statement_line_numbers,
+            vec![add_metadata.source_line_start]
+        );
+        assert!(add_metadata.statement_entry_pcs.is_empty());
     }
 
     #[test]

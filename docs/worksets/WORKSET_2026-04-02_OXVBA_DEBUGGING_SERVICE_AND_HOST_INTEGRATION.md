@@ -91,7 +91,7 @@ These are useful, but they should layer on top of the semantic debugger rather t
 ## Execution Slices
 
 1. define the semantic debugger contract
-2. land source-position and statement identity support needed for breakpoints/stepping
+2. land source-position and first emitted-statement identity support needed for breakpoints/stepping
 3. implement VM-backed debug execution mode
 4. expose typed host-facing debug session APIs
 5. add debugger-focused unit and behavior coverage with high semantic-path coverage
@@ -104,7 +104,8 @@ This debugger lane should therefore proceed after the current non-debug Immediat
 Current execution state:
 - workset and policy are published
 - debugger contract/spec is now published in `docs/spec/OXVBA_DEBUGGER_CONTRACT_V1.md`
-- the next delivery slice is the source/statement identity substrate for breakpoints and stepping
+- the source/procedure identity substrate is now in place with candidate statement lines and emitted statement-entry PCs
+- the next delivery slice is VM breakpoint/pause execution over that substrate
 
 ## Validation Strategy
 

@@ -4731,6 +4731,7 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(34);
+        let values = vm.snapshot_values(34);
         assert_eq!(out[8], 20260228);
         assert_eq!(out[9], 20260229);
         assert_eq!(out[10], 1);
@@ -4742,8 +4743,12 @@ mod tests {
         assert_eq!(out[17], 1);
         assert_eq!(out[18], 2);
         assert_eq!(out[19], 2);
-        assert_eq!(out[20], 5004);
-        assert_eq!(out[21], 5007);
+        let object_handle = match &values[20] {
+            RuntimeValue::ObjectHandle(handle) => handle.raw(),
+            other => panic!("expected object handle result, got {other:?}"),
+        };
+        assert_eq!(out[20], object_handle);
+        assert_eq!(out[21], object_handle + 3);
         assert_eq!(out[31], 59);
         assert_eq!(out[32], -50);
         assert_eq!(out[33], -28);
@@ -4921,9 +4926,12 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(8);
         let values = vm.snapshot_values(8);
-        assert_eq!(out[1], 5004);
-        assert_eq!(out[7], 5004 + 6 + (ARRAY_TAG_BASE + 3));
-        assert_eq!(values[1], RuntimeValue::ObjectHandle(5004.into()));
+        let object_handle = match &values[1] {
+            RuntimeValue::ObjectHandle(handle) => handle.raw(),
+            other => panic!("expected object handle result, got {other:?}"),
+        };
+        assert_eq!(out[1], object_handle);
+        assert_eq!(out[7], object_handle + 6 + (ARRAY_TAG_BASE + 3));
         assert_eq!(
             values[6],
             RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
@@ -5411,7 +5419,13 @@ mod tests {
         metadata.insert(
             "pmr_projecta_sink_src_onvaluechanged".to_string(),
             ProcedureRuntimeMetadata {
+                module_name: "sink".to_string(),
+                procedure_name: "src_onvaluechanged".to_string(),
                 entry_pc: 9,
+                source_line_start: 1,
+                source_line_end: 1,
+                statement_line_numbers: vec![1],
+                statement_entry_pcs: vec![10],
                 param_slots: vec![20, 21],
                 return_slot: None,
             },

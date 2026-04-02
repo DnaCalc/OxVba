@@ -51,14 +51,20 @@ Names may change, but the shape should remain:
 ## Required Runtime Metadata
 
 The VM/debugger substrate will need:
-- statement-to-bytecode mapping,
-- bytecode-PC to statement/source mapping,
+- candidate source statement lines per procedure,
+- emitted statement-entry PCs per procedure,
+- later statement-to-bytecode/source zippering across nested control flow,
 - procedure entry metadata enriched with source range identity,
 - stable frame metadata for active procedure calls,
 - slot/value inspection for arguments, locals, and return values.
 
-This is the first real implementation blocker.
-Without source/statement mapping, breakpoints and stepping are not honest.
+Current bounded landing:
+- procedure runtime metadata carries module/procedure identity,
+- source line start/end,
+- candidate source statement lines,
+- and top-level emitted statement-entry PCs.
+
+That is enough substrate to begin semantic stop planning honestly, but not yet enough for final breakpoint/step resolution across all nested control-flow shapes. The zippering layer remains part of the next debugger execution bead.
 
 ## Execution Model
 
@@ -115,7 +121,7 @@ Order:
 ## First Executable Ladder
 
 1. publish this debugger contract and child-bead ladder
-2. add source/statement identity metadata sufficient for breakpoints and stepping
+2. add source/statement identity metadata and first emitted-statement PC substrate sufficient to start semantic stop planning
 3. add VM pause/continue/breakpoint substrate
 4. expose typed host-facing debug session APIs
 5. prove direct-host/OxIde consumption with a bounded harness

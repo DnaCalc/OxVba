@@ -248,7 +248,13 @@ mod tests {
         metadata.insert(
             "Main".to_string(),
             ProcedureRuntimeMetadata {
+                module_name: "Main".to_string(),
+                procedure_name: "Main".to_string(),
                 entry_pc: 0,
+                source_line_start: 1,
+                source_line_end: 1,
+                statement_line_numbers: vec![1],
+                statement_entry_pcs: vec![1],
                 param_slots: vec![],
                 return_slot: None,
             },

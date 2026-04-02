@@ -32,7 +32,13 @@ struct EmitProcMeta {
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProcedureRuntimeMetadata {
+    pub module_name: String,
+    pub procedure_name: String,
     pub entry_pc: usize,
+    pub source_line_start: usize,
+    pub source_line_end: usize,
+    pub statement_line_numbers: Vec<usize>,
+    pub statement_entry_pcs: Vec<usize>,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
 }
@@ -48,6 +54,9 @@ pub fn emit_bytecode_with_runtime_metadata(
     let procedures = if module.procedures.is_empty() {
         vec![BoundProcedure {
             name: "main".to_string(),
+            source_line_start: 1,
+            source_line_end: module.source.lines().count().max(1),
+            statement_line_numbers: vec![1],
             return_type: crate::resolve::BoundType::Variant,
             params: Vec::new(),
             declarations: module.declarations.clone(),
@@ -129,26 +138,6 @@ pub fn emit_bytecode_with_runtime_metadata(
         None
     };
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
-    procedure_runtime_metadata.insert(
-        procedures[entry_idx].name.to_ascii_lowercase(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 0,
-            param_slots: procedures[entry_idx]
-                .params
-                .iter()
-                .filter_map(|param| proc_slots[entry_idx].get(&param.name).copied())
-                .collect(),
-            return_slot: proc_slots[entry_idx]
-                .get(&procedures[entry_idx].name)
-                .or_else(|| {
-                    procedures[entry_idx]
-                        .name
-                        .strip_prefix("property_get_")
-                        .and_then(|base| proc_slots[entry_idx].get(base))
-                })
-                .copied(),
-        },
-    );
     instructions.push(Instruction::ClearErr);
 
     if let Some(name) = class_init_proc {
@@ -156,6 +145,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         instructions.push(Instruction::CallProc { target_pc: 0 });
         call_patches.push((patch_idx, name));
     }
+    let mut entry_statement_entry_pcs = Vec::new();
     emit_stmt_list(
         &procedures[entry_idx].body,
         compare_mode,
@@ -172,6 +162,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         &external_decls,
         &procedures[entry_idx].name,
         &mut proc_labels,
+        &mut entry_statement_entry_pcs,
     );
     if let Some(name) = class_terminate_proc {
         let patch_idx = instructions.len();
@@ -180,6 +171,32 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
     instructions.push(Instruction::ClearErr);
     instructions.push(Instruction::Halt);
+    procedure_runtime_metadata.insert(
+        procedures[entry_idx].name.to_ascii_lowercase(),
+        ProcedureRuntimeMetadata {
+            module_name: String::new(),
+            procedure_name: procedures[entry_idx].name.clone(),
+            entry_pc: 0,
+            source_line_start: procedures[entry_idx].source_line_start,
+            source_line_end: procedures[entry_idx].source_line_end,
+            statement_line_numbers: procedures[entry_idx].statement_line_numbers.clone(),
+            statement_entry_pcs: entry_statement_entry_pcs,
+            param_slots: procedures[entry_idx]
+                .params
+                .iter()
+                .filter_map(|param| proc_slots[entry_idx].get(&param.name).copied())
+                .collect(),
+            return_slot: proc_slots[entry_idx]
+                .get(&procedures[entry_idx].name)
+                .or_else(|| {
+                    procedures[entry_idx]
+                        .name
+                        .strip_prefix("property_get_")
+                        .and_then(|base| proc_slots[entry_idx].get(base))
+                })
+                .copied(),
+        },
+    );
 
     for (idx, proc) in procedures.iter().enumerate() {
         if idx == entry_idx {
@@ -187,26 +204,8 @@ pub fn emit_bytecode_with_runtime_metadata(
         }
         let entry_pc = instructions.len();
         proc_labels.insert(proc.name.clone(), entry_pc);
-        procedure_runtime_metadata.insert(
-            proc.name.to_ascii_lowercase(),
-            ProcedureRuntimeMetadata {
-                entry_pc,
-                param_slots: proc
-                    .params
-                    .iter()
-                    .filter_map(|param| proc_slots[idx].get(&param.name).copied())
-                    .collect(),
-                return_slot: proc_slots[idx]
-                    .get(&proc.name)
-                    .or_else(|| {
-                        proc.name
-                            .strip_prefix("property_get_")
-                            .and_then(|base| proc_slots[idx].get(base))
-                    })
-                    .copied(),
-            },
-        );
         instructions.push(Instruction::ClearErr);
+        let mut statement_entry_pcs = Vec::new();
         emit_stmt_list(
             &proc.body,
             compare_mode,
@@ -223,9 +222,35 @@ pub fn emit_bytecode_with_runtime_metadata(
             &external_decls,
             &proc.name,
             &mut proc_labels,
+            &mut statement_entry_pcs,
         );
         instructions.push(Instruction::ClearErr);
         instructions.push(Instruction::Return);
+        procedure_runtime_metadata.insert(
+            proc.name.to_ascii_lowercase(),
+            ProcedureRuntimeMetadata {
+                module_name: String::new(),
+                procedure_name: proc.name.clone(),
+                entry_pc,
+                source_line_start: proc.source_line_start,
+                source_line_end: proc.source_line_end,
+                statement_line_numbers: proc.statement_line_numbers.clone(),
+                statement_entry_pcs,
+                param_slots: proc
+                    .params
+                    .iter()
+                    .filter_map(|param| proc_slots[idx].get(&param.name).copied())
+                    .collect(),
+                return_slot: proc_slots[idx]
+                    .get(&proc.name)
+                    .or_else(|| {
+                        proc.name
+                            .strip_prefix("property_get_")
+                            .and_then(|base| proc_slots[idx].get(base))
+                    })
+                    .copied(),
+            },
+        );
     }
 
     for (patch_idx, proc_name) in call_patches {
@@ -343,6 +368,7 @@ fn emit_stmt_list(
     external_decls: &HashMap<String, BoundExternalDecl>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
+    statement_entry_pcs: &mut Vec<usize>,
 ) {
     for stmt in stmts {
         emit_stmt(
@@ -361,6 +387,7 @@ fn emit_stmt_list(
             external_decls,
             current_proc_name,
             proc_labels,
+            statement_entry_pcs,
         );
     }
 }
@@ -382,7 +409,9 @@ fn emit_stmt(
     external_decls: &HashMap<String, BoundExternalDecl>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
+    statement_entry_pcs: &mut Vec<usize>,
 ) {
+    statement_entry_pcs.push(instructions.len());
     match stmt {
         BoundStmt::Assign {
             target,
@@ -550,6 +579,7 @@ fn emit_stmt(
                 external_decls,
                 current_proc_name,
                 proc_labels,
+                statement_entry_pcs,
             );
             if else_body.is_empty() {
                 let target = instructions.len();
@@ -579,6 +609,7 @@ fn emit_stmt(
                     external_decls,
                     current_proc_name,
                     proc_labels,
+                    statement_entry_pcs,
                 );
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
@@ -702,6 +733,7 @@ fn emit_stmt(
                     external_decls,
                     current_proc_name,
                     proc_labels,
+                    statement_entry_pcs,
                 );
                 instructions.push(Instruction::AddSlots {
                     dst: var_slot,
@@ -778,6 +810,7 @@ fn emit_stmt(
                         external_decls,
                         current_proc_name,
                         proc_labels,
+                        statement_entry_pcs,
                     );
                     instructions.push(Instruction::Jump {
                         target_pc: loop_start,
@@ -816,6 +849,7 @@ fn emit_stmt(
                             external_decls,
                             current_proc_name,
                             proc_labels,
+                            statement_entry_pcs,
                         );
                     }
                 }
@@ -900,6 +934,7 @@ fn emit_stmt(
                 external_decls,
                 current_proc_name,
                 proc_labels,
+                statement_entry_pcs,
             );
 
             emit_cond_into(
@@ -1083,6 +1118,7 @@ fn emit_stmt(
                     external_decls,
                     current_proc_name,
                     proc_labels,
+                    statement_entry_pcs,
                 );
                 let end_patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
@@ -1109,6 +1145,7 @@ fn emit_stmt(
                 external_decls,
                 current_proc_name,
                 proc_labels,
+                statement_entry_pcs,
             );
             let end_target = instructions.len();
             for patch in end_patches {
