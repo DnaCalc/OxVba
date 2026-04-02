@@ -138,6 +138,9 @@ The debugger lane should not invent a separate evaluation model.
 5. document OxIde consumption
 6. layer debugger-context evaluation later
 
+Current published guidance:
+- `docs/OXIDE_IMMEDIATE_WINDOW_INTEGRATION_GUIDANCE.md`
+
 ## Exit Condition For V1 Contract
 
 V1 contract is complete when:

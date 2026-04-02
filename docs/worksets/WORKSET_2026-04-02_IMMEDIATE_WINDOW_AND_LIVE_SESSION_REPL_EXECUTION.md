@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Near-Term Priority
 
@@ -156,6 +156,8 @@ These provide regression protection for both CLI and future OxIde Immediate Wind
   - `WORKSET_2026-04-02_OXVBA_DEBUGGING_SERVICE_AND_HOST_INTEGRATION.md`
 - OxIde host lane:
   - `WORKSET_2026-04-01_OXIDE_HOST_SURFACE_AND_VSCODE_ALTERNATE_EDITOR_EXECUTION.md`
+- Published OxIde integration guidance:
+  - `docs/OXIDE_IMMEDIATE_WINDOW_INTEGRATION_GUIDANCE.md`
 
 ## Non-Goals
 
@@ -172,3 +174,10 @@ This workset is complete only when:
 - the OxIde Immediate Window consumption path is explicit,
 - strong validation exists across unit, integration, and transcript lanes,
 - and the debugger-context extension path is defined rather than implied.
+
+Current completion note:
+- `ImmediateSession` and the bounded evaluator core are live in `oxvba-host`
+- CLI exposes `oxvba repl` / `oxvba immediate`
+- validation beads for unit/behavior and transcript/integration coverage are landed
+- OxIde guidance is published in `docs/OXIDE_IMMEDIATE_WINDOW_INTEGRATION_GUIDANCE.md`
+- debugger-context layering is explicit through `DebugSession`
