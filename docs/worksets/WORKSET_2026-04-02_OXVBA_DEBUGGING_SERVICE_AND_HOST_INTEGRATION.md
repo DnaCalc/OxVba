@@ -88,14 +88,53 @@ These are useful, but they should layer on top of the semantic debugger rather t
 2. land source-position and statement identity support needed for breakpoints/stepping
 3. implement VM-backed debug execution mode
 4. expose typed host-facing debug session APIs
-5. add OxIde-facing debug harness/evidence
-6. later add DAP projection for VS Code
-7. later add Windows-specific COM/Office debug helpers where justified
+5. add debugger-focused unit and behavior coverage with high semantic-path coverage
+6. add OxIde-facing debug harness/evidence and real-example integration scenarios
+7. later add DAP projection for VS Code
+8. later add Windows-specific COM/Office debug helpers where justified
 
 Current execution state:
 - workset and policy are published
 - debugger contract/spec is now published in `docs/spec/OXVBA_DEBUGGER_CONTRACT_V1.md`
 - the next delivery slice is the source/statement identity substrate for breakpoints and stepping
+
+## Validation Strategy
+
+Debugger delivery is not complete on API shape alone.
+The debugger lane must carry strong validation in three layers:
+
+### 1. Unit and behavior coverage
+
+Required:
+- breakpoint registration and matching
+- statement/source stop resolution
+- step into / over / out transitions
+- call stack construction
+- locals and arguments projection
+- paused-context evaluation semantics
+- stop-reason reporting and resume semantics
+
+These tests should live close to the runtime/compiler/debugger implementation and aim for high semantic-path coverage rather than just API smoke tests.
+
+### 2. Real-example integration scenarios
+
+Required:
+- multi-procedure stepping over real OxVba source
+- pause and inspect across module/class boundaries
+- watch/evaluate while paused
+- resume after evaluation without corrupting session state
+- representative direct-host/OxIde-style debug harness scenarios
+
+These should use real sample programs and prove user-meaningful debugging flows, not only synthetic micro-cases.
+
+### 3. Transcript/golden behavior tests
+
+Required:
+- deterministic stop/resume transcripts
+- stack/local snapshots at key breakpoints
+- stable direct-host-facing debug-event/output sequences
+
+These transcripts provide regression protection for OxIde now and DAP later.
 
 ## Non-Goals
 
@@ -117,4 +156,5 @@ Current execution state:
 This workset is complete only when:
 - the OxVba debugger core exists and is host-consumable,
 - OxIde can debug OxVba code without native debuggers,
+- strong debugger validation exists across unit, integration, and transcript lanes,
 - and the path to a VS Code DAP adapter is explicit and technically credible.

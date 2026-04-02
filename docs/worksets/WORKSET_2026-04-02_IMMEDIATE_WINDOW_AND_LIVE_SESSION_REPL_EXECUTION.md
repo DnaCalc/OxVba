@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Purpose
 
@@ -96,8 +96,46 @@ Later, during debug break state, the same evaluator should support:
 2. define the typed immediate evaluator contract
 3. implement non-debug live-session evaluator core
 4. add CLI REPL/immediate shell
-5. document OxIde integration shape
-6. define debugger-context extension path against the debugger workset
+5. add immediate-window-focused unit and behavior coverage
+6. add transcript and real-example integration scenarios
+7. document OxIde integration shape
+8. define debugger-context extension path against the debugger workset
+
+## Validation Strategy
+
+Immediate Window delivery is not complete on evaluator shape or CLI shell alone.
+This lane must carry strong validation in three layers:
+
+### 1. Unit and behavior coverage
+
+Required:
+- expression evaluation
+- statement execution
+- `? expr` / `Print`-style result projection
+- assignment and persistent session-state mutation
+- diagnostics and error-reset behavior
+- explicit reset and reload semantics
+
+These tests should target the evaluator core directly and aim for high semantic-path coverage.
+
+### 2. Real-example integration scenarios
+
+Required:
+- repeated immediate commands against one live session
+- interaction with procedure-created and module-level state
+- realistic CLI REPL transcripts over example projects
+- later, paused debug-context evaluation over the same evaluator core
+
+These scenarios should use real OxVba examples rather than only isolated evaluator stubs.
+
+### 3. Transcript/golden behavior tests
+
+Required:
+- deterministic REPL transcripts
+- deterministic typed-value output snapshots
+- reset/reload transcript coverage
+
+These provide regression protection for both CLI and future OxIde Immediate Window presentation.
 
 ## Relationships
 
@@ -121,4 +159,5 @@ This workset is complete only when:
 - OxVba has a real live-session immediate evaluator,
 - CLI exposes it as a REPL/immediate shell,
 - the OxIde Immediate Window consumption path is explicit,
+- strong validation exists across unit, integration, and transcript lanes,
 - and the debugger-context extension path is defined rather than implied.
