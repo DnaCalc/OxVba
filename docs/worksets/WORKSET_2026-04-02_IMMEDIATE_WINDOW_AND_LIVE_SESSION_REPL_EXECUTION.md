@@ -4,6 +4,16 @@ Date: 2026-04-02
 Owner: Codex
 Status: in-progress
 
+## Near-Term Priority
+
+This lane now has higher delivery priority than the debugger lane and than the current VS Code, wrapper/native-hosting, web/wasm, and XLL execution lanes.
+
+The intended near-term order is:
+1. non-debug Immediate Window / CLI REPL contract and core,
+2. CLI shell and validation,
+3. later debugger-context Immediate Window layering,
+4. then debugger, VS Code, wrapper, web/wasm, and XLL follow-on lanes as separate consumers or siblings.
+
 ## Purpose
 
 Define and deliver an OxVba-side Immediate Window / REPL capability that evaluates VBA statements and expressions against a live compiled runtime session instead of forcing a full compile/run/debug cycle for each interaction.
@@ -59,6 +69,7 @@ Later, during debug break state, the same evaluator should support:
 3. CLI exposes the evaluator through a bounded REPL surface.
 4. The path to OxIde Immediate Window integration is explicit.
 5. The later debugger-context Immediate Window path is explicit and layered on the debugger workset.
+6. The non-debug Immediate Window lane is the current preferred interactive-host priority ahead of debugger and alternate-editor follow-on work.
 
 ## Main Design Questions
 

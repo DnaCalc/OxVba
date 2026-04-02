@@ -4,6 +4,12 @@ Date: 2026-04-02
 Owner: Codex
 Status: in-progress
 
+## Near-Term Priority Position
+
+This lane remains important, but it is no longer the highest-priority interactive-host lane.
+
+Immediate Window / live-session REPL work now comes first for near-term delivery, with debugger-context evaluation layering on afterward.
+
 ## Purpose
 
 Define and deliver the first real OxVba debugging substrate for host IDEs, with OxIde as the direct showcase consumer and VS Code as a later DAP consumer.
@@ -91,6 +97,8 @@ These are useful, but they should layer on top of the semantic debugger rather t
 5. add debugger-focused unit and behavior coverage with high semantic-path coverage
 6. add OxIde-facing debug harness/evidence and real-example integration scenarios
 7. later add DAP projection for VS Code
+
+This debugger lane should therefore proceed after the current non-debug Immediate Window slices, except where shared substrate work is explicitly needed by a dependent immediate-window bead.
 8. later add Windows-specific COM/Office debug helpers where justified
 
 Current execution state:

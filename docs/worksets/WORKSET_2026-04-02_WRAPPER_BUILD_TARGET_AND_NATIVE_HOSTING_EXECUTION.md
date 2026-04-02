@@ -4,6 +4,10 @@ Date: 2026-04-02
 Owner: Codex
 Status: planned
 
+## Near-Term Priority Position
+
+This packaging/native-hosting lane remains planned follow-on work and is lower priority than the current Immediate Window / live-session REPL lane.
+
 ## Purpose
 
 Refresh and continue the older wrapper-builder planning into a current execution lane for:

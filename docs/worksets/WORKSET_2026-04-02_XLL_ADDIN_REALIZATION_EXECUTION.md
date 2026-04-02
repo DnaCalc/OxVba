@@ -4,6 +4,10 @@ Date: 2026-04-02
 Owner: Codex
 Status: planned
 
+## Near-Term Priority Position
+
+This XLL lane remains downstream of both wrapper/native-hosting substrate work and the current higher-priority Immediate Window / live-session REPL lane.
+
 ## Purpose
 
 Execute the first honest OxVba XLL/add-in delivery lane on top of the wrapper/native-hosting substrate.

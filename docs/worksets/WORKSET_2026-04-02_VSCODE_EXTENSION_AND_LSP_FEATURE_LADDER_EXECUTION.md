@@ -4,6 +4,10 @@ Date: 2026-04-02
 Owner: Codex
 Status: planned
 
+## Near-Term Priority Position
+
+This is an alternate-editor lane and is intentionally lower priority than the current OxIde-facing Immediate Window / live-session REPL work.
+
 ## Purpose
 
 Deliver a credible alternate-editor integration for OxVba in VS Code by:
