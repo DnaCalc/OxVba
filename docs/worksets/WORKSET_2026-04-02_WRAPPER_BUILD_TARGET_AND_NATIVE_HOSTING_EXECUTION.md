@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Near-Term Priority Position
 
@@ -53,6 +53,11 @@ What is still largely unstarted is the packaging/hosting layer above that:
 3. implement wrapper DLL/shared-library generation
 4. validate launch/config/reference behavior under wrapper outputs
 5. establish the handoff boundary to COM server and XLL lanes
+
+Current execution state:
+- workset is now the active execution owner for wrapper/native-hosting work
+- the next delivery slice is the explicit `BuildTarget` and wrapper-boundary model
+- wrapper EXE/DLL packaging remains unstarted until that model lands
 
 ## Relationship To Prior Work
 
