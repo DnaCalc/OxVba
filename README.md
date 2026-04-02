@@ -814,6 +814,41 @@ oxvba run-project . --profile windows-stdio --jit
 oxvba run-project .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
+### `oxvba repl [PATH]` / `oxvba immediate [PATH]`
+
+Starts the bounded v1 Immediate Window shell over one live compiled project session.
+
+Current v1 scope:
+- invoke existing project procedures against a persistent session
+- keep module-level state alive across repeated calls
+- reset the live session without leaving the shell
+
+Useful commands:
+- `.help`
+- `.quit` / `.exit`
+- `.module <ModuleName>` to set the default module for unqualified calls
+- `reset` to reload the live session
+
+Examples:
+
+```powershell
+oxvba repl .\demo-app --module MainModule
+oxvba immediate .\scratch-app
+```
+
+Example interaction:
+
+```text
+immediate> .module MainModule
+module: MainModule
+immediate> ? GetValue(21)
+42
+immediate> Call IncrementCounter()
+ok: MainModule.IncrementCounter => 1
+immediate> reset
+reset
+```
+
 ### `oxvba build [PATH]`
 
 Builds a discovered project target into an `.oxb` bundle.

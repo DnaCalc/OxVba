@@ -4,10 +4,12 @@ use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
 use oxvba_host::{
-    Engine, HostConfig, RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
+    Engine, HostConfig, ImmediateEvaluationOutput, ImmediateEvaluationRequest, ImmediateSession,
+    RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
     resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{RuntimeValue, bstr::BStr, value_tags::EMPTY_TAG};
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -19,6 +21,7 @@ fn main() {
         Some("compile") => run_compile(cli_args),
         Some("build") => run_build(cli_args),
         Some("com-ref") => run_com_ref(cli_args),
+        Some("repl") | Some("immediate") => run_immediate(cli_args),
         Some("run-project") => run_project(cli_args),
         Some("explain") | Some("host-check") => run_explain(cli_args),
         Some("init") => run_init(cli_args),
@@ -223,6 +226,60 @@ fn run_project(args: Vec<String>) {
     }
 }
 
+fn run_immediate(args: Vec<String>) {
+    let parsed = parse_immediate_args_from(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba repl|immediate [path] [--module <ModuleName>] [--project-ref <path>] [--com-ref <lib-or-lib=importlib>] [--native-ref <path>] [runtime/bootstrap options]"
+        );
+        std::process::exit(2);
+    });
+
+    let mut loaded = load_run_project_target(parsed.input_path).unwrap_or_else(|err| {
+        eprintln!("oxvba repl: {err}");
+        std::process::exit(1);
+    });
+    apply_cli_reference_overrides(&mut loaded, &parsed.references).unwrap_or_else(|err| {
+        eprintln!("oxvba repl: {err}");
+        std::process::exit(2);
+    });
+
+    let config = HostConfig {
+        enable_jit: false,
+        root_object_name: Some(loaded.default_root_object.clone()),
+    };
+    let mut engine = Engine::new(config);
+    let resolved =
+        resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba repl: bootstrap failed: {err}");
+                std::process::exit(2);
+            });
+    engine.set_runtime_profile(resolved.runtime_profile);
+    engine.set_host_policy(resolved.policy.clone());
+    if parsed.dump_bootstrap {
+        println!("BOOTSTRAP:{}", resolved.fingerprint());
+    }
+
+    let mut session = engine
+        .prepare_immediate_session(&loaded.manifest)
+        .unwrap_or_else(|err| {
+            eprintln!("oxvba repl: {err}");
+            std::process::exit(1);
+        });
+    session.set_default_target_module(parsed.default_module);
+
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let mut input = stdin.lock();
+    let mut output = stdout.lock();
+    let mut errors = stderr.lock();
+    if let Err(err) = run_immediate_shell(&mut session, &mut input, &mut output, &mut errors) {
+        eprintln!("oxvba repl: {err}");
+        std::process::exit(1);
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RunProjectArgs {
     input_path: Option<PathBuf>,
@@ -232,6 +289,15 @@ struct RunProjectArgs {
     dump_bootstrap: bool,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
+    references: CliReferenceArgs,
+}
+
+#[derive(Debug, Clone)]
+struct ImmediateArgs {
+    input_path: Option<PathBuf>,
+    dump_bootstrap: bool,
+    bootstrap: RunnerBootstrapOptions,
+    default_module: Option<String>,
     references: CliReferenceArgs,
 }
 
@@ -358,6 +424,209 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         entry_point_override,
         references,
     })
+}
+
+fn parse_immediate_args_from(args: Vec<String>) -> Option<ImmediateArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "repl" && cmd != "immediate" {
+        return None;
+    }
+
+    let collected: Vec<String> = iter.collect();
+    let mut input_path: Option<PathBuf> = None;
+    let mut dump_bootstrap = false;
+    let mut bootstrap = RunnerBootstrapOptions::default();
+    let mut default_module: Option<String> = None;
+    let mut references = CliReferenceArgs::default();
+
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--dump-bootstrap" => dump_bootstrap = true,
+            "--module" => {
+                i += 1;
+                default_module = collected.get(i).cloned();
+            }
+            "--config" => {
+                i += 1;
+                bootstrap.config_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--profile" => {
+                i += 1;
+                bootstrap.profile = Some(collected.get(i)?.clone());
+            }
+            "--policy" => {
+                i += 1;
+                bootstrap.policy_preset = Some(collected.get(i)?.clone());
+            }
+            "--runtime-class" => {
+                i += 1;
+                bootstrap.overrides.runtime_class = Some(parse_runtime_class(collected.get(i)?)?);
+            }
+            "--allow-interaction" => {
+                i += 1;
+                bootstrap.overrides.allow_interaction = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-process-spawn" => {
+                i += 1;
+                bootstrap.overrides.allow_process_spawn = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-filesystem-mutation" => {
+                i += 1;
+                bootstrap.overrides.allow_filesystem_mutation =
+                    Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-dynamic-link" => {
+                i += 1;
+                bootstrap.overrides.allow_dynamic_link = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-com-activation" => {
+                i += 1;
+                bootstrap.overrides.allow_com_activation = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--deterministic-mode" => {
+                i += 1;
+                bootstrap.overrides.deterministic_mode = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--ui-virtualization" => {
+                i += 1;
+                bootstrap.overrides.ui_virtualization =
+                    Some(parse_ui_virtualization(collected.get(i)?)?);
+            }
+            "--unsupported-mode" => {
+                i += 1;
+                bootstrap.overrides.unsupported_feature_mode =
+                    Some(parse_unsupported_mode(collected.get(i)?)?);
+            }
+            "--wasm-runtime-class" => {
+                i += 1;
+                bootstrap.overrides.wasm_runtime_class =
+                    Some(parse_wasm_runtime_class(collected.get(i)?)?);
+            }
+            "--project-ref" => {
+                i += 1;
+                references
+                    .project_refs
+                    .push(PathBuf::from(collected.get(i)?));
+            }
+            "--com-ref" => {
+                i += 1;
+                references
+                    .com_refs
+                    .push(parse_cli_com_reference(collected.get(i)?)?);
+            }
+            "--native-ref" => {
+                i += 1;
+                references
+                    .native_refs
+                    .push(oxvba_project::BasProjNativeReference {
+                        include: collected.get(i)?.clone(),
+                        path: Some(collected.get(i)?.clone()),
+                    });
+            }
+            value if !value.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(value));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(ImmediateArgs {
+        input_path,
+        dump_bootstrap,
+        bootstrap,
+        default_module,
+        references,
+    })
+}
+
+fn run_immediate_shell<R: BufRead, W: Write, E: Write>(
+    session: &mut ImmediateSession<'_>,
+    input: &mut R,
+    out: &mut W,
+    err: &mut E,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "OxVba Immediate Window (bounded v1). Use .help for commands, .quit to exit."
+    )?;
+    loop {
+        write!(out, "immediate> ")?;
+        out.flush()?;
+
+        let mut line = String::new();
+        if input.read_line(&mut line)? == 0 {
+            writeln!(out)?;
+            break;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.eq_ignore_ascii_case(".quit") || trimmed.eq_ignore_ascii_case(".exit") {
+            break;
+        }
+
+        if trimmed.eq_ignore_ascii_case(".help") {
+            writeln!(out, ".help                show this help")?;
+            writeln!(out, ".quit | .exit        leave the shell")?;
+            writeln!(out, ".module              show the current default module")?;
+            writeln!(
+                out,
+                ".module <name>       set the default module for unqualified calls"
+            )?;
+            writeln!(out, "reset                reset the live runtime session")?;
+            writeln!(out, "? Proc(1)            invoke and print a return value")?;
+            writeln!(out, "Call Proc(1)         invoke as a statement")?;
+            continue;
+        }
+
+        if trimmed.eq_ignore_ascii_case(".module") {
+            match session.default_target_module() {
+                Some(module) => writeln!(out, "module: {module}")?,
+                None => writeln!(out, "module: <none>")?,
+            }
+            continue;
+        }
+
+        if let Some(module_name) = trimmed.strip_prefix(".module ") {
+            let module_name = module_name.trim();
+            if module_name.is_empty() {
+                writeln!(err, "immediate: module name cannot be empty")?;
+            } else {
+                session.set_default_target_module(Some(module_name.to_string()));
+                writeln!(out, "module: {module_name}")?;
+            }
+            continue;
+        }
+
+        match session.evaluate(&ImmediateEvaluationRequest::new(trimmed)) {
+            Ok(result) => {
+                for diagnostic in result.diagnostics {
+                    writeln!(err, "immediate: {diagnostic}")?;
+                }
+                match result.output {
+                    ImmediateEvaluationOutput::Empty => {}
+                    ImmediateEvaluationOutput::Value(value) => {
+                        writeln!(out, "{}", value.display_text)?;
+                    }
+                    ImmediateEvaluationOutput::PrintedLine(line) => {
+                        writeln!(out, "{line}")?;
+                    }
+                    ImmediateEvaluationOutput::Reset => {
+                        writeln!(out, "reset")?;
+                    }
+                }
+            }
+            Err(err_value) => writeln!(err, "immediate: {err_value}")?,
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2021,11 +2290,15 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 mod tests {
     use super::{
         apply_cli_reference_overrides, default_build_output_path, load_run_project_target,
-        parse_cli_com_reference, parse_com_ref_args, parse_init_args_from, parse_run_args_from,
-        parse_run_project_args_from, resolve_project_runner_bootstrap, run_init,
+        parse_cli_com_reference, parse_com_ref_args, parse_immediate_args_from,
+        parse_init_args_from, parse_run_args_from, parse_run_project_args_from,
+        resolve_project_runner_bootstrap, run_immediate_shell, run_init,
     };
+    use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
     use oxvba_hal::model::{HostPolicyPreset, UnsupportedFeatureMode};
     use oxvba_host::{Engine, HostConfig, RunnerBootstrapOptions, RuntimeProfileId};
+    use std::collections::BTreeMap;
+    use std::io::Cursor;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -2152,6 +2425,75 @@ mod tests {
                 importlib: Some("scrrun.dll".to_string())
             }
         );
+    }
+
+    #[test]
+    fn parse_immediate_args_supports_module_and_reference_flags() {
+        let args = vec![
+            "repl".to_string(),
+            ".".to_string(),
+            "--module".to_string(),
+            "Main".to_string(),
+            "--profile".to_string(),
+            "windows-stdio".to_string(),
+            "--com-ref".to_string(),
+            "Scripting=scrrun.dll".to_string(),
+            "--native-ref".to_string(),
+            ".\\native\\helper.dll".to_string(),
+        ];
+
+        let parsed = parse_immediate_args_from(args).expect("args should parse");
+        assert_eq!(parsed.default_module.as_deref(), Some("Main"));
+        assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
+        assert_eq!(parsed.references.com_refs.len(), 1);
+        assert_eq!(parsed.references.native_refs.len(), 1);
+    }
+
+    #[test]
+    fn run_immediate_shell_supports_module_query_reset_and_quit() {
+        let manifest = ProjectManifest {
+            project_name: "ImmediateCli".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source(
+                    "Module1",
+                    ModuleKind::Procedural,
+                    r#"
+Dim counter As Integer
+
+Public Function IncrementCounter() As Integer
+    counter = counter + 1
+    IncrementCounter = counter
+End Function
+"#,
+                )
+                .expect("module unit"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+
+        let mut input = Cursor::new(
+            ".module Module1\nIncrementCounter()\nIncrementCounter()\nreset\nIncrementCounter()\n.quit\n",
+        );
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        run_immediate_shell(&mut session, &mut input, &mut output, &mut errors)
+            .expect("shell should succeed");
+
+        let output_text = String::from_utf8(output).expect("utf8 output");
+        assert!(output_text.contains("module: Module1"));
+        assert!(output_text.contains("immediate> 1"));
+        assert!(output_text.contains("immediate> 2"));
+        assert!(output_text.contains("immediate> reset"));
+        assert!(errors.is_empty(), "unexpected stderr: {:?}", errors);
     }
 
     #[test]
