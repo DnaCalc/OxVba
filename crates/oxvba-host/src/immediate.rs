@@ -149,6 +149,10 @@ impl<'engine> ImmediateSession<'engine> {
         self.runtime.snapshot()
     }
 
+    pub fn into_runtime(self) -> ProjectRuntimeSession {
+        self.runtime
+    }
+
     pub fn reset(
         &mut self,
         kind: ImmediateResetKind,

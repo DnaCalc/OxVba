@@ -47,7 +47,8 @@ Current execution state:
 - the typed desktop-first host bridge contract is now landed as the first substrate
 - the shell baseline crate and embedded frontend asset inventory are now landed over that bridge
 - real workspace load, run, and reset wiring now lands through the shell session and bridge commands
-- diagnostics/output enrichment and minimal immediate/debug-style command routing remain the next delivery lane
+- diagnostics updates, output events, and a bounded immediate command flow now land through the shell session
+- validation evidence and the honest browser-native wasm handoff are the remaining closure lane
 
 ## Relationship To Prior Work
 

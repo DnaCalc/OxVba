@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use oxvba_host::{Engine, HostConfig, PhaseDiagnostic, ProjectRuntimeSession};
+use oxvba_host::{
+    Engine, HostConfig, ImmediateEvaluationOutput, ImmediateSession, PhaseDiagnostic,
+    ProjectRuntimeSession,
+};
 use oxvba_languageservice::{DocumentId, HostWorkspaceSession};
 use oxvba_project::{LoadedProject, load_workspace_target};
 use oxvba_web_host::{
     WebDiagnostic, WebHostCommand, WebHostEvent, WebOutputStream, WebRunState,
-    project_workspace_loaded,
+    project_immediate_result, project_workspace_loaded,
 };
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +139,7 @@ impl WebShellSession {
             WebHostCommand::CloseDocument { document_id } => self.close_document(&document_id),
             WebHostCommand::RunProject => self.run_project(),
             WebHostCommand::ResetRuntime => self.reset_runtime(),
+            WebHostCommand::ImmediateEvaluate(request) => self.immediate_evaluate(request),
             other => Ok(vec![WebHostEvent::Error {
                 operation: format!("{other:?}"),
                 message: "command not yet wired in shell baseline".to_string(),
@@ -252,6 +256,55 @@ impl WebShellSession {
         ])
     }
 
+    fn immediate_evaluate(
+        &mut self,
+        request: oxvba_web_host::WebImmediateRequest,
+    ) -> Result<Vec<WebHostEvent>, WebShellError> {
+        let manifest = self
+            .loaded_project
+            .as_ref()
+            .ok_or(WebShellError::NoWorkspaceLoaded)?
+            .manifest
+            .clone();
+        let runtime = match self.runtime_session.take() {
+            Some(runtime) => runtime,
+            None => self
+                .engine
+                .compile_and_prepare_session(&manifest)
+                .map_err(map_phase_diagnostic)?,
+        };
+        let request = oxvba_host::ImmediateEvaluationRequest::from(request);
+        let target_module = request.target_module.clone();
+        let mut session = ImmediateSession::new(&self.engine, manifest, runtime);
+        if let Some(module_name) = target_module {
+            session.set_default_target_module(Some(module_name));
+        }
+        let result = session
+            .evaluate(&request)
+            .map_err(|err| WebShellError::Host(err.to_string()))?;
+        let runtime = session.into_runtime();
+        self.runtime_session = Some(runtime);
+
+        let immediate_result = project_immediate_result(&result.output, &result.diagnostics);
+        let mut events = vec![WebHostEvent::ImmediateResult(immediate_result)];
+        match &result.output {
+            ImmediateEvaluationOutput::PrintedLine(line) => {
+                events.push(WebHostEvent::OutputLine {
+                    stream: WebOutputStream::Stdout,
+                    text: line.clone(),
+                });
+            }
+            ImmediateEvaluationOutput::Value(value) => {
+                events.push(WebHostEvent::OutputLine {
+                    stream: WebOutputStream::Stdout,
+                    text: value.display_text.clone(),
+                });
+            }
+            ImmediateEvaluationOutput::Empty | ImmediateEvaluationOutput::Reset => {}
+        }
+        Ok(events)
+    }
+
     fn workspace_loaded_events(&self) -> Vec<WebHostEvent> {
         let workspace_session = self.workspace_session.as_ref().expect("workspace session");
         let workspace_path = self.workspace_path.as_ref().expect("workspace path");
@@ -309,7 +362,10 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use oxvba_web_host::{WebHostCommand, WebHostEvent, WebRunState};
+    use oxvba_web_host::{
+        WebHostCommand, WebHostEvent, WebImmediateDisplayStyle, WebImmediateInputKind,
+        WebImmediateOutput, WebRunState,
+    };
 
     use super::{ShellAssetKind, WebShellSession, embedded_assets, shell_manifest};
 
@@ -407,6 +463,51 @@ mod tests {
         assert!(reset_events.iter().any(
             |event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Idle))
         ));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn immediate_command_flows_through_shell_runtime() {
+        let temp_root = unique_temp_dir("oxvba_web_shell_immediate");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+        fs::write(
+            temp_root.join("Main.bas"),
+            "Attribute VB_Name = \"Main\"\nDim counter As Long\nPublic Function IncrementCounter() As Long\n    counter = counter + 1\n    IncrementCounter = counter\nEnd Function\n",
+        )
+        .expect("module");
+
+        let mut shell = WebShellSession::new();
+        shell.handle_command(WebHostCommand::LoadWorkspace {
+            path: temp_root.display().to_string(),
+        })
+        .expect("load");
+
+        let events = shell
+            .handle_command(WebHostCommand::ImmediateEvaluate(
+                oxvba_web_host::WebImmediateRequest {
+                    source_text: "IncrementCounter()".to_string(),
+                    kind: WebImmediateInputKind::Auto,
+                    display_style: WebImmediateDisplayStyle::ImmediateWindow,
+                    target_module: Some("Main".to_string()),
+                },
+            ))
+            .expect("immediate");
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WebHostEvent::ImmediateResult(result)
+                if matches!(result.output, WebImmediateOutput::Value { .. })
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WebHostEvent::OutputLine { text, .. } if text == "1"
+        )));
 
         let _ = fs::remove_dir_all(&temp_root);
     }
