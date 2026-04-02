@@ -157,3 +157,18 @@ This workset is complete only when:
 - the public host-facing interface is explicit rather than implied,
 - the next executable OxIde-facing OxVba API slices are tracked as beads,
 - and the VS Code alternate integration lane is explicitly tracked rather than hand-waved.
+
+## Follow-On Split
+
+This workset remains the parent policy and ownership document for editor-facing host integration, but execution now splits into more concrete follow-on lanes:
+
+- OxIde direct-host continuation remains under this workset and the `bd-oxi1` bead tree.
+- VS Code extension delivery is split into:
+  - `docs/worksets/WORKSET_2026-04-02_VSCODE_EXTENSION_AND_LSP_FEATURE_LADDER_EXECUTION.md`
+- shared OxVba-code debugging is split into:
+  - `docs/worksets/WORKSET_2026-04-02_OXVBA_DEBUGGING_SERVICE_AND_HOST_INTEGRATION.md`
+
+That split reflects the intended architecture:
+- OxIde consumes direct Rust host APIs.
+- VS Code consumes `oxvba-lsp` plus an extension package.
+- Debugging should share one semantic OxVba-side debugger core, then project into OxIde directly and VS Code through DAP later.
