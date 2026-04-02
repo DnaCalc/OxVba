@@ -105,7 +105,8 @@ Current execution state:
 - workset and policy are published
 - debugger contract/spec is now published in `docs/spec/OXVBA_DEBUGGER_CONTRACT_V1.md`
 - the source/procedure identity substrate is now in place with candidate statement lines and emitted statement-entry PCs
-- the next delivery slice is VM breakpoint/pause execution over that substrate
+- a bounded VM debug-execution substrate is now in place with entry pause, breakpoints, continue, and step into/over/out over emitted statement identities
+- the next delivery slice is typed host-facing debug session APIs over that VM substrate
 
 ## Validation Strategy
 

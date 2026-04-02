@@ -16,7 +16,9 @@ use oxvba_hal::{
 };
 use oxvba_runtime::RuntimeValue;
 
-pub use interpreter::Vm;
+pub use interpreter::{
+    DebugBreakpoint, DebugRunResult, DebugSourceLocation, DebugStop, DebugStopReason, Vm,
+};
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
     let mut vm = Vm::new(default_host_services());

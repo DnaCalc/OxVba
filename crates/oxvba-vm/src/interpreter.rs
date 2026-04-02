@@ -65,11 +65,65 @@ struct ComWithEventsSubscription {
     route: ProjectComWithEventsRoute,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugBreakpoint {
+    pub module_name: String,
+    pub line_number: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugSourceLocation {
+    pub module_name: String,
+    pub procedure_name: String,
+    pub entry_pc: usize,
+    pub statement_pc: usize,
+    pub line_number: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DebugStopReason {
+    Entry,
+    Breakpoint,
+    Step,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugStop {
+    pub reason: DebugStopReason,
+    pub location: DebugSourceLocation,
+    pub call_stack_depth: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DebugRunResult {
+    Paused(DebugStop),
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DebugStepMode {
+    Into,
+    Over { depth: usize },
+    Out { depth: usize },
+}
+
+#[derive(Debug, Clone)]
+struct DebugRuntimeState {
+    current_pc: usize,
+    return_halts_when_stack_empty: bool,
+    breakpoints: Vec<DebugBreakpoint>,
+    pause_on_entry: bool,
+    skip_pause_once_at_pc: Option<usize>,
+    step_mode: Option<DebugStepMode>,
+    last_pause: Option<DebugStop>,
+}
+
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
     typed_fastpaths_default: bool,
     call_stack: Vec<(usize, ErrorFrame)>,
+    activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     project_dynamic_objects: HashMap<ObjectHandle, ProjectDynamicObjectRoute>,
     foreach_iterators: HashMap<i32, ForEachIteratorState>,
@@ -87,6 +141,7 @@ pub struct Vm {
     last_error_description: Option<String>,
     last_error_source: Option<String>,
     rnd_state: u32,
+    debug_runtime: Option<DebugRuntimeState>,
 }
 
 const FIN_MAX_ITERS: usize = 60;
@@ -115,6 +170,7 @@ impl Vm {
             host_services,
             typed_fastpaths_default: Self::typed_fastpaths_enabled_from_env(),
             call_stack: Vec::new(),
+            activation_entry_pcs: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
             project_dynamic_objects: HashMap::new(),
             foreach_iterators: HashMap::new(),
@@ -132,6 +188,7 @@ impl Vm {
             last_error_description: None,
             last_error_source: None,
             rnd_state: 0x50000,
+            debug_runtime: None,
         }
     }
 
@@ -246,6 +303,95 @@ impl Vm {
         }
     }
 
+    pub fn debug_set_breakpoints(&mut self, breakpoints: Vec<DebugBreakpoint>) {
+        if let Some(state) = &mut self.debug_runtime {
+            state.breakpoints = breakpoints;
+        } else {
+            self.debug_runtime = Some(DebugRuntimeState {
+                current_pc: 0,
+                return_halts_when_stack_empty: false,
+                breakpoints,
+                pause_on_entry: false,
+                skip_pause_once_at_pc: None,
+                step_mode: None,
+                last_pause: None,
+            });
+        }
+    }
+
+    pub fn debug_start(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        self.reset_execution_state(bytecode.slot_count, false);
+        let mut state = self.debug_runtime.take().unwrap_or(DebugRuntimeState {
+            current_pc: 0,
+            return_halts_when_stack_empty: false,
+            breakpoints: Vec::new(),
+            pause_on_entry: true,
+            skip_pause_once_at_pc: None,
+            step_mode: None,
+            last_pause: None,
+        });
+        state.current_pc = 0;
+        state.return_halts_when_stack_empty = false;
+        state.pause_on_entry = true;
+        state.skip_pause_once_at_pc = None;
+        state.step_mode = None;
+        state.last_pause = None;
+        self.debug_runtime = Some(state);
+        self.resume_debug_session(bytecode)
+    }
+
+    pub fn debug_continue(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        let state = self
+            .debug_runtime
+            .as_mut()
+            .ok_or_else(|| "debug session is not active".to_string())?;
+        state.pause_on_entry = false;
+        state.step_mode = None;
+        state.skip_pause_once_at_pc = Some(state.current_pc);
+        state.last_pause = None;
+        self.resume_debug_session(bytecode)
+    }
+
+    pub fn debug_step_into(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        let state = self
+            .debug_runtime
+            .as_mut()
+            .ok_or_else(|| "debug session is not active".to_string())?;
+        state.pause_on_entry = false;
+        state.step_mode = Some(DebugStepMode::Into);
+        state.skip_pause_once_at_pc = Some(state.current_pc);
+        state.last_pause = None;
+        self.resume_debug_session(bytecode)
+    }
+
+    pub fn debug_step_over(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        let state = self
+            .debug_runtime
+            .as_mut()
+            .ok_or_else(|| "debug session is not active".to_string())?;
+        state.pause_on_entry = false;
+        state.step_mode = Some(DebugStepMode::Over {
+            depth: self.activation_entry_pcs.len().max(1),
+        });
+        state.skip_pause_once_at_pc = Some(state.current_pc);
+        state.last_pause = None;
+        self.resume_debug_session(bytecode)
+    }
+
+    pub fn debug_step_out(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        let state = self
+            .debug_runtime
+            .as_mut()
+            .ok_or_else(|| "debug session is not active".to_string())?;
+        state.pause_on_entry = false;
+        state.step_mode = Some(DebugStepMode::Out {
+            depth: self.activation_entry_pcs.len().saturating_sub(1),
+        });
+        state.skip_pause_once_at_pc = Some(state.current_pc);
+        state.last_pause = None;
+        self.resume_debug_session(bytecode)
+    }
+
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
         self.execute_with_typed_fastpaths(bytecode, self.typed_fastpaths_default)
     }
@@ -256,7 +402,7 @@ impl Vm {
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         self.reset_execution_state(bytecode.slot_count, false);
-        self.execute_loop(bytecode, 0, typed_fastpaths, false)
+        self.execute_loop(bytecode, 0, 0, typed_fastpaths, false)
     }
 
     pub fn invoke_procedure_with_i32_args(
@@ -280,7 +426,13 @@ impl Vm {
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_legacy_scalar_slot(*slot, *value)?;
         }
-        self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
+        self.execute_loop(
+            bytecode,
+            entry_pc,
+            entry_pc,
+            self.typed_fastpaths_default,
+            true,
+        )
     }
 
     pub fn invoke_procedure_with_values(
@@ -318,7 +470,13 @@ impl Vm {
             self.write_value_slot(*slot, value.clone())?;
         }
 
-        let result = self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true);
+        let result = self.execute_loop(
+            bytecode,
+            entry_pc,
+            entry_pc,
+            self.typed_fastpaths_default,
+            true,
+        );
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -361,6 +519,7 @@ impl Vm {
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
         self.ensure_slot_count(slot_count);
         self.call_stack.clear();
+        self.activation_entry_pcs.clear();
         if !preserve_withevents_bindings {
             self.clear_all_com_withevents_state_best_effort();
             self.withevents_bindings.clear();
@@ -373,16 +532,122 @@ impl Vm {
         self.clear_error_state();
     }
 
+    fn resume_debug_session(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        let (entry_pc, return_halts_when_stack_empty) = {
+            let state = self
+                .debug_runtime
+                .as_ref()
+                .ok_or_else(|| "debug session is not active".to_string())?;
+            (state.current_pc, state.return_halts_when_stack_empty)
+        };
+        self.execute_loop(
+            bytecode,
+            entry_pc,
+            self.activation_entry_pcs.last().copied().unwrap_or(0),
+            self.typed_fastpaths_default,
+            return_halts_when_stack_empty,
+        )?;
+        let Some(state) = &self.debug_runtime else {
+            return Ok(DebugRunResult::Completed);
+        };
+        if let Some(stop) = state.last_pause.clone() {
+            Ok(DebugRunResult::Paused(stop))
+        } else {
+            self.debug_runtime = None;
+            Ok(DebugRunResult::Completed)
+        }
+    }
+
+    fn debug_metadata_for_entry_pc(&self, entry_pc: usize) -> Option<&ProcedureRuntimeMetadata> {
+        self.procedure_runtime_metadata
+            .values()
+            .find(|metadata| metadata.entry_pc == entry_pc)
+    }
+
+    fn debug_resolve_stop_location(&self, pc: usize) -> Option<DebugSourceLocation> {
+        let entry_pc = self.activation_entry_pcs.last().copied().unwrap_or(0);
+        let metadata = self.debug_metadata_for_entry_pc(entry_pc)?;
+        let statement_index = metadata
+            .statement_entry_pcs
+            .iter()
+            .position(|candidate| *candidate == pc)?;
+        Some(DebugSourceLocation {
+            module_name: metadata.module_name.clone(),
+            procedure_name: metadata.procedure_name.clone(),
+            entry_pc,
+            statement_pc: pc,
+            line_number: metadata.statement_line_numbers.get(statement_index).copied(),
+        })
+    }
+
+    fn debug_breakpoint_matches(breakpoint: &DebugBreakpoint, location: &DebugSourceLocation) -> bool {
+        location.line_number == Some(breakpoint.line_number)
+            && location
+                .module_name
+                .eq_ignore_ascii_case(&breakpoint.module_name)
+    }
+
+    fn maybe_pause_before_pc(&mut self, pc: usize) -> Option<DebugStop> {
+        let location = self.debug_resolve_stop_location(pc)?;
+        let current_depth = self.activation_entry_pcs.len().max(1);
+        let state = self.debug_runtime.as_mut()?;
+
+        if state.skip_pause_once_at_pc == Some(pc) {
+            state.skip_pause_once_at_pc = None;
+            return None;
+        }
+
+        let reason = if state.pause_on_entry {
+            state.pause_on_entry = false;
+            Some(DebugStopReason::Entry)
+        } else if state
+            .breakpoints
+            .iter()
+            .any(|breakpoint| Self::debug_breakpoint_matches(breakpoint, &location))
+        {
+            Some(DebugStopReason::Breakpoint)
+        } else {
+            match state.step_mode.clone() {
+                Some(DebugStepMode::Into) => Some(DebugStopReason::Step),
+                Some(DebugStepMode::Over { depth }) if current_depth <= depth => {
+                    Some(DebugStopReason::Step)
+                }
+                Some(DebugStepMode::Out { depth }) if current_depth <= depth => {
+                    Some(DebugStopReason::Step)
+                }
+                _ => None,
+            }
+        }?;
+
+        state.current_pc = pc;
+        state.step_mode = None;
+        let stop = DebugStop {
+            reason,
+            location,
+            call_stack_depth: current_depth,
+        };
+        state.last_pause = Some(stop.clone());
+        Some(stop)
+    }
+
     fn execute_loop(
         &mut self,
         bytecode: &Bytecode,
-        entry_pc: usize,
+        start_pc: usize,
+        activation_entry_pc: usize,
         typed_fastpaths: bool,
         return_halts_when_stack_empty: bool,
     ) -> Result<(), String> {
-        let mut pc = entry_pc;
+        let activation_depth = self.activation_entry_pcs.len();
+        if self.activation_entry_pcs.last().copied() != Some(activation_entry_pc) {
+            self.activation_entry_pcs.push(activation_entry_pc);
+        }
+        let mut pc = start_pc;
         let len = bytecode.instructions.len();
         while pc < len {
+            if self.maybe_pause_before_pc(pc).is_some() {
+                return Ok(());
+            }
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
                     // Use from_legacy_i32 for the special tag values (0=Empty,
@@ -2693,6 +2958,7 @@ impl Vm {
                     self.on_error_resume_next = false;
                     self.on_error_goto_label_target = None;
                     self.clear_error_state();
+                    self.activation_entry_pcs.push(*target_pc);
                     pc = *target_pc;
                 }
                 Instruction::SetOnErrorResumeNext => {
@@ -2754,6 +3020,9 @@ impl Vm {
                 }
                 Instruction::Return => {
                     if let Some((return_pc, saved_frame)) = self.call_stack.pop() {
+                        if !self.activation_entry_pcs.is_empty() {
+                            self.activation_entry_pcs.pop();
+                        }
                         // Restore caller's error-handling state.
                         self.on_error_resume_next = saved_frame.on_error_resume_next;
                         self.on_error_goto_label_target = saved_frame.on_error_goto_label_target;
@@ -2763,6 +3032,7 @@ impl Vm {
                         self.last_error_source = saved_frame.last_error_source;
                         pc = return_pc;
                     } else if return_halts_when_stack_empty {
+                        self.activation_entry_pcs.truncate(activation_depth);
                         break;
                     } else {
                         return Err("return with empty call stack".to_string());
@@ -2873,6 +3143,7 @@ impl Vm {
                 Instruction::Halt => break,
             }
         }
+        self.activation_entry_pcs.truncate(activation_depth);
         Ok(())
     }
 
@@ -3427,7 +3698,7 @@ impl Vm {
             self.write_value_slot(*slot, value.clone())?;
         }
 
-        let result = self.execute_loop(bytecode, entry_pc, typed_fastpaths, true);
+        let result = self.execute_loop(bytecode, entry_pc, entry_pc, typed_fastpaths, true);
         self.call_stack.truncate(call_stack_depth);
 
         // Restore caller's error handling mode.
@@ -4188,7 +4459,7 @@ impl Vm {
 
 #[cfg(test)]
 mod tests {
-    use super::Vm;
+    use super::{DebugBreakpoint, DebugRunResult, DebugStopReason, Vm};
     use oxvba_com::{
         ComValue, DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector,
     };
@@ -4210,6 +4481,26 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
+    fn debug_metadata(
+        module_name: &str,
+        procedure_name: &str,
+        entry_pc: usize,
+        statement_line_numbers: Vec<usize>,
+        statement_entry_pcs: Vec<usize>,
+    ) -> ProcedureRuntimeMetadata {
+        ProcedureRuntimeMetadata {
+            module_name: module_name.to_string(),
+            procedure_name: procedure_name.to_string(),
+            entry_pc,
+            source_line_start: statement_line_numbers.first().copied().unwrap_or(1),
+            source_line_end: statement_line_numbers.last().copied().unwrap_or(1),
+            statement_line_numbers,
+            statement_entry_pcs,
+            param_slots: Vec::new(),
+            return_slot: None,
+        }
+    }
+
     #[test]
     fn executes_load_and_add_sequence() {
         let bytecode = Bytecode {
@@ -4226,6 +4517,125 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![15]);
+    }
+
+    #[test]
+    fn debug_start_pauses_on_entry_and_breakpoint_then_completes() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 10 },
+                Instruction::LoadConstI32 { slot: 1, value: 20 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "main".to_string(),
+            debug_metadata("MainModule", "Main", 0, vec![2, 3], vec![0, 1]),
+        );
+
+        let mut vm = Vm::default();
+        vm.set_project_procedure_runtime_metadata(metadata);
+        vm.debug_set_breakpoints(vec![DebugBreakpoint {
+            module_name: "MainModule".to_string(),
+            line_number: 3,
+        }]);
+
+        let start = vm.debug_start(&bytecode).expect("debug start should pause");
+        let DebugRunResult::Paused(start_pause) = start else {
+            panic!("expected initial pause");
+        };
+        assert_eq!(start_pause.reason, DebugStopReason::Entry);
+        assert_eq!(start_pause.location.statement_pc, 0);
+        assert_eq!(start_pause.location.line_number, Some(2));
+
+        let next = vm
+            .debug_continue(&bytecode)
+            .expect("continue should hit breakpoint");
+        let DebugRunResult::Paused(breakpoint_pause) = next else {
+            panic!("expected breakpoint pause");
+        };
+        assert_eq!(breakpoint_pause.reason, DebugStopReason::Breakpoint);
+        assert_eq!(breakpoint_pause.location.statement_pc, 1);
+        assert_eq!(breakpoint_pause.location.line_number, Some(3));
+
+        assert_eq!(
+            vm.debug_continue(&bytecode)
+                .expect("final continue should complete"),
+            DebugRunResult::Completed
+        );
+    }
+
+    #[test]
+    fn debug_step_over_skips_nested_call_and_step_into_and_out_track_depth() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::CallProc { target_pc: 3 },
+                Instruction::LoadConstI32 { slot: 0, value: 7 },
+                Instruction::Halt,
+                Instruction::LoadConstI32 { slot: 1, value: 9 },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "main".to_string(),
+            debug_metadata("MainModule", "Main", 0, vec![2, 3], vec![0, 1]),
+        );
+        metadata.insert(
+            "foo".to_string(),
+            debug_metadata("HelperModule", "Foo", 3, vec![10], vec![3]),
+        );
+
+        let mut vm = Vm::default();
+        vm.set_project_procedure_runtime_metadata(metadata.clone());
+        let DebugRunResult::Paused(entry_pause) =
+            vm.debug_start(&bytecode).expect("debug start should pause")
+        else {
+            panic!("expected entry pause");
+        };
+        assert_eq!(entry_pause.location.statement_pc, 0);
+
+        let DebugRunResult::Paused(step_over_pause) =
+            vm.debug_step_over(&bytecode).expect("step over should pause")
+        else {
+            panic!("expected step-over pause");
+        };
+        assert_eq!(step_over_pause.reason, DebugStopReason::Step);
+        assert_eq!(step_over_pause.location.statement_pc, 1);
+        assert_eq!(step_over_pause.call_stack_depth, 1);
+
+        let mut vm = Vm::default();
+        vm.set_project_procedure_runtime_metadata(metadata);
+        let DebugRunResult::Paused(_) = vm.debug_start(&bytecode).expect("debug start should pause")
+        else {
+            panic!("expected entry pause");
+        };
+        let DebugRunResult::Paused(step_into_pause) =
+            vm.debug_step_into(&bytecode).expect("step into should pause in callee")
+        else {
+            panic!("expected step-into pause");
+        };
+        assert_eq!(step_into_pause.reason, DebugStopReason::Step);
+        assert_eq!(step_into_pause.location.statement_pc, 3);
+        assert_eq!(step_into_pause.location.procedure_name, "Foo");
+        assert_eq!(step_into_pause.call_stack_depth, 2);
+
+        let DebugRunResult::Paused(step_out_pause) =
+            vm.debug_step_out(&bytecode).expect("step out should return to caller")
+        else {
+            panic!("expected step-out pause");
+        };
+        assert_eq!(step_out_pause.reason, DebugStopReason::Step);
+        assert_eq!(step_out_pause.location.statement_pc, 1);
+        assert_eq!(step_out_pause.location.procedure_name, "Main");
+        assert_eq!(step_out_pause.call_stack_depth, 1);
     }
 
     #[test]

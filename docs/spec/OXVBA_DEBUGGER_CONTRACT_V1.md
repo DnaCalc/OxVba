@@ -62,9 +62,16 @@ Current bounded landing:
 - procedure runtime metadata carries module/procedure identity,
 - source line start/end,
 - candidate source statement lines,
-- and top-level emitted statement-entry PCs.
+- top-level emitted statement-entry PCs,
+- and a VM-backed paused execution substrate with:
+  - entry pause,
+  - line breakpoints,
+  - continue,
+  - step into,
+  - step over,
+  - step out.
 
-That is enough substrate to begin semantic stop planning honestly, but not yet enough for final breakpoint/step resolution across all nested control-flow shapes. The zippering layer remains part of the next debugger execution bead.
+That is enough substrate to begin semantic stop planning honestly and to exercise bounded stepping behavior over simple procedure/call shapes, but not yet enough for final breakpoint/step resolution across all nested control-flow shapes. The zippering and richer paused-state projection layers remain later debugger beads.
 
 ## Execution Model
 
