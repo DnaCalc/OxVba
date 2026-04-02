@@ -1015,6 +1015,7 @@ For the honest capability ladder, current showcase, exact non-goals, and the spl
 - [docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md](docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md)
 - [docs/LANGUAGE_SERVICE_SHOWCASE.md](docs/LANGUAGE_SERVICE_SHOWCASE.md)
 - [docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md](docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md)
+- [docs/spec/OXVBA_IMMEDIATE_EVALUATOR_CONTRACT_V1.md](docs/spec/OXVBA_IMMEDIATE_EVALUATOR_CONTRACT_V1.md)
 
 ## Current Limits
 

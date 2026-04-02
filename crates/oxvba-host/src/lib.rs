@@ -2,10 +2,19 @@
 
 pub mod engine;
 pub mod events;
+pub mod immediate;
 pub mod project;
 pub mod runner;
 
-pub use engine::{ComEventCallbackDispatch, Engine, HostConfig, ProjectRuntimeSession};
+pub use engine::{
+    ComEventCallbackDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
+    ProjectRuntimeSession,
+};
+pub use immediate::{
+    ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
+    ImmediateEvaluationResult, ImmediateInputKind, ImmediateResetKind, ImmediateSession,
+    ImmediateSessionError, ImmediateValueProjection,
+};
 pub use project::{
     GraphPublicSymbolResolution, HostExportKind, HostProcedureExport, ModuleAttributes, ModuleKind,
     ModuleNode, Project, ProjectGraph, ProjectKind, ProjectModelError, ProjectNode,

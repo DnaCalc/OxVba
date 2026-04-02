@@ -9,7 +9,7 @@ The key split is:
 
 ## Public Host Surface Today
 
-Today the real direct host surface is spread across two crates:
+Today the real direct host surface is spread across three crates:
 
 ### `oxvba-languageservice`
 
@@ -56,6 +56,20 @@ This is the right crate for:
 - module/class/reference authoring,
 - file-name versus logical-name reconciliation,
 - project-model truth that should not be reimplemented in the IDE.
+
+### `oxvba-host`
+
+This crate currently exports the direct runtime/session ladder:
+- `Engine`
+- `ProjectRuntimeSession`
+- the first bounded immediate-session contract via `ImmediateSession`
+- typed immediate request/result/output shapes for future CLI and OxIde consumption
+
+This is the right crate for:
+- live runtime-session ownership,
+- direct host-side build/run/invoke pathways,
+- Immediate Window / REPL session semantics,
+- later debugger and paused-context runtime session surfaces.
 
 ## Public Host Surface Policy
 
@@ -123,6 +137,8 @@ Use:
 - `oxvba_project::host_helpers::*`
 - `oxvba_project::inspect_workspace_target`
 - `oxvba_project::assess_project_com_selections`
+- `oxvba_host::Engine`
+- `oxvba_host::ImmediateSession`
 - `oxvba_languageservice::LanguageService`
 - `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`
