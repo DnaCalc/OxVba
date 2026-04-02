@@ -45,7 +45,8 @@ That recommendation now needs a current execution owner and bead root.
 Current execution state:
 - this workset is now the active execution owner for the remaining ready web/wasm lane
 - the typed desktop-first host bridge contract is now landed as the first substrate
-- shell packaging and frontend wiring remain the next real delivery lane over that explicit bridge
+- the shell baseline crate and embedded frontend asset inventory are now landed over that bridge
+- real workspace load, run, and reset wiring remain the next delivery lane
 
 ## Relationship To Prior Work
 
