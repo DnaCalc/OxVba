@@ -388,4 +388,52 @@ mod tests {
         assert_eq!(y.value.runtime_value, RuntimeValue::I32(4));
         assert_eq!(y.value.kind, DebugFrameValueKind::Parameter);
     }
+
+    #[test]
+    fn debug_session_pause_state_is_absent_before_start_and_after_completion() {
+        let manifest = make_manifest("Sub Main()\nEnd Sub");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_debug_session(&manifest)
+            .expect("debug session should prepare");
+        assert_eq!(
+            session.current_pause_state().expect("pause query should succeed"),
+            None
+        );
+        assert!(matches!(
+            session.start().expect("debug start should complete"),
+            HostDebugRunResult::Completed
+        ));
+        assert_eq!(
+            session.current_pause_state().expect("pause query should succeed"),
+            None
+        );
+    }
+
+    #[test]
+    fn debug_session_rejects_non_identifier_and_unknown_name_evaluation() {
+        let manifest = make_manifest("Sub Main()\nDim answer As Long\nanswer = 42\nEnd Sub");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_debug_session(&manifest)
+            .expect("debug session should prepare");
+        let HostDebugRunResult::Paused(_) = session.start().expect("debug start should pause")
+        else {
+            panic!("expected entry pause");
+        };
+        let unsupported = session
+            .evaluate(&DebugEvaluationRequest::new("answer + 1"))
+            .expect_err("non-identifier expression should be rejected");
+        assert!(matches!(
+            unsupported,
+            super::DebugSessionError::UnsupportedEvaluation { .. }
+        ));
+        let unknown = session
+            .evaluate(&DebugEvaluationRequest::new("missingValue"))
+            .expect_err("unknown name should be rejected");
+        assert!(matches!(
+            unknown,
+            super::DebugSessionError::UnknownVisibleName { .. }
+        ));
+    }
 }

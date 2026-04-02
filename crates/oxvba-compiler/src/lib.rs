@@ -115,7 +115,9 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 
 #[cfg(test)]
 mod tests {
-    use super::{Instruction, compile, compile_with_runtime_metadata};
+    use super::{
+        Instruction, ProcedureRuntimeSlotKind, compile, compile_with_runtime_metadata,
+    };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
     };
@@ -188,6 +190,31 @@ mod tests {
                 Instruction::Halt
             ]
         );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_projects_named_slot_kinds() {
+        let source = "Function AddOne(ByVal value As Long) As Long\n\
+                      Dim localValue As Long\n\
+                      localValue = value + 1\n\
+                      AddOne = localValue\n\
+                      End Function";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let add_one = metadata
+            .get("addone")
+            .expect("function metadata should be present");
+        assert!(add_one.slots.iter().any(|slot| {
+            slot.name.eq_ignore_ascii_case("value") && slot.kind == ProcedureRuntimeSlotKind::Parameter
+        }));
+        assert!(add_one.slots.iter().any(|slot| {
+            slot.name.eq_ignore_ascii_case("localvalue")
+                && slot.kind == ProcedureRuntimeSlotKind::Local
+        }));
+        assert!(add_one.slots.iter().any(|slot| {
+            slot.name.eq_ignore_ascii_case("addone")
+                && slot.kind == ProcedureRuntimeSlotKind::ReturnValue
+        }));
     }
 
     #[test]
