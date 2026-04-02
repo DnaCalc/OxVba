@@ -262,6 +262,14 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
                 _ => None,
             };
         }
+        "BuildTarget" => {
+            props.build_target = match value {
+                "Bundle" => Some(BuildTarget::Bundle),
+                "WrapperExe" => Some(BuildTarget::WrapperExe),
+                "WrapperLibrary" => Some(BuildTarget::WrapperLibrary),
+                _ => None,
+            };
+        }
         "ProjectName" => props.project_name = Some(value.to_string()),
         "EntryPoint" => props.entry_point = Some(value.to_string()),
         "RuntimeFlavor" => {

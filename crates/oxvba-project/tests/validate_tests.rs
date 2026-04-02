@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use oxvba_compiler::{
     Bytecode, CompiledProject, DeclareParamType, ExportKind, HostProcedureExport,
-    ProcedureRuntimeMetadata, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotMetadata, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
 };
 use oxvba_project::validate::{validate_com_class_exports, validate_native_exports};
 use oxvba_project::{
@@ -60,6 +60,27 @@ fn make_native_export(
     }
 }
 
+fn make_runtime_metadata(
+    module_name: &str,
+    procedure_name: &str,
+    entry_pc: usize,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+) -> ProcedureRuntimeMetadata {
+    ProcedureRuntimeMetadata {
+        module_name: module_name.to_string(),
+        procedure_name: procedure_name.to_string(),
+        entry_pc,
+        source_line_start: 1,
+        source_line_end: 1,
+        statement_line_numbers: vec![1],
+        statement_entry_pcs: vec![entry_pc],
+        slots: Vec::<ProcedureRuntimeSlotMetadata>::new(),
+        param_slots,
+        return_slot,
+    }
+}
+
 /// Helper: build a `BasProjModule` for a class module with the given
 /// `vb_exposed` and `vb_creatable` flags.
 fn make_class_module(include: &str, vb_exposed: bool, vb_creatable: bool) -> BasProjModule {
@@ -93,11 +114,7 @@ fn valid_native_export_resolves_kind_and_params() {
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "mathutils.addtwo".to_string(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 0,
-            param_slots: vec![1, 2],
-            return_slot: Some(3),
-        },
+        make_runtime_metadata("MathUtils", "AddTwo", 0, vec![1, 2], Some(3)),
     );
 
     let compiled = make_compiled_project(host_exports, metadata, Vec::new());
@@ -132,11 +149,7 @@ fn valid_native_export_sub_with_no_return_slot() {
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "helpers.dowork".to_string(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 0,
-            param_slots: vec![1],
-            return_slot: None,
-        },
+        make_runtime_metadata("Helpers", "DoWork", 0, vec![1], None),
     );
 
     let compiled = make_compiled_project(host_exports, metadata, Vec::new());
@@ -516,11 +529,7 @@ fn case_insensitive_module_and_procedure_lookup() {
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "mathutils.addtwo".to_string(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 0,
-            param_slots: vec![1, 2, 3],
-            return_slot: Some(4),
-        },
+        make_runtime_metadata("MathUtils", "AddTwo", 0, vec![1, 2, 3], Some(4)),
     );
 
     let compiled = make_compiled_project(host_exports, metadata, Vec::new());
@@ -597,19 +606,11 @@ fn multiple_native_exports_all_resolve() {
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "m.a".to_string(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 0,
-            param_slots: vec![1],
-            return_slot: Some(2),
-        },
+        make_runtime_metadata("M", "A", 0, vec![1], Some(2)),
     );
     metadata.insert(
         "m.b".to_string(),
-        ProcedureRuntimeMetadata {
-            entry_pc: 10,
-            param_slots: Vec::new(),
-            return_slot: None,
-        },
+        make_runtime_metadata("M", "B", 10, Vec::new(), None),
     );
 
     let compiled = make_compiled_project(host_exports, metadata, Vec::new());

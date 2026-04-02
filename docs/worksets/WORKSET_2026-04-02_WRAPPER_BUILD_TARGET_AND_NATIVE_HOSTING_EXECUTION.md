@@ -56,8 +56,8 @@ What is still largely unstarted is the packaging/hosting layer above that:
 
 Current execution state:
 - workset is now the active execution owner for wrapper/native-hosting work
-- the next delivery slice is the explicit `BuildTarget` and wrapper-boundary model
-- wrapper EXE/DLL packaging remains unstarted until that model lands
+- the explicit `BuildTarget` and wrapper-boundary model is now landed in the project system and `.basproj` spec
+- wrapper EXE/DLL packaging remains the next real delivery lane on top of that substrate
 
 ## Relationship To Prior Work
 

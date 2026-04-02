@@ -28,6 +28,7 @@ pub struct BasProj {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BasProjProperties {
     pub output_type: Option<OutputType>,
+    pub build_target: Option<BuildTarget>,
     pub project_name: Option<String>,
     pub entry_point: Option<String>,
     pub runtime_flavor: Option<RuntimeFlavor>,
@@ -46,6 +47,14 @@ pub enum OutputType {
     Addin,
     ComServer,
     ComExe,
+}
+
+/// Physical packaging/build shape for the project artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildTarget {
+    Bundle,
+    WrapperExe,
+    WrapperLibrary,
 }
 
 /// COM class instancing mode.

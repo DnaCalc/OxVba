@@ -904,6 +904,7 @@ fn run_init_from_convention(target_dir: &Path) {
     let xml = oxvba_project::generate_basproj_xml(
         &loaded.manifest,
         loaded.output_type,
+        Some(loaded.build_target),
         loaded.entry_point.as_deref(),
         Some(loaded.runtime_flavor),
         loaded.default_runtime_profile.as_deref(),

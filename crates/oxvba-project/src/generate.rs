@@ -28,6 +28,11 @@ pub fn serialize_basproj_xml(basproj: &BasProj) -> String {
         );
         push_optional_property(
             &mut xml,
+            "BuildTarget",
+            basproj.properties.build_target.map(build_target_str),
+        );
+        push_optional_property(
+            &mut xml,
             "ProjectName",
             basproj.properties.project_name.as_deref(),
         );
@@ -111,6 +116,7 @@ pub fn serialize_basproj_xml(basproj: &BasProj) -> String {
 pub fn generate_basproj_xml(
     manifest: &ProjectManifest,
     output_type: OutputType,
+    build_target: Option<BuildTarget>,
     entry_point: Option<&str>,
     runtime_flavor: Option<RuntimeFlavor>,
     default_runtime_profile: Option<&str>,
@@ -129,6 +135,12 @@ pub fn generate_basproj_xml(
         "    <OutputType>{}</OutputType>\n",
         output_type_str(output_type)
     ));
+    if let Some(build_target) = build_target {
+        xml.push_str(&format!(
+            "    <BuildTarget>{}</BuildTarget>\n",
+            build_target_str(build_target)
+        ));
+    }
     xml.push_str(&format!(
         "    <ProjectName>{}</ProjectName>\n",
         xml_escape(&manifest.project_name)
@@ -364,8 +376,17 @@ fn output_type_str(ot: OutputType) -> &'static str {
     }
 }
 
+fn build_target_str(build_target: BuildTarget) -> &'static str {
+    match build_target {
+        BuildTarget::Bundle => "Bundle",
+        BuildTarget::WrapperExe => "WrapperExe",
+        BuildTarget::WrapperLibrary => "WrapperLibrary",
+    }
+}
+
 fn has_any_properties(properties: &BasProjProperties) -> bool {
     properties.output_type.is_some()
+        || properties.build_target.is_some()
         || properties.project_name.is_some()
         || properties.entry_point.is_some()
         || properties.runtime_flavor.is_some()

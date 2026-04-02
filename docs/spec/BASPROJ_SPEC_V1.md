@@ -9,6 +9,7 @@ Supersedes: `oxvba.toml` format in `HOSTING_PROJECT_TOOLING_PROPOSAL.md` §4.1
 Related docs:
 - `docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md`
 - `docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md`
+- `docs/spec/BUILD_TARGET_AND_WRAPPER_BOUNDARY_V1.md`
 
 ---
 
@@ -44,6 +45,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 | Property | Type | Values | Default | Required | Purpose |
 |----------|------|--------|---------|----------|---------|
 | `OutputType` | enum | `HostModule`, `Library`, `Exe`, `Addin`, `ComServer`, `ComExe` | — | **yes** | Semantic project/output kind |
+| `BuildTarget` | enum | `Bundle`, `WrapperExe`, `WrapperLibrary` | `Bundle` | no | Physical packaging/build shape |
 | `ProjectName` | identifier | any valid VBA identifier | directory name | no | Maps to `ProjectManifest.project_name` |
 | `EntryPoint` | string | `Module.Procedure` | — | no | Explicit startup procedure override for execution |
 | `RuntimeFlavor` | enum | `Lite`, `Jit` | `Lite` | no | VM-only vs VM+JIT |
@@ -65,7 +67,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 
 **OxVBA extension note:** top-level executable statements are an OxVBA hosting/project extension, not an Office-VBA parity claim. In `.basproj` program-style execution (`OutputType=Exe`), a module containing top-level executable statements may supply the startup mainline when no explicit `EntryPoint` is configured. In the current bounded lane, top-level executable statements are rejected for `Library`, `Addin`, `ComServer`, and `ComExe`.
 
-**Packaging note:** `OutputType` is the semantic project kind, not a guarantee of today's emitted file shape. The current stable compiled output emitted by the shipped CLI is an OxVBA bundle artifact. Wrapper and native image packaging are a separate build-target concern.
+**Packaging note:** `OutputType` is the semantic project kind, not a guarantee of today's emitted file shape. `BuildTarget` controls the physical packaging lane. `Bundle` is the stable default and emits the canonical `.oxb` artifact. `WrapperExe` and `WrapperLibrary` are wrapper/native-hosting lanes over that canonical bundle, not a second compiler path.
 
 **Planned extension:** a future `WinExe` `OutputType` is expected for windowed executable semantics distinct from console/program-style `Exe`. That future lane is intentionally separate from the physical build-target choice.
 

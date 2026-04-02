@@ -41,6 +41,7 @@ fn parse_use_case_a_host_module() {
 
     assert_eq!(basproj.sdk, "OxVba.Sdk/0.1.0");
     assert_eq!(basproj.properties.output_type, Some(OutputType::HostModule));
+    assert!(basproj.properties.build_target.is_none());
     assert_eq!(
         basproj.properties.project_name.as_deref(),
         Some("VBAProject")
@@ -240,6 +241,7 @@ fn parse_minimal_project() {
 
     assert_eq!(basproj.sdk, "OxVba.Sdk/0.1.0");
     assert_eq!(basproj.properties.output_type, Some(OutputType::Exe));
+    assert!(basproj.properties.build_target.is_none());
     assert!(basproj.properties.project_name.is_none());
     assert!(basproj.properties.entry_point.is_none());
     assert!(basproj.modules.is_empty());
@@ -404,6 +406,7 @@ fn load_use_case_a_from_str() {
 
     // Metadata
     assert_eq!(loaded.output_type, OutputType::HostModule);
+    assert_eq!(loaded.build_target, BuildTarget::Bundle);
     assert_eq!(loaded.default_root_object, "Application");
 
     // Cleanup
@@ -661,6 +664,7 @@ fn round_trip_host_module() {
     let generated_xml = generate_basproj_xml(
         &loaded1.manifest,
         loaded1.output_type,
+        Some(loaded1.build_target),
         loaded1.entry_point.as_deref(),
         Some(loaded1.runtime_flavor),
         loaded1.default_runtime_profile.as_deref(),
@@ -705,6 +709,7 @@ fn round_trip_host_module() {
         loaded2.manifest.conditional_constants
     );
     assert_eq!(loaded1.output_type, loaded2.output_type);
+    assert_eq!(loaded1.build_target, loaded2.build_target);
     assert_eq!(loaded1.default_root_object, loaded2.default_root_object);
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -754,6 +759,7 @@ fn round_trip_library_with_exports() {
     let generated_xml = generate_basproj_xml(
         &loaded1.manifest,
         loaded1.output_type,
+        Some(loaded1.build_target),
         loaded1.entry_point.as_deref(),
         Some(loaded1.runtime_flavor),
         None,
@@ -780,6 +786,7 @@ fn round_trip_library_with_exports() {
         loaded2.native_exports[0].ordinal
     );
     assert_eq!(loaded1.runtime_flavor, loaded2.runtime_flavor);
+    assert_eq!(loaded1.build_target, loaded2.build_target);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
@@ -853,6 +860,45 @@ fn multiple_property_groups_merge() {
     assert_eq!(basproj.properties.project_name.as_deref(), Some("Second"));
     // OutputType from first group persists
     assert_eq!(basproj.properties.output_type, Some(OutputType::Exe));
+}
+
+#[test]
+fn parse_explicit_build_target_property() {
+    let xml = r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <BuildTarget>WrapperLibrary</BuildTarget>
+    <ProjectName>NativeBridge</ProjectName>
+  </PropertyGroup>
+</Project>"#;
+
+    let basproj = parse_basproj_xml(xml).unwrap();
+    assert_eq!(basproj.properties.output_type, Some(OutputType::Library));
+    assert_eq!(
+        basproj.properties.build_target,
+        Some(BuildTarget::WrapperLibrary)
+    );
+}
+
+#[test]
+fn serialize_build_target_property_when_present() {
+    let basproj = BasProj {
+        sdk: "OxVba.Sdk/0.1.0".to_string(),
+        properties: BasProjProperties {
+            output_type: Some(OutputType::Exe),
+            build_target: Some(BuildTarget::WrapperExe),
+            project_name: Some("Tool".to_string()),
+            ..Default::default()
+        },
+        modules: Vec::new(),
+        project_references: Vec::new(),
+        com_references: Vec::new(),
+        native_references: Vec::new(),
+        native_exports: Vec::new(),
+    };
+
+    let xml = serialize_basproj_xml(&basproj);
+    assert!(xml.contains("<BuildTarget>WrapperExe</BuildTarget>"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,6 +1056,7 @@ fn round_trip_com_server_with_instancing() {
     let generated_xml = generate_basproj_xml(
         &loaded1.manifest,
         loaded1.output_type,
+        Some(loaded1.build_target),
         loaded1.entry_point.as_deref(),
         Some(loaded1.runtime_flavor),
         loaded1.default_runtime_profile.as_deref(),
@@ -1023,6 +1070,7 @@ fn round_trip_com_server_with_instancing() {
     let loaded2 = load_basproj_from_str(&generated_xml, &tmp).unwrap();
 
     assert_eq!(loaded1.output_type, loaded2.output_type);
+    assert_eq!(loaded1.build_target, loaded2.build_target);
     assert_eq!(loaded1.manifest.project_name, loaded2.manifest.project_name);
     assert_eq!(
         loaded1.class_module_metadata.len(),
