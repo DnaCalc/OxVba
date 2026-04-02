@@ -64,6 +64,7 @@ This crate currently exports the direct runtime/session ladder:
 - `ProjectRuntimeSession`
 - the first bounded immediate-session contract via `ImmediateSession`
 - typed immediate request/result/output shapes for future CLI and OxIde consumption
+- the first non-debug live-session evaluator core for bounded procedure invocation and reset/reload
 
 This is the right crate for:
 - live runtime-session ownership,

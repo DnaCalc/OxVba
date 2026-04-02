@@ -45,14 +45,14 @@ pub struct PhaseDiagnostic {
 }
 
 impl PhaseDiagnostic {
-    fn compile(message: impl Into<String>) -> Self {
+    pub(crate) fn compile(message: impl Into<String>) -> Self {
         Self {
             phase: DiagnosticPhase::CompileTime,
             message: message.into(),
         }
     }
 
-    fn runtime(message: impl Into<String>) -> Self {
+    pub(crate) fn runtime(message: impl Into<String>) -> Self {
         Self {
             phase: DiagnosticPhase::Runtime,
             message: message.into(),

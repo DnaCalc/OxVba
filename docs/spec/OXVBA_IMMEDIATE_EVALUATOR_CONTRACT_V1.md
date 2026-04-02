@@ -55,18 +55,26 @@ Names may evolve, but the shape should remain:
 - `ImmediateEvaluationResult`
 - related input/output/projection enums
 
-In V1 contract form:
+In the current V1 slice:
 - `ImmediateSession` owns the live `ProjectRuntimeSession`
 - the host may set a default target module explicitly
-- evaluation behavior is still the next delivery slice
+- evaluation is bounded to existing project procedure invocation on that live session
+- typed value projection and deterministic reset/reload are present
+- arbitrary ad hoc expression compilation and multi-line statement evaluation are still future slices
 
-This is intentional: the contract now exists as a real OxVba-side API, and the evaluator implementation follows in the next bead.
+This is intentional: the contract now exists as a real OxVba-side API, and the first executable evaluator is honest about what it can already do.
 
 ## Session Model
 
 `ImmediateSession` should remain the single semantic owner for non-debug interactive evaluation.
 
-It should eventually support:
+It currently supports:
+- default target module selection,
+- snapshot access for tests/debugging,
+- explicit reset/reload operations,
+- bounded live evaluator entrypoints for existing procedures.
+
+It should later support:
 - default target module selection,
 - snapshot access for tests/debugging,
 - explicit reset/reload operations,
@@ -77,17 +85,22 @@ Hosts should not own their own parallel runtime-session bookkeeping.
 
 ## Request Model
 
-The bounded request model should support:
+The bounded request model supports:
 - `Auto`
 - `Expression`
 - `Statement`
 - `Query`
 
-This leaves room for:
-- `? expr` shorthand
+In the current evaluator core, these route into:
+- `?` shorthand for value-oriented invocation,
+- `Call ...` or statement-mode invocation,
+- explicit module-qualified or default-module procedure targets,
+- literal arguments for strings, integers, booleans, and `Empty`.
+
+This still leaves room for later:
 - explicit `Print expr`
 - assignment statements
-- bounded single-line statements
+- broader bounded single-line statements
 
 Multi-line structural editing remains outside this contract.
 
