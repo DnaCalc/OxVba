@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_languageservice::{
-    DocumentId, DocumentSymbol, HoverInfo, LanguageService, Location, SemanticProvenance,
+    CodeActionPlan, CompletionItem, DocumentId, DocumentSymbol, HoverInfo, LanguageService,
+    Location, RenamePreparation, SemanticClassification, SemanticProvenance, SignatureHelp,
     SpannedDiagnostic, SymbolProvenanceKind, Workspace, WorkspaceSymbol,
 };
 use oxvba_project::{
@@ -17,7 +18,9 @@ use oxvba_project::{
     load_workspace_target as load_project_workspace_target,
 };
 use tower_lsp::lsp_types::{
-    HoverProviderCapability, OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    CodeActionProviderCapability, CompletionOptions, HoverProviderCapability, OneOf,
+    RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    ServerCapabilities, ServerInfo, SignatureHelpOptions, TextDocumentSyncCapability,
     TextDocumentSyncKind, TextDocumentSyncOptions, Url, WorkspaceSymbolOptions,
 };
 
@@ -282,6 +285,46 @@ impl OxvbaLspCore {
             .expect("oxvba-lsp transport state mutex poisoned");
         state.document_uris.get(id).cloned()
     }
+
+    pub fn completions(&self, id: &DocumentId, position: u32) -> Vec<CompletionItem> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.completions(id, position)
+    }
+
+    pub fn signature_help(&self, id: &DocumentId, position: u32) -> Option<SignatureHelp> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.signature_help(id, position)
+    }
+
+    pub fn prepare_rename(&self, id: &DocumentId, position: u32) -> Option<RenamePreparation> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.prepare_rename(id, position)
+    }
+
+    pub fn code_actions(&self, id: &DocumentId) -> Vec<CodeActionPlan> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.code_actions(id)
+    }
+
+    pub fn semantic_classifications(&self, id: &DocumentId) -> Vec<SemanticClassification> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.semantic_classifications(id)
+    }
 }
 
 /// Current server info for the transport shell.
@@ -310,6 +353,40 @@ pub fn server_capabilities() -> ServerCapabilities {
             work_done_progress_options: Default::default(),
             resolve_provider: None,
         })),
+        completion_provider: Some(CompletionOptions::default()),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: Some(vec![",".to_string()]),
+            ..SignatureHelpOptions::default()
+        }),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+        semantic_tokens_provider: Some(
+            SemanticTokensOptions {
+                work_done_progress_options: Default::default(),
+                legend: SemanticTokensLegend {
+                    token_types: vec![
+                        "keyword".into(),
+                        "function".into(),
+                        "property".into(),
+                        "variable".into(),
+                        "parameter".into(),
+                        "enumMember".into(),
+                        "class".into(),
+                        "enum".into(),
+                        "event".into(),
+                        "macro".into(),
+                    ],
+                    token_modifiers: vec![],
+                },
+                range: None,
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+            }
+            .into(),
+        ),
         ..ServerCapabilities::default()
     }
 }
@@ -470,6 +547,11 @@ mod tests {
             Some(super::OneOf::Left(true))
         );
         assert!(capabilities.workspace_symbol_provider.is_some());
+        assert!(capabilities.completion_provider.is_some());
+        assert!(capabilities.signature_help_provider.is_some());
+        assert!(capabilities.rename_provider.is_some());
+        assert!(capabilities.code_action_provider.is_some());
+        assert!(capabilities.semantic_tokens_provider.is_some());
     }
 
     #[test]

@@ -70,7 +70,8 @@ Current execution state:
 - debugger DAP projection guidance is now published in `docs/spec/OXVBA_DEBUGGER_DAP_PROJECTION_V1.md`
 - the minimal VS Code extension shell now exists under `extensions/vscode-oxvba`
 - `oxvba-lsp` now publishes diagnostics and answers document/workspace symbols, hover, definition, and references over the same direct semantic core
-- the next delivery slice is completion, signature help, rename, code actions, and semantic tokens over `oxvba-lsp`
+- `oxvba-lsp` now also exposes completion, signature help, rename, code actions, and semantic tokens over the same direct semantic core
+- the next delivery slice is extension-owned project commands over OxVba helper APIs
 
 ## Non-Goals
 

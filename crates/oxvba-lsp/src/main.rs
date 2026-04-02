@@ -2,17 +2,25 @@ use std::path::PathBuf;
 
 use oxvba_lsp::{OxvbaLspCore, server_capabilities, server_info};
 use oxvba_languageservice::{
-    DiagnosticSeverity as OxDiagnosticSeverity, DocumentId, DocumentSymbol as OxDocumentSymbol,
-    HoverInfo, Location as OxLocation, SpannedDiagnostic, TextSpan, WorkspaceSymbol as OxWorkspaceSymbol,
+    CodeActionKind as OxCodeActionKind, CodeActionPlan, CompletionItem as OxCompletionItem,
+    CompletionKind as OxCompletionKind, DiagnosticSeverity as OxDiagnosticSeverity, DocumentId,
+    DocumentSymbol as OxDocumentSymbol, HoverInfo, Location as OxLocation,
+    SemanticClassification, SemanticTokenKind as OxSemanticTokenKind,
+    SignatureHelp as OxSignatureHelp, SpannedDiagnostic, TextEdit as OxTextEdit, TextSpan,
+    WorkspaceSymbol as OxWorkspaceSymbol,
 };
 use tower_lsp::jsonrpc::Error;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
-    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
-    InitializeParams, InitializeResult, InitializedParams, Location, MarkedString, MessageType,
-    Position, Range, ReferenceParams, SymbolInformation, SymbolKind, TextDocumentIdentifier,
+    CodeAction, CodeActionOrCommand, CodeActionParams, CompletionItem, CompletionItemKind,
+    CompletionParams, CompletionResponse, Diagnostic, DiagnosticSeverity,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams,
+    InitializeResult, InitializedParams, Location, MarkedString, MessageType, Position,
+    PrepareRenameResponse, Range, ReferenceParams, RenameParams, SemanticToken,
+    SemanticTokens, SemanticTokensParams, SemanticTokensResult, SignatureHelp, SignatureHelpParams,
+    SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit, Url, WorkspaceEdit,
     WorkspaceSymbolParams,
 };
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -130,10 +138,10 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let (document, source, position) =
+        let (document, _source, position) =
             resolve_request_position(&self.core, &params.text_document_position_params.text_document, params.text_document_position_params.position)
                 .map_err(Error::invalid_params)?;
-        Ok(self.core.hover(&document, position).map(|hover| hover_to_lsp(&source, hover)))
+        Ok(self.core.hover(&document, position).map(hover_to_lsp))
     }
 
     async fn goto_definition(
@@ -194,6 +202,133 @@ impl LanguageServer for Backend {
             .filter_map(|symbol| workspace_symbol_to_lsp(&self.core, symbol))
             .collect::<Vec<_>>();
         Ok(Some(symbols))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let (document, _source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position.text_document,
+            params.text_document_position.position,
+        )
+        .map_err(Error::invalid_params)?;
+        let items = self
+            .core
+            .completions(&document, position)
+            .into_iter()
+            .map(completion_item_to_lsp)
+            .collect::<Vec<_>>();
+        Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let (document, _source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position_params.text_document,
+            params.text_document_position_params.position,
+        )
+        .map_err(Error::invalid_params)?;
+        Ok(self
+            .core
+            .signature_help(&document, position)
+            .map(signature_help_to_lsp))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: tower_lsp::lsp_types::TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let (document, source, position) =
+            resolve_request_position(&self.core, &params.text_document, params.position)
+                .map_err(Error::invalid_params)?;
+        let preparation = self
+            .core
+            .prepare_rename(&document, position)
+            .ok_or_else(|| Error::invalid_params("symbol at position is not renameable"))?;
+        Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+            range: span_to_range(&source, preparation.placeholder),
+            placeholder: preparation.current_name,
+        }))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let (document, _source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position.text_document,
+            params.text_document_position.position,
+        )
+        .map_err(Error::invalid_params)?;
+        let preparation = self
+            .core
+            .prepare_rename(&document, position)
+            .ok_or_else(|| Error::invalid_params("symbol at position is not renameable"))?;
+
+        if !preparation.reference_analysis.safe_to_apply {
+            return Err(Error::invalid_request());
+        }
+
+        let mut changes = std::collections::HashMap::<Url, Vec<TextEdit>>::new();
+        for location in std::iter::once(preparation.declaration)
+            .chain(preparation.reference_analysis.references.into_iter())
+        {
+            let Some(uri) = self.core.document_uri(&location.document) else {
+                continue;
+            };
+            let Some(source) = self.core.document_source(&location.document) else {
+                continue;
+            };
+            changes.entry(uri).or_default().push(TextEdit {
+                range: span_to_range(&source, location.span),
+                new_text: params.new_name.clone(),
+            });
+        }
+
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }))
+    }
+
+    async fn code_action(
+        &self,
+        params: CodeActionParams,
+    ) -> Result<Option<Vec<CodeActionOrCommand>>> {
+        let uri = &params.text_document.uri;
+        let Some(document) = self.core.synchronized_document_id(uri) else {
+            return Ok(None);
+        };
+        let Some(source) = self.core.document_source(&document) else {
+            return Ok(None);
+        };
+
+        let actions = self
+            .core
+            .code_actions(&document)
+            .into_iter()
+            .map(|action| code_action_to_lsp(&self.core, &source, action))
+            .collect::<Vec<_>>();
+        Ok(Some(actions))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let uri = &params.text_document.uri;
+        let Some(document) = self.core.synchronized_document_id(uri) else {
+            return Ok(None);
+        };
+        let Some(source) = self.core.document_source(&document) else {
+            return Ok(None);
+        };
+        let tokens = semantic_tokens_to_lsp(
+            &source,
+            self.core.semantic_classifications(&document),
+        );
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: tokens,
+        })))
     }
 }
 
@@ -322,19 +457,14 @@ fn diagnostic_to_lsp(source: &str, diagnostic: SpannedDiagnostic) -> Diagnostic 
     }
 }
 
-fn hover_to_lsp(source: &str, hover: HoverInfo) -> Hover {
+fn hover_to_lsp(hover: HoverInfo) -> Hover {
     let mut lines = vec![hover.label];
     if let Some(detail) = hover.detail {
         lines.push(detail);
     }
     Hover {
         contents: HoverContents::Scalar(MarkedString::String(lines.join("\n"))),
-        range: None.or_else(|| {
-            hover
-                .symbol_identity
-                .as_ref()
-                .map(|_| span_to_range(source, TextSpan::new(0, 0)))
-        }),
+        range: None,
     }
 }
 
@@ -384,6 +514,144 @@ fn symbol_kind_to_lsp(kind: oxvba_languageservice::SymbolKind) -> SymbolKind {
         oxvba_languageservice::SymbolKind::External => SymbolKind::FUNCTION,
         oxvba_languageservice::SymbolKind::Property => SymbolKind::PROPERTY,
         oxvba_languageservice::SymbolKind::Event => SymbolKind::EVENT,
+    }
+}
+
+fn completion_item_to_lsp(item: OxCompletionItem) -> CompletionItem {
+    CompletionItem {
+        label: item.label,
+        kind: Some(match item.kind {
+            OxCompletionKind::Keyword => CompletionItemKind::KEYWORD,
+            OxCompletionKind::Variable => CompletionItemKind::VARIABLE,
+            OxCompletionKind::Procedure => CompletionItemKind::FUNCTION,
+            OxCompletionKind::Parameter => CompletionItemKind::VARIABLE,
+            OxCompletionKind::Constant => CompletionItemKind::CONSTANT,
+            OxCompletionKind::Intrinsic => CompletionItemKind::FUNCTION,
+            OxCompletionKind::Property => CompletionItemKind::PROPERTY,
+        }),
+        detail: item.detail,
+        ..CompletionItem::default()
+    }
+}
+
+fn signature_help_to_lsp(help: OxSignatureHelp) -> SignatureHelp {
+    let label = format!(
+        "{}({}) -> {}",
+        help.name,
+        help.parameters
+            .iter()
+            .map(|parameter| format!("{} As {}", parameter.name, parameter.type_name))
+            .collect::<Vec<_>>()
+            .join(", "),
+        help.return_type
+    );
+    SignatureHelp {
+        signatures: vec![tower_lsp::lsp_types::SignatureInformation {
+            label,
+            documentation: None,
+            parameters: Some(
+                help.parameters
+                    .into_iter()
+                    .map(|parameter| tower_lsp::lsp_types::ParameterInformation {
+                        label: tower_lsp::lsp_types::ParameterLabel::Simple(parameter.name),
+                        documentation: Some(
+                            tower_lsp::lsp_types::Documentation::String(format!(
+                                "As {}",
+                                parameter.type_name
+                            )),
+                        ),
+                    })
+                    .collect(),
+            ),
+            active_parameter: Some(help.active_parameter as u32),
+        }],
+        active_signature: Some(0),
+        active_parameter: Some(help.active_parameter as u32),
+    }
+}
+
+fn code_action_to_lsp(
+    core: &OxvbaLspCore,
+    source: &str,
+    action: CodeActionPlan,
+) -> CodeActionOrCommand {
+    let uri = core
+        .document_uri(&action.document)
+        .expect("code action document should resolve to a file uri");
+    let edits = action
+        .edits
+        .into_iter()
+        .map(|edit| text_edit_to_lsp(source, edit))
+        .collect::<Vec<_>>();
+    CodeActionOrCommand::CodeAction(CodeAction {
+        title: action.title,
+        kind: Some(match action.kind {
+            OxCodeActionKind::QuickFix => tower_lsp::lsp_types::CodeActionKind::QUICKFIX,
+        }),
+        diagnostics: Some(vec![diagnostic_to_lsp(source, action.diagnostic)]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(std::iter::once((uri, edits)).collect()),
+            document_changes: None,
+            change_annotations: None,
+        }),
+        ..CodeAction::default()
+    })
+}
+
+fn text_edit_to_lsp(source: &str, edit: OxTextEdit) -> TextEdit {
+    TextEdit {
+        range: span_to_range(source, edit.span),
+        new_text: edit.new_text,
+    }
+}
+
+fn semantic_tokens_to_lsp(source: &str, mut classifications: Vec<SemanticClassification>) -> Vec<SemanticToken> {
+    classifications.sort_by_key(|classification| classification.span.start);
+    let mut tokens = Vec::new();
+    let mut previous_line = 0u32;
+    let mut previous_start = 0u32;
+
+    for classification in classifications {
+        let position = offset_to_lsp_position(source, classification.span.start);
+        let delta_line = position.line.saturating_sub(previous_line);
+        let delta_start = if delta_line == 0 {
+            position.character.saturating_sub(previous_start)
+        } else {
+            position.character
+        };
+        tokens.push(SemanticToken {
+            delta_line,
+            delta_start,
+            length: semantic_token_length(source, classification.span),
+            token_type: semantic_token_kind_index(classification.kind),
+            token_modifiers_bitset: 0,
+        });
+        previous_line = position.line;
+        previous_start = position.character;
+    }
+
+    tokens
+}
+
+fn semantic_token_length(source: &str, span: TextSpan) -> u32 {
+    let start = span.start as usize;
+    let end = (span.end as usize).min(source.len());
+    source[start..end].encode_utf16().count() as u32
+}
+
+fn semantic_token_kind_index(kind: OxSemanticTokenKind) -> u32 {
+    match kind {
+        OxSemanticTokenKind::Keyword => 0,
+        OxSemanticTokenKind::Procedure => 1,
+        OxSemanticTokenKind::Property => 2,
+        OxSemanticTokenKind::Variable => 3,
+        OxSemanticTokenKind::Parameter => 4,
+        OxSemanticTokenKind::Constant => 5,
+        OxSemanticTokenKind::TypeDef => 6,
+        OxSemanticTokenKind::EnumDef => 7,
+        OxSemanticTokenKind::Event => 8,
+        OxSemanticTokenKind::External => 9,
+        OxSemanticTokenKind::Intrinsic => 1,
     }
 }
 
