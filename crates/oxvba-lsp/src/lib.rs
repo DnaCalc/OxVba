@@ -3,19 +3,22 @@
 //! This crate intentionally owns transport/session concerns only. Semantic
 //! parsing, binding, and query behavior remain in `oxvba-languageservice`.
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_languageservice::{
-    DocumentId, LanguageService, SemanticProvenance, SpannedDiagnostic, SymbolProvenanceKind,
-    Workspace,
+    DocumentId, DocumentSymbol, HoverInfo, LanguageService, Location, SemanticProvenance,
+    SpannedDiagnostic, SymbolProvenanceKind, Workspace, WorkspaceSymbol,
 };
-use oxvba_project::load_workspace_target as load_project_workspace_target;
+use oxvba_project::{
+    HostProjectReferenceKind, HostProjectSurface, inspect_workspace_target,
+    load_workspace_target as load_project_workspace_target,
+};
 use tower_lsp::lsp_types::{
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Url,
+    HoverProviderCapability, OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, Url, WorkspaceSymbolOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -29,6 +32,7 @@ struct TransportState {
     service: LanguageService,
     uri_documents: HashMap<Url, DocumentId>,
     baseline_documents: HashMap<DocumentId, BaselineDocument>,
+    document_uris: HashMap<DocumentId, Url>,
 }
 
 impl TransportState {
@@ -37,6 +41,7 @@ impl TransportState {
             service: LanguageService::new(Workspace::new()),
             uri_documents: HashMap::new(),
             baseline_documents: HashMap::new(),
+            document_uris: HashMap::new(),
         }
     }
 
@@ -51,7 +56,7 @@ impl TransportState {
         for id in document_ids {
             if let Some(doc) = self.service.workspace.document(&id) {
                 self.baseline_documents.insert(
-                    id,
+                    id.clone(),
                     BaselineDocument {
                         source: doc.source.to_string(),
                         project_name: doc.project_name.clone(),
@@ -89,12 +94,20 @@ impl OxvbaLspCore {
             .expect("oxvba-lsp transport state mutex poisoned");
         state.service = LanguageService::from_project(manifest);
         state.uri_documents.clear();
+        state.document_uris.clear();
         state.refresh_baseline_documents();
     }
 
     pub fn load_workspace_path(&self, path: &Path) -> Result<(), String> {
         let loaded = load_workspace_target(path)?;
+        let document_uris = collect_workspace_document_uris(path)?;
         self.load_project_manifest(loaded.manifest);
+        let mut state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.document_uris = document_uris;
+        state.refresh_baseline_documents();
         Ok(())
     }
 
@@ -110,6 +123,7 @@ impl OxvbaLspCore {
             state.service.workspace.open_document(id.clone(), source);
         }
         state.uri_documents.insert(uri.clone(), id.clone());
+        state.document_uris.insert(id.clone(), uri.clone());
         Ok(id)
     }
 
@@ -131,6 +145,7 @@ impl OxvbaLspCore {
         }
 
         state.uri_documents.insert(uri.clone(), id.clone());
+        state.document_uris.insert(id.clone(), uri.clone());
         Ok(id)
     }
 
@@ -219,6 +234,54 @@ impl OxvbaLspCore {
             .document(id)
             .map(|doc| doc.semantic_provenance())
     }
+
+    pub fn document_symbols(&self, id: &DocumentId) -> Vec<DocumentSymbol> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.document_symbols(id)
+    }
+
+    pub fn workspace_symbols(&self, query: &str) -> Vec<WorkspaceSymbol> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.workspace_symbols(query)
+    }
+
+    pub fn hover(&self, id: &DocumentId, position: u32) -> Option<HoverInfo> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.hover(id, position)
+    }
+
+    pub fn go_to_definition(&self, id: &DocumentId, position: u32) -> Option<Location> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.go_to_definition(id, position)
+    }
+
+    pub fn find_references(&self, id: &DocumentId, position: u32) -> Vec<Location> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.service.find_references(id, position)
+    }
+
+    pub fn document_uri(&self, id: &DocumentId) -> Option<Url> {
+        let state = self
+            .state
+            .lock()
+            .expect("oxvba-lsp transport state mutex poisoned");
+        state.document_uris.get(id).cloned()
+    }
 }
 
 /// Current server info for the transport shell.
@@ -239,6 +302,14 @@ pub fn server_capabilities() -> ServerCapabilities {
                 ..TextDocumentSyncOptions::default()
             },
         )),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
+            work_done_progress_options: Default::default(),
+            resolve_provider: None,
+        })),
         ..ServerCapabilities::default()
     }
 }
@@ -310,9 +381,62 @@ fn load_workspace_target(path: &Path) -> Result<oxvba_project::LoadedProject, St
     load_project_workspace_target(path).map_err(|err| err.to_string())
 }
 
+fn collect_workspace_document_uris(path: &Path) -> Result<HashMap<DocumentId, Url>, String> {
+    let mut uris = HashMap::new();
+    let mut visited = HashSet::new();
+    collect_workspace_document_uris_recursive(path, true, &mut visited, &mut uris)?;
+    Ok(uris)
+}
+
+fn collect_workspace_document_uris_recursive(
+    path: &Path,
+    root: bool,
+    visited: &mut HashSet<PathBuf>,
+    uris: &mut HashMap<DocumentId, Url>,
+) -> Result<(), String> {
+    let surface = inspect_workspace_target(path).map_err(|err| err.to_string())?;
+    let visit_key = canonical_or_original(&surface.workspace_target);
+    if !visited.insert(visit_key) {
+        return Ok(());
+    }
+
+    for module in &surface.modules {
+        let document_id = if root {
+            DocumentId::new(module.identity.effective_name.clone())
+        } else {
+            DocumentId::new(format!(
+                "{}::{}",
+                surface.project_name, module.identity.effective_name
+            ))
+        };
+        if let Ok(uri) = Url::from_file_path(&module.source_path) {
+            uris.insert(document_id, uri);
+        }
+    }
+
+    for reference in surface
+        .references
+        .iter()
+        .filter(|reference| reference.kind == HostProjectReferenceKind::Project)
+    {
+        let project_path = resolve_project_reference_path(&surface, &reference.include);
+        collect_workspace_document_uris_recursive(&project_path, false, visited, uris)?;
+    }
+
+    Ok(())
+}
+
+fn resolve_project_reference_path(surface: &HostProjectSurface, include: &str) -> PathBuf {
+    canonical_or_original(&surface.project_dir.join(include))
+}
+
+fn canonical_or_original(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{OxvbaLspCore, server_capabilities, server_info};
+    use super::{DocumentId, OxvbaLspCore, server_capabilities, server_info};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -335,6 +459,17 @@ mod tests {
         };
         assert_eq!(options.open_close, Some(true));
         assert_eq!(options.change, Some(TextDocumentSyncKind::FULL));
+        assert_eq!(
+            capabilities.hover_provider,
+            Some(super::HoverProviderCapability::Simple(true))
+        );
+        assert_eq!(capabilities.definition_provider, Some(super::OneOf::Left(true)));
+        assert_eq!(capabilities.references_provider, Some(super::OneOf::Left(true)));
+        assert_eq!(
+            capabilities.document_symbol_provider,
+            Some(super::OneOf::Left(true))
+        );
+        assert!(capabilities.workspace_symbol_provider.is_some());
     }
 
     #[test]
@@ -544,6 +679,59 @@ mod tests {
         assert!(
             documents.iter().any(|document| document == "Lib::Helpers"),
             "expected referenced-project module in workspace, got: {documents:?}"
+        );
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn workspace_load_maps_document_uris_for_root_and_referenced_projects() {
+        let temp_root = unique_temp_dir("oxvba_lsp_uri_workspace");
+        let app_dir = temp_root.join("App");
+        let lib_dir = temp_root.join("Lib");
+        fs::create_dir_all(&app_dir).expect("app dir");
+        fs::create_dir_all(&lib_dir).expect("lib dir");
+
+        let app_module_path = app_dir.join("Module1.bas");
+        let lib_module_path = lib_dir.join("Helpers.bas");
+
+        fs::write(
+            &lib_module_path,
+            "Public Function DoubleIt(ByVal x As Long) As Long\n    DoubleIt = x * 2\nEnd Function\n",
+        )
+        .expect("lib module");
+        fs::write(
+            lib_dir.join("Lib.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>Lib</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Helpers.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("lib basproj");
+
+        fs::write(
+            &app_module_path,
+            "Sub Main()\n    Print DoubleIt(2)\nEnd Sub\n",
+        )
+        .expect("app module");
+        fs::write(
+            app_dir.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n    <ProjectReference Include=\"..\\Lib\\Lib.basproj\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("app basproj");
+
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&app_dir)
+            .expect("load app workspace");
+
+        assert_eq!(
+            core.document_uri(&DocumentId::new("Module1"))
+                .and_then(|uri| uri.to_file_path().ok())
+                .map(|path| super::canonical_or_original(&path)),
+            Some(super::canonical_or_original(&app_module_path))
+        );
+        assert_eq!(
+            core.document_uri(&DocumentId::new("Lib::Helpers"))
+                .and_then(|uri| uri.to_file_path().ok())
+                .map(|path| super::canonical_or_original(&path)),
+            Some(super::canonical_or_original(&lib_module_path))
         );
 
         let _ = fs::remove_dir_all(&temp_root);
