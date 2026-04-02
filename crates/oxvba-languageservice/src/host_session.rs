@@ -5,8 +5,7 @@ use oxvba_project::load_workspace_target;
 
 use crate::document::DocumentId;
 use crate::service::{
-    CompletionItem, DocumentSymbol, HoverInfo, LanguageService, Location, Position,
-    WorkspaceSymbol,
+    CompletionItem, DocumentSymbol, HoverInfo, LanguageService, Location, Position, WorkspaceSymbol,
 };
 use crate::span::{SemanticProvenance, SpannedDiagnostic, SymbolProvenanceKind};
 use crate::workspace::WorkspaceStats;
@@ -27,23 +26,25 @@ pub struct HostWorkspaceDocument {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostSessionError {
-    WorkspaceLoad {
-        path: PathBuf,
-        message: String,
-    },
-    DocumentNotFound {
-        document: DocumentId,
-    },
+    WorkspaceLoad { path: PathBuf, message: String },
+    DocumentNotFound { document: DocumentId },
 }
 
 impl std::fmt::Display for HostSessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HostSessionError::WorkspaceLoad { path, message } => {
-                write!(f, "failed to load workspace `{}`: {message}", path.display())
+                write!(
+                    f,
+                    "failed to load workspace `{}`: {message}",
+                    path.display()
+                )
             }
             HostSessionError::DocumentNotFound { document } => {
-                write!(f, "document `{document}` is not part of the loaded workspace")
+                write!(
+                    f,
+                    "document `{document}` is not part of the loaded workspace"
+                )
             }
         }
     }
@@ -64,10 +65,11 @@ pub struct HostWorkspaceSession {
 
 impl HostWorkspaceSession {
     pub fn load_workspace_path(path: &Path) -> Result<Self, HostSessionError> {
-        let loaded = load_workspace_target(path).map_err(|err| HostSessionError::WorkspaceLoad {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })?;
+        let loaded =
+            load_workspace_target(path).map_err(|err| HostSessionError::WorkspaceLoad {
+                path: path.to_path_buf(),
+                message: err.to_string(),
+            })?;
         let service = LanguageService::from_project(loaded.manifest);
         let baseline_documents = collect_baseline_documents(&service);
         Ok(Self {
@@ -132,11 +134,13 @@ impl HostWorkspaceSession {
     }
 
     pub fn close_document(&mut self, document: &DocumentId) -> Result<(), HostSessionError> {
-        let baseline = self.baseline_documents.get(document).cloned().ok_or_else(|| {
-            HostSessionError::DocumentNotFound {
+        let baseline = self
+            .baseline_documents
+            .get(document)
+            .cloned()
+            .ok_or_else(|| HostSessionError::DocumentNotFound {
                 document: document.clone(),
-            }
-        })?;
+            })?;
         self.service.workspace.open_document_with_origin(
             document.clone(),
             &baseline.source,
@@ -146,7 +150,10 @@ impl HostWorkspaceSession {
         Ok(())
     }
 
-    pub fn diagnostics(&self, document: &DocumentId) -> Result<Vec<SpannedDiagnostic>, HostSessionError> {
+    pub fn diagnostics(
+        &self,
+        document: &DocumentId,
+    ) -> Result<Vec<SpannedDiagnostic>, HostSessionError> {
         self.ensure_document(document)?;
         Ok(self.service.diagnostics(document))
     }
@@ -223,11 +230,13 @@ impl HostWorkspaceSession {
     }
 }
 
-fn collect_baseline_documents(
-    service: &LanguageService,
-) -> HashMap<DocumentId, BaselineDocument> {
+fn collect_baseline_documents(service: &LanguageService) -> HashMap<DocumentId, BaselineDocument> {
     let mut baseline_documents = HashMap::new();
-    let document_ids = service.workspace.document_ids().cloned().collect::<Vec<_>>();
+    let document_ids = service
+        .workspace
+        .document_ids()
+        .cloned()
+        .collect::<Vec<_>>();
     for id in document_ids {
         if let Some(doc) = service.workspace.document(&id) {
             baseline_documents.insert(
@@ -365,13 +374,20 @@ mod tests {
 
         let session = HostWorkspaceSession::load_workspace_path(&app_dir).expect("session");
         let documents = session.documents();
-        assert!(documents.iter().any(|document| document.id == DocumentId::new("Module1")));
+        assert!(
+            documents
+                .iter()
+                .any(|document| document.id == DocumentId::new("Module1"))
+        );
         let referenced = documents
             .iter()
             .find(|document| document.id == DocumentId::new("Lib::Helpers"))
             .expect("referenced document");
         assert_eq!(referenced.project_name.as_deref(), Some("Lib"));
-        assert_eq!(referenced.provenance_kind, SymbolProvenanceKind::ProjectReference);
+        assert_eq!(
+            referenced.provenance_kind,
+            SymbolProvenanceKind::ProjectReference
+        );
 
         let _ = fs::remove_dir_all(&temp_root);
     }

@@ -7,13 +7,14 @@
 
 use std::path::{Path, PathBuf};
 
-use oxvba_com::{
-    TypeLibResolveRequest, TypeLibResolvedIdentity, activation_prog_id_from_typelib_metadata,
-    build_typelib_metadata, resolve_known_typelib_identity, resolve_typelib_identity_for_prog_id_name,
-};
 #[cfg(target_os = "windows")]
 use oxvba_com::windows_typelib_loader::{
     discover_registered_typelib_identities_by_name, resolve_typelib_identity_from_registry,
+};
+use oxvba_com::{
+    TypeLibResolveRequest, TypeLibResolvedIdentity, activation_prog_id_from_typelib_metadata,
+    build_typelib_metadata, resolve_known_typelib_identity,
+    resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_host::TypeLibraryCatalogEntry;
 use thiserror::Error;
@@ -111,8 +112,12 @@ pub struct ComProjectSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComProjectSelectionStatus {
-    ResolvedUnique { candidate: ComSelectionCandidate },
-    Ambiguous { candidates: Vec<ComSelectionCandidate> },
+    ResolvedUnique {
+        candidate: ComSelectionCandidate,
+    },
+    Ambiguous {
+        candidates: Vec<ComSelectionCandidate>,
+    },
     Missing,
 }
 
@@ -173,7 +178,10 @@ pub fn candidate_from_catalog_entry(
 }
 
 pub fn candidate_from_project_reference(reference: &BasProjComReference) -> ComSelectionCandidate {
-    let import_lib = reference.import_lib.clone().filter(|value| !value.trim().is_empty());
+    let import_lib = reference
+        .import_lib
+        .clone()
+        .filter(|value| !value.trim().is_empty());
     let carrier_path = import_lib.as_ref().map(PathBuf::from);
     let carrier_kind = carrier_kind_from_path(carrier_path.as_deref());
 
@@ -264,12 +272,13 @@ pub fn discover_registered_com_candidates(
 
     #[cfg(target_os = "windows")]
     {
-        let identities = discover_registered_typelib_identities_by_name(reference_name).map_err(
-            |message| ComSelectionDiscoveryError::RegisteredDiscoveryFailed {
-                query: reference_name.to_string(),
-                message,
-            },
-        )?;
+        let identities =
+            discover_registered_typelib_identities_by_name(reference_name).map_err(|message| {
+                ComSelectionDiscoveryError::RegisteredDiscoveryFailed {
+                    query: reference_name.to_string(),
+                    message,
+                }
+            })?;
         let candidates = identities
             .into_iter()
             .filter(|identity| registered_identity_matches_query(identity, query))
@@ -313,7 +322,12 @@ pub fn discover_prog_id_com_candidates(
 pub fn discover_file_backed_com_candidates(
     query: &FileBackedComSelectionQuery,
 ) -> Result<Vec<ComSelectionCandidate>, ComSelectionDiscoveryError> {
-    let carrier_path = query.carrier_path.as_os_str().to_string_lossy().trim().to_string();
+    let carrier_path = query
+        .carrier_path
+        .as_os_str()
+        .to_string_lossy()
+        .trim()
+        .to_string();
     if carrier_path.is_empty() {
         return Err(ComSelectionDiscoveryError::EmptyCarrierPath);
     }
@@ -467,7 +481,8 @@ pub fn plan_repair_project_selection(
         }
         ComProjectSelectionStatus::ResolvedUnique { .. } => ComProjectEditPlanKind::Replace,
     };
-    let replacement = basproj_reference_from_candidate(candidate, Some(&selection.reference.include));
+    let replacement =
+        basproj_reference_from_candidate(candidate, Some(&selection.reference.include));
     ComProjectEditPlan {
         kind,
         include: selection.reference.include.clone(),
@@ -759,7 +774,11 @@ fn sort_candidates_deterministically(candidates: &mut [ComSelectionCandidate]) {
                 left.identity
                     .version_major
                     .cmp(&right.identity.version_major)
-                    .then_with(|| left.identity.version_minor.cmp(&right.identity.version_minor))
+                    .then_with(|| {
+                        left.identity
+                            .version_minor
+                            .cmp(&right.identity.version_minor)
+                    })
             })
             .then_with(|| {
                 left.identity
@@ -783,14 +802,13 @@ fn sort_candidates_deterministically(candidates: &mut [ComSelectionCandidate]) {
 mod tests {
     use super::{
         ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
-        ComSelectionService,
-        ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionSourceKind,
-        FileBackedComSelectionQuery, RegisteredComSelectionQuery, assess_project_com_selections,
-        basproj_reference_from_candidate, candidate_from_catalog_entry,
-        candidate_from_project_reference, discover_file_backed_com_candidates,
-        discover_prog_id_com_candidates, discover_registered_com_candidates,
-        inspect_workspace_com_project_state, plan_add_com_candidate,
-        plan_repair_project_selection, plan_replace_com_reference,
+        ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionService,
+        ComSelectionSourceKind, FileBackedComSelectionQuery, RegisteredComSelectionQuery,
+        assess_project_com_selections, basproj_reference_from_candidate,
+        candidate_from_catalog_entry, candidate_from_project_reference,
+        discover_file_backed_com_candidates, discover_prog_id_com_candidates,
+        discover_registered_com_candidates, inspect_workspace_com_project_state,
+        plan_add_com_candidate, plan_repair_project_selection, plan_replace_com_reference,
     };
     use crate::{BasProjComReference, HostProjectEdit};
     use oxvba_host::TypeLibraryCatalogEntry;
@@ -819,7 +837,10 @@ mod tests {
         );
         assert_eq!(candidate.identity.version_major, Some(1));
         assert_eq!(candidate.identity.version_minor, Some(0));
-        assert_eq!(candidate.carrier_kind, ComSelectionCarrierKind::DynamicLibrary);
+        assert_eq!(
+            candidate.carrier_kind,
+            ComSelectionCarrierKind::DynamicLibrary
+        );
         assert_eq!(candidate.confidence, ComSelectionConfidence::Strong);
     }
 
@@ -950,7 +971,10 @@ mod tests {
             import_lib: Some("widget.tlb".to_string()),
         });
 
-        assert_eq!(candidate.source_kind, ComSelectionSourceKind::ProjectActiveReference);
+        assert_eq!(
+            candidate.source_kind,
+            ComSelectionSourceKind::ProjectActiveReference
+        );
         assert_eq!(candidate.carrier_kind, ComSelectionCarrierKind::TypeLibrary);
     }
 
@@ -968,9 +992,16 @@ mod tests {
         .expect("known typelib discovery");
 
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].source_kind, ComSelectionSourceKind::RegisteredLibrary);
         assert_eq!(
-            candidates[0].identity.guid.as_deref().map(|value| value.trim_matches('{').trim_matches('}')),
+            candidates[0].source_kind,
+            ComSelectionSourceKind::RegisteredLibrary
+        );
+        assert_eq!(
+            candidates[0]
+                .identity
+                .guid
+                .as_deref()
+                .map(|value| value.trim_matches('{').trim_matches('}')),
             Some("00020430-0000-0000-C000-000000000046")
         );
     }
@@ -981,8 +1012,14 @@ mod tests {
             discover_prog_id_com_candidates("OxVba.TestDispatch").expect("fixture ProgID lookup");
 
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].source_kind, ComSelectionSourceKind::ProgIdLookup);
-        assert_eq!(candidates[0].prog_ids, vec!["OxVba.TestDispatch".to_string()]);
+        assert_eq!(
+            candidates[0].source_kind,
+            ComSelectionSourceKind::ProgIdLookup
+        );
+        assert_eq!(
+            candidates[0].prog_ids,
+            vec!["OxVba.TestDispatch".to_string()]
+        );
         assert_eq!(candidates[0].identity.library_name, "OxVba.TestDispatch");
     }
 
@@ -998,11 +1035,19 @@ mod tests {
         .expect("fixture file-backed lookup");
 
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].source_kind, ComSelectionSourceKind::FileBrowse);
-        assert_eq!(candidates[0].carrier_kind, ComSelectionCarrierKind::TypeLibrary);
+        assert_eq!(
+            candidates[0].source_kind,
+            ComSelectionSourceKind::FileBrowse
+        );
+        assert_eq!(
+            candidates[0].carrier_kind,
+            ComSelectionCarrierKind::TypeLibrary
+        );
         assert_eq!(
             candidates[0].identity.carrier_path.as_deref(),
-            Some(Path::new(r"C:\Work\DnaCalc\OxVba\temp\missing\OxVba.TestEventServer.tlb"))
+            Some(Path::new(
+                r"C:\Work\DnaCalc\OxVba\temp\missing\OxVba.TestEventServer.tlb"
+            ))
         );
     }
 
@@ -1046,11 +1091,15 @@ mod tests {
         assert_eq!(plan.kind, ComProjectEditPlanKind::Replace);
         assert_eq!(plan.include, "Scripting");
         assert_eq!(
-            plan.resulting_reference.as_ref().and_then(|value| value.guid.as_deref()),
+            plan.resulting_reference
+                .as_ref()
+                .and_then(|value| value.guid.as_deref()),
             Some("{420B2830-E718-11CF-893D-00A0C9054228}")
         );
         assert_eq!(
-            plan.resulting_reference.as_ref().map(|value| value.include.as_str()),
+            plan.resulting_reference
+                .as_ref()
+                .map(|value| value.include.as_str()),
             Some("Scripting")
         );
         assert_eq!(plan.edits.len(), 2);
@@ -1081,7 +1130,9 @@ mod tests {
         let plan = plan_repair_project_selection(&selection, &candidate);
         assert_eq!(plan.kind, ComProjectEditPlanKind::Repair);
         assert_eq!(
-            plan.resulting_reference.as_ref().map(|value| value.include.as_str()),
+            plan.resulting_reference
+                .as_ref()
+                .map(|value| value.include.as_str()),
             Some("Scripting")
         );
     }

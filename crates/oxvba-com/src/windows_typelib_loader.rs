@@ -21,14 +21,14 @@ use std::ffi::c_void;
 #[cfg(target_os = "windows")]
 use std::ptr::null_mut;
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::ERROR_NO_MORE_ITEMS;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::CLSIDFromProgID;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CLASSES_ROOT, KEY_READ, REG_SZ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
     RegQueryValueExW,
 };
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::ERROR_NO_MORE_ITEMS;
 
 // ── ITypeLib / ITypeInfo vtable definitions ──
 
@@ -1481,9 +1481,8 @@ mod tests {
         let result = discover_registered_typelib_identities_by_name("OLE Automation");
         if let Ok(matches) = result {
             assert!(
-                matches
-                    .iter()
-                    .any(|identity| identity.libid.as_deref() == Some("{00020430-0000-0000-C000-000000000046}")),
+                matches.iter().any(|identity| identity.libid.as_deref()
+                    == Some("{00020430-0000-0000-C000-000000000046}")),
                 "expected stdole registry discovery to include the stdole LIBID"
             );
         }
