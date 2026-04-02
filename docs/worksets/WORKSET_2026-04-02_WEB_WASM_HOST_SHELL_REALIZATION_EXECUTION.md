@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Purpose
 
@@ -41,6 +41,11 @@ That recommendation now needs a current execution owner and bead root.
 4. route diagnostics/output and minimal commands
 5. publish validation evidence
 6. only then plan browser-native wasm follow-ons
+
+Current execution state:
+- this workset is now the active execution owner for the remaining ready web/wasm lane
+- the typed desktop-first host bridge contract is now landed as the first substrate
+- shell packaging and frontend wiring remain the next real delivery lane over that explicit bridge
 
 ## Relationship To Prior Work
 

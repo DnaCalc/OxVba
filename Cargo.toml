@@ -15,6 +15,7 @@ members = [
     "crates/oxvba-build",
     "crates/oxvba-languageservice",
     "crates/oxvba-lsp",
+    "crates/oxvba-web-host",
 ]
 resolver = "2"
 
@@ -38,6 +39,7 @@ oxvba-host = { path = "crates/oxvba-host" }
 oxvba-project = { path = "crates/oxvba-project" }
 oxvba-build = { path = "crates/oxvba-build" }
 oxvba-languageservice = { path = "crates/oxvba-languageservice" }
+oxvba-web-host = { path = "crates/oxvba-web-host" }
 rkyv = "0.8"
 quick-xml = "0.37"
 thiserror = "2"
