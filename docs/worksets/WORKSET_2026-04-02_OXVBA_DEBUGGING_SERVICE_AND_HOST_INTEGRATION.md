@@ -111,6 +111,7 @@ Current execution state:
   - breakpoint management
   - typed pause/frame/value projection
   - bounded current-frame identifier evaluation while paused
+- DAP projection guidance is now published in `docs/spec/OXVBA_DEBUGGER_DAP_PROJECTION_V1.md`
 - the next delivery slice is stronger debugger validation and direct-host harness evidence
 
 ## Validation Strategy

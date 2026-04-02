@@ -78,6 +78,8 @@ What it does not yet have is a usable VS Code integration:
   - `WORKSET_2026-04-01_OXIDE_HOST_SURFACE_AND_VSCODE_ALTERNATE_EDITOR_EXECUTION.md`
 - Shared debugger core:
   - `WORKSET_2026-04-02_OXVBA_DEBUGGING_SERVICE_AND_HOST_INTEGRATION.md`
+- Debugger DAP projection guidance:
+  - `docs/spec/OXVBA_DEBUGGER_DAP_PROJECTION_V1.md`
 
 ## Exit Condition
 
