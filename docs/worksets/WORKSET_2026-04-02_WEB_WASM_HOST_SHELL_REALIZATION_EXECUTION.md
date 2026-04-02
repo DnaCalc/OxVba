@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Purpose
 
@@ -48,7 +48,8 @@ Current execution state:
 - the shell baseline crate and embedded frontend asset inventory are now landed over that bridge
 - real workspace load, run, and reset wiring now lands through the shell session and bridge commands
 - diagnostics updates, output events, and a bounded immediate command flow now land through the shell session
-- validation evidence and the honest browser-native wasm handoff are the remaining closure lane
+- validation evidence is now published in `docs/WEB_HOST_SHELL_BASELINE_EVIDENCE.md`
+- the honest browser-native wasm handoff is now published in `docs/spec/BROWSER_NATIVE_WASM_HANDOFF_V1.md`
 
 ## Relationship To Prior Work
 
