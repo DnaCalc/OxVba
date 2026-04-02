@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+oxvba-host.workspace = true
+oxvba-languageservice.workspace = true
+oxvba-project.workspace = true
 oxvba-web-host.workspace = true
 serde.workspace = true
 serde_json.workspace = true
