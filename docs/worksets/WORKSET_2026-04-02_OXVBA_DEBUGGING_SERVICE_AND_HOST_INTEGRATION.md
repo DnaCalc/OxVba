@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Near-Term Priority Position
 
@@ -117,7 +117,10 @@ Current execution state:
   - compiler slot-kind projection
   - host pause-state lifecycle
   - bounded paused evaluation success and rejection paths
-- the next delivery slice is direct-host harness evidence and broader integration/transcript coverage
+- direct-host harness evidence now exists in:
+  - `crates/oxvba-host/tests/debug_session_host_harness.rs`
+  - `docs/evidence/DEBUGGER_HOST_HARNESS_V1.md`
+- debugger integration/transcript coverage now exists through the direct-host harness transcript assertions
 
 ## Validation Strategy
 
@@ -179,3 +182,10 @@ This workset is complete only when:
 - OxIde can debug OxVba code without native debuggers,
 - strong debugger validation exists across unit, integration, and transcript lanes,
 - and the path to a VS Code DAP adapter is explicit and technically credible.
+
+Current completion note:
+- semantic VM-backed debugging is live
+- `DebugSession` is the direct host boundary
+- unit/behavior coverage is in-tree
+- direct-host integration/transcript evidence is in-tree
+- DAP projection guidance is published for the later VS Code adapter lane
