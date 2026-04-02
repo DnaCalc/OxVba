@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Purpose
 
@@ -91,6 +91,11 @@ These are useful, but they should layer on top of the semantic debugger rather t
 5. add OxIde-facing debug harness/evidence
 6. later add DAP projection for VS Code
 7. later add Windows-specific COM/Office debug helpers where justified
+
+Current execution state:
+- workset and policy are published
+- debugger contract/spec is now published in `docs/spec/OXVBA_DEBUGGER_CONTRACT_V1.md`
+- the next delivery slice is the source/statement identity substrate for breakpoints and stepping
 
 ## Non-Goals
 
