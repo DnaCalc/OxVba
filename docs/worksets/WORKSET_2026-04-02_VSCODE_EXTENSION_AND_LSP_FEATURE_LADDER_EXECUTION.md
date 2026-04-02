@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Near-Term Priority Position
 
@@ -71,7 +71,8 @@ Current execution state:
 - the minimal VS Code extension shell now exists under `extensions/vscode-oxvba`
 - `oxvba-lsp` now publishes diagnostics and answers document/workspace symbols, hover, definition, and references over the same direct semantic core
 - `oxvba-lsp` now also exposes completion, signature help, rename, code actions, and semantic tokens over the same direct semantic core
-- the next delivery slice is extension-owned project commands over OxVba helper APIs
+- the extension now owns a bounded command set over `oxvba-cli` and helper-backed flows for project init, convention capture, and COM reference add/repair
+- the debugger path is now explicitly connected through `docs/spec/OXVBA_DEBUGGER_DAP_PROJECTION_V1.md` and the extension guidance, without claiming adapter delivery
 
 ## Non-Goals
 

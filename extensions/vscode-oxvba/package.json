@@ -39,6 +39,24 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "commands": [
+      {
+        "command": "oxvba.initProject",
+        "title": "OxVba: Initialize Project"
+      },
+      {
+        "command": "oxvba.captureConventionProject",
+        "title": "OxVba: Capture Convention Folder"
+      },
+      {
+        "command": "oxvba.addComReference",
+        "title": "OxVba: Add COM Reference"
+      },
+      {
+        "command": "oxvba.repairComReferences",
+        "title": "OxVba: Repair COM References"
+      }
+    ],
     "configuration": {
       "title": "OxVba",
       "properties": {
@@ -46,6 +64,11 @@
           "type": "string",
           "default": "",
           "description": "Absolute path to the oxvba-lsp executable. Leave empty to use the repo-local target output."
+        },
+        "oxvba.cli.path": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the oxvba-cli executable. Leave empty to use the repo-local target output."
         }
       }
     }
