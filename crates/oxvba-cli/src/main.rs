@@ -2533,7 +2533,8 @@ End Function
         let mut session = engine
             .prepare_immediate_session(&loaded.manifest)
             .expect("immediate session");
-        let mut input = Cursor::new(".module Main\nIncrementCounter()\nIncrementCounter()\n.quit\n");
+        let mut input =
+            Cursor::new(".module Main\nIncrementCounter()\nIncrementCounter()\n.quit\n");
         let mut output = Vec::new();
         let mut errors = Vec::new();
 
@@ -2586,9 +2587,8 @@ End Function
         let mut session = engine
             .prepare_immediate_session(&loaded.manifest)
             .expect("immediate session");
-        let mut input = Cursor::new(
-            ".module Main\nIncrementCounter()\nreset\nIncrementCounter()\n.quit\n",
-        );
+        let mut input =
+            Cursor::new(".module Main\nIncrementCounter()\nreset\nIncrementCounter()\n.quit\n");
         let mut output = Vec::new();
         let mut errors = Vec::new();
 

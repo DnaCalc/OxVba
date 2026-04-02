@@ -31,6 +31,20 @@ struct EmitProcMeta {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ProcedureRuntimeSlotKind {
+    Parameter,
+    Local,
+    ReturnValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProcedureRuntimeSlotMetadata {
+    pub name: String,
+    pub slot: usize,
+    pub kind: ProcedureRuntimeSlotKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProcedureRuntimeMetadata {
     pub module_name: String,
     pub procedure_name: String,
@@ -39,6 +53,7 @@ pub struct ProcedureRuntimeMetadata {
     pub source_line_end: usize,
     pub statement_line_numbers: Vec<usize>,
     pub statement_entry_pcs: Vec<usize>,
+    pub slots: Vec<ProcedureRuntimeSlotMetadata>,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
 }
@@ -181,6 +196,11 @@ pub fn emit_bytecode_with_runtime_metadata(
             source_line_end: procedures[entry_idx].source_line_end,
             statement_line_numbers: procedures[entry_idx].statement_line_numbers.clone(),
             statement_entry_pcs: entry_statement_entry_pcs,
+            slots: build_runtime_slot_metadata(
+                &procedures[entry_idx],
+                &proc_slots[entry_idx],
+                proc_meta[&procedures[entry_idx].name].return_slot,
+            ),
             param_slots: procedures[entry_idx]
                 .params
                 .iter()
@@ -236,6 +256,11 @@ pub fn emit_bytecode_with_runtime_metadata(
                 source_line_end: proc.source_line_end,
                 statement_line_numbers: proc.statement_line_numbers.clone(),
                 statement_entry_pcs,
+                slots: build_runtime_slot_metadata(
+                    proc,
+                    &proc_slots[idx],
+                    proc_meta[&proc.name].return_slot,
+                ),
                 param_slots: proc
                     .params
                     .iter()
@@ -294,6 +319,48 @@ pub fn emit_bytecode_with_runtime_metadata(
         },
         procedure_runtime_metadata,
     )
+}
+
+fn build_runtime_slot_metadata(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+    return_slot: Option<usize>,
+) -> Vec<ProcedureRuntimeSlotMetadata> {
+    let return_name = proc
+        .name
+        .strip_prefix("property_get_")
+        .unwrap_or(&proc.name)
+        .to_ascii_lowercase();
+    let mut slots = Vec::new();
+    for name in &proc.declarations {
+        let Some(slot) = proc_slots.get(name).copied() else {
+            continue;
+        };
+        let kind = if proc
+            .params
+            .iter()
+            .any(|param| param.name.eq_ignore_ascii_case(name))
+        {
+            ProcedureRuntimeSlotKind::Parameter
+        } else if Some(slot) == return_slot
+            && (proc.name.eq_ignore_ascii_case(name) || name.eq_ignore_ascii_case(&return_name))
+        {
+            ProcedureRuntimeSlotKind::ReturnValue
+        } else {
+            ProcedureRuntimeSlotKind::Local
+        };
+        slots.push(ProcedureRuntimeSlotMetadata {
+            name: name.clone(),
+            slot,
+            kind,
+        });
+    }
+    slots.sort_by(|lhs, rhs| {
+        lhs.slot
+            .cmp(&rhs.slot)
+            .then_with(|| lhs.name.cmp(&rhs.name))
+    });
+    slots
 }
 
 fn build_external_call_descriptors(

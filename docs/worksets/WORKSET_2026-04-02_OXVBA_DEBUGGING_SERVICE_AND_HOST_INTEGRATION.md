@@ -106,7 +106,12 @@ Current execution state:
 - debugger contract/spec is now published in `docs/spec/OXVBA_DEBUGGER_CONTRACT_V1.md`
 - the source/procedure identity substrate is now in place with candidate statement lines and emitted statement-entry PCs
 - a bounded VM debug-execution substrate is now in place with entry pause, breakpoints, continue, and step into/over/out over emitted statement identities
-- the next delivery slice is typed host-facing debug session APIs over that VM substrate
+- typed host-facing debug session APIs now sit over that VM substrate, including:
+  - direct `DebugSession` creation from a live project manifest
+  - breakpoint management
+  - typed pause/frame/value projection
+  - bounded current-frame identifier evaluation while paused
+- the next delivery slice is stronger debugger validation and direct-host harness evidence
 
 ## Validation Strategy
 

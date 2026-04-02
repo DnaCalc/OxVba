@@ -255,6 +255,7 @@ mod tests {
                 source_line_end: 1,
                 statement_line_numbers: vec![1],
                 statement_entry_pcs: vec![1],
+                slots: vec![],
                 param_slots: vec![],
                 return_slot: None,
             },

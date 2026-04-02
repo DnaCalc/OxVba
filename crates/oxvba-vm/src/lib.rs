@@ -17,7 +17,8 @@ use oxvba_hal::{
 use oxvba_runtime::RuntimeValue;
 
 pub use interpreter::{
-    DebugBreakpoint, DebugRunResult, DebugSourceLocation, DebugStop, DebugStopReason, Vm,
+    DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
+    DebugStopReason, Vm,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {

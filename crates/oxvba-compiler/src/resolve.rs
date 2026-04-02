@@ -662,7 +662,10 @@ fn collect_top_level_mainline_line_numbers(lines: &[String]) -> Vec<usize> {
     out
 }
 
-fn collect_candidate_statement_line_numbers(lines: &[String], start_line_number: usize) -> Vec<usize> {
+fn collect_candidate_statement_line_numbers(
+    lines: &[String],
+    start_line_number: usize,
+) -> Vec<usize> {
     let mut out = Vec::new();
     for (offset, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -1460,7 +1463,8 @@ fn parse_procedures(
         );
         body.splice(0..0, build_const_prelude(module_constants));
         let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
-        let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
+        let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term)
+        {
             index + 1
         } else {
             index.max(source_line_start)

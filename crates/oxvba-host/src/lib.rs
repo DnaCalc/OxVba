@@ -1,11 +1,16 @@
 //! oxvba-host: engine orchestration and host integration scaffolding.
 
+pub mod debugger;
 pub mod engine;
 pub mod events;
 pub mod immediate;
 pub mod project;
 pub mod runner;
 
+pub use debugger::{
+    DebugEvaluationRequest, DebugEvaluationResult, DebugFrame, DebugFrameValue,
+    DebugFrameValueKind, DebugPauseState, DebugSession, DebugSessionError, HostDebugRunResult,
+};
 pub use engine::{
     ComEventCallbackDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
     ProjectRuntimeSession,

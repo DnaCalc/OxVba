@@ -14,7 +14,10 @@ use thiserror::Error;
 
 pub use bundle::{ComClassExportEntry, OxBundle};
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
-pub use emit::{ProcedureRuntimeMetadata, bound_type_to_declare_param_type};
+pub use emit::{
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    bound_type_to_declare_param_type,
+};
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
     ProjectComWithEventsRoute, ProjectCompileError, ProjectDynamicMemberKind,

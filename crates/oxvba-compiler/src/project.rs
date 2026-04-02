@@ -643,21 +643,19 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let (bytecode, mut procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals_class(
-        &rewritten_source,
-        &forced_object_locals_by_proc,
-        has_class_modules,
-    )
-    .map_err(|e| ProjectCompileError::BackendCompile {
-        message: e.to_string(),
-    })?;
+    let (bytecode, mut procedure_runtime_metadata) =
+        compile_with_runtime_metadata_object_locals_class(
+            &rewritten_source,
+            &forced_object_locals_by_proc,
+            has_class_modules,
+        )
+        .map_err(|e| ProjectCompileError::BackendCompile {
+            message: e.to_string(),
+        })?;
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
-    decorate_project_procedure_runtime_metadata(
-        &mut procedure_runtime_metadata,
-        &procedure_index,
-    );
+    decorate_project_procedure_runtime_metadata(&mut procedure_runtime_metadata, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
     let project_com_withevents_routes =
         build_project_com_withevents_routes(manifest, &event_dispatch_plan);

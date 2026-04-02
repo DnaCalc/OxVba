@@ -101,6 +101,12 @@ pub enum DebugRunResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugRuntimeSnapshot {
+    pub last_pause: Option<DebugStop>,
+    pub activation_entry_pcs: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum DebugStepMode {
     Into,
     Over { depth: usize },
@@ -392,6 +398,14 @@ impl Vm {
         self.resume_debug_session(bytecode)
     }
 
+    pub fn debug_snapshot(&self) -> Option<DebugRuntimeSnapshot> {
+        let state = self.debug_runtime.as_ref()?;
+        Some(DebugRuntimeSnapshot {
+            last_pause: state.last_pause.clone(),
+            activation_entry_pcs: self.activation_entry_pcs.clone(),
+        })
+    }
+
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
         self.execute_with_typed_fastpaths(bytecode, self.typed_fastpaths_default)
     }
@@ -576,11 +590,17 @@ impl Vm {
             procedure_name: metadata.procedure_name.clone(),
             entry_pc,
             statement_pc: pc,
-            line_number: metadata.statement_line_numbers.get(statement_index).copied(),
+            line_number: metadata
+                .statement_line_numbers
+                .get(statement_index)
+                .copied(),
         })
     }
 
-    fn debug_breakpoint_matches(breakpoint: &DebugBreakpoint, location: &DebugSourceLocation) -> bool {
+    fn debug_breakpoint_matches(
+        breakpoint: &DebugBreakpoint,
+        location: &DebugSourceLocation,
+    ) -> bool {
         location.line_number == Some(breakpoint.line_number)
             && location
                 .module_name
@@ -4496,6 +4516,7 @@ mod tests {
             source_line_end: statement_line_numbers.last().copied().unwrap_or(1),
             statement_line_numbers,
             statement_entry_pcs,
+            slots: Vec::new(),
             param_slots: Vec::new(),
             return_slot: None,
         }
@@ -4602,8 +4623,9 @@ mod tests {
         };
         assert_eq!(entry_pause.location.statement_pc, 0);
 
-        let DebugRunResult::Paused(step_over_pause) =
-            vm.debug_step_over(&bytecode).expect("step over should pause")
+        let DebugRunResult::Paused(step_over_pause) = vm
+            .debug_step_over(&bytecode)
+            .expect("step over should pause")
         else {
             panic!("expected step-over pause");
         };
@@ -4613,12 +4635,14 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.set_project_procedure_runtime_metadata(metadata);
-        let DebugRunResult::Paused(_) = vm.debug_start(&bytecode).expect("debug start should pause")
+        let DebugRunResult::Paused(_) =
+            vm.debug_start(&bytecode).expect("debug start should pause")
         else {
             panic!("expected entry pause");
         };
-        let DebugRunResult::Paused(step_into_pause) =
-            vm.debug_step_into(&bytecode).expect("step into should pause in callee")
+        let DebugRunResult::Paused(step_into_pause) = vm
+            .debug_step_into(&bytecode)
+            .expect("step into should pause in callee")
         else {
             panic!("expected step-into pause");
         };
@@ -4627,8 +4651,9 @@ mod tests {
         assert_eq!(step_into_pause.location.procedure_name, "Foo");
         assert_eq!(step_into_pause.call_stack_depth, 2);
 
-        let DebugRunResult::Paused(step_out_pause) =
-            vm.debug_step_out(&bytecode).expect("step out should return to caller")
+        let DebugRunResult::Paused(step_out_pause) = vm
+            .debug_step_out(&bytecode)
+            .expect("step out should return to caller")
         else {
             panic!("expected step-out pause");
         };
@@ -5836,6 +5861,7 @@ mod tests {
                 source_line_end: 1,
                 statement_line_numbers: vec![1],
                 statement_entry_pcs: vec![10],
+                slots: vec![],
                 param_slots: vec![20, 21],
                 return_slot: None,
             },

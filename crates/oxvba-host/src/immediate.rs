@@ -612,7 +612,9 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::statement("Call DoubleValue(21)"))
+            .evaluate(&ImmediateEvaluationRequest::statement(
+                "Call DoubleValue(21)",
+            ))
             .expect("evaluate");
 
         let ImmediateEvaluationOutput::PrintedLine(line) = result.output else {
@@ -643,7 +645,10 @@ End Function
 
         assert!(matches!(result.output, ImmediateEvaluationOutput::Empty));
         assert_eq!(result.diagnostics.len(), 1);
-        assert_eq!(result.diagnostics[0].phase(), crate::DiagnosticPhase::CompileTime);
+        assert_eq!(
+            result.diagnostics[0].phase(),
+            crate::DiagnosticPhase::CompileTime
+        );
         assert!(
             result.diagnostics[0]
                 .message()

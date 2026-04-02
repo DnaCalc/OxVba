@@ -139,6 +139,14 @@ impl ProjectRuntimeSession {
     ) -> &std::collections::BTreeMap<String, ProcedureRuntimeMetadata> {
         &self.compiled.procedure_runtime_metadata
     }
+
+    pub(crate) fn vm(&self) -> &Vm {
+        &self.vm
+    }
+
+    pub(crate) fn vm_mut(&mut self) -> &mut Vm {
+        &mut self.vm
+    }
 }
 
 impl Default for Engine {

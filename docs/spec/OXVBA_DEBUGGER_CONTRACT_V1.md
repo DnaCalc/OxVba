@@ -63,6 +63,7 @@ Current bounded landing:
 - source line start/end,
 - candidate source statement lines,
 - top-level emitted statement-entry PCs,
+- named slot metadata for parameters, locals, and return values,
 - and a VM-backed paused execution substrate with:
   - entry pause,
   - line breakpoints,
@@ -70,6 +71,11 @@ Current bounded landing:
   - step into,
   - step over,
   - step out.
+- a direct host-facing debug session over the live runtime with:
+  - breakpoint management,
+  - typed pause state,
+  - frame/local projection,
+  - and bounded current-frame identifier evaluation.
 
 That is enough substrate to begin semantic stop planning honestly and to exercise bounded stepping behavior over simple procedure/call shapes, but not yet enough for final breakpoint/step resolution across all nested control-flow shapes. The zippering and richer paused-state projection layers remain later debugger beads.
 
@@ -131,7 +137,7 @@ Order:
 2. add source/statement identity metadata and first emitted-statement PC substrate sufficient to start semantic stop planning
 3. add VM pause/continue/breakpoint substrate
 4. expose typed host-facing debug session APIs
-5. prove direct-host/OxIde consumption with a bounded harness
+5. prove direct-host/OxIde consumption with a bounded harness and stronger validation
 6. plan or project DAP later
 
 ## Exit Condition For V1
