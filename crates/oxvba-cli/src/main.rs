@@ -2301,6 +2301,19 @@ mod tests {
     use std::io::Cursor;
     use std::path::{Path, PathBuf};
 
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let temp_root = std::env::temp_dir().join(format!(
+            "{label}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        temp_root
+    }
+
     #[test]
     fn parse_run_args_with_flags() {
         let path = "Cargo.toml".to_string();
@@ -2494,6 +2507,109 @@ End Function
         assert!(output_text.contains("immediate> 2"));
         assert!(output_text.contains("immediate> reset"));
         assert!(errors.is_empty(), "unexpected stderr: {:?}", errors);
+    }
+
+    #[test]
+    fn run_immediate_shell_transcript_over_convention_project_is_deterministic() {
+        let temp_root = unique_temp_dir("oxvba_cli_immediate_convention");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            r#"
+Dim counter As Integer
+
+Public Sub Main()
+End Sub
+
+Public Function IncrementCounter() As Integer
+    counter = counter + 1
+    IncrementCounter = counter
+End Function
+"#,
+        )
+        .expect("write module");
+
+        let loaded = load_run_project_target(Some(temp_root.clone())).expect("load convention");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_immediate_session(&loaded.manifest)
+            .expect("immediate session");
+        let mut input = Cursor::new(".module Main\nIncrementCounter()\nIncrementCounter()\n.quit\n");
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        run_immediate_shell(&mut session, &mut input, &mut output, &mut errors)
+            .expect("shell should succeed");
+
+        let output_text = String::from_utf8(output).expect("utf8 output");
+        assert_eq!(
+            output_text,
+            concat!(
+                "OxVba Immediate Window (bounded v1). Use .help for commands, .quit to exit.\n",
+                "immediate> module: Main\n",
+                "immediate> 1\n",
+                "immediate> 2\n",
+                "immediate> "
+            )
+        );
+        assert!(errors.is_empty(), "unexpected stderr: {:?}", errors);
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_immediate_shell_transcript_over_basproj_reset_is_deterministic() {
+        let temp_root = unique_temp_dir("oxvba_cli_immediate_basproj");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            r#"
+Dim counter As Integer
+
+Public Sub Main()
+End Sub
+
+Public Function IncrementCounter() As Integer
+    counter = counter + 1
+    IncrementCounter = counter
+End Function
+"#,
+        )
+        .expect("write module");
+        std::fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let loaded =
+            load_run_project_target(Some(temp_root.join("App.basproj"))).expect("load basproj");
+        let engine = Engine::new(HostConfig::default());
+        let mut session = engine
+            .prepare_immediate_session(&loaded.manifest)
+            .expect("immediate session");
+        let mut input = Cursor::new(
+            ".module Main\nIncrementCounter()\nreset\nIncrementCounter()\n.quit\n",
+        );
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        run_immediate_shell(&mut session, &mut input, &mut output, &mut errors)
+            .expect("shell should succeed");
+
+        let output_text = String::from_utf8(output).expect("utf8 output");
+        assert_eq!(
+            output_text,
+            concat!(
+                "OxVba Immediate Window (bounded v1). Use .help for commands, .quit to exit.\n",
+                "immediate> module: Main\n",
+                "immediate> 1\n",
+                "immediate> reset\n",
+                "immediate> 1\n",
+                "immediate> "
+            )
+        );
+        assert!(errors.is_empty(), "unexpected stderr: {:?}", errors);
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
 
     #[test]

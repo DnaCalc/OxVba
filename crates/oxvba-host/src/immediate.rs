@@ -408,7 +408,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{RuntimeValue, bstr::BStr};
 
     use super::{
         ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
@@ -563,5 +563,142 @@ End Function
             panic!("expected reset value result");
         };
         assert_eq!(reset_value.runtime_value, RuntimeValue::I32(1));
+    }
+
+    #[test]
+    fn immediate_session_supports_question_shorthand_and_string_arguments() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function EchoText(value As String) As String
+    EchoText = value
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .expect("evaluate");
+
+        let ImmediateEvaluationOutput::Value(value) = result.output else {
+            panic!("expected value result");
+        };
+        assert_eq!(
+            value.runtime_value,
+            RuntimeValue::String(BStr("hello".to_string()))
+        );
+        assert_eq!(value.display_text, "hello");
+    }
+
+    #[test]
+    fn immediate_session_statement_mode_projects_printed_line() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function DoubleValue(value As Integer) As Integer
+    DoubleValue = value * 2
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate(&ImmediateEvaluationRequest::statement("Call DoubleValue(21)"))
+            .expect("evaluate");
+
+        let ImmediateEvaluationOutput::PrintedLine(line) = result.output else {
+            panic!("expected printed-line result");
+        };
+        assert_eq!(line, "ok: Module1.DoubleValue => 42");
+    }
+
+    #[test]
+    fn immediate_session_reports_diagnostics_for_unsupported_literal_arguments() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function DoubleValue(value As Integer) As Integer
+    DoubleValue = value * 2
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate(&ImmediateEvaluationRequest::new("DoubleValue(counter)"))
+            .expect("evaluate");
+
+        assert!(matches!(result.output, ImmediateEvaluationOutput::Empty));
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.diagnostics[0].phase(), crate::DiagnosticPhase::CompileTime);
+        assert!(
+            result.diagnostics[0]
+                .message()
+                .contains("unsupported argument `counter`")
+        );
+    }
+
+    #[test]
+    fn immediate_session_requires_target_module_for_unqualified_calls() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function GetValue() As Integer
+    GetValue = 42
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+
+        let err = session
+            .evaluate(&ImmediateEvaluationRequest::new("GetValue()"))
+            .expect_err("missing module should fail");
+
+        assert_eq!(
+            err,
+            super::ImmediateSessionError::UnknownTargetModule {
+                module: "<none>".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn immediate_session_reset_command_flows_through_evaluator() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function GetValue() As Integer
+    GetValue = 42
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate(&ImmediateEvaluationRequest::new("reset"))
+            .expect("reset should evaluate");
+
+        assert!(matches!(result.output, ImmediateEvaluationOutput::Reset));
+        assert!(result.diagnostics.is_empty());
     }
 }
