@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Near-Term Priority Position
 
@@ -64,6 +64,12 @@ What it does not yet have is a usable VS Code integration:
 3. expose completion/signature help/rename/code actions/semantic tokens
 4. add extension-owned project commands over OxVba helpers
 5. wire the later debugger lane
+
+Current execution state:
+- policy/workset is published
+- debugger DAP projection guidance is now published in `docs/spec/OXVBA_DEBUGGER_DAP_PROJECTION_V1.md`
+- the minimal VS Code extension shell now exists under `extensions/vscode-oxvba`
+- the next delivery slice is diagnostics and basic navigation over `oxvba-lsp`
 
 ## Non-Goals
 

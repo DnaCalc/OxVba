@@ -1,0 +1,57 @@
+{
+  "name": "oxvba-vscode",
+  "displayName": "OxVba",
+  "description": "Minimal VS Code shell for OxVba over oxvba-lsp.",
+  "version": "0.0.1",
+  "publisher": "dnacalc",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DnaCalc/OxVba"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:oxvba",
+    "workspaceContains:**/*.basproj",
+    "workspaceContains:**/*.vbp"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "oxvba",
+        "aliases": [
+          "OxVba",
+          "OxVBA"
+        ],
+        "extensions": [
+          ".bas",
+          ".cls",
+          ".frm",
+          ".basproj",
+          ".vbp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "OxVba",
+      "properties": {
+        "oxvba.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the oxvba-lsp executable. Leave empty to use the repo-local target output."
+        }
+      }
+    }
+  },
+  "extensionDependencies": [],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
