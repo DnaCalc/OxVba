@@ -2,7 +2,7 @@
 
 Date: 2026-04-03
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Purpose
 
@@ -27,6 +27,15 @@ What is still missing is the direct host-facing execution seam that lets OxIde s
 - reset this runtime,
 - invoke this startup/procedure,
 without shelling out to CLI or stitching together lower-level calls ad hoc.
+
+Delivered so far in this lane:
+- concrete contract ownership in `oxvba-host::embedded`
+- explicit typed source-policy selection
+- `HostWorkspaceSession` -> `EmbeddedWorkspaceSnapshot` handoff
+- first bounded `build_workspace` substrate
+- first bounded `run_project` / `reset_runtime` / `invoke_entry_point` / `invoke_procedure` substrate
+- targeted unit and cross-surface validation for disk-vs-overlay, compile-vs-runtime separation, reset, and entry/procedure invocation
+- OxIde-facing guidance and evidence in `docs/OXIDE_EMBEDDED_BUILD_RUN_INTEGRATION_GUIDANCE.md`
 
 ## Governing Policy
 

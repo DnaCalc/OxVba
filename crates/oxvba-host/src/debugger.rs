@@ -397,7 +397,9 @@ mod tests {
             .prepare_debug_session(&manifest)
             .expect("debug session should prepare");
         assert_eq!(
-            session.current_pause_state().expect("pause query should succeed"),
+            session
+                .current_pause_state()
+                .expect("pause query should succeed"),
             None
         );
         assert!(matches!(
@@ -405,7 +407,9 @@ mod tests {
             HostDebugRunResult::Completed
         ));
         assert_eq!(
-            session.current_pause_state().expect("pause query should succeed"),
+            session
+                .current_pause_state()
+                .expect("pause query should succeed"),
             None
         );
     }

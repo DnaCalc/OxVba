@@ -129,6 +129,16 @@ Status:
 Design status:
 - the intended shape is now captured in `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
 - the chosen direction is an explicit source-policy model so hosts choose between on-disk state and workspace-overlay state honestly
+- the owning contract module and type family now live in `oxvba_host::embedded`
+- the executable source-policy handoff now exists via `HostWorkspaceSession::prepare_embedded_workspace_snapshot`
+- the first typed `build_workspace` substrate now exists via `EmbeddedBuildRunHost::build_workspace`
+- the first typed live runtime-session substrate now exists via:
+  - `EmbeddedBuildRunHost::run_project`
+  - `EmbeddedRunSession::reset_runtime`
+  - `EmbeddedRunSession::invoke_entry_point`
+  - `EmbeddedRunSession::invoke_procedure`
+- OxIde-facing host-consumption guidance is now published in
+  `docs/OXIDE_EMBEDDED_BUILD_RUN_INTEGRATION_GUIDANCE.md`
 
 4. Stable host-facing guidance
 - document which crates/types are intended for direct host use,
@@ -147,6 +157,9 @@ Use:
 - `oxvba_project::apply_host_project_edit_plan`
 - `oxvba_project::assess_project_com_selections`
 - `oxvba_host::Engine`
+- `oxvba_host::EmbeddedBuildRunHost`
+- `oxvba_host::EmbeddedRunSession`
+- `oxvba_host::EmbeddedWorkspaceSnapshot`
 - `oxvba_host::ImmediateSession`
 - `oxvba_host::DebugSession`
 - `oxvba_languageservice::LanguageService`

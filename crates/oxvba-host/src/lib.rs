@@ -1,6 +1,7 @@
 //! oxvba-host: engine orchestration and host integration scaffolding.
 
 pub mod debugger;
+pub mod embedded;
 pub mod engine;
 pub mod events;
 pub mod immediate;
@@ -10,6 +11,15 @@ pub mod runner;
 pub use debugger::{
     DebugEvaluationRequest, DebugEvaluationResult, DebugFrame, DebugFrameValue,
     DebugFrameValueKind, DebugPauseState, DebugSession, DebugSessionError, HostDebugRunResult,
+};
+pub use embedded::{
+    EmbeddedBuildRequest, EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
+    EmbeddedBuildStatus, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
+    EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureRequest, EmbeddedInvokeResult,
+    EmbeddedInvokeStatus, EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget,
+    EmbeddedResetKind, EmbeddedResetRequest, EmbeddedResetResult, EmbeddedResetStatus,
+    EmbeddedRunRequest, EmbeddedRunResult, EmbeddedRunSession, EmbeddedRunSessionError,
+    EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
     ComEventCallbackDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,

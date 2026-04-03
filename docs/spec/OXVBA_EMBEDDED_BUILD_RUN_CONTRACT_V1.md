@@ -54,7 +54,14 @@ OxIde owns:
 
 ## Intended Surface
 
-The likely home for this contract is `oxvba-host` or a small host-facing facade crate layered directly over it.
+The owning home for this contract is `oxvba-host::embedded`.
+
+The initial facade shape is:
+- `oxvba_host::EmbeddedBuildRunHost`
+- `oxvba_host::EmbeddedWorkspaceSnapshot`
+- the `Embedded*Request` / `Embedded*Result` / `EmbeddedBuildRunEvent` family
+
+This chooses the public host boundary now without claiming the full executable substrate is already complete.
 
 ### Requests
 
@@ -174,6 +181,8 @@ It should not require OxIde to manually recreate compiler input from editor buff
 Recommended concrete direction:
 - the request carries the source policy plus workspace identity
 - OxVba performs any required snapshot extraction internally
+- `oxvba_languageservice::HostWorkspaceSession::prepare_embedded_workspace_snapshot(...)`
+  is the first concrete handoff point for that snapshot extraction
 - OxIde defaults to `WorkspaceOverlay`
 - CLI defaults to `DiskOnly`
 
@@ -232,7 +241,10 @@ Those remain separate lanes.
 ## Intended Follow-On
 
 The next bounded implementation bead for this area should:
-- define the concrete request/result/event Rust types,
-- choose the owning crate/module,
-- implement the explicit source-policy handoff between `HostWorkspaceSession` and embedded build/run,
-- and land the first `build_workspace` / `run_project` / `reset_runtime` substrate with regression coverage.
+- publish the OxIde-facing guidance and evidence for the now-landed:
+  - snapshot handoff,
+  - `build_workspace`,
+  - `run_project`,
+  - `reset_runtime`,
+  - `invoke_entry_point`,
+  - `invoke_procedure` surface.

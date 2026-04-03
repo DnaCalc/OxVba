@@ -57,8 +57,9 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
         entry_pause.stop.location.line_number.unwrap_or_default()
     ));
 
-    let HostDebugRunResult::Paused(callee_pause) =
-        session.step_into().expect("step into should pause in callee")
+    let HostDebugRunResult::Paused(callee_pause) = session
+        .step_into()
+        .expect("step into should pause in callee")
     else {
         panic!("expected callee pause");
     };
@@ -66,7 +67,11 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
         "step:{}:{}:{}",
         callee_pause.frames.len(),
         callee_pause.frames[0].procedure_name,
-        callee_pause.frames.last().expect("current frame").procedure_name
+        callee_pause
+            .frames
+            .last()
+            .expect("current frame")
+            .procedure_name
     ));
 
     let value = session
@@ -123,7 +128,9 @@ fn direct_host_debug_harness_reports_completed_session_without_pause_state() {
         .prepare_debug_session(&manifest)
         .expect("debug session should prepare");
 
-    let result = session.start().expect("empty mainline debug start should finish");
+    let result = session
+        .start()
+        .expect("empty mainline debug start should finish");
     assert!(matches!(result, HostDebugRunResult::Completed));
     assert_eq!(
         session

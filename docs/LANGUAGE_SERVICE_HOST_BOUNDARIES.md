@@ -126,7 +126,15 @@ Current status:
 - the first bounded host-facing session API is now implemented,
 - typed project roster/reference inspection is now implemented,
 - validated project-edit planning and apply is now implemented for `.basproj` workspaces,
-- broader typed build/run embedding remains follow-on work.
+- the first bounded embedded build/run surface is now implemented via `oxvba_host::embedded`.
+
+Current embedded build/run anchor:
+- `oxvba_host::EmbeddedBuildRunHost`
+- `oxvba_host::EmbeddedRunSession`
+- `oxvba_languageservice::HostWorkspaceSession::prepare_embedded_workspace_snapshot(...)`
+
+Current OxIde execution guidance for that surface:
+- `docs/OXIDE_EMBEDDED_BUILD_RUN_INTEGRATION_GUIDANCE.md`
 
 ## Current Honest Boundary
 
