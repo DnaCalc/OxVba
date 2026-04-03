@@ -164,6 +164,8 @@ This workset is complete only when:
 This workset remains the parent policy and ownership document for editor-facing host integration, but execution now splits into more concrete follow-on lanes:
 
 - OxIde direct-host continuation remains under this workset and the `bd-oxi1` bead tree.
+- Embedded build/run direct-host delivery is split into:
+  - `docs/worksets/WORKSET_2026-04-03_EMBEDDED_BUILD_RUN_DIRECT_HOST_EXECUTION.md`
 - VS Code extension delivery is split into:
   - `docs/worksets/WORKSET_2026-04-02_VSCODE_EXTENSION_AND_LSP_FEATURE_LADDER_EXECUTION.md`
 - shared OxVba-code debugging is split into:
