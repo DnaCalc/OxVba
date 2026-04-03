@@ -509,6 +509,7 @@ fn check_stmt(
         }
         BoundStmt::ExitDo => Ok(()),
         BoundStmt::ExitFor => Ok(()),
+        BoundStmt::ExitProcedure => Ok(()),
         BoundStmt::OnErrorResumeNext => Ok(()),
         BoundStmt::OnErrorGoto0 => Ok(()),
         BoundStmt::OnErrorGotoLabel { label } => {

@@ -104,6 +104,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     let mut instructions = Vec::new();
     let mut do_exit_stack: Vec<Vec<usize>> = Vec::new();
     let mut for_exit_stack: Vec<Vec<usize>> = Vec::new();
+    let mut proc_exit_stack: Vec<Vec<usize>> = Vec::new();
     let mut call_patches: Vec<(usize, String)> = Vec::new();
     let mut error_handler_patches: Vec<(usize, String)> = Vec::new();
     let mut goto_patches: Vec<(usize, String)> = Vec::new();
@@ -161,6 +162,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         call_patches.push((patch_idx, name));
     }
     let mut entry_statement_entry_pcs = Vec::new();
+    proc_exit_stack.push(Vec::new());
     emit_stmt_list(
         &procedures[entry_idx].body,
         compare_mode,
@@ -169,6 +171,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         &mut instructions,
         &mut do_exit_stack,
         &mut for_exit_stack,
+        &mut proc_exit_stack,
         &mut call_patches,
         &mut error_handler_patches,
         &mut goto_patches,
@@ -183,6 +186,14 @@ pub fn emit_bytecode_with_runtime_metadata(
         let patch_idx = instructions.len();
         instructions.push(Instruction::CallProc { target_pc: 0 });
         call_patches.push((patch_idx, name));
+    }
+    let entry_exit_target = instructions.len();
+    if let Some(exit_patches) = proc_exit_stack.pop() {
+        for patch in exit_patches {
+            if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                *target_pc = entry_exit_target;
+            }
+        }
     }
     instructions.push(Instruction::ClearErr);
     instructions.push(Instruction::Halt);
@@ -226,6 +237,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         proc_labels.insert(proc.name.clone(), entry_pc);
         instructions.push(Instruction::ClearErr);
         let mut statement_entry_pcs = Vec::new();
+        proc_exit_stack.push(Vec::new());
         emit_stmt_list(
             &proc.body,
             compare_mode,
@@ -234,6 +246,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             &mut instructions,
             &mut do_exit_stack,
             &mut for_exit_stack,
+            &mut proc_exit_stack,
             &mut call_patches,
             &mut error_handler_patches,
             &mut goto_patches,
@@ -244,6 +257,14 @@ pub fn emit_bytecode_with_runtime_metadata(
             &mut proc_labels,
             &mut statement_entry_pcs,
         );
+        let proc_exit_target = instructions.len();
+        if let Some(exit_patches) = proc_exit_stack.pop() {
+            for patch in exit_patches {
+                if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                    *target_pc = proc_exit_target;
+                }
+            }
+        }
         instructions.push(Instruction::ClearErr);
         instructions.push(Instruction::Return);
         procedure_runtime_metadata.insert(
@@ -427,6 +448,7 @@ fn emit_stmt_list(
     instructions: &mut Vec<Instruction>,
     do_exit_stack: &mut Vec<Vec<usize>>,
     for_exit_stack: &mut Vec<Vec<usize>>,
+    proc_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
     error_handler_patches: &mut Vec<(usize, String)>,
     goto_patches: &mut Vec<(usize, String)>,
@@ -446,6 +468,7 @@ fn emit_stmt_list(
             instructions,
             do_exit_stack,
             for_exit_stack,
+            proc_exit_stack,
             call_patches,
             error_handler_patches,
             goto_patches,
@@ -468,6 +491,7 @@ fn emit_stmt(
     instructions: &mut Vec<Instruction>,
     do_exit_stack: &mut Vec<Vec<usize>>,
     for_exit_stack: &mut Vec<Vec<usize>>,
+    proc_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
     error_handler_patches: &mut Vec<(usize, String)>,
     goto_patches: &mut Vec<(usize, String)>,
@@ -638,6 +662,7 @@ fn emit_stmt(
                 instructions,
                 do_exit_stack,
                 for_exit_stack,
+                proc_exit_stack,
                 call_patches,
                 error_handler_patches,
                 goto_patches,
@@ -668,6 +693,7 @@ fn emit_stmt(
                     instructions,
                     do_exit_stack,
                     for_exit_stack,
+                    proc_exit_stack,
                     call_patches,
                     error_handler_patches,
                     goto_patches,
@@ -792,6 +818,7 @@ fn emit_stmt(
                     instructions,
                     do_exit_stack,
                     for_exit_stack,
+                    proc_exit_stack,
                     call_patches,
                     error_handler_patches,
                     goto_patches,
@@ -869,6 +896,7 @@ fn emit_stmt(
                         instructions,
                         do_exit_stack,
                         for_exit_stack,
+                        proc_exit_stack,
                         call_patches,
                         error_handler_patches,
                         goto_patches,
@@ -908,6 +936,7 @@ fn emit_stmt(
                             instructions,
                             do_exit_stack,
                             for_exit_stack,
+                            proc_exit_stack,
                             call_patches,
                             error_handler_patches,
                             goto_patches,
@@ -993,6 +1022,7 @@ fn emit_stmt(
                 instructions,
                 do_exit_stack,
                 for_exit_stack,
+                proc_exit_stack,
                 call_patches,
                 error_handler_patches,
                 goto_patches,
@@ -1051,6 +1081,13 @@ fn emit_stmt(
         }
         BoundStmt::ExitFor => {
             if let Some(exit_patches) = for_exit_stack.last_mut() {
+                let patch = instructions.len();
+                instructions.push(Instruction::Jump { target_pc: 0 });
+                exit_patches.push(patch);
+            }
+        }
+        BoundStmt::ExitProcedure => {
+            if let Some(exit_patches) = proc_exit_stack.last_mut() {
                 let patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
                 exit_patches.push(patch);
@@ -1177,6 +1214,7 @@ fn emit_stmt(
                     instructions,
                     do_exit_stack,
                     for_exit_stack,
+                    proc_exit_stack,
                     call_patches,
                     error_handler_patches,
                     goto_patches,
@@ -1204,6 +1242,7 @@ fn emit_stmt(
                 instructions,
                 do_exit_stack,
                 for_exit_stack,
+                proc_exit_stack,
                 call_patches,
                 error_handler_patches,
                 goto_patches,

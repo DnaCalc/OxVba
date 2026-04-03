@@ -218,6 +218,7 @@ pub enum BoundStmt {
     ConsoleLineInput {
         target: String,
     },
+    ExitProcedure,
     DebugPrint {
         data: BoundExpr,
     },
@@ -2548,6 +2549,12 @@ fn parse_block(
 
         if lower == "exit for" {
             out.push(BoundStmt::ExitFor);
+            *index += 1;
+            continue;
+        }
+
+        if lower == "exit sub" || lower == "exit function" || lower == "exit property" {
+            out.push(BoundStmt::ExitProcedure);
             *index += 1;
             continue;
         }

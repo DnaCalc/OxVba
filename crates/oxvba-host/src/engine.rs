@@ -24204,6 +24204,16 @@ mod tests {
     }
 
     #[test]
+    fn formal_v568a_exit_function_returns_early() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Function F()\nF = 1\nExit Function\nF = 2\nEnd Function\nSub Main()\nDim y\ny = F()\nEnd Sub";
+        let slots = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(slots[0], 1);
+    }
+
+    #[test]
     fn formal_v569_for_inside_do() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nDo While y < 3\nFor i = 1 To 2\nx = x + 1\nNext\ny = y + 1\nLoop\nEnd Sub";

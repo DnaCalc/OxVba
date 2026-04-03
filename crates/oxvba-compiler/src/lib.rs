@@ -1736,6 +1736,12 @@ mod tests {
     }
 
     #[test]
+    fn compile_exit_function_is_accepted() {
+        let source = "Function F()\nF = 1\nExit Function\nF = 2\nEnd Function\nSub Main()\nDim y\ny = F()\nEnd Sub";
+        compile(source).expect("Exit Function compile should succeed");
+    }
+
+    #[test]
     fn compile_boolean_literal_emits_bool_const_instruction() {
         let source = "Sub Main()\nDim x\nx = True\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
