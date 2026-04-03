@@ -92,6 +92,10 @@ Delivered so far in this lane:
   compiler regressions; the SQLite core and demo rows now both reproduce the
   later runtime-sized `ReDim` boundary after the `sqlite3open` duplicate-name
   fix
+- current implementation finding: this `ReDim` boundary is not a small parser
+  issue. Static arrays still lower to compile-time alias slots, while the
+  SQLite helper lane needs a bounded runtime-sized dynamic-array substrate for
+  `ReDim buf(bSize)` plus `VarPtr(buf(0))`
 - host-only `--jit` probe now runs cleanly after the diagnostics-host and
   console-host helper consistency follow-ons
 - follow-on ownership decision: `Debug.Print` is treated as a host-supplied
@@ -113,6 +117,16 @@ Delivered so far in this lane:
 3. OxVba should control the test fixtures and dependency paths used for the integration runs.
 4. The first-pass setup should favor local reproducibility over clever dynamic downloads.
 5. Results must be split by modality, not collapsed into one pass/fail claim.
+
+## Current Next Delivery Slice
+
+- `bd-sql1.16.1` design the bounded runtime-sized dynamic-array substrate needed
+  for SQLite native buffer helpers
+- `bd-sql1.16.2` implement one-dimensional non-`Preserve` runtime `ReDim`
+  allocation into the base array slot
+- `bd-sql1.16.3` bridge `VarPtr(buf(0))` and array return/assignment over that
+  runtime array payload
+- `bd-sql1.16.4` rerun the SQLite fixture matrix and publish the moved boundary
 
 ## Scope
 
