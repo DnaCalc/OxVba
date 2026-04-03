@@ -128,6 +128,7 @@ Status:
 
 Design status:
 - the intended shape is now captured in `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
+- the chosen direction is an explicit source-policy model so hosts choose between on-disk state and workspace-overlay state honestly
 
 4. Stable host-facing guidance
 - document which crates/types are intended for direct host use,

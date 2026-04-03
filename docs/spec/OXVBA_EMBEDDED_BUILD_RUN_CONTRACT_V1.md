@@ -33,6 +33,10 @@ This contract exists so OxIde does not have to:
 5. Immediate Window and debugger flows must be able to attach to the same live runtime session created by the run contract.
 6. The contract must define how unsaved editor overlays from `HostWorkspaceSession` are incorporated into build/run so OxIde does not have to invent a parallel “dirty buffer” compile path.
 
+Decision:
+- the contract will expose an explicit build/run source policy
+- it will not silently choose between disk state and workspace overlay state
+
 ## Ownership Split
 
 OxVba owns:
@@ -72,6 +76,11 @@ Each request should identify whether it operates against:
 - canonical on-disk project state,
 - the current `HostWorkspaceSession` overlay state,
 - or a previously prepared build/runtime handle.
+
+Expected first source policy enum:
+- `DiskOnly`
+- `WorkspaceOverlay`
+- optionally later `PreparedSnapshot`
 
 ### Results
 
@@ -134,8 +143,11 @@ The first version does not need:
 - debug attach in the same batch
 - artifact packaging policy
 
-The first version does need to answer one policy question explicitly:
-- whether build/run always snapshots the current in-memory overlay state from `HostWorkspaceSession`, or whether the host must request that snapshot explicitly.
+The first version does need one explicit policy:
+- build/run requests carry a source policy
+- `DiskOnly` means execute the current on-disk project state
+- `WorkspaceOverlay` means execute a snapshot derived from the current `HostWorkspaceSession`
+- the host does not construct compiler input itself
 
 ## Relationship To Existing Surfaces
 
@@ -158,6 +170,12 @@ The build/run contract should therefore either:
 - or document a deterministic snapshot handoff step.
 
 It should not require OxIde to manually recreate compiler input from editor buffers.
+
+Recommended concrete direction:
+- the request carries the source policy plus workspace identity
+- OxVba performs any required snapshot extraction internally
+- OxIde defaults to `WorkspaceOverlay`
+- CLI defaults to `DiskOnly`
 
 ## Error Model
 
@@ -193,7 +211,7 @@ OxIde should eventually consume the contract like this:
 Recommended host sequence:
 1. apply project authoring through validated project-edit plans,
 2. keep unsaved editor text in `HostWorkspaceSession`,
-3. request build/run against that same workspace/session truth,
+3. request build/run with `WorkspaceOverlay`,
 4. attach immediate/debug tooling to the returned runtime session.
 
 This keeps the host architecture clean:
@@ -216,5 +234,5 @@ Those remain separate lanes.
 The next bounded implementation bead for this area should:
 - define the concrete request/result/event Rust types,
 - choose the owning crate/module,
-- define the overlay snapshot policy between `HostWorkspaceSession` and embedded build/run,
+- implement the explicit source-policy handoff between `HostWorkspaceSession` and embedded build/run,
 - and land the first `build_workspace` / `run_project` / `reset_runtime` substrate with regression coverage.
