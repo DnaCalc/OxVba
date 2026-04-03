@@ -63,6 +63,13 @@ Current OxVba direct-host gaps:
 - build/run is still more CLI-shaped than direct-host-shaped,
 - public guidance does not yet present OxIde as the reference direct-embed consumer clearly enough.
 
+Updated current status:
+- the first direct IDE session API is now implemented
+- the project/helper and COM helper surfaces are now implemented
+- the first embedded build/run direct-host substrate is now implemented
+- OxVba-side direct-host showcase boundary docs now exist
+- the remaining showcase gap is real OxIde-side consumption evidence over that stack
+
 Current VS Code gaps:
 - `oxvba-lsp` still exposes only a bounded subset of the direct semantic ladder,
 - there is no OxVba VS Code extension package yet,

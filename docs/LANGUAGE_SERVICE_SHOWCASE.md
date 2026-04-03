@@ -12,6 +12,7 @@ For the architectural target, see:
 
 For host-boundary guidance, see:
 - `docs/LANGUAGE_SERVICE_HOST_BOUNDARIES.md`
+- `docs/OXIDE_DIRECT_HOST_SHOWCASE_BOUNDARY.md`
 
 For the direct public host-facing surface, see:
 - `docs/LANGUAGE_SERVICE_PUBLIC_INTERFACE.md`
@@ -67,6 +68,9 @@ The LSP transport is intentionally layered on top of that crate and does not own
 
 That direct Rust API is the primary editor-integration story for OxIde-style hosts.
 The current gap is no longer the absence of a session seam. The first bounded host-facing session contract now exists as `HostWorkspaceSession`; the remaining work is to broaden authoring/build flows and have OxIde consume that contract directly.
+
+For the current honest OxIde-facing evidence boundary, see:
+- `docs/OXIDE_DIRECT_HOST_SHOWCASE_BOUNDARY.md`
 
 ### Thin LSP Shell
 
