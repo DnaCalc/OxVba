@@ -559,16 +559,10 @@ pub fn module_unit_from_source(
             attrs.option_private_module = true;
         }
     }
-
-    if !attrs.vb_name.eq_ignore_ascii_case(&module_name) {
-        return Err(ProjectCompileError::ModuleHeaderVbNameMismatch {
-            module_name,
-            vb_name: attrs.vb_name,
-        });
-    }
+    let semantic_module_name = attrs.vb_name.clone();
 
     Ok(ModuleUnit {
-        module_name,
+        module_name: semantic_module_name,
         module_kind,
         attributes: attrs,
         source,
@@ -7727,6 +7721,18 @@ mod tests {
         .expect("attribute keyword casing and option-private spacing should be tolerated");
         assert_eq!(unit.attributes.vb_name, "module1");
         assert!(unit.attributes.option_private_module);
+    }
+
+    #[test]
+    fn module_unit_uses_vb_name_as_semantic_identity_when_file_name_differs() {
+        let unit = module_unit_from_source(
+            "Sqlite3_64",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("mismatched file/module naming should still parse");
+        assert_eq!(unit.module_name, "sqlite3");
+        assert_eq!(unit.attributes.vb_name, "sqlite3");
     }
 
     #[test]

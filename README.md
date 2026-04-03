@@ -232,6 +232,7 @@ Attribute VB_Name = "LegacyPricing"
 ```
 
 That is most relevant for import/export fidelity and cases where source text is being moved independently of the original filename.
+When a source file's filename and `VB_Name` differ, OxVba now treats `VB_Name` as the semantic module identity while keeping the source file path stable by default. Reconcile or rename the file only as an explicit host or user action.
 
 ### 3. Canonical project file: `.basproj`
 

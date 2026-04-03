@@ -32,7 +32,7 @@ Machine-readable companion:
 | `PMR-PROJ-006` | project | Open-host extension behavior is explicit and profile-governed (`SPEC-...-01240/01241`). | specified-pending | HAL-adjacent contract checks (planned) |
 | `PMR-MOD-001` | module | Module kinds include at least procedural + class (`CONF-...-0039`). | implemented-partial | `ModuleKind` modeling + project-node validation tests |
 | `PMR-MOD-002` | module | Every module in a project has a distinct module name (`CONF-...-0041`). | implemented-verified | `project_node_rejects_duplicate_module_name_case_insensitive` |
-| `PMR-MOD-003` | module | Module name source is `VB_Name` attribute (`SPEC-...-01285`). | implemented-verified | `PMR-E-MODULE-HEADER-VB-NAME` checks in `ProjectNode::add_module` |
+| `PMR-MOD-003` | module | Module name source is `VB_Name` attribute (`SPEC-...-01285`). | implemented-verified | `module_unit_uses_vb_name_as_semantic_identity_when_file_name_differs`; `load_basproj_uses_vb_name_as_semantic_identity_while_preserving_include_path` |
 | `PMR-MOD-004` | module | Module name max length is 31 (`SPEC-...-01286`). | implemented-verified | `project_node_rejects_module_name_over_31_chars` |
 | `PMR-MOD-005` | module | Source-project modules require `VB_GlobalNamespace=False` and `VB_Creatable=False` (`CONF-...-0042`). | implemented-verified | `source_project_class_attribute_constraints_are_enforced` |
 | `PMR-MOD-006` | module | Class header supports `VB_PredeclaredId` + `VB_Exposed` attributes (`SPEC-...-01266/01267`). | implemented-verified | `module_unit_parses_header_attributes_and_option_private` |

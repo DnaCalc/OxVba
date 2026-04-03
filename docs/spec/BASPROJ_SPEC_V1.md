@@ -83,7 +83,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 <Module Include="Module1.bas" />
 ```
 
-Maps to `ModuleUnit` with `ModuleKind::Procedural`. The `Include` attribute is a relative path to the `.bas` source file. The module name defaults to the filename stem (without extension) unless an `Attribute VB_Name` line in the source overrides it.
+Maps to `ModuleUnit` with `ModuleKind::Procedural`. The `Include` attribute is a relative path to the `.bas` source file. The filename is the storage path. Semantic module identity comes from `Attribute VB_Name` when present; otherwise it defaults to the filename stem (without extension). A differing `VB_Name` does not by itself rename or rewrite the `Include` path.
 
 #### 2.3.2 `<ClassModule>` — Class Modules
 
@@ -297,7 +297,7 @@ When a `.basproj` contains no `<Module>`, `<ClassModule>`, or `<DocumentModule>`
 
 1. All `**/*.bas` files in the project directory (recursive) are treated as `<Module>` items
 2. All `**/*.cls` files in the project directory (recursive) are treated as `<ClassModule>` items
-3. Module names are derived from filename stems
+3. Semantic module names are derived from `Attribute VB_Name` when present, otherwise from filename stems; discovered file paths remain stable by default
 4. For `OutputType=Exe`, startup resolution is: explicit `EntryPoint` if configured, else unique top-level mainline, else unique `Sub Main`
 5. For `Library`, `Addin`, `ComServer`, and `ComExe`, top-level executable statements are rejected in the current bounded lane
 6. Ambiguous or missing startup resolution fails deterministically

@@ -1903,4 +1903,98 @@ mod tests {
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }
+
+    #[test]
+    fn load_basproj_uses_vb_name_as_semantic_identity_while_preserving_include_path() {
+        let unique = format!(
+            "oxvba-vb-name-load-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("Sqlite3_64.bas"),
+            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Main()\nEnd Sub\n",
+        )
+        .expect("write module");
+
+        let loaded = load_basproj_from_str(
+            "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>SqliteFixture</ProjectName>
+    <EntryPoint>Sqlite3.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Sqlite3_64.bas\" />
+  </ItemGroup>
+</Project>
+",
+            &temp_root,
+        )
+        .expect("load project");
+
+        let sqlite_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "sqlite3")
+            .expect("loaded manifest should contain semantic Sqlite3 module");
+        assert_eq!(sqlite_module.attributes.vb_name, "sqlite3");
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn load_basproj_allows_mismatched_file_stems_but_duplicate_vb_names_still_fail_compile() {
+        let unique = format!(
+            "oxvba-vb-name-duplicate-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("Sqlite3_64.bas"),
+            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Main()\nEnd Sub\n",
+        )
+        .expect("write first module");
+        std::fs::write(
+            temp_root.join("Sqlite3Arm64.bas"),
+            "Attribute VB_Name = \"Sqlite3\"\nPublic Sub Worker()\nEnd Sub\n",
+        )
+        .expect("write second module");
+
+        let loaded = load_basproj_from_str(
+            "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>SqliteFixture</ProjectName>
+    <EntryPoint>Sqlite3.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Sqlite3_64.bas\" />
+    <Module Include=\"Sqlite3Arm64.bas\" />
+  </ItemGroup>
+</Project>
+",
+            &temp_root,
+        )
+        .expect("load project");
+
+        let err = oxvba_compiler::compile_project(&loaded.manifest)
+            .expect_err("duplicate semantic module names should still fail");
+        assert_eq!(err.code(), "PMR-E-MODULE-NAME-DUPLICATE");
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
 }
