@@ -23,7 +23,7 @@ declare integration lane.
 | Fixture | Mode | Command shape | Expected | Actual | Classification |
 | --- | --- | --- | --- | --- | --- |
 | `HostEnvironmentProbe` | default | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj` | compile/run cleanly | compile/run cleanly | positive baseline |
-| `HostEnvironmentProbe` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj --jit` | compile/run cleanly | JIT panic: `missing helper: oxrt_host_console_print` | unexpected runtime/JIT limitation |
+| `HostEnvironmentProbe` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj --jit` | compile/run cleanly | compile/run cleanly | positive baseline |
 | `Demo64` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj` | likely import failure because raw filenames keep upstream `_64` suffix | `PMR-E-MODULE-HEADER-VB-NAME` on `Sqlite3_64.bas` / `Sqlite3Demo_64.bas` | expected negative / import-shape mismatch |
 | `Demo64` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj --jit` | same import failure before runtime choice matters | same `PMR-E-MODULE-HEADER-VB-NAME` import failure | expected negative / import-shape mismatch |
 | `Core64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj` | if core compiles, should begin native init/version lane | `PMR-E-BACKEND-COMPILE`: `use of undeclared variable: thisworkbook_path` | unexpected compile-time limitation |
@@ -38,10 +38,10 @@ declare integration lane.
   sqliteforexcel_distribution_path` and was reduced to an inline literal.
 - After that reduction, the standalone host probe passed, so the current
   blocking failures are beyond the minimal host shim itself.
-- The original `--jit` host-only panic on `oxrt_host_debug_print` has now been
-  fixed as part of the diagnostics-host ownership follow-on.
-- Re-running the same host-only `--jit` row now exposes the next limitation:
-  `Print`/console-host lowering reaches the JIT helper table, but
-  `oxrt_host_console_print` is still missing.
+- The original `--jit` host-only panic on `oxrt_host_debug_print` was fixed as
+  part of the diagnostics-host ownership follow-on.
+- The next exposed JIT helper-table omission for console-host instructions was
+  then fixed as part of the console-host follow-on, so the tiny host shim now
+  runs cleanly under both VM and JIT.
 - Excel-side ground truth is recorded separately in
   [SQLITEFOREXCEL_EXCEL_GROUND_TRUTH_2026-04-03.md](/C:/Work/DnaCalc/OxVba/docs/evidence/SQLITEFOREXCEL_EXCEL_GROUND_TRUTH_2026-04-03.md).

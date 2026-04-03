@@ -78,29 +78,35 @@ fn engine_with_profile(
 
 #[test]
 fn console_print_and_input_execute_on_windows_stdio_profile() {
-    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&["42,hello there", "rest of line"]));
-    let source = "Sub Main()\n\
-        Dim a\n\
-        Dim b\n\
-        Dim c\n\
-        Print \"hello\"\n\
-        Input a, b\n\
-        Line Input c\n\
-        Debug.Print \"trace\"\n\
-        End Sub";
-    let values = engine_with_profile(RuntimeProfileId::WindowsStdio, false, callbacks.clone())
-        .execute_source_with_value_snapshot(source)
-        .expect("console stdio execution should succeed");
-    assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
-    assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
-    assert_eq!(
-        values,
-        vec![
-            RuntimeValue::I32(42),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr("hello there".to_string())),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr("rest of line".to_string())),
-        ]
-    );
+    for enable_jit in [false, true] {
+        let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&[
+            "42,hello there",
+            "rest of line",
+        ]));
+        let source = "Sub Main()\n\
+            Dim a\n\
+            Dim b\n\
+            Dim c\n\
+            Print \"hello\"\n\
+            Input a, b\n\
+            Line Input c\n\
+            Debug.Print \"trace\"\n\
+            End Sub";
+        let values = engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
+            .execute_source_with_value_snapshot(source)
+            .expect("console stdio execution should succeed");
+        assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
+        assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
+        assert_eq!(
+            values,
+            vec![
+                RuntimeValue::I32(42),
+                RuntimeValue::String(oxvba_runtime::bstr::BStr("hello there".to_string())),
+                RuntimeValue::String(oxvba_runtime::bstr::BStr("rest of line".to_string())),
+            ],
+            "windows stdio host should preserve console/debug behavior for enable_jit={enable_jit}"
+        );
+    }
 }
 
 #[test]

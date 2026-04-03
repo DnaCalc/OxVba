@@ -3583,6 +3583,9 @@ impl HelperFuncIds {
             ("oxrt_host_file_lof", &sig_ctx_2),
             ("oxrt_host_file_seek", &sig_ctx_2),
             ("oxrt_host_file_loc", &sig_ctx_2),
+            ("oxrt_host_console_print", &sig_ctx_3),
+            ("oxrt_host_console_input", &sig_ctx_3),
+            ("oxrt_host_console_line_input", &sig_ctx_2),
             // Phase 4: COM
             ("oxrt_host_create_object", &sig_ctx_2),
             (
