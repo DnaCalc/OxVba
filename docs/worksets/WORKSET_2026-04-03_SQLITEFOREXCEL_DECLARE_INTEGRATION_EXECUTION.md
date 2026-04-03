@@ -70,10 +70,9 @@ Delivered so far in this lane:
 - provenance recorded in `docs/evidence/SQLITEFOREXCEL_PROVENANCE_AND_SYNC_2026-04-03.md`
 - tiny host-environment reference shim created under `.external/sqliteforexcel/fixtures/HostEnvironment/`
 - first raw 64-bit fixture probe created under `.external/sqliteforexcel/fixtures/Demo64/`
-- first raw probe finding captured: upstream filenames `Sqlite3_64.bas` / `Sqlite3Demo_64.bas`
-  currently fail OxVba `.basproj` import with
-  `PMR-E-MODULE-HEADER-VB-NAME` because their internal `VB_Name` values are
-  `Sqlite3` / `Sqlite3Demo`
+- raw `_64` source ingestion is no longer blocked after the `VB_Name`-wins
+  external-identity fix; raw and normalized demo fixtures now both reach the
+  same compile-time `sqlite3open` ambiguity boundary
 - first mutable host-shim attempt intentionally reduced after a setup finding:
   direct helper call `HostEnv.SetWorkbookPath` did not resolve across the
   current project-reference boundary, so the tiny shim now only supplies the
@@ -85,6 +84,9 @@ Delivered so far in this lane:
   `PMR-E-BACKEND-COMPILE: type error: use of undeclared variable: thisworkbook_path`
 - normalized full demo probe currently fails at compile time with
   `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
+- both of those compile-time limitations are now pinned under automated host and
+  compiler regressions, and both reproduce in the module-aware and rewrite-bridge
+  compiler strategies
 - host-only `--jit` probe now runs cleanly after the diagnostics-host and
   console-host helper consistency follow-ons
 - follow-on ownership decision: `Debug.Print` is treated as a host-supplied
@@ -95,6 +97,9 @@ Delivered so far in this lane:
     before first observed runtime failure at `TestOpenClose` (`Err 53`)
   - raw upstream `_64` source files import successfully into Excel, confirming a
     real Excel-vs-OxVba ingestion-policy difference for filename vs `VB_Name`
+- the earlier `Private Const` host-shim suspicion is not currently reproduced by
+  the minimal direct compiler probe, so it remains a narrower follow-on question
+  rather than a proven active blocker
 
 ## Governing Rules
 

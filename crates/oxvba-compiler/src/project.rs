@@ -24654,6 +24654,203 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_sqliteforexcel_fixture_reproduces_thisworkbook_path_failure_in_both_strategies()
+    {
+        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workspace root");
+        let sqlite3_source = std::fs::read_to_string(
+            workspace_root.join(".external/sqliteforexcel/fixtures/Core64Normalized/Sqlite3.bas"),
+        )
+        .expect("sqlite fixture source should load");
+        let sqlite3_module =
+            module_unit_from_source("Sqlite3", ModuleKind::Procedural, &sqlite3_source)
+                .expect("sqlite fixture module should parse");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"ThisWorkbook\"\n",
+                "Attribute VB_GlobalNameSpace = False\n",
+                "Attribute VB_Creatable = False\n",
+                "Attribute VB_PredeclaredId = True\n",
+                "Attribute VB_Exposed = True\n",
+                "Option Explicit\n",
+                "Public Property Get Path() As String\n",
+                "    Path = \".external\\sqliteforexcel\\upstream\\Distribution\"\n",
+                "End Property\n",
+            ),
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "SQLiteCoreDirectProbe".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sqlite3_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostEnvironment".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostEnvironment".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        for (label, strategy) in [
+            ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),
+            ("rewrite-bridge", ProjectLoweringStrategy::RewriteBridge),
+        ] {
+            let err = compile_project_with_strategy(&manifest, strategy)
+                .expect_err("sqlite fixture should currently fail deterministically");
+            assert!(
+                err.to_string()
+                    .contains("use of undeclared variable: thisworkbook_path"),
+                "unexpected {label} diagnostic: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_sqliteforexcel_demo_fixture_reproduces_sqlite3open_duplicate_failure_in_both_strategies(
+    ) {
+        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workspace root");
+        let sqlite3_source = std::fs::read_to_string(
+            workspace_root.join(".external/sqliteforexcel/fixtures/Demo64Normalized/Sqlite3.bas"),
+        )
+        .expect("sqlite fixture source should load");
+        let sqlite3_demo_source = std::fs::read_to_string(
+            workspace_root
+                .join(".external/sqliteforexcel/fixtures/Demo64Normalized/Sqlite3Demo.bas"),
+        )
+        .expect("sqlite demo fixture source should load");
+        let main_source = std::fs::read_to_string(
+            workspace_root.join(".external/sqliteforexcel/fixtures/Demo64Normalized/Main.bas"),
+        )
+        .expect("sqlite demo main source should load");
+        let main_module = module_unit_from_source("Main", ModuleKind::Procedural, &main_source)
+            .expect("main module parses");
+        let sqlite3_module =
+            module_unit_from_source("Sqlite3", ModuleKind::Procedural, &sqlite3_source)
+                .expect("sqlite fixture module should parse");
+        let sqlite3_demo_module =
+            module_unit_from_source("Sqlite3Demo", ModuleKind::Procedural, &sqlite3_demo_source)
+                .expect("sqlite demo module should parse");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"ThisWorkbook\"\n",
+                "Attribute VB_GlobalNameSpace = False\n",
+                "Attribute VB_Creatable = False\n",
+                "Attribute VB_PredeclaredId = True\n",
+                "Attribute VB_Exposed = True\n",
+                "Option Explicit\n",
+                "Public Property Get Path() As String\n",
+                "    Path = \".external\\sqliteforexcel\\upstream\\Distribution\"\n",
+                "End Property\n",
+            ),
+        )
+        .expect("host workbook parses");
+        let debug_module = module_unit_from_source(
+            "Debug",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"Debug\"\nOption Explicit\nPublic Sub Print(ParamArray args() As Variant)\nEnd Sub\n",
+        )
+        .expect("debug module parses");
+        let manifest = ProjectManifest {
+            project_name: "SQLiteDemoDirectProbe".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sqlite3_module, sqlite3_demo_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostEnvironment".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostEnvironment".to_string(),
+                modules: vec![debug_module, host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        for (label, strategy) in [
+            ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),
+            ("rewrite-bridge", ProjectLoweringStrategy::RewriteBridge),
+        ] {
+            let err = compile_project_with_strategy(&manifest, strategy)
+                .expect_err("sqlite demo fixture should currently fail deterministically");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains("PMR-E-NAME-QUALIFICATION-REQUIRED")
+                    && rendered.to_ascii_lowercase().contains("sqlite3open"),
+                "unexpected {label} diagnostic: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_referenced_predeclared_property_with_private_const_compiles_in_both_strategies(
+    ) {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nEnd Sub",
+        )
+        .expect("main module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"ThisWorkbook\"\n",
+                "Attribute VB_PredeclaredId = True\n",
+                "Private Const SQLITEFOREXCEL_DISTRIBUTION_PATH As String = \".external\\sqliteforexcel\\upstream\\Distribution\"\n",
+                "Public Property Get Path() As String\n",
+                "    Path = SQLITEFOREXCEL_DISTRIBUTION_PATH\n",
+                "End Property\n",
+            ),
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        for (label, strategy) in [
+            ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),
+            ("rewrite-bridge", ProjectLoweringStrategy::RewriteBridge),
+        ] {
+            let compiled = compile_project_with_strategy(&manifest, strategy)
+                .unwrap_or_else(|err| panic!("unexpected {label} compile failure: {err}"));
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("pmr_hostproject_thisworkbook_path")
+                    && lowered.contains("sqliteforexcel_distribution_path"),
+                "unexpected {label} lowered source: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rejects_host_injected_invalid_root_without_exposure_attribute() {
         let cases = [
             ("named property read", "Let valueOut = Application.Value"),
