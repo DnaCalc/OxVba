@@ -61,8 +61,9 @@ without shelling out to CLI or stitching together lower-level calls ad hoc.
 3. implement source-policy snapshot handoff
 4. implement first `build_workspace` substrate
 5. implement first `run_project` / `reset_runtime` / `invoke_entry_point` substrate
-6. add unit/integration/transcript evidence
-7. publish OxIde-facing guidance and evidence for the new execution seam
+6. implement bounded `invoke_procedure` substrate over the same runtime/session model
+7. add unit/integration/transcript evidence
+8. publish OxIde-facing guidance and evidence for the new execution seam
 
 ## Relationship To Existing Work
 
