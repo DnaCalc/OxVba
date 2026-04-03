@@ -70,6 +70,7 @@ Current implemented direct session anchor:
 Current host-helper operations live in `oxvba-project::host_helpers` and cover:
 - planned `.bas` / `.cls` module creation,
 - typed project-edit intents for modules and references,
+- validated project-edit planning and `.basproj` apply flow,
 - typed workspace-target roster/reference inspection,
 - typed COM candidate and active-selection assessment,
 - logical module-name inspection,
@@ -121,7 +122,8 @@ Near-term OxIde-driven additions should include:
 Current status:
 - the first bounded host-facing session API is now implemented,
 - typed project roster/reference inspection is now implemented,
-- broader project-authoring and typed build/run embedding remain follow-on work.
+- validated project-edit planning and apply is now implemented for `.basproj` workspaces,
+- broader typed build/run embedding remains follow-on work.
 
 ## Current Honest Boundary
 

@@ -54,7 +54,8 @@ Current OxVba direct-host strengths:
 - rename preparation and reference-update analysis,
 - bounded diagnostics-driven code-action planning,
 - canonical project-loading policy,
-- typed module/reference helper plans.
+- typed module/reference helper plans,
+- validated project-edit planning and apply flow for `.basproj` host authoring.
 
 Current OxVba direct-host gaps:
 - no explicit high-level IDE session facade over the current query surface,

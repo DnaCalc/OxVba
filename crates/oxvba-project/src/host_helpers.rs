@@ -98,6 +98,44 @@ pub enum HostProjectEdit {
     RemoveComReference { include: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectEditPlan {
+    pub workspace_target: PathBuf,
+    pub project_file: PathBuf,
+    pub project_name: String,
+    pub edits: Vec<HostProjectEdit>,
+    pub validation: HostProjectEditValidation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectEditValidation {
+    pub can_apply: bool,
+    pub issues: Vec<HostProjectEditIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostProjectEditIssueKind {
+    AlreadyPresent,
+    MissingTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectEditIssue {
+    pub edit_index: usize,
+    pub kind: HostProjectEditIssueKind,
+    pub include: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectEditApplication {
+    pub workspace_target: PathBuf,
+    pub project_file: PathBuf,
+    pub project_name: String,
+    pub applied_edits: usize,
+    pub basproj: BasProj,
+}
+
 pub fn inspect_workspace_target(path: &Path) -> Result<HostProjectSurface, BasProjError> {
     if path.is_dir() {
         if let Some(project_file) = discover_project_file_in_dir(path, "basproj")? {
@@ -289,6 +327,148 @@ pub fn remove_com_reference_edit(include: impl Into<String>) -> HostProjectEdit 
     }
 }
 
+pub fn prepare_host_project_edit_plan(
+    workspace_path: &Path,
+    edits: &[HostProjectEdit],
+) -> Result<HostProjectEditPlan, BasProjError> {
+    let surface = inspect_workspace_target(workspace_path)?;
+    let project_file = surface.project_file.clone().ok_or_else(|| {
+        BasProjError::HostProjectEditUnsupportedWorkspace {
+            path: workspace_path.display().to_string(),
+            workspace_kind: host_workspace_kind_name(surface.workspace_kind).to_string(),
+        }
+    })?;
+    if surface.workspace_kind != HostWorkspaceTargetKind::BasProj {
+        return Err(BasProjError::HostProjectEditUnsupportedWorkspace {
+            path: workspace_path.display().to_string(),
+            workspace_kind: host_workspace_kind_name(surface.workspace_kind).to_string(),
+        });
+    }
+
+    let xml = fs::read_to_string(&project_file).map_err(|source| BasProjError::Io {
+        path: project_file.display().to_string(),
+        source,
+    })?;
+    let basproj = parse_basproj_xml(&xml)?;
+    let validation = validate_host_project_edits(&basproj, edits);
+
+    Ok(HostProjectEditPlan {
+        workspace_target: workspace_path.to_path_buf(),
+        project_file,
+        project_name: surface.project_name,
+        edits: edits.to_vec(),
+        validation,
+    })
+}
+
+pub fn validate_host_project_edits(
+    basproj: &BasProj,
+    edits: &[HostProjectEdit],
+) -> HostProjectEditValidation {
+    let mut module_includes = basproj
+        .modules
+        .iter()
+        .map(|module| normalize_include_key(&module.include))
+        .collect::<Vec<_>>();
+    let mut project_reference_includes = basproj
+        .project_references
+        .iter()
+        .map(|reference| normalize_include_key(&reference.include))
+        .collect::<Vec<_>>();
+    let mut com_reference_includes = basproj
+        .com_references
+        .iter()
+        .map(|reference| normalize_include_key(&reference.include))
+        .collect::<Vec<_>>();
+
+    let mut issues = Vec::new();
+
+    for (edit_index, edit) in edits.iter().enumerate() {
+        match edit {
+            HostProjectEdit::AddModule(module) => {
+                let include = normalize_include_key(&module.include);
+                if module_includes.iter().any(|existing| existing == &include) {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::AlreadyPresent,
+                        include: module.include.clone(),
+                        message: format!("module `{}` already exists", module.include),
+                    });
+                } else {
+                    module_includes.push(include);
+                }
+            }
+            HostProjectEdit::RemoveModule { include } => {
+                if !remove_first_matching(&mut module_includes, include) {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::MissingTarget,
+                        include: include.clone(),
+                        message: format!("module `{include}` is not present"),
+                    });
+                }
+            }
+            HostProjectEdit::AddProjectReference(reference) => {
+                let include = normalize_include_key(&reference.include);
+                if project_reference_includes
+                    .iter()
+                    .any(|existing| existing == &include)
+                {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::AlreadyPresent,
+                        include: reference.include.clone(),
+                        message: format!(
+                            "project reference `{}` already exists",
+                            reference.include
+                        ),
+                    });
+                } else {
+                    project_reference_includes.push(include);
+                }
+            }
+            HostProjectEdit::RemoveProjectReference { include } => {
+                if !remove_first_matching(&mut project_reference_includes, include) {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::MissingTarget,
+                        include: include.clone(),
+                        message: format!("project reference `{include}` is not present"),
+                    });
+                }
+            }
+            HostProjectEdit::AddComReference(reference) => {
+                let include = normalize_include_key(&reference.include);
+                if com_reference_includes.iter().any(|existing| existing == &include) {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::AlreadyPresent,
+                        include: reference.include.clone(),
+                        message: format!("COM reference `{}` already exists", reference.include),
+                    });
+                } else {
+                    com_reference_includes.push(include);
+                }
+            }
+            HostProjectEdit::RemoveComReference { include } => {
+                if !remove_first_matching(&mut com_reference_includes, include) {
+                    issues.push(HostProjectEditIssue {
+                        edit_index,
+                        kind: HostProjectEditIssueKind::MissingTarget,
+                        include: include.clone(),
+                        message: format!("COM reference `{include}` is not present"),
+                    });
+                }
+            }
+        }
+    }
+
+    HostProjectEditValidation {
+        can_apply: issues.is_empty(),
+        issues,
+    }
+}
+
 pub fn apply_host_project_edits_to_basproj(basproj: &mut BasProj, edits: &[HostProjectEdit]) {
     for edit in edits {
         match edit {
@@ -334,6 +514,30 @@ pub fn apply_host_project_edits_to_basproj_path(
         source,
     })?;
     Ok(basproj)
+}
+
+pub fn apply_host_project_edit_plan(
+    plan: &HostProjectEditPlan,
+) -> Result<HostProjectEditApplication, BasProjError> {
+    if !plan.validation.can_apply {
+        let summary = plan
+            .validation
+            .issues
+            .iter()
+            .map(|issue| issue.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(BasProjError::HostProjectEditPlanInvalid(summary));
+    }
+
+    let basproj = apply_host_project_edits_to_basproj_path(&plan.project_file, &plan.edits)?;
+    Ok(HostProjectEditApplication {
+        workspace_target: plan.workspace_target.clone(),
+        project_file: plan.project_file.clone(),
+        project_name: plan.project_name.clone(),
+        applied_edits: plan.edits.len(),
+        basproj,
+    })
 }
 
 fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, BasProjError> {
@@ -635,6 +839,28 @@ fn module_file_stem(path: &Path, include: &str) -> Result<String, BasProjError> 
         })
 }
 
+fn host_workspace_kind_name(kind: HostWorkspaceTargetKind) -> &'static str {
+    match kind {
+        HostWorkspaceTargetKind::BasProj => "BasProj",
+        HostWorkspaceTargetKind::Vbp => "Vbp",
+        HostWorkspaceTargetKind::ConventionDirectory => "ConventionDirectory",
+    }
+}
+
+fn normalize_include_key(include: &str) -> String {
+    include.replace('\\', "/").to_ascii_lowercase()
+}
+
+fn remove_first_matching(items: &mut Vec<String>, target_include: &str) -> bool {
+    let target = normalize_include_key(target_include);
+    if let Some(index) = items.iter().position(|item| item == &target) {
+        items.remove(index);
+        true
+    } else {
+        false
+    }
+}
+
 fn upsert_by_include<T, F>(items: &mut Vec<T>, new_item: &T, include: F)
 where
     T: Clone,
@@ -679,10 +905,12 @@ fn vb_name_attribute_line_index(source: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        HostProjectReferenceKind, HostWorkspaceTargetKind, VbNameAttributeAction,
+        HostProjectEditIssueKind, HostProjectReferenceKind, HostWorkspaceTargetKind,
+        VbNameAttributeAction,
         add_com_reference_edit, add_project_reference_edit, apply_host_project_edits_to_basproj,
-        apply_host_project_edits_to_basproj_path, inspect_module_identity,
-        inspect_workspace_target, plan_new_module, reconcile_module_identity,
+        apply_host_project_edit_plan, apply_host_project_edits_to_basproj_path,
+        inspect_module_identity, inspect_workspace_target, plan_new_module,
+        prepare_host_project_edit_plan, reconcile_module_identity, validate_host_project_edits,
     };
     use crate::{BasProjModuleKind, parse_basproj_xml};
     use std::fs;
@@ -921,6 +1149,96 @@ mod tests {
         let written = fs::read_to_string(&project_file).expect("read rewritten basproj");
         assert!(written.contains("<COMReference Include=\"Scripting\">"));
         assert!(written.contains("<ImportLib>scrrun.dll</ImportLib>"));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn validate_host_project_edits_reports_duplicate_add_and_missing_remove() {
+        let basproj = parse_basproj_xml(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n    <ProjectReference Include=\"../Lib/Lib.basproj\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("parse basproj");
+
+        let validation = validate_host_project_edits(
+            &basproj,
+            &[
+                super::add_module_edit(crate::BasProjModule {
+                    kind: BasProjModuleKind::Module,
+                    include: "Main.bas".to_string(),
+                    vb_predeclared_id: false,
+                    vb_exposed: false,
+                    vb_global_namespace: false,
+                    vb_creatable: false,
+                    host_document_type: None,
+                    instancing: None,
+                    prog_id: None,
+                    description: None,
+                }),
+                super::remove_project_reference_edit("../Missing/Thing.basproj"),
+            ],
+        );
+
+        assert!(!validation.can_apply);
+        assert_eq!(validation.issues.len(), 2);
+        assert_eq!(
+            validation.issues[0].kind,
+            HostProjectEditIssueKind::AlreadyPresent
+        );
+        assert_eq!(
+            validation.issues[1].kind,
+            HostProjectEditIssueKind::MissingTarget
+        );
+    }
+
+    #[test]
+    fn prepare_host_project_edit_plan_reports_validation_and_apply_round_trips() {
+        let temp_root = unique_temp_dir("oxvba_project_host_edit_plan");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        let project_file = temp_root.join("App.basproj");
+        fs::write(temp_root.join("Main.bas"), "Sub Main()\nEnd Sub\n").expect("module");
+        fs::write(
+            &project_file,
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let plan = prepare_host_project_edit_plan(
+            &temp_root,
+            &[
+                add_project_reference_edit("../Lib/Lib.basproj"),
+                add_com_reference_edit("Scripting"),
+            ],
+        )
+        .expect("plan");
+        assert!(plan.validation.can_apply);
+        assert_eq!(plan.project_name, "App");
+        assert_eq!(plan.edits.len(), 2);
+
+        let application = apply_host_project_edit_plan(&plan).expect("apply plan");
+        assert_eq!(application.applied_edits, 2);
+        assert_eq!(application.basproj.project_references.len(), 1);
+        assert_eq!(application.basproj.com_references.len(), 1);
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn prepare_host_project_edit_plan_rejects_convention_directory_targets() {
+        let temp_root = unique_temp_dir("oxvba_project_host_edit_plan_convention");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(temp_root.join("Main.bas"), "Sub Main()\nEnd Sub\n").expect("module");
+
+        let error = prepare_host_project_edit_plan(
+            &temp_root,
+            &[add_project_reference_edit("../Lib/Lib.basproj")],
+        )
+        .expect_err("expected unsupported workspace");
+
+        assert!(matches!(
+            error,
+            crate::BasProjError::HostProjectEditUnsupportedWorkspace { .. }
+        ));
 
         let _ = fs::remove_dir_all(&temp_root);
     }

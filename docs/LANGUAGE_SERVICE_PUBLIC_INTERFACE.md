@@ -119,6 +119,7 @@ Status:
 - typed active-selection repair planning now exists via `assess_project_com_selections` and `plan_*_com_*` helpers
 - a direct OxIde-facing COM helper surface now exists via `ComSelectionService` and `inspect_workspace_com_project_state`
 - canonical `.basproj` mutation/apply flows now exist via `apply_host_project_edits_to_basproj` and `apply_host_project_edits_to_basproj_path`
+- validated edit planning and apply flow now exists via `prepare_host_project_edit_plan`, `validate_host_project_edits`, and `apply_host_project_edit_plan`
 
 3. Typed build/run integration
 - keep CLI as an end-user tool,
@@ -137,6 +138,8 @@ Use:
 - `oxvba_project::load_workspace_target`
 - `oxvba_project::host_helpers::*`
 - `oxvba_project::inspect_workspace_target`
+- `oxvba_project::prepare_host_project_edit_plan`
+- `oxvba_project::apply_host_project_edit_plan`
 - `oxvba_project::assess_project_com_selections`
 - `oxvba_host::Engine`
 - `oxvba_host::ImmediateSession`
@@ -148,6 +151,7 @@ Prefer:
 - host-owned project/session orchestration,
 - host-owned document/session orchestration,
 - OxVba-owned project, semantic, and build/runtime semantics.
+- validated plan/apply authoring over direct helper APIs instead of host-side `.basproj` XML mutation.
 
 Avoid:
 - shelling out for semantic features,
