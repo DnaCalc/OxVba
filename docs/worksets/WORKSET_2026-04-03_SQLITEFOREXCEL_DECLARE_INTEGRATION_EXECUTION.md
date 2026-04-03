@@ -80,13 +80,15 @@ Delivered so far in this lane:
 - standalone host-environment probe now compiles and runs cleanly, so the tiny
   `ThisWorkbook.Path` / `Debug.Print` reference-project shim is usable as a
   separate probe surface
-- normalized core-only SQLite probe currently fails at compile time with
-  `PMR-E-BACKEND-COMPILE: type error: use of undeclared variable: thisworkbook_path`
+- normalized core-only SQLite probe now moves past the earlier
+  `thisworkbook_path` boundary and currently fails later at compile time with
+  `PMR-E-BACKEND-COMPILE: type error: call to unknown procedure: loadlibrary`
 - normalized full demo probe currently fails at compile time with
   `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
-- both of those compile-time limitations are now pinned under automated host and
-  compiler regressions, and both reproduce in the module-aware and rewrite-bridge
-  compiler strategies
+- both current compile-time limitations are now pinned under automated host and
+  compiler regressions; the SQLite core row reproduces the newer `loadlibrary`
+  boundary in both compiler strategies, while the demo row still reproduces the
+  `sqlite3open` duplicate-name boundary
 - host-only `--jit` probe now runs cleanly after the diagnostics-host and
   console-host helper consistency follow-ons
 - follow-on ownership decision: `Debug.Print` is treated as a host-supplied

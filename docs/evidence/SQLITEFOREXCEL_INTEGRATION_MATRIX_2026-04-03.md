@@ -26,8 +26,8 @@ declare integration lane.
 | `HostEnvironmentProbe` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj --jit` | compile/run cleanly | compile/run cleanly | positive baseline |
 | `Demo64` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj` | if raw `_64` imports now work, should reach the same demo compile boundary as the normalized fixture | `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | compile-time limitation after `VB_Name`-wins ingest fix |
 | `Demo64` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj --jit` | same as default or same compile-time failure | same `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | compile-time limitation after `VB_Name`-wins ingest fix |
-| `Core64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj` | if core compiles, should begin native init/version lane | `PMR-E-BACKEND-COMPILE`: `use of undeclared variable: thisworkbook_path` | unexpected compile-time limitation |
-| `Core64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-BACKEND-COMPILE`: `use of undeclared variable: thisworkbook_path` | unexpected compile-time limitation |
+| `Core64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj` | if core compiles, should begin native init/version lane | `PMR-E-BACKEND-COMPILE`: `call to unknown procedure: loadlibrary` | compile-time limitation after predeclared property rewrite fix |
+| `Core64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-BACKEND-COMPILE`: `call to unknown procedure: loadlibrary` | compile-time limitation after predeclared property rewrite fix |
 | `Demo64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj` | if demo compiles, should reach broader SQLite sample lane | `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | unexpected compile-time limitation |
 | `Demo64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | unexpected compile-time limitation |
 
@@ -35,9 +35,9 @@ declare integration lane.
 
 - Raw upstream `_64` filenames are no longer blocked at import because external
   source identity now follows `VB_Name` while file paths remain stable.
-- The `thisworkbook_path` failure is now pinned under automated regression at
-  both the host/basproj boundary and direct compiler boundary, and it reproduces
-  in both compiler lowering strategies.
+- The earlier `thisworkbook_path` failure is fixed. The current compiler and host
+  regressions now pin the moved boundary one step later at `call to unknown
+  procedure: loadlibrary`.
 - The `sqlite3open` duplicate-name failure is likewise pinned at the host/basproj
   boundary and direct compiler boundary, and it also reproduces in both compiler
   lowering strategies.

@@ -632,6 +632,10 @@ fn compile_project_with_strategy(
             &reference_order,
             &event_dispatch_plan,
         )?;
+    let rewritten_source = rewrite_predeclared_property_reads_for_backend(
+        &rewritten_source,
+        &collect_predeclared_property_read_rewrite_routes(manifest, &procedure_index),
+    );
 
     let has_class_modules = manifest
         .modules
@@ -676,6 +680,124 @@ fn compile_project_with_strategy(
         project_com_withevents_routes,
         project_dynamic_objects,
     })
+}
+
+fn collect_predeclared_property_read_rewrite_routes(
+    manifest: &ProjectManifest,
+    procedure_index: &[ProcedureDecl],
+) -> BTreeMap<String, String> {
+    let mut candidates = BTreeMap::<String, BTreeSet<String>>::new();
+    for decl in procedure_index {
+        if decl.kind != ProcedureDeclKind::PropertyGet || decl.param_count != 0 || !decl.is_public {
+            continue;
+        }
+        if !module_is_predeclared(manifest, &decl.project_name, &decl.module_name) {
+            continue;
+        }
+        let key = format!("{}.{}", decl.module_name, decl.procedure_name).to_ascii_lowercase();
+        let route = format!("property_get_{}(0)", lowered_proc_signature_name(decl));
+        candidates.entry(key).or_default().insert(route);
+    }
+
+    candidates
+        .into_iter()
+        .filter_map(|(key, values)| {
+            if values.len() == 1 {
+                Some((key, values.into_iter().next().expect("single value")))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn module_is_predeclared(manifest: &ProjectManifest, project_name: &str, module_name: &str) -> bool {
+    let project_name = normalize_identifier(project_name);
+    let module_name = normalize_identifier(module_name);
+    manifest
+        .modules
+        .iter()
+        .map(|module| (&manifest.project_name, module))
+        .chain(
+            manifest
+                .reference_projects
+                .iter()
+                .flat_map(|project| project.modules.iter().map(move |module| (&project.project_name, module))),
+        )
+        .any(|(candidate_project, module)| {
+            normalize_identifier(candidate_project) == project_name
+                && normalize_identifier(&module.module_name) == module_name
+                && module.attributes.vb_predeclared_id
+        })
+}
+
+fn rewrite_predeclared_property_reads_for_backend(
+    source: &str,
+    routes: &BTreeMap<String, String>,
+) -> String {
+    if routes.is_empty() {
+        return source.to_string();
+    }
+    source
+        .lines()
+        .map(|line| rewrite_predeclared_property_reads_in_line(line, routes))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn rewrite_predeclared_property_reads_in_line(line: &str, routes: &BTreeMap<String, String>) -> String {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut out = String::with_capacity(line.len() + 16);
+    let mut i = 0usize;
+    let mut in_string = false;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '"' {
+            out.push(ch);
+            if in_string && i + 1 < chars.len() && chars[i + 1] == '"' {
+                out.push('"');
+                i += 2;
+                continue;
+            }
+            in_string = !in_string;
+            i += 1;
+            continue;
+        }
+        if !in_string && ch == '\'' {
+            out.extend(chars[i..].iter());
+            break;
+        }
+        if !in_string && (ch.is_ascii_alphabetic() || ch == '_') {
+            let start = i;
+            i += 1;
+            while i < chars.len()
+                && (chars[i].is_ascii_alphanumeric() || matches!(chars[i], '_' | '.'))
+            {
+                i += 1;
+            }
+            let token = chars[start..i].iter().collect::<String>();
+            let normalized = {
+                let parts = token
+                    .split('.')
+                    .map(normalize_identifier)
+                    .collect::<Vec<_>>();
+                if parts.len() == 2 && parts.iter().all(|part| !part.is_empty()) {
+                    Some(parts.join("."))
+                } else {
+                    None
+                }
+            };
+            if let Some(route) = normalized.as_ref().and_then(|key| routes.get(key)) {
+                out.push_str(route);
+            } else {
+                out.push_str(&token);
+            }
+            continue;
+        }
+        out.push(ch);
+        i += 1;
+    }
+    out
 }
 
 fn decorate_project_procedure_runtime_metadata(
@@ -24648,13 +24770,72 @@ mod tests {
             .expect("optional-parameter function body with predeclared property should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
-            lowered.contains("thisworkbook.path"),
+            lowered.contains("property_get_pmr_hostproject_thisworkbook_path(0)"),
             "unexpected lowered source: {lowered}"
         );
     }
 
     #[test]
-    fn compile_project_sqliteforexcel_fixture_reproduces_thisworkbook_path_failure_in_both_strategies()
+    fn compile_project_moves_past_predeclared_path_in_optional_function_body_with_declares_and_module_state()
+    {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            concat!(
+                "Attribute VB_Name = \"MainModule\"\n",
+                "Option Explicit\n",
+                "#If Win64 Then\n",
+                "Private Declare PtrSafe Function LoadLibrary Lib \"kernel32\" Alias \"LoadLibraryA\" (ByVal lpLibFileName As String) As LongPtr\n",
+                "#Else\n",
+                "Private Declare Function LoadLibrary Lib \"kernel32\" Alias \"LoadLibraryA\" (ByVal lpLibFileName As String) As Long\n",
+                "#End If\n",
+                "#If Win64 Then\n",
+                "Private hSQLiteLibrary As LongPtr\n",
+                "#Else\n",
+                "Private hSQLiteLibrary As Long\n",
+                "#End If\n",
+                "Public Function SQLite3Initialize(Optional ByVal libDir As String) As Long\n",
+                "If libDir = \"\" Then libDir = ThisWorkbook.Path\n",
+                "If Right(libDir, 1) <> \"\\\" Then libDir = libDir & \"\\\"\n",
+                "If hSQLiteLibrary = 0 Then\n",
+                "    hSQLiteLibrary = LoadLibrary(libDir + \"SQLite3.dll\")\n",
+                "End If\n",
+                "SQLite3Initialize = 0\n",
+                "End Function",
+            ),
+        )
+        .expect("module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("declare-heavy optional body should still expose the next backend boundary");
+        assert!(
+            err.to_string()
+                .contains("call to unknown procedure: loadlibrary"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    #[test]
+    fn compile_project_sqliteforexcel_fixture_rewrites_referenced_thisworkbook_path_before_next_boundary()
     {
         let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -24704,15 +24885,42 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
 
+        let procedure_index = super::collect_project_procedures(&manifest);
+        let reference_order = super::build_reference_order_map(&manifest);
+        let active_project = super::normalize_identifier(&manifest.project_name);
+        let event_dispatch_plan =
+            super::collect_event_dispatch_plan(&manifest, &procedure_index, &reference_order)
+                .expect("event plan");
+
         for (label, strategy) in [
             ("module-aware", ProjectLoweringStrategy::ModuleAwareBindPlan),
             ("rewrite-bridge", ProjectLoweringStrategy::RewriteBridge),
         ] {
+            let (rewritten_source, _, _) = super::lower_project_source(
+                strategy,
+                &manifest,
+                &active_project,
+                &procedure_index,
+                &reference_order,
+                &event_dispatch_plan,
+            )
+            .expect("lowering should succeed");
+            let rewritten_source = super::rewrite_predeclared_property_reads_for_backend(
+                &rewritten_source,
+                &super::collect_predeclared_property_read_rewrite_routes(&manifest, &procedure_index),
+            );
+            assert!(
+                rewritten_source
+                    .to_ascii_lowercase()
+                    .contains("property_get_pmr_hostenvironment_thisworkbook_path(0)"),
+                "unexpected {label} lowered source: {}",
+                rewritten_source
+            );
             let err = compile_project_with_strategy(&manifest, strategy)
-                .expect_err("sqlite fixture should currently fail deterministically");
+                .expect_err("sqlite fixture should now expose the next backend boundary");
             assert!(
                 err.to_string()
-                    .contains("use of undeclared variable: thisworkbook_path"),
+                    .contains("call to unknown procedure: loadlibrary"),
                 "unexpected {label} diagnostic: {err}"
             );
         }
