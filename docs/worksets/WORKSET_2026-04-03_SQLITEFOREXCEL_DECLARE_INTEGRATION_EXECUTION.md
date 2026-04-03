@@ -44,6 +44,8 @@ Local material discovered on this machine:
 - this is not a Git clone
 - it appears to be a Fossil-style checkout because it contains `_FOSSIL_`
 - `fossil` is not currently installed on this machine, so direct Fossil remote-sync verification is not currently available
+- fresh Git clone now exists at `C:\Work\SqliteForExcel`
+- fresh clone HEAD: `8aae8bd5c69a9083a67a295fcbcfde838c755f4f`
 
 Local fixture content already present in that archive:
 - `Source\SQLite3VBAModules\Sqlite3.bas`
@@ -58,6 +60,14 @@ Additional machine-wide SQLite discovery:
 - `C:\Programs\SQLite\sqlite3.exe`
 - `C:\Programs\SQLite\Old\sqlite3.exe`
 - no `sqlite3.dll` was found under `C:\Programs` during the current sweep
+
+Delivered so far in this lane:
+- public upstream identity pinned
+- fresh Git clone created and verified against current remote HEAD
+- local archive versus fresh clone comparison completed
+- archive treated as stale for the declare/sample artifacts under test
+- controlled fixture import created under `.external/sqliteforexcel/`
+- provenance recorded in `docs/evidence/SQLITEFOREXCEL_PROVENANCE_AND_SYNC_2026-04-03.md`
 
 ## Governing Rules
 
