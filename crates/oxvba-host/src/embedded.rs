@@ -395,6 +395,7 @@ impl<'engine> EmbeddedRunSession<'engine> {
             .compile_and_prepare_session(&request.workspace.manifest)
             .map_err(EmbeddedRunSessionError::Phase)?;
         self.workspace = request.workspace.clone();
+        self.run_result.workspace = request.workspace.clone();
         self.runtime = runtime;
         Ok(EmbeddedResetResult::reset(
             request.workspace.clone(),
@@ -412,6 +413,7 @@ impl<'engine> EmbeddedRunSession<'engine> {
             .start_project_runtime_session(&request.workspace.manifest)
             .map_err(EmbeddedRunSessionError::Phase)?;
         self.workspace = request.workspace.clone();
+        self.run_result.workspace = request.workspace.clone();
         self.runtime = runtime;
         Ok(EmbeddedInvokeResult::completed(
             EmbeddedInvocationTarget::EntryPoint(request.workspace.clone()),
@@ -454,11 +456,18 @@ impl<'engine> EmbeddedRunSession<'engine> {
 }
 
 fn same_workspace_target_path(left: &Path, right: &Path) -> bool {
-    if let (Ok(left), Ok(right)) = (left.canonicalize(), right.canonicalize()) {
-        left == right
+    normalize_workspace_target_path(left) == normalize_workspace_target_path(right)
+}
+
+fn normalize_workspace_target_path(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else if let Ok(current_dir) = std::env::current_dir() {
+        current_dir.join(path)
     } else {
-        left == right
-    }
+        path.to_path_buf()
+    };
+    absolute.canonicalize().unwrap_or(absolute)
 }
 
 #[cfg(test)]
@@ -724,5 +733,34 @@ mod tests {
             ))
             .expect("after invoke");
         assert_eq!(after.return_value, Some(RuntimeValue::I32(1)));
+    }
+
+    #[test]
+    fn embedded_run_session_keeps_run_result_workspace_in_sync_after_reset() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let first_snapshot = EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
+            make_manifest("Public Function GetValue() As Integer\n    GetValue = 1\nEnd Function\n"),
+        );
+        let second_snapshot = EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
+            make_manifest("Public Function GetValue() As Integer\n    GetValue = 2\nEnd Function\n"),
+        );
+
+        let mut session = host
+            .run_project(&EmbeddedRunRequest::new(first_snapshot.clone()))
+            .expect("run session");
+        assert_eq!(session.run_result().workspace, first_snapshot);
+
+        session
+            .reset_runtime(&EmbeddedResetRequest::new(
+                second_snapshot.clone(),
+                EmbeddedResetKind::ReloadProject,
+            ))
+            .expect("reset");
+
+        assert_eq!(session.workspace(), &second_snapshot);
+        assert_eq!(session.run_result().workspace, second_snapshot);
     }
 }

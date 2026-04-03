@@ -330,11 +330,18 @@ fn apply_workspace_sources_to_manifest(service: &LanguageService, manifest: &mut
 }
 
 fn same_workspace_target_path(left: &Path, right: &Path) -> bool {
-    if let (Ok(left), Ok(right)) = (left.canonicalize(), right.canonicalize()) {
-        left == right
+    normalize_workspace_target_path(left) == normalize_workspace_target_path(right)
+}
+
+fn normalize_workspace_target_path(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else if let Ok(current_dir) = std::env::current_dir() {
+        current_dir.join(path)
     } else {
-        left == right
-    }
+        path.to_path_buf()
+    };
+    absolute.canonicalize().unwrap_or(absolute)
 }
 
 #[cfg(test)]
