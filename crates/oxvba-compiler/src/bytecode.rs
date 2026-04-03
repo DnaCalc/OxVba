@@ -355,6 +355,18 @@ pub enum Instruction {
         dst: usize,
         data: usize,
     },
+    IntrinsicStrPtr {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicVarPtr {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicObjPtr {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicDoEventsHost {
         dst: usize,
     },

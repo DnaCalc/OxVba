@@ -22,7 +22,8 @@ fn sqlite_fixture_root() -> PathBuf {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn sqliteforexcel_core64_normalized_basproj_moves_past_thisworkbook_path_compile_failure() {
+fn sqliteforexcel_core64_normalized_basproj_moves_past_pointer_helper_boundary_to_redim_expression_failure(
+) {
     let basproj_path =
         sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite core fixture should load");
@@ -38,7 +39,7 @@ fn sqliteforexcel_core64_normalized_basproj_moves_past_thisworkbook_path_compile
     assert!(
         err.message()
             .to_ascii_lowercase()
-            .contains("call to unknown procedure: strptr"),
+            .contains("unsupported statement: redim buf(length - 1)"),
         "unexpected compile diagnostic: {}",
         err.message()
     );
@@ -85,8 +86,10 @@ fn sqliteforexcel_host_environment_reference_loads_expected_predeclared_path_pro
 }
 
 #[test]
-fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_thisworkbook_path_failure() {
-    let core_path = sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
+fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_helper_boundary_to_redim_expression_failure(
+) {
+    let core_path =
+        sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
     let host_path = sqlite_fixture_root().join("HostEnvironment/HostEnvironment.basproj");
     let core = load_basproj(&core_path).expect("sqlite core fixture should load");
     let host = load_basproj(&host_path).expect("host environment fixture should load");
@@ -131,7 +134,7 @@ fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_thisworkbook_p
     assert!(
         err.to_string()
             .to_ascii_lowercase()
-            .contains("call to unknown procedure: strptr"),
+            .contains("unsupported statement: redim buf(length - 1)"),
         "unexpected direct compile diagnostic: {err}"
     );
 }

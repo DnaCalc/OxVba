@@ -3428,6 +3428,15 @@ mod tests {
         assert_eq!(out.external_call_descriptors.len(), 1);
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn compile_native_declare_uses_native_ffi_lane_on_native_targets() {
+        let source = "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nDim y\ny = LstrlenW(0)\nEnd Sub";
+        let out = compile(source).expect("native declare should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        assert_eq!(out.external_call_descriptors[0].marshal_lane, "m1-native-ffi");
+    }
+
     #[test]
     fn compile_withevents_declaration_in_single_module_subset_succeeds() {
         let source = "Sub Main()\nDim WithEvents app As Object\nEnd Sub";

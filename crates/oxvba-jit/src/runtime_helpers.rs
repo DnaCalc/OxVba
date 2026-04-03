@@ -1529,6 +1529,43 @@ pub extern "C" fn oxrt_vartype(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let value = read_slot!(ctx, src);
+    let pointer = match &value {
+        RuntimeValue::Empty | RuntimeValue::Null => 0,
+        RuntimeValue::String(value) => match oxvba_runtime::pointer_helpers::register_utf16_string(&value.0) {
+            Ok(pointer) => pointer,
+            Err(_) => return ERR_RUNTIME,
+        },
+        _ => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let value = read_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value) {
+        Ok(pointer) => pointer,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let value = read_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_object_pointer(&value) {
+        Ok(pointer) => pointer,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    OK
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     let v = match semantics::runtime_value_legacy_token(&val, "TypeName operand") {
@@ -3806,6 +3843,9 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_msgbox", oxrt_host_msgbox as *const u8),
         ("oxrt_host_inputbox", oxrt_host_inputbox as *const u8),
         ("oxrt_host_debug_print", oxrt_host_debug_print as *const u8),
+        ("oxrt_strptr", oxrt_strptr as *const u8),
+        ("oxrt_varptr", oxrt_varptr as *const u8),
+        ("oxrt_objptr", oxrt_objptr as *const u8),
         ("oxrt_host_do_events", oxrt_host_do_events as *const u8),
         ("oxrt_host_shell", oxrt_host_shell as *const u8),
         ("oxrt_host_environ", oxrt_host_environ as *const u8),

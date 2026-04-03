@@ -4529,7 +4529,9 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
         | "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
         | "isobject" | "isempty" | "isnull" | "iserror" | "monthname" | "collectioncount"
-        | "strreverse" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        | "strreverse" | "strptr" | "varptr" | "objptr" => {
+            Some(IntrinsicSpec::fixed(1, DeterministicCore))
+        }
         "eof" | "lof" | "loc" | "seek" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "format" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "strconv" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
@@ -4590,6 +4592,10 @@ fn parse_stdlib_intrinsic_call_expr(
             .iter()
             .map(|arg| parse_createobject_arg(arg, array_bounds))
             .collect::<Option<Vec<_>>>()?,
+        "varptr" => args_text
+            .iter()
+            .map(|arg| parse_varptr_arg(arg, array_bounds))
+            .collect::<Option<Vec<_>>>()?,
         "dispatchinvoke" => parse_dispatch_invoke_args(&args_text, array_bounds)?,
         _ => args_text
             .iter()
@@ -4602,6 +4608,31 @@ fn parse_stdlib_intrinsic_call_expr(
     }
 
     Some(BoundExpr::IntrinsicCall { name, args })
+}
+
+fn parse_varptr_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    if let Some(base) = parse_array_element_base_for_varptr(arg, array_bounds) {
+        return Some(BoundExpr::Var(base));
+    }
+    parse_expr(arg, array_bounds)
+}
+
+fn parse_array_element_base_for_varptr(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
+    let open = token.find('(')?;
+    let close = token.rfind(')')?;
+    if close <= open || !token[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let base = normalize_ident(token[..open].trim())?;
+    let bounds = array_bounds.get(&base)?;
+    let indices = split_call_args(token[open + 1..close].trim())?;
+    if indices.len() != 1 || indices[0].trim() != "0" {
+        return None;
+    }
+    if !bounds.is_empty() && (bounds.len() != 1 || bounds[0].0 != 0) {
+        return None;
+    }
+    Some(base)
 }
 
 fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
@@ -4882,13 +4913,22 @@ fn parse_declaration_remainder(
             resolve_declared_type(&base, explicit_ty, type_char_ty, default_type_table);
         if declarations
             .iter()
-            .any(|existing| existing.eq_ignore_ascii_case(&format!("{base}_0")))
+            .any(|existing| existing.eq_ignore_ascii_case(&base))
+            || declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&format!("{base}_0")))
             || array_bounds.contains_key(&base)
         {
             duplicate_declarations.push(base);
             return;
         }
         array_bounds.insert(base.clone(), bounds.clone());
+        if bounds.is_empty() {
+            declarations.push(base.clone());
+            declaration_types.insert(base.clone(), BoundType::Array);
+            declaration_types.insert(format!("{base}_0"), declared_ty);
+            return;
+        }
         let Some(element_count) = array_element_count(&bounds) else {
             duplicate_declarations.push(base);
             return;
@@ -5002,6 +5042,9 @@ fn parse_array_declaration(token: &str, option_base: i32) -> Option<ParsedArrayD
 }
 
 fn parse_array_bounds_spec(raw: &str, option_base: i32) -> Option<Vec<(i32, i32)>> {
+    if raw.trim().is_empty() {
+        return Some(Vec::new());
+    }
     let mut bounds = Vec::new();
     for dim in split_call_args(raw)? {
         let trimmed = dim.trim();
@@ -5354,7 +5397,7 @@ fn build_array_descriptors(
             name.clone(),
             BoundArrayDescriptor {
                 element_type,
-                rank: bounds.len(),
+                rank: bounds.len().max(1),
                 bounds: bounds.clone(),
                 dynamic: redim_targets.contains(name),
             },

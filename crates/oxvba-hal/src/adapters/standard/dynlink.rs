@@ -267,6 +267,11 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
+        if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
+            return self
+                .invoke_descriptor_multi(descriptor, &[arg])
+                .map(|(rv, _)| rv);
+        }
         let binding = self.bind_descriptor(descriptor)?;
         let prepared = self.prepare_invoke(binding, arg)?;
         self.invoke_bound(binding, prepared)
@@ -478,7 +483,11 @@ fn marshal_runtime_to_ffi_unix(
                 RuntimeValue::I64(v) => *v,
                 _ => value.to_legacy_i32().unwrap_or(0) as i64,
             };
-            FfiArg::LongLong(v)
+            if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
+                FfiArg::Pointer(pointer)
+            } else {
+                FfiArg::LongLong(v)
+            }
         }
         "String" => {
             let text = match value {
@@ -530,7 +539,11 @@ fn marshal_runtime_to_ffi(
                 RuntimeValue::I64(v) => *v,
                 _ => value.to_legacy_i32().unwrap_or(0) as i64,
             };
-            FfiArg::LongLong(v)
+            if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
+                FfiArg::Pointer(pointer)
+            } else {
+                FfiArg::LongLong(v)
+            }
         }
         "String" => {
             let text = match value {

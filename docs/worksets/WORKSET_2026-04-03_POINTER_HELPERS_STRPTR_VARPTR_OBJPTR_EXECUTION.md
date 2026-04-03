@@ -42,10 +42,12 @@ This workset is grounded by external historical and practical references, not by
 official Microsoft VBA documentation:
 
 - classicvb.net “Unofficial Documentation for VarPtr, StrPtr, and ObjPtr”
+- https://classicvb.net/tips/varptr/
 - Bruce McKinney / classic VB literature that treats these helpers as real,
   widely used pointer-entry surfaces
 - community explanation and usage references such as Stack Overflow posts on
   `StrPtr` / `VarPtr` / `ObjPtr`
+- https://stackoverflow.com/questions/42015700/what-are-the-benefits-and-risks-of-using-the-strptr-function-in-vba
 
 The governing consequence is:
 
@@ -127,3 +129,13 @@ This workset is complete only when:
 - SQLiteForExcel has been rerun against the moved boundary,
 - and any unsupported `ObjPtr` / pointer-lifetime cases are documented as exact
   boundaries rather than implicit gaps.
+
+## Current Exact Status
+
+- `StrPtr` is now live through a real native-call probe in both VM and JIT.
+- `ObjPtr` is now stable for repeated reads of the same runtime object handle,
+  and returns `0` for the current direct-host `Nothing` lane.
+- `VarPtr` is now recognized and produces bounded scalar pointer-like values,
+  but the array-buffer native dereference lane (`VarPtr(buf(0))`) is still open.
+- the SQLiteForExcel core fixture has moved past the old pointer-helper frontier
+  and now stops later at `ReDim buf(length - 1)`.

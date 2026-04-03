@@ -1433,6 +1433,7 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "isempty" | "isnull" | "iserror" | "typeofis" => Some(BoundType::Boolean),
         "vbnullstring" => Some(BoundType::String),
         "array" | "__oxvba_array_append" => Some(BoundType::Array),
+        "strptr" | "varptr" | "objptr" => Some(BoundType::LongPtr),
         _ => None,
     }
 }

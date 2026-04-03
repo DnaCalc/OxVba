@@ -178,6 +178,9 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicVarTypeTag { .. }
             | Instruction::IntrinsicVarType { .. }
             | Instruction::IntrinsicTypeNameTag { .. }
+            | Instruction::IntrinsicStrPtr { .. }
+            | Instruction::IntrinsicVarPtr { .. }
+            | Instruction::IntrinsicObjPtr { .. }
             | Instruction::IntrinsicIsNumericTag { .. }
             | Instruction::IntrinsicIsNumeric { .. }
             | Instruction::IntrinsicIsError { .. }
@@ -2040,6 +2043,48 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicStrPtr { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_strptr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicVarPtr { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_varptr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicObjPtr { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_objptr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
             Instruction::IntrinsicIsNumeric { dst, src } => {
                 emit_extra_2slot(
                     &mut builder,
@@ -3617,6 +3662,9 @@ impl HelperFuncIds {
             ("oxrt_host_msgbox", &sig_ctx_3),
             ("oxrt_host_inputbox", &sig_ctx_3),
             ("oxrt_host_debug_print", &sig_ctx_3),
+            ("oxrt_strptr", &sig_ctx_3),
+            ("oxrt_varptr", &sig_ctx_3),
+            ("oxrt_objptr", &sig_ctx_3),
             ("oxrt_host_do_events", &sig_ctx_1),
             // Phase 4: Process/Env
             ("oxrt_host_shell", &sig_ctx_2),

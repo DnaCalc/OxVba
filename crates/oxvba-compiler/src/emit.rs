@@ -113,7 +113,10 @@ pub fn emit_bytecode_with_runtime_metadata(
     let mut procedure_runtime_metadata = BTreeMap::<String, ProcedureRuntimeMetadata>::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     let external_decls = module.external_declarations.clone();
-    let external_call_descriptors = build_external_call_descriptors(&external_decls, false);
+    let external_call_descriptors = build_external_call_descriptors(
+        &external_decls,
+        cfg!(any(target_os = "windows", target_os = "linux")),
+    );
     for (idx, proc) in procedures.iter().enumerate() {
         proc_meta.insert(
             proc.name.clone(),
@@ -2780,6 +2783,15 @@ fn emit_expr_into(
                 }
                 ("asc", [src]) => {
                     instructions.push(Instruction::IntrinsicAscDigits { dst, src: *src })
+                }
+                ("strptr", [src]) => {
+                    instructions.push(Instruction::IntrinsicStrPtr { dst, src: *src })
+                }
+                ("varptr", [src]) => {
+                    instructions.push(Instruction::IntrinsicVarPtr { dst, src: *src })
+                }
+                ("objptr", [src]) => {
+                    instructions.push(Instruction::IntrinsicObjPtr { dst, src: *src })
                 }
                 ("strreverse", [src]) => {
                     instructions.push(Instruction::IntrinsicStrReverseDigits { dst, src: *src })

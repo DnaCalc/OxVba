@@ -6,6 +6,7 @@ pub mod bstr;
 pub mod builtins;
 pub mod coerce;
 pub mod decimal;
+pub mod pointer_helpers;
 pub mod runtime_value;
 pub mod safe_array;
 pub mod value_tags;

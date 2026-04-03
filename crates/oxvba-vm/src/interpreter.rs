@@ -1508,6 +1508,28 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicStrPtr { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let pointer = match &value {
+                        RuntimeValue::Empty | RuntimeValue::Null => 0,
+                        RuntimeValue::String(text) => oxvba_runtime::pointer_helpers::register_utf16_string(&text.0)?,
+                        _ => return Err("runtime error: 13 (Type mismatch)".to_string()),
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicVarPtr { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let pointer = oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value)?;
+                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicObjPtr { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let pointer = oxvba_runtime::pointer_helpers::register_object_pointer(&value)?;
+                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicDoEventsHost { dst } => {
                     if let Some(callback) = self.pending_callback_tokens.pop_front() {
                         self.write_value_slot(*dst, RuntimeValue::I32(callback.raw()))?;
