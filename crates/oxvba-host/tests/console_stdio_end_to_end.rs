@@ -128,6 +128,23 @@ fn debug_print_executes_on_windows_stdio_profile_for_vm_and_jit() {
 }
 
 #[test]
+fn debug_print_multiple_exprs_executes_on_windows_stdio_profile_for_vm_and_jit() {
+    for enable_jit in [false, true] {
+        let callbacks = Arc::new(ConsoleCallbacks::default());
+        let source = "Sub Main()\nOn Error Resume Next\nError 9\nDebug.Print \"trace\", Err.LastDllError\nEnd Sub";
+        engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
+            .execute_source(source)
+            .expect("multi-expr debug-print execution should succeed");
+        assert_eq!(
+            callbacks.debug_output(),
+            vec!["trace\t".to_string()],
+            "windows stdio host should preserve multi-expr Debug.Print behavior for enable_jit={enable_jit}"
+        );
+        assert_eq!(callbacks.console_output(), Vec::<String>::new());
+    }
+}
+
+#[test]
 fn console_print_and_input_execute_on_linux_stdio_profile() {
     let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&["7,alpha", "omega"]));
     let source = "Sub Main()\n\

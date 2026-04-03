@@ -1718,6 +1718,24 @@ mod tests {
     }
 
     #[test]
+    fn compile_debug_print_multiple_exprs_emits_diagnostics_host_instruction() {
+        let source = "Sub Main()\nDebug.Print \"hello\", Err.LastDllError\nEnd Sub";
+        let out = compile(source).expect("multi-expr Debug.Print compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDebugPrintHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::ConcatSlots { .. })),
+            "expected concatenation for multi-expr Debug.Print in {:?}",
+            out.instructions
+        );
+    }
+
+    #[test]
     fn compile_boolean_literal_emits_bool_const_instruction() {
         let source = "Sub Main()\nDim x\nx = True\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

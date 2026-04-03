@@ -24847,7 +24847,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_sqliteforexcel_fixture_rewrites_referenced_thisworkbook_path_before_debug_print_boundary()
+    fn compile_project_sqliteforexcel_fixture_rewrites_referenced_thisworkbook_path_before_exit_function_boundary()
     {
         let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -24932,7 +24932,7 @@ mod tests {
                 .expect_err("sqlite fixture should now expose the next backend boundary");
             assert!(
                 err.to_string()
-                    .contains("unsupported statement: Debug.Print"),
+                    .contains("unsupported statement: Exit Function"),
                 "unexpected {label} diagnostic: {err}"
             );
         }

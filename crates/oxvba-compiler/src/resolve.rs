@@ -3898,9 +3898,34 @@ fn parse_debug_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<B
     let data = if payload.is_empty() {
         BoundExpr::StringConst(String::new())
     } else {
-        parse_expr(payload, array_bounds)?
+        let parts = split_top_level_stmt_args(payload)?;
+        let exprs = parts
+            .into_iter()
+            .map(|part| parse_expr(part.as_str(), array_bounds))
+            .collect::<Option<Vec<_>>>()?;
+        concat_exprs_with_delimiter(exprs, "\t")
     };
     Some(BoundStmt::DebugPrint { data })
+}
+
+fn concat_exprs_with_delimiter(mut exprs: Vec<BoundExpr>, delimiter: &str) -> BoundExpr {
+    let mut acc = if exprs.is_empty() {
+        BoundExpr::StringConst(String::new())
+    } else {
+        exprs.remove(0)
+    };
+    for expr in exprs {
+        acc = BoundExpr::BinaryOp {
+            op: ArithOp::Concat,
+            lhs: Box::new(BoundExpr::BinaryOp {
+                op: ArithOp::Concat,
+                lhs: Box::new(acc),
+                rhs: Box::new(BoundExpr::StringConst(delimiter.to_string())),
+            }),
+            rhs: Box::new(expr),
+        };
+    }
+    acc
 }
 
 fn split_top_level_stmt_args(args: &str) -> Option<Vec<String>> {
@@ -6808,6 +6833,29 @@ mod tests {
         assert_eq!(ext.alias, "ping");
         assert!(ext.ptr_safe);
         assert!(!ext.ordinal_alias);
+        assert!(module.resolution_diagnostics.is_empty());
+    }
+
+    #[test]
+    fn resolve_debug_print_multiple_exprs_is_lowered_as_concat_chain() {
+        let source = "Sub Main()\nDebug.Print \"trace\", Err.LastDllError\nEnd Sub";
+        let module = resolve_symbols(source);
+        let stmt = module
+            .procedures
+            .iter()
+            .find(|proc| proc.name == "main")
+            .and_then(|proc| proc.body.first())
+            .expect("debug print stmt");
+        match stmt {
+            BoundStmt::DebugPrint { data } => match data {
+                BoundExpr::BinaryOp {
+                    op: ArithOp::Concat,
+                    ..
+                } => {}
+                other => panic!("expected concat chain, got {:?}", other),
+            },
+            other => panic!("expected DebugPrint stmt, got {:?}", other),
+        }
         assert!(module.resolution_diagnostics.is_empty());
     }
 

@@ -38,7 +38,7 @@ fn sqliteforexcel_core64_normalized_basproj_moves_past_thisworkbook_path_compile
     assert!(
         err.message()
             .to_ascii_lowercase()
-            .contains("unsupported statement: debug.print"),
+            .contains("unsupported statement: exit function"),
         "unexpected compile diagnostic: {}",
         err.message()
     );
@@ -131,7 +131,7 @@ fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_thisworkbook_p
     assert!(
         err.to_string()
             .to_ascii_lowercase()
-            .contains("unsupported statement: debug.print"),
+            .contains("unsupported statement: exit function"),
         "unexpected direct compile diagnostic: {err}"
     );
 }
