@@ -41,3 +41,5 @@ declare integration lane.
 - The `--jit` host-only row exposed a separate limitation: `Debug.Print` lowers
   far enough to reach the JIT helper table, but the required helper
   `oxrt_host_debug_print` is currently missing.
+- Excel-side ground truth is recorded separately in
+  [SQLITEFOREXCEL_EXCEL_GROUND_TRUTH_2026-04-03.md](/C:/Work/DnaCalc/OxVba/docs/evidence/SQLITEFOREXCEL_EXCEL_GROUND_TRUTH_2026-04-03.md).

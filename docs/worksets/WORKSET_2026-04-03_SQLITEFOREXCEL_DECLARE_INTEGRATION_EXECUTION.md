@@ -87,6 +87,11 @@ Delivered so far in this lane:
   `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
 - host-only `--jit` probe currently panics with missing helper
   `oxrt_host_debug_print`
+- Excel ground truth now captured separately:
+  - shipped workbook compiles/runs through SQLite initialization and `TestVersion`
+    before first observed runtime failure at `TestOpenClose` (`Err 53`)
+  - raw upstream `_64` source files import successfully into Excel, confirming a
+    real Excel-vs-OxVba ingestion-policy difference for filename vs `VB_Name`
 
 ## Governing Rules
 
