@@ -64,6 +64,11 @@ The governing consequence is:
   pointer
 - the object model uses OxVba runtime handles and host-backed object seams,
   which are not automatically equivalent to COM interface pointers
+- the accepted design is now:
+  - one shared OxVba-owned pointer-helper substrate
+  - explicit native marshaling-lane expansion for pointer-helper scenarios
+  - no pretense that these are ordinary integer intrinsics with undefined
+    lifetime
 
 ## Governing Design Direction
 
