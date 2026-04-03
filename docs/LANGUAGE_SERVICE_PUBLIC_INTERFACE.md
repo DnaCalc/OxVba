@@ -125,6 +125,9 @@ Status:
 - keep CLI as an end-user tool,
 - but expose typed build/run requests/results suitable for an embedded IDE host.
 
+Design status:
+- the intended shape is now captured in `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
+
 4. Stable host-facing guidance
 - document which crates/types are intended for direct host use,
 - keep transport-only types out of that public story,
@@ -146,6 +149,7 @@ Use:
 - `oxvba_languageservice::LanguageService`
 - `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`
+- the embedded build/run contract design in `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
 
 Prefer:
 - host-owned project/session orchestration,

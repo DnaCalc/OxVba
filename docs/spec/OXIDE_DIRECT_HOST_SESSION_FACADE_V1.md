@@ -99,5 +99,8 @@ The next OxVba-side additions are expected to include:
 - typed embedded build/run requests and results,
 - potentially a slightly richer direct session/query facade if OxIde needs more orchestration help.
 
+Build/run design reference:
+- `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
+
 Those are follow-on steps.
 The current V1 contract is specifically the first direct editor/session seam.

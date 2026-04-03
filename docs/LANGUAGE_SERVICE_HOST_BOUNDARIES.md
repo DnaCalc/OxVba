@@ -119,6 +119,9 @@ Near-term OxIde-driven additions should include:
 - broader typed project-authoring operations for module rosters and references,
 - typed build/run requests and results suitable for embedded IDE consumption.
 
+The intended design for that remaining build/run area now lives in:
+- `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
+
 Current status:
 - the first bounded host-facing session API is now implemented,
 - typed project roster/reference inspection is now implemented,
