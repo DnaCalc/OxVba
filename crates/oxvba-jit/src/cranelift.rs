@@ -3613,6 +3613,7 @@ impl HelperFuncIds {
             // Phase 4: UI
             ("oxrt_host_msgbox", &sig_ctx_3),
             ("oxrt_host_inputbox", &sig_ctx_3),
+            ("oxrt_host_debug_print", &sig_ctx_3),
             ("oxrt_host_do_events", &sig_ctx_1),
             // Phase 4: Process/Env
             ("oxrt_host_shell", &sig_ctx_2),

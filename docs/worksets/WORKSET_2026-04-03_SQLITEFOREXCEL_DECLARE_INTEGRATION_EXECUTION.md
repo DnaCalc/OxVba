@@ -85,8 +85,12 @@ Delivered so far in this lane:
   `PMR-E-BACKEND-COMPILE: type error: use of undeclared variable: thisworkbook_path`
 - normalized full demo probe currently fails at compile time with
   `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
-- host-only `--jit` probe currently panics with missing helper
-  `oxrt_host_debug_print`
+- host-only `--jit` probe originally panicked with missing helper
+  `oxrt_host_debug_print`; after the diagnostics-host consistency fix, the same
+  row now panics later on missing helper `oxrt_host_console_print`
+- follow-on ownership decision: `Debug.Print` is treated as a host-supplied
+  diagnostics capability routed through the runtime diagnostics surface, not as
+  a special built-in library function
 - Excel ground truth now captured separately:
   - shipped workbook compiles/runs through SQLite initialization and `TestVersion`
     before first observed runtime failure at `TestOpenClose` (`Err 53`)

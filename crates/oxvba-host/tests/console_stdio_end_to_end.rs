@@ -64,9 +64,13 @@ impl HostCallbacks for ConsoleCallbacks {
 
 fn engine_with_profile(
     runtime_profile: RuntimeProfileId,
+    enable_jit: bool,
     callbacks: Arc<dyn HostCallbacks>,
 ) -> Engine {
-    let mut engine = Engine::new(HostConfig::default());
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        ..HostConfig::default()
+    });
     engine.set_runtime_profile(runtime_profile);
     engine.set_host_callbacks(Some(callbacks));
     engine
@@ -74,10 +78,7 @@ fn engine_with_profile(
 
 #[test]
 fn console_print_and_input_execute_on_windows_stdio_profile() {
-    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&[
-        "42,hello there",
-        "rest of line",
-    ]));
+    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&["42,hello there", "rest of line"]));
     let source = "Sub Main()\n\
         Dim a\n\
         Dim b\n\
@@ -87,7 +88,7 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
         Line Input c\n\
         Debug.Print \"trace\"\n\
         End Sub";
-    let values = engine_with_profile(RuntimeProfileId::WindowsStdio, callbacks.clone())
+    let values = engine_with_profile(RuntimeProfileId::WindowsStdio, false, callbacks.clone())
         .execute_source_with_value_snapshot(source)
         .expect("console stdio execution should succeed");
     assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
@@ -103,6 +104,24 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
 }
 
 #[test]
+fn debug_print_executes_on_windows_stdio_profile_for_vm_and_jit() {
+    for enable_jit in [false, true] {
+        let callbacks = Arc::new(ConsoleCallbacks::default());
+        let source = "Sub Main()\nDebug.Print \"trace\"\nEnd Sub";
+        let values = engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
+            .execute_source_with_value_snapshot(source)
+            .expect("debug-print execution should succeed");
+        assert_eq!(values, Vec::<RuntimeValue>::new());
+        assert_eq!(
+            callbacks.debug_output(),
+            vec!["trace".to_string()],
+            "windows stdio host should preserve Debug.Print behavior for enable_jit={enable_jit}"
+        );
+        assert_eq!(callbacks.console_output(), Vec::<String>::new());
+    }
+}
+
+#[test]
 fn console_print_and_input_execute_on_linux_stdio_profile() {
     let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&["7,alpha", "omega"]));
     let source = "Sub Main()\n\
@@ -113,7 +132,7 @@ fn console_print_and_input_execute_on_linux_stdio_profile() {
         Input a, b\n\
         Line Input c\n\
         End Sub";
-    let values = engine_with_profile(RuntimeProfileId::LinuxStdio, callbacks.clone())
+    let values = engine_with_profile(RuntimeProfileId::LinuxStdio, false, callbacks.clone())
         .execute_source_with_value_snapshot(source)
         .expect("console stdio execution should succeed");
     assert_eq!(callbacks.console_output(), vec!["hello-linux".to_string()]);
