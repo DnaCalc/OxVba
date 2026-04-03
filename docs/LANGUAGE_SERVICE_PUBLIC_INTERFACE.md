@@ -65,10 +65,11 @@ This crate currently exports the direct runtime/session ladder:
 - the first bounded immediate-session contract via `ImmediateSession`
 - typed immediate request/result/output shapes for future CLI and OxIde consumption
 - the first non-debug live-session evaluator core for bounded procedure invocation and reset/reload
+- the first direct debug-session substrate for paused runtime inspection and stepping
 
 This is the right crate for:
 - live runtime-session ownership,
-- direct host-side build/run/invoke pathways,
+- the low-level runtime substrate that a future typed embedded build/run facade will sit over,
 - Immediate Window / REPL session semantics,
 - later debugger and paused-context runtime session surfaces.
 
@@ -146,10 +147,10 @@ Use:
 - `oxvba_project::assess_project_com_selections`
 - `oxvba_host::Engine`
 - `oxvba_host::ImmediateSession`
+- `oxvba_host::DebugSession`
 - `oxvba_languageservice::LanguageService`
 - `oxvba_languageservice::HostWorkspaceSession`
 - the direct query/result types re-exported by `oxvba-languageservice`
-- the embedded build/run contract design in `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
 
 Prefer:
 - host-owned project/session orchestration,
@@ -177,5 +178,5 @@ Do not use:
 
 The next execution lane should:
 - tighten the documented direct host surface around OxIde,
-- add any missing typed host-facing session APIs on the OxVba side,
+- add the missing typed embedded build/run facade on the OxVba side,
 - and treat VS Code as an alternate integration lane over the same semantics rather than the primary editor model.
