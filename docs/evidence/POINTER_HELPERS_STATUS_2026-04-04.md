@@ -24,29 +24,30 @@ This note records the exact current support split for the `StrPtr` / `VarPtr` /
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::objptr_returns_zero_for_runtime_nothing_after_failed_createobject -- --exact --nocapture`
 
 - bounded `VarPtr`
-  - compiler recognition and typed runtime production are live for scalar values
+  - compiler recognition and typed runtime production are live for scalar
+    values and canonical zero-based byte-buffer shapes such as
+    `VarPtr(buf(0))`
   - focused host evidence:
     - `cargo test -p oxvba-host --test pointer_helpers_end_to_end -- --nocapture`
-  - current automated proof is bounded to non-zero pointer-like production for a
-    scalar variable in both VM and JIT
+    - `cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::varptr_supports_byte_buffer_native_read_in_vm_and_jit -- --exact --nocapture`
+  - current result:
+    - non-zero scalar pointer-like production in both VM and JIT
+    - byte-buffer registry materialization in both VM and JIT
+    - real native byte-buffer read through `ucrtbase!strlen` in both VM and JIT
 
 ## Still Open
 
-- `VarPtr(buf(0))` native dereference for array-buffer interop is not yet
-  trustworthy
-- the exact direct probe
-  - `cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::varptr_supports_byte_buffer_native_read_in_vm_and_jit -- --exact --nocapture`
-  currently terminates with:
-  - `exit code: 0xc0000005 (STATUS_ACCESS_VIOLATION)`
-- this means the later SQLite-style array-buffer lane remains open even though
-  the helper family is now recognized and the core SQLite fixture has moved past
-  the old `StrPtr` frontier
+- runtime-sized dynamic arrays remain a later delivery area
+- the SQLite core fixture now stops at a narrower compile-time boundary around
+  expression-bounded `ReDim`, not at the pointer-helper lane
+- native writeback semantics for pointer-backed array destinations are not yet
+  claimed by this note
 
 ## SQLite Movement
 
 - `Core64Normalized` no longer stops at `call to unknown procedure: strptr`
 - current CLI/host boundary:
-  - `PMR-E-BACKEND-COMPILE: type error: unsupported statement: ReDim buf(length - 1)`
+  - `PMR-E-BACKEND-COMPILE: type error: unsupported statement: ReDim with runtime expression bounds is not yet supported for array `buf`: buf(length - 1)`
 - evidence:
   - `cargo run -p oxvba-cli -- run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj`
 

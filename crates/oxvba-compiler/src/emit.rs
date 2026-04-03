@@ -1701,6 +1701,7 @@ fn expr_bound_type(
             .get(name.as_str())
             .copied()
             .unwrap_or(BoundType::Variant),
+        BoundExpr::VarPtrArrayBuffer(_) => BoundType::LongPtr,
         BoundExpr::IntrinsicCall { name, .. } | BoundExpr::ProcCall { name, .. } => {
             call_bound_type(name, proc_meta, external_decls)
         }
@@ -2435,6 +2436,21 @@ fn emit_expr_into(
                 instructions.push(Instruction::CopySlot { dst, src });
             } else {
                 let _ = emit_err_member_value(name, dst, instructions);
+            }
+        }
+        BoundExpr::VarPtrArrayBuffer(name) => {
+            let element_slots = collect_array_element_slots(name, slot_map);
+            if element_slots.is_empty() {
+                if let Some(src) = slot_map.get(name.as_str()).copied()
+                    && src != dst
+                {
+                    instructions.push(Instruction::CopySlot { dst, src });
+                }
+            } else {
+                instructions.push(Instruction::IntrinsicArrayLiteral {
+                    dst,
+                    values: element_slots,
+                });
             }
         }
         BoundExpr::AddConst { var, delta } => {
@@ -3469,6 +3485,23 @@ fn reset_array_slots_range(
     for slot in slots {
         instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
     }
+}
+
+fn collect_array_element_slots(array_name: &str, slot_map: &HashMap<String, usize>) -> Vec<usize> {
+    let prefix = format!("{array_name}_");
+    let mut indexed = slot_map
+        .iter()
+        .filter_map(|(name, slot)| {
+            if !name.starts_with(&prefix) {
+                return None;
+            }
+            let suffix = &name[prefix.len()..];
+            let index = suffix.parse::<usize>().ok()?;
+            Some((index, *slot))
+        })
+        .collect::<Vec<_>>();
+    indexed.sort_unstable_by_key(|(index, _)| *index);
+    indexed.into_iter().map(|(_, slot)| slot).collect()
 }
 
 fn array_element_count(bounds: &[(i32, i32)]) -> Option<usize> {

@@ -2,7 +2,7 @@
 
 Date: 2026-04-03
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Purpose
 
@@ -135,7 +135,10 @@ This workset is complete only when:
 - `StrPtr` is now live through a real native-call probe in both VM and JIT.
 - `ObjPtr` is now stable for repeated reads of the same runtime object handle,
   and returns `0` for the current direct-host `Nothing` lane.
-- `VarPtr` is now recognized and produces bounded scalar pointer-like values,
-  but the array-buffer native dereference lane (`VarPtr(buf(0))`) is still open.
+- `VarPtr` is now recognized and validated for both bounded scalar values and
+  the canonical zero-based byte-buffer dereference lane (`VarPtr(buf(0))`) in
+  both VM and JIT.
 - the SQLiteForExcel core fixture has moved past the old pointer-helper frontier
-  and now stops later at `ReDim buf(length - 1)`.
+  and now stops later at the explicit runtime-sized `ReDim` boundary.
+- native writeback for wider pointer-backed array destinations remains outside
+  the bounded V1 contract and is not claimed by this workset.

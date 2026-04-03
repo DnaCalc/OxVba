@@ -100,6 +100,7 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             let mut bytes = Vec::with_capacity(elements.len());
             for element in elements {
                 match element {
+                    RuntimeValue::Empty | RuntimeValue::Null => bytes.push(0),
                     RuntimeValue::I32(value) if (0..=255).contains(value) => bytes.push(*value as u8),
                     RuntimeValue::Bool(value) => bytes.push(if *value { 1 } else { 0 }),
                     other => {

@@ -1316,6 +1316,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_redim_expression_bounds_reports_exact_current_boundary() {
+        let source =
+            "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim buf(length - 1)\nEnd Sub";
+        let err = compile(source).expect_err("compile should fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("ReDim with runtime expression bounds is not yet supported"),
+            "expected explicit ReDim expression-bound diagnostic, got: {message}"
+        );
+        assert!(
+            message.contains("buf(length - 1)"),
+            "expected diagnostic to preserve the original ReDim shape, got: {message}"
+        );
+    }
+
+    #[test]
     fn compile_option_base_one_array_indexing_subset() {
         let source =
             "Option Base 1\nSub Main()\nDim a(3)\nDim x\na(1) = 4\na(3) = 9\nx = a(3)\nEnd Sub";

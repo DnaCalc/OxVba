@@ -31,6 +31,7 @@ pub enum BoundExpr {
     FloatConst(u64),
     StringConst(String),
     Var(String),
+    VarPtrArrayBuffer(String),
     AddConst {
         var: String,
         delta: i32,
@@ -3987,7 +3988,12 @@ fn parse_redim_stmt(
         preserve = true;
         payload = payload[9..].trim();
     }
-    let (name, _, bounds) = parse_array_declaration(payload, option_base)?;
+    let Some((name, _, bounds)) = parse_array_declaration(payload, option_base) else {
+        if let Some(detail) = describe_unsupported_redim_expression_bounds(payload) {
+            return Some(BoundStmt::Unsupported { line: detail });
+        }
+        return None;
+    };
     let element_prefix = format!("{name}_");
     let element_ty = declaration_types
         .iter()
@@ -4018,6 +4024,22 @@ fn parse_redim_stmt(
         previous_bounds,
         preserve,
     })
+}
+
+fn describe_unsupported_redim_expression_bounds(payload: &str) -> Option<String> {
+    let open = payload.find('(')?;
+    let close = payload.rfind(')')?;
+    if close <= open || !payload[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let (name, _) = normalize_ident_with_type_char(payload[..open].trim())?;
+    let raw_bounds = payload[open + 1..close].trim();
+    if raw_bounds.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "ReDim with runtime expression bounds is not yet supported for array `{name}`: {payload}"
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4612,7 +4634,7 @@ fn parse_stdlib_intrinsic_call_expr(
 
 fn parse_varptr_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if let Some(base) = parse_array_element_base_for_varptr(arg, array_bounds) {
-        return Some(BoundExpr::Var(base));
+        return Some(BoundExpr::VarPtrArrayBuffer(base));
     }
     parse_expr(arg, array_bounds)
 }

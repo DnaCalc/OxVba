@@ -975,7 +975,7 @@ fn check_expr(
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => Ok(()),
-        BoundExpr::Var(name) => ensure_declared(
+        BoundExpr::Var(name) | BoundExpr::VarPtrArrayBuffer(name) => ensure_declared(
             name,
             option_explicit,
             default_type_table,
@@ -1157,6 +1157,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::Var(name) => *declared_types.get(name).unwrap_or(&BoundType::Variant),
+        BoundExpr::VarPtrArrayBuffer(_) => BoundType::LongPtr,
         BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => {
             let lhs_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
             match arithmetic_result(lhs_ty, BoundType::Long) {

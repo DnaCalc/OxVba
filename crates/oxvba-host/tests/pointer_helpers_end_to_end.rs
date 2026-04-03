@@ -74,6 +74,86 @@ End Sub
     }
 
     #[test]
+    fn varptr_supports_byte_buffer_native_read_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function strlen Lib "ucrtbase" Alias "strlen" (ByVal textPtr As LongPtr) As LongPtr
+
+Sub Main()
+    Dim buf() As Byte
+    Dim pointerValue As LongPtr
+    Dim byteCount As LongPtr
+    ReDim buf(0 To 2)
+    buf(0) = 65
+    buf(1) = 66
+    buf(2) = 0
+    pointerValue = VarPtr(buf(0))
+    byteCount = strlen(pointerValue)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            let pointer = snapshot
+                .iter()
+                .find_map(|value| match value {
+                    RuntimeValue::I64(value) => Some(*value),
+                    _ => None,
+                })
+                .expect("snapshot should contain a pointer-like value");
+            assert!(
+                pointer != 0,
+                "VarPtr(buf(0)) should produce a non-zero pointer-like value for enable_jit={enable_jit}"
+            );
+            assert_eq!(
+                snapshot
+                    .iter()
+                    .find(|value| matches!(value, RuntimeValue::I64(2)))
+                    .cloned()
+                    .unwrap_or(RuntimeValue::Empty),
+                RuntimeValue::I64(2),
+                "strlen should observe the zero-terminated byte buffer for enable_jit={enable_jit}"
+            );
+        }
+    }
+
+    #[test]
+    fn varptr_exposes_byte_buffer_contents_to_runtime_registry_in_vm_and_jit() {
+        let source = r#"
+Sub Main()
+    Dim buf() As Byte
+    Dim pointerValue As LongPtr
+    ReDim buf(0 To 2)
+    buf(0) = 65
+    buf(1) = 66
+    buf(2) = 0
+    pointerValue = VarPtr(buf(0))
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            let pointer = snapshot
+                .iter()
+                .find_map(|value| match value {
+                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
+                    _ => None,
+                })
+                .expect("snapshot should contain a non-zero pointer-like value");
+            assert_ne!(pointer, 0);
+            let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
+                .expect("pointer helper registry should contain VarPtr result")
+                .cast::<u8>();
+            assert!(!raw.is_null());
+            let bytes = unsafe { std::slice::from_raw_parts(raw, 3) };
+            assert_eq!(
+                bytes,
+                &[65, 66, 0],
+                "VarPtr(buf(0)) should expose the byte buffer contents for enable_jit={enable_jit}"
+            );
+        }
+    }
+
+    #[test]
     fn objptr_is_stable_for_same_object_in_vm_and_jit() {
         let source = r#"
 Sub Main()

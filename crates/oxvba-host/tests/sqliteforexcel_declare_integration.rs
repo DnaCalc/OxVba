@@ -39,7 +39,7 @@ fn sqliteforexcel_core64_normalized_basproj_moves_past_pointer_helper_boundary_t
     assert!(
         err.message()
             .to_ascii_lowercase()
-            .contains("unsupported statement: redim buf(length - 1)"),
+            .contains("redim with runtime expression bounds is not yet supported"),
         "unexpected compile diagnostic: {}",
         err.message()
     );
@@ -134,7 +134,7 @@ fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_helper
     assert!(
         err.to_string()
             .to_ascii_lowercase()
-            .contains("unsupported statement: redim buf(length - 1)"),
+            .contains("redim with runtime expression bounds is not yet supported"),
         "unexpected direct compile diagnostic: {err}"
     );
 }

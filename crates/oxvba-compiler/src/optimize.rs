@@ -179,6 +179,7 @@ fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
 fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
     match expr {
         BoundExpr::Var(name) => name == var,
+        BoundExpr::VarPtrArrayBuffer(name) => name == var,
         BoundExpr::AddConst { var: name, .. } => name == var,
         BoundExpr::SubConst { var: name, .. } => name == var,
         BoundExpr::IntConst(_)
@@ -207,6 +208,7 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         }
         BoundExpr::ProcCall { .. } => true,
         BoundExpr::Var(_)
+        | BoundExpr::VarPtrArrayBuffer(_)
         | BoundExpr::AddConst { .. }
         | BoundExpr::SubConst { .. }
         | BoundExpr::IntConst(_)

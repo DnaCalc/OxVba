@@ -85,8 +85,15 @@ V1 design:
 - support the ByRef/native-buffer scenarios actually needed by external native
   code
 - start with variable and array-element shapes used in real interop probes
+- support canonical zero-based byte-buffer shapes such as `VarPtr(buf(0))`
+  through OxVba-owned backing storage suitable for native read/dereference
 - keep writeback/aliasing rules explicit
 - avoid promising arbitrary pointer arithmetic semantics as part of V1
+
+Current bounded V1 support:
+- scalar variable pointer production
+- canonical zero-based byte-buffer dereference in VM and JIT
+- no broader native writeback guarantee yet
 
 ### `ObjPtr`
 
