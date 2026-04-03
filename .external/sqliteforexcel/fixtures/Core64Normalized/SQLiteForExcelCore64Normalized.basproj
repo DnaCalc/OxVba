@@ -1,0 +1,12 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>SQLiteForExcelCore64Normalized</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+    <Module Include="Sqlite3.bas" />
+    <ProjectReference Include="..\HostEnvironment\HostEnvironment.basproj" />
+  </ItemGroup>
+</Project>

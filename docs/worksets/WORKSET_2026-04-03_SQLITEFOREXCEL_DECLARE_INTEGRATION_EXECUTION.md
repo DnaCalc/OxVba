@@ -68,6 +68,25 @@ Delivered so far in this lane:
 - archive treated as stale for the declare/sample artifacts under test
 - controlled fixture import created under `.external/sqliteforexcel/`
 - provenance recorded in `docs/evidence/SQLITEFOREXCEL_PROVENANCE_AND_SYNC_2026-04-03.md`
+- tiny host-environment reference shim created under `.external/sqliteforexcel/fixtures/HostEnvironment/`
+- first raw 64-bit fixture probe created under `.external/sqliteforexcel/fixtures/Demo64/`
+- first raw probe finding captured: upstream filenames `Sqlite3_64.bas` / `Sqlite3Demo_64.bas`
+  currently fail OxVba `.basproj` import with
+  `PMR-E-MODULE-HEADER-VB-NAME` because their internal `VB_Name` values are
+  `Sqlite3` / `Sqlite3Demo`
+- first mutable host-shim attempt intentionally reduced after a setup finding:
+  direct helper call `HostEnv.SetWorkbookPath` did not resolve across the
+  current project-reference boundary, so the tiny shim now only supplies the
+  exact upstream host-ish names under test
+- standalone host-environment probe now compiles and runs cleanly, so the tiny
+  `ThisWorkbook.Path` / `Debug.Print` reference-project shim is usable as a
+  separate probe surface
+- normalized core-only SQLite probe currently fails at compile time with
+  `PMR-E-BACKEND-COMPILE: type error: use of undeclared variable: thisworkbook_path`
+- normalized full demo probe currently fails at compile time with
+  `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
+- host-only `--jit` probe currently panics with missing helper
+  `oxrt_host_debug_print`
 
 ## Governing Rules
 
@@ -150,7 +169,9 @@ Every matrix row should record:
 1. verify upstream provenance and local-archive sync posture honestly
 2. capture external fixture/dependency provenance in this repo
 3. import the minimal SQLiteForExcel source/binary artifact set into `.external/`
-4. create OxVba fixture projects for 64-bit declare/sample execution
+4. create OxVba fixture projects for 64-bit declare/sample execution, including a
+   deliberately tiny host-environment shim for `ThisWorkbook.Path` and
+   `Debug.Print`
 5. create CLI harness commands and matrix rows for IL/interpreter and CraneLift
 6. run the positive matrix
 7. run the negative matrix

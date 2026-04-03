@@ -1,0 +1,13 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>HostEnvironment</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Debug.bas" />
+    <ClassModule Include="ThisWorkbook.cls">
+      <VBExposed>True</VBExposed>
+      <VBPredeclaredId>True</VBPredeclaredId>
+    </ClassModule>
+  </ItemGroup>
+</Project>

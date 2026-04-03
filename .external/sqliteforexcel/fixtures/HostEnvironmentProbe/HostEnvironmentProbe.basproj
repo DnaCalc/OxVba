@@ -1,0 +1,11 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>HostEnvironmentProbe</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+    <ProjectReference Include="..\HostEnvironment\HostEnvironment.basproj" />
+  </ItemGroup>
+</Project>
