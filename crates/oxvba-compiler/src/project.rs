@@ -24503,6 +24503,157 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_accepts_plain_project_reference_predeclared_path_property_read() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("plain project reference predeclared property read should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("valueout = thisworkbook.path")
+                || lowered.contains("valueout = property_get_pmr_hostproject_thisworkbook_path(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_accepts_plain_project_reference_predeclared_path_property_concat() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nvalueOut = ThisWorkbook.Path & \"\\\\x64\"\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("plain project reference predeclared property concat should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("thisworkbook.path"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_accepts_plain_project_reference_predeclared_path_in_single_line_if_assignment(
+    ) {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As String\nIf valueOut = \"\" Then valueOut = ThisWorkbook.Path\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("single-line If assignment with predeclared property should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("if valueout = \"\" then valueout = thisworkbook.path")
+                || lowered.contains("if valueout = \"\" then valueout = property_get_pmr_hostproject_thisworkbook_path(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_accepts_plain_project_reference_predeclared_path_in_optional_function_body() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Function SQLite3Initialize(Optional ByVal libDir As String) As Long\nIf libDir = \"\" Then libDir = ThisWorkbook.Path\nSQLite3Initialize = 0\nEnd Function",
+        )
+        .expect("module parses");
+        let host_workbook = module_unit_from_source(
+            "ThisWorkbook",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThisWorkbook\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Path() As String\nPath = \"abc\"\nEnd Property",
+        )
+        .expect("host workbook parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_workbook],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("optional-parameter function body with predeclared property should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("thisworkbook.path"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_rejects_host_injected_invalid_root_without_exposure_attribute() {
         let cases = [
             ("named property read", "Let valueOut = Application.Value"),
