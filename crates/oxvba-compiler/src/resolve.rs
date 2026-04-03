@@ -985,7 +985,7 @@ struct ConditionalFrame {
 }
 
 fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
-    let mut constants: HashMap<String, i32> = HashMap::new();
+    let mut constants = builtin_pp_constants();
     let mut frames: Vec<ConditionalFrame> = Vec::new();
     let mut current_active = true;
     let mut out = Vec::new();
@@ -1056,6 +1056,24 @@ fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
     }
 
     out
+}
+
+fn builtin_pp_constants() -> HashMap<String, i32> {
+    let mut constants = HashMap::new();
+    constants.insert("vba7".to_string(), -1);
+    constants.insert(
+        "win64".to_string(),
+        if cfg!(all(windows, target_pointer_width = "64")) {
+            -1
+        } else {
+            0
+        },
+    );
+    constants.insert(
+        "mac".to_string(),
+        if cfg!(target_os = "macos") { -1 } else { 0 },
+    );
+    constants
 }
 
 fn parse_pp_const(line: &str) -> Option<(&str, &str)> {
@@ -1918,7 +1936,12 @@ fn parse_declare_signature_line(
     default_type_table: &[BoundType; 26],
 ) -> Result<Option<ParsedDeclareSignature>, String> {
     let trimmed = line.trim();
-    let Some(rest) = strip_keyword_prefix_ci(trimmed, "declare") else {
+    let visibility_trimmed = strip_keyword_prefix_ci(trimmed, "private")
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "public"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "friend"))
+        .unwrap_or(trimmed)
+        .trim();
+    let Some(rest) = strip_keyword_prefix_ci(visibility_trimmed, "declare") else {
         return Ok(None);
     };
     let rest = rest.trim();
@@ -6766,6 +6789,21 @@ mod tests {
             .external_declarations
             .get("hostping")
             .expect("external declaration should be registered");
+        assert_eq!(ext.library, "host");
+        assert_eq!(ext.alias, "ping");
+        assert!(ext.ptr_safe);
+        assert!(!ext.ordinal_alias);
+        assert!(module.resolution_diagnostics.is_empty());
+    }
+
+    #[test]
+    fn resolve_private_declare_alias_is_canonicalized_and_ptrsafe_recorded() {
+        let source = "Private Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"Ping\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let ext = module
+            .external_declarations
+            .get("hostping")
+            .expect("private external declaration should be registered");
         assert_eq!(ext.library, "host");
         assert_eq!(ext.alias, "ping");
         assert!(ext.ptr_safe);

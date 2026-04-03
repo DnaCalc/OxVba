@@ -81,14 +81,16 @@ Delivered so far in this lane:
   `ThisWorkbook.Path` / `Debug.Print` reference-project shim is usable as a
   separate probe surface
 - normalized core-only SQLite probe now moves past the earlier
-  `thisworkbook_path` boundary and currently fails later at compile time with
-  `PMR-E-BACKEND-COMPILE: type error: call to unknown procedure: loadlibrary`
+  `thisworkbook_path` boundary, the later `Private Declare` / `LoadLibrary`
+  binding boundary, and the built-in `Win64` conditional-selection boundary;
+  it currently fails later at compile time with
+  `PMR-E-BACKEND-COMPILE: type error: unsupported statement: Debug.Print "...", Err.LastDllError`
 - normalized full demo probe currently fails at compile time with
   `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
 - both current compile-time limitations are now pinned under automated host and
-  compiler regressions; the SQLite core row reproduces the newer `loadlibrary`
-  boundary in both compiler strategies, while the demo row still reproduces the
-  `sqlite3open` duplicate-name boundary
+  compiler regressions; the SQLite core row reproduces the newer `Debug.Print`
+  statement boundary in both compiler strategies, while the demo row still
+  reproduces the `sqlite3open` duplicate-name boundary
 - host-only `--jit` probe now runs cleanly after the diagnostics-host and
   console-host helper consistency follow-ons
 - follow-on ownership decision: `Debug.Print` is treated as a host-supplied

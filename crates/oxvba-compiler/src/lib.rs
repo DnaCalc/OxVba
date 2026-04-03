@@ -3313,6 +3313,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_private_declare_function_stub_binding_subset_is_accepted() {
+        let source = "Private Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out = compile(source).expect("private declare compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicInvokeSymbolHost { .. }))
+        );
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        let descriptor = &out.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name.to_ascii_lowercase(), "hostping");
+        assert_eq!(descriptor.library, "host");
+        assert_eq!(descriptor.alias, "ping");
+    }
+
+    #[test]
     fn compile_declare_descriptor_table_is_stable_for_identical_source() {
         let source = "Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"PiNg\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let out1 = compile(source).expect("first compile should succeed");

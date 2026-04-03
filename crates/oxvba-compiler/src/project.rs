@@ -24776,7 +24776,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_moves_past_predeclared_path_in_optional_function_body_with_declares_and_module_state()
+    fn compile_project_accepts_predeclared_path_in_optional_function_body_with_declares_and_module_state()
     {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -24825,17 +24825,29 @@ mod tests {
             }],
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("declare-heavy optional body should still expose the next backend boundary");
+        let compiled = compile_project(&manifest)
+            .expect("declare-heavy optional body with active Win64 declare should compile");
         assert!(
-            err.to_string()
-                .contains("call to unknown procedure: loadlibrary"),
-            "unexpected diagnostic: {err}"
+            compiled
+                .rewritten_source
+                .to_ascii_lowercase()
+                .contains("property_get_pmr_hostproject_thisworkbook_path(0)"),
+            "unexpected lowered source: {}",
+            compiled.rewritten_source
+        );
+        assert!(
+            compiled
+                .bytecode
+                .external_call_descriptors
+                .iter()
+                .any(|descriptor| descriptor.declared_name.eq_ignore_ascii_case("loadlibrary")),
+            "expected external LoadLibrary descriptor in {:?}",
+            compiled.bytecode.external_call_descriptors
         );
     }
 
     #[test]
-    fn compile_project_sqliteforexcel_fixture_rewrites_referenced_thisworkbook_path_before_next_boundary()
+    fn compile_project_sqliteforexcel_fixture_rewrites_referenced_thisworkbook_path_before_debug_print_boundary()
     {
         let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -24920,7 +24932,7 @@ mod tests {
                 .expect_err("sqlite fixture should now expose the next backend boundary");
             assert!(
                 err.to_string()
-                    .contains("call to unknown procedure: loadlibrary"),
+                    .contains("unsupported statement: Debug.Print"),
                 "unexpected {label} diagnostic: {err}"
             );
         }
