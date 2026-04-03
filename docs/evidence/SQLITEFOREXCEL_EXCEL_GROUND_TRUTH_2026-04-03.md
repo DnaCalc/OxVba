@@ -81,19 +81,20 @@ Confirmed by these probes:
 1. Raw-source filename mismatch acceptance
 - Excel imports raw `*_64.bas` files whose internal `VB_Name` values are
   `Sqlite3` / `Sqlite3Demo`
-- OxVba currently rejects that source shape during project import
+- OxVba previously rejected that source shape during project import; this is now
+  fixed under the `VB_Name`-wins external-identity rule
 
 2. Normalized SQLite compile-time failures are OxVba-side
 - Excel compiles and starts running the shipped workbook
-- OxVba currently fails earlier on normalized probes with:
-  - `use of undeclared variable: thisworkbook_path`
-  - `PMR-E-NAME-QUALIFICATION-REQUIRED` on `sqlite3open`
+- OxVba has already moved past earlier normalized-probe failures on
+  `ThisWorkbook.Path` and `sqlite3open`
+- the current normalized-probe boundary is later:
+  - `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)`
 
 ## Related Follow-On Beads
 
-- `bd-sql1.8.3` qualified `ThisWorkbook.Path` resolution in normalized core probe
-- `bd-sql1.8.4` duplicate-name qualification failure in normalized demo probe
 - `bd-sql1.8.5` `VB_Name`-wins external source identity with stable file-path writes
+- `bd-sql1.16` runtime-sized `ReDim` support for the SQLite UTF-8 helper lane
 
 The Excel runtime `File not found` during `TestOpenClose` is not yet classified
 as an OxVba delta. It is recorded here as upstream/runtime ground truth only.

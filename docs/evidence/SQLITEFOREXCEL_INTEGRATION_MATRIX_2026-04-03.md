@@ -24,12 +24,12 @@ declare integration lane.
 | --- | --- | --- | --- | --- | --- |
 | `HostEnvironmentProbe` | default | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj` | compile/run cleanly | compile/run cleanly | positive baseline |
 | `HostEnvironmentProbe` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\HostEnvironmentProbe\HostEnvironmentProbe.basproj --jit` | compile/run cleanly | compile/run cleanly | positive baseline |
-| `Demo64` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj` | if raw `_64` imports now work, should reach the same demo compile boundary as the normalized fixture | `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | compile-time limitation after `VB_Name`-wins ingest fix |
-| `Demo64` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj --jit` | same as default or same compile-time failure | same `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | compile-time limitation after `VB_Name`-wins ingest fix |
+| `Demo64` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj` | if raw `_64` imports now work, should reach the same demo compile boundary as the normalized fixture | `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after duplicate-name fix |
+| `Demo64` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64\SQLiteForExcelDemo64.basproj --jit` | same as default or same compile-time failure | same `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after duplicate-name fix |
 | `Core64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj` | if core compiles, should begin native init/version lane | `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after pointer-helper support |
 | `Core64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Core64Normalized\SQLiteForExcelCore64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after pointer-helper support |
-| `Demo64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj` | if demo compiles, should reach broader SQLite sample lane | `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | unexpected compile-time limitation |
-| `Demo64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-NAME-QUALIFICATION-REQUIRED`: `sqlite3open` declared in multiple modules | unexpected compile-time limitation |
+| `Demo64Normalized` | default | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj` | if demo compiles, should reach broader SQLite sample lane | `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after duplicate-name fix |
+| `Demo64Normalized` | `--jit` | `oxvba run-project .external\sqliteforexcel\fixtures\Demo64Normalized\SQLiteForExcelDemo64Normalized.basproj --jit` | same as default or same compile-time failure | same `PMR-E-BACKEND-COMPILE`: `unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)` | compile-time limitation after duplicate-name fix |
 
 ## Notes
 
@@ -48,9 +48,10 @@ declare integration lane.
   moves past procedure-level early-exit control flow, `StrPtr`, and the
   `VarPtr(buf(0))` byte-buffer dereference lane before stopping at the narrower
   runtime-sized `ReDim` statement frontier.
-- The `sqlite3open` duplicate-name failure is likewise pinned at the host/basproj
-  boundary and direct compiler boundary, and it also reproduces in both compiler
-  lowering strategies.
+- The earlier `sqlite3open` duplicate-name failure is fixed. The active
+  conditional-compilation branch is now the only visible `SQLite3Open`
+  declaration in the procedure index, so both raw and normalized demo fixtures
+  now advance to the same later runtime-sized `ReDim` boundary as the core row.
 - The earlier `Private Const` shim hypothesis is not currently reproduced by the
   minimal direct compiler probe, so it remains a narrower follow-on question
   rather than a confirmed active blocker.

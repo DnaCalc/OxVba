@@ -857,7 +857,7 @@ fn starts_enum_block(lower: &str) -> bool {
         || lower.starts_with("public enum ")
 }
 
-fn normalize_source_lines(source: &str) -> Vec<String> {
+pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
     let mut merged = Vec::new();
     let mut pending = String::new();
 

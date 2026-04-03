@@ -72,7 +72,7 @@ Delivered so far in this lane:
 - first raw 64-bit fixture probe created under `.external/sqliteforexcel/fixtures/Demo64/`
 - raw `_64` source ingestion is no longer blocked after the `VB_Name`-wins
   external-identity fix; raw and normalized demo fixtures now both reach the
-  same compile-time `sqlite3open` ambiguity boundary
+  same later runtime-sized `ReDim` compile boundary
 - first mutable host-shim attempt intentionally reduced after a setup finding:
   direct helper call `HostEnv.SetWorkbookPath` did not resolve across the
   current project-reference boundary, so the tiny shim now only supplies the
@@ -85,13 +85,13 @@ Delivered so far in this lane:
   binding boundary, the built-in `Win64` conditional-selection boundary, and the
   later multi-expression `Debug.Print` boundary;
   it currently fails later at compile time with
-  `PMR-E-BACKEND-COMPILE: type error: call to unknown procedure: strptr`
+  `PMR-E-BACKEND-COMPILE: type error: unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)`
 - normalized full demo probe currently fails at compile time with
-  `PMR-E-NAME-QUALIFICATION-REQUIRED: procedure name sqlite3open is declared in multiple modules`
+  `PMR-E-BACKEND-COMPILE: type error: unsupported statement: ReDim with runtime expression bounds is not yet supported for array 'buf': buf(length - 1)`
 - both current compile-time limitations are now pinned under automated host and
-  compiler regressions; the SQLite core row reproduces the newer `StrPtr`
-  statement boundary in both compiler strategies, while the demo row still
-  reproduces the `sqlite3open` duplicate-name boundary
+  compiler regressions; the SQLite core and demo rows now both reproduce the
+  later runtime-sized `ReDim` boundary after the `sqlite3open` duplicate-name
+  fix
 - host-only `--jit` probe now runs cleanly after the diagnostics-host and
   console-host helper consistency follow-ons
 - follow-on ownership decision: `Debug.Print` is treated as a host-supplied

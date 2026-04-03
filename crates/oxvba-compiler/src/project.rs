@@ -15,6 +15,7 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+    resolve::normalize_source_lines,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1830,9 +1831,9 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
     for module in &manifest.modules {
         let module_name = normalize_identifier(&module.module_name);
         let member_attributes = collect_member_attributes(&module.source);
-        for line in module.source.lines() {
-            if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
-                let params = procedure_signature_params(line).unwrap_or_default();
+        for line in normalize_source_lines(&module.source) {
+            if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
+                let params = procedure_signature_params(&line).unwrap_or_default();
                 let param_count = params.len();
                 let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name, kind);
                 procedures.push(ProcedureDecl {
@@ -1883,9 +1884,9 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             }
             let module_name = normalize_identifier(&module.module_name);
             let member_attributes = collect_member_attributes(&module.source);
-            for line in module.source.lines() {
-                if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
-                    let params = procedure_signature_params(line).unwrap_or_default();
+            for line in normalize_source_lines(&module.source) {
+                if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
+                    let params = procedure_signature_params(&line).unwrap_or_default();
                     let param_count = params.len();
                     let lowered_name =
                         lowered_proc_symbol(&project_name, &module_name, &name, kind);
@@ -24939,7 +24940,46 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_sqliteforexcel_demo_fixture_reproduces_sqlite3open_duplicate_failure_in_both_strategies(
+    fn collect_project_procedures_uses_active_conditional_branch_for_public_wrappers() {
+        let sqlite_wrapper = module_unit_from_source(
+            "Sqlite3",
+            ModuleKind::Procedural,
+            concat!(
+                "Attribute VB_Name = \"Sqlite3\"\n",
+                "Option Explicit\n",
+                "#If Win64 Then\n",
+                "Public Function SQLite3Open(ByVal fileName As String, ByRef dbHandle As LongPtr) As Long\n",
+                "#Else\n",
+                "Public Function SQLite3Open(ByVal fileName As String, ByRef dbHandle As Long) As Long\n",
+                "#End If\n",
+                "SQLite3Open = 0\n",
+                "End Function\n",
+            ),
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![sqlite_wrapper],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let procedures = super::collect_project_procedures(&manifest);
+        let open_entries = procedures
+            .iter()
+            .filter(|decl| decl.procedure_name == "sqlite3open")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            open_entries.len(),
+            1,
+            "unexpected active SQLite3Open declarations: {open_entries:#?}"
+        );
+        assert_eq!(open_entries[0].param_count, 2);
+    }
+
+    #[test]
+    fn compile_project_sqliteforexcel_demo_fixture_moves_past_duplicate_name_to_redim_expression_failure_in_both_strategies(
     ) {
         let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -25011,8 +25051,9 @@ mod tests {
                 .expect_err("sqlite demo fixture should currently fail deterministically");
             let rendered = err.to_string();
             assert!(
-                rendered.contains("PMR-E-NAME-QUALIFICATION-REQUIRED")
-                    && rendered.to_ascii_lowercase().contains("sqlite3open"),
+                rendered
+                    .to_ascii_lowercase()
+                    .contains("redim with runtime expression bounds is not yet supported"),
                 "unexpected {label} diagnostic: {rendered}"
             );
         }

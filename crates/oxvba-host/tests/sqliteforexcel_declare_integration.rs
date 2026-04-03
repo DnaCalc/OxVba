@@ -141,7 +141,8 @@ fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_helper
 
 #[cfg(target_os = "windows")]
 #[test]
-fn sqliteforexcel_demo64_normalized_basproj_reports_current_sqlite3open_duplicate_failure() {
+fn sqliteforexcel_demo64_normalized_basproj_moves_past_duplicate_name_to_redim_expression_failure()
+{
     let basproj_path =
         sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite demo fixture should load");
@@ -156,24 +157,27 @@ fn sqliteforexcel_demo64_normalized_basproj_reports_current_sqlite3open_duplicat
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
         err.message()
-            .contains("PMR-E-NAME-QUALIFICATION-REQUIRED")
-            && err.message().to_ascii_lowercase().contains("sqlite3open"),
+            .to_ascii_lowercase()
+            .contains("redim with runtime expression bounds is not yet supported"),
         "unexpected compile diagnostic: {}",
         err.message()
     );
 }
 
 #[test]
-fn sqliteforexcel_demo_module_sources_direct_compile_reproduce_sqlite3open_duplicate_failure() {
-    let demo_path = sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
+fn sqliteforexcel_demo_module_sources_direct_compile_move_past_duplicate_name_to_redim_expression_failure(
+) {
+    let demo_path =
+        sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
     let demo = load_basproj(&demo_path).expect("sqlite demo fixture should load");
 
     let err = compile_project(&demo.manifest)
-        .expect_err("direct compile should currently reproduce sqlite demo duplicate-name failure");
+        .expect_err("direct compile should now expose the next backend boundary");
     let rendered = err.to_string();
     assert!(
-        rendered.contains("PMR-E-NAME-QUALIFICATION-REQUIRED")
-            && rendered.to_ascii_lowercase().contains("sqlite3open"),
+        rendered
+            .to_ascii_lowercase()
+            .contains("redim with runtime expression bounds is not yet supported"),
         "unexpected direct compile diagnostic: {rendered}"
     );
 }
