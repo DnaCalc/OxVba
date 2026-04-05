@@ -1,12 +1,18 @@
+use super::filesystem::{expand_host_wildcard_paths, path_contains_wildcards};
 use crate::{
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::ProcessEnvHal,
 };
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
-use std::fs;
+use std::path::PathBuf;
 
 use super::StandardHostServices;
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct DirSearchState {
+    pub(super) remaining: Vec<String>,
+}
 
 impl ProcessEnvHal for StandardHostServices {
     fn shell(&self, command: RuntimeValue, _window_style: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -35,7 +41,7 @@ impl ProcessEnvHal for StandardHostServices {
         }
         if self.native_process_enabled() {
             let command = self
-                .runtime_value_to_legacy_i32(&command, capability, "shell", "command")
+                .runtime_value_project_compat_slot_i32(&command, capability, "shell", "command")
                 .unwrap_or(0);
             if command != 0 {
                 let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
@@ -54,10 +60,10 @@ impl ProcessEnvHal for StandardHostServices {
         let command = match &command {
             RuntimeValue::String(BStr(text)) => i32::from(!text.trim().is_empty()),
             other => self
-                .runtime_value_to_legacy_i32(other, capability, "shell", "command")
+                .runtime_value_project_compat_slot_i32(other, capability, "shell", "command")
                 .unwrap_or(0),
         };
-        Ok(RuntimeValue::from_legacy_i32(if command == 0 {
+        Ok(RuntimeValue::from_compat_slot_i32(if command == 0 {
             0
         } else {
             1
@@ -85,7 +91,7 @@ impl ProcessEnvHal for StandardHostServices {
             }
             vars.sort_by(|a, b| a.0.cmp(&b.0));
             let key = self
-                .runtime_value_to_legacy_i32(&key, capability, "environ", "key")
+                .runtime_value_project_compat_slot_i32(&key, capability, "environ", "key")
                 .unwrap_or(0);
             let idx = (key.unsigned_abs() as usize) % vars.len();
             let entry = format!(
@@ -98,10 +104,10 @@ impl ProcessEnvHal for StandardHostServices {
         let key = match &key {
             RuntimeValue::String(BStr(text)) => text.len().min(i32::MAX as usize) as i32,
             other => self
-                .runtime_value_to_legacy_i32(other, capability, "environ", "key")
+                .runtime_value_project_compat_slot_i32(other, capability, "environ", "key")
                 .unwrap_or(0),
         };
-        Ok(RuntimeValue::from_legacy_i32(key))
+        Ok(RuntimeValue::from_compat_slot_i32(key))
     }
 
     fn dir(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -110,55 +116,66 @@ impl ProcessEnvHal for StandardHostServices {
             return Err(self.unsupported(capability, "dir"));
         }
         if self.native_process_enabled() {
-            let target = match &path {
-                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => {
-                    std::env::current_dir().map_err(|err| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dir",
-                            format!("failed to get current directory: {err}"),
-                        )
-                    })?
-                }
-                _ => self.runtime_value_to_path(&path, capability, "dir", "path")?,
-            };
-
-            if target.is_file() || target.is_dir() {
-                let name = target
-                    .file_name()
-                    .map(|value| value.to_string_lossy().to_string())
-                    .unwrap_or_else(|| target.display().to_string());
-                return Ok(RuntimeValue::String(BStr(name)));
+            let is_continuation = matches!(
+                path,
+                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0)
+            );
+            if is_continuation {
+                let mut state = self.dir_lock(capability, "dir")?;
+                let next = if state.remaining.is_empty() {
+                    String::new()
+                } else {
+                    state.remaining.remove(0)
+                };
+                return Ok(RuntimeValue::String(BStr(next)));
             }
 
-            let out = match fs::read_dir(&target) {
-                Ok(mut entries) => entries
-                    .next()
-                    .transpose()
-                    .map_err(|err| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dir",
-                            format!("failed to read directory {}: {err}", target.display()),
-                        )
-                    })?
-                    .map(|entry| entry.file_name().to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                Err(_) => String::new(),
+            let target = self.runtime_value_to_path(&path, capability, "dir", "path")?;
+            let matches = enumerate_dir_matches(&target).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "dir",
+                    format!("failed to enumerate dir path {}: {err}", target.display()),
+                )
+            })?;
+            let mut names = matches
+                .into_iter()
+                .map(|entry| {
+                    entry
+                        .file_name()
+                        .map(|value| value.to_string_lossy().to_string())
+                        .unwrap_or_else(|| entry.display().to_string())
+                })
+                .collect::<Vec<_>>();
+            let first = names.first().cloned().unwrap_or_default();
+            let mut state = self.dir_lock(capability, "dir")?;
+            state.remaining = if names.len() > 1 {
+                names.drain(1..).collect()
+            } else {
+                Vec::new()
             };
-            return Ok(RuntimeValue::String(BStr(out)));
+            return Ok(RuntimeValue::String(BStr(first)));
         }
         let out = match &path {
             RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => 0,
             RuntimeValue::String(BStr(text)) => i32::from(!text.is_empty()),
             other => i32::from(
-                self.runtime_value_to_legacy_i32(other, capability, "dir", "path")
+                self.runtime_value_project_compat_slot_i32(other, capability, "dir", "path")
                     .unwrap_or(0)
                     != 0,
             ),
         };
         Ok(RuntimeValue::I32(out))
     }
+}
+
+fn enumerate_dir_matches(target: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
+    if path_contains_wildcards(target) {
+        return expand_host_wildcard_paths(target);
+    }
+    if target.exists() {
+        return Ok(vec![target.clone()]);
+    }
+    Ok(Vec::new())
 }

@@ -1,5 +1,4 @@
 use oxvba_host::{Engine, HostConfig};
-use oxvba_runtime::RuntimeValue;
 
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -31,7 +30,7 @@ fn example_direct_file_top_level_mainline_executes() {
     })
     .execute_source_with_value_snapshot(source)
     .expect("direct-file example should execute");
-    assert_eq!(values[0].to_legacy_i32(), Ok(42));
+    assert_eq!(values[0].project_compat_slot_i32(), Ok(42));
 }
 
 #[test]
@@ -75,7 +74,7 @@ fn example_basproj_exe_with_explicit_entrypoint_executes() {
     .execute_project_with_snapshot_phased(&loaded.manifest)
     .expect("basproj example should execute");
     assert!(
-        matches!(values.as_slice(), [RuntimeValue::Empty]),
+        values.is_empty(),
         "explicit-entry project example should execute with the current empty snapshot slot shape: {values:?}"
     );
 
@@ -147,7 +146,7 @@ fn example_vbp_sub_main_executes() {
     .execute_project_with_snapshot_phased(&loaded.manifest)
     .expect("vbp example should execute");
     assert!(
-        matches!(values.as_slice(), [RuntimeValue::Empty]),
+        values.is_empty(),
         "VBP Sub Main example should execute with the current empty snapshot slot shape: {values:?}"
     );
 

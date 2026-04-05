@@ -1,4 +1,5 @@
 use oxvba_host::{Engine, HostConfig};
+use oxvba_runtime::RuntimeValue;
 
 #[test]
 fn loaded_basproj_configured_entry_point_bypasses_default_main_startup_path() {
@@ -52,9 +53,10 @@ fn loaded_basproj_configured_entry_point_bypasses_default_main_startup_path() {
     let snapshot = engine
         .execute_project_with_snapshot_phased(&loaded.manifest)
         .expect("configured entry point should bypass failing default Main");
-    assert!(
-        snapshot.is_empty(),
-        "startup shim should leave no user slots in the empty startup path: {snapshot:?}"
+    assert_eq!(
+        snapshot,
+        vec![RuntimeValue::Empty],
+        "configured entry point snapshot should reflect the entry procedure slot view"
     );
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
@@ -118,9 +120,10 @@ fn loaded_basproj_unique_sub_main_fallback_bypasses_first_module_order_bias() {
     let snapshot = engine
         .execute_project_with_snapshot_phased(&loaded.manifest)
         .expect("unique Sub Main fallback should bypass first-module Warmup");
-    assert!(
-        snapshot.is_empty(),
-        "unique Sub Main fallback should bypass first-module Warmup and leave no user slots in the shim path: {snapshot:?}"
+    assert_eq!(
+        snapshot,
+        vec![RuntimeValue::I32(5)],
+        "unique Sub Main fallback should reflect the selected Main procedure slot view"
     );
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");

@@ -320,9 +320,21 @@ This is the last representation before target-specific lowering.
 
 The `Variant` type is the most performance-critical data structure in the engine. Every VBA value passes through it, and correctness depends on matching VBA/COM semantics exactly.
 
-**Design decision: use COM `VARIANT` layout as the canonical runtime representation**
+**Current design note: OxVBA semantic runtime values are canonical; COM layouts are boundary representations**
 
-OxVBA keeps the official `VARIANT` field structure and ABI layout (same `vt` + reserved words + union data model used by COM). This preserves blittable interop expectations and avoids internal/external representation drift.
+OxVBA does not currently require its internal execution representation to equal native VBA/COM wire layout everywhere. The authoritative runtime model is the OxVBA semantic value model, while `oxvba-com` and other boundary layers translate to and from COM-facing shapes such as `VARIANT`, `BSTR`, `SAFEARRAY`, and COM interface pointers.
+
+Known current differences from native VBA/COM internal representation include:
+- strings may remain Rust-owned UTF-8 semantic values internally even when the boundary shape is `BSTR`,
+- object/interface identity may remain handle- or facade-based internally rather than raw COM interface pointers,
+- and similar internal/boundary representation differences may exist for other supported types.
+
+These are known differences, not hidden assumptions:
+- they may leak at some boundaries from time to time,
+- they should be monitored through interop and conformance evidence,
+- and they may be revisited later if they become a real compatibility or performance problem.
+
+Where COM-style layout alignment is honest and useful, OxVBA may still use it as an optimization or local implementation choice. That does not make COM wire layout the canonical semantic ownership model for the engine.
 
 ```rust
 #[repr(C)]
@@ -358,12 +370,12 @@ pub struct Variant {
 | `Array` | flag `0x2000` | SAFEARRAY pointer | ORed with element type |
 | `ByRef` | flag `0x4000` | by-ref pointer | ORed with referent type |
 
-**Optional future optimization (explicitly non-canonical):**
+**Optional future optimization / revisit path:**
 
-We may introduce an alternative internal Variant representation for hot paths only (for example compact 8-byte immediate forms, short-string embedding, indirection for long contents) if and only if benchmark evidence justifies it.
+We may still revise internal representation choices for hot paths or interop pressure (for example compact immediate forms, different string storage, short-string embedding, indirection for long contents, or tighter internal/boundary alignment) if and only if evidence justifies it.
 
 If introduced:
-- it remains an internal optimization layer, not the canonical public/runtime `VARIANT`,
+- it remains an internal implementation decision, not an implicit semantic redefinition of the whole runtime around COM wire layout,
 - boundary marshalling must be deterministic and lossless,
 - formal/conformance evidence must prove semantic equivalence at representation boundaries.
 

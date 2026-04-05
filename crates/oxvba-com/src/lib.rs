@@ -111,6 +111,7 @@ pub use windows_runtime_state::{
     cache_member_dispid, callback_arg, callback_arity, callback_subscription_token,
     collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
     event_is_source_interface_only, event_signature_arity_for_binding, insert_bound_object_binding,
+    insert_bound_object_binding_at_handle, insert_bound_object_binding_at_handle_shared,
     insert_bound_object_binding_shared, mark_next_callback_pumped_shared,
     queue_projection_event_callbacks_shared, release_callback, release_object_binding,
     release_object_binding_shared, release_subscription_transport, remove_subscription_callbacks,

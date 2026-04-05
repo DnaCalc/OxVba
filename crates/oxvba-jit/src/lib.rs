@@ -32,7 +32,7 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
 
     values
         .into_iter()
-        .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+        .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
         .collect()
 }
 
@@ -97,11 +97,16 @@ mod tests {
     use super::{JitEngine, cranelift};
     #[cfg(target_os = "windows")]
     use crate::project_runtime_values_to_legacy_slots;
+    use crate::{jit_context::JitContextOwned, runtime_helpers};
+    use oxvba_compiler::bytecode::RuntimeArrayElementType;
     use oxvba_hal::{
         adapters::builder::HostBuilder,
         model::{HalProfileId, HostPolicy},
     };
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{
+        F64Value, RuntimeValue,
+        safe_array::{SafeArray, SafeArrayBound},
+    };
 
     #[test]
     fn supports_subset_bytecode_path() {
@@ -186,6 +191,90 @@ mod tests {
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
         assert_eq!(jit, vm);
+    }
+
+    #[test]
+    fn runtime_date_helpers_materialize_real_date_values() {
+        let mut ctx = JitContextOwned::new(8, 8, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_slot(1, RuntimeValue::I32(2026));
+            ctx.context.write_slot(2, RuntimeValue::I32(2));
+            ctx.context.write_slot(3, RuntimeValue::I32(28));
+            ctx.context.write_slot(4, RuntimeValue::I32(1));
+            ctx.context.write_slot(5, RuntimeValue::I32(3));
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_date_serial(ctx.context_ptr(), 0, 1, 2, 3),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_date_add(ctx.context_ptr(), 6, 4, 5, 0),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_year(ctx.context_ptr(), 1, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_month(ctx.context_ptr(), 2, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_day(ctx.context_ptr(), 3, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_weekday(ctx.context_ptr(), 7, 6), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(
+            values[0],
+            RuntimeValue::F64(F64Value::from_date_f64(46081.0))
+        );
+        assert_eq!(
+            values[6],
+            RuntimeValue::F64(F64Value::from_date_f64(46084.0))
+        );
+        assert_eq!(values[1], RuntimeValue::I32(2026));
+        assert_eq!(values[2], RuntimeValue::I32(3));
+        assert_eq!(values[3], RuntimeValue::I32(3));
+        assert_eq!(values[7], RuntimeValue::I32(3));
+    }
+
+    #[test]
+    fn runtime_preserve_resize_helper_retains_existing_byte_values() {
+        let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_slot(
+                0,
+                RuntimeValue::ArrayIntent(SafeArray {
+                    dimensions: 1,
+                    len: 2,
+                    bounds: Some(vec![SafeArrayBound { lower: 0, count: 2 }]),
+                    elements: Some(vec![RuntimeValue::I32(90), RuntimeValue::I32(91)]),
+                }),
+            );
+            ctx.context.write_slot(1, RuntimeValue::I32(3));
+        }
+
+        let upper_bounds = [1u32];
+        let lower_bounds = [0i32];
+        let rc = runtime_helpers::oxrt_array_resize_preserve(
+            ctx.context_ptr(),
+            0,
+            upper_bounds.as_ptr(),
+            lower_bounds.as_ptr(),
+            1,
+            RuntimeArrayElementType::Byte as i32,
+        );
+        assert_eq!(rc, 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(
+            values[0],
+            RuntimeValue::ArrayIntent(SafeArray {
+                dimensions: 1,
+                len: 4,
+                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
+                elements: Some(vec![
+                    RuntimeValue::I32(90),
+                    RuntimeValue::I32(91),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ]),
+            })
+        );
     }
 
     #[test]

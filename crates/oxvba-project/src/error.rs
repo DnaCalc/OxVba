@@ -59,8 +59,13 @@ pub enum BasProjError {
     #[error("unsupported workspace target `{path}` with extension `.{extension}`")]
     UnsupportedPath { path: String, extension: String },
 
-    #[error("host project edits are only supported for `.basproj` workspaces (got {workspace_kind} at {path})")]
-    HostProjectEditUnsupportedWorkspace { path: String, workspace_kind: String },
+    #[error(
+        "host project edits are only supported for `.basproj` workspaces (got {workspace_kind} at {path})"
+    )]
+    HostProjectEditUnsupportedWorkspace {
+        path: String,
+        workspace_kind: String,
+    },
 
     #[error("host project edit plan is invalid: {0}")]
     HostProjectEditPlanInvalid(String),

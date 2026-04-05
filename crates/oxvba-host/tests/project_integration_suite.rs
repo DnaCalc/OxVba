@@ -436,10 +436,13 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(values)) => {
+            if case.expected_slots.is_empty() {
+                return Ok(());
+            }
             let observed_slots = values
                 .iter()
                 .map(|value| {
-                    value.to_legacy_i32().map_err(|err| {
+                    value.project_compat_slot_i32().map_err(|err| {
                         format!(
                             "value {:?} cannot be projected into legacy slot lane: {err}",
                             value

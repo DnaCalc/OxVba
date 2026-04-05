@@ -49,6 +49,14 @@ High-level execution path:
 - typed identity carriers such as `ObjectHandle` and `BindingHandle` remain acceptable semantic leaves,
 - COM-style `Variant`/`BSTR` alignment is acceptable where it lowers boundary cost,
 - but COM layout compatibility does not transfer semantic ownership away from OxVba.
+- current internal representation is intentionally not required to equal native VBA/COM representation:
+  - strings may remain Rust-owned UTF-8 semantic values internally even when `BSTR` is required at the boundary,
+  - object/interface identity may remain handle/facade based internally instead of raw COM interface pointers,
+  - and similar representation differences may exist for other supported types.
+- those are known differences, not hidden assumptions:
+  - they may leak at some boundaries from time to time,
+  - they should be monitored through interop/conformance evidence,
+  - and they may be revisited later if they become a real compatibility problem.
 8. The next architectural step is broader than a value-carrier patch:
 - early-bound COM should converge on a synthetic reference facade in the compiler/binder,
 - late-bound COM should converge on the same internal dynamic-object protocol used for VBA objects,

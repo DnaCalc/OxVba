@@ -201,7 +201,9 @@ impl From<SymbolProvenanceKind> for WebProvenanceKind {
         match value {
             SymbolProvenanceKind::SourceModule => Self::SourceModule,
             SymbolProvenanceKind::ProjectReference => Self::ProjectReference,
-            SymbolProvenanceKind::ImportedTypeLibraryProjection => Self::ImportedTypeLibraryProjection,
+            SymbolProvenanceKind::ImportedTypeLibraryProjection => {
+                Self::ImportedTypeLibraryProjection
+            }
             SymbolProvenanceKind::Generated => Self::Generated,
         }
     }
@@ -306,9 +308,9 @@ pub fn project_immediate_result(
     let output = match output {
         ImmediateEvaluationOutput::Empty => WebImmediateOutput::Empty,
         ImmediateEvaluationOutput::Value(value) => value.clone().into(),
-        ImmediateEvaluationOutput::PrintedLine(line) => WebImmediateOutput::PrintedLine {
-            text: line.clone(),
-        },
+        ImmediateEvaluationOutput::PrintedLine(line) => {
+            WebImmediateOutput::PrintedLine { text: line.clone() }
+        }
         ImmediateEvaluationOutput::Reset => WebImmediateOutput::Reset,
     };
     WebImmediateResult {

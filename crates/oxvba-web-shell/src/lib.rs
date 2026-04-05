@@ -133,9 +133,10 @@ impl WebShellSession {
             WebHostCommand::LoadWorkspace { path } => self.load_workspace(Path::new(&path)),
             WebHostCommand::ReloadWorkspace => self.reload_workspace(),
             WebHostCommand::ListDocuments => self.list_documents(),
-            WebHostCommand::SetDocumentText { document_id, source } => {
-                self.set_document_text(&document_id, &source)
-            }
+            WebHostCommand::SetDocumentText {
+                document_id,
+                source,
+            } => self.set_document_text(&document_id, &source),
             WebHostCommand::CloseDocument { document_id } => self.close_document(&document_id),
             WebHostCommand::RunProject => self.run_project(),
             WebHostCommand::ResetRuntime => self.reset_runtime(),
@@ -148,10 +149,8 @@ impl WebShellSession {
     }
 
     fn load_workspace(&mut self, path: &Path) -> Result<Vec<WebHostEvent>, WebShellError> {
-        let workspace_session =
-            HostWorkspaceSession::load_workspace_path(path).map_err(|err| {
-                WebShellError::Host(err.to_string())
-            })?;
+        let workspace_session = HostWorkspaceSession::load_workspace_path(path)
+            .map_err(|err| WebShellError::Host(err.to_string()))?;
         let loaded_project =
             load_workspace_target(path).map_err(|err| WebShellError::Host(err.to_string()))?;
         self.workspace_path = Some(path.to_path_buf());
@@ -411,7 +410,10 @@ mod tests {
             })
             .expect("load workspace");
 
-        assert!(matches!(events.first(), Some(WebHostEvent::WorkspaceLoaded(_))));
+        assert!(matches!(
+            events.first(),
+            Some(WebHostEvent::WorkspaceLoaded(_))
+        ));
         assert!(
             events
                 .iter()
@@ -442,27 +444,35 @@ mod tests {
         .expect("module");
 
         let mut shell = WebShellSession::new();
-        shell.handle_command(WebHostCommand::LoadWorkspace {
-            path: temp_root.display().to_string(),
-        })
-        .expect("load");
+        shell
+            .handle_command(WebHostCommand::LoadWorkspace {
+                path: temp_root.display().to_string(),
+            })
+            .expect("load");
 
         let run_events = shell
             .handle_command(WebHostCommand::RunProject)
             .expect("run project");
-        assert!(run_events.iter().any(
-            |event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Running))
-        ));
-        assert!(run_events.iter().any(
-            |event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Completed))
-        ));
+        assert!(
+            run_events
+                .iter()
+                .any(|event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Running)))
+        );
+        assert!(
+            run_events.iter().any(|event| matches!(
+                event,
+                WebHostEvent::RunStateChanged(WebRunState::Completed)
+            ))
+        );
 
         let reset_events = shell
             .handle_command(WebHostCommand::ResetRuntime)
             .expect("reset runtime");
-        assert!(reset_events.iter().any(
-            |event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Idle))
-        ));
+        assert!(
+            reset_events
+                .iter()
+                .any(|event| matches!(event, WebHostEvent::RunStateChanged(WebRunState::Idle)))
+        );
 
         let _ = fs::remove_dir_all(&temp_root);
     }
@@ -483,10 +493,11 @@ mod tests {
         .expect("module");
 
         let mut shell = WebShellSession::new();
-        shell.handle_command(WebHostCommand::LoadWorkspace {
-            path: temp_root.display().to_string(),
-        })
-        .expect("load");
+        shell
+            .handle_command(WebHostCommand::LoadWorkspace {
+                path: temp_root.display().to_string(),
+            })
+            .expect("load");
 
         let events = shell
             .handle_command(WebHostCommand::ImmediateEvaluate(

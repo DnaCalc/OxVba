@@ -146,7 +146,7 @@ impl ComValue {
     }
 
     pub fn to_runtime_token(&self) -> Result<i32, String> {
-        self.to_runtime_value().to_legacy_i32()
+        self.to_runtime_value().project_compat_slot_i32()
     }
 
     pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {

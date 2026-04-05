@@ -29,14 +29,65 @@ fn is_dispatch_fixture_prog_id_name(prog_id_name: &str) -> bool {
     })
 }
 
-fn fallback_create_object_handle_raw(prog_id_name: &str) -> i32 {
-    if is_dispatch_fixture_prog_id_name(prog_id_name) {
-        return 5_004;
+fn allocate_projection_object_handle(
+    host: &StandardHostServices,
+    prog_id_name: &str,
+) -> HalResult<ObjectHandle> {
+    let capability = CapabilityId::ComActivationDispatch;
+    let mut state = host.projection_lock(capability, "create_object")?;
+    if let Some(handle) = state.handles_by_prog_id.get(prog_id_name).copied() {
+        return Ok(ObjectHandle::new(handle));
     }
-    let hash = prog_id_name
-        .bytes()
-        .fold(0i32, |acc, b| acc.wrapping_add(b as i32));
-    10_000i32.saturating_add(hash)
+    state.next_handle = state.next_handle.saturating_add(1).max(1);
+    let object = ObjectHandle::new(state.next_handle);
+    state
+        .handles_by_prog_id
+        .insert(prog_id_name.to_string(), object.raw());
+    state
+        .prog_ids_by_handle
+        .insert(object.raw(), prog_id_name.to_string());
+    Ok(object)
+}
+
+fn release_projection_object_handle(
+    host: &StandardHostServices,
+    object: ObjectHandle,
+) -> HalResult<bool> {
+    let capability = CapabilityId::ComActivationDispatch;
+    let mut state = host.projection_lock(capability, "release_object")?;
+    if let Some(prog_id_name) = state.prog_ids_by_handle.remove(&object.raw()) {
+        state.handles_by_prog_id.remove(&prog_id_name);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn projection_prog_id_name(
+    host: &StandardHostServices,
+    object: ObjectHandle,
+) -> HalResult<Option<String>> {
+    let capability = CapabilityId::ComActivationDispatch;
+    let state = host.projection_lock(capability, "describe_object")?;
+    Ok(state.prog_ids_by_handle.get(&object.raw()).cloned())
+}
+
+#[cfg(target_os = "windows")]
+fn try_bind_projection_object_metadata(
+    host: &StandardHostServices,
+    object: ObjectHandle,
+    prog_id_name: &str,
+) -> HalResult<()> {
+    host.com_bridge
+        .bind_projection_object(object, prog_id_name)
+        .map(|_| ())
+        .map_err(|message| {
+            HalError::adapter_fault(
+                host.profile(),
+                CapabilityId::ComActivationDispatch,
+                "create_object",
+                message,
+            )
+        })
 }
 
 impl ComHal for StandardHostServices {
@@ -73,25 +124,27 @@ impl ComHal for StandardHostServices {
         {
             // Portable registry matched: return a synthetic object handle.
             // The handle base mirrors the existing fallback convention.
-            return Ok(RuntimeValue::ObjectHandle(
-                fallback_create_object_handle_raw(prog_id_name).into(),
-            ));
+            let object = allocate_projection_object_handle(self, prog_id_name)?;
+            #[cfg(target_os = "windows")]
+            try_bind_projection_object_metadata(self, object, prog_id_name)?;
+            return Ok(RuntimeValue::ObjectHandle(object));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
                 Ok(value) => return Ok(value),
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
-                    return Ok(RuntimeValue::ObjectHandle(
-                        fallback_create_object_handle_raw(prog_id_name).into(),
-                    ));
+                    let object = allocate_projection_object_handle(self, prog_id_name)?;
+                    try_bind_projection_object_metadata(self, object, prog_id_name)?;
+                    return Ok(RuntimeValue::ObjectHandle(object));
                 }
                 Err(err) => return Err(err),
             }
         }
-        Ok(RuntimeValue::ObjectHandle(
-            fallback_create_object_handle_raw(prog_id_name).into(),
-        ))
+        let object = allocate_projection_object_handle(self, prog_id_name)?;
+        #[cfg(target_os = "windows")]
+        try_bind_projection_object_metadata(self, object, prog_id_name)?;
+        Ok(RuntimeValue::ObjectHandle(object))
     }
 
     fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
@@ -102,9 +155,14 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "release_object"));
         }
+        let removed_projection = release_projection_object_handle(self, object)?;
         let object = object.raw();
         if !self.native_com_enabled() {
-            return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
+            return Ok(RuntimeValue::I32(if removed_projection || object != 0 {
+                1
+            } else {
+                0
+            }));
         }
         self.ensure_thread_com_apartment("release_object")?;
         #[cfg(target_os = "windows")]
@@ -135,19 +193,36 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "describe_object"));
         }
         #[cfg(target_os = "windows")]
-        if self.native_com_enabled() {
-            return self.com_bridge.describe_object(object).map_err(|message| {
+        {
+            let descriptor = self.com_bridge.describe_object(object).map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "describe_object", message)
-            });
+            })?;
+            if descriptor.is_some() || self.native_com_enabled() {
+                return Ok(descriptor);
+            }
         }
         let object_handle = object;
-        let object = object.raw();
-        let descriptor = if object == 0 {
+        let descriptor = if object_handle.raw() == 0 {
             None
+        } else if let Some(prog_id_name) = projection_prog_id_name(self, object_handle)? {
+            Some(ComObjectDescriptor {
+                object: object_handle,
+                prog_id_name,
+                transport: ComObjectTransportKind::Projection,
+                supports_events: false,
+                known_member_tokens: Vec::new(),
+                known_event_tokens: Vec::new(),
+                default_member_token: None,
+                default_member_name: None,
+                typelib_cache_key: None,
+            })
         } else {
             Some(ComObjectDescriptor {
                 object: object_handle,
-                prog_id_name: format!("projection:{object}"),
+                prog_id_name: projection_prog_id_name(self, object_handle)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| format!("projection:{}", object_handle.raw())),
                 transport: ComObjectTransportKind::Projection,
                 supports_events: false,
                 known_member_tokens: Vec::new(),
@@ -207,13 +282,11 @@ impl ComHal for StandardHostServices {
                 17 => {
                     return Err(self.controlled_dispatch_exception_fault(member));
                 }
-                // Preserve a bounded object-result lane on the deterministic projection path
-                // so host-returned CreateObject fallback handles can still roundtrip the
-                // controlled self-object members instead of collapsing them into scalars.
+                // Preserve the controlled self-object lane on the deterministic projection
+                // path by returning the already bound object identity rather than inventing
+                // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Ok(RuntimeValue::ObjectHandle(
-                        object.saturating_add(member).into(),
-                    ));
+                    return Ok(RuntimeValue::ObjectHandle(object.into()));
                 }
                 _ => {}
             }
@@ -254,24 +327,61 @@ impl ComHal for StandardHostServices {
                 }
             }
         }
-        let lowered = if let DynamicMemberSelector::Name(_name) = &request.member {
-            request.try_into_com_invoke_request().map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "dispatch_invoke",
-                    format!("dynamic call request cannot lower to COM invoke: {detail}"),
-                )
-            })?
-        } else {
-            request.try_into_com_invoke_request().map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "dispatch_invoke",
-                    format!("dynamic call request cannot lower to COM invoke: {detail}"),
-                )
-            })?
+        let lowered = match &request.member {
+            DynamicMemberSelector::Name(name) => {
+                #[cfg(target_os = "windows")]
+                {
+                    if let Some(descriptor) = self
+                        .com_bridge
+                        .describe_object(request.object.into())
+                        .map_err(|message| self.com_dispatch_adapter_fault(message))?
+                        && let Some((member_token, _)) = self
+                            .com_bridge
+                            .known_member_spec_for_prog_id_name_by_name(
+                                &descriptor.prog_id_name,
+                                name,
+                            )
+                            .map_err(|message| self.com_dispatch_adapter_fault(message))?
+                    {
+                        ComInvokeRequest {
+                            object: request.object.into(),
+                            member: member_token,
+                            args: request.args.clone().into_iter().map(Into::into).collect(),
+                            invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                        }
+                    } else {
+                        return Err(HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dispatch_invoke",
+                            format!(
+                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` did not resolve through authoritative object metadata"
+                            ),
+                        ));
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "dispatch_invoke",
+                        format!(
+                            "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
+                        ),
+                    ));
+                }
+            }
+            DynamicMemberSelector::Token(_) | DynamicMemberSelector::DefaultMember => {
+                request.try_into_com_invoke_request().map_err(|detail| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "dispatch_invoke",
+                        format!("dynamic call request cannot lower to COM invoke: {detail}"),
+                    )
+                })?
+            }
         };
         self.dispatch_invoke_runtime_value_v2(&lowered)
     }
@@ -341,7 +451,7 @@ impl ComHal for StandardHostServices {
             unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
             })?;
-            Ok(RuntimeValue::from_legacy_i32(1))
+            Ok(RuntimeValue::from_compat_slot_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -497,7 +607,7 @@ impl ComHal for StandardHostServices {
                         message,
                     )
                 })?;
-            Ok(RuntimeValue::from_legacy_i32(1))
+            Ok(RuntimeValue::from_compat_slot_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")

@@ -8,19 +8,19 @@
 //!
 //! Return convention: 0 = success, nonzero = error code.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicObjectBridge};
 use oxvba_compiler::bytecode::{
-    DispatchInvokeArg, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+    DispatchInvokeArg, ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
+    RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
 };
 use oxvba_hal::HalComDynamicBridge;
 use oxvba_hal::error::{HalError, HalErrorKind};
 use oxvba_hal::model::CapabilityId;
-use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
-use oxvba_runtime::value_tags::{
-    EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
-};
+use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
+use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
 use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use oxvba_vm::semantics;
 
@@ -361,27 +361,9 @@ pub extern "C" fn oxrt_bool_or(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u3
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_abs(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let result = match &val {
-        RuntimeValue::Null => RuntimeValue::Null,
-        RuntimeValue::F64(v) => RuntimeValue::F64(F64Value::from_f64(v.as_f64().abs())),
-        RuntimeValue::I32(v) => {
-            if *v == i32::MIN {
-                RuntimeValue::I32(i32::MAX) // saturate
-            } else {
-                RuntimeValue::I32(v.abs())
-            }
-        }
-        _ => {
-            if let Ok(token) = semantics::runtime_value_legacy_token(&val, "abs operand") {
-                if token == i32::MIN {
-                    RuntimeValue::I32(i32::MAX)
-                } else {
-                    RuntimeValue::I32(token.abs())
-                }
-            } else {
-                return ERR_RUNTIME;
-            }
-        }
+    let result = match semantics::runtime_abs_bounded(&val) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
     };
     write_slot!(ctx, dst, result);
     OK
@@ -390,26 +372,9 @@ pub extern "C" fn oxrt_abs(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sgn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let result = match &val {
-        RuntimeValue::Null => RuntimeValue::Null,
-        RuntimeValue::F64(v) => {
-            let f = v.as_f64();
-            RuntimeValue::I32(if f > 0.0 {
-                1
-            } else if f < 0.0 {
-                -1
-            } else {
-                0
-            })
-        }
-        RuntimeValue::I32(v) => RuntimeValue::I32(v.signum()),
-        _ => {
-            if let Ok(token) = semantics::runtime_value_legacy_token(&val, "sgn operand") {
-                RuntimeValue::I32(token.signum())
-            } else {
-                return ERR_RUNTIME;
-            }
-        }
+    let result = match semantics::runtime_sgn_bounded(&val) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
     };
     write_slot!(ctx, dst, result);
     OK
@@ -469,86 +434,54 @@ pub extern "C" fn oxrt_load_f64(ctx: *mut JitContext, dst: u32, bits: u64) -> i3
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_len(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(s.0.len() as i32));
-        }
-        _ => {
-            if let Ok(token) = semantics::runtime_value_legacy_token(&val, "Len operand") {
-                let len = len_digits(token);
-                write_slot!(ctx, dst, RuntimeValue::I32(len));
-            } else {
-                return ERR_RUNTIME;
-            }
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "Len operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I32(text.len() as i32));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32) -> i32 {
     let src_val = read_slot!(ctx, src);
-    match &src_val {
-        RuntimeValue::String(s) => {
-            let count_val = read_slot!(ctx, count);
-            let n = match semantics::runtime_value_to_usize(&count_val) {
-                Ok(n) => n,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let result = if n >= s.0.len() {
-                s.0.clone()
-            } else {
-                s.0[..n].to_string()
-            };
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&src_val, "Left src") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let c_val = read_slot!(ctx, count);
-            let c = match semantics::runtime_value_legacy_token(&c_val, "Left count") {
-                Ok(c) => c,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(left_digits(v, c)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&src_val, "Left src") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let count_val = read_slot!(ctx, count);
+    let n = match semantics::runtime_value_to_usize(&count_val) {
+        Ok(n) => n,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let result = if n >= text.len() {
+        text
+    } else {
+        text[..n].to_string()
+    };
+    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u32) -> i32 {
     let src_val = read_slot!(ctx, src);
-    match &src_val {
-        RuntimeValue::String(s) => {
-            let count_val = read_slot!(ctx, count);
-            let n = match semantics::runtime_value_to_usize(&count_val) {
-                Ok(n) => n,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let len = s.0.len();
-            let result = if n >= len {
-                s.0.clone()
-            } else {
-                s.0[len - n..].to_string()
-            };
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&src_val, "Right src") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let c_val = read_slot!(ctx, count);
-            let c = match semantics::runtime_value_legacy_token(&c_val, "Right count") {
-                Ok(c) => c,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(right_digits(v, c)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&src_val, "Right src") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let count_val = read_slot!(ctx, count);
+    let n = match semantics::runtime_value_to_usize(&count_val) {
+        Ok(n) => n,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let len = text.len();
+    let result = if n >= len {
+        text
+    } else {
+        text[len - n..].to_string()
+    };
+    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
     OK
 }
 
@@ -563,53 +496,32 @@ pub extern "C" fn oxrt_mid(
     count_slot: u32,
 ) -> i32 {
     let src_val = read_slot!(ctx, src);
-    match &src_val {
-        RuntimeValue::String(s) => {
-            let start_val = read_slot!(ctx, start);
-            let st = match semantics::runtime_value_to_usize(&start_val) {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let cnt = if count_slot == u32::MAX {
-                None
-            } else {
-                let cv = read_slot!(ctx, count_slot);
-                match semantics::runtime_value_to_usize(&cv) {
-                    Ok(v) => Some(v),
-                    Err(_) => return ERR_RUNTIME,
-                }
-            };
-            let len = s.0.len();
-            let begin = if st == 0 { 0 } else { (st - 1).min(len) };
-            let end = match cnt {
-                Some(c) => (begin + c).min(len),
-                None => len,
-            };
-            let result = s.0[begin..end].to_string();
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    let text = match semantics::runtime_value_to_text(&src_val, "Mid src") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let start_val = read_slot!(ctx, start);
+    let st = match semantics::runtime_value_to_usize(&start_val) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let cnt = if count_slot == u32::MAX {
+        None
+    } else {
+        let cv = read_slot!(ctx, count_slot);
+        match semantics::runtime_value_to_usize(&cv) {
+            Ok(v) => Some(v),
+            Err(_) => return ERR_RUNTIME,
         }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&src_val, "Mid src") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let st_val = read_slot!(ctx, start);
-            let st = match semantics::runtime_value_legacy_token(&st_val, "Mid start") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let cnt = if count_slot == u32::MAX {
-                None
-            } else {
-                let cv = read_slot!(ctx, count_slot);
-                match semantics::runtime_value_legacy_token(&cv, "Mid count") {
-                    Ok(v) => Some(v),
-                    Err(_) => return ERR_RUNTIME,
-                }
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(mid_digits(v, st, cnt)));
-        }
-    }
+    };
+    let len = text.len();
+    let begin = if st == 0 { 0 } else { (st - 1).min(len) };
+    let end = match cnt {
+        Some(c) => (begin + c).min(len),
+        None => len,
+    };
+    let result = text[begin..end].to_string();
+    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
     OK
 }
 
@@ -623,34 +535,19 @@ pub extern "C" fn oxrt_mid_stmt(
     value: u32,
 ) -> i32 {
     let target_val = read_slot!(ctx, target);
-    let tv = match semantics::runtime_value_legacy_token(&target_val, "MidStmt target") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
     let st_val = read_slot!(ctx, start);
-    let st = match semantics::runtime_value_legacy_token(&st_val, "MidStmt start") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let cnt = if count_slot == u32::MAX {
+    let cnt_val = if count_slot == u32::MAX {
         None
     } else {
-        let cv = read_slot!(ctx, count_slot);
-        match semantics::runtime_value_legacy_token(&cv, "MidStmt count") {
-            Ok(v) => Some(v),
-            Err(_) => return ERR_RUNTIME,
-        }
+        Some(read_slot!(ctx, count_slot))
     };
     let val = read_slot!(ctx, value);
-    let vv = match semantics::runtime_value_legacy_token(&val, "MidStmt value") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(
-        ctx,
-        target,
-        RuntimeValue::I32(mid_stmt_digits(tv, st, cnt, vv))
-    );
+    let out =
+        match semantics::runtime_mid_stmt_bounded(&target_val, &st_val, cnt_val.as_ref(), &val) {
+            Ok(v) => v,
+            Err(_) => return ERR_RUNTIME,
+        };
+    write_slot!(ctx, target, out);
     OK
 }
 
@@ -669,25 +566,16 @@ pub extern "C" fn oxrt_instr(
     } else {
         StringCompareMode::Binary
     };
-    match (&hay_val, &nee_val) {
-        (RuntimeValue::String(h), RuntimeValue::String(n)) => {
-            let h = semantics::normalize_for_compare(h.0.clone(), scm);
-            let n = semantics::normalize_for_compare(n.0.clone(), scm);
-            let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
-            write_slot!(ctx, dst, RuntimeValue::I32(pos));
-        }
-        _ => {
-            let h = match semantics::runtime_value_legacy_token(&hay_val, "InStr haystack") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let n = match semantics::runtime_value_legacy_token(&nee_val, "InStr needle") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(instr_digits(h, n, scm)));
-        }
-    }
+    let h = match semantics::runtime_value_to_text(&hay_val, "InStr haystack") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let n = match semantics::runtime_value_to_text(&nee_val, "InStr needle") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
+    write_slot!(ctx, dst, RuntimeValue::I32(pos));
     OK
 }
 
@@ -706,69 +594,46 @@ pub extern "C" fn oxrt_instrrev(
     } else {
         StringCompareMode::Binary
     };
-    match (&hay_val, &nee_val) {
-        (RuntimeValue::String(h), RuntimeValue::String(n)) => {
-            let h = semantics::normalize_for_compare(h.0.clone(), scm);
-            let n = semantics::normalize_for_compare(n.0.clone(), scm);
-            let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
-            write_slot!(ctx, dst, RuntimeValue::I32(pos));
-        }
-        _ => {
-            let h = match semantics::runtime_value_legacy_token(&hay_val, "InStrRev haystack") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let n = match semantics::runtime_value_legacy_token(&nee_val, "InStrRev needle") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(instrrev_digits(h, n, scm)));
-        }
-    }
+    let h = match semantics::runtime_value_to_text(&hay_val, "InStrRev haystack") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let n = match semantics::runtime_value_to_text(&nee_val, "InStrRev needle") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
+    write_slot!(ctx, dst, RuntimeValue::I32(pos));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(
-                ctx,
-                dst,
-                RuntimeValue::String(BStr(s.0.to_ascii_lowercase()))
-            );
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "LCase operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(to_lower_digits(v)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "LCase operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::String(BStr(text.to_ascii_lowercase()))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(
-                ctx,
-                dst,
-                RuntimeValue::String(BStr(s.0.to_ascii_uppercase()))
-            );
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "UCase operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(to_upper_digits(v)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "UCase operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::String(BStr(text.to_ascii_uppercase()))
+    );
     OK
 }
 
@@ -776,15 +641,11 @@ pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 pub extern "C" fn oxrt_split(ctx: *mut JitContext, dst: u32, src: u32, delimiter: u32) -> i32 {
     let v_val = read_slot!(ctx, src);
     let d_val = read_slot!(ctx, delimiter);
-    let v = match semantics::runtime_value_legacy_token(&v_val, "Split src") {
-        Ok(v) => v,
+    let out = match semantics::runtime_split_count_bounded(&v_val, &d_val) {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let d = match semantics::runtime_value_legacy_token(&d_val, "Split delimiter") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(split_count_digits(v, d)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -792,15 +653,11 @@ pub extern "C" fn oxrt_split(ctx: *mut JitContext, dst: u32, src: u32, delimiter
 pub extern "C" fn oxrt_join(ctx: *mut JitContext, dst: u32, src: u32, delimiter: u32) -> i32 {
     let v_val = read_slot!(ctx, src);
     let d_val = read_slot!(ctx, delimiter);
-    let v = match semantics::runtime_value_legacy_token(&v_val, "Join src") {
-        Ok(v) => v,
+    let out = match semantics::runtime_join_bounded(&v_val, &d_val) {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let d = match semantics::runtime_value_legacy_token(&d_val, "Join delimiter") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(join_digits(v, d)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -815,89 +672,65 @@ pub extern "C" fn oxrt_replace(
     let src_val = read_slot!(ctx, src);
     let find_val = read_slot!(ctx, find);
     let replace_val = read_slot!(ctx, replace);
-    match (&src_val, &find_val, &replace_val) {
-        (RuntimeValue::String(s), RuntimeValue::String(f), RuntimeValue::String(r)) => {
-            let result = s.0.replace(&f.0[..], &r.0[..]);
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&src_val, "Replace src") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let f = match semantics::runtime_value_legacy_token(&find_val, "Replace find") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let r = match semantics::runtime_value_legacy_token(&replace_val, "Replace replace") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(replace_digits(v, f, r)));
-        }
-    }
+    let src_text = match semantics::runtime_value_to_text(&src_val, "Replace src") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let find_text = match semantics::runtime_value_to_text(&find_val, "Replace find") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let replace_text = match semantics::runtime_value_to_text(&replace_val, "Replace replace") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let result = src_text.replace(&find_text, &replace_text);
+    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_trim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(s.0.trim().to_string())));
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "Trim operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(trim_digits(v)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "Trim operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::String(BStr(text.trim().to_string()))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(
-                ctx,
-                dst,
-                RuntimeValue::String(BStr(s.0.trim_start().to_string()))
-            );
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "LTrim operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(ltrim_digits(v)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "LTrim operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::String(BStr(text.trim_start().to_string()))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    match &val {
-        RuntimeValue::String(s) => {
-            write_slot!(
-                ctx,
-                dst,
-                RuntimeValue::String(BStr(s.0.trim_end().to_string()))
-            );
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "RTrim operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(rtrim_digits(v)));
-        }
-    }
+    let text = match semantics::runtime_value_to_text(&val, "RTrim operand") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::String(BStr(text.trim_end().to_string()))
+    );
     OK
 }
 
@@ -916,29 +749,20 @@ pub extern "C" fn oxrt_strcomp(
     } else {
         StringCompareMode::Binary
     };
-    match (&lhs_val, &rhs_val) {
-        (RuntimeValue::String(l), RuntimeValue::String(r)) => {
-            let l = semantics::normalize_for_compare(l.0.clone(), scm);
-            let r = semantics::normalize_for_compare(r.0.clone(), scm);
-            let result = match l.cmp(&r) {
-                Ordering::Less => -1,
-                Ordering::Equal => 0,
-                Ordering::Greater => 1,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(result));
-        }
-        _ => {
-            let l = match semantics::runtime_value_legacy_token(&lhs_val, "StrComp lhs") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let r = match semantics::runtime_value_legacy_token(&rhs_val, "StrComp rhs") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            write_slot!(ctx, dst, RuntimeValue::I32(strcomp_digits(l, r, scm)));
-        }
-    }
+    let l = match semantics::runtime_value_to_text(&lhs_val, "StrComp lhs") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let r = match semantics::runtime_value_to_text(&rhs_val, "StrComp rhs") {
+        Ok(text) => semantics::normalize_for_compare(text, scm),
+        Err(_) => return ERR_RUNTIME,
+    };
+    let result = match l.cmp(&r) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I32(result));
     OK
 }
 
@@ -957,40 +781,23 @@ pub extern "C" fn oxrt_like(
     } else {
         StringCompareMode::Binary
     };
-    let l = match semantics::runtime_value_legacy_token(&lhs_val, "Like lhs") {
-        Ok(v) => v,
+    let out = match semantics::runtime_like_bounded(&lhs_val, &pat_val, scm) {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let p = match semantics::runtime_value_legacy_token(&pat_val, "Like pattern") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(like_digits(l, p, scm)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_strconv(ctx: *mut JitContext, dst: u32, src: u32, conversion: u32) -> i32 {
     let src_val = read_slot!(ctx, src);
-    let s = match &src_val {
-        RuntimeValue::String(s) => s.0.clone(),
-        _ => match semantics::runtime_value_legacy_token(&src_val, "StrConv source") {
-            Ok(v) => v.to_string(),
-            Err(_) => return ERR_RUNTIME,
-        },
-    };
     let conv_val = read_slot!(ctx, conversion);
-    let conv = match semantics::runtime_value_legacy_token(&conv_val, "StrConv conversion") {
+    let result = match semantics::runtime_strconv_bounded(&src_val, &conv_val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = match conv {
-        1 => s.to_uppercase(),
-        2 => s.to_lowercase(),
-        3 => semantics::proper_case(&s),
-        _ => s,
-    };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, result);
     OK
 }
 
@@ -999,105 +806,67 @@ pub extern "C" fn oxrt_strconv(ctx: *mut JitContext, dst: u32, src: u32, convers
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_chr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Chr operand") {
+    let out = match semantics::runtime_chr_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let ch = char::from_u32(v as u32).unwrap_or('\0');
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(ch.to_string())));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_asc(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let code = match &val {
-        RuntimeValue::String(s) => {
-            if s.0.is_empty() {
-                0
-            } else {
-                s.0.as_bytes()[0] as i32
-            }
-        }
-        _ => {
-            let v = match semantics::runtime_value_legacy_token(&val, "Asc operand") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            let digits = format!("{v}");
-            if digits.is_empty() {
-                0
-            } else {
-                digits.as_bytes()[0] as i32
-            }
-        }
+    let out = match semantics::runtime_asc_bounded(&val) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(code));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_space(ctx: *mut JitContext, dst: u32, count: u32) -> i32 {
     let val = read_slot!(ctx, count);
-    let n = match semantics::runtime_value_legacy_token(&val, "Space count") {
+    let out = match semantics::runtime_space_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = " ".repeat(n.max(0) as usize);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_string_repeat(ctx: *mut JitContext, dst: u32, count: u32, ch: u32) -> i32 {
     let n_val = read_slot!(ctx, count);
-    let n = match semantics::runtime_value_legacy_token(&n_val, "String$ count") {
+    let ch_val = read_slot!(ctx, ch);
+    let out = match semantics::runtime_string_repeat_bounded(&n_val, &ch_val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let ch_val = read_slot!(ctx, ch);
-    let c = match &ch_val {
-        RuntimeValue::String(s) => {
-            if s.0.is_empty() {
-                '\0'
-            } else {
-                s.0.chars().next().unwrap_or('\0')
-            }
-        }
-        _ => {
-            let code = match semantics::runtime_value_legacy_token(&ch_val, "String$ char") {
-                Ok(v) => v,
-                Err(_) => return ERR_RUNTIME,
-            };
-            char::from_u32(code as u32).unwrap_or('\0')
-        }
-    };
-    let result = c.to_string().repeat(n.max(0) as usize);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_hex(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Hex operand") {
+    let out = match semantics::runtime_hex_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = format!("{:X}", v as u32);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_oct(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Oct operand") {
+    let out = match semantics::runtime_oct_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = format!("{:o}", v as u32);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -1127,12 +896,9 @@ pub extern "C" fn oxrt_format(ctx: *mut JitContext, dst: u32, value: u32, format
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_strreverse(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let s = match &val {
-        RuntimeValue::String(s) => s.0.clone(),
-        _ => match semantics::runtime_value_legacy_token(&val, "StrReverse source") {
-            Ok(v) => v.to_string(),
-            Err(_) => return ERR_RUNTIME,
-        },
+    let s = match semantics::runtime_value_to_text(&val, "StrReverse source") {
+        Ok(text) => text,
+        Err(_) => return ERR_RUNTIME,
     };
     let result: String = s.chars().rev().collect();
     write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
@@ -1149,20 +915,14 @@ pub extern "C" fn oxrt_date_serial(
     month: u32,
     day: u32,
 ) -> i32 {
-    let y = match semantics::runtime_value_legacy_token(&read_slot!(ctx, year), "DateSerial year") {
+    let y = read_slot!(ctx, year);
+    let m = read_slot!(ctx, month);
+    let d = read_slot!(ctx, day);
+    let out = match semantics::runtime_date_serial_bounded(&y, &m, &d) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let m = match semantics::runtime_value_legacy_token(&read_slot!(ctx, month), "DateSerial month")
-    {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let d = match semantics::runtime_value_legacy_token(&read_slot!(ctx, day), "DateSerial day") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(date_serial_digits(y, m, d)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -1174,47 +934,47 @@ pub extern "C" fn oxrt_time_serial(
     minute: u32,
     second: u32,
 ) -> i32 {
-    let h = match semantics::runtime_value_legacy_token(&read_slot!(ctx, hour), "TimeSerial hour") {
+    let h = read_slot!(ctx, hour);
+    let m = read_slot!(ctx, minute);
+    let s = read_slot!(ctx, second);
+    let out = match semantics::runtime_time_serial_bounded(&h, &m, &s) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let m = match semantics::runtime_value_legacy_token(
-        &read_slot!(ctx, minute),
-        "TimeSerial minute",
-    ) {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let s = match semantics::runtime_value_legacy_token(
-        &read_slot!(ctx, second),
-        "TimeSerial second",
-    ) {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(time_serial_digits(h, m, s)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_date_value(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "DateValue src") {
+    let v = match semantics::runtime_value_to_datevalue(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_slot!(ctx, dst, v);
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_cdate(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let val = read_slot!(ctx, src);
+    let v = match semantics::runtime_value_to_cdate(&val) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, v);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_time_value(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "TimeValue src") {
+    let v = match semantics::runtime_value_to_timevalue(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_slot!(ctx, dst, v);
     OK
 }
 
@@ -1226,22 +986,14 @@ pub extern "C" fn oxrt_date_add(
     number: u32,
     date: u32,
 ) -> i32 {
-    let i =
-        match semantics::runtime_value_legacy_token(&read_slot!(ctx, interval), "DateAdd interval")
-        {
-            Ok(v) => v,
-            Err(_) => return ERR_RUNTIME,
-        };
-    let n = match semantics::runtime_value_legacy_token(&read_slot!(ctx, number), "DateAdd number")
-    {
+    let i = read_slot!(ctx, interval);
+    let n = read_slot!(ctx, number);
+    let date_value = read_slot!(ctx, date);
+    let out = match semantics::runtime_date_add_bounded(&i, &n, &date_value) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let d = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date), "DateAdd date") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(date_add_digits(i, n, d)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -1253,102 +1005,69 @@ pub extern "C" fn oxrt_date_diff(
     date1: u32,
     date2: u32,
 ) -> i32 {
-    let i = match semantics::runtime_value_legacy_token(
-        &read_slot!(ctx, interval),
-        "DateDiff interval",
-    ) {
+    let i = read_slot!(ctx, interval);
+    let date1_value = read_slot!(ctx, date1);
+    let date2_value = read_slot!(ctx, date2);
+    let out = match semantics::runtime_date_diff_bounded(&i, &date1_value, &date2_value) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let d1 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date1), "DateDiff date1")
-    {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let d2 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date2), "DateDiff date2")
-    {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(date_diff_digits(i, d1, d2)));
+    write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_year(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Year operand") {
+    let v = match semantics::runtime_date_year(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v / 10_000));
+    write_slot!(ctx, dst, RuntimeValue::I32(v));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_month(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Month operand") {
+    let v = match semantics::runtime_date_month(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v / 100) % 100));
+    write_slot!(ctx, dst, RuntimeValue::I32(v));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_day(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Day operand") {
+    let v = match semantics::runtime_date_day(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v % 100));
+    write_slot!(ctx, dst, RuntimeValue::I32(v));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_weekday(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let packed = match semantics::runtime_value_legacy_token(&val, "Weekday operand") {
+    let weekday = match semantics::runtime_date_weekday(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let year = packed / 10_000;
-    let month = (packed / 100) % 100;
-    let day = packed % 100;
-    let dow = day_of_week(year, month, day);
-    write_slot!(ctx, dst, RuntimeValue::I32(dow + 1));
+    write_slot!(ctx, dst, RuntimeValue::I32(weekday));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let month = match semantics::runtime_value_legacy_token(&val, "MonthName operand") {
+    let out = match semantics::runtime_month_name_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let names = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
-    let name = if (1..=12).contains(&month) {
-        names[(month - 1) as usize]
-    } else {
-        ""
-    };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(name.to_string())));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -1357,109 +1076,93 @@ pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_round(ctx: *mut JitContext, dst: u32, src: u32, digits_slot: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Round operand") {
+    let digits = if digits_slot == u32::MAX {
+        None
+    } else {
+        Some(read_slot!(ctx, digits_slot))
+    };
+    let out = match semantics::runtime_round_bounded(&val, digits.as_ref()) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let digits = if digits_slot == u32::MAX {
-        0
-    } else {
-        match semantics::runtime_value_legacy_token(&read_slot!(ctx, digits_slot), "Round digits") {
-            Ok(v) => v,
-            Err(_) => return ERR_RUNTIME,
-        }
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(round_i32(v, digits)));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sqr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Sqr operand") {
+    let out = match semantics::runtime_sqr_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::I32((v.saturating_abs() as f64).sqrt() as i32)
-    );
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sin(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Sin operand") {
+    let out = match semantics::runtime_sin_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v as f64).sin().round() as i32));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_cos(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Cos operand") {
+    let out = match semantics::runtime_cos_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v as f64).cos().round() as i32));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_log(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Log operand") {
+    let out = match semantics::runtime_log_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = if v > 0 {
-        (v as f64).ln().round() as i32
-    } else {
-        0
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(result));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_exp(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Exp operand") {
+    let out = match semantics::runtime_exp_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v as f64).exp().round() as i32));
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_atn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Atn operand") {
+    let out = match semantics::runtime_atn_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::I32((v as f64).atan().round() as i32)
-    );
+    write_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "Tan operand") {
+    let out = match semantics::runtime_tan_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v as f64).tan().round() as i32));
+    write_slot!(ctx, dst, out);
     OK
 }
 
@@ -1468,32 +1171,7 @@ pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    // For typed values, use the typed VarType logic directly
-    let code = match &val {
-        RuntimeValue::Empty => 0,
-        RuntimeValue::Null => 1,
-        RuntimeValue::ErrorCode(_) => 10,
-        RuntimeValue::ArrayIntent(_) => 8192 + 12,
-        _ => {
-            // Try legacy path for i32 tag values
-            match semantics::runtime_value_legacy_token(&val, "VarType operand") {
-                Ok(v) => {
-                    if runtime_is_array_tag(v) {
-                        8192 + 12
-                    } else if v == EMPTY_TAG {
-                        0
-                    } else if v == NULL_TAG {
-                        1
-                    } else if runtime_is_error_tag(v) {
-                        10
-                    } else {
-                        3
-                    }
-                }
-                Err(_) => return ERR_RUNTIME,
-            }
-        }
-    };
+    let code = semantics::runtime_vartype_tag_bounded(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(code));
     OK
 }
@@ -1533,10 +1211,12 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let value = read_slot!(ctx, src);
     let pointer = match &value {
         RuntimeValue::Empty | RuntimeValue::Null => 0,
-        RuntimeValue::String(value) => match oxvba_runtime::pointer_helpers::register_utf16_string(&value.0) {
-            Ok(pointer) => pointer,
-            Err(_) => return ERR_RUNTIME,
-        },
+        RuntimeValue::String(value) => {
+            match oxvba_runtime::pointer_helpers::register_utf16_string(&value.0) {
+                Ok(pointer) => pointer,
+                Err(_) => return ERR_RUNTIME,
+            }
+        }
         _ => return ERR_RUNTIME,
     };
     write_slot!(ctx, dst, RuntimeValue::I64(pointer));
@@ -1547,6 +1227,28 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let value = read_slot!(ctx, src);
     let pointer = match oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value) {
+        Ok(pointer) => pointer,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_varptr_string_var(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let value = read_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_string_var_pointer(&value) {
+        Ok(pointer) => pointer,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_varptr_variant_var(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let value = read_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_variant_var_pointer(&value) {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1568,11 +1270,7 @@ pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "TypeName operand") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let out = if runtime_is_array_tag(v) { 1001 } else { 1002 };
+    let out = semantics::runtime_typename_tag_bounded(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
@@ -1580,27 +1278,7 @@ pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) ->
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    // Handle typed values directly
-    let out = match &val {
-        RuntimeValue::Empty
-        | RuntimeValue::Null
-        | RuntimeValue::ErrorCode(_)
-        | RuntimeValue::ArrayIntent(_) => 0,
-        _ => match semantics::runtime_value_legacy_token(&val, "IsNumeric operand") {
-            Ok(v) => {
-                if runtime_is_array_tag(v)
-                    || v == EMPTY_TAG
-                    || v == NULL_TAG
-                    || runtime_is_error_tag(v)
-                {
-                    0
-                } else {
-                    1
-                }
-            }
-            Err(_) => return ERR_RUNTIME,
-        },
-    };
+    let out = semantics::runtime_is_numeric_tag_bounded(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
@@ -1639,11 +1317,7 @@ pub extern "C" fn oxrt_is_error(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_date_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "IsDate operand") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let out = if (1_000_000..=99_999_999).contains(&v) {
+    let out = if semantics::runtime_value_is_date(&val) {
         1
     } else {
         0
@@ -1683,14 +1357,14 @@ pub extern "C" fn oxrt_is_empty(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_array_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "IsArray operand") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::I32(if runtime_is_array_tag(v) { 1 } else { 0 })
+        RuntimeValue::I32(if semantics::runtime_value_is_array_compat(&val) {
+            1
+        } else {
+            0
+        })
     );
     OK
 }
@@ -1715,19 +1389,19 @@ pub extern "C" fn oxrt_fv(
     pv_slot: u32,
     due_slot: u32,
 ) -> i32 {
-    let r = legacy_slot(ctx, rate, "FV rate");
-    let n = legacy_slot(ctx, nper, "FV nper");
-    let p = legacy_slot(ctx, pmt, "FV pmt");
+    let r = compat_i32_slot(ctx, rate, "FV rate");
+    let n = compat_i32_slot(ctx, nper, "FV nper");
+    let p = compat_i32_slot(ctx, pmt, "FV pmt");
     let (r, n, p) = match (r, n, p) {
         (Ok(r), Ok(n), Ok(p)) => (r, n, p),
         _ => return ERR_RUNTIME,
     };
-    let pv = opt_legacy_slot(ctx, pv_slot, 0);
-    let due = opt_legacy_slot(ctx, due_slot, 0);
+    let pv = opt_compat_i32_slot(ctx, pv_slot, 0);
+    let due = opt_compat_i32_slot(ctx, due_slot, 0);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(fv_i32(r, n, p, pv, due))
+        RuntimeValue::from_compat_slot_i32(fv_i32(r, n, p, pv, due))
     );
     OK
 }
@@ -1742,19 +1416,19 @@ pub extern "C" fn oxrt_pv(
     fv_slot: u32,
     due_slot: u32,
 ) -> i32 {
-    let r = legacy_slot(ctx, rate, "PV rate");
-    let n = legacy_slot(ctx, nper, "PV nper");
-    let p = legacy_slot(ctx, pmt, "PV pmt");
+    let r = compat_i32_slot(ctx, rate, "PV rate");
+    let n = compat_i32_slot(ctx, nper, "PV nper");
+    let p = compat_i32_slot(ctx, pmt, "PV pmt");
     let (r, n, p) = match (r, n, p) {
         (Ok(r), Ok(n), Ok(p)) => (r, n, p),
         _ => return ERR_RUNTIME,
     };
-    let fv = opt_legacy_slot(ctx, fv_slot, 0);
-    let due = opt_legacy_slot(ctx, due_slot, 0);
+    let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
+    let due = opt_compat_i32_slot(ctx, due_slot, 0);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(pv_i32(r, n, p, fv, due))
+        RuntimeValue::from_compat_slot_i32(pv_i32(r, n, p, fv, due))
     );
     OK
 }
@@ -1769,19 +1443,19 @@ pub extern "C" fn oxrt_pmt(
     fv_slot: u32,
     due_slot: u32,
 ) -> i32 {
-    let r = legacy_slot(ctx, rate, "PMT rate");
-    let n = legacy_slot(ctx, nper, "PMT nper");
-    let p = legacy_slot(ctx, pv, "PMT pv");
+    let r = compat_i32_slot(ctx, rate, "PMT rate");
+    let n = compat_i32_slot(ctx, nper, "PMT nper");
+    let p = compat_i32_slot(ctx, pv, "PMT pv");
     let (r, n, p) = match (r, n, p) {
         (Ok(r), Ok(n), Ok(p)) => (r, n, p),
         _ => return ERR_RUNTIME,
     };
-    let fv = opt_legacy_slot(ctx, fv_slot, 0);
-    let due = opt_legacy_slot(ctx, due_slot, 0);
+    let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
+    let due = opt_compat_i32_slot(ctx, due_slot, 0);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(pmt_i32(r, n, p, fv, due))
+        RuntimeValue::from_compat_slot_i32(pmt_i32(r, n, p, fv, due))
     );
     OK
 }
@@ -1795,14 +1469,14 @@ pub extern "C" fn oxrt_npv(
     slots_ptr: *const u32,
     slots_len: u32,
 ) -> i32 {
-    let r = match legacy_slot(ctx, rate, "NPV rate") {
+    let r = match compat_i32_slot(ctx, rate, "NPV rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
     let slot_indices = unsafe { std::slice::from_raw_parts(slots_ptr, slots_len as usize) };
     let mut cash_flows = Vec::with_capacity(slots_len as usize);
     for &slot in slot_indices {
-        match legacy_slot(ctx, slot, "NPV value") {
+        match compat_i32_slot(ctx, slot, "NPV value") {
             Ok(v) => cash_flows.push(v),
             Err(_) => return ERR_RUNTIME,
         }
@@ -1810,19 +1484,23 @@ pub extern "C" fn oxrt_npv(
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(npv_i32(r, &cash_flows))
+        RuntimeValue::from_compat_slot_i32(npv_i32(r, &cash_flows))
     );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_irr(ctx: *mut JitContext, dst: u32, value: u32, guess_slot: u32) -> i32 {
-    let v = match legacy_slot(ctx, value, "IRR value") {
+    let v = match compat_i32_slot(ctx, value, "IRR value") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let guess = opt_legacy_slot(ctx, guess_slot, 10);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(irr_i32(v, guess)));
+    let guess = opt_compat_i32_slot(ctx, guess_slot, 10);
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_compat_slot_i32(irr_i32(v, guess))
+    );
     OK
 }
 
@@ -1834,19 +1512,23 @@ pub extern "C" fn oxrt_mirr(
     finance_rate: u32,
     reinvest_rate: u32,
 ) -> i32 {
-    let v = match legacy_slot(ctx, value, "MIRR value") {
+    let v = match compat_i32_slot(ctx, value, "MIRR value") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let fr = match legacy_slot(ctx, finance_rate, "MIRR finance_rate") {
+    let fr = match compat_i32_slot(ctx, finance_rate, "MIRR finance_rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let rr = match legacy_slot(ctx, reinvest_rate, "MIRR reinvest_rate") {
+    let rr = match compat_i32_slot(ctx, reinvest_rate, "MIRR reinvest_rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(mirr_i32(v, fr, rr)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_compat_slot_i32(mirr_i32(v, fr, rr))
+    );
     OK
 }
 
@@ -1861,25 +1543,25 @@ pub extern "C" fn oxrt_rate(
     due_slot: u32,
     guess_slot: u32,
 ) -> i32 {
-    let n = match legacy_slot(ctx, nper, "Rate nper") {
+    let n = match compat_i32_slot(ctx, nper, "Rate nper") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let p = match legacy_slot(ctx, pmt, "Rate pmt") {
+    let p = match compat_i32_slot(ctx, pmt, "Rate pmt") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let pv = match legacy_slot(ctx, pv, "Rate pv") {
+    let pv = match compat_i32_slot(ctx, pv, "Rate pv") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let fv = opt_legacy_slot(ctx, fv_slot, 0);
-    let due = opt_legacy_slot(ctx, due_slot, 0);
-    let guess = opt_legacy_slot(ctx, guess_slot, 10);
+    let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
+    let due = opt_compat_i32_slot(ctx, due_slot, 0);
+    let guess = opt_compat_i32_slot(ctx, guess_slot, 10);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(rate_i32(n, p, pv, fv, due, guess))
+        RuntimeValue::from_compat_slot_i32(rate_i32(n, p, pv, fv, due, guess))
     );
     OK
 }
@@ -1894,29 +1576,175 @@ pub extern "C" fn oxrt_nper(
     fv_slot: u32,
     due_slot: u32,
 ) -> i32 {
-    let r = match legacy_slot(ctx, rate, "NPer rate") {
+    let r = match compat_i32_slot(ctx, rate, "NPer rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let p = match legacy_slot(ctx, pmt, "NPer pmt") {
+    let p = match compat_i32_slot(ctx, pmt, "NPer pmt") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let pv = match legacy_slot(ctx, pv, "NPer pv") {
+    let pv = match compat_i32_slot(ctx, pv, "NPer pv") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let fv = opt_legacy_slot(ctx, fv_slot, 0);
-    let due = opt_legacy_slot(ctx, due_slot, 0);
+    let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
+    let due = opt_compat_i32_slot(ctx, due_slot, 0);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::from_legacy_i32(nper_i32(r, p, pv, fv, due))
+        RuntimeValue::from_compat_slot_i32(nper_i32(r, p, pv, fv, due))
     );
     OK
 }
 
 // ── Array ops ────────────────────────────────────────────────────────
+
+fn runtime_resized_array(
+    lower_bounds: &[i32],
+    upper_bounds: &[i32],
+    element_type: RuntimeArrayElementType,
+) -> Result<SafeArray, String> {
+    if lower_bounds.is_empty() || lower_bounds.len() != upper_bounds.len() {
+        return Err("runtime ReDim requires at least one dimension".to_string());
+    }
+    let mut len = 1usize;
+    let mut bounds = Vec::with_capacity(lower_bounds.len());
+    for (&lower_bound, &upper_bound) in lower_bounds.iter().zip(upper_bounds.iter()) {
+        if upper_bound < lower_bound {
+            return Err(format!(
+                "runtime ReDim upper bound {upper_bound} is below lower bound {lower_bound}"
+            ));
+        }
+        let count = i64::from(upper_bound) - i64::from(lower_bound) + 1;
+        let width = usize::try_from(count)
+            .map_err(|_| format!("runtime ReDim bound span {count} cannot fit in host memory"))?;
+        len = len
+            .checked_mul(width)
+            .ok_or_else(|| "runtime ReDim total array length overflowed".to_string())?;
+        bounds.push(SafeArrayBound {
+            lower: lower_bound,
+            count: u32::try_from(width)
+                .map_err(|_| format!("runtime ReDim length {width} exceeds SAFEARRAY capacity"))?,
+        });
+    }
+    let default = runtime_array_default_value(element_type);
+    let values = vec![default; len];
+    Ok(SafeArray {
+        dimensions: u8::try_from(bounds.len())
+            .map_err(|_| "runtime ReDim dimension count exceeds SAFEARRAY capacity".to_string())?,
+        len,
+        bounds: Some(bounds),
+        elements: Some(values),
+    })
+}
+
+fn runtime_resized_array_preserve(
+    current: &RuntimeValue,
+    lower_bounds: &[i32],
+    upper_bounds: &[i32],
+    element_type: RuntimeArrayElementType,
+) -> Result<SafeArray, String> {
+    let RuntimeValue::ArrayIntent(previous) = current else {
+        return Err("runtime ReDim Preserve requires an existing runtime array value".to_string());
+    };
+    if previous.dimensions as usize != lower_bounds.len()
+        || lower_bounds.len() != upper_bounds.len()
+    {
+        return Err(
+            "runtime ReDim Preserve requires the existing and resized array to have the same rank"
+                .to_string(),
+        );
+    }
+    let previous_bounds = previous
+        .bounds
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve requires bounds metadata".to_string())?;
+    let previous_values = previous
+        .elements
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve requires an owned array payload".to_string())?;
+    let mut resized = runtime_resized_array(lower_bounds, upper_bounds, element_type)?;
+    let resized_bounds = resized
+        .bounds
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve failed to materialize bounds metadata".to_string())?
+        .clone();
+    let resized_values = resized.elements.as_mut().ok_or_else(|| {
+        "runtime ReDim Preserve failed to materialize an owned array payload".to_string()
+    })?;
+    for dim in 0..previous_bounds.len() {
+        let previous_bound = &previous_bounds[dim];
+        let resized_bound = &resized_bounds[dim];
+        if previous_bound.lower != resized_bound.lower {
+            return Err(
+                "runtime ReDim Preserve requires lower bounds to remain unchanged".to_string(),
+            );
+        }
+        if dim + 1 != previous_bounds.len() && previous_bound.count != resized_bound.count {
+            return Err("runtime ReDim Preserve only supports resizing the upper bound of the last dimension".to_string());
+        }
+    }
+    let last = previous_bounds.len() - 1;
+    let previous_last = previous_bounds[last].count as usize;
+    let resized_last = resized_bounds[last].count as usize;
+    let overlap = previous_last.min(resized_last);
+    let mut block_count = 1usize;
+    for bound in &previous_bounds[..last] {
+        block_count = block_count
+            .checked_mul(bound.count as usize)
+            .ok_or_else(|| "runtime ReDim Preserve block count overflowed".to_string())?;
+    }
+    for block in 0..block_count.max(1) {
+        let previous_start = block
+            .checked_mul(previous_last)
+            .ok_or_else(|| "runtime ReDim Preserve previous block offset overflowed".to_string())?;
+        let resized_start = block
+            .checked_mul(resized_last)
+            .ok_or_else(|| "runtime ReDim Preserve resized block offset overflowed".to_string())?;
+        for offset in 0..overlap {
+            resized_values[resized_start + offset] =
+                previous_values[previous_start + offset].clone();
+        }
+    }
+    Ok(resized)
+}
+
+fn decode_runtime_array_element_type(element_type: i32) -> Option<RuntimeArrayElementType> {
+    Some(match element_type {
+        x if x == RuntimeArrayElementType::Variant as i32 => RuntimeArrayElementType::Variant,
+        x if x == RuntimeArrayElementType::Integer as i32 => RuntimeArrayElementType::Integer,
+        x if x == RuntimeArrayElementType::Long as i32 => RuntimeArrayElementType::Long,
+        x if x == RuntimeArrayElementType::LongLong as i32 => RuntimeArrayElementType::LongLong,
+        x if x == RuntimeArrayElementType::LongPtr as i32 => RuntimeArrayElementType::LongPtr,
+        x if x == RuntimeArrayElementType::Byte as i32 => RuntimeArrayElementType::Byte,
+        x if x == RuntimeArrayElementType::Single as i32 => RuntimeArrayElementType::Single,
+        x if x == RuntimeArrayElementType::Double as i32 => RuntimeArrayElementType::Double,
+        x if x == RuntimeArrayElementType::Currency as i32 => RuntimeArrayElementType::Currency,
+        x if x == RuntimeArrayElementType::Date as i32 => RuntimeArrayElementType::Date,
+        x if x == RuntimeArrayElementType::String as i32 => RuntimeArrayElementType::String,
+        x if x == RuntimeArrayElementType::Boolean as i32 => RuntimeArrayElementType::Boolean,
+        _ => return None,
+    })
+}
+
+fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> RuntimeValue {
+    match element_type {
+        RuntimeArrayElementType::Variant => RuntimeValue::Empty,
+        RuntimeArrayElementType::Integer
+        | RuntimeArrayElementType::Long
+        | RuntimeArrayElementType::Byte => RuntimeValue::I32(0),
+        RuntimeArrayElementType::LongLong | RuntimeArrayElementType::LongPtr => {
+            RuntimeValue::I64(0)
+        }
+        RuntimeArrayElementType::Single
+        | RuntimeArrayElementType::Double
+        | RuntimeArrayElementType::Currency
+        | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
+        RuntimeArrayElementType::String => RuntimeValue::String(BStr(String::new())),
+        RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
+    }
+}
 
 /// ArrayLiteral: reads values from slot_indices, creates ArrayIntent.
 #[unsafe(no_mangle)]
@@ -1958,33 +1786,144 @@ pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_array_resize(
+    ctx: *mut JitContext,
+    dst: u32,
+    upper_bound_slots_ptr: *const u32,
+    lower_bounds_ptr: *const i32,
+    bounds_len: u32,
+    element_type: i32,
+) -> i32 {
+    let upper_bound_slots =
+        unsafe { std::slice::from_raw_parts(upper_bound_slots_ptr, bounds_len as usize) };
+    let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds_ptr, bounds_len as usize) };
+    let mut upper_bounds = Vec::with_capacity(upper_bound_slots.len());
+    for &upper_bound_slot in upper_bound_slots {
+        match semantics::runtime_value_to_i32_compat(
+            &read_slot!(ctx, upper_bound_slot),
+            "ReDim upper bound",
+        ) {
+            Ok(value) => upper_bounds.push(value),
+            Err(_) => return ERR_RUNTIME,
+        }
+    }
+    let Some(element_type) = decode_runtime_array_element_type(element_type) else {
+        return ERR_RUNTIME;
+    };
+    let array = match runtime_resized_array(lower_bounds, &upper_bounds, element_type) {
+        Ok(array) => array,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, RuntimeValue::ArrayIntent(array));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_array_resize_preserve(
+    ctx: *mut JitContext,
+    dst: u32,
+    upper_bound_slots_ptr: *const u32,
+    lower_bounds_ptr: *const i32,
+    bounds_len: u32,
+    element_type: i32,
+) -> i32 {
+    let upper_bound_slots =
+        unsafe { std::slice::from_raw_parts(upper_bound_slots_ptr, bounds_len as usize) };
+    let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds_ptr, bounds_len as usize) };
+    let mut upper_bounds = Vec::with_capacity(upper_bound_slots.len());
+    for &upper_bound_slot in upper_bound_slots {
+        match semantics::runtime_value_to_i32_compat(
+            &read_slot!(ctx, upper_bound_slot),
+            "ReDim Preserve upper bound",
+        ) {
+            Ok(value) => upper_bounds.push(value),
+            Err(_) => return ERR_RUNTIME,
+        }
+    }
+    let current = read_slot!(ctx, dst);
+    let Some(element_type) = decode_runtime_array_element_type(element_type) else {
+        return ERR_RUNTIME;
+    };
+    let array =
+        match runtime_resized_array_preserve(&current, lower_bounds, &upper_bounds, element_type) {
+            Ok(array) => array,
+            Err(_) => return ERR_RUNTIME,
+        };
+    write_slot!(ctx, dst, RuntimeValue::ArrayIntent(array));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_array_get(
+    ctx: *mut JitContext,
+    dst: u32,
+    array_slot: u32,
+    index_slots_ptr: *const u32,
+    index_slots_len: u32,
+) -> i32 {
+    let array_value = read_slot!(ctx, array_slot);
+    let index_slots =
+        unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
+    let index_values = index_slots
+        .iter()
+        .map(|slot| read_slot!(ctx, *slot))
+        .collect::<Vec<_>>();
+    let value = match semantics::runtime_array_get(&array_value, &index_values, "array index") {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, value);
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_array_set(
+    ctx: *mut JitContext,
+    array_slot: u32,
+    index_slots_ptr: *const u32,
+    index_slots_len: u32,
+    src_slot: u32,
+) -> i32 {
+    let array_value = read_slot!(ctx, array_slot);
+    let index_slots =
+        unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
+    let index_values = index_slots
+        .iter()
+        .map(|slot| read_slot!(ctx, *slot))
+        .collect::<Vec<_>>();
+    let src_value = read_slot!(ctx, src_slot);
+    let value = match semantics::runtime_array_set(
+        &array_value,
+        &index_values,
+        &src_value,
+        "array index",
+    ) {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, array_slot, value);
+    OK
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_lbound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "LBound operand") {
+    let v = match semantics::runtime_array_lbound(&val, "LBound operand") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let out = if runtime_is_array_tag(v) { 0 } else { -1 };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_slot!(ctx, dst, RuntimeValue::I32(v));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_ubound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_legacy_token(&val, "UBound operand") {
+    let v = match semantics::runtime_array_ubound(&val, "UBound operand") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let out = if runtime_is_array_tag(v) {
-        array_len_from_tag(v)
-            .and_then(|count| i32::try_from(count).ok())
-            .unwrap_or(0)
-            - 1
-    } else {
-        -1
-    };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_slot!(ctx, dst, RuntimeValue::I32(v));
     OK
 }
 
@@ -1997,11 +1936,11 @@ pub extern "C" fn oxrt_collection_add(
     count: u32,
     item: u32,
 ) -> i32 {
-    let c = match legacy_slot(ctx, count, "Collection.Add count") {
+    let c = match compat_i32_slot(ctx, count, "Collection.Add count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let _item = legacy_slot(ctx, item, "Collection.Add item");
+    let _item = compat_i32_slot(ctx, item, "Collection.Add item");
     write_slot!(ctx, dst, RuntimeValue::I32((c + 1).max(0)));
     OK
 }
@@ -2013,11 +1952,11 @@ pub extern "C" fn oxrt_collection_item(
     count: u32,
     index: u32,
 ) -> i32 {
-    let c = match legacy_slot(ctx, count, "Collection.Item count") {
+    let c = match compat_i32_slot(ctx, count, "Collection.Item count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let i = match legacy_slot(ctx, index, "Collection.Item index") {
+    let i = match compat_i32_slot(ctx, index, "Collection.Item index") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2033,18 +1972,18 @@ pub extern "C" fn oxrt_collection_remove(
     count: u32,
     index: u32,
 ) -> i32 {
-    let c = match legacy_slot(ctx, count, "Collection.Remove count") {
+    let c = match compat_i32_slot(ctx, count, "Collection.Remove count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let _i = legacy_slot(ctx, index, "Collection.Remove index");
+    let _i = compat_i32_slot(ctx, index, "Collection.Remove index");
     write_slot!(ctx, dst, RuntimeValue::I32((c - 1).max(0)));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_collection_count(ctx: *mut JitContext, dst: u32, count: u32) -> i32 {
-    let c = match legacy_slot(ctx, count, "Collection.Count count") {
+    let c = match compat_i32_slot(ctx, count, "Collection.Count count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2059,7 +1998,7 @@ pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i3
     let ctx_ref = unsafe { &mut *ctx };
     if seed_slot != u32::MAX {
         let seed_val = read_slot!(ctx, seed_slot);
-        let seed = match semantics::runtime_value_legacy_token(&seed_val, "Rnd seed") {
+        let seed = match semantics::runtime_random_seed_bounded(&seed_val, "Rnd seed") {
             Ok(v) => v,
             Err(_) => return ERR_RUNTIME,
         };
@@ -2086,7 +2025,7 @@ pub extern "C" fn oxrt_randomize(ctx: *mut JitContext, dst: u32, seed_slot: u32)
     let ctx_ref = unsafe { &mut *ctx };
     if seed_slot != u32::MAX {
         let seed_val = read_slot!(ctx, seed_slot);
-        let seed = match semantics::runtime_value_legacy_token(&seed_val, "Randomize seed") {
+        let seed = match semantics::runtime_random_seed_bounded(&seed_val, "Randomize seed") {
             Ok(v) => v,
             Err(_) => return ERR_RUNTIME,
         };
@@ -2303,8 +2242,14 @@ pub extern "C" fn oxrt_host_file_open(
     let path_val = read_slot!(ctx, path);
     let mode_val = read_slot!(ctx, mode);
     let file_num = read_slot!(ctx, file_number);
-    let mode_i32 = mode_val.to_legacy_i32().unwrap_or(0);
-    let fnum_i32 = file_num.to_legacy_i32().unwrap_or(0);
+    let mode_i32 = match semantics::runtime_value_to_i32_compat(&mode_val, "Open mode") {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let fnum_i32 = match semantics::runtime_value_to_i32_compat(&file_num, "Open file number") {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
     let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
     match host.fs().open(path_val, combined_mode) {
         Ok(value) => {
@@ -2320,6 +2265,19 @@ pub extern "C" fn oxrt_host_file_close(ctx: *mut JitContext, dst: u32, handle: u
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     match host.fs().close(handle_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_file_kill(ctx: *mut JitContext, dst: u32, path: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let path_val = read_slot!(ctx, path);
+    match host.fs().kill(path_val) {
         Ok(value) => {
             write_slot!(ctx, dst, value);
             OK
@@ -2447,6 +2405,18 @@ pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, hand
 pub extern "C" fn oxrt_host_console_line_input(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.console().line_input() {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_beep(ctx: *mut JitContext, dst: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    match host.diag().emit(RuntimeValue::I32(7), RuntimeValue::I32(0)) {
         Ok(value) => {
             write_slot!(ctx, dst, value);
             OK
@@ -2782,7 +2752,7 @@ pub extern "C" fn oxrt_host_withevents_set(
     };
     let key = semantics::withevents_binding_key(owner, binding);
     let state = unsafe { (*ctx).host_state_mut() };
-    if val.to_legacy_i32().ok() == Some(0) {
+    if semantics::runtime_value_is_explicit_zero_carrier(&val) {
         state.withevents_bindings.remove(&key);
     } else {
         state.withevents_bindings.insert(key, val.clone());
@@ -2824,7 +2794,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
         Err(_) => return ERR_RUNTIME,
     };
     // If source is 0, no matching owners.
-    if source_val.to_legacy_i32().ok() == Some(0) {
+    if semantics::runtime_value_is_explicit_zero_carrier(&source_val) {
         write_slot!(ctx, dst, RuntimeValue::I32(0));
         return OK;
     }
@@ -3019,13 +2989,20 @@ pub extern "C" fn oxrt_host_time_now(ctx: *mut JitContext, dst: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.time_locale().date_serial_now() {
-        Ok(value) => {
-            write_slot!(ctx, dst, value);
-            OK
-        }
-        Err(_) => ERR_RUNTIME,
-    }
+    let date = match host.time_locale().date_serial_now() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let time = match host.time_locale().time_serial_now() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let value = match semantics::runtime_host_now_value(&date, &time) {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_slot!(ctx, dst, value);
+    OK
 }
 
 #[unsafe(no_mangle)]
@@ -3049,7 +3026,7 @@ pub extern "C" fn oxrt_host_invoke_symbol(
     descriptor_id: u32,
     args_ptr: *const usize,
     args_len: u32,
-    writeback_ptr: *const [usize; 2],
+    writeback_ptr: *const ExternalCallWriteback,
     writeback_len: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
@@ -3114,12 +3091,13 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         selection_policy: descriptor.selection_policy.as_str(),
         param_count: descriptor.param_count,
         param_types: &param_type_strings,
+        param_by_ref: &descriptor.param_by_ref,
         return_type: {
             return_type_string = descriptor
                 .return_type
                 .as_ref()
-                .map(|rt| format!("{:?}", rt));
-            return_type_string.as_deref()
+                .map(|rt| Cow::Owned(format!("{:?}", rt)));
+            return_type_string.clone()
         },
     };
     if let Some(_violation) = view.contract_violation() {
@@ -3130,14 +3108,10 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         match host.dynlink().invoke_descriptor_multi(&view, &arg_values) {
             Ok((ret_value, wb_values)) => {
                 write_slot!(ctx, dst, ret_value);
-                for (wb_idx, pair) in writeback_slots.iter().enumerate() {
-                    let arg_index = pair[0];
-                    // pair[1] is source_slot, reserved for future use
-                    if let Some(wb_val) = wb_values.get(wb_idx)
-                        && let Some(target_slot) = arg_slots.get(arg_index)
-                    {
-                        write_slot!(ctx, *target_slot as u32, wb_val.clone());
-                    }
+                if let Err(_detail) =
+                    apply_external_writebacks(ctx, writeback_slots, &arg_values, &wb_values)
+                {
+                    return route_host_error_code(ctx, 53073);
                 }
                 OK
             }
@@ -3152,6 +3126,44 @@ pub extern "C" fn oxrt_host_invoke_symbol(
             Err(err) => route_hal_error(ctx, err),
         }
     }
+}
+
+fn apply_external_writebacks(
+    ctx: *mut JitContext,
+    writebacks: &[ExternalCallWriteback],
+    arg_values: &[RuntimeValue],
+    wb_values: &[RuntimeValue],
+) -> Result<(), String> {
+    for writeback in writebacks {
+        let value = match writeback.kind {
+            ExternalCallWritebackKind::ByRefValue => {
+                let Some(value) = wb_values.get(writeback.arg_index) else {
+                    continue;
+                };
+                value.clone()
+            }
+            ExternalCallWritebackKind::PointerByteArrayPayload => {
+                let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index) else {
+                    return Err(format!(
+                        "pointer writeback arg {} is not a LongPtr value",
+                        writeback.arg_index
+                    ));
+                };
+                oxvba_runtime::pointer_helpers::read_back_byte_array_payload(*pointer)?
+            }
+            ExternalCallWritebackKind::PointerStringPayload => {
+                let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index) else {
+                    return Err(format!(
+                        "pointer writeback arg {} is not a LongPtr value",
+                        writeback.arg_index
+                    ));
+                };
+                oxvba_runtime::pointer_helpers::read_back_string_payload(*pointer)?
+            }
+        };
+        write_slot!(ctx, writeback.source_slot as u32, value);
+    }
+    Ok(())
 }
 
 // ── Private helper functions ─────────────────────────────────────────
@@ -3227,16 +3239,16 @@ fn normalize_com_result(value: RuntimeValue) -> RuntimeValue {
     value
 }
 
-fn legacy_slot(ctx: *mut JitContext, slot: u32, field: &str) -> Result<i32, ()> {
+fn compat_i32_slot(ctx: *mut JitContext, slot: u32, field: &str) -> Result<i32, ()> {
     let val = read_slot!(ctx, slot);
-    semantics::runtime_value_legacy_token(&val, field).map_err(|_| ())
+    semantics::runtime_value_to_i32_compat(&val, field).map_err(|_| ())
 }
 
-fn opt_legacy_slot(ctx: *mut JitContext, slot: u32, default: i32) -> i32 {
+fn opt_compat_i32_slot(ctx: *mut JitContext, slot: u32, default: i32) -> i32 {
     if slot == u32::MAX {
         default
     } else {
-        legacy_slot(ctx, slot, "optional").unwrap_or(default)
+        compat_i32_slot(ctx, slot, "optional").unwrap_or(default)
     }
 }
 
@@ -3287,31 +3299,6 @@ fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
     slice_digits(value, zero_based_start, count)
 }
 
-fn mid_stmt_digits(target: i32, start: i32, count: Option<i32>, value: i32) -> i32 {
-    let base = target.to_string();
-    let repl = value.to_string();
-    let start_idx = if start <= 1 { 0 } else { (start - 1) as usize };
-    if start_idx >= base.len() {
-        return target;
-    }
-    let end_idx = match count {
-        Some(c) if c <= 0 => start_idx,
-        Some(c) => (start_idx + c as usize).min(base.len()),
-        None => base.len(),
-    };
-    let replace_len = end_idx.saturating_sub(start_idx);
-    let replace_text = if replace_len >= repl.len() {
-        repl.as_str()
-    } else {
-        &repl[..replace_len]
-    };
-    let mut out = String::with_capacity(base.len() - replace_len + replace_text.len());
-    out.push_str(&base[..start_idx]);
-    out.push_str(replace_text);
-    out.push_str(&base[end_idx..]);
-    out.parse::<i32>().unwrap_or(0)
-}
-
 fn instr_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
     let hay = semantics::normalize_for_compare(haystack.to_string(), mode);
     let nee = semantics::normalize_for_compare(needle.to_string(), mode);
@@ -3338,21 +3325,6 @@ fn to_upper_digits(value: i32) -> i32 {
         .to_ascii_uppercase()
         .parse::<i32>()
         .unwrap_or(0)
-}
-
-fn split_count_digits(value: i32, delimiter: i32) -> i32 {
-    let text = value.to_string();
-    let delim = delimiter.to_string();
-    if delim.is_empty() {
-        return 1;
-    }
-    text.split(&delim).count() as i32
-}
-
-fn join_digits(value: i32, _delimiter: i32) -> i32 {
-    array_len_from_tag(value)
-        .and_then(|c| i32::try_from(c).ok())
-        .unwrap_or(value)
 }
 
 fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
@@ -3389,39 +3361,6 @@ fn strcomp_digits(lhs: i32, rhs: i32, mode: StringCompareMode) -> i32 {
         Ordering::Equal => 0,
         Ordering::Greater => 1,
     }
-}
-
-fn like_digits(lhs: i32, pattern: i32, mode: StringCompareMode) -> i32 {
-    let l = semantics::normalize_for_compare(lhs.to_string(), mode);
-    let p = semantics::normalize_for_compare(pattern.to_string(), mode);
-    if l == p { -1 } else { 0 }
-}
-
-fn date_serial_digits(year: i32, month: i32, day: i32) -> i32 {
-    year.saturating_mul(10_000)
-        .saturating_add(month.saturating_mul(100))
-        .saturating_add(day)
-}
-
-fn time_serial_digits(hour: i32, minute: i32, second: i32) -> i32 {
-    hour.saturating_mul(3600)
-        .saturating_add(minute.saturating_mul(60))
-        .saturating_add(second)
-}
-
-fn date_add_digits(_interval: i32, number: i32, date: i32) -> i32 {
-    date.saturating_add(number)
-}
-
-fn date_diff_digits(_interval: i32, date1: i32, date2: i32) -> i32 {
-    date2.saturating_sub(date1)
-}
-
-fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
-    let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-    let y = if month < 3 { year - 1 } else { year };
-    let m_idx = ((month - 1).max(0) as usize).min(11);
-    (y + y / 4 - y / 100 + y / 400 + t[m_idx] + day) % 7
 }
 
 fn round_i32(value: i32, digits: i32) -> i32 {
@@ -3680,6 +3619,7 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_date_serial", oxrt_date_serial as *const u8),
         ("oxrt_time_serial", oxrt_time_serial as *const u8),
         ("oxrt_date_value", oxrt_date_value as *const u8),
+        ("oxrt_cdate", oxrt_cdate as *const u8),
         ("oxrt_time_value", oxrt_time_value as *const u8),
         ("oxrt_date_add", oxrt_date_add as *const u8),
         ("oxrt_date_diff", oxrt_date_diff as *const u8),
@@ -3721,6 +3661,12 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         // Phase 2: Array
         ("oxrt_array_literal", oxrt_array_literal as *const u8),
         ("oxrt_array_append", oxrt_array_append as *const u8),
+        (
+            "oxrt_array_resize_preserve",
+            oxrt_array_resize_preserve as *const u8,
+        ),
+        ("oxrt_array_get", oxrt_array_get as *const u8),
+        ("oxrt_array_set", oxrt_array_set as *const u8),
         ("oxrt_lbound", oxrt_lbound as *const u8),
         ("oxrt_ubound", oxrt_ubound as *const u8),
         // Phase 2: Collection
@@ -3768,6 +3714,7 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_free_file", oxrt_host_free_file as *const u8),
         ("oxrt_host_file_open", oxrt_host_file_open as *const u8),
         ("oxrt_host_file_close", oxrt_host_file_close as *const u8),
+        ("oxrt_host_file_kill", oxrt_host_file_kill as *const u8),
         ("oxrt_host_file_read", oxrt_host_file_read as *const u8),
         ("oxrt_host_file_write", oxrt_host_file_write as *const u8),
         ("oxrt_host_file_print", oxrt_host_file_print as *const u8),
@@ -3788,6 +3735,7 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
             "oxrt_host_console_line_input",
             oxrt_host_console_line_input as *const u8,
         ),
+        ("oxrt_host_beep", oxrt_host_beep as *const u8),
         ("oxrt_host_file_eof", oxrt_host_file_eof as *const u8),
         ("oxrt_host_file_lof", oxrt_host_file_lof as *const u8),
         ("oxrt_host_file_seek", oxrt_host_file_seek as *const u8),
@@ -3843,8 +3791,23 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_msgbox", oxrt_host_msgbox as *const u8),
         ("oxrt_host_inputbox", oxrt_host_inputbox as *const u8),
         ("oxrt_host_debug_print", oxrt_host_debug_print as *const u8),
+        ("oxrt_array_resize", oxrt_array_resize as *const u8),
+        (
+            "oxrt_array_resize_preserve",
+            oxrt_array_resize_preserve as *const u8,
+        ),
+        ("oxrt_array_get", oxrt_array_get as *const u8),
+        ("oxrt_array_set", oxrt_array_set as *const u8),
         ("oxrt_strptr", oxrt_strptr as *const u8),
         ("oxrt_varptr", oxrt_varptr as *const u8),
+        (
+            "oxrt_varptr_string_var",
+            oxrt_varptr_string_var as *const u8,
+        ),
+        (
+            "oxrt_varptr_variant_var",
+            oxrt_varptr_variant_var as *const u8,
+        ),
         ("oxrt_objptr", oxrt_objptr as *const u8),
         ("oxrt_host_do_events", oxrt_host_do_events as *const u8),
         ("oxrt_host_shell", oxrt_host_shell as *const u8),

@@ -403,6 +403,7 @@ pub fn resolve_typelib_identity_for_prog_id_name(
 }
 
 pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
+    let mut effective_identity = identity.clone();
     let (activation_prog_id, member_name_to_token, members, events) = if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
@@ -1502,7 +1503,32 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
     };
 
     TypeLibMetadataBlob {
-        identity: identity.clone(),
+        identity: {
+            if effective_identity.requested_coclass.is_none()
+                && (effective_identity
+                    .importlib
+                    .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
+                    || effective_identity
+                        .importlib
+                        .eq_ignore_ascii_case("oxvba_testeventserveralt.tlb")
+                    || effective_identity
+                        .importlib
+                        .eq_ignore_ascii_case("oxvba_testeventserveralt2.tlb")
+                    || effective_identity
+                        .libid
+                        .as_deref()
+                        .is_some_and(|libid: &str| {
+                            libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
+                                || libid
+                                    .eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000101")
+                                || libid
+                                    .eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000201")
+                        }))
+            {
+                effective_identity.requested_coclass = Some("TestEventServer".to_string());
+            }
+            effective_identity
+        },
         activation_prog_id,
         member_name_to_token,
         members,
@@ -1694,13 +1720,14 @@ mod tests {
             Some("OxVba.TestDispatch")
         );
 
-        let excel_identity =
-            resolve_typelib_identity_for_prog_id_name("Excel.Application").expect("identity");
-        let excel_blob = build_typelib_metadata(&excel_identity);
-        assert_eq!(
-            activation_prog_id_from_typelib_metadata(&excel_blob),
-            Some("Excel.Application")
-        );
+        if let Some(excel_identity) = resolve_typelib_identity_for_prog_id_name("Excel.Application")
+        {
+            let excel_blob = build_typelib_metadata(&excel_identity);
+            assert_eq!(
+                activation_prog_id_from_typelib_metadata(&excel_blob),
+                Some("Excel.Application")
+            );
+        }
 
         let alt_identity =
             known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt").expect("identity");

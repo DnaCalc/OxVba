@@ -4,6 +4,7 @@ use oxvba_compiler::{
     ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind, compile_project,
     module_unit_from_source,
 };
+use oxvba_hal::model::HostPolicy;
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
@@ -20,27 +21,33 @@ fn sqlite_fixture_root() -> PathBuf {
     workspace_root().join(".external/sqliteforexcel/fixtures")
 }
 
+fn sqlite_bounded_demo_basproj() -> PathBuf {
+    sqlite_fixture_root()
+        .join("Demo64NormalizedBounded/SQLiteForExcelDemo64NormalizedBounded.basproj")
+}
+
 #[cfg(target_os = "windows")]
 #[test]
-fn sqliteforexcel_core64_normalized_basproj_moves_past_pointer_helper_boundary_to_redim_expression_failure(
-) {
+fn sqliteforexcel_core64_normalized_basproj_moves_past_compile_frontiers_to_runtime_loadlibrary_boundary_in_vm()
+ {
     let basproj_path =
         sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite core fixture should load");
 
-    let engine = Engine::new(HostConfig {
+    let mut engine = Engine::new(HostConfig {
         enable_jit: false,
         root_object_name: None,
     });
+    engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
         .execute_project_with_snapshot_phased(&loaded.manifest)
-        .expect_err("sqlite core fixture should still fail before native success");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        .expect_err("sqlite core fixture should now reach the runtime LoadLibrary boundary");
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
     assert!(
         err.message()
             .to_ascii_lowercase()
-            .contains("redim with runtime expression bounds is not yet supported"),
-        "unexpected compile diagnostic: {}",
+            .contains("loadlibraryw failed"),
+        "unexpected runtime diagnostic: {}",
         err.message()
     );
 }
@@ -62,7 +69,10 @@ fn sqliteforexcel_host_environment_reference_loads_expected_predeclared_path_pro
         .find(|module| module.module_name.eq_ignore_ascii_case("ThisWorkbook"))
         .unwrap_or_else(|| panic!("predeclared workbook module should load; got {loaded_names:?}"));
     assert!(
-        matches!(workbook.module_kind, ModuleKind::Class | ModuleKind::Document),
+        matches!(
+            workbook.module_kind,
+            ModuleKind::Class | ModuleKind::Document
+        ),
         "unexpected workbook module kind {:?} in {:?}",
         workbook.module_kind,
         loaded_names
@@ -72,7 +82,9 @@ fn sqliteforexcel_host_environment_reference_loads_expected_predeclared_path_pro
         "ThisWorkbook should remain predeclared"
     );
     assert!(
-        workbook.source.contains("Public Property Get Path() As String"),
+        workbook
+            .source
+            .contains("Public Property Get Path() As String"),
         "expected Path property getter in loaded workbook source: {}",
         workbook.source
     );
@@ -86,8 +98,7 @@ fn sqliteforexcel_host_environment_reference_loads_expected_predeclared_path_pro
 }
 
 #[test]
-fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_helper_boundary_to_redim_expression_failure(
-) {
+fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_and_redim_boundaries() {
     let core_path =
         sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
     let host_path = sqlite_fixture_root().join("HostEnvironment/HostEnvironment.basproj");
@@ -129,20 +140,13 @@ fn sqliteforexcel_sqlite3_module_source_direct_compile_moves_past_pointer_helper
         conditional_constants: core.manifest.conditional_constants.clone(),
     };
 
-    let err = compile_project(&manifest)
-        .expect_err("direct compile should now expose the next backend boundary");
-    assert!(
-        err.to_string()
-            .to_ascii_lowercase()
-            .contains("redim with runtime expression bounds is not yet supported"),
-        "unexpected direct compile diagnostic: {err}"
-    );
+    compile_project(&manifest)
+        .expect("direct compile should now succeed for the normalized core sqlite module");
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn sqliteforexcel_demo64_normalized_basproj_moves_past_duplicate_name_to_redim_expression_failure()
-{
+fn sqliteforexcel_demo64_normalized_basproj_now_reaches_runtime_boundary_after_compile_frontiers() {
     let basproj_path =
         sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite demo fixture should load");
@@ -153,31 +157,39 @@ fn sqliteforexcel_demo64_normalized_basproj_moves_past_duplicate_name_to_redim_e
     });
     let err = engine
         .execute_project_with_snapshot_phased(&loaded.manifest)
-        .expect_err("sqlite demo fixture should currently fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .to_ascii_lowercase()
-            .contains("redim with runtime expression bounds is not yet supported"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect_err("sqlite demo fixture should currently fail at runtime");
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
 }
 
 #[test]
-fn sqliteforexcel_demo_module_sources_direct_compile_move_past_duplicate_name_to_redim_expression_failure(
-) {
+fn sqliteforexcel_demo_module_sources_direct_compile_now_succeeds_after_compile_frontiers() {
     let demo_path =
         sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
     let demo = load_basproj(&demo_path).expect("sqlite demo fixture should load");
 
-    let err = compile_project(&demo.manifest)
-        .expect_err("direct compile should now expose the next backend boundary");
-    let rendered = err.to_string();
-    assert!(
-        rendered
-            .to_ascii_lowercase()
-            .contains("redim with runtime expression bounds is not yet supported"),
-        "unexpected direct compile diagnostic: {rendered}"
-    );
+    compile_project(&demo.manifest)
+        .expect("direct compile should now succeed for the normalized sqlite demo manifest");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn sqliteforexcel_bounded_normalized_demo_completes_in_vm_and_jit() {
+    let basproj_path = sqlite_bounded_demo_basproj();
+    let loaded = load_basproj(&basproj_path).expect("bounded sqlite demo fixture should load");
+
+    for enable_jit in [false, true] {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        engine
+            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "bounded sqlite demo fixture should complete for enable_jit={enable_jit}: {}",
+                    err
+                )
+            });
+    }
 }

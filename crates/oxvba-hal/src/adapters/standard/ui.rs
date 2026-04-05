@@ -10,7 +10,8 @@ use super::StandardHostServices;
 impl UiInteractionHal for StandardHostServices {
     fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::UiInteraction;
-        let style = self.runtime_value_to_legacy_i32(&style, capability, "msg_box", "style")?;
+        let style =
+            self.runtime_value_project_compat_slot_i32(&style, capability, "msg_box", "style")?;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "msg_box"));
         }
@@ -49,7 +50,7 @@ impl UiInteractionHal for StandardHostServices {
                 }
             }
             UiVirtualizationMode::Disabled => Ok(RuntimeValue::I32(
-                prompt.to_legacy_i32().unwrap_or(1).max(1),
+                prompt.project_compat_slot_i32().unwrap_or(1).max(1),
             )),
         }
     }

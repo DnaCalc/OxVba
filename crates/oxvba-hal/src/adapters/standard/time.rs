@@ -1,9 +1,29 @@
 use crate::{error::HalResult, model::CapabilityId, traits::TimeLocaleHal};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{F64Value, RuntimeValue};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::StandardHostServices;
-use super::filesystem::clamp_u64_to_i32;
+
+const DETERMINISTIC_DATE_SERIAL: f64 = 46_082.0;
+const DETERMINISTIC_SECONDS: f64 = 45_296.0;
+
+fn deterministic_date_value() -> RuntimeValue {
+    RuntimeValue::F64(F64Value::from_date_f64(DETERMINISTIC_DATE_SERIAL))
+}
+
+fn deterministic_time_value() -> RuntimeValue {
+    RuntimeValue::F64(F64Value::from_date_f64(DETERMINISTIC_SECONDS / 86_400.0))
+}
+
+fn deterministic_timer_value() -> RuntimeValue {
+    RuntimeValue::F64(F64Value::from_single_f64(DETERMINISTIC_SECONDS))
+}
+
+fn system_time_components() -> std::time::Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+}
 
 impl TimeLocaleHal for StandardHostServices {
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
@@ -12,12 +32,11 @@ impl TimeLocaleHal for StandardHostServices {
             return Err(self.unsupported(capability, "date_serial_now"));
         }
         if self.native_time_enabled() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default();
-            return Ok(RuntimeValue::I32(clamp_u64_to_i32(now.as_secs() / 86_400)));
+            let now = system_time_components();
+            let serial = (now.as_secs() / 86_400) as f64 + 25_569.0;
+            return Ok(RuntimeValue::F64(F64Value::from_date_f64(serial.floor())));
         }
-        Ok(RuntimeValue::I32(20_260_301))
+        Ok(deterministic_date_value())
     }
 
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
@@ -26,12 +45,14 @@ impl TimeLocaleHal for StandardHostServices {
             return Err(self.unsupported(capability, "time_serial_now"));
         }
         if self.native_time_enabled() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default();
-            return Ok(RuntimeValue::I32((now.as_secs() % 86_400) as i32));
+            let now = system_time_components();
+            let secs_today =
+                (now.as_secs() % 86_400) as f64 + f64::from(now.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(RuntimeValue::F64(F64Value::from_date_f64(
+                secs_today / 86_400.0,
+            )));
         }
-        Ok(RuntimeValue::I32(123_456))
+        Ok(deterministic_time_value())
     }
 
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
@@ -40,12 +61,11 @@ impl TimeLocaleHal for StandardHostServices {
             return Err(self.unsupported(capability, "timer_ticks"));
         }
         if self.native_time_enabled() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default();
-            let modulo = i32::MAX as u128;
-            return Ok(RuntimeValue::I32((now.as_millis() % modulo) as i32));
+            let now = system_time_components();
+            let secs_today =
+                (now.as_secs() % 86_400) as f64 + f64::from(now.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(RuntimeValue::F64(F64Value::from_single_f64(secs_today)));
         }
-        Ok(RuntimeValue::I32(42))
+        Ok(deterministic_timer_value())
     }
 }

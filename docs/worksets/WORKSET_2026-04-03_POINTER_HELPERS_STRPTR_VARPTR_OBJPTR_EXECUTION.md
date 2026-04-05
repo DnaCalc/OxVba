@@ -142,3 +142,32 @@ This workset is complete only when:
   and now stops later at the explicit runtime-sized `ReDim` boundary.
 - native writeback for wider pointer-backed array destinations remains outside
   the bounded V1 contract and is not claimed by this workset.
+
+## Follow-On Boundary Tightening
+
+The bounded delivery above is complete, and the follow-on boundary-tightening
+lane has now delivered its first honest container/ABI upgrades:
+
+- `StrPtr` should expose the character payload pointer of a real `BSTR`
+  materialized by OxVba for the supported interop window, rather than only a
+  generic UTF-16 backing buffer.
+- `VarPtr` should be defined as a pointer to the supported native storage or
+  container cell for the referenced value, not merely a generic pointer-like
+  projection of the current Rust-owned runtime value.
+- `ObjPtr` remains limited to honest object-reference categories; non-object
+  payloads such as string-valued `Variant` cases must continue to reject.
+
+Current follow-on status:
+
+- `StrPtr` now materializes a real `BSTR` payload on Windows.
+- `VarPtr(s As String)` now returns the address of a native boundary cell whose
+  contents are the `BSTR` payload pointer, preserving the distinction from
+  `StrPtr(s)`.
+- `VarPtr(v As Variant)` now returns the address of a native `VARIANT`
+  container cell for the currently supported scalar and string payload lanes.
+- object-, array-, and decimal-valued `Variant` container materialization
+  remains explicit unsupported territory until OxVba can expose an honest
+  boundary representation for those cases.
+
+This follow-on work remains a new implementation lane, not a reopening of this
+bounded execution claim.

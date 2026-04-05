@@ -26,6 +26,7 @@ pub use oxvba_com::{
     TypeLibResolvedIdentity,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynLinkDescriptorView<'a> {
@@ -40,7 +41,8 @@ pub struct DynLinkDescriptorView<'a> {
     pub selection_policy: &'a str,
     pub param_count: usize,
     pub param_types: &'a [String],
-    pub return_type: Option<&'a str>,
+    pub param_by_ref: &'a [bool],
+    pub return_type: Option<Cow<'a, str>>,
 }
 
 impl DynLinkDescriptorView<'_> {
@@ -67,6 +69,12 @@ impl DynLinkDescriptorView<'_> {
         };
         if self.selection_policy != expected_selection_policy {
             return Some("selection_policy does not match ordinal_alias contract");
+        }
+        if self.param_count != self.param_types.len() {
+            return Some("param_count does not match param_types length");
+        }
+        if self.param_count != self.param_by_ref.len() {
+            return Some("param_count does not match param_by_ref length");
         }
         None
     }
@@ -125,6 +133,7 @@ pub trait EventPumpHal: Send + Sync {
 pub trait FileSystemHal: Send + Sync {
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
     fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue>;
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
@@ -302,6 +311,7 @@ mod kani_proofs {
             selection_policy: "case-insensitive-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         assert_eq!(descriptor.contract_violation(), None);
@@ -321,6 +331,7 @@ mod kani_proofs {
             selection_policy: "case-insensitive-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         assert_eq!(

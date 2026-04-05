@@ -244,7 +244,7 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
-    pub fn from_legacy_i32(value: i32) -> Self {
+    pub fn from_compat_slot_i32(value: i32) -> Self {
         if value == EMPTY_TAG {
             return Self::Empty;
         }
@@ -260,44 +260,44 @@ impl RuntimeValue {
         Self::I32(value)
     }
 
-    pub fn to_legacy_i32(&self) -> Result<i32, String> {
+    pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
         match self {
             Self::Empty => Ok(EMPTY_TAG),
             Self::Null => Ok(NULL_TAG),
             Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
             Self::I32(value) => Ok(*value),
             Self::I64(value) => i32::try_from(*value).map_err(|_| {
-                format!("i64 value {value} cannot be represented in current legacy i32 slot lane")
+                format!("i64 value {value} cannot be represented in current compat slot lane")
             }),
             Self::F64(_) => {
-                Err("f64 cannot be represented in current legacy i32 slot lane".to_string())
+                Err("f64 cannot be represented in current compat slot lane".to_string())
             }
             Self::Decimal(_) => {
-                Err("decimal cannot be represented in current legacy i32 slot lane".to_string())
+                Err("decimal cannot be represented in current compat slot lane".to_string())
             }
             Self::Currency(_) => {
-                Err("currency cannot be represented in current legacy i32 slot lane".to_string())
+                Err("currency cannot be represented in current compat slot lane".to_string())
             }
             Self::Bool(value) => Ok(i32::from(*value)),
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
-                "array intent cannot be represented in current legacy slot tag".to_string()
+                "array intent cannot be represented in current compat slot tag".to_string()
             }),
             Self::ObjectHandle(handle) => Ok(handle.raw()),
             Self::BindingHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
-                Err("string cannot be represented in current legacy i32 slot lane".to_string())
+                Err("string cannot be represented in current compat slot lane".to_string())
             }
         }
     }
 
     pub fn as_i32_lossy(&self) -> Option<i32> {
-        self.to_legacy_i32().ok()
+        self.project_compat_slot_i32().ok()
     }
 }
 
 impl From<i32> for RuntimeValue {
     fn from(value: i32) -> Self {
-        Self::from_legacy_i32(value)
+        Self::from_compat_slot_i32(value)
     }
 }
 
@@ -312,18 +312,21 @@ mod tests {
     use crate::decimal::Decimal96;
 
     #[test]
-    fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
+    fn runtime_value_from_compat_slot_i32_preserves_tagged_shapes() {
         assert_eq!(
-            RuntimeValue::from_legacy_i32(EMPTY_TAG),
+            RuntimeValue::from_compat_slot_i32(EMPTY_TAG),
             RuntimeValue::Empty
         );
-        assert_eq!(RuntimeValue::from_legacy_i32(NULL_TAG), RuntimeValue::Null);
         assert_eq!(
-            RuntimeValue::from_legacy_i32(error_tag_from_code(17)),
+            RuntimeValue::from_compat_slot_i32(NULL_TAG),
+            RuntimeValue::Null
+        );
+        assert_eq!(
+            RuntimeValue::from_compat_slot_i32(error_tag_from_code(17)),
             RuntimeValue::ErrorCode(17)
         );
         assert_eq!(
-            RuntimeValue::from_legacy_i32(ARRAY_TAG_BASE + 3),
+            RuntimeValue::from_compat_slot_i32(ARRAY_TAG_BASE + 3),
             RuntimeValue::ArrayIntent(SafeArray::vector(3))
         );
     }
@@ -332,31 +335,33 @@ mod tests {
     fn runtime_value_roundtrips_legacy_i32_subset() {
         let value = RuntimeValue::ArrayIntent(SafeArray::vector(4));
         assert_eq!(
-            value.to_legacy_i32().expect("array tag"),
+            value.project_compat_slot_i32().expect("array tag"),
             ARRAY_TAG_BASE + 4
         );
         assert_eq!(
-            RuntimeValue::Bool(true).to_legacy_i32().expect("bool tag"),
+            RuntimeValue::Bool(true)
+                .project_compat_slot_i32()
+                .expect("bool tag"),
             1
         );
         assert!(
             RuntimeValue::String(crate::bstr::BStr("ABC".to_string()))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .is_err()
         );
         assert!(
             RuntimeValue::F64(F64Value::from_f64(3.5))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .is_err()
         );
         assert!(
             RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .is_err()
         );
         assert!(
             RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .is_err()
         );
     }
@@ -368,7 +373,7 @@ mod tests {
             RuntimeValue::I32(9),
         ]));
         assert_eq!(
-            value.to_legacy_i32().expect("array tag"),
+            value.project_compat_slot_i32().expect("array tag"),
             ARRAY_TAG_BASE + 2
         );
     }
@@ -377,7 +382,7 @@ mod tests {
     fn runtime_value_object_handles_preserve_legacy_shape() {
         assert_eq!(
             RuntimeValue::ObjectHandle(ObjectHandle::new(42))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .expect("object handle"),
             42
         );
@@ -387,7 +392,7 @@ mod tests {
     fn runtime_value_binding_handles_preserve_legacy_shape() {
         assert_eq!(
             RuntimeValue::BindingHandle(BindingHandle::new(77))
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .expect("binding handle"),
             77
         );
@@ -425,24 +430,39 @@ mod tests {
     }
 
     #[test]
-    fn runtime_value_i64_to_legacy_i32_narrows_when_fits() {
-        assert_eq!(RuntimeValue::I64(42).to_legacy_i32().expect("fits i32"), 42);
+    fn runtime_value_i64_to_compat_slot_i32_narrows_when_fits() {
         assert_eq!(
-            RuntimeValue::I64(-100).to_legacy_i32().expect("fits i32"),
+            RuntimeValue::I64(42)
+                .project_compat_slot_i32()
+                .expect("fits i32"),
+            42
+        );
+        assert_eq!(
+            RuntimeValue::I64(-100)
+                .project_compat_slot_i32()
+                .expect("fits i32"),
             -100
         );
         assert_eq!(
             RuntimeValue::I64(i32::MAX as i64)
-                .to_legacy_i32()
+                .project_compat_slot_i32()
                 .expect("fits i32"),
             i32::MAX
         );
     }
 
     #[test]
-    fn runtime_value_i64_to_legacy_i32_rejects_overflow() {
-        assert!(RuntimeValue::I64(5_000_000_000).to_legacy_i32().is_err());
-        assert!(RuntimeValue::I64(i64::MIN).to_legacy_i32().is_err());
+    fn runtime_value_i64_to_compat_slot_i32_rejects_overflow() {
+        assert!(
+            RuntimeValue::I64(5_000_000_000)
+                .project_compat_slot_i32()
+                .is_err()
+        );
+        assert!(
+            RuntimeValue::I64(i64::MIN)
+                .project_compat_slot_i32()
+                .is_err()
+        );
     }
 }
 
@@ -464,8 +484,8 @@ mod proptests {
             prop_assume!(!is_error_tag(v));
             prop_assume!(!is_array_tag(v));
 
-            let rt = RuntimeValue::from_legacy_i32(v);
-            let back = rt.to_legacy_i32().expect("plain i32 should roundtrip");
+            let rt = RuntimeValue::from_compat_slot_i32(v);
+            let back = rt.project_compat_slot_i32().expect("plain i32 should roundtrip");
             prop_assert_eq!(back, v);
         }
 

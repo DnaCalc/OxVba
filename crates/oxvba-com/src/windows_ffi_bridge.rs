@@ -7,6 +7,10 @@
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
+use libffi::middle::{
+    Arg as LibffiArg, Cif as LibffiCif, CodePtr as LibffiCodePtr, Type as LibffiType,
+};
+#[cfg(target_os = "windows")]
 use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::sync::Mutex;
@@ -28,7 +32,8 @@ pub enum FfiArg {
     Double(f64),
     Single(f32),
     LongLong(i64),
-    String(Vec<u16>), // null-terminated wide string
+    AnsiString(Vec<u8>), // null-terminated narrow string
+    String(Vec<u16>),    // null-terminated wide string
     Pointer(*mut c_void),
 }
 
@@ -46,6 +51,105 @@ pub enum FfiReturnType {
     LongPtr,
 }
 
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+#[derive(Debug, Clone, Copy)]
+enum PreparedX64Arg {
+    Long(i32),
+    Integer(i16),
+    Byte(u8),
+    Boolean(i16),
+    Double(f64),
+    Single(f32),
+    LongLong(i64),
+    Pointer(*mut c_void),
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+impl PreparedX64Arg {
+    fn from_ffi_arg(arg: &FfiArg) -> Self {
+        match arg {
+            FfiArg::Long(v) => Self::Long(*v),
+            FfiArg::Integer(v) => Self::Integer(*v),
+            FfiArg::Byte(v) => Self::Byte(*v),
+            FfiArg::Boolean(v) => Self::Boolean(*v),
+            FfiArg::Double(v) => Self::Double(*v),
+            FfiArg::Single(v) => Self::Single(*v),
+            FfiArg::LongLong(v) => Self::LongLong(*v),
+            FfiArg::AnsiString(v) => Self::Pointer(v.as_ptr().cast_mut().cast::<c_void>()),
+            FfiArg::String(v) => Self::Pointer(v.as_ptr().cast_mut().cast::<c_void>()),
+            FfiArg::Pointer(v) => Self::Pointer(*v),
+        }
+    }
+
+    fn ffi_type(&self) -> LibffiType {
+        match self {
+            Self::Long(_) => LibffiType::i32(),
+            Self::Integer(_) => LibffiType::i16(),
+            Self::Byte(_) => LibffiType::u8(),
+            Self::Boolean(_) => LibffiType::i16(),
+            Self::Double(_) => LibffiType::f64(),
+            Self::Single(_) => LibffiType::f32(),
+            Self::LongLong(_) => LibffiType::i64(),
+            Self::Pointer(_) => LibffiType::pointer(),
+        }
+    }
+
+    fn as_arg(&self) -> LibffiArg<'_> {
+        match self {
+            Self::Long(v) => LibffiArg::new(v),
+            Self::Integer(v) => LibffiArg::new(v),
+            Self::Byte(v) => LibffiArg::new(v),
+            Self::Boolean(v) => LibffiArg::new(v),
+            Self::Double(v) => LibffiArg::new(v),
+            Self::Single(v) => LibffiArg::new(v),
+            Self::LongLong(v) => LibffiArg::new(v),
+            Self::Pointer(v) => LibffiArg::new(v),
+        }
+    }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn x64_return_type(return_type: FfiReturnType) -> LibffiType {
+    match return_type {
+        FfiReturnType::Void => LibffiType::void(),
+        FfiReturnType::Long => LibffiType::i32(),
+        FfiReturnType::Integer => LibffiType::i16(),
+        FfiReturnType::Byte => LibffiType::u8(),
+        FfiReturnType::Boolean => LibffiType::i16(),
+        FfiReturnType::Double => LibffiType::f64(),
+        FfiReturnType::Single => LibffiType::f32(),
+        FfiReturnType::LongLong => LibffiType::i64(),
+        FfiReturnType::LongPtr => LibffiType::pointer(),
+    }
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+unsafe fn invoke_stdcall_x64(proc_addr: usize, args: &[FfiArg], return_type: FfiReturnType) -> i64 {
+    let prepared_args: Vec<PreparedX64Arg> =
+        args.iter().map(PreparedX64Arg::from_ffi_arg).collect();
+    let cif = LibffiCif::new(
+        prepared_args.iter().map(PreparedX64Arg::ffi_type),
+        x64_return_type(return_type),
+    );
+    let ffi_args: Vec<LibffiArg<'_>> = prepared_args.iter().map(PreparedX64Arg::as_arg).collect();
+    let code_ptr = LibffiCodePtr::from_ptr(proc_addr as *const c_void);
+
+    match return_type {
+        FfiReturnType::Void => {
+            cif.call::<()>(code_ptr, &ffi_args);
+            0
+        }
+        FfiReturnType::Long => cif.call::<i32>(code_ptr, &ffi_args) as i64,
+        FfiReturnType::Integer => cif.call::<i16>(code_ptr, &ffi_args) as i64,
+        FfiReturnType::Byte => cif.call::<u8>(code_ptr, &ffi_args) as i64,
+        FfiReturnType::Boolean => cif.call::<i16>(code_ptr, &ffi_args) as i64,
+        FfiReturnType::Double => cif.call::<f64>(code_ptr, &ffi_args).to_bits() as i64,
+        FfiReturnType::Single => cif.call::<f32>(code_ptr, &ffi_args).to_bits() as i64,
+        FfiReturnType::LongLong => cif.call::<i64>(code_ptr, &ffi_args),
+        FfiReturnType::LongPtr => cif.call::<*mut c_void>(code_ptr, &ffi_args) as isize as i64,
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Windows implementation
 // ══════════════════════════════════════════════════════════════════════
@@ -61,8 +165,22 @@ static DLL_CACHE: Mutex<Option<DllCache>> = Mutex::new(None);
 #[cfg(target_os = "windows")]
 unsafe extern "system" {
     fn LoadLibraryW(lp_lib_file_name: *const u16) -> *mut c_void;
+    fn GetModuleHandleW(lp_module_name: *const u16) -> *mut c_void;
     fn GetProcAddress(h_module: *mut c_void, lp_proc_name: *const u8) -> *mut c_void;
+    fn WideCharToMultiByte(
+        CodePage: u32,
+        dwFlags: u32,
+        lpWideCharStr: *const u16,
+        cchWideChar: i32,
+        lpMultiByteStr: *mut u8,
+        cbMultiByte: i32,
+        lpDefaultChar: *const u8,
+        lpUsedDefaultChar: *mut i32,
+    ) -> i32;
 }
+
+#[cfg(target_os = "windows")]
+const CP_ACP: u32 = 0;
 
 // ── Public API (Windows) ──
 
@@ -82,14 +200,87 @@ pub fn load_library(library: &str) -> Result<usize, String> {
         return Ok(handle);
     }
 
-    let wide: Vec<u16> = library.encode_utf16().chain(std::iter::once(0)).collect();
-    let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
-    if handle.is_null() {
-        return Err(format!("LoadLibraryW failed for `{}`", library));
+    for candidate in windows_library_candidates(library) {
+        let wide: Vec<u16> = candidate.encode_utf16().chain(std::iter::once(0)).collect();
+        let existing = unsafe { GetModuleHandleW(wide.as_ptr()) };
+        if !existing.is_null() {
+            let handle_val = existing as usize;
+            cache.modules.insert(key, handle_val);
+            return Ok(handle_val);
+        }
     }
-    let handle_val = handle as usize;
-    cache.modules.insert(key, handle_val);
-    Ok(handle_val)
+
+    for candidate in windows_library_candidates(library) {
+        let wide: Vec<u16> = candidate.encode_utf16().chain(std::iter::once(0)).collect();
+        let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
+        if !handle.is_null() {
+            let handle_val = handle as usize;
+            cache.modules.insert(key, handle_val);
+            return Ok(handle_val);
+        }
+    }
+    Err(format!("LoadLibraryW failed for `{}`", library))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_library_candidates(library: &str) -> Vec<String> {
+    let trimmed = library.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec![trimmed.to_string()];
+    if !trimmed.contains(['\\', '/']) && !trimmed.contains('.') {
+        out.push(format!("{trimmed}.dll"));
+    }
+    out
+}
+
+#[cfg(target_os = "windows")]
+pub fn ansi_c_string(text: &str) -> Vec<u8> {
+    if text.is_empty() {
+        return vec![0];
+    }
+
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let required = unsafe {
+        WideCharToMultiByte(
+            CP_ACP,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        )
+    };
+    if required <= 0 {
+        let mut fallback = text.as_bytes().to_vec();
+        fallback.push(0);
+        return fallback;
+    }
+
+    let mut bytes = vec![0u8; required as usize + 1];
+    let written = unsafe {
+        WideCharToMultiByte(
+            CP_ACP,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            bytes.as_mut_ptr(),
+            required,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        )
+    };
+    if written <= 0 {
+        let mut fallback = text.as_bytes().to_vec();
+        fallback.push(0);
+        return fallback;
+    }
+    bytes.truncate(written as usize + 1);
+    bytes[written as usize] = 0;
+    bytes
 }
 
 /// Resolves a function address from a loaded module.
@@ -135,31 +326,39 @@ pub fn invoke_stdcall(
         ));
     }
 
-    // Marshal arguments to raw i64 values for the call
-    let mut raw_args: Vec<i64> = Vec::with_capacity(args.len());
-    for arg in args {
-        match arg {
-            FfiArg::Long(v) => raw_args.push(*v as i64),
-            FfiArg::Integer(v) => raw_args.push(*v as i64),
-            FfiArg::Byte(v) => raw_args.push(*v as i64),
-            FfiArg::Boolean(v) => raw_args.push(*v as i64),
-            FfiArg::Double(v) => raw_args.push(v.to_bits() as i64),
-            FfiArg::Single(v) => raw_args.push(v.to_bits() as i64),
-            FfiArg::LongLong(v) => raw_args.push(*v),
-            FfiArg::String(v) => raw_args.push(v.as_ptr() as i64),
-            FfiArg::Pointer(v) => raw_args.push(*v as i64),
-        }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let result = unsafe { invoke_stdcall_x64(proc_addr, args, return_type) };
+        return Ok(result);
     }
 
-    // Use platform-specific invocation
-    let result = unsafe { invoke_stdcall_raw(proc_addr, &raw_args, return_type) };
-    Ok(result)
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        // Marshal arguments to raw i64 values for the call on the legacy integer-only path.
+        let mut raw_args: Vec<i64> = Vec::with_capacity(args.len());
+        for arg in args {
+            match arg {
+                FfiArg::Long(v) => raw_args.push(*v as i64),
+                FfiArg::Integer(v) => raw_args.push(*v as i64),
+                FfiArg::Byte(v) => raw_args.push(*v as i64),
+                FfiArg::Boolean(v) => raw_args.push(*v as i64),
+                FfiArg::Double(v) => raw_args.push(v.to_bits() as i64),
+                FfiArg::Single(v) => raw_args.push(v.to_bits() as i64),
+                FfiArg::LongLong(v) => raw_args.push(*v),
+                FfiArg::AnsiString(v) => raw_args.push(v.as_ptr() as i64),
+                FfiArg::String(v) => raw_args.push(v.as_ptr() as i64),
+                FfiArg::Pointer(v) => raw_args.push(*v as i64),
+            }
+        }
+        let result = unsafe { invoke_stdcall_raw(proc_addr, &raw_args, return_type) };
+        Ok(result)
+    }
 }
 
 /// Raw stdcall invocation. This dispatches based on argument count
 /// for common arities and falls back to a generic approach for larger calls.
 #[cfg(target_os = "windows")]
-#[cfg(target_arch = "x86_64")]
+#[cfg(not(target_arch = "x86_64"))]
 unsafe fn invoke_stdcall_raw(proc_addr: usize, args: &[i64], _return_type: FfiReturnType) -> i64 {
     // On x86_64 Windows, the calling convention is actually __fastcall (first 4 args in registers).
     // We handle common arities explicitly for safety.
@@ -398,6 +597,7 @@ pub fn invoke_stdcall(
             FfiArg::Double(v) => raw_args.push(v.to_bits() as i64),
             FfiArg::Single(v) => raw_args.push(v.to_bits() as i64),
             FfiArg::LongLong(v) => raw_args.push(*v),
+            FfiArg::AnsiString(v) => raw_args.push(v.as_ptr() as i64),
             FfiArg::String(v) => raw_args.push(v.as_ptr() as i64),
             FfiArg::Pointer(v) => raw_args.push(*v as i64),
         }
@@ -470,6 +670,40 @@ mod tests {
         let addr = get_proc_address(module, "GetTickCount").expect("GetTickCount should resolve");
         let result = invoke_stdcall(addr, &[], FfiReturnType::Long).expect("invoke should succeed");
         assert!(result > 0, "GetTickCount should return positive value");
+    }
+
+    #[test]
+    fn invoke_msvcrt_sqrt_round_trips_double_argument_and_return() {
+        let module = load_library("msvcrt.dll").expect("msvcrt.dll should load");
+        let addr = get_proc_address(module, "sqrt").expect("sqrt should resolve");
+        let result = invoke_stdcall(addr, &[FfiArg::Double(156.25)], FfiReturnType::Double)
+            .expect("invoke should succeed");
+        let value = f64::from_bits(result as u64);
+        assert!(
+            (value - 12.5).abs() < 1.0e-10,
+            "sqrt should round-trip the double lane; got {value}"
+        );
+    }
+
+    #[test]
+    fn invoke_msvcrt_wcstod_round_trips_double_return_with_pointer_arguments() {
+        let module = load_library("msvcrt.dll").expect("msvcrt.dll should load");
+        let addr = get_proc_address(module, "wcstod").expect("wcstod should resolve");
+        let text: Vec<u16> = "123.5".encode_utf16().chain(std::iter::once(0)).collect();
+        let result = invoke_stdcall(
+            addr,
+            &[
+                FfiArg::Pointer(text.as_ptr().cast_mut().cast::<c_void>()),
+                FfiArg::Pointer(std::ptr::null_mut()),
+            ],
+            FfiReturnType::Double,
+        )
+        .expect("invoke should succeed");
+        let value = f64::from_bits(result as u64);
+        assert!(
+            (value - 123.5).abs() < 1.0e-10,
+            "wcstod should round-trip the double return lane; got {value}"
+        );
     }
 
     #[test]

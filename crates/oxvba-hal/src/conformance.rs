@@ -1,6 +1,6 @@
 //! HAL conformance probes and report model.
 
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Subtype, RuntimeValue, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -21,6 +21,15 @@ const CLAUSE_CATALOG_MD_V1: &str =
 fn runtime_i32(value: &RuntimeValue) -> Option<i32> {
     match value {
         RuntimeValue::I32(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn runtime_numeric_f64(value: &RuntimeValue) -> Option<f64> {
+    match value {
+        RuntimeValue::I32(value) => Some(f64::from(*value)),
+        RuntimeValue::I64(value) => Some(*value as f64),
+        RuntimeValue::F64(value) => Some(value.as_f64()),
         _ => None,
     }
 }
@@ -501,6 +510,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         selection_policy: "case-insensitive-canonical",
         param_count: 0,
         param_types: &[],
+        param_by_ref: &[],
         return_type: None,
     };
     probe(
@@ -808,6 +818,7 @@ fn evaluate_dynlink_contract_paths(
         selection_policy: "case-insensitive-canonical",
         param_count: 0,
         param_types: &[],
+        param_by_ref: &[],
         return_type: None,
     };
     let mut win_ok = true;
@@ -866,6 +877,7 @@ fn evaluate_dynlink_contract_paths(
         selection_policy: "case-insensitive-canonical",
         param_count: 0,
         param_types: &[],
+        param_by_ref: &[],
         return_type: None,
     };
     match host
@@ -902,6 +914,7 @@ fn evaluate_dynlink_contract_paths(
         selection_policy: "case-insensitive-canonical",
         param_count: 0,
         param_types: &[],
+        param_by_ref: &[],
         return_type: None,
     };
     match host
@@ -1200,49 +1213,87 @@ fn verify_time_host_backed_contract(
         }
     };
 
-    let Some(date_i32) = runtime_i32(&date) else {
+    let Some(date_serial) = runtime_numeric_f64(&date) else {
         ok = false;
         failures.push(format!(
-            "time.date_serial_now probe returned non-integer runtime value: {date:?}"
+            "time.date_serial_now probe returned non-numeric runtime value: {date:?}"
         ));
         return ok;
     };
-    let Some(time_i32) = runtime_i32(&time) else {
+    let Some(time_serial) = runtime_numeric_f64(&time) else {
         ok = false;
         failures.push(format!(
-            "time.time_serial_now probe returned non-integer runtime value: {time:?}"
+            "time.time_serial_now probe returned non-numeric runtime value: {time:?}"
         ));
         return ok;
     };
-    let Some(ticks_i32) = runtime_i32(&ticks) else {
+    let Some(timer_value) = runtime_numeric_f64(&ticks) else {
         ok = false;
         failures.push(format!(
-            "time.timer_ticks probe returned non-integer runtime value: {ticks:?}"
+            "time.timer_ticks probe returned non-numeric runtime value: {ticks:?}"
         ));
         return ok;
     };
 
+    let date_is_date = matches!(
+        date,
+        RuntimeValue::F64(value) if value.subtype() == F64Subtype::Date
+    );
+    let time_is_date = matches!(
+        time,
+        RuntimeValue::F64(value) if value.subtype() == F64Subtype::Date
+    );
+
     if host_backed_active {
-        if date_i32 < 0 || time_i32 < 0 || ticks_i32 < 0 {
+        if !date_is_date || !time_is_date {
             ok = false;
             failures.push(format!(
-                "host-backed time probe observed negative tokens: date={}, time={}, ticks={}",
-                date_i32, time_i32, ticks_i32
+                "host-backed time probe expected Date-subtyped date/time values; observed date={date:?}, time={time:?}"
             ));
         }
-        if date_i32 == 20_260_301 && time_i32 == 123_456 && ticks_i32 == 42 {
+        if date_serial < 0.0 || time_serial < 0.0 || timer_value < 0.0 {
+            ok = false;
+            failures.push(
+                format!(
+                    "host-backed time probe observed negative numeric values: date={}, time={}, ticks={}",
+                    date_serial, time_serial, timer_value
+                ),
+            );
+        }
+        if matches!(
+            (&date, &time, &ticks),
+            (
+                RuntimeValue::F64(date),
+                RuntimeValue::F64(time),
+                RuntimeValue::F64(ticks)
+            ) if date.subtype() == F64Subtype::Date
+                && time.subtype() == F64Subtype::Date
+                && (date.as_f64() - 46_082.0).abs() < f64::EPSILON
+                && (time.as_f64() - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
+                && (ticks.as_f64() - 45_296.0).abs() < f64::EPSILON
+        ) {
             ok = false;
             failures.push(
                 "host-backed time probe observed deterministic constants; expected system-time-derived values".to_string(),
             );
         }
     } else if host.policy().deterministic_mode
-        && (date_i32 != 20_260_301 || time_i32 != 123_456 || ticks_i32 != 42)
+        && !matches!(
+            (&date, &time, &ticks),
+            (
+                RuntimeValue::F64(date),
+                RuntimeValue::F64(time),
+                RuntimeValue::F64(ticks)
+            ) if date.subtype() == F64Subtype::Date
+                && time.subtype() == F64Subtype::Date
+                && (date.as_f64() - 46_082.0).abs() < f64::EPSILON
+                && (time.as_f64() - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
+                && (ticks.as_f64() - 45_296.0).abs() < f64::EPSILON
+        )
     {
         ok = false;
         failures.push(format!(
-            "deterministic time lane expected constants; observed date={}, time={}, ticks={}",
-            date_i32, time_i32, ticks_i32
+            "deterministic time lane expected Date/time constants; observed date={date:?}, time={time:?}, ticks={ticks:?}"
         ));
     }
 
@@ -1459,6 +1510,9 @@ const fn is_policy_gated(capability: CapabilityId) -> bool {
 
 fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
     let mut hash: u32 = 2_166_136_261;
+    let library = library.to_ascii_lowercase();
+    let alias = alias.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
     for byte in library
         .bytes()
         .chain([b'!'])

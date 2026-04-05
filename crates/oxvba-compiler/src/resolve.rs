@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
+type ModuleConstMap = HashMap<String, BoundExpr>;
 type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
 #[derive(Debug, Clone)]
 struct UdtFieldDef {
@@ -42,6 +43,11 @@ pub enum BoundExpr {
     },
     BinaryOp {
         op: ArithOp,
+        lhs: Box<BoundExpr>,
+        rhs: Box<BoundExpr>,
+    },
+    CompareOp {
+        op: CompareOp,
         lhs: Box<BoundExpr>,
         rhs: Box<BoundExpr>,
     },
@@ -94,9 +100,21 @@ pub enum AssignmentIntent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeArrayDimExpr {
+    pub lower_bound: i32,
+    pub upper_bound: BoundExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundStmt {
     Assign {
         target: String,
+        expr: BoundExpr,
+        intent: AssignmentIntent,
+    },
+    AssignRuntimeArrayElement {
+        name: String,
+        indices: Vec<BoundExpr>,
         expr: BoundExpr,
         intent: AssignmentIntent,
     },
@@ -133,6 +151,11 @@ pub enum BoundStmt {
         name: String,
         bounds: Vec<(i32, i32)>,
         previous_bounds: Option<Vec<(i32, i32)>>,
+        preserve: bool,
+    },
+    ReDimRuntime {
+        name: String,
+        bounds: Vec<RuntimeArrayDimExpr>,
         preserve: bool,
     },
     Erase {
@@ -194,6 +217,9 @@ pub enum BoundStmt {
     FileClose {
         file_number: Option<BoundExpr>,
     },
+    FileKill {
+        path: BoundExpr,
+    },
     FilePrint {
         file_number: BoundExpr,
         data: BoundExpr,
@@ -219,6 +245,7 @@ pub enum BoundStmt {
     ConsoleLineInput {
         target: String,
     },
+    Beep,
     ExitProcedure,
     DebugPrint {
         data: BoundExpr,
@@ -290,6 +317,7 @@ pub struct BoundProcedure {
     pub statement_line_numbers: Vec<usize>,
     pub return_type: BoundType,
     pub params: Vec<BoundParam>,
+    pub module_scope_names: Vec<String>,
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
@@ -429,6 +457,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             statement_line_numbers: Vec::new(),
             return_type: BoundType::Variant,
             params: Vec::new(),
+            module_scope_names: Vec::new(),
             declarations: Vec::new(),
             declaration_types: HashMap::new(),
             array_descriptors: HashMap::new(),
@@ -468,7 +497,7 @@ fn build_whole_file_main_procedure(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> BoundProcedure {
@@ -493,6 +522,7 @@ fn build_whole_file_main_procedure(
         statement_line_numbers: collect_candidate_statement_line_numbers(lines, 1),
         return_type: BoundType::Variant,
         params: Vec::new(),
+        module_scope_names: Vec::new(),
         declarations: Vec::new(),
         declaration_types: HashMap::new(),
         array_descriptors: HashMap::new(),
@@ -507,7 +537,7 @@ fn build_top_level_mainline_procedure(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> Option<BoundProcedure> {
@@ -547,7 +577,7 @@ fn build_mainline_procedure_from_lines(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> Option<BoundProcedure> {
@@ -577,7 +607,11 @@ fn build_mainline_procedure_from_lines(
         {
             declarations.push(name.clone());
         }
-        declaration_types.insert(name, BoundType::Long);
+        let ty = module_constants
+            .get(name.as_str())
+            .map(module_const_expr_type)
+            .unwrap_or(BoundType::Variant);
+        declaration_types.insert(name, ty);
     }
     let mut body = parse_block(
         lines,
@@ -604,6 +638,7 @@ fn build_mainline_procedure_from_lines(
         statement_line_numbers,
         return_type: BoundType::Variant,
         params: Vec::new(),
+        module_scope_names: Vec::new(),
         declarations,
         declaration_types,
         array_descriptors,
@@ -862,7 +897,7 @@ pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
     let mut pending = String::new();
 
     for raw in source.lines() {
-        let trimmed = raw.trim();
+        let trimmed = strip_inline_comment(raw).trim();
         if trimmed.is_empty() {
             continue;
         }
@@ -884,14 +919,14 @@ pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
         }
 
         let final_line = pending.trim();
-        if !final_line.is_empty() && !final_line.starts_with('\'') {
+        if !final_line.is_empty() {
             merged.push(final_line.to_string());
         }
         pending.clear();
     }
 
     let final_line = pending.trim();
-    if !final_line.is_empty() && !final_line.starts_with('\'') {
+    if !final_line.is_empty() {
         merged.push(final_line.to_string());
     }
 
@@ -927,6 +962,27 @@ pub(crate) fn normalize_source_lines(source: &str) -> Vec<String> {
     }
 
     out
+}
+
+fn strip_inline_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut index = 0usize;
+    let mut in_string = false;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' => {
+                if in_string && index + 1 < bytes.len() && bytes[index + 1] == b'"' {
+                    index += 2;
+                    continue;
+                }
+                in_string = !in_string;
+            }
+            b'\'' if !in_string => return line[..index].trim_end(),
+            _ => {}
+        }
+        index += 1;
+    }
+    line.trim_end()
 }
 
 fn normalize_with_target(raw: &str, parent_target: Option<&str>) -> Option<String> {
@@ -1373,7 +1429,7 @@ fn parse_procedures(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> Vec<BoundProcedure> {
@@ -1426,6 +1482,7 @@ fn parse_procedures(
         let mut declaration_types: HashMap<String, BoundType> = module_declaration_types.clone();
         let mut duplicate_declarations: Vec<String> = module_duplicate_declarations.clone();
         let mut array_bounds: ArrayBoundsMap = module_array_bounds.clone();
+        let mut module_scope_names = declarations.clone();
         for param in &params {
             if !declarations
                 .iter()
@@ -1434,6 +1491,14 @@ fn parse_procedures(
                 declarations.push(param.name.clone());
             }
             declaration_types.insert(param.name.clone(), param.ty);
+            if param.ty == BoundType::Array {
+                // Procedure array parameters do not carry compile-time extents here,
+                // but they still need array identity so `VarPtr(arg(0))` and similar
+                // parser paths recognize them as array-backed values.
+                array_bounds
+                    .entry(param.name.clone())
+                    .or_insert_with(|| vec![(0, 0)]);
+            }
         }
         if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
             // For Property Get, the return-value slot must use the base name
@@ -1462,7 +1527,17 @@ fn parse_procedures(
             {
                 declarations.push(name.clone());
             }
-            declaration_types.entry(name).or_insert(BoundType::Long);
+            if !module_scope_names
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&name))
+            {
+                module_scope_names.push(name.clone());
+            }
+            let ty = module_constants
+                .get(name.as_str())
+                .map(module_const_expr_type)
+                .unwrap_or(BoundType::Variant);
+            declaration_types.entry(name).or_insert(ty);
         }
         let end_term = kind.end_term();
         let mut body = parse_block(
@@ -1507,6 +1582,7 @@ fn parse_procedures(
             statement_line_numbers,
             return_type,
             params,
+            module_scope_names,
             declarations,
             declaration_types,
             array_descriptors,
@@ -1598,7 +1674,7 @@ pub fn parse_proc_signature(
     let mut explicit_return_ty = None;
 
     if let Some(open) = rest.find('(')
-        && let Some(close) = rest.rfind(')')
+        && let Some(close) = find_matching_paren(rest, open)
         && close > open
     {
         let params_raw = rest[open + 1..close].trim();
@@ -1666,9 +1742,10 @@ pub fn parse_proc_signature(
                     return None;
                 }
 
-                let normalized_name_text = if param_array {
-                    let trimmed = name_text.trim();
-                    trimmed.strip_suffix("()")?
+                let trimmed_name_text = name_text.trim();
+                let is_array_param = trimmed_name_text.ends_with("()");
+                let normalized_name_text = if param_array || is_array_param {
+                    trimmed_name_text.strip_suffix("()")?
                 } else {
                     name_text
                 };
@@ -1678,6 +1755,8 @@ pub fn parse_proc_signature(
                     if explicit_ty.is_some() && explicit_ty != Some(BoundType::Variant) {
                         return None;
                     }
+                    BoundType::Array
+                } else if is_array_param {
                     BoundType::Array
                 } else {
                     resolve_declared_type(
@@ -1705,13 +1784,14 @@ pub fn parse_proc_signature(
             let tail = rest[close + 1..].trim();
             if let Some(ty_text) = strip_keyword_prefix_ci(tail, "as") {
                 explicit_return_ty =
-                    Some(parse_declared_type(ty_text).unwrap_or(BoundType::Variant));
+                    Some(parse_declared_or_array_type(ty_text).unwrap_or(BoundType::Variant));
             }
         }
     } else if matches!(kind, ProcKind::Function | ProcKind::PropertyGet)
         && let Some((_, rhs)) = split_keyword_ci(rest, "as")
     {
-        explicit_return_ty = Some(parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant));
+        explicit_return_ty =
+            Some(parse_declared_or_array_type(rhs.trim()).unwrap_or(BoundType::Variant));
     }
 
     let return_type = if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
@@ -1732,27 +1812,45 @@ fn parse_param_default(text: &str) -> Option<i32> {
     text.trim().parse::<i32>().ok()
 }
 
-fn sorted_module_constants(constants: &HashMap<String, i32>) -> Vec<(String, i32)> {
+fn sorted_module_constants(constants: &ModuleConstMap) -> Vec<(String, BoundExpr)> {
     let mut out = constants
         .iter()
-        .map(|(name, value)| (name.clone(), *value))
+        .map(|(name, value)| (name.clone(), value.clone()))
         .collect::<Vec<_>>();
     out.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
     out
 }
 
-fn build_const_prelude(constants: &HashMap<String, i32>) -> Vec<BoundStmt> {
+fn build_const_prelude(constants: &ModuleConstMap) -> Vec<BoundStmt> {
     sorted_module_constants(constants)
         .into_iter()
-        .map(|(name, value)| BoundStmt::Assign {
+        .map(|(name, expr)| BoundStmt::Assign {
             target: name,
-            expr: BoundExpr::IntConst(value),
+            expr,
             intent: AssignmentIntent::Implicit,
         })
         .collect()
 }
 
-fn collect_module_constants(lines: &[String]) -> HashMap<String, i32> {
+fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
+    match expr {
+        BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
+            BoundType::Long
+        }
+        BoundExpr::BoolConst(_) => BoundType::Boolean,
+        BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::StringConst(_) => BoundType::String,
+        BoundExpr::Var(_)
+        | BoundExpr::BinaryOp { .. }
+        | BoundExpr::CompareOp { .. }
+        | BoundExpr::UnaryOp { .. }
+        | BoundExpr::IntrinsicCall { .. }
+        | BoundExpr::ProcCall { .. }
+        | BoundExpr::VarPtrArrayBuffer(_) => BoundType::Variant,
+    }
+}
+
+fn collect_module_constants(lines: &[String]) -> ModuleConstMap {
     let mut constants = HashMap::new();
     let mut index = 0usize;
 
@@ -1776,8 +1874,8 @@ fn collect_module_constants(lines: &[String]) -> HashMap<String, i32> {
             continue;
         }
 
-        if let Some((name, value)) = parse_const_declaration(line) {
-            constants.insert(name, value);
+        if let Some((name, expr)) = parse_const_declaration(line) {
+            constants.insert(name, expr);
         }
         index += 1;
     }
@@ -1858,6 +1956,7 @@ fn collect_declared_external_procedures(
             statement_line_numbers: vec![1],
             return_type,
             params,
+            module_scope_names: Vec::new(),
             declarations,
             declaration_types,
             array_descriptors: HashMap::new(),
@@ -2020,7 +2119,8 @@ fn parse_declare_signature_line(
     let lib = extract_quoted_after_keyword(tail, "lib").ok_or_else(|| {
         "external procedure declaration rejected: missing `Lib \"...\"` clause".to_string()
     })?;
-    let alias_raw = extract_quoted_after_keyword(tail, "alias").unwrap_or_else(|| name.clone());
+    let alias_raw =
+        extract_quoted_after_keyword(tail, "alias").unwrap_or_else(|| name_token.to_string());
     let (alias, ordinal_alias) = normalize_external_alias(alias_raw.as_str())?;
 
     Ok(Some(ParsedDeclareSignature {
@@ -2067,7 +2167,7 @@ fn normalize_external_alias(alias: &str) -> Result<(String, bool), String> {
         };
         return Ok((format!("#{canonical_digits}"), true));
     }
-    Ok((alias.to_ascii_lowercase(), false))
+    Ok((alias.to_string(), false))
 }
 
 /// Parse UDT field array bounds from a parenthesized expression like `(10)` or `(1 To 5)`.
@@ -2215,7 +2315,7 @@ fn expand_nested_udt_fields(defs: &mut UdtDefMap) {
     }
 }
 
-fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap<String, i32>) {
+fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut ModuleConstMap) {
     *index += 1;
     let mut next_value = 0i32;
 
@@ -2227,21 +2327,21 @@ fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap
         }
         if let Some((name, explicit)) = parse_enum_member(line) {
             let value = explicit.unwrap_or(next_value);
-            constants.insert(name, value);
+            constants.insert(name, BoundExpr::IntConst(value));
             next_value = value.saturating_add(1);
         }
         *index += 1;
     }
 }
 
-fn parse_const_declaration(line: &str) -> Option<(String, i32)> {
+fn parse_const_declaration(line: &str) -> Option<(String, BoundExpr)> {
     let trimmed = line.trim();
     let rhs = strip_keyword_prefix_ci(trimmed, "public const")
         .or_else(|| strip_keyword_prefix_ci(trimmed, "private const"))
         .or_else(|| strip_keyword_prefix_ci(trimmed, "const"))?;
     let (lhs, rhs_value) = rhs.split_once('=')?;
     let name = lhs.split_whitespace().next().and_then(normalize_ident)?;
-    let value = rhs_value.trim().parse::<i32>().ok()?;
+    let value = parse_expr(rhs_value.trim(), &HashMap::new())?;
     Some((name, value))
 }
 
@@ -2270,7 +2370,7 @@ fn parse_block(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     terminators: &[&str],
@@ -2731,6 +2831,18 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("kill ") {
+            if let Some(stmt) = parse_file_kill_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("print #") {
             if let Some(stmt) = parse_file_print_stmt(line, array_bounds) {
                 out.push(stmt);
@@ -2815,6 +2927,12 @@ fn parse_block(
             continue;
         }
 
+        if lower == "beep" {
+            out.push(BoundStmt::Beep);
+            *index += 1;
+            continue;
+        }
+
         if lower == "debug.print" || lower.starts_with("debug.print ") {
             if let Some(stmt) = parse_debug_print_stmt(line, array_bounds) {
                 out.push(stmt);
@@ -2853,7 +2971,7 @@ fn parse_if_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -3019,7 +3137,7 @@ fn parse_for_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -3080,7 +3198,7 @@ fn parse_for_each_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -3145,7 +3263,7 @@ fn parse_while_wend_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -3210,10 +3328,24 @@ fn parse_assign_or_unsupported(
         return stmt;
     }
 
-    if let Some((lhs_raw, rhs_raw)) = assignment_line.split_once('=')
+    if let Some((lhs_raw, rhs_raw)) = split_assignment_once_top_level(assignment_line)
+        && let Some((name, indices)) = parse_runtime_array_index_target(lhs_raw, array_bounds)
+        && let Some(expr) = parse_expr(rhs_raw, array_bounds)
+    {
+        return BoundStmt::AssignRuntimeArrayElement {
+            name,
+            indices,
+            expr,
+            intent: assignment_intent,
+        };
+    }
+
+    if let Some((lhs_raw, rhs_raw)) = split_assignment_once_top_level(assignment_line)
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
     {
+        let runtime_array_read = parse_runtime_array_index_expr(rhs_raw.trim(), array_bounds);
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
+            && runtime_array_read.is_none()
             && let Some((call_name, args)) =
                 parse_dispatch_invoke_call_invocation(rhs_raw.trim(), array_bounds)
         {
@@ -3225,6 +3357,7 @@ fn parse_assign_or_unsupported(
             };
         }
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
+            && runtime_array_read.is_none()
             && let Some((call_name, args)) = parse_call_invocation(rhs_raw.trim(), array_bounds)
             && !is_intrinsic_call_name(&call_name)
         {
@@ -3254,7 +3387,7 @@ fn parse_assign_or_unsupported(
             };
         }
 
-        if let Some(expr) = parse_expr(rhs_raw, array_bounds) {
+        if let Some(expr) = runtime_array_read.or_else(|| parse_expr(rhs_raw, array_bounds)) {
             if let BoundExpr::Var(source) = &expr
                 && let Some(fields) =
                     shared_udt_fields_for_assignment(&target, source, declarations, udt_defs)
@@ -3307,6 +3440,11 @@ fn parse_assign_or_unsupported(
         }
         return BoundStmt::Call { name, args };
     }
+    if !has_call_keyword
+        && let Some((name, args)) = parse_statement_call_invocation(call_token, array_bounds)
+    {
+        return BoundStmt::Call { name, args };
+    }
     if let Some(name) = normalize_ident(call_token).or_else(|| parse_member_reference(call_token)) {
         return BoundStmt::Call {
             name,
@@ -3317,6 +3455,33 @@ fn parse_assign_or_unsupported(
     BoundStmt::Unsupported {
         line: line.to_string(),
     }
+}
+
+fn split_assignment_once_top_level(line: &str) -> Option<(&str, &str)> {
+    let bytes = line.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch == '"' {
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '=' if depth == 0 => return Some((&line[..idx], &line[idx + 1..])),
+            _ => {}
+        }
+        idx += 1;
+    }
+    None
 }
 
 fn shared_udt_fields_for_assignment(
@@ -3506,6 +3671,39 @@ fn parse_dispatch_invoke_call_invocation(
     Some((name, args))
 }
 
+fn parse_statement_call_invocation(
+    text: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<(String, Vec<BoundCallArg>)> {
+    let trimmed = text.trim();
+    let split_at = trimmed.find(char::is_whitespace)?;
+    let name = normalize_ident(trimmed[..split_at].trim())
+        .or_else(|| parse_member_reference(trimmed[..split_at].trim()))?;
+    let args_raw = trimmed[split_at..].trim();
+    if args_raw.is_empty() {
+        return Some((name, Vec::new()));
+    }
+
+    let mut args = Vec::new();
+    for token in split_call_args(args_raw)? {
+        let trimmed = token.trim();
+        if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+            args.push(BoundCallArg {
+                name: Some(normalize_ident(lhs)?),
+                expr: parse_expr(rhs.trim(), array_bounds)?,
+                force_byval: false,
+            });
+        } else {
+            args.push(BoundCallArg {
+                name: None,
+                expr: parse_expr(trimmed, array_bounds)?,
+                force_byval: false,
+            });
+        }
+    }
+    Some((name, args))
+}
+
 fn parse_raiseevent_invocation(
     line: &str,
     array_bounds: &ArrayBoundsMap,
@@ -3580,7 +3778,7 @@ fn parse_do_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -3795,6 +3993,11 @@ fn parse_file_close_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
     })
 }
 
+fn parse_file_kill_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let path = parse_expr(line[5..].trim(), array_bounds)?;
+    Some(BoundStmt::FileKill { path })
+}
+
 /// Parse `Print #filenum, data`
 fn parse_file_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
     let after_print = line[7..].trim(); // skip "Print #"
@@ -3989,11 +4192,32 @@ fn parse_redim_stmt(
         payload = payload[9..].trim();
     }
     let Some((name, _, bounds)) = parse_array_declaration(payload, option_base) else {
+        if let Some(runtime_stmt) =
+            parse_runtime_redim_stmt(payload, preserve, declarations, array_bounds, option_base)
+        {
+            return Some(runtime_stmt);
+        }
         if let Some(detail) = describe_unsupported_redim_expression_bounds(payload) {
             return Some(BoundStmt::Unsupported { line: detail });
         }
         return None;
     };
+    if array_bounds
+        .get(&name)
+        .is_some_and(|existing_bounds| existing_bounds.is_empty())
+    {
+        return Some(BoundStmt::ReDimRuntime {
+            name,
+            bounds: bounds
+                .into_iter()
+                .map(|(lower_bound, upper_bound)| RuntimeArrayDimExpr {
+                    lower_bound,
+                    upper_bound: BoundExpr::IntConst(upper_bound),
+                })
+                .collect(),
+            preserve,
+        });
+    }
     let element_prefix = format!("{name}_");
     let element_ty = declaration_types
         .iter()
@@ -4026,6 +4250,55 @@ fn parse_redim_stmt(
     })
 }
 
+fn parse_runtime_redim_stmt(
+    payload: &str,
+    preserve: bool,
+    declarations: &[String],
+    array_bounds: &ArrayBoundsMap,
+    option_base: i32,
+) -> Option<BoundStmt> {
+    let open = payload.find('(')?;
+    let close = payload.rfind(')')?;
+    if close <= open || !payload[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let name = normalize_ident(payload[..open].trim())?;
+    if !declarations
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&name))
+    {
+        return None;
+    }
+    let raw_bounds = payload[open + 1..close].trim();
+    let dims = split_call_args(raw_bounds)?;
+    if dims.is_empty() {
+        return None;
+    }
+
+    Some(BoundStmt::ReDimRuntime {
+        name,
+        bounds: dims
+            .into_iter()
+            .map(|dim| {
+                let dim = dim.trim();
+                let (lower_bound, upper_raw) = if let Some((lhs, rhs)) = split_keyword_ci(dim, "to")
+                {
+                    let lower = lhs.trim().parse::<i32>().ok()?;
+                    (lower, rhs.trim())
+                } else {
+                    (option_base, dim)
+                };
+                let upper_bound = parse_expr(upper_raw, array_bounds)?;
+                Some(RuntimeArrayDimExpr {
+                    lower_bound,
+                    upper_bound,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        preserve,
+    })
+}
+
 fn describe_unsupported_redim_expression_bounds(payload: &str) -> Option<String> {
     let open = payload.find('(')?;
     let close = payload.rfind(')')?;
@@ -4054,7 +4327,7 @@ fn parse_select_case_stmt(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
     line: &str,
@@ -4112,7 +4385,7 @@ fn parse_select_case_stmt(
 
         if lower.starts_with("case ") {
             let values_raw = current[5..].trim();
-            let Some(values) = parse_case_clauses(values_raw) else {
+            let Some(values) = parse_case_clauses(values_raw, module_constants) else {
                 return BoundStmt::Unsupported {
                     line: line.to_string(),
                 };
@@ -4149,11 +4422,14 @@ fn parse_select_case_stmt(
     }
 }
 
-fn parse_case_clauses(values_raw: &str) -> Option<Vec<BoundCaseClause>> {
+fn parse_case_clauses(
+    values_raw: &str,
+    module_constants: &ModuleConstMap,
+) -> Option<Vec<BoundCaseClause>> {
     let tokens = split_call_args(values_raw)?;
     let mut out = Vec::new();
     for token in tokens {
-        let clause = parse_case_clause(token.trim())?;
+        let clause = parse_case_clause(token.trim(), module_constants)?;
         out.push(clause);
     }
     if out.is_empty() {
@@ -4162,26 +4438,27 @@ fn parse_case_clauses(values_raw: &str) -> Option<Vec<BoundCaseClause>> {
     Some(out)
 }
 
-fn parse_case_clause(token: &str) -> Option<BoundCaseClause> {
+fn parse_case_clause(token: &str, module_constants: &ModuleConstMap) -> Option<BoundCaseClause> {
+    let token = token.trim().trim_end_matches(':').trim();
     if token.is_empty() {
         return None;
     }
 
     let lower = token.to_ascii_lowercase();
     if lower.starts_with("is ") {
-        return parse_case_is_clause(token[3..].trim());
+        return parse_case_is_clause(token[3..].trim(), module_constants);
     }
 
     if let Some((start_raw, end_raw)) = split_keyword_ci(token, "to") {
-        let start = start_raw.trim().parse::<i32>().ok()?;
-        let end = end_raw.trim().parse::<i32>().ok()?;
+        let start = parse_case_i32_value(start_raw.trim(), module_constants)?;
+        let end = parse_case_i32_value(end_raw.trim(), module_constants)?;
         return Some(BoundCaseClause::Range { start, end });
     }
 
-    token.parse::<i32>().ok().map(BoundCaseClause::Value)
+    parse_case_i32_value(token, module_constants).map(BoundCaseClause::Value)
 }
 
-fn parse_case_is_clause(token: &str) -> Option<BoundCaseClause> {
+fn parse_case_is_clause(token: &str, module_constants: &ModuleConstMap) -> Option<BoundCaseClause> {
     let pairs = [
         ("<>", CompareOp::Ne),
         ("<=", CompareOp::Le),
@@ -4192,11 +4469,30 @@ fn parse_case_is_clause(token: &str) -> Option<BoundCaseClause> {
     ];
     for (op_text, op) in pairs {
         if let Some(rest) = token.strip_prefix(op_text) {
-            let value = rest.trim().parse::<i32>().ok()?;
+            let value = parse_case_i32_value(rest.trim(), module_constants)?;
             return Some(BoundCaseClause::Is { op, value });
         }
     }
     None
+}
+
+fn parse_case_i32_value(token: &str, module_constants: &ModuleConstMap) -> Option<i32> {
+    if let Ok(value) = token.parse::<i32>() {
+        return Some(value);
+    }
+    let name = normalize_ident(token)?;
+    let expr = module_constants.get(&name)?;
+    match expr {
+        BoundExpr::IntConst(value) => Some(*value),
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => match operand.as_ref() {
+            BoundExpr::IntConst(value) => Some(value.saturating_neg()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Scan right-to-left at paren depth 0, quote-aware, to find the operator
@@ -4296,7 +4592,10 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
                     let mod_candidate = Some((ArithOp::Mod, i));
                     if let Some((op, _)) = mod_candidate {
                         let p = precedence(op);
-                        if best.is_none_or(|(b_op, _)| p <= precedence(b_op)) {
+                        // We scan right-to-left. On equal precedence we keep the
+                        // first match we saw, which is the rightmost operator, so
+                        // `a - b + 1` parses as `(a - b) + 1`.
+                        if best.is_none_or(|(b_op, _)| p < precedence(b_op)) {
                             best = mod_candidate;
                         }
                     }
@@ -4307,7 +4606,10 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
 
         if let Some((op, _)) = candidate {
             let p = precedence(op);
-            if best.is_none_or(|(b_op, _)| p <= precedence(b_op)) {
+            // Same-precedence operators are left-associative; because we scan
+            // right-to-left, keeping the first equal-precedence match preserves
+            // the rightmost split point.
+            if best.is_none_or(|(b_op, _)| p < precedence(b_op)) {
                 best = candidate;
             }
         }
@@ -4402,11 +4704,13 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
             // If we close all parens before the end, these aren't wrapping parens
             let _ = idx;
         }
-        if balanced
-            && depth == 0
-            && let Some(parsed) = parse_expr(inner, array_bounds)
-        {
-            return Some(parsed);
+        if balanced && depth == 0 {
+            if let Some(parsed) = parse_expr(inner, array_bounds) {
+                return Some(parsed);
+            }
+            if let Some(parsed) = parse_compare_expr(inner, array_bounds) {
+                return Some(parsed);
+            }
         }
     }
 
@@ -4416,11 +4720,17 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if let Some(call) = parse_stdlib_intrinsic_call_expr(expr, array_bounds) {
         return Some(call);
     }
+    if let Some(array_index) = parse_runtime_array_index_expr(expr, array_bounds) {
+        return Some(array_index);
+    }
     if parse_reference_name(expr, array_bounds).is_none()
         && let Some((name, args)) = parse_call_invocation(expr, array_bounds)
         && !is_intrinsic_call_name(&name)
     {
         return Some(BoundExpr::ProcCall { name, args });
+    }
+    if let Some(compare) = parse_compare_expr(expr, array_bounds) {
+        return Some(compare);
     }
 
     if let Some((op, split_pos)) = split_at_lowest_precedence_op(expr) {
@@ -4468,6 +4778,139 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
 }
 
+fn parse_compare_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    if let Some((lhs_raw, rhs_raw)) = split_compare_keyword_top_level(expr, "like") {
+        let lhs = parse_expr(lhs_raw, array_bounds)?;
+        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        return Some(BoundExpr::CompareOp {
+            op: CompareOp::Like,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        });
+    }
+    let (op, pos, width) = split_compare_operator_top_level(expr)?;
+    let lhs = parse_expr(expr[..pos].trim(), array_bounds)?;
+    let rhs = parse_expr(expr[pos + width..].trim(), array_bounds)?;
+    Some(BoundExpr::CompareOp {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    })
+}
+
+fn split_compare_keyword_top_level<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let bytes = text.as_bytes();
+    let keyword_len = keyword.len();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut idx = 0usize;
+    while idx + keyword_len <= bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch == '"' {
+            if in_string && idx + 1 < bytes.len() && bytes[idx + 1] == b'"' {
+                idx += 2;
+                continue;
+            }
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        if depth == 0
+            && lower[idx..].starts_with(keyword)
+            && is_keyword_boundary(text, idx.saturating_sub(1))
+            && is_keyword_boundary(text, idx + keyword_len)
+        {
+            let lhs = text[..idx].trim();
+            let rhs = text[idx + keyword_len..].trim();
+            if !lhs.is_empty() && !rhs.is_empty() {
+                return Some((lhs, rhs));
+            }
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn is_keyword_boundary(text: &str, index: usize) -> bool {
+    if index >= text.len() {
+        return true;
+    }
+    !text.as_bytes()[index].is_ascii_alphanumeric() && text.as_bytes()[index] != b'_'
+}
+
+fn split_compare_operator_top_level(text: &str) -> Option<(CompareOp, usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch == '"' {
+            if in_string && idx + 1 < bytes.len() && bytes[idx + 1] == b'"' {
+                idx += 2;
+                continue;
+            }
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => {
+                depth += 1;
+                idx += 1;
+                continue;
+            }
+            ')' => {
+                depth -= 1;
+                idx += 1;
+                continue;
+            }
+            _ => {}
+        }
+        if depth == 0 {
+            let tail = &text[idx..];
+            let candidate = if tail.starts_with("<>") {
+                Some((CompareOp::Ne, 2))
+            } else if tail.starts_with("<=") {
+                Some((CompareOp::Le, 2))
+            } else if tail.starts_with(">=") {
+                Some((CompareOp::Ge, 2))
+            } else if tail.starts_with("=") {
+                Some((CompareOp::Eq, 1))
+            } else if tail.starts_with("<") {
+                Some((CompareOp::Lt, 1))
+            } else if tail.starts_with(">") {
+                Some((CompareOp::Gt, 1))
+            } else {
+                None
+            };
+            if let Some((op, width)) = candidate {
+                let lhs = text[..idx].trim();
+                let rhs = text[idx + width..].trim();
+                if !lhs.is_empty() && !rhs.is_empty() {
+                    return Some((op, idx, width));
+                }
+            }
+        }
+        idx += 1;
+    }
+    None
+}
+
 fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let open = expr.find('(')?;
     let close = expr.rfind(')')?;
@@ -4494,7 +4937,7 @@ fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) ->
         return None;
     }
     let inner = parse_expr(expr[open + 1..close].trim(), array_bounds)?;
-    if matches!(name.as_str(), "cverr" | "cstr" | "str" | "val") {
+    if matches!(name.as_str(), "cverr" | "cstr" | "str" | "val" | "cdate") {
         return Some(BoundExpr::IntrinsicCall {
             name,
             args: vec![inner],
@@ -4577,9 +5020,8 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "npv" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
         "__oxvba_array_append" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
-        "shell" | "environ" | "dir" | "createobject" => {
-            Some(IntrinsicSpec::fixed(1, HostSensitive))
-        }
+        "shell" | "environ" | "createobject" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
+        "dir" => Some(IntrinsicSpec::range(0, 1, HostSensitive)),
         "dispatchinvoke" => Some(IntrinsicSpec::range(2, usize::MAX, HostSensitive)),
         "__oxvba_com_subscribe_event" => Some(IntrinsicSpec::fixed(2, HostSensitive)),
         "__oxvba_com_unsubscribe_event" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
@@ -4601,14 +5043,18 @@ fn parse_stdlib_intrinsic_call_expr(
 ) -> Option<BoundExpr> {
     let open = expr.find('(')?;
     let close = expr.rfind(')')?;
-    if close <= open || !expr[close + 1..].trim().is_empty() {
+    if close < open || !expr[close + 1..].trim().is_empty() {
         return None;
     }
     let name = normalize_ident(expr[..open].trim())?;
     let spec = intrinsic_spec(name.as_str())?;
 
     let args_raw = expr[open + 1..close].trim();
-    let args_text = split_call_args(args_raw)?;
+    let args_text = if args_raw.is_empty() {
+        Vec::new()
+    } else {
+        split_call_args(args_raw)?
+    };
     let args = match name.as_str() {
         "createobject" => args_text
             .iter()
@@ -4639,7 +5085,46 @@ fn parse_varptr_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExp
     parse_expr(arg, array_bounds)
 }
 
-fn parse_array_element_base_for_varptr(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
+fn parse_runtime_array_index_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    let (base, indices) = parse_runtime_array_index_target(expr, array_bounds)?;
+    let mut args = Vec::with_capacity(indices.len() + 1);
+    args.push(BoundExpr::Var(base));
+    args.extend(indices);
+    Some(BoundExpr::IntrinsicCall {
+        name: "__oxvba_array_get".to_string(),
+        args,
+    })
+}
+
+fn parse_runtime_array_index_target(
+    expr: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<(String, Vec<BoundExpr>)> {
+    let open = expr.find('(')?;
+    let close = expr.rfind(')')?;
+    if close <= open || !expr[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let base = normalize_ident(expr[..open].trim())?;
+    let bounds = array_bounds.get(&base)?;
+    if !bounds.is_empty() {
+        return None;
+    }
+    let args = split_call_args(expr[open + 1..close].trim())?;
+    if args.is_empty() {
+        return None;
+    }
+    let indices = args
+        .into_iter()
+        .map(|arg| parse_expr(arg, array_bounds))
+        .collect::<Option<Vec<_>>>()?;
+    Some((base, indices))
+}
+
+fn parse_array_element_base_for_varptr(
+    token: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<String> {
     let open = token.find('(')?;
     let close = token.rfind(')')?;
     if close <= open || !token[close + 1..].trim().is_empty() {
@@ -4743,7 +5228,24 @@ fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
     let mut out = Vec::new();
     let mut depth = 0i32;
     let mut start = 0usize;
-    for (idx, ch) in args_raw.char_indices() {
+    let bytes = args_raw.as_bytes();
+    let mut idx = 0usize;
+    let mut in_string = false;
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch == '"' {
+            if in_string && idx + 1 < bytes.len() && bytes[idx + 1] == b'"' {
+                idx += 2;
+                continue;
+            }
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
         match ch {
             '(' => depth += 1,
             ')' => {
@@ -4762,8 +5264,9 @@ fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
             }
             _ => {}
         }
+        idx += 1;
     }
-    if depth != 0 {
+    if depth != 0 || in_string {
         return None;
     }
     let tail = args_raw[start..].trim();
@@ -4955,6 +5458,8 @@ fn parse_declaration_remainder(
             duplicate_declarations.push(base);
             return;
         };
+        declarations.push(base.clone());
+        declaration_types.insert(base.clone(), BoundType::Array);
         for idx in 0..element_count {
             let alias = format!("{base}_{idx}");
             if !declarations
@@ -5249,6 +5754,31 @@ fn split_type_char(token: &str) -> (&str, Option<BoundType>) {
     (&token[..cutoff], Some(ty))
 }
 
+fn find_matching_paren(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    for (idx, ch) in text[open..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_declared_or_array_type(token: &str) -> Option<BoundType> {
+    let trimmed = token.trim();
+    if trimmed.ends_with("()") {
+        return Some(BoundType::Array);
+    }
+    parse_declared_type(trimmed)
+}
+
 fn type_declaration_char(ch: char) -> Option<BoundType> {
     match ch {
         '%' => Some(BoundType::Integer),
@@ -5434,6 +5964,9 @@ fn collect_redim_targets(stmts: &[BoundStmt], targets: &mut HashSet<String>) {
             BoundStmt::ReDim { name, .. } => {
                 targets.insert(name.clone());
             }
+            BoundStmt::ReDimRuntime { name, .. } => {
+                targets.insert(name.clone());
+            }
             BoundStmt::IfCond {
                 then_body,
                 else_body,
@@ -5542,7 +6075,7 @@ fn parse_if_tail(
     option_base: i32,
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
-    module_constants: &HashMap<String, i32>,
+    module_constants: &ModuleConstMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> Option<Vec<BoundStmt>> {
@@ -5899,6 +6432,19 @@ mod tests {
     }
 
     #[test]
+    fn resolve_dir_continuation_intrinsic_call_expression() {
+        let source = "Sub Main()\nDim x\nx = Dir()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "dir" && args.is_empty()
+        ));
+    }
+
+    #[test]
     fn resolve_stdlib_dollar_suffix_intrinsic_call_expression() {
         let source = "Sub Main()\nDim x\nx = Left$(1234, 2)\nEnd Sub";
         let module = resolve_symbols(source);
@@ -6247,6 +6793,34 @@ mod tests {
     }
 
     #[test]
+    fn resolve_runtime_redim_expression_bounds_on_dynamic_array() {
+        let source =
+            "Sub Main()\nDim length As Long\nDim buf() As Byte\nReDim buf(length - 1)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let stmt = module
+            .body
+            .iter()
+            .find(|s| matches!(s, BoundStmt::ReDimRuntime { .. }))
+            .expect("runtime redim statement expected");
+        let BoundStmt::ReDimRuntime {
+            name,
+            preserve,
+            bounds,
+        } = stmt
+        else {
+            panic!("expected runtime redim statement");
+        };
+        assert_eq!(name, "buf");
+        assert!(!preserve);
+        assert_eq!(bounds.len(), 1);
+        assert_eq!(bounds[0].lower_bound, 0);
+        assert!(matches!(
+            bounds[0].upper_bound,
+            BoundExpr::SubConst { ref var, delta } if var == "length" && delta == 1
+        ));
+    }
+
+    #[test]
     fn resolve_option_base_one_applies_to_array_declaration_bounds() {
         let source = "Option Base 1\nSub Main()\nDim a(3)\na(1) = 7\na(3) = 9\nEnd Sub";
         let module = resolve_symbols(source);
@@ -6488,6 +7062,56 @@ mod tests {
     }
 
     #[test]
+    fn resolve_statement_level_call_without_parentheses_preserves_arguments() {
+        let source = "Sub Main()\nDim ptr\nDim length\nDim buf() As Byte\nRtlMoveMemory VarPtr(buf(0)), ptr, length\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+            panic!("expected call statement");
+        };
+        assert_eq!(name, "rtlmovememory");
+        assert_eq!(args.len(), 3);
+        assert!(matches!(
+            &args[0].expr,
+            BoundExpr::IntrinsicCall { name, .. } if name == "varptr"
+        ));
+        assert!(matches!(&args[1].expr, BoundExpr::Var(var) if var == "ptr"));
+        assert!(matches!(&args[2].expr, BoundExpr::Var(var) if var == "length"));
+    }
+
+    #[test]
+    fn resolve_fixture_shaped_demo_module_keeps_later_testversion_procedure_visible() {
+        let source = "Option Explicit\nDim TestFile As String\nPublic Sub AllTests()\nDim InitReturn As Long\n#If Win64 Then\nInitReturn = SQLite3Initialize(ThisWorkbook.Path + \"\\\\x64\")\n#Else\nInitReturn = SQLite3Initialize\n#End If\nIf InitReturn <> SQLITE_INIT_OK Then\nDebug.Print \"Error Initializing SQLite. Error: \" & Err.LastDllError\nExit Sub\nEnd If\nTestVersion\nEnd Sub\nPublic Sub TestVersion()\nDebug.Print SQLite3LibVersion()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let names = module
+            .procedures
+            .iter()
+            .map(|proc| proc.name.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            names.iter().any(|name| name == "alltests"),
+            "expected alltests procedure, got {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name == "testversion"),
+            "expected testversion procedure, got {names:?}"
+        );
+    }
+
+    #[test]
+    fn normalize_source_lines_strips_inline_apostrophe_comments() {
+        let lines = super::normalize_source_lines(
+            "Sub Main()\nvalue = String(3, \"*\") ' trailing comment\nmessage = \"don't strip\"\nEnd Sub",
+        );
+        assert!(lines.iter().any(|line| line == "value = String(3, \"*\")"));
+        assert!(lines.iter().any(|line| line == "message = \"don't strip\""));
+    }
+
+    #[test]
     fn resolve_module_const_injects_const_prelude() {
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let module = resolve_symbols(source);
@@ -6700,6 +7324,92 @@ mod tests {
     }
 
     #[test]
+    fn resolve_runtime_redim_preserve_expression_bounds_on_dynamic_array() {
+        let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nReDim Preserve buf(length)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::ReDimRuntime {
+                name,
+                preserve: true,
+                ..
+            } if name == "buf"
+        )));
+    }
+
+    #[test]
+    fn resolve_literal_redim_on_dynamic_array_keeps_runtime_array_model() {
+        let source = "Sub Main()\nDim buf() As Byte\nReDim buf(2)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::ReDimRuntime {
+                name,
+                bounds,
+                preserve: false,
+            } if name == "buf"
+                && bounds.len() == 1
+                && bounds[0].lower_bound == 0
+                && matches!(bounds[0].upper_bound, BoundExpr::IntConst(2))
+        )));
+    }
+
+    #[test]
+    fn resolve_runtime_array_index_assignment_target() {
+        let source = "Sub Main()\nDim buf() As Byte\nDim length As Long\nlength = 1\nReDim buf(length)\nbuf(1) = 7\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::AssignRuntimeArrayElement {
+                name,
+                indices,
+                expr: BoundExpr::IntConst(7),
+                ..
+            } if name == "buf"
+                && matches!(indices.as_slice(), [BoundExpr::IntConst(1)])
+        )));
+    }
+
+    #[test]
+    fn resolve_runtime_multidim_redim_keeps_runtime_array_model() {
+        let source = "Sub Main()\nDim buf() As Byte\nReDim buf(1 To 2, 3 To 4)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::ReDimRuntime {
+                name,
+                bounds,
+                preserve: false,
+            } if name == "buf"
+                && bounds.len() == 2
+                && bounds[0].lower_bound == 1
+                && matches!(bounds[0].upper_bound, BoundExpr::IntConst(2))
+                && bounds[1].lower_bound == 3
+                && matches!(bounds[1].upper_bound, BoundExpr::IntConst(4))
+        )));
+    }
+
+    #[test]
+    fn resolve_runtime_multidim_array_index_assignment_target() {
+        let source =
+            "Sub Main()\nDim buf() As Byte\nReDim buf(1 To 2, 1 To 2)\nbuf(2, 1) = 7\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::AssignRuntimeArrayElement {
+                name,
+                indices,
+                expr: BoundExpr::IntConst(7),
+                ..
+            } if name == "buf"
+                && matches!(
+                    indices.as_slice(),
+                    [BoundExpr::IntConst(2), BoundExpr::IntConst(1)]
+                )
+        )));
+    }
+
+    #[test]
     fn resolve_on_error_resume_next_and_error_stmt() {
         let source = "Sub Main()\nOn Error Resume Next\nError 5\nEnd Sub";
         let module = resolve_symbols(source);
@@ -6803,6 +7513,177 @@ mod tests {
     }
 
     #[test]
+    fn resolve_select_case_accepts_module_constants_and_trailing_colons() {
+        let source = concat!(
+            "Public Const SQLITE_INTEGER = 1\n",
+            "Sub Main()\n",
+            "Dim x\n",
+            "Select Case x\n",
+            "Case SQLITE_INTEGER:\n",
+            "x = 1\n",
+            "End Select\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::SelectCase { arms, .. }) = module
+            .body
+            .iter()
+            .find(|stmt| matches!(stmt, BoundStmt::SelectCase { .. }))
+        else {
+            panic!("expected select-case statement");
+        };
+        assert!(matches!(arms[0].0[0], super::BoundCaseClause::Value(1)));
+    }
+
+    #[test]
+    fn resolve_assignment_from_call_ignores_equals_inside_sql_string_literals() {
+        let source = concat!(
+            "Sub Main()\n",
+            "Dim RetVal As Long\n",
+            "Dim myDbHandle As Long\n",
+            "Dim myStmtHandle As Long\n",
+            "RetVal = SQLite3PrepareV2(myDbHandle, \"SELECT * FROM MyTable WHERE TheDate <= @FindThisDate\", myStmtHandle)\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::AssignFromCall { name, .. }) = module
+            .body
+            .iter()
+            .find(|stmt| matches!(stmt, BoundStmt::AssignFromCall { .. }))
+        else {
+            panic!("expected assign-from-call statement");
+        };
+        assert_eq!(name, "sqlite3preparev2");
+    }
+
+    #[test]
+    fn resolve_assignment_from_call_ignores_commas_inside_sql_string_literals() {
+        let source = concat!(
+            "Sub Main()\n",
+            "Dim RetVal As Long\n",
+            "Dim myDbHandle As Long\n",
+            "Dim myStmtHandle As Long\n",
+            "RetVal = SQLite3PrepareV2(myDbHandle, \"SELECT TheId, datetime(TheDate), TheText FROM MyTable\", myStmtHandle)\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::AssignFromCall { name, args, .. }) = module
+            .body
+            .iter()
+            .find(|stmt| matches!(stmt, BoundStmt::AssignFromCall { .. }))
+        else {
+            panic!("expected assign-from-call statement");
+        };
+        assert_eq!(name, "sqlite3preparev2");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn resolve_parenthesized_compare_expression_as_value_without_breaking_named_args() {
+        let source = concat!(
+            "Sub Main()\n",
+            "Dim result\n",
+            "result = \"same: \" & (1 = 1)\n",
+            "Call Fill(value := 9)\n",
+            "End Sub\n",
+            "Sub Fill(Optional ByVal value = 7)\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::Assign { expr, .. }
+            if matches!(
+                expr,
+                BoundExpr::BinaryOp {
+                    op: ArithOp::Concat,
+                    rhs,
+                    ..
+                } if matches!(rhs.as_ref(), BoundExpr::CompareOp { op: CompareOp::Eq, .. })
+            )
+        )));
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::Call { name, args }
+            if name == "fill" && args.len() == 1 && args[0].name.as_deref() == Some("value")
+        )));
+    }
+
+    #[test]
+    fn resolve_proc_signature_accepts_regular_array_parameter_shape() {
+        let source = concat!(
+            "Public Function BindBlob(ByVal stmtHandle As LongPtr, ByRef Value() As Byte) As Long\n",
+            "BindBlob = 0\n",
+            "End Function\n",
+        );
+        let module = resolve_symbols(source);
+        let proc = module
+            .procedures
+            .iter()
+            .find(|proc| proc.name == "bindblob")
+            .expect("array-parameter function should be resolved");
+        assert_eq!(proc.params.len(), 2);
+        assert_eq!(proc.params[1].name, "value");
+        assert_eq!(proc.params[1].ty, super::BoundType::Array);
+        assert!(proc.params[1].by_ref);
+    }
+
+    #[test]
+    fn resolve_fixed_array_declaration_keeps_base_symbol_for_whole_array_passing() {
+        let source = concat!(
+            "Sub Main()\n",
+            "Dim myBlob(2) As Byte\n",
+            "myBlob(0) = 90\n",
+            "Call UseBlob(myBlob)\n",
+            "End Sub\n",
+            "Sub UseBlob(ByRef value() As Byte)\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|name| name == "myblob"));
+        assert_eq!(
+            module.declaration_types.get("myblob"),
+            Some(&super::BoundType::Array)
+        );
+    }
+
+    #[test]
+    fn parse_runtime_array_index_expr_prefers_array_read_over_proc_call() {
+        let source = concat!(
+            "Sub Main()\n",
+            "Dim buf() As Byte\n",
+            "Dim length As Long\n",
+            "Dim value As Long\n",
+            "length = 2\n",
+            "ReDim buf(length)\n",
+            "value = buf(0)\n",
+            "End Sub\n",
+        );
+        let module = resolve_symbols(source);
+        let proc = module
+            .procedures
+            .iter()
+            .find(|proc| proc.name == "main")
+            .expect("main procedure expected");
+        let Some(BoundStmt::Assign { expr, .. }) = proc
+            .body
+            .iter()
+            .find(|stmt| matches!(stmt, BoundStmt::Assign { target, .. } if target == "value"))
+        else {
+            panic!("expected value assignment");
+        };
+        assert!(
+            matches!(
+                expr,
+                BoundExpr::IntrinsicCall { name, args }
+                    if name == "__oxvba_array_get"
+                        && matches!(args.first(), Some(BoundExpr::Var(name)) if name == "buf")
+            ),
+            "expr lowered as {expr:?}"
+        );
+    }
+
+    #[test]
     fn resolve_goto_numeric_target_uses_line_label_key() {
         let source = "Sub Main()\nGoTo 100\n100:\nEnd Sub";
         let module = resolve_symbols(source);
@@ -6887,7 +7768,7 @@ mod tests {
             .get("hostping")
             .expect("external declaration should be registered");
         assert_eq!(ext.library, "host");
-        assert_eq!(ext.alias, "ping");
+        assert_eq!(ext.alias, "Ping");
         assert!(ext.ptr_safe);
         assert!(!ext.ordinal_alias);
         assert!(module.resolution_diagnostics.is_empty());
@@ -6902,7 +7783,7 @@ mod tests {
             .get("hostping")
             .expect("private external declaration should be registered");
         assert_eq!(ext.library, "host");
-        assert_eq!(ext.alias, "ping");
+        assert_eq!(ext.alias, "Ping");
         assert!(ext.ptr_safe);
         assert!(!ext.ordinal_alias);
         assert!(module.resolution_diagnostics.is_empty());
@@ -7050,6 +7931,32 @@ mod tests {
                 ));
             }
             other => panic!("expected BinaryOp::Add, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_expr_add_sub_is_left_associative() {
+        let source = "Sub Main()\nDim a\nDim b\nDim x\nx = a - b + 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        match expr {
+            BoundExpr::BinaryOp {
+                op: ArithOp::Add,
+                lhs,
+                rhs,
+            } => {
+                assert!(matches!(rhs.as_ref(), BoundExpr::IntConst(1)));
+                assert!(matches!(
+                    lhs.as_ref(),
+                    BoundExpr::BinaryOp {
+                        op: ArithOp::Sub,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected left-associative add/sub tree, got {:?}", other),
         }
     }
 

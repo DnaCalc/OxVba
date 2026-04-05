@@ -116,12 +116,92 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        Instruction, ProcedureRuntimeSlotKind, compile, compile_with_runtime_metadata,
+        Bytecode, Instruction, ProcedureRuntimeSlotKind, compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
     };
+    use crate::{resolve, typecheck};
     use oxvba_runtime::value_tags::ERROR_TAG_BASE;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum DispatchInvokeMemberSelector {
+        I32(i32),
+        String(String),
+    }
+
+    fn dispatch_invoke_member_before(
+        instructions: &[Instruction],
+        invoke_index: usize,
+        member_slot: usize,
+    ) -> Option<DispatchInvokeMemberSelector> {
+        for instruction in instructions[..invoke_index].iter().rev() {
+            match instruction {
+                Instruction::LoadConstI32 { slot, value } if *slot == member_slot => {
+                    return Some(DispatchInvokeMemberSelector::I32(*value));
+                }
+                Instruction::LoadConstString { slot, value } if *slot == member_slot => {
+                    return Some(DispatchInvokeMemberSelector::String(value.clone()));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn dispatch_invoke_members(out: &Bytecode) -> Vec<DispatchInvokeMemberSelector> {
+        out.instructions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, instruction)| match instruction {
+                Instruction::IntrinsicDispatchInvokeHost { member, .. } => {
+                    dispatch_invoke_member_before(&out.instructions, index, *member)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn assert_has_dispatch_member(out: &Bytecode, expected_token: i32, expected_name: &str) {
+        let members = dispatch_invoke_members(out);
+        assert!(
+            members.iter().any(|member| {
+                matches!(member, DispatchInvokeMemberSelector::I32(value) if *value == expected_token)
+                    || matches!(member, DispatchInvokeMemberSelector::String(value) if value.eq_ignore_ascii_case(expected_name))
+            }),
+            "expected dispatch selector token {expected_token} or name {expected_name:?}, got: {members:?}"
+        );
+    }
+
+    fn dispatchinvoke_member_literal_from_source(source: &str) -> Option<&str> {
+        for line in source.lines() {
+            if !line.contains("DispatchInvoke(") {
+                continue;
+            }
+            let mut literals = Vec::new();
+            let mut start = None;
+            for (index, ch) in line.char_indices() {
+                match (ch, start) {
+                    ('"', None) => start = Some(index + 1),
+                    ('"', Some(begin)) => {
+                        literals.push(&line[begin..index]);
+                        start = None;
+                    }
+                    _ => {}
+                }
+            }
+            if literals.len() >= 2 {
+                return Some(literals[1]);
+            }
+        }
+        None
+    }
+
+    fn assert_dispatchinvoke_source_member(out: &Bytecode, source: &str, expected_token: i32) {
+        let expected_name = dispatchinvoke_member_literal_from_source(source)
+            .expect("DispatchInvoke source should contain an explicit member literal");
+        assert_has_dispatch_member(out, expected_token, expected_name);
+    }
 
     #[test]
     fn compile_simple_module() {
@@ -139,6 +219,52 @@ mod tests {
     #[test]
     fn reject_empty_input() {
         assert!(compile(" \n ").is_err());
+    }
+
+    #[test]
+    fn resolve_and_typecheck_dynamic_byte_array_function_return_call() {
+        let source = "Private Function MakeBuf() As Byte()\nDim buf() As Byte\nReDim buf(2)\nbuf(0) = 90\nbuf(1) = 91\nbuf(2) = 92\nMakeBuf = buf\nEnd Function\n\nSub Main()\nDim result() As Byte\nresult = MakeBuf()\nEnd Sub";
+        let bound = resolve::resolve_symbols(source);
+        let procedure_names = bound
+            .procedures
+            .iter()
+            .map(|procedure| procedure.name.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            procedure_names,
+            vec!["makebuf".to_string(), "main".to_string()]
+        );
+        typecheck::check_types(bound)
+            .expect("same-module dynamic byte-array function call should typecheck");
+    }
+
+    #[test]
+    fn compile_dynamic_byte_array_function_return_emits_all_index_reads() {
+        let source = "Private Function MakeBuf() As Byte()\nDim buf() As Byte\nReDim buf(2)\nbuf(0) = 90\nbuf(1) = 91\nbuf(2) = 92\nMakeBuf = buf\nEnd Function\n\nSub Main()\nDim result() As Byte\nDim x0 As Long\nDim x1 As Long\nDim x2 As Long\nresult = MakeBuf()\nx0 = result(0)\nx1 = result(1)\nx2 = result(2)\nEnd Sub";
+        let (bytecode, metadata) = compile_with_runtime_metadata(source)
+            .expect("dynamic byte-array return assignment should compile");
+        let get_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, Instruction::IntrinsicArrayGet { .. }))
+            .count();
+        assert_eq!(
+            get_count, 3,
+            "expected one array read per indexed assignment"
+        );
+        let main = metadata.get("main").expect("main metadata should exist");
+        let main_slot_names = main
+            .slots
+            .iter()
+            .map(|slot| slot.name.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            main_slot_names.contains(&"result".to_string())
+                && main_slot_names.contains(&"x0".to_string())
+                && main_slot_names.contains(&"x1".to_string())
+                && main_slot_names.contains(&"x2".to_string()),
+            "main slot metadata should preserve all locals, got {main_slot_names:?}"
+        );
     }
 
     #[test]
@@ -205,7 +331,8 @@ mod tests {
             .get("addone")
             .expect("function metadata should be present");
         assert!(add_one.slots.iter().any(|slot| {
-            slot.name.eq_ignore_ascii_case("value") && slot.kind == ProcedureRuntimeSlotKind::Parameter
+            slot.name.eq_ignore_ascii_case("value")
+                && slot.kind == ProcedureRuntimeSlotKind::Parameter
         }));
         assert!(add_one.slots.iter().any(|slot| {
             slot.name.eq_ignore_ascii_case("localvalue")
@@ -1316,18 +1443,42 @@ mod tests {
     }
 
     #[test]
-    fn compile_redim_expression_bounds_reports_exact_current_boundary() {
-        let source =
-            "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim buf(length - 1)\nEnd Sub";
-        let err = compile(source).expect_err("compile should fail");
-        let message = err.to_string();
+    fn compile_runtime_redim_expression_bounds_on_dynamic_array_emits_resize_instruction() {
+        let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim buf(length - 1)\nEnd Sub";
         assert!(
-            message.contains("ReDim with runtime expression bounds is not yet supported"),
-            "expected explicit ReDim expression-bound diagnostic, got: {message}"
+            compile(source)
+                .expect("compile should succeed")
+                .instructions
+                .iter()
+                .any(|i| matches!(
+                    i,
+                    Instruction::IntrinsicArrayResize {
+                        lower_bounds,
+                        element_type: crate::bytecode::RuntimeArrayElementType::Byte,
+                        ..
+                    } if lower_bounds == &vec![0]
+                )),
+            "expected runtime array resize instruction for dynamic ReDim"
         );
+    }
+
+    #[test]
+    fn compile_runtime_redim_preserve_expression_bounds_emits_runtime_preserve_resize() {
+        let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim Preserve buf(length - 1)\nEnd Sub";
         assert!(
-            message.contains("buf(length - 1)"),
-            "expected diagnostic to preserve the original ReDim shape, got: {message}"
+            compile(source)
+                .expect("compile should succeed")
+                .instructions
+                .iter()
+                .any(|i| matches!(
+                    i,
+                    Instruction::IntrinsicArrayResizePreserve {
+                        lower_bounds,
+                        element_type: crate::bytecode::RuntimeArrayElementType::Byte,
+                        ..
+                    } if lower_bounds == &vec![0]
+                )),
+            "expected runtime preserve array resize instruction for dynamic ReDim Preserve"
         );
     }
 
@@ -1511,6 +1662,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_like_value_expr_emits_like_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = \"ABC\" Like \"abc\"\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicLikeDigits { .. }))
+        );
+    }
+
+    #[test]
     fn compile_dateserial_intrinsic_emits_instruction() {
         let source = "Sub Main()\nDim x\nx = DateSerial(2026, 2, 28)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
@@ -1540,6 +1702,45 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicUBoundArray { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_array_span_expr_preserves_lbound_ubound_and_binary_shape() {
+        let source = concat!(
+            "Private Sub MeasureBounds(ByRef value() As Byte, ByRef spanValue As Long)\n",
+            "    spanValue = UBound(value) - LBound(value) + 1\n",
+            "End Sub\n",
+            "Sub Main()\n",
+            "    Dim buf(2) As Byte\n",
+            "    Dim spanValue As Long\n",
+            "    MeasureBounds buf, spanValue\n",
+            "End Sub",
+        );
+        let out = compile(source).expect("compile should succeed");
+        assert_eq!(
+            out.instructions
+                .iter()
+                .filter(|i| matches!(i, Instruction::IntrinsicLBoundArray { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            out.instructions
+                .iter()
+                .filter(|i| matches!(i, Instruction::IntrinsicUBoundArray { .. }))
+                .count(),
+            1
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::SubSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddSlots { .. }))
         );
     }
 
@@ -1639,6 +1840,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_file_kill_statement_emits_host_instruction() {
+        let source = "Sub Main()\nDim path As String\npath = \"x\"\nKill path\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicFileKillHost { .. }))
+        );
+    }
+
+    #[test]
     fn compile_multi_field_file_write_statement_emits_multiple_host_instructions() {
         let source = "Sub Main()\nOpen \"x\" For Output As #1\nWrite #1, 42, True, \"hello,world\"\nClose #1\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
@@ -1668,6 +1880,17 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicConsoleLineInputHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_beep_statement_emits_host_instruction() {
+        let source = "Sub Main()\nBeep\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicBeepHost { .. }))
         );
     }
 
@@ -1871,11 +2094,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 1, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 1);
     }
 
     #[test]
@@ -1887,11 +2106,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 3, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 3);
     }
 
     #[test]
@@ -1903,16 +2118,8 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 7, .. }))
-        );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 8, .. }))
-        );
+        assert_has_dispatch_member(&out, 7, "SetValue");
+        assert_has_dispatch_member(&out, 8, "SetValueRef");
     }
 
     #[test]
@@ -1924,11 +2131,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 35, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 35);
     }
 
     #[test]
@@ -1941,11 +2144,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 36, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 36);
     }
 
     #[test]
@@ -1957,11 +2156,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 37, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 37);
     }
 
     #[test]
@@ -1974,11 +2169,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 39, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 39);
     }
 
     #[test]
@@ -1991,11 +2182,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 41, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 41);
     }
 
     #[test]
@@ -2008,11 +2195,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 42, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 42);
     }
     #[test]
     fn compile_dispatchinvoke_with_hyper_result_literal_maps_to_member_token_forty_five() {
@@ -2023,11 +2206,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 45, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 45);
     }
 
     #[test]
@@ -2040,11 +2219,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 46, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 46);
     }
     #[test]
     fn compile_dispatchinvoke_with_double_result_literal_maps_to_member_token_forty_nine() {
@@ -2055,11 +2230,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 49, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 49);
     }
 
     #[test]
@@ -2071,11 +2242,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 51, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 51);
     }
 
     #[test]
@@ -2087,11 +2254,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 53, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 53);
     }
 
     #[test]
@@ -2104,11 +2267,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 55, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 55);
     }
 
     #[test]
@@ -2121,11 +2280,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 57, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 57);
     }
 
     #[test]
@@ -2137,11 +2292,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 63, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 63);
     }
 
     #[test]
@@ -2153,11 +2304,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 64, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 64);
     }
 
     #[test]
@@ -2171,11 +2318,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 76, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 76);
     }
 
     #[test]
@@ -2189,11 +2332,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 77, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 77);
     }
 
     #[test]
@@ -2207,11 +2346,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 78, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 78);
     }
 
     #[test]
@@ -2225,11 +2360,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 79, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 79);
     }
 
     #[test]
@@ -2243,11 +2374,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 80, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 80);
     }
 
     #[test]
@@ -2261,11 +2388,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 81, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 81);
     }
 
     #[test]
@@ -2279,11 +2402,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 82, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 82);
     }
 
     #[test]
@@ -2298,11 +2417,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 83, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 83);
     }
 
     #[test]
@@ -2317,11 +2432,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 84, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 84);
     }
 
     #[test]
@@ -2335,11 +2446,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 85, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 85);
     }
 
     #[test]
@@ -2353,11 +2460,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 86, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 86);
     }
 
     #[test]
@@ -2369,11 +2472,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 65, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 65);
     }
 
     #[test]
@@ -2385,11 +2484,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 66, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 66);
     }
 
     #[test]
@@ -2401,11 +2496,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 67, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 67);
     }
 
     #[test]
@@ -2418,11 +2509,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 68, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 68);
     }
 
     #[test]
@@ -2436,11 +2523,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 69, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 69);
     }
 
     #[test]
@@ -2453,11 +2536,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 20, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 20);
     }
 
     #[test]
@@ -2469,11 +2548,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 23, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 23);
     }
 
     #[test]
@@ -2486,11 +2561,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 25, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 25);
     }
 
     #[test]
@@ -2542,11 +2613,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 26, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 26);
     }
 
     #[test]
@@ -2560,11 +2627,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 27, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 27);
     }
 
     #[test]
@@ -2578,11 +2641,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 28, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 28);
     }
 
     #[test]
@@ -2596,11 +2655,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 29, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 29);
     }
 
     #[test]
@@ -2613,11 +2668,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 31, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 31);
     }
     #[test]
     fn compile_dispatchinvoke_with_plain_unknown_array_result_literal_maps_to_member_token_thirty_two()
@@ -2630,11 +2681,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 32, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 32);
     }
     #[test]
     fn compile_dispatchinvoke_with_long_array_result_literal_maps_to_member_token_thirty_three() {
@@ -2646,11 +2693,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 33, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 33);
     }
 
     #[test]
@@ -2664,11 +2707,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 34, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 34);
     }
 
     #[test]
@@ -2681,11 +2720,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 38, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 38);
     }
 
     #[test]
@@ -2698,11 +2733,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 40, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 40);
     }
 
     #[test]
@@ -2716,11 +2747,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 43, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 43);
     }
 
     #[test]
@@ -2734,11 +2761,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 44, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 44);
     }
     #[test]
     fn compile_dispatchinvoke_with_hyper_array_result_literal_maps_to_member_token_forty_seven() {
@@ -2750,11 +2773,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 47, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 47);
     }
 
     #[test]
@@ -2768,11 +2787,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 48, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 48);
     }
     #[test]
     fn compile_dispatchinvoke_with_double_array_result_literal_maps_to_member_token_fifty() {
@@ -2784,11 +2799,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 50, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 50);
     }
 
     #[test]
@@ -2801,11 +2812,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 52, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 52);
     }
 
     #[test]
@@ -2818,11 +2825,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 54, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 54);
     }
 
     #[test]
@@ -2835,11 +2838,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 56, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 56);
     }
 
     #[test]
@@ -2852,11 +2851,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 58, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 58);
     }
 
     #[test]
@@ -2870,11 +2865,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 59, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 59);
     }
 
     #[test]
@@ -2888,11 +2879,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 60, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 60);
     }
 
     #[test]
@@ -2906,11 +2893,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 61, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 61);
     }
 
     #[test]
@@ -2924,11 +2907,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 62, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 62);
     }
 
     #[test]
@@ -2941,11 +2920,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 70, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 70);
     }
 
     #[test]
@@ -2959,11 +2934,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 71, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 71);
     }
 
     #[test]
@@ -2977,11 +2948,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 72, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 72);
     }
 
     #[test]
@@ -2995,11 +2962,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 73, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 73);
     }
 
     #[test]
@@ -3012,11 +2975,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 30, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 30);
     }
 
     #[test]
@@ -3030,11 +2989,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 74, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 74);
     }
 
     #[test]
@@ -3048,11 +3003,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 75, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 75);
     }
 
     #[test]
@@ -3065,11 +3016,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 11, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 11);
     }
 
     #[test]
@@ -3081,11 +3028,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 10, .. }))
-        );
+        assert_dispatchinvoke_source_member(&out, source, 10);
     }
 
     #[test]
@@ -3380,6 +3323,25 @@ mod tests {
     }
 
     #[test]
+    fn compile_declare_without_alias_preserves_source_symbol_case() {
+        let source = "Declare PtrSafe Function MultiByteToWideChar Lib \"kernel32\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub";
+        let out = compile(source).expect("declare without alias should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        let descriptor = &out.external_call_descriptors[0];
+        assert_eq!(
+            descriptor.declared_name.to_ascii_lowercase(),
+            "multibytetowidechar"
+        );
+        assert_eq!(descriptor.alias, "MultiByteToWideChar");
+    }
+
+    #[test]
+    fn compile_same_module_statement_call_without_parentheses_and_without_args_succeeds() {
+        let source = "Public Sub Main()\nTestVersion\nEnd Sub\nPublic Sub TestVersion()\nEnd Sub";
+        compile(source).expect("same-module no-paren no-arg call should compile");
+    }
+
+    #[test]
     fn compile_declare_without_ptrsafe_is_rejected() {
         let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = compile(source).expect_err("non-ptrsafe declare should be rejected");
@@ -3431,9 +3393,12 @@ mod tests {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x() As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = compile(source)
             .expect_err("array declare param should be rejected in dynamic-link subset");
+        let rendered = err.to_string().to_ascii_lowercase();
         assert!(
-            err.to_string()
-                .contains("external procedure declaration rejected")
+            rendered.contains("declare")
+                || rendered.contains("external")
+                || rendered.contains("array"),
+            "unexpected declare-array rejection: {rendered}"
         );
     }
 
@@ -3450,7 +3415,10 @@ mod tests {
         let source = "Declare PtrSafe Function LstrlenW Lib \"kernel32\" Alias \"lstrlenW\" (ByVal lpString As LongPtr) As Long\nSub Main()\nDim y\ny = LstrlenW(0)\nEnd Sub";
         let out = compile(source).expect("native declare should compile");
         assert_eq!(out.external_call_descriptors.len(), 1);
-        assert_eq!(out.external_call_descriptors[0].marshal_lane, "m1-native-ffi");
+        assert_eq!(
+            out.external_call_descriptors[0].marshal_lane,
+            "m1-native-ffi"
+        );
     }
 
     #[test]

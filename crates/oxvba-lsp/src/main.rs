@@ -1,14 +1,13 @@
 use std::path::PathBuf;
 
-use oxvba_lsp::{OxvbaLspCore, server_capabilities, server_info};
 use oxvba_languageservice::{
     CodeActionKind as OxCodeActionKind, CodeActionPlan, CompletionItem as OxCompletionItem,
     CompletionKind as OxCompletionKind, DiagnosticSeverity as OxDiagnosticSeverity, DocumentId,
-    DocumentSymbol as OxDocumentSymbol, HoverInfo, Location as OxLocation,
-    SemanticClassification, SemanticTokenKind as OxSemanticTokenKind,
-    SignatureHelp as OxSignatureHelp, SpannedDiagnostic, TextEdit as OxTextEdit, TextSpan,
-    WorkspaceSymbol as OxWorkspaceSymbol,
+    DocumentSymbol as OxDocumentSymbol, HoverInfo, Location as OxLocation, SemanticClassification,
+    SemanticTokenKind as OxSemanticTokenKind, SignatureHelp as OxSignatureHelp, SpannedDiagnostic,
+    TextEdit as OxTextEdit, TextSpan, WorkspaceSymbol as OxWorkspaceSymbol,
 };
+use oxvba_lsp::{OxvbaLspCore, server_capabilities, server_info};
 use tower_lsp::jsonrpc::Error;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
@@ -16,12 +15,11 @@ use tower_lsp::lsp_types::{
     CompletionParams, CompletionResponse, Diagnostic, DiagnosticSeverity,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, Location, MarkedString, MessageType, Position,
-    PrepareRenameResponse, Range, ReferenceParams, RenameParams, SemanticToken,
-    SemanticTokens, SemanticTokensParams, SemanticTokensResult, SignatureHelp, SignatureHelpParams,
-    SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit, Url, WorkspaceEdit,
-    WorkspaceSymbolParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams, InitializeResult,
+    InitializedParams, Location, MarkedString, MessageType, Position, PrepareRenameResponse, Range,
+    ReferenceParams, RenameParams, SemanticToken, SemanticTokens, SemanticTokensParams,
+    SemanticTokensResult, SignatureHelp, SignatureHelpParams, SymbolInformation, SymbolKind,
+    TextDocumentIdentifier, TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams,
 };
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
@@ -100,7 +98,8 @@ impl LanguageServer for Backend {
                 .await;
             return;
         }
-        self.publish_diagnostics_for_uri(&params.text_document.uri).await;
+        self.publish_diagnostics_for_uri(&params.text_document.uri)
+            .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -119,7 +118,8 @@ impl LanguageServer for Backend {
                 .await;
             return;
         }
-        self.publish_diagnostics_for_uri(&params.text_document.uri).await;
+        self.publish_diagnostics_for_uri(&params.text_document.uri)
+            .await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -138,9 +138,12 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let (document, _source, position) =
-            resolve_request_position(&self.core, &params.text_document_position_params.text_document, params.text_document_position_params.position)
-                .map_err(Error::invalid_params)?;
+        let (document, _source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position_params.text_document,
+            params.text_document_position_params.position,
+        )
+        .map_err(Error::invalid_params)?;
         Ok(self.core.hover(&document, position).map(hover_to_lsp))
     }
 
@@ -148,9 +151,12 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        let (document, source, position) =
-            resolve_request_position(&self.core, &params.text_document_position_params.text_document, params.text_document_position_params.position)
-                .map_err(Error::invalid_params)?;
+        let (document, source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position_params.text_document,
+            params.text_document_position_params.position,
+        )
+        .map_err(Error::invalid_params)?;
         let response = self
             .core
             .go_to_definition(&document, position)
@@ -159,9 +165,12 @@ impl LanguageServer for Backend {
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
-        let (document, source, position) =
-            resolve_request_position(&self.core, &params.text_document_position.text_document, params.text_document_position.position)
-                .map_err(Error::invalid_params)?;
+        let (document, source, position) = resolve_request_position(
+            &self.core,
+            &params.text_document_position.text_document,
+            params.text_document_position.position,
+        )
+        .map_err(Error::invalid_params)?;
         let locations = self
             .core
             .find_references(&document, position)
@@ -321,10 +330,7 @@ impl LanguageServer for Backend {
         let Some(source) = self.core.document_source(&document) else {
             return Ok(None);
         };
-        let tokens = semantic_tokens_to_lsp(
-            &source,
-            self.core.semantic_classifications(&document),
-        );
+        let tokens = semantic_tokens_to_lsp(&source, self.core.semantic_classifications(&document));
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: tokens,
@@ -432,7 +438,11 @@ fn offset_to_lsp_position(source: &str, offset: u32) -> Position {
     let offset = offset as usize;
     let bounded = offset.min(source.len());
     let prefix = &source[..bounded];
-    let line = prefix.as_bytes().iter().filter(|byte| **byte == b'\n').count() as u32;
+    let line = prefix
+        .as_bytes()
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count() as u32;
     let line_start = prefix.rfind('\n').map(|index| index + 1).unwrap_or(0);
     let character = source[line_start..bounded].encode_utf16().count() as u32;
     Position::new(line, character)
@@ -468,7 +478,11 @@ fn hover_to_lsp(hover: HoverInfo) -> Hover {
     }
 }
 
-fn location_to_lsp(core: &OxvbaLspCore, fallback_source: &str, location: OxLocation) -> Option<Location> {
+fn location_to_lsp(
+    core: &OxvbaLspCore,
+    fallback_source: &str,
+    location: OxLocation,
+) -> Option<Location> {
     let uri = core.document_uri(&location.document)?;
     let source = core
         .document_source(&location.document)
@@ -489,7 +503,10 @@ fn document_symbol_to_lsp(source: &str, symbol: OxDocumentSymbol) -> DocumentSym
     }
 }
 
-fn workspace_symbol_to_lsp(core: &OxvbaLspCore, symbol: OxWorkspaceSymbol) -> Option<SymbolInformation> {
+fn workspace_symbol_to_lsp(
+    core: &OxvbaLspCore,
+    symbol: OxWorkspaceSymbol,
+) -> Option<SymbolInformation> {
     let source = core.document_source(&symbol.document)?;
     let uri = core.document_uri(&symbol.document)?;
     Some(SymbolInformation {
@@ -554,12 +571,10 @@ fn signature_help_to_lsp(help: OxSignatureHelp) -> SignatureHelp {
                     .into_iter()
                     .map(|parameter| tower_lsp::lsp_types::ParameterInformation {
                         label: tower_lsp::lsp_types::ParameterLabel::Simple(parameter.name),
-                        documentation: Some(
-                            tower_lsp::lsp_types::Documentation::String(format!(
-                                "As {}",
-                                parameter.type_name
-                            )),
-                        ),
+                        documentation: Some(tower_lsp::lsp_types::Documentation::String(format!(
+                            "As {}",
+                            parameter.type_name
+                        ))),
                     })
                     .collect(),
             ),
@@ -605,7 +620,10 @@ fn text_edit_to_lsp(source: &str, edit: OxTextEdit) -> TextEdit {
     }
 }
 
-fn semantic_tokens_to_lsp(source: &str, mut classifications: Vec<SemanticClassification>) -> Vec<SemanticToken> {
+fn semantic_tokens_to_lsp(
+    source: &str,
+    mut classifications: Vec<SemanticClassification>,
+) -> Vec<SemanticToken> {
     classifications.sort_by_key(|classification| classification.span.start);
     let mut tokens = Vec::new();
     let mut previous_line = 0u32;

@@ -51,17 +51,20 @@ fn load_widget_project(
 
 fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<RuntimeValue, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
-    let mut session = engine
-        .compile_and_prepare_session(&loaded.manifest)
-        .map_err(|err| err.to_string())?;
-    let result = engine
-        .invoke_procedure(&mut session, "Main", "Main", &[])
-        .map_err(|err| err.to_string());
+    let result = {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let mut session = engine
+            .compile_and_prepare_session(&loaded.manifest)
+            .map_err(|err| err.to_string())?;
+        engine
+            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .map_err(|err| err.to_string())
+    };
 
+    drop(loaded);
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     result
 }
@@ -72,17 +75,20 @@ fn run_project_with_widget_session(
     enable_jit: bool,
 ) -> Result<RuntimeValue, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
-    let engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
-    let mut session = engine
-        .compile_and_prepare_session(&loaded.manifest)
-        .map_err(|err| err.to_string())?;
-    let result = engine
-        .invoke_procedure(&mut session, "Main", "Main", &[])
-        .map_err(|err| err.to_string());
+    let result = {
+        let engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        let mut session = engine
+            .compile_and_prepare_session(&loaded.manifest)
+            .map_err(|err| err.to_string())?;
+        engine
+            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .map_err(|err| err.to_string())
+    };
 
+    drop(loaded);
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     result
 }
@@ -93,14 +99,17 @@ fn execute_project_with_widget_snapshot(
     enable_jit: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
-    let engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
-    let result = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
-        .map_err(|err| err.to_string());
+    let result = {
+        let engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        engine
+            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .map_err(|err| err.to_string())
+    };
 
+    drop(loaded);
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     result
 }
@@ -111,19 +120,22 @@ fn run_project_with_widget_bundle_session(
     enable_jit: bool,
 ) -> Result<RuntimeValue, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
-    let compiled = compile_project(&loaded.manifest).map_err(|err| err.to_string())?;
-    let bundle = OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
-    let engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
-    let mut session = engine
-        .compile_and_prepare_session_from_bundle(&bundle)
-        .map_err(|err| err.to_string())?;
-    let result = engine
-        .invoke_procedure(&mut session, "Main", "Main", &[])
-        .map_err(|err| err.to_string());
+    let result = {
+        let compiled = compile_project(&loaded.manifest).map_err(|err| err.to_string())?;
+        let bundle = OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+        let engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        let mut session = engine
+            .compile_and_prepare_session_from_bundle(&bundle)
+            .map_err(|err| err.to_string())?;
+        engine
+            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .map_err(|err| err.to_string())
+    };
 
+    drop(loaded);
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     result
 }
@@ -213,6 +225,24 @@ fn imported_collection_field_newenum_for_each_executes_with_excel_import_header(
     .expect("Excel-imported collection-backed NewEnum project should execute");
 
     assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[test]
+fn imported_collection_field_control_string_accumulator_without_foreach_starts_empty() {
+    let result = run_project_with_widget(
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public valueOut As String\n",
+            "Public Function Main() As String\n",
+            "valueOut = valueOut & \"41,\"\n",
+            "Main = valueOut\n",
+            "End Function\n"
+        ),
+        "Attribute VB_Name = \"Widget\"\nOption Explicit\n",
+    )
+    .expect("control string accumulator project should execute");
+
+    assert_eq!(result, RuntimeValue::String(BStr("41,".to_string())));
 }
 
 #[test]

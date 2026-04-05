@@ -1,10 +1,14 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use oxvba_runtime::{DynLinkSymbol, value_tags::ERROR_TAG_BASE};
 
 use crate::{
     bytecode::{
-        Bytecode, DeclareParamType, DispatchInvokeArg, ExternalCallDescriptor, Instruction,
+        Bytecode, DeclareParamType, DispatchInvokeArg, ExternalCallDescriptor,
+        ExternalCallWriteback, ExternalCallWritebackKind, Instruction, RuntimeArrayElementType,
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
     },
     resolve::{
@@ -28,6 +32,43 @@ struct EmitProcMeta {
     return_slot: Option<usize>,
     return_type: BoundType,
     declaration_types: HashMap<String, BoundType>,
+}
+
+fn normalize_runtime_name_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
+fn insert_casefold_key<V: Clone>(map: &mut HashMap<String, V>, name: &str, value: V) {
+    map.insert(name.to_string(), value.clone());
+    let folded = normalize_runtime_name_key(name);
+    if folded != name {
+        map.insert(folded, value);
+    }
+}
+
+fn lookup_casefold_key<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Option<&'a V> {
+    map.get(name)
+        .or_else(|| map.get(&normalize_runtime_name_key(name)))
+}
+
+thread_local! {
+    static CURRENT_PROC_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+fn with_current_proc_name<T>(name: &str, f: impl FnOnce() -> T) -> T {
+    CURRENT_PROC_NAME.with(|current| {
+        *current.borrow_mut() = Some(name.to_string());
+        let result = f();
+        *current.borrow_mut() = None;
+        result
+    })
+}
+
+fn current_proc_meta<'a>(proc_meta: &'a HashMap<String, EmitProcMeta>) -> Option<&'a EmitProcMeta> {
+    CURRENT_PROC_NAME.with(|current| {
+        let name = current.borrow();
+        lookup_casefold_key(proc_meta, name.as_deref()?)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -74,6 +115,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             statement_line_numbers: vec![1],
             return_type: crate::resolve::BoundType::Variant,
             params: Vec::new(),
+            module_scope_names: Vec::new(),
             declarations: module.declarations.clone(),
             declaration_types: module.declaration_types.clone(),
             array_descriptors: module.array_descriptors.clone(),
@@ -118,8 +160,9 @@ pub fn emit_bytecode_with_runtime_metadata(
         cfg!(any(target_os = "windows", target_os = "linux")),
     );
     for (idx, proc) in procedures.iter().enumerate() {
-        proc_meta.insert(
-            proc.name.clone(),
+        insert_casefold_key(
+            &mut proc_meta,
+            &proc.name,
             EmitProcMeta {
                 params: proc.params.clone(),
                 slots: proc_slots[idx].clone(),
@@ -156,8 +199,23 @@ pub fn emit_bytecode_with_runtime_metadata(
     } else {
         None
     };
-    proc_labels.insert(procedures[entry_idx].name.clone(), 0);
+    insert_casefold_key(&mut proc_labels, &procedures[entry_idx].name, 0);
     instructions.push(Instruction::ClearErr);
+    for param in &procedures[entry_idx].params {
+        if param.ty == BoundType::Date
+            && let Some(slot) = proc_slots[entry_idx].get(&param.name).copied()
+        {
+            instructions.push(Instruction::IntrinsicCDateValue {
+                dst: slot,
+                src: slot,
+            });
+        }
+    }
+    emit_declared_string_initializers(
+        &procedures[entry_idx],
+        &proc_slots[entry_idx],
+        &mut instructions,
+    );
 
     if let Some(name) = class_init_proc {
         let patch_idx = instructions.len();
@@ -166,25 +224,27 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
     let mut entry_statement_entry_pcs = Vec::new();
     proc_exit_stack.push(Vec::new());
-    emit_stmt_list(
-        &procedures[entry_idx].body,
-        compare_mode,
-        &proc_slots[entry_idx],
-        &mut temps,
-        &mut instructions,
-        &mut do_exit_stack,
-        &mut for_exit_stack,
-        &mut proc_exit_stack,
-        &mut call_patches,
-        &mut error_handler_patches,
-        &mut goto_patches,
-        &mut resume_label_patches,
-        &proc_meta,
-        &external_decls,
-        &procedures[entry_idx].name,
-        &mut proc_labels,
-        &mut entry_statement_entry_pcs,
-    );
+    with_current_proc_name(&procedures[entry_idx].name, || {
+        emit_stmt_list(
+            &procedures[entry_idx].body,
+            compare_mode,
+            &proc_slots[entry_idx],
+            &mut temps,
+            &mut instructions,
+            &mut do_exit_stack,
+            &mut for_exit_stack,
+            &mut proc_exit_stack,
+            &mut call_patches,
+            &mut error_handler_patches,
+            &mut goto_patches,
+            &mut resume_label_patches,
+            &proc_meta,
+            &external_decls,
+            &procedures[entry_idx].name,
+            &mut proc_labels,
+            &mut entry_statement_entry_pcs,
+        );
+    });
     if let Some(name) = class_terminate_proc {
         let patch_idx = instructions.len();
         instructions.push(Instruction::CallProc { target_pc: 0 });
@@ -237,29 +297,42 @@ pub fn emit_bytecode_with_runtime_metadata(
             continue;
         }
         let entry_pc = instructions.len();
-        proc_labels.insert(proc.name.clone(), entry_pc);
+        insert_casefold_key(&mut proc_labels, &proc.name, entry_pc);
         instructions.push(Instruction::ClearErr);
+        for param in &proc.params {
+            if param.ty == BoundType::Date
+                && let Some(slot) = proc_slots[idx].get(&param.name).copied()
+            {
+                instructions.push(Instruction::IntrinsicCDateValue {
+                    dst: slot,
+                    src: slot,
+                });
+            }
+        }
+        emit_declared_string_initializers(proc, &proc_slots[idx], &mut instructions);
         let mut statement_entry_pcs = Vec::new();
         proc_exit_stack.push(Vec::new());
-        emit_stmt_list(
-            &proc.body,
-            compare_mode,
-            &proc_slots[idx],
-            &mut temps,
-            &mut instructions,
-            &mut do_exit_stack,
-            &mut for_exit_stack,
-            &mut proc_exit_stack,
-            &mut call_patches,
-            &mut error_handler_patches,
-            &mut goto_patches,
-            &mut resume_label_patches,
-            &proc_meta,
-            &external_decls,
-            &proc.name,
-            &mut proc_labels,
-            &mut statement_entry_pcs,
-        );
+        with_current_proc_name(&proc.name, || {
+            emit_stmt_list(
+                &proc.body,
+                compare_mode,
+                &proc_slots[idx],
+                &mut temps,
+                &mut instructions,
+                &mut do_exit_stack,
+                &mut for_exit_stack,
+                &mut proc_exit_stack,
+                &mut call_patches,
+                &mut error_handler_patches,
+                &mut goto_patches,
+                &mut resume_label_patches,
+                &proc_meta,
+                &external_decls,
+                &proc.name,
+                &mut proc_labels,
+                &mut statement_entry_pcs,
+            );
+        });
         let proc_exit_target = instructions.len();
         if let Some(exit_patches) = proc_exit_stack.pop() {
             for patch in exit_patches {
@@ -303,7 +376,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
 
     for (patch_idx, proc_name) in call_patches {
-        if let Some(target) = proc_labels.get(&proc_name).copied()
+        if let Some(target) = lookup_casefold_key(&proc_labels, &proc_name).copied()
             && let Instruction::CallProc { target_pc } = &mut instructions[patch_idx]
         {
             *target_pc = target;
@@ -311,7 +384,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
 
     for (patch_idx, label_name) in error_handler_patches {
-        if let Some(target) = proc_labels.get(&label_name).copied()
+        if let Some(target) = lookup_casefold_key(&proc_labels, &label_name).copied()
             && let Instruction::SetOnErrorGotoLabel { target_pc } = &mut instructions[patch_idx]
         {
             *target_pc = target;
@@ -319,7 +392,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
 
     for (patch_idx, label_name) in goto_patches {
-        if let Some(target) = proc_labels.get(&label_name).copied()
+        if let Some(target) = lookup_casefold_key(&proc_labels, &label_name).copied()
             && let Instruction::Jump { target_pc } = &mut instructions[patch_idx]
         {
             *target_pc = target;
@@ -327,7 +400,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
 
     for (patch_idx, label_name) in resume_label_patches {
-        if let Some(target) = proc_labels.get(&label_name).copied()
+        if let Some(target) = lookup_casefold_key(&proc_labels, &label_name).copied()
             && let Instruction::ResumeLabel { target_pc } = &mut instructions[patch_idx]
         {
             *target_pc = target;
@@ -357,6 +430,15 @@ fn build_runtime_slot_metadata(
         .to_ascii_lowercase();
     let mut slots = Vec::new();
     for name in &proc.declarations {
+        let hide_module_scope_slots = !proc.name.eq_ignore_ascii_case("main");
+        if hide_module_scope_slots
+            && proc
+                .module_scope_names
+                .iter()
+                .any(|module_name| module_name.eq_ignore_ascii_case(name))
+        {
+            continue;
+        }
         let Some(slot) = proc_slots.get(name).copied() else {
             continue;
         };
@@ -387,6 +469,36 @@ fn build_runtime_slot_metadata(
     slots
 }
 
+fn emit_declared_string_initializers(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+    instructions: &mut Vec<Instruction>,
+) {
+    let mut initialized = HashSet::new();
+    for name in &proc.declarations {
+        if proc
+            .params
+            .iter()
+            .any(|param| param.name.eq_ignore_ascii_case(name))
+        {
+            continue;
+        }
+        if proc.declaration_types.get(name.as_str()) != Some(&BoundType::String) {
+            continue;
+        }
+        let Some(slot) = proc_slots.get(name.as_str()).copied() else {
+            continue;
+        };
+        if !initialized.insert(slot) {
+            continue;
+        }
+        instructions.push(Instruction::LoadConstString {
+            slot,
+            value: String::new(),
+        });
+    }
+}
+
 fn build_external_call_descriptors(
     external_decls: &HashMap<String, BoundExternalDecl>,
     native_ffi_available: bool,
@@ -410,6 +522,7 @@ fn build_external_call_descriptors(
             .iter()
             .map(|p| bound_type_to_declare_param_type(&p.ty))
             .collect();
+        let param_by_ref = decl.params.iter().map(|p| p.by_ref).collect();
         let return_type = if decl.is_function {
             Some(bound_type_to_declare_param_type(&decl.return_type))
         } else {
@@ -436,6 +549,7 @@ fn build_external_call_descriptors(
             },
             param_count,
             param_types,
+            param_by_ref,
             return_type,
         });
     }
@@ -561,6 +675,50 @@ fn emit_stmt(
                         external_decls,
                     );
                 }
+            }
+        }
+        BoundStmt::AssignRuntimeArrayElement {
+            name,
+            indices,
+            expr,
+            intent: _,
+        } => {
+            if let Some(array_slot) = slot_map.get(name.as_str()).copied() {
+                let index_slots = indices
+                    .iter()
+                    .map(|index| {
+                        let index_slot = temps.alloc_temp();
+                        emit_expr_into(
+                            index,
+                            compare_mode,
+                            index_slot,
+                            slot_map,
+                            temps,
+                            instructions,
+                            call_patches,
+                            proc_meta,
+                            external_decls,
+                        );
+                        index_slot
+                    })
+                    .collect::<Vec<_>>();
+                let value_slot = temps.alloc_temp();
+                emit_expr_into(
+                    expr,
+                    compare_mode,
+                    value_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                instructions.push(Instruction::IntrinsicArraySet {
+                    array: array_slot,
+                    indices: index_slots,
+                    src: value_slot,
+                });
             }
         }
         BoundStmt::UdtAssign {
@@ -984,6 +1142,51 @@ fn emit_stmt(
                 reset_array_slots(name, slot_map, instructions);
             }
         }
+        BoundStmt::ReDimRuntime {
+            name,
+            bounds,
+            preserve,
+        } => {
+            let dst = slot_map
+                .get(name.as_str())
+                .copied()
+                .expect("runtime ReDim requires a base array slot");
+            let mut upper_slots = Vec::with_capacity(bounds.len());
+            let mut lower_bounds = Vec::with_capacity(bounds.len());
+            for bound in bounds {
+                let upper_slot = temps.alloc_temp();
+                emit_expr_into(
+                    &bound.upper_bound,
+                    compare_mode,
+                    upper_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                upper_slots.push(upper_slot);
+                lower_bounds.push(bound.lower_bound);
+            }
+            let element_type = runtime_array_element_type_for(name, proc_meta)
+                .expect("runtime ReDim element type should be validated during typecheck");
+            if *preserve {
+                instructions.push(Instruction::IntrinsicArrayResizePreserve {
+                    dst,
+                    upper_bounds: upper_slots,
+                    lower_bounds,
+                    element_type,
+                });
+            } else {
+                instructions.push(Instruction::IntrinsicArrayResize {
+                    dst,
+                    upper_bounds: upper_slots,
+                    lower_bounds,
+                    element_type,
+                });
+            }
+        }
         BoundStmt::Erase { name } => {
             reset_array_slots(name, slot_map, instructions);
         }
@@ -1143,8 +1346,9 @@ fn emit_stmt(
             instructions.push(Instruction::ClearErr);
         }
         BoundStmt::Label { name } => {
-            proc_labels.insert(
-                format!("__label::{current_proc_name}::{name}"),
+            insert_casefold_key(
+                proc_labels,
+                &format!("__label::{current_proc_name}::{name}"),
                 instructions.len(),
             );
         }
@@ -1467,6 +1671,25 @@ fn emit_stmt(
                 });
             }
         }
+        BoundStmt::FileKill { path } => {
+            let dst = temps.alloc_temp();
+            let path_slot = temps.alloc_temp();
+            emit_expr_into(
+                path,
+                compare_mode,
+                path_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicFileKillHost {
+                dst,
+                path: path_slot,
+            });
+        }
         BoundStmt::FilePrint { file_number, data } => {
             let dst = temps.alloc_temp();
             let handle_slot = temps.alloc_temp();
@@ -1626,6 +1849,10 @@ fn emit_stmt(
                 instructions.push(Instruction::IntrinsicConsoleLineInputHost { dst: target_slot });
             }
         }
+        BoundStmt::Beep => {
+            let dst = temps.alloc_temp();
+            instructions.push(Instruction::IntrinsicBeepHost { dst });
+        }
         BoundStmt::DebugPrint { data } => {
             let dst = temps.alloc_temp();
             let data_slot = temps.alloc_temp();
@@ -1695,6 +1922,7 @@ fn expr_bound_type(
         BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
+        BoundExpr::CompareOp { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
         BoundExpr::Var(name) => current_meta
             .declaration_types
@@ -1705,6 +1933,38 @@ fn expr_bound_type(
         BoundExpr::IntrinsicCall { name, .. } | BoundExpr::ProcCall { name, .. } => {
             call_bound_type(name, proc_meta, external_decls)
         }
+    }
+}
+
+fn runtime_array_element_type_for(
+    name: &str,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+) -> Option<RuntimeArrayElementType> {
+    let current = current_proc_meta(proc_meta)?;
+    let alias = format!("{name}_0");
+    let bound_type = current
+        .declaration_types
+        .get(alias.as_str())
+        .copied()
+        .unwrap_or(BoundType::Variant);
+    runtime_array_element_type(bound_type)
+}
+
+fn runtime_array_element_type(bound_type: BoundType) -> Option<RuntimeArrayElementType> {
+    match bound_type {
+        BoundType::Variant => Some(RuntimeArrayElementType::Variant),
+        BoundType::Integer => Some(RuntimeArrayElementType::Integer),
+        BoundType::Long => Some(RuntimeArrayElementType::Long),
+        BoundType::LongLong => Some(RuntimeArrayElementType::LongLong),
+        BoundType::LongPtr => Some(RuntimeArrayElementType::LongPtr),
+        BoundType::Byte => Some(RuntimeArrayElementType::Byte),
+        BoundType::Single => Some(RuntimeArrayElementType::Single),
+        BoundType::Double => Some(RuntimeArrayElementType::Double),
+        BoundType::Currency => Some(RuntimeArrayElementType::Currency),
+        BoundType::Date => Some(RuntimeArrayElementType::Date),
+        BoundType::String => Some(RuntimeArrayElementType::String),
+        BoundType::Boolean => Some(RuntimeArrayElementType::Boolean),
+        BoundType::Object | BoundType::Array | BoundType::Decimal => None,
     }
 }
 
@@ -1829,6 +2089,21 @@ fn emit_early_call(
             }
             continue;
         };
+
+        if param.ty == BoundType::Array
+            && let BoundExpr::Var(var_name) = &arg.expr
+        {
+            let element_slots = collect_array_element_slots(var_name, slot_map);
+            if !element_slots.is_empty() {
+                // Fixed-array callers still lower through alias element slots; materialize
+                // the current payload into the callee's regular-array slot.
+                instructions.push(Instruction::IntrinsicArrayLiteral {
+                    dst: param_slot,
+                    values: element_slots,
+                });
+                continue;
+            }
+        }
 
         if param.by_ref
             && !arg.force_byval
@@ -1986,7 +2261,16 @@ fn emit_external_declare_call(
             && let BoundExpr::Var(ref ident_name) = arg.expr
             && let Some(&source_slot) = slot_map.get(&ident_name.to_ascii_lowercase())
         {
-            writeback_slots.push((arg_index, source_slot));
+            writeback_slots.push(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::ByRefValue,
+            });
+        }
+        if let Some(pointer_writeback) =
+            external_pointer_writeback(arg_index, &arg.expr, slot_map, external_decl)
+        {
+            writeback_slots.push(pointer_writeback);
         }
         arg_slots.push(slot);
     }
@@ -2011,8 +2295,59 @@ fn emit_external_declare_call(
     true
 }
 
+fn external_pointer_writeback(
+    arg_index: usize,
+    expr: &BoundExpr,
+    slot_map: &HashMap<String, usize>,
+    external_decl: &BoundExternalDecl,
+) -> Option<ExternalCallWriteback> {
+    let param = external_decl.params.get(arg_index)?;
+    if param.by_ref || param.ty != BoundType::LongPtr {
+        return None;
+    }
+
+    // Writable pointer sync is decided from the VBA source expression and the
+    // boundary shape we materialize, not from any library or API symbol name.
+    match expr {
+        BoundExpr::IntrinsicCall { name, args }
+            if name.eq_ignore_ascii_case("varptr")
+                && args.len() == 1
+                && matches!(args.first(), Some(BoundExpr::VarPtrArrayBuffer(_))) =>
+        {
+            let BoundExpr::VarPtrArrayBuffer(name) = args.first()? else {
+                return None;
+            };
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerByteArrayPayload,
+            })
+        }
+        BoundExpr::IntrinsicCall { name, args }
+            if name.eq_ignore_ascii_case("strptr")
+                && args.len() == 1
+                && matches!(args.first(), Some(BoundExpr::Var(_))) =>
+        {
+            let BoundExpr::Var(name) = args.first()? else {
+                return None;
+            };
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerStringPayload,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
     let mut hash: u32 = 2_166_136_261;
+    let library = library.to_ascii_lowercase();
+    let alias = alias.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
     for byte in library
         .bytes()
         .chain([b'!'])
@@ -2555,6 +2890,76 @@ fn emit_expr_into(
             };
             instructions.push(instr);
         }
+        BoundExpr::CompareOp { op, lhs, rhs } => {
+            let lhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let rhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            match op {
+                CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Ne => instructions.push(Instruction::CmpNeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Lt => instructions.push(Instruction::CmpLtSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Le => instructions.push(Instruction::CmpLeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Gt => instructions.push(Instruction::CmpGtSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Ge => instructions.push(Instruction::CmpGeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                    mode: compare_mode,
+                }),
+                CompareOp::Like => instructions.push(Instruction::IntrinsicLikeDigits {
+                    dst,
+                    lhs: lhs_slot,
+                    pattern: rhs_slot,
+                    mode: compare_mode,
+                }),
+            }
+        }
         BoundExpr::UnaryOp { op, operand } => {
             let src_slot = temps.alloc_temp();
             emit_expr_into(
@@ -2804,8 +3209,28 @@ fn emit_expr_into(
                     instructions.push(Instruction::IntrinsicStrPtr { dst, src: *src })
                 }
                 ("varptr", [src]) => {
-                    instructions.push(Instruction::IntrinsicVarPtr { dst, src: *src })
+                    let instruction = match args.first() {
+                        Some(BoundExpr::Var(name)) => match current_proc_meta(proc_meta)
+                            .and_then(|meta| meta.declaration_types.get(name.as_str()).copied())
+                        {
+                            Some(BoundType::String) => {
+                                Instruction::IntrinsicVarPtrStringVar { dst, src: *src }
+                            }
+                            Some(BoundType::Variant) => {
+                                Instruction::IntrinsicVarPtrVariantVar { dst, src: *src }
+                            }
+                            _ => Instruction::IntrinsicVarPtr { dst, src: *src },
+                        },
+                        _ => Instruction::IntrinsicVarPtr { dst, src: *src },
+                    };
+                    instructions.push(instruction)
                 }
+                ("__oxvba_array_get", [array, indices @ ..]) if !indices.is_empty() => instructions
+                    .push(Instruction::IntrinsicArrayGet {
+                        dst,
+                        array: *array,
+                        indices: indices.to_vec(),
+                    }),
                 ("objptr", [src]) => {
                     instructions.push(Instruction::IntrinsicObjPtr { dst, src: *src })
                 }
@@ -2925,6 +3350,9 @@ fn emit_expr_into(
                 }
                 ("val", [src]) => {
                     instructions.push(Instruction::IntrinsicValDigits { dst, src: *src })
+                }
+                ("cdate", [src]) => {
+                    instructions.push(Instruction::IntrinsicCDateValue { dst, src: *src })
                 }
                 ("hex", [src]) => {
                     instructions.push(Instruction::IntrinsicHexDigits { dst, src: *src })
@@ -3180,6 +3608,14 @@ fn emit_expr_into(
                 }),
                 ("environ", [key]) => {
                     instructions.push(Instruction::IntrinsicEnvironHost { dst, key: *key })
+                }
+                ("dir", []) => {
+                    let path = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: path,
+                        value: 0,
+                    });
+                    instructions.push(Instruction::IntrinsicDirHost { dst, path })
                 }
                 ("dir", [path]) => {
                     instructions.push(Instruction::IntrinsicDirHost { dst, path: *path })

@@ -6,7 +6,9 @@ use crate::{
 use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+#[cfg(target_os = "windows")]
+use std::{thread, time::Duration};
 
 use super::StandardHostServices;
 
@@ -142,13 +144,36 @@ fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {
     cursor
 }
 
+#[cfg(target_os = "windows")]
+fn remove_file_with_retry(host_path: &PathBuf) -> std::io::Result<()> {
+    const MAX_ATTEMPTS: usize = 8;
+    const RETRY_DELAY_MS: u64 = 25;
+
+    let mut last_err = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match fs::remove_file(host_path) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                last_err = Some(err);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                    continue;
+                }
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("remove_file retry loop exhausted")))
+}
+
 impl FileSystemHal for StandardHostServices {
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "open"));
         }
-        let mode_raw = self.runtime_value_to_legacy_i32(&mode, capability, "open", "mode")?;
+        let mode_raw =
+            self.runtime_value_project_compat_slot_i32(&mode, capability, "open", "mode")?;
         // Upper 16 bits may carry a requested file number from the VBA Open statement.
         let requested_handle = mode_raw >> 16;
         let mode = mode_raw & 0xFFFF;
@@ -295,7 +320,7 @@ impl FileSystemHal for StandardHostServices {
             self.assert_fs_invariants(&state, "open-post");
             return Ok(RuntimeValue::I32(handle));
         }
-        let path = self.runtime_value_to_legacy_i32(&path, capability, "open", "path")?;
+        let path = self.runtime_value_project_compat_slot_i32(&path, capability, "open", "path")?;
         let mut state = self.fs_lock(capability, "open")?;
         self.assert_fs_invariants(&state, "open-pre");
         let Some(handle) = state.first_free_in(1, 511) else {
@@ -429,7 +454,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "close"));
         }
-        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "close", "handle")?;
+        let handle =
+            self.runtime_value_project_compat_slot_i32(&handle, capability, "close", "handle")?;
         let mut state = self.fs_lock(capability, "close")?;
         self.assert_fs_invariants(&state, "close-pre");
         if handle == 0 {
@@ -478,14 +504,94 @@ impl FileSystemHal for StandardHostServices {
         }
     }
 
+    fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "kill"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "kill"));
+        }
+        let RuntimeValue::String(BStr(path_text)) = path else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "kill",
+                "path must be a string",
+            ));
+        };
+        if path_text.contains('*') || path_text.contains('?') {
+            if self.native_fs_enabled() {
+                let matched_paths = expand_host_wildcard_paths(Path::new(&path_text))
+                    .map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "kill",
+                            format!("failed to expand wildcard Kill path {path_text}: {err}"),
+                        )
+                    })?
+                    .into_iter()
+                    .filter(|path| path.is_file())
+                    .collect::<Vec<_>>();
+                if matched_paths.is_empty() {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "kill",
+                        format!("wildcard Kill path matched no files: {path_text}"),
+                    ));
+                }
+                for matched_path in matched_paths {
+                    #[cfg(target_os = "windows")]
+                    let remove_result = remove_file_with_retry(&matched_path);
+                    #[cfg(not(target_os = "windows"))]
+                    let remove_result = fs::remove_file(&matched_path);
+
+                    remove_result.map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "kill",
+                            format!(
+                                "failed to remove host path {} expanded from {}: {err}",
+                                matched_path.display(),
+                                path_text
+                            ),
+                        )
+                    })?;
+                }
+            }
+            return Ok(RuntimeValue::I32(0));
+        }
+        if self.native_fs_enabled() {
+            let host_path = PathBuf::from(&path_text);
+            #[cfg(target_os = "windows")]
+            let remove_result = remove_file_with_retry(&host_path);
+            #[cfg(not(target_os = "windows"))]
+            let remove_result = fs::remove_file(&host_path);
+
+            remove_result.map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "kill",
+                    format!("failed to remove host path {}: {err}", host_path.display()),
+                )
+            })?;
+        }
+        Ok(RuntimeValue::I32(0))
+    }
+
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "seek"));
         }
-        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "seek", "handle")?;
+        let handle =
+            self.runtime_value_project_compat_slot_i32(&handle, capability, "seek", "handle")?;
         let position =
-            self.runtime_value_to_legacy_i32(&position, capability, "seek", "position")?;
+            self.runtime_value_project_compat_slot_i32(&position, capability, "seek", "position")?;
         if position < 0 {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -569,7 +675,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "eof"));
         }
-        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "eof", "handle")?;
+        let handle =
+            self.runtime_value_project_compat_slot_i32(&handle, capability, "eof", "handle")?;
         let mut state = self.fs_lock(capability, "eof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "eof")?;
         Ok(RuntimeValue::I32(if entry.position >= entry.len {
@@ -584,7 +691,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "lof"));
         }
-        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "lof", "handle")?;
+        let handle =
+            self.runtime_value_project_compat_slot_i32(&handle, capability, "lof", "handle")?;
         let mut state = self.fs_lock(capability, "lof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
         Ok(RuntimeValue::I32(entry.len))
@@ -595,7 +703,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "free_file"));
         }
-        let range_selector = self.runtime_value_to_legacy_i32(
+        let range_selector = self.runtime_value_project_compat_slot_i32(
             &range_selector,
             capability,
             "free_file",
@@ -631,9 +739,14 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "read_bytes"));
         }
-        let handle_id =
-            self.runtime_value_to_legacy_i32(&handle, capability, "read_bytes", "handle")?;
-        let count = self.runtime_value_to_legacy_i32(&count, capability, "read_bytes", "count")?;
+        let handle_id = self.runtime_value_project_compat_slot_i32(
+            &handle,
+            capability,
+            "read_bytes",
+            "handle",
+        )?;
+        let count =
+            self.runtime_value_project_compat_slot_i32(&count, capability, "read_bytes", "count")?;
         let mut state = self.fs_lock(capability, "read_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "read_bytes")?;
         let pos = entry.position as usize;
@@ -655,8 +768,12 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "write_bytes"));
         }
-        let handle_id =
-            self.runtime_value_to_legacy_i32(&handle, capability, "write_bytes", "handle")?;
+        let handle_id = self.runtime_value_project_compat_slot_i32(
+            &handle,
+            capability,
+            "write_bytes",
+            "handle",
+        )?;
         let bytes = format!("{}\r\n", format_write_field(&data)).into_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
@@ -679,13 +796,21 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "print_line"));
         }
-        let handle_id =
-            self.runtime_value_to_legacy_i32(&handle, capability, "print_line", "handle")?;
+        let handle_id = self.runtime_value_project_compat_slot_i32(
+            &handle,
+            capability,
+            "print_line",
+            "handle",
+        )?;
         let text = match &data {
             RuntimeValue::String(BStr(s)) => format!("{s}\r\n"),
             other => {
-                let val =
-                    self.runtime_value_to_legacy_i32(other, capability, "print_line", "data")?;
+                let val = self.runtime_value_project_compat_slot_i32(
+                    other,
+                    capability,
+                    "print_line",
+                    "data",
+                )?;
                 format!("{val}\r\n")
             }
         };
@@ -708,10 +833,18 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_fields"));
         }
-        let handle_id =
-            self.runtime_value_to_legacy_i32(&handle, capability, "input_fields", "handle")?;
-        let count =
-            self.runtime_value_to_legacy_i32(&count, capability, "input_fields", "count")?;
+        let handle_id = self.runtime_value_project_compat_slot_i32(
+            &handle,
+            capability,
+            "input_fields",
+            "handle",
+        )?;
+        let count = self.runtime_value_project_compat_slot_i32(
+            &count,
+            capability,
+            "input_fields",
+            "count",
+        )?;
         let count = count.max(1) as usize;
         let mut state = self.fs_lock(capability, "input_fields")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "input_fields")?;
@@ -739,8 +872,12 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "line_input"));
         }
-        let handle_id =
-            self.runtime_value_to_legacy_i32(&handle, capability, "line_input", "handle")?;
+        let handle_id = self.runtime_value_project_compat_slot_i32(
+            &handle,
+            capability,
+            "line_input",
+            "handle",
+        )?;
         let mut state = self.fs_lock(capability, "line_input")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "line_input")?;
         let pos = entry.position as usize;
@@ -769,9 +906,159 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "loc"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "loc", "handle")?;
+        let handle_id =
+            self.runtime_value_project_compat_slot_i32(&handle, capability, "loc", "handle")?;
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
         Ok(RuntimeValue::I32(entry.position))
+    }
+}
+
+pub(super) fn path_contains_wildcards(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(part) => {
+            let text = part.to_string_lossy();
+            text.contains('*') || text.contains('?')
+        }
+        _ => false,
+    })
+}
+
+pub(super) fn expand_host_wildcard_paths(path: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let components = path.components().collect::<Vec<_>>();
+    let mut roots = vec![PathBuf::new()];
+    let mut index = 0;
+
+    while index < components.len() {
+        match components[index] {
+            Component::Prefix(prefix) => {
+                for root in &mut roots {
+                    root.push(prefix.as_os_str());
+                }
+                index += 1;
+            }
+            Component::RootDir => {
+                for root in &mut roots {
+                    root.push(Component::RootDir.as_os_str());
+                }
+                index += 1;
+            }
+            Component::CurDir => {
+                index += 1;
+            }
+            Component::ParentDir => {
+                for root in &mut roots {
+                    root.push("..");
+                }
+                index += 1;
+            }
+            Component::Normal(_) => break,
+        }
+    }
+
+    let mut matches = Vec::new();
+    expand_host_wildcard_components(&roots, &components[index..], &mut matches)?;
+    matches.sort_by_key(|path| wildcard_casefold(&path.to_string_lossy()));
+    matches.dedup();
+    Ok(matches)
+}
+
+fn expand_host_wildcard_components(
+    bases: &[PathBuf],
+    components: &[Component<'_>],
+    matches: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
+    if components.is_empty() {
+        matches.extend(bases.iter().cloned());
+        return Ok(());
+    }
+
+    let component = components[0];
+    match component {
+        Component::CurDir => expand_host_wildcard_components(bases, &components[1..], matches),
+        Component::ParentDir => {
+            let next = bases
+                .iter()
+                .map(|base| {
+                    let mut path = base.clone();
+                    path.push("..");
+                    path
+                })
+                .collect::<Vec<_>>();
+            expand_host_wildcard_components(&next, &components[1..], matches)
+        }
+        Component::Normal(part) => {
+            let text = part.to_string_lossy();
+            let has_wildcards = text.contains('*') || text.contains('?');
+            if !has_wildcards {
+                let next = bases
+                    .iter()
+                    .map(|base| {
+                        let mut path = base.clone();
+                        path.push(part);
+                        path
+                    })
+                    .collect::<Vec<_>>();
+                return expand_host_wildcard_components(&next, &components[1..], matches);
+            }
+
+            let mut next = Vec::new();
+            for base in bases {
+                let dir = if base.as_os_str().is_empty() {
+                    PathBuf::from(".")
+                } else {
+                    base.clone()
+                };
+                for entry in fs::read_dir(&dir)? {
+                    let entry = entry?;
+                    let entry_path = entry.path();
+                    let entry_name = entry.file_name();
+                    if !wildcard_match(&text, &entry_name.to_string_lossy()) {
+                        continue;
+                    }
+                    if components.len() > 1 && !entry.file_type()?.is_dir() {
+                        continue;
+                    }
+                    next.push(entry_path);
+                }
+            }
+            expand_host_wildcard_components(&next, &components[1..], matches)
+        }
+        Component::Prefix(_) | Component::RootDir => {
+            unreachable!("prefix/root handled before recursion")
+        }
+    }
+}
+
+fn wildcard_match(pattern: &str, candidate: &str) -> bool {
+    let pattern: Vec<char> = wildcard_casefold(pattern).chars().collect();
+    let candidate: Vec<char> = wildcard_casefold(candidate).chars().collect();
+    let mut dp = vec![vec![false; candidate.len() + 1]; pattern.len() + 1];
+    dp[0][0] = true;
+
+    for i in 0..pattern.len() {
+        if pattern[i] == '*' {
+            dp[i + 1][0] = dp[i][0];
+        }
+        for j in 0..candidate.len() {
+            dp[i + 1][j + 1] = match pattern[i] {
+                '*' => dp[i][j + 1] || dp[i + 1][j] || dp[i][j],
+                '?' => dp[i][j],
+                ch => dp[i][j] && ch == candidate[j],
+            };
+        }
+    }
+
+    dp[pattern.len()][candidate.len()]
+}
+
+fn wildcard_casefold(text: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        text.to_ascii_lowercase()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        text.to_string()
     }
 }

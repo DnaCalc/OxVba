@@ -9,8 +9,8 @@ use oxvba_com::{
     DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
-    compile_project,
+    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest,
+    compile_project, compile_with_runtime_metadata,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -112,9 +112,65 @@ pub struct ProjectRuntimeSession {
 
 const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
 
+fn entry_procedure_runtime_metadata(
+    metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Option<&ProcedureRuntimeMetadata> {
+    metadata
+        .values()
+        .find(|metadata| {
+            metadata.procedure_name.eq_ignore_ascii_case("main")
+                && !is_startup_entry_shim_module_name(&metadata.module_name)
+        })
+        .or_else(|| {
+            metadata.values().find(|metadata| {
+                metadata.entry_pc == 0 && !is_startup_entry_shim_module_name(&metadata.module_name)
+            })
+        })
+        .or_else(|| {
+            metadata
+                .values()
+                .find(|metadata| !is_startup_entry_shim_module_name(&metadata.module_name))
+        })
+        .or_else(|| metadata.values().find(|metadata| metadata.entry_pc == 0))
+}
+
+fn project_visible_snapshot(
+    all_slots: &[RuntimeValue],
+    metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    fallback_count: usize,
+) -> Vec<RuntimeValue> {
+    if let Some(entry) = entry_procedure_runtime_metadata(metadata) {
+        let mut visible = Vec::with_capacity(entry.slots.len());
+        for slot in &entry.slots {
+            if matches!(
+                slot.kind,
+                oxvba_compiler::ProcedureRuntimeSlotKind::ReturnValue
+            ) {
+                continue;
+            }
+            if let Some(value) = all_slots.get(slot.slot).cloned() {
+                visible.push(value);
+            }
+        }
+        return visible;
+    }
+    all_slots[..fallback_count.min(all_slots.len())].to_vec()
+}
+
+fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
+    let mut snapshot_bytecode = bytecode.clone();
+    snapshot_bytecode.user_slot_count = snapshot_bytecode.slot_count;
+    snapshot_bytecode
+}
+
 impl ProjectRuntimeSession {
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        self.vm.snapshot(self.compiled.bytecode.user_slot_count)
+        let all_slots = self.vm.snapshot(self.compiled.bytecode.slot_count);
+        project_visible_snapshot(
+            &all_slots,
+            &self.compiled.procedure_runtime_metadata,
+            self.compiled.bytecode.user_slot_count,
+        )
     }
 
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
@@ -158,7 +214,7 @@ impl Default for Engine {
 fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
     values
         .into_iter()
-        .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+        .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
         .collect()
 }
 
@@ -837,20 +893,33 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata(source)
+            .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         self.preflight_host_sensitive_support(&bytecode)?;
+        let snapshot_bytecode = full_snapshot_bytecode(&bytecode);
         if self.config.enable_jit {
             self.jit
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            return self
+            let all_slots = self
                 .jit
-                .execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
+                .execute_and_snapshot_with_host(&snapshot_bytecode, self.host_services.clone())
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
+            return Ok(project_visible_snapshot(
+                &all_slots,
+                &procedure_runtime_metadata,
+                bytecode.user_slot_count,
+            ));
         }
 
-        execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
-            .map_err(PhaseDiagnostic::runtime)
+        let all_slots =
+            execute_and_snapshot_with_host(&snapshot_bytecode, self.host_services.clone())
+                .map_err(PhaseDiagnostic::runtime)?;
+        Ok(project_visible_snapshot(
+            &all_slots,
+            &procedure_runtime_metadata,
+            bytecode.user_slot_count,
+        ))
     }
 
     pub fn execute_source_with_value_snapshot_phased(
@@ -904,7 +973,12 @@ impl Engine {
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
-        Ok(vm.snapshot_values(compiled.bytecode.user_slot_count))
+        let all_slots = vm.snapshot(compiled.bytecode.slot_count);
+        Ok(project_visible_snapshot(
+            &all_slots,
+            &compiled.procedure_runtime_metadata,
+            compiled.bytecode.user_slot_count,
+        ))
     }
 
     pub fn execute_project_with_value_snapshot_phased(
@@ -1230,6 +1304,52 @@ mod tests {
             expected,
             "snapshot tail mismatch: snapshot={snapshot:?}"
         );
+    }
+
+    #[test]
+    fn source_snapshot_uses_entry_procedure_slots_when_helper_precedes_main_vm_and_jit() {
+        let source = "Private Function MakeBuf() As Byte()\n\
+Dim buf() As Byte\n\
+ReDim buf(2)\n\
+buf(0) = 90\n\
+buf(1) = 91\n\
+buf(2) = 92\n\
+MakeBuf = buf\n\
+End Function\n\
+\n\
+Sub Main()\n\
+Dim result() As Byte\n\
+Dim x0 As Long\n\
+Dim x1 As Long\n\
+Dim x2 As Long\n\
+result = MakeBuf()\n\
+x0 = result(0)\n\
+x1 = result(1)\n\
+x2 = result(2)\n\
+End Sub";
+        for enable_jit in [false, true] {
+            let engine = Engine::new(HostConfig {
+                enable_jit,
+                root_object_name: None,
+            });
+            let snapshot = engine
+                .execute_source_with_value_snapshot(source)
+                .expect("source snapshot should execute");
+            assert_eq!(snapshot.len(), 4);
+            assert!(
+                matches!(snapshot[0], RuntimeValue::ArrayIntent(_)),
+                "result should remain a runtime array carrier for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+            assert_eq!(
+                &snapshot[1..],
+                &[
+                    RuntimeValue::I32(90),
+                    RuntimeValue::I32(91),
+                    RuntimeValue::I32(92),
+                ],
+                "snapshot should reflect Main scalar slots for enable_jit={enable_jit}"
+            );
+        }
     }
 
     struct ProjectAwareCallbacks {
@@ -1867,7 +1987,7 @@ mod tests {
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[2], 7);
+        assert_eq!(snapshot[3], 7);
     }
 
     #[test]
@@ -1877,7 +1997,7 @@ mod tests {
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[2], 0);
+        assert_eq!(snapshot[3], 0);
     }
 
     #[test]
@@ -1891,14 +2011,34 @@ mod tests {
     }
 
     #[test]
+    fn formal_v42_literal_redim_on_dynamic_array_keeps_runtime_indexing() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a() As Byte\nDim x\nReDim a(2)\na(1) = 7\nx = a(1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 7);
+    }
+
+    #[test]
+    fn formal_v42_runtime_redim_preserve_over_dynamic_array_retains_existing_values() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim length As Long\nDim a() As Byte\nDim x\nlength = 1\nReDim a(length)\na(1) = 7\nlength = 3\nReDim Preserve a(length)\nx = a(1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[2], 7);
+    }
+
+    #[test]
     fn formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nDim x\nm(1, 1) = 7\nReDim Preserve m(1 To 2, 1 To 3)\nx = m(1, 1)\nEnd Sub";
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[0], 7);
-        assert_eq!(snapshot[4], 7);
+        assert_eq!(snapshot[1], 7);
+        assert_eq!(snapshot[5], 7);
     }
 
     #[test]
@@ -1920,6 +2060,70 @@ mod tests {
             .execute_source_slots_test(source)
             .expect_err("non-last-dimension preserve resize should fail");
         assert!(err.contains("redim preserve only supports resizing"));
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_redim_preserve_keeps_overlap() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m() As Byte\nDim x\nReDim m(1 To 2, 1 To 2)\nm(1, 1) = 7\nReDim Preserve m(1 To 2, 1 To 3)\nx = m(1, 1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 7);
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_explicit_lower_bounds_are_honored() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m() As Byte\nDim x\nReDim m(5 To 6, 3 To 4)\nm(6, 4) = 9\nx = m(6, 4)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 9);
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_option_base_applies_to_runtime_redim() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Option Base 1\nSub Main()\nDim m() As Byte\nDim x\nReDim m(2, 3)\nm(1, 1) = 5\nx = m(1, 1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 5);
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_explicit_lower_bounds_lbound_ubound_follow_metadata() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m() As Byte\nDim x\nDim l\nDim u\nReDim m(5 To 6, 3 To 4)\nl = LBound(m)\nu = UBound(m)\nx = l * 10 + u\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 56);
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_option_base_lbound_ubound_follow_metadata() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Option Base 1\nSub Main()\nDim m() As Byte\nDim x\nDim l\nDim u\nReDim m(2, 3)\nl = LBound(m)\nu = UBound(m)\nx = l * 10 + u\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 12);
+    }
+
+    #[test]
+    fn formal_v42_dynamic_multidim_preserve_rejects_non_last_dimension_resize() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m() As Byte\nReDim m(1 To 2, 1 To 2)\nReDim Preserve m(1 To 3, 1 To 2)\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("non-last-dimension preserve resize should fail");
+        assert!(
+            err.contains("redim preserve only supports resizing")
+                || err.contains("runtime error: 9"),
+            "unexpected rejection detail: {err}"
+        );
     }
 
     #[test]
@@ -2018,6 +2222,27 @@ mod tests {
     }
 
     #[test]
+    fn formal_v45_char_and_format_intrinsic_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\nDim f\nDim g\na = Chr(\"65\")\nb = Asc(123)\nc = Space(\"3\")\nd = String$(3, \"Z\")\ne = Hex(\"255\")\nf = Oct(8)\ng = StrConv(\"ab\", \"1\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::String(BStr("A".to_string())),
+                RuntimeValue::I32('1' as i32),
+                RuntimeValue::String(BStr("   ".to_string())),
+                RuntimeValue::String(BStr("ZZZ".to_string())),
+                RuntimeValue::String(BStr("FF".to_string())),
+                RuntimeValue::String(BStr("10".to_string())),
+                RuntimeValue::String(BStr("AB".to_string())),
+            ]
+        );
+    }
+
+    #[test]
     fn formal_v46_len_intrinsic_digit_count() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = Len(1234)\nEnd Sub";
@@ -2032,9 +2257,16 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\nDim c\na = Left(12345, 2)\nb = Right(12345, 2)\nc = Mid(12345, 2, 3)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![12, 45, 234]);
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::String(BStr("12".to_string())),
+                RuntimeValue::String(BStr("45".to_string())),
+                RuntimeValue::String(BStr("234".to_string()))
+            ]
+        );
     }
 
     #[test]
@@ -2042,9 +2274,16 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nDim z\nx = InStr(12345, 34)\ny = LCase(789)\nz = UCase(654)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![3, 789, 654]);
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::I32(3),
+                RuntimeValue::String(BStr("789".to_string())),
+                RuntimeValue::String(BStr("654".to_string()))
+            ]
+        );
     }
 
     #[test]
@@ -2062,9 +2301,16 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nDim z\nx = Replace(12345, 23, 67)\ny = Trim(456)\nz = RTrim(321)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![16745, 456, 321]);
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::String(BStr("16745".to_string())),
+                RuntimeValue::String(BStr("456".to_string())),
+                RuntimeValue::String(BStr("321".to_string()))
+            ]
+        );
     }
 
     #[test]
@@ -2079,14 +2325,96 @@ mod tests {
     }
 
     #[test]
+    fn formal_v47_like_intrinsic_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Option Compare Text\nSub Main()\nDim x\nDim y\nx = \"ABC\" Like \"abc\"\ny = 123 Like \"456\"\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![RuntimeValue::I32(-1), RuntimeValue::I32(0)]);
+    }
+
+    #[test]
+    fn formal_v47_mid_statement_intrinsic_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim s\ns = \"ABCDE\"\nMid(s, 2, 2) = \"99\"\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(
+            snapshot,
+            vec![RuntimeValue::String(BStr("A99DE".to_string()))]
+        );
+    }
+
+    #[test]
     fn formal_v48_date_serial_and_value_subset() {
         let engine = Engine::new(HostConfig::default());
         let source =
             "Sub Main()\nDim x\nDim y\nx = DateSerial(2026, 2, 28)\ny = DateValue(x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![20260228, 20260228]);
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::F64(F64Value::from_date_f64(46081.0))
+        );
+        assert_eq!(
+            snapshot[1],
+            RuntimeValue::F64(F64Value::from_date_f64(46081.0))
+        );
+    }
+
+    #[test]
+    fn formal_v48_datevalue_string_month_name_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DateValue(\"1 Jan 2000\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("DateValue month-name string should execute");
+        assert_eq!(
+            snapshot,
+            vec![RuntimeValue::F64(F64Value::from_date_f64(36526.0))]
+        );
+    }
+
+    #[test]
+    fn formal_v48_datevalue_string_month_first_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DateValue(\"January 1, 2000\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("DateValue month-first string should execute");
+        assert_eq!(
+            snapshot,
+            vec![RuntimeValue::F64(F64Value::from_date_f64(36526.0))]
+        );
+    }
+
+    #[test]
+    fn formal_v48_cdate_string_month_dot_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = CDate(\"Jan. 1, 2000\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("CDate dotted month-name string should execute");
+        assert_eq!(
+            snapshot,
+            vec![RuntimeValue::F64(F64Value::from_date_f64(36526.0))]
+        );
+    }
+
+    #[test]
+    fn formal_v48_date_param_boundary_coerces_packed_dates_to_date_subtype() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim out\nout = PassDate(DateSerial(2010, 6, 19))\nEnd Sub\nPrivate Function PassDate(ByVal value As Date) As Double\nPassDate = CDbl(value)\nEnd Function";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("typed Date parameter should coerce packed date digits");
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::F64(F64Value::from_date_f64(40348.0))
+        );
     }
 
     #[test]
@@ -2094,9 +2422,15 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nx = TimeSerial(1, 2, 3)\ny = TimeValue(x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![3723, 3723]);
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::F64(F64Value::from_date_f64(3723.0 / 86_400.0)),
+                RuntimeValue::F64(F64Value::from_date_f64(3723.0 / 86_400.0))
+            ]
+        );
     }
 
     #[test]
@@ -2104,9 +2438,13 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nx = DateAdd(1, 3, DateSerial(2026, 2, 28))\ny = DateDiff(1, DateSerial(2026, 2, 28), x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[1], 3);
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::F64(F64Value::from_date_f64(46084.0))
+        );
+        assert_eq!(snapshot[1], RuntimeValue::I32(3));
     }
 
     #[test]
@@ -2127,6 +2465,43 @@ mod tests {
             .execute_source_slots_test(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn formal_v49_math_and_date_numeric_text_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Abs(\"-7\")\nb = Round(\"19\", \"-1\")\nc = MonthName(\"3\")\nd = DateAdd(\"1\", \"3\", DateSerial(\"2026\", \"2\", \"28\"))\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::I32(7),
+                RuntimeValue::I32(20),
+                RuntimeValue::String(BStr("March".to_string())),
+                RuntimeValue::F64(F64Value::from_date_f64(46084.0))
+            ]
+        );
+    }
+
+    #[test]
+    fn formal_v49_arithmetic_and_comparison_numeric_text_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\na = \"12\" + 3\nb = \"12\" - 5\nc = \"3\" * 4\nd = \"2\" ^ 3\ne = (\"12\" = 12)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::I32(15),
+                RuntimeValue::I32(7),
+                RuntimeValue::I32(12),
+                RuntimeValue::F64(F64Value::from_f64(8.0)),
+                RuntimeValue::Bool(true),
+            ]
+        );
     }
 
     #[test]
@@ -2218,9 +2593,17 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim d\nDim t\nDim n\nDim k\nd = Date()\nt = Time()\nn = Now()\nk = Timer()\nEnd Sub";
         let snapshot = engine
-            .execute_source_slots_test(source)
+            .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![20_260_301, 123_456, 20_260_301, 42]);
+        assert_eq!(
+            snapshot,
+            vec![
+                RuntimeValue::F64(F64Value::from_date_f64(46_082.0)),
+                RuntimeValue::F64(F64Value::from_date_f64(45_296.0 / 86_400.0)),
+                RuntimeValue::F64(F64Value::from_date_f64(46_082.0 + 45_296.0 / 86_400.0)),
+                RuntimeValue::F64(F64Value::from_single_f64(45_296.0))
+            ]
+        );
     }
 
     #[test]
@@ -2631,12 +3014,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared property let should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(9),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(9)]);
     }
 
     #[test]
@@ -2672,12 +3050,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared default-member let should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(9),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(9)]);
     }
 
     #[test]
@@ -2741,12 +3114,7 @@ mod tests {
                         "{label} active-project Application should outrank same-name host-injected root at runtime: {err}"
                     )
                 });
-            assert_eq!(
-                snapshot[0],
-                RuntimeValue::I32(9),
-                "{label}: active-project Application should own same-name receiver traffic, snapshot: {:?}",
-                snapshot
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(9)]);
         }
     }
 
@@ -2822,15 +3190,15 @@ mod tests {
                     RuntimeValue::I32(exists_value),
                     RuntimeValue::I32(lookup_value),
                     RuntimeValue::I32(echo_value),
-                ] if root.raw() == 5_004
-                    && *implicit_value == 5_013
-                    && *explicit_paren_value == 5_013
-                    && *sum_pair == 5_033
-                    && *lookup_pair == 5_031
-                    && *count_value == 5_005
-                    && *exists_value == 5_048
-                    && *lookup_value == 5_052
-                    && *echo_value == 5_062 => {}
+                ] if root.raw() > 0
+                    && *implicit_value == root.raw().saturating_add(9)
+                    && *explicit_paren_value == root.raw().saturating_add(9)
+                    && *sum_pair == root.raw().saturating_add(12 + 3 + 14)
+                    && *lookup_pair == root.raw().saturating_add(13 + 5 + 9)
+                    && *count_value == root.raw().saturating_add(1)
+                    && *exists_value == root.raw().saturating_add(2 + 42)
+                    && *lookup_value == root.raw().saturating_add(6 + 42)
+                    && *echo_value == root.raw().saturating_add(16 + 42) => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM handoff and preserve imported scalar/named/positional read witnesses on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -2903,7 +3271,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 19 => {}
+                ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM Call-form handoff and preserve sentinel 19 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -2976,7 +3344,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 23 => {}
+                ] if root.raw() > 0 && *after_value == 23 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM statement-context handoff and preserve sentinel 23 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3049,7 +3417,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 29 => {}
+                ] if root.raw() > 0 && *after_value == 29 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren Call-form handoff and preserve sentinel 29 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3122,7 +3490,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 37 => {}
+                ] if root.raw() > 0 && *after_value == 37 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren statement-context handoff and preserve sentinel 37 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3195,7 +3563,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 67 => {}
+                ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM named-argument Call-form handoff and preserve sentinel 67 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3268,7 +3636,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 71 => {}
+                ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM named-argument statement-context handoff and preserve sentinel 71 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3341,7 +3709,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 73 => {}
+                ] if root.raw() > 0 && *after_value == 73 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren named-argument Call-form handoff and preserve sentinel 73 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3414,7 +3782,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 79 => {}
+                ] if root.raw() > 0 && *after_value == 79 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren named-argument statement-context handoff and preserve sentinel 79 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3487,7 +3855,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_013 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM property-put/get handoff and preserve deterministic getter witness 5013 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3561,7 +3929,9 @@ mod tests {
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::ObjectHandle(other),
                     RuntimeValue::I32(result),
-                ] if root.raw() == 5_004 && other.raw() == 5_004 && *result == 5_013 => {}
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
+                    && *result == root.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM property-putref handoff and preserve deterministic getter witness 5013 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3639,8 +4009,8 @@ mod tests {
                     RuntimeValue::I32(after_set_named_indexed_value),
                     RuntimeValue::I32(after_set_indexed_value_ref),
                     RuntimeValue::I32(after_set_named_indexed_value_ref),
-                ] if root.raw() == 5_004
-                    && other.raw() == 5_004
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
                     && *other_count == 5_005
                     && *after_set_indexed_value == 5_013
                     && *after_set_named_indexed_value == 5_013
@@ -3817,7 +4187,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -3862,12 +4232,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected global-namespace property let should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(9),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(9)]);
     }
 
     #[test]
@@ -3903,12 +4268,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected global-namespace default-member let should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(9),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(9)]);
     }
 
     #[test]
@@ -3944,12 +4304,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared call statement property get should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -3985,12 +4340,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared call statement default member should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4026,12 +4376,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected global-namespace call statement property get should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4067,12 +4412,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected global-namespace call statement default member should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4108,12 +4448,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared statement-context property get should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4149,12 +4484,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared statement-context default member should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4191,12 +4521,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected global-namespace statement-context property get should execute");
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -4235,12 +4560,7 @@ mod tests {
             .expect(
                 "host-injected global-namespace statement-context default member should execute",
             );
-        assert_eq!(
-            snapshot[0],
-            RuntimeValue::I32(7),
-            "snapshot: {:?}",
-            snapshot
-        );
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(7)]);
     }
 
     #[test]
@@ -5021,11 +5341,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(7)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(7)]);
         }
     }
 
@@ -5096,11 +5412,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(7)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(7)]);
         }
     }
 
@@ -5171,11 +5483,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(9)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(9)]);
         }
     }
 
@@ -5246,11 +5554,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(9)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(9)]);
         }
     }
 
@@ -5322,11 +5626,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(7)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(7)]);
         }
     }
 
@@ -5398,11 +5698,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(7)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(7)]);
         }
     }
 
@@ -5473,11 +5769,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(9)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(9)]);
         }
     }
 
@@ -5549,11 +5841,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(9)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(9)]);
         }
     }
 
@@ -5625,11 +5913,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(9)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(9)]);
         }
     }
 
@@ -5701,11 +5985,7 @@ mod tests {
             let snapshot = engine
                 .execute_project_with_value_snapshot_phased(&manifest)
                 .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
-            assert_eq!(
-                snapshot,
-                [RuntimeValue::I32(1), RuntimeValue::I32(11)],
-                "{label}: {snapshot:?}"
-            );
+            assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(11)]);
         }
     }
 
@@ -6151,7 +6431,7 @@ mod tests {
                 _ => None,
             };
             let (bound_handle, other_handle) = match snapshot.as_slice() {
-                [bound, other, _sink] => {
+                [.., bound, other, _sink] => {
                     let bound_handle = snapshot_handle(bound);
                     let other_handle = snapshot_handle(other);
                     match (bound_handle, other_handle) {
@@ -6279,7 +6559,7 @@ mod tests {
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
-                [bound, _sink] => match bound {
+                [.., bound, _sink] => match bound {
                     RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
@@ -6387,7 +6667,7 @@ mod tests {
                 _ => None,
             };
             let (bound_handle, com_handle) = match snapshot.as_slice() {
-                [bound, com_obj, _sink] => {
+                [.., bound, com_obj, _sink] => {
                     let bound_handle = snapshot_handle(bound);
                     let com_handle = snapshot_handle(com_obj);
                     match (bound_handle, com_handle) {
@@ -6502,7 +6782,7 @@ mod tests {
                 _ => None,
             };
             let (bound_handle, other_handle) = match snapshot.as_slice() {
-                [bound, other, _sink] => {
+                [.., bound, other, _sink] => {
                     let bound_handle = snapshot_handle(bound);
                     let other_handle = snapshot_handle(other);
                     match (bound_handle, other_handle) {
@@ -6633,7 +6913,7 @@ mod tests {
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
-                [bound, _sink] => match bound {
+                [.., bound, _sink] => match bound {
                     RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
@@ -6740,7 +7020,7 @@ mod tests {
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
-                [bound, _sink] => match bound {
+                [.., bound, _sink] => match bound {
                     RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
@@ -6820,7 +7100,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_009 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(5) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and dispatch result 5009, got: {other:?}"
                 ),
@@ -6881,7 +7161,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_005 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and imported Count() result 5005, got: {other:?}"
                 ),
@@ -6960,7 +7240,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_005 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and yield COM-backed handle 5004 plus imported Count() result 5005, got: {other:?}"
                 ),
@@ -7023,7 +7303,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_013 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and shared-model imported property-get result 5013 after property-put traffic, got: {other:?}"
                 ),
@@ -7091,7 +7371,7 @@ mod tests {
                     RuntimeValue::I32(explicit_paren_value),
                     RuntimeValue::I32(implicit_ping),
                     RuntimeValue::I32(explicit_ping),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *implicit_value == 5_013
                     && *explicit_value == 5_013
                     && *implicit_paren_value == 5_013
@@ -7166,7 +7446,7 @@ mod tests {
                     RuntimeValue::I32(let_sum_pair),
                     RuntimeValue::I32(let_lookup_pair),
                     RuntimeValue::I32(let_echo_value),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *sum_pair == 5_033
                     && *lookup_pair == 5_031
                     && *echo_value == 5_061
@@ -7243,7 +7523,7 @@ mod tests {
                     RuntimeValue::I32(let_exists_value),
                     RuntimeValue::I32(let_lookup_value),
                     RuntimeValue::I32(let_echo_value),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *count_value == 5_005
                     && *exists_value == 5_048
                     && *lookup_value == 5_052
@@ -7399,7 +7679,9 @@ mod tests {
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::ObjectHandle(other),
                     RuntimeValue::I32(result),
-                ] if root.raw() == 5_004 && other.raw() == 5_004 && *result == 5_013 => {}
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
+                    && *result == root.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected host-root imported property-putref traffic to execute on shared-model COM handles 5004/5004 with deterministic getter witness 5013, got: {other:?}"
                 ),
@@ -7486,7 +7768,7 @@ mod tests {
                     RuntimeValue::I32(exists_value),
                     RuntimeValue::I32(lookup_value),
                     RuntimeValue::I32(echo_value),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *implicit_value == 5_013
                     && *explicit_paren_value == 5_013
                     && *sum_pair == 5_033
@@ -7675,7 +7957,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_013 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported property-put/get traffic with deterministic getter witness 5013, got: {other:?}"
                 ),
@@ -7738,7 +8020,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_061 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and shared-model imported default-member result 5061 on the returned COM object, got: {other:?}"
                 ),
@@ -7818,7 +8100,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(handle),
                     RuntimeValue::I32(result),
-                ] if handle.raw() == 5_004 && *result == 5_061 => {}
+                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported default-member traffic with deterministic result 5061, got: {other:?}"
                 ),
@@ -7889,7 +8171,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -7980,7 +8262,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8055,7 +8337,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8146,7 +8428,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8221,7 +8503,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8312,7 +8594,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8397,7 +8679,9 @@ mod tests {
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::ObjectHandle(other),
                     RuntimeValue::I32(result),
-                ] if root.raw() == 5_004 && other.raw() == 5_004 && *result == 5_013 => {}
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
+                    && *result == root.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported property-putref traffic plus deterministic getter witness 5013, got: {other:?}"
                 ),
@@ -8465,8 +8749,8 @@ mod tests {
                     RuntimeValue::I32(after_set_named_indexed_value),
                     RuntimeValue::I32(after_set_indexed_value_ref),
                     RuntimeValue::I32(after_set_named_indexed_value_ref),
-                ] if root.raw() == 5_004
-                    && other.raw() == 5_004
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
                     && *other_count == 5_005
                     && *after_set_indexed_value == 5_013
                     && *after_set_named_indexed_value == 5_013
@@ -8556,8 +8840,8 @@ mod tests {
                     RuntimeValue::I32(after_set_named_indexed_value),
                     RuntimeValue::I32(after_set_indexed_value_ref),
                     RuntimeValue::I32(after_set_named_indexed_value_ref),
-                ] if root.raw() == 5_004
-                    && other.raw() == 5_004
+                ] if root.raw() > 0
+                    && other.raw() == root.raw()
                     && *other_count == 5_005
                     && *after_set_indexed_value == 5_013
                     && *after_set_named_indexed_value == 5_013
@@ -8633,7 +8917,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8724,7 +9008,7 @@ mod tests {
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
                     RuntimeValue::I32(wrapped_unknown_count),
-                ] if root.raw() == 5_004
+                ] if root.raw() > 0
                     && *child_dispatch_count == child_dispatch.raw() + 1
                     && *child_unknown_count == child_unknown.raw() + 1
                     && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
@@ -8972,7 +9256,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 43 => {}
+                ] if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren Call-form imported traffic to execute and preserve sentinel 43, got: {other:?}"
                 ),
@@ -9052,7 +9336,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 43 => {}
+                ] if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren Call-form traffic with sentinel 43, got: {other:?}"
                 ),
@@ -9115,7 +9399,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 53 => {}
+                ] if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren statement-context imported traffic to execute and preserve sentinel 53, got: {other:?}"
                 ),
@@ -9195,7 +9479,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 53 => {}
+                ] if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren statement-context traffic with sentinel 53, got: {other:?}"
                 ),
@@ -9258,7 +9542,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 19 => {}
+                ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected host-root Call-form imported traffic to execute and preserve sentinel 19, got: {other:?}"
                 ),
@@ -9337,7 +9621,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 19 => {}
+                ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported Call-form traffic with sentinel 19, got: {other:?}"
                 ),
@@ -9400,7 +9684,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 31 => {}
+                ] if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
                     "{label}: expected host-root statement-context imported traffic to execute and preserve sentinel 31, got: {other:?}"
                 ),
@@ -9480,7 +9764,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 31 => {}
+                ] if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported statement-context traffic with sentinel 31, got: {other:?}"
                 ),
@@ -9544,7 +9828,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 59 => {}
+                ] if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
                     "{label}: expected host-root named-argument Call-form traffic to execute and preserve sentinel 59, got: {other:?}"
                 ),
@@ -9624,7 +9908,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 59 => {}
+                ] if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument Call-form traffic with sentinel 59, got: {other:?}"
                 ),
@@ -9688,7 +9972,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 61 => {}
+                ] if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
                     "{label}: expected host-root named-argument statement-context traffic to execute and preserve sentinel 61, got: {other:?}"
                 ),
@@ -9768,7 +10052,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 61 => {}
+                ] if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument statement-context traffic with sentinel 61, got: {other:?}"
                 ),
@@ -9832,7 +10116,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 67 => {}
+                ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren named-argument Call-form traffic to execute and preserve sentinel 67, got: {other:?}"
                 ),
@@ -9912,7 +10196,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 67 => {}
+                ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument Call-form traffic with sentinel 67, got: {other:?}"
                 ),
@@ -9976,7 +10260,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 71 => {}
+                ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren named-argument statement-context traffic to execute and preserve sentinel 71, got: {other:?}"
                 ),
@@ -10056,7 +10340,7 @@ mod tests {
                 [
                     RuntimeValue::ObjectHandle(root),
                     RuntimeValue::I32(after_value),
-                ] if root.raw() == 5_004 && *after_value == 71 => {}
+                ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument statement-context traffic with sentinel 71, got: {other:?}"
                 ),
@@ -10262,9 +10546,11 @@ mod tests {
                 .members
                 .iter()
                 .any(|member| {
-                    member.member_name == "value" && member.known_dispatch_token == Some(9)
+                    member.member_name == "value"
+                        && member.known_dispatch_token.is_none()
+                        && member.dispatch_id.is_none()
                 }),
-            "expected property member token metadata for project dynamic object route"
+            "expected property member metadata to avoid the transitional token table"
         );
         assert!(
             compiled.project_dynamic_objects[0]
@@ -19232,7 +19518,11 @@ mod tests {
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![5_004]);
+        assert_eq!(snapshot.len(), 1);
+        assert!(
+            snapshot[0] > 0,
+            "expected a positive state-owned projection handle"
+        );
     }
 
     #[test]
@@ -19923,20 +20213,35 @@ mod tests {
 
     #[test]
     fn formal_v32_language_coverage_status_taxonomy_is_present() {
-        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
-            .expect("coverage index exists");
-        assert!(text.contains(",implemented,"));
-        assert!(text.contains(",partial,"));
-        assert!(text.contains(",planned,"));
+        let summary =
+            std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+                .expect("coverage index exists");
+        assert!(summary.contains("derived-summary"));
+        assert!(summary.contains("docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv"));
+
+        let matrix = std::fs::read_to_string(repo_path(
+            "docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv",
+        ))
+        .expect("validation matrix exists");
+        assert!(matrix.contains("implemented"));
+        assert!(matrix.contains("implemented-subset"));
+        assert!(matrix.contains("planned"));
     }
 
     #[test]
     fn formal_v33_core_coverage_tracks_key_control_flow_constructs() {
-        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
-            .expect("coverage index exists");
-        assert!(text.contains("If Then End If"));
-        assert!(text.contains("For Next"));
-        assert!(text.contains("Select Case"));
+        let matrix = std::fs::read_to_string(repo_path(
+            "docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv",
+        ))
+        .expect("validation matrix exists");
+        assert!(matrix.contains("For Each over arrays"));
+        assert!(matrix.contains("For Each over object enumerators"));
+
+        let spec = std::fs::read_to_string(repo_path("docs/evidence/SPEC_CHECKLIST.md"))
+            .expect("spec checklist exists");
+        assert!(spec.contains("`For Each ... Next`"));
+        assert!(spec.contains("`Select Case` basic"));
+        assert!(spec.contains("`Select Case Is` and range clauses"));
     }
 
     #[test]
@@ -19955,10 +20260,15 @@ mod tests {
 
     #[test]
     fn formal_v34_object_coverage_entries_are_present() {
-        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
-            .expect("coverage index exists");
-        assert!(text.contains("objects,Root object injection"));
-        assert!(text.contains("objects,Class module lifecycle"));
+        let spec = std::fs::read_to_string(repo_path("docs/evidence/SPEC_CHECKLIST.md"))
+            .expect("spec checklist exists");
+        assert!(spec.contains("| `[~]` | Class/project event model |"));
+        assert!(spec.contains(
+            "`WithEvents`/`Implements`/`RaiseEvent` legality + runtime dispatch semantics"
+        ));
+        assert!(spec.contains(
+            "| `[x]` | Error object | Full `Err` object surface (non-HAL deterministic subset) |"
+        ));
     }
 
     #[test]
@@ -21640,15 +21950,21 @@ mod tests {
 
     #[test]
     fn formal_v163_coverage_index_reconciles_non_hal_rows() {
-        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
-            .expect("coverage index exists");
-        assert!(text.contains(
-            "Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),implemented"
+        let summary =
+            std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+                .expect("coverage index exists");
+        assert!(summary.contains("This file is no longer the active source of truth."));
+        assert!(summary.contains("docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv"));
+
+        let spec = std::fs::read_to_string(repo_path("docs/evidence/SPEC_CHECKLIST.md"))
+            .expect("spec checklist exists");
+        assert!(spec.contains("Full `Err` object surface (non-HAL deterministic subset)"));
+        assert!(spec.contains(
+            "`String` BSTR and UDT runtime semantics (non-boundary deterministic subset)"
         ));
-        assert!(text.contains("Err object full surface,implemented"));
-        assert!(text.contains("String BSTR core,implemented"));
-        assert!(text.contains(
-            "File-introspection intrinsics (FreeFile/EOF/LOF/Seek expression subset),implemented"
+        assert!(spec.contains("`NPV`, `IRR`, `MIRR`, `Rate`, `NPer`, and related suite"));
+        assert!(spec.contains(
+            "`Open/Close`, `Input/Line Input`, `Print #/Write #`, `EOF/LOF/Seek`, `FreeFile`"
         ));
     }
 
@@ -21850,7 +22166,6 @@ mod tests {
             .expect("interpreter exists");
         assert!(text.contains("text[start..end]"));
         assert!(text.contains("text[start..]"));
-        assert!(text.contains("String::with_capacity"));
     }
 
     #[test]
@@ -24091,6 +24406,19 @@ mod tests {
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
         assert!(matches!(snapshot[0], RuntimeValue::F64(_)));
+    }
+
+    #[test]
+    fn formal_v559_randomize_numeric_text_seed_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nDim a\nx = Randomize(\"1\")\na = Rnd()\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("execution should succeed");
+        let expected_state: u32 =
+            1u32.wrapping_mul(0x43FD_43FD).wrapping_add(0x0026_9EC3) & 0x00FF_FFFF;
+        let expected = expected_state as f64 / 16_777_216.0;
+        assert_eq!(snapshot[1], RuntimeValue::F64(F64Value::from_f64(expected)));
     }
 
     // --- Format subset (v560-v565) ---

@@ -1943,9 +1943,9 @@ mod tests {
             .manifest
             .modules
             .iter()
-            .find(|module| module.module_name == "sqlite3")
+            .find(|module| module.module_name == "Sqlite3")
             .expect("loaded manifest should contain semantic Sqlite3 module");
-        assert_eq!(sqlite_module.attributes.vb_name, "sqlite3");
+        assert_eq!(sqlite_module.attributes.vb_name, "Sqlite3");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

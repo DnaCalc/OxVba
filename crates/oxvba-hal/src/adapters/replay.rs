@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue};
 
 use super::standard::descriptor_for_profile;
 
@@ -82,6 +82,59 @@ impl ReplayHostServices {
         let entry = self.next_entry(op)?;
         let value = entry.result.as_i64().unwrap_or(0) as i32;
         Ok(RuntimeValue::I32(value))
+    }
+
+    fn replay_runtime_value(&self, op: &'static str) -> HalResult<RuntimeValue> {
+        let entry = self.next_entry(op)?;
+        self.decode_runtime_value(op, entry)
+    }
+
+    fn decode_runtime_value(
+        &self,
+        op: &'static str,
+        entry: HalJournalEntry,
+    ) -> HalResult<RuntimeValue> {
+        let Some(kind) = entry.result.get("kind").and_then(|value| value.as_str()) else {
+            return Err(HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                op,
+                "replay runtime value missing `kind`".to_string(),
+            ));
+        };
+        match kind {
+            "i32" => Ok(RuntimeValue::I32(
+                entry
+                    .result
+                    .get("value")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default() as i32,
+            )),
+            "f64" => {
+                let value = entry
+                    .result
+                    .get("value")
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or_default();
+                let subtype = entry
+                    .result
+                    .get("subtype")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("double");
+                let out = match subtype {
+                    "single" => RuntimeValue::F64(F64Value::from_single_f64(value)),
+                    "date" => RuntimeValue::F64(F64Value::from_date_f64(value)),
+                    _ => RuntimeValue::F64(F64Value::from_f64(value)),
+                };
+                Ok(out)
+            }
+            other => Err(HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                op,
+                format!("replay runtime value kind `{other}` is not supported"),
+            )),
+        }
     }
 
     fn unsupported(&self, capability: CapabilityId, op: &'static str) -> HalError {
@@ -168,6 +221,9 @@ impl FileSystemHal for ReplayHostServices {
     }
     fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         self.replay_i32("close")
+    }
+    fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
+        self.replay_i32("kill")
     }
     fn seek(&self, _handle: RuntimeValue, _pos: RuntimeValue) -> HalResult<RuntimeValue> {
         self.replay_i32("seek")
@@ -298,13 +354,13 @@ impl ComHal for ReplayHostServices {
 
 impl TimeLocaleHal for ReplayHostServices {
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.replay_i32("date_serial_now")
+        self.replay_runtime_value("date_serial_now")
     }
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.replay_i32("time_serial_now")
+        self.replay_runtime_value("time_serial_now")
     }
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
-        self.replay_i32("timer_ticks")
+        self.replay_runtime_value("timer_ticks")
     }
 }
 

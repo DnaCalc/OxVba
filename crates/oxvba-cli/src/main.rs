@@ -205,7 +205,7 @@ fn run_project(args: Vec<String>) {
             if parsed.dump_slots {
                 let payload = values
                     .iter()
-                    .map(|v| v.to_legacy_i32().unwrap_or(EMPTY_TAG).to_string())
+                    .map(|v| v.project_compat_slot_i32().unwrap_or(EMPTY_TAG).to_string())
                     .collect::<Vec<_>>()
                     .join(",");
                 println!("SLOTS:{payload}");
@@ -2053,7 +2053,12 @@ fn run_execute(cli_args: Vec<String>) {
                 let payload = result
                     .values
                     .iter()
-                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG).to_string())
+                    .map(|value| {
+                        value
+                            .project_compat_slot_i32()
+                            .unwrap_or(EMPTY_TAG)
+                            .to_string()
+                    })
                     .collect::<Vec<_>>()
                     .join(",");
                 println!("SLOTS:{payload}");

@@ -409,6 +409,17 @@ pub fn insert_bound_object_binding(
     ObjectHandle::new(handle.raw())
 }
 
+pub fn insert_bound_object_binding_at_handle(
+    state: &mut WindowsComClientState,
+    object: ObjectHandle,
+    binding: ComBinding,
+) -> ObjectHandle {
+    state
+        .bindings
+        .insert(ComObjectToken::new(object.raw()), binding);
+    object
+}
+
 pub fn cache_member_dispid(
     state: &mut WindowsComClientState,
     object: ObjectHandle,
@@ -502,6 +513,17 @@ pub fn insert_bound_object_binding_shared(
 ) -> Result<ObjectHandle, String> {
     let mut state = lock_state(com_state, "insert_bound_object_binding")?;
     Ok(insert_bound_object_binding(&mut state, binding))
+}
+
+pub fn insert_bound_object_binding_at_handle_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+    binding: ComBinding,
+) -> Result<ObjectHandle, String> {
+    let mut state = lock_state(com_state, "insert_bound_object_binding_at_handle")?;
+    Ok(insert_bound_object_binding_at_handle(
+        &mut state, object, binding,
+    ))
 }
 
 pub fn resolve_bound_native_dispatch_shared(

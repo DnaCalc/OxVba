@@ -7,8 +7,9 @@ use crate::{
     ReleasedWindowsComObject, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibMetadataCacheState,
     TypeLibResolveRequest, TypeLibResolvedIdentity, WindowsComClientState,
     activate_runtime_dispatch, activate_runtime_object_binding_shared,
-    bind_native_dispatch_result_shared, build_typelib_metadata, callback_arg, callback_arity,
-    callback_subscription_token, execute_bound_runtime_value_with_shared_state,
+    bind_native_dispatch_result_shared, binding_from_typelib_metadata, build_typelib_metadata,
+    callback_arg, callback_arity, callback_subscription_token,
+    execute_bound_runtime_value_with_shared_state, insert_bound_object_binding_at_handle_shared,
     invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
     legacy_runtime_arg_values, member_spec_from_typelib_metadata,
     member_token_and_spec_from_typelib_metadata_name, queue_projection_event_callbacks_shared,
@@ -172,6 +173,16 @@ impl WindowsComBridge {
             self.force_registered_test_dispatch,
             |binding| configure_binding(binding),
         )
+    }
+
+    pub fn bind_projection_object(
+        &self,
+        object: ObjectHandle,
+        prog_id_name: &str,
+    ) -> Result<ObjectHandle, String> {
+        let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
+        let binding = binding_from_typelib_metadata(prog_id_name.to_string(), 0, metadata.as_ref());
+        insert_bound_object_binding_at_handle_shared(&self.state, object, binding)
     }
 
     pub fn describe_object(

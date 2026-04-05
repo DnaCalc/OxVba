@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, VecDeque},
     sync::Arc,
 };
@@ -11,7 +12,10 @@ use oxvba_compiler::{
     Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
     ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
     ProjectDynamicParamRoute,
-    bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode},
+    bytecode::{
+        ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
+        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+    },
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -20,12 +24,8 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
-use oxvba_runtime::safe_array::{
-    SafeArray, array_len_from_tag, is_array_tag as runtime_is_array_tag,
-};
-use oxvba_runtime::value_tags::{
-    EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
-};
+use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
+use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
 use oxvba_runtime::{BindingHandle, F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
 
 use crate::register_file::RegisterFile;
@@ -272,7 +272,7 @@ impl Vm {
         let end = slot_count.min(self.registers.registers.len());
         self.registers.registers[..end]
             .iter()
-            .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+            .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
             .collect()
     }
 
@@ -670,13 +670,13 @@ impl Vm {
             }
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
-                    // Use from_legacy_i32 for the special tag values (0=Empty,
+                    // Use compat-slot decoding for the special tag values (0=Empty,
                     // error tags, array tags) but NOT for -1 which is now
                     // properly represented via LoadNull.
                     let rv = if *value == NULL_TAG {
                         RuntimeValue::I32(*value)
                     } else {
-                        RuntimeValue::from_legacy_i32(*value)
+                        RuntimeValue::from_compat_slot_i32(*value)
                     };
                     self.write_value_slot(*slot, rv)?;
                     pc += 1;
@@ -737,72 +737,52 @@ impl Vm {
                 Instruction::DivSlots { dst, lhs, rhs } => {
                     let lhs_val = self.read_value_slot(*lhs)?;
                     let rhs_val = self.read_value_slot(*rhs)?;
-                    if Self::either_null(&lhs_val, &rhs_val) {
-                        self.write_value_slot(*dst, RuntimeValue::Null)?;
-                        pc += 1;
-                    } else {
-                        let r = Self::runtime_value_as_f64(&rhs_val).or_else(|_| {
-                            Self::runtime_value_legacy_token(&rhs_val, "div rhs").map(|v| v as f64)
-                        })?;
-                        if r == 0.0 {
-                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
-                        } else {
-                            let l = Self::runtime_value_as_f64(&lhs_val).or_else(|_| {
-                                Self::runtime_value_legacy_token(&lhs_val, "div lhs")
-                                    .map(|v| v as f64)
-                            })?;
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::F64(F64Value::from_f64(l / r)),
-                            )?;
+                    match crate::semantics::legacy_div_values(&lhs_val, &rhs_val)? {
+                        Ok(out) => {
+                            self.write_value_slot(*dst, out)?;
                             pc += 1;
+                        }
+                        Err(11) => {
+                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
+                        }
+                        Err(code) => {
+                            pc = self.route_runtime_error(pc, code, Some("Division failed"))?;
                         }
                     }
                 }
                 Instruction::IntDivSlots { dst, lhs, rhs } => {
                     let lhs_val = self.read_value_slot(*lhs)?;
                     let rhs_val = self.read_value_slot(*rhs)?;
-                    if Self::either_null(&lhs_val, &rhs_val) {
-                        self.write_value_slot(*dst, RuntimeValue::Null)?;
-                        pc += 1;
-                    } else {
-                        let r = Self::runtime_value_as_f64(&rhs_val).or_else(|_| {
-                            Self::runtime_value_legacy_token(&rhs_val, "intdiv rhs")
-                                .map(|v| v as f64)
-                        })?;
-                        let r_trunc = r as i32;
-                        if r_trunc == 0 {
-                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
-                        } else {
-                            let l = Self::runtime_value_as_f64(&lhs_val).or_else(|_| {
-                                Self::runtime_value_legacy_token(&lhs_val, "intdiv lhs")
-                                    .map(|v| v as f64)
-                            })?;
-                            self.write_value_slot(*dst, RuntimeValue::I32((l / r).trunc() as i32))?;
+                    match crate::semantics::legacy_intdiv_values(&lhs_val, &rhs_val)? {
+                        Ok(out) => {
+                            self.write_value_slot(*dst, out)?;
                             pc += 1;
+                        }
+                        Err(11) => {
+                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
+                        }
+                        Err(code) => {
+                            pc = self.route_runtime_error(
+                                pc,
+                                code,
+                                Some("Integer division failed"),
+                            )?;
                         }
                     }
                 }
                 Instruction::ModSlots { dst, lhs, rhs } => {
                     let lhs_val = self.read_value_slot(*lhs)?;
                     let rhs_val = self.read_value_slot(*rhs)?;
-                    if Self::either_null(&lhs_val, &rhs_val) {
-                        self.write_value_slot(*dst, RuntimeValue::Null)?;
-                        pc += 1;
-                    } else {
-                        let r = Self::runtime_value_as_f64(&rhs_val).or_else(|_| {
-                            Self::runtime_value_legacy_token(&rhs_val, "mod rhs").map(|v| v as f64)
-                        })?;
-                        let r_int = r as i32;
-                        if r_int == 0 {
-                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
-                        } else {
-                            let l = Self::runtime_value_as_f64(&lhs_val).or_else(|_| {
-                                Self::runtime_value_legacy_token(&lhs_val, "mod lhs")
-                                    .map(|v| v as f64)
-                            })?;
-                            self.write_value_slot(*dst, RuntimeValue::I32((l as i32) % r_int))?;
+                    match crate::semantics::legacy_mod_values(&lhs_val, &rhs_val)? {
+                        Ok(out) => {
+                            self.write_value_slot(*dst, out)?;
                             pc += 1;
+                        }
+                        Err(11) => {
+                            pc = self.route_runtime_error(pc, 11, Some("Division by zero"))?;
+                        }
+                        Err(code) => {
+                            pc = self.route_runtime_error(pc, code, Some("Modulo failed"))?;
                         }
                     }
                 }
@@ -837,58 +817,35 @@ impl Vm {
                 }
                 Instruction::IntrinsicLenDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(*dst, RuntimeValue::I32(s.0.len() as i32))?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "Len operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::len_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "Len operand")?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(text.len() as i32))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLeftDigits { dst, src, count } => {
                     let src_val = self.read_value_slot(*src)?;
-                    match &src_val {
-                        RuntimeValue::String(s) => {
-                            let count_val = self.read_value_slot(*count)?;
-                            let n = Self::runtime_value_to_usize(&count_val)?;
-                            let result = if n >= s.0.len() {
-                                s.0.clone()
-                            } else {
-                                s.0[..n].to_string()
-                            };
-                            self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&src_val, "Left src")?;
-                            let c = self.read_legacy_scalar_slot(*count)?;
-                            self.write_legacy_scalar_slot(*dst, Self::left_digits(v, c))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&src_val, "Left src")?;
+                    let count_val = self.read_value_slot(*count)?;
+                    let n = Self::runtime_value_to_usize(&count_val)?;
+                    let result = if n >= text.len() {
+                        text
+                    } else {
+                        text[..n].to_string()
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRightDigits { dst, src, count } => {
                     let src_val = self.read_value_slot(*src)?;
-                    match &src_val {
-                        RuntimeValue::String(s) => {
-                            let count_val = self.read_value_slot(*count)?;
-                            let n = Self::runtime_value_to_usize(&count_val)?;
-                            let len = s.0.len();
-                            let result = if n >= len {
-                                s.0.clone()
-                            } else {
-                                s.0[len - n..].to_string()
-                            };
-                            self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&src_val, "Right src")?;
-                            let c = self.read_legacy_scalar_slot(*count)?;
-                            self.write_legacy_scalar_slot(*dst, Self::right_digits(v, c))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&src_val, "Right src")?;
+                    let count_val = self.read_value_slot(*count)?;
+                    let n = Self::runtime_value_to_usize(&count_val)?;
+                    let len = text.len();
+                    let result = if n >= len {
+                        text
+                    } else {
+                        text[len - n..].to_string()
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidDigits {
@@ -898,36 +855,24 @@ impl Vm {
                     count,
                 } => {
                     let src_val = self.read_value_slot(*src)?;
-                    match &src_val {
-                        RuntimeValue::String(s) => {
-                            let start_val = self.read_value_slot(*start)?;
-                            let st = Self::runtime_value_to_usize(&start_val)?;
-                            let cnt = match count {
-                                Some(slot) => {
-                                    let cv = self.read_value_slot(*slot)?;
-                                    Some(Self::runtime_value_to_usize(&cv)?)
-                                }
-                                None => None,
-                            };
-                            let len = s.0.len();
-                            let begin = if st == 0 { 0 } else { (st - 1).min(len) };
-                            let end = match cnt {
-                                Some(c) => (begin + c).min(len),
-                                None => len,
-                            };
-                            let result = s.0[begin..end].to_string();
-                            self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    let text = crate::semantics::runtime_value_to_text(&src_val, "Mid src")?;
+                    let start_val = self.read_value_slot(*start)?;
+                    let st = Self::runtime_value_to_usize(&start_val)?;
+                    let cnt = match count {
+                        Some(slot) => {
+                            let cv = self.read_value_slot(*slot)?;
+                            Some(Self::runtime_value_to_usize(&cv)?)
                         }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&src_val, "Mid src")?;
-                            let st = self.read_legacy_scalar_slot(*start)?;
-                            let cnt = match count {
-                                Some(slot) => Some(self.read_legacy_scalar_slot(*slot)?),
-                                None => None,
-                            };
-                            self.write_legacy_scalar_slot(*dst, Self::mid_digits(v, st, cnt))?;
-                        }
-                    }
+                        None => None,
+                    };
+                    let len = text.len();
+                    let begin = if st == 0 { 0 } else { (st - 1).min(len) };
+                    let end = match cnt {
+                        Some(c) => (begin + c).min(len),
+                        None => len,
+                    };
+                    let result = text[begin..end].to_string();
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidStmtDigits {
@@ -936,16 +881,21 @@ impl Vm {
                     count,
                     value,
                 } => {
-                    let target_value = self.read_legacy_scalar_slot(*target)?;
-                    let start = self.read_legacy_scalar_slot(*start)?;
-                    let count = match count {
-                        Some(slot) => Some(self.read_legacy_scalar_slot(*slot)?),
+                    let target_value = self.read_value_slot(*target)?;
+                    let start_value = self.read_value_slot(*start)?;
+                    let count_value = match count {
+                        Some(slot) => Some(self.read_value_slot(*slot)?),
                         None => None,
                     };
-                    let value = self.read_legacy_scalar_slot(*value)?;
-                    self.write_legacy_scalar_slot(
+                    let value_value = self.read_value_slot(*value)?;
+                    self.write_value_slot(
                         *target,
-                        Self::mid_stmt_digits(target_value, start, count, value),
+                        crate::semantics::runtime_mid_stmt_bounded(
+                            &target_value,
+                            &start_value,
+                            count_value.as_ref(),
+                            &value_value,
+                        )?,
                     )?;
                     pc += 1;
                 }
@@ -957,19 +907,16 @@ impl Vm {
                 } => {
                     let hay_val = self.read_value_slot(*haystack)?;
                     let nee_val = self.read_value_slot(*needle)?;
-                    match (&hay_val, &nee_val) {
-                        (RuntimeValue::String(h), RuntimeValue::String(n)) => {
-                            let h = Self::normalize_for_compare(h.0.clone(), *mode);
-                            let n = Self::normalize_for_compare(n.0.clone(), *mode);
-                            let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
-                            self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
-                        }
-                        _ => {
-                            let h = Self::runtime_value_legacy_token(&hay_val, "InStr haystack")?;
-                            let n = Self::runtime_value_legacy_token(&nee_val, "InStr needle")?;
-                            self.write_legacy_scalar_slot(*dst, Self::instr_digits(h, n, *mode))?;
-                        }
-                    }
+                    let h = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&hay_val, "InStr haystack")?,
+                        *mode,
+                    );
+                    let n = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&nee_val, "InStr needle")?,
+                        *mode,
+                    );
+                    let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
+                    self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicInStrRevDigits {
@@ -980,55 +927,34 @@ impl Vm {
                 } => {
                     let hay_val = self.read_value_slot(*haystack)?;
                     let nee_val = self.read_value_slot(*needle)?;
-                    match (&hay_val, &nee_val) {
-                        (RuntimeValue::String(h), RuntimeValue::String(n)) => {
-                            let h = Self::normalize_for_compare(h.0.clone(), *mode);
-                            let n = Self::normalize_for_compare(n.0.clone(), *mode);
-                            let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
-                            self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
-                        }
-                        _ => {
-                            let h =
-                                Self::runtime_value_legacy_token(&hay_val, "InStrRev haystack")?;
-                            let n = Self::runtime_value_legacy_token(&nee_val, "InStrRev needle")?;
-                            self.write_legacy_scalar_slot(
-                                *dst,
-                                Self::instrrev_digits(h, n, *mode),
-                            )?;
-                        }
-                    }
+                    let h = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&hay_val, "InStrRev haystack")?,
+                        *mode,
+                    );
+                    let n = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&nee_val, "InStrRev needle")?,
+                        *mode,
+                    );
+                    let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
+                    self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::String(BStr(s.0.to_ascii_lowercase())),
-                            )?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "LCase operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::to_lower_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "LCase operand")?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::String(BStr(text.to_ascii_lowercase())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUpperDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::String(BStr(s.0.to_ascii_uppercase())),
-                            )?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "UCase operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::to_upper_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "UCase operand")?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::String(BStr(text.to_ascii_uppercase())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSplitCountDigits {
@@ -1036,11 +962,11 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let delimiter = self.read_legacy_scalar_slot(*delimiter)?;
-                    self.write_legacy_scalar_slot(
+                    let value = self.read_value_slot(*src)?;
+                    let delimiter = self.read_value_slot(*delimiter)?;
+                    self.write_value_slot(
                         *dst,
-                        Self::split_count_digits(value, delimiter),
+                        crate::semantics::runtime_split_count_bounded(&value, &delimiter)?,
                     )?;
                     pc += 1;
                 }
@@ -1049,9 +975,12 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let delimiter = self.read_legacy_scalar_slot(*delimiter)?;
-                    self.write_legacy_scalar_slot(*dst, Self::join_digits(value, delimiter))?;
+                    let value = self.read_value_slot(*src)?;
+                    let delimiter = self.read_value_slot(*delimiter)?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_join_bounded(&value, &delimiter)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicReplaceDigits {
@@ -1063,71 +992,41 @@ impl Vm {
                     let src_val = self.read_value_slot(*src)?;
                     let find_val = self.read_value_slot(*find)?;
                     let replace_val = self.read_value_slot(*replace)?;
-                    match (&src_val, &find_val, &replace_val) {
-                        (
-                            RuntimeValue::String(s),
-                            RuntimeValue::String(f),
-                            RuntimeValue::String(r),
-                        ) => {
-                            let result = s.0.replace(&f.0[..], &r.0[..]);
-                            self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&src_val, "Replace src")?;
-                            let f = Self::runtime_value_legacy_token(&find_val, "Replace find")?;
-                            let r =
-                                Self::runtime_value_legacy_token(&replace_val, "Replace replace")?;
-                            self.write_legacy_scalar_slot(*dst, Self::replace_digits(v, f, r))?;
-                        }
-                    }
+                    let src_text =
+                        crate::semantics::runtime_value_to_text(&src_val, "Replace src")?;
+                    let find_text =
+                        crate::semantics::runtime_value_to_text(&find_val, "Replace find")?;
+                    let replace_text =
+                        crate::semantics::runtime_value_to_text(&replace_val, "Replace replace")?;
+                    let result = src_text.replace(&find_text, &replace_text);
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::String(BStr(s.0.trim().to_string())),
-                            )?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "Trim operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::trim_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "Trim operand")?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::String(BStr(text.trim().to_string())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::String(BStr(s.0.trim_start().to_string())),
-                            )?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "LTrim operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::ltrim_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "LTrim operand")?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::String(BStr(text.trim_start().to_string())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::String(s) => {
-                            self.write_value_slot(
-                                *dst,
-                                RuntimeValue::String(BStr(s.0.trim_end().to_string())),
-                            )?;
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "RTrim operand")?;
-                            self.write_legacy_scalar_slot(*dst, Self::rtrim_digits(v))?;
-                        }
-                    }
+                    let text = crate::semantics::runtime_value_to_text(&value, "RTrim operand")?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::String(BStr(text.trim_end().to_string())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStrCompDigits {
@@ -1138,23 +1037,20 @@ impl Vm {
                 } => {
                     let lhs_val = self.read_value_slot(*lhs)?;
                     let rhs_val = self.read_value_slot(*rhs)?;
-                    match (&lhs_val, &rhs_val) {
-                        (RuntimeValue::String(l), RuntimeValue::String(r)) => {
-                            let l = Self::normalize_for_compare(l.0.clone(), *mode);
-                            let r = Self::normalize_for_compare(r.0.clone(), *mode);
-                            let result = match l.cmp(&r) {
-                                std::cmp::Ordering::Less => -1,
-                                std::cmp::Ordering::Equal => 0,
-                                std::cmp::Ordering::Greater => 1,
-                            };
-                            self.write_value_slot(*dst, RuntimeValue::I32(result))?;
-                        }
-                        _ => {
-                            let l = Self::runtime_value_legacy_token(&lhs_val, "StrComp lhs")?;
-                            let r = Self::runtime_value_legacy_token(&rhs_val, "StrComp rhs")?;
-                            self.write_legacy_scalar_slot(*dst, Self::strcomp_digits(l, r, *mode))?;
-                        }
-                    }
+                    let l = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&lhs_val, "StrComp lhs")?,
+                        *mode,
+                    );
+                    let r = Self::normalize_for_compare(
+                        crate::semantics::runtime_value_to_text(&rhs_val, "StrComp rhs")?,
+                        *mode,
+                    );
+                    let result = match l.cmp(&r) {
+                        std::cmp::Ordering::Less => -1,
+                        std::cmp::Ordering::Equal => 0,
+                        std::cmp::Ordering::Greater => 1,
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::I32(result))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLikeDigits {
@@ -1163,9 +1059,12 @@ impl Vm {
                     pattern,
                     mode,
                 } => {
-                    let lhs = self.read_legacy_scalar_slot(*lhs)?;
-                    let pattern = self.read_legacy_scalar_slot(*pattern)?;
-                    self.write_legacy_scalar_slot(*dst, Self::like_digits(lhs, pattern, *mode))?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let pattern = self.read_value_slot(*pattern)?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_like_bounded(&lhs, &pattern, *mode)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateSerialDigits {
@@ -1174,13 +1073,11 @@ impl Vm {
                     month,
                     day,
                 } => {
-                    let year = self.read_legacy_scalar_slot(*year)?;
-                    let month = self.read_legacy_scalar_slot(*month)?;
-                    let day = self.read_legacy_scalar_slot(*day)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        Self::date_serial_digits(year, month, day),
-                    )?;
+                    let year = self.read_value_slot(*year)?;
+                    let month = self.read_value_slot(*month)?;
+                    let day = self.read_value_slot(*day)?;
+                    let out = crate::semantics::runtime_date_serial_bounded(&year, &month, &day)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeSerialDigits {
@@ -1189,23 +1086,24 @@ impl Vm {
                     minute,
                     second,
                 } => {
-                    let hour = self.read_legacy_scalar_slot(*hour)?;
-                    let minute = self.read_legacy_scalar_slot(*minute)?;
-                    let second = self.read_legacy_scalar_slot(*second)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        Self::time_serial_digits(hour, minute, second),
-                    )?;
+                    let hour = self.read_value_slot(*hour)?;
+                    let minute = self.read_value_slot(*minute)?;
+                    let second = self.read_value_slot(*second)?;
+                    let out =
+                        crate::semantics::runtime_time_serial_bounded(&hour, &minute, &second)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateValueDigits { dst, src } => {
-                    let src = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, src)?;
+                    let src = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_value_to_datevalue(&src)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeValueDigits { dst, src } => {
-                    let src = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, src)?;
+                    let src = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_value_to_timevalue(&src)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateAddDigits {
@@ -1214,13 +1112,12 @@ impl Vm {
                     number,
                     date,
                 } => {
-                    let interval = self.read_legacy_scalar_slot(*interval)?;
-                    let number = self.read_legacy_scalar_slot(*number)?;
-                    let date = self.read_legacy_scalar_slot(*date)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        Self::date_add_digits(interval, number, date),
-                    )?;
+                    let interval = self.read_value_slot(*interval)?;
+                    let number = self.read_value_slot(*number)?;
+                    let date = self.read_value_slot(*date)?;
+                    let out =
+                        crate::semantics::runtime_date_add_bounded(&interval, &number, &date)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateDiffDigits {
@@ -1229,28 +1126,30 @@ impl Vm {
                     date1,
                     date2,
                 } => {
-                    let interval = self.read_legacy_scalar_slot(*interval)?;
-                    let date1 = self.read_legacy_scalar_slot(*date1)?;
-                    let date2 = self.read_legacy_scalar_slot(*date2)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        Self::date_diff_digits(interval, date1, date2),
-                    )?;
+                    let interval = self.read_value_slot(*interval)?;
+                    let date1 = self.read_value_slot(*date1)?;
+                    let date2 = self.read_value_slot(*date2)?;
+                    let out =
+                        crate::semantics::runtime_date_diff_bounded(&interval, &date1, &date2)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicYearDigits { dst, src } => {
-                    let v = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, v / 10_000)?;
+                    let v = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_date_year(&v)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthDigits { dst, src } => {
-                    let v = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (v / 100) % 100)?;
+                    let v = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_date_month(&v)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDayDigits { dst, src } => {
-                    let v = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, v % 100)?;
+                    let v = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_date_day(&v)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
@@ -1272,14 +1171,23 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicNowHost { dst } => {
-                    // Current token model uses date projection for Now().
-                    match self.host_services.time_locale().date_serial_now() {
-                        Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
-                            pc += 1;
+                    let date = match self.host_services.time_locale().date_serial_now() {
+                        Ok(value) => value,
+                        Err(err) => {
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
                         }
-                        Err(err) => pc = self.route_host_error(pc, err)?,
-                    }
+                    };
+                    let time = match self.host_services.time_locale().time_serial_now() {
+                        Ok(value) => value,
+                        Err(err) => {
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
+                    let value = crate::semantics::runtime_host_now_value(&date, &time)?;
+                    self.write_value_slot(*dst, value)?;
+                    pc += 1;
                 }
                 Instruction::IntrinsicTimerHost { dst } => {
                     match self.host_services.time_locale().timer_ticks() {
@@ -1301,8 +1209,12 @@ impl Vm {
                     let file_num = self.read_value_slot(*file_number)?;
                     // Encode file_number into upper 16 bits of mode so the HAL
                     // can allocate the specific handle requested by the VBA source.
-                    let mode_i32 = mode_val.to_legacy_i32().unwrap_or(0);
-                    let fnum_i32 = file_num.to_legacy_i32().unwrap_or(0);
+                    let mode_i32 =
+                        crate::semantics::runtime_value_to_i32_compat(&mode_val, "Open mode")?;
+                    let fnum_i32 = crate::semantics::runtime_value_to_i32_compat(
+                        &file_num,
+                        "Open file number",
+                    )?;
                     let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
                     match self.host_services.fs().open(path, combined_mode) {
                         Ok(value) => {
@@ -1315,6 +1227,16 @@ impl Vm {
                 Instruction::IntrinsicFileCloseHost { dst, handle } => {
                     let handle = self.read_value_slot(*handle)?;
                     match self.host_services.fs().close(handle) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicFileKillHost { dst, path } => {
+                    let path = self.read_value_slot(*path)?;
+                    match self.host_services.fs().kill(path) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -1426,8 +1348,8 @@ impl Vm {
                     let handle = self.read_value_slot(*handle)?;
                     match self.host_services.fs().eof(handle) {
                         Ok(value) => {
-                            let value = value.to_legacy_i32().unwrap_or(0);
-                            self.write_value_slot(*dst, RuntimeValue::Bool(value != 0))?;
+                            let value = crate::semantics::legacy_truthy_value(&value)?;
+                            self.write_value_slot(*dst, RuntimeValue::Bool(value))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1447,7 +1369,8 @@ impl Vm {
                     let handle = self.read_value_slot(*handle)?;
                     match self.host_services.fs().loc(handle) {
                         Ok(value) => {
-                            let value = value.to_legacy_i32().unwrap_or(0);
+                            let value =
+                                crate::semantics::runtime_value_to_i32_compat(&value, "Loc")?;
                             self.write_value_slot(*dst, RuntimeValue::I32(value + 1))?;
                             pc += 1;
                         }
@@ -1498,6 +1421,19 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicBeepHost { dst } => {
+                    match self
+                        .host_services
+                        .diag()
+                        .emit(RuntimeValue::I32(7), RuntimeValue::I32(0))
+                    {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicDebugPrintHost { dst, data } => {
                     let data = self.read_value_slot(*data)?;
                     match self.host_services.diag().debug_print(data) {
@@ -1512,7 +1448,9 @@ impl Vm {
                     let value = self.read_value_slot(*src)?;
                     let pointer = match &value {
                         RuntimeValue::Empty | RuntimeValue::Null => 0,
-                        RuntimeValue::String(text) => oxvba_runtime::pointer_helpers::register_utf16_string(&text.0)?,
+                        RuntimeValue::String(text) => {
+                            oxvba_runtime::pointer_helpers::register_utf16_string(&text.0)?
+                        }
                         _ => return Err("runtime error: 13 (Type mismatch)".to_string()),
                     };
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
@@ -1520,7 +1458,22 @@ impl Vm {
                 }
                 Instruction::IntrinsicVarPtr { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    let pointer = oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value)?;
+                    let pointer =
+                        oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value)?;
+                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicVarPtrStringVar { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let pointer =
+                        oxvba_runtime::pointer_helpers::register_string_var_pointer(&value)?;
+                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicVarPtrVariantVar { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let pointer =
+                        oxvba_runtime::pointer_helpers::register_variant_var_pointer(&value)?;
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
                 }
@@ -1545,8 +1498,8 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicAbsI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, value.saturating_abs())?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_abs_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIntI32 { dst, src } => {
@@ -1557,9 +1510,7 @@ impl Vm {
                             self.write_value_slot(*dst, RuntimeValue::I32(floored))?;
                         }
                         _ => {
-                            let v = value.to_legacy_i32().map_err(|e| {
-                                format!("Int operand cannot enter legacy i32 lane: {e}")
-                            })?;
+                            let v = crate::semantics::runtime_value_to_i32_compat(&value, "Int")?;
                             self.write_legacy_scalar_slot(*dst, v)?;
                         }
                     }
@@ -1571,117 +1522,79 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicSgnI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, value.signum())?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_sgn_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRoundI32 { dst, src, digits } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let value = self.read_value_slot(*src)?;
                     let digits = match digits {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
-                        None => 0,
+                        Some(slot) => Some(self.read_value_slot(*slot)?),
+                        None => None,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::round_i32(value, digits))?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_round_bounded(&value, digits.as_ref())?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSqrI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        (value.saturating_abs() as f64).sqrt() as i32,
-                    )?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_sqr_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSinI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value as f64).sin().round() as i32)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_sin_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCosI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value as f64).cos().round() as i32)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_cos_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLogI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(
-                        *dst,
-                        if value > 0 {
-                            (value as f64).ln().round() as i32
-                        } else {
-                            0
-                        },
-                    )?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_log_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicExpI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value as f64).exp().round() as i32)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_exp_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAtnI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value as f64).atan().round() as i32)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_atn_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTanI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value as f64).tan().round() as i32)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_tan_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicChrDigits { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let ch = char::from_u32(value as u32).unwrap_or('\0');
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(ch.to_string())))?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_chr_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAscDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    let code = match &value {
-                        RuntimeValue::String(s) => {
-                            if s.0.is_empty() {
-                                0
-                            } else {
-                                s.0.as_bytes()[0] as i32
-                            }
-                        }
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&value, "Asc operand")?;
-                            let digits = format!("{v}");
-                            if digits.is_empty() {
-                                0
-                            } else {
-                                digits.as_bytes()[0] as i32
-                            }
-                        }
-                    };
-                    self.write_value_slot(*dst, RuntimeValue::I32(code))?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_asc_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSpaceDigits { dst, count } => {
-                    let n = self.read_legacy_scalar_slot(*count)?;
-                    let result = " ".repeat(n.max(0) as usize);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    let count = self.read_value_slot(*count)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_space_bounded(&count)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStringRepeatDigits { dst, count, ch } => {
-                    let n = self.read_legacy_scalar_slot(*count)?;
+                    let count_val = self.read_value_slot(*count)?;
                     let ch_val = self.read_value_slot(*ch)?;
-                    let c = match &ch_val {
-                        RuntimeValue::String(s) => {
-                            if s.0.is_empty() {
-                                '\0'
-                            } else {
-                                s.0.chars().next().unwrap_or('\0')
-                            }
-                        }
-                        _ => {
-                            let code = Self::runtime_value_legacy_token(&ch_val, "String$ char")?;
-                            char::from_u32(code as u32).unwrap_or('\0')
-                        }
-                    };
-                    let result = c.to_string().repeat(n.max(0) as usize);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_string_repeat_bounded(&count_val, &ch_val)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCStrDigits { dst, src } => {
@@ -1710,120 +1623,38 @@ impl Vm {
                 }
                 Instruction::IntrinsicValDigits { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
-                    let result = match &src_val {
-                        RuntimeValue::String(BStr(s)) => {
-                            let trimmed = s.trim();
-                            if trimmed.is_empty() {
-                                RuntimeValue::I32(0)
-                            } else if let Ok(n) = trimmed.parse::<i64>() {
-                                if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
-                                    RuntimeValue::I32(n as i32)
-                                } else {
-                                    RuntimeValue::F64(F64Value::from_f64(n as f64))
-                                }
-                            } else if let Ok(f) = trimmed.parse::<f64>() {
-                                if f == f.trunc() && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
-                                    RuntimeValue::I32(f as i32)
-                                } else {
-                                    RuntimeValue::F64(F64Value::from_f64(f))
-                                }
-                            } else {
-                                // VBA Val: parse leading numeric portion, return 0 if none
-                                let mut end = 0;
-                                let bytes = trimmed.as_bytes();
-                                if !bytes.is_empty()
-                                    && (bytes[0] == b'-'
-                                        || bytes[0] == b'+'
-                                        || bytes[0].is_ascii_digit())
-                                {
-                                    end = 1;
-                                    let mut has_dot = false;
-                                    while end < bytes.len() {
-                                        if bytes[end].is_ascii_digit() {
-                                            end += 1;
-                                        } else if bytes[end] == b'.' && !has_dot {
-                                            has_dot = true;
-                                            end += 1;
-                                        } else {
-                                            break;
-                                        }
-                                    }
-                                }
-                                if end > 0 {
-                                    if let Ok(f) = trimmed[..end].parse::<f64>() {
-                                        if f == f.trunc()
-                                            && f >= i32::MIN as f64
-                                            && f <= i32::MAX as f64
-                                        {
-                                            RuntimeValue::I32(f as i32)
-                                        } else {
-                                            RuntimeValue::F64(F64Value::from_f64(f))
-                                        }
-                                    } else {
-                                        RuntimeValue::I32(0)
-                                    }
-                                } else {
-                                    RuntimeValue::I32(0)
-                                }
-                            }
-                        }
-                        // For numeric values, Val is identity
-                        RuntimeValue::I32(_) | RuntimeValue::I64(_) | RuntimeValue::F64(_) => {
-                            src_val
-                        }
-                        RuntimeValue::Empty => RuntimeValue::I32(0),
-                        _ => {
-                            let v = Self::runtime_value_legacy_token(&src_val, "Val src")?;
-                            RuntimeValue::I32(v)
-                        }
-                    };
+                    let result = crate::semantics::runtime_val_bounded(&src_val)?;
+                    self.write_value_slot(*dst, result)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCDateValue { dst, src } => {
+                    let src_val = self.read_value_slot(*src)?;
+                    let result = crate::semantics::runtime_value_to_cdate(&src_val)?;
                     self.write_value_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicHexDigits { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let result = format!("{:X}", value as u32);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_hex_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicOctDigits { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let result = format!("{:o}", value as u32);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, crate::semantics::runtime_oct_bounded(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWeekdayDigits { dst, src } => {
-                    let packed = self.read_legacy_scalar_slot(*src)?;
-                    let year = packed / 10_000;
-                    let month = (packed / 100) % 100;
-                    let day = packed % 100;
-                    let dow = Self::day_of_week(year, month, day);
-                    // VBA: 1=Sunday..7=Saturday; Sakamoto returns 0=Sunday..6=Saturday
-                    self.write_legacy_scalar_slot(*dst, dow + 1)?;
+                    let value = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_date_weekday(&value)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthNameDigits { dst, src } => {
-                    let month = self.read_legacy_scalar_slot(*src)?;
-                    let names = [
-                        "January",
-                        "February",
-                        "March",
-                        "April",
-                        "May",
-                        "June",
-                        "July",
-                        "August",
-                        "September",
-                        "October",
-                        "November",
-                        "December",
-                    ];
-                    let name = if (1..=12).contains(&month) {
-                        names[(month - 1) as usize]
-                    } else {
-                        ""
-                    };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(name.to_string())))?;
+                    let month = self.read_value_slot(*src)?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_month_name_bounded(&month)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicFvI32 {
@@ -2016,6 +1847,134 @@ impl Vm {
                     )?;
                     pc += 1;
                 }
+                Instruction::IntrinsicArrayResize {
+                    dst,
+                    upper_bounds,
+                    lower_bounds,
+                    element_type,
+                } => {
+                    let mut resolved_upper_bounds = Vec::with_capacity(upper_bounds.len());
+                    let mut upper_error = None;
+                    for upper_bound in upper_bounds {
+                        match crate::semantics::runtime_value_to_i32_compat(
+                            &self.read_value_slot(*upper_bound)?,
+                            "ReDim upper bound",
+                        ) {
+                            Ok(value) => resolved_upper_bounds.push(value),
+                            Err(detail) => {
+                                upper_error = Some(detail);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(detail) = upper_error {
+                        pc = self.route_runtime_error(pc, 13, Some(&detail))?;
+                        continue;
+                    }
+                    let array = match runtime_resized_array(
+                        lower_bounds,
+                        &resolved_upper_bounds,
+                        *element_type,
+                    ) {
+                        Ok(array) => array,
+                        Err(detail) => {
+                            pc = self.route_runtime_error(pc, 9, Some(&detail))?;
+                            continue;
+                        }
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::ArrayIntent(array))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicArrayResizePreserve {
+                    dst,
+                    upper_bounds,
+                    lower_bounds,
+                    element_type,
+                } => {
+                    let mut resolved_upper_bounds = Vec::with_capacity(upper_bounds.len());
+                    let mut upper_error = None;
+                    for upper_bound in upper_bounds {
+                        match crate::semantics::runtime_value_to_i32_compat(
+                            &self.read_value_slot(*upper_bound)?,
+                            "ReDim Preserve upper bound",
+                        ) {
+                            Ok(value) => resolved_upper_bounds.push(value),
+                            Err(detail) => {
+                                upper_error = Some(detail);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(detail) = upper_error {
+                        pc = self.route_runtime_error(pc, 13, Some(&detail))?;
+                        continue;
+                    }
+                    let current = self.read_value_slot(*dst)?;
+                    let array = match runtime_resized_array_preserve(
+                        &current,
+                        lower_bounds,
+                        &resolved_upper_bounds,
+                        *element_type,
+                    ) {
+                        Ok(array) => array,
+                        Err(detail) => {
+                            pc = self.route_runtime_error(pc, 9, Some(&detail))?;
+                            continue;
+                        }
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::ArrayIntent(array))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicArrayGet {
+                    dst,
+                    array,
+                    indices,
+                } => {
+                    let array_value = self.read_value_slot(*array)?;
+                    let index_values = indices
+                        .iter()
+                        .map(|slot| self.read_value_slot(*slot))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let value = match crate::semantics::runtime_array_get(
+                        &array_value,
+                        &index_values,
+                        "array index",
+                    ) {
+                        Ok(value) => value,
+                        Err(detail) => {
+                            pc = self.route_runtime_error(pc, 9, Some(&detail))?;
+                            continue;
+                        }
+                    };
+                    self.write_value_slot(*dst, value)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicArraySet {
+                    array,
+                    indices,
+                    src,
+                } => {
+                    let array_value = self.read_value_slot(*array)?;
+                    let index_values = indices
+                        .iter()
+                        .map(|slot| self.read_value_slot(*slot))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let src_value = self.read_value_slot(*src)?;
+                    let value = match crate::semantics::runtime_array_set(
+                        &array_value,
+                        &index_values,
+                        &src_value,
+                        "array index",
+                    ) {
+                        Ok(value) => value,
+                        Err(detail) => {
+                            pc = self.route_runtime_error(pc, 9, Some(&detail))?;
+                            continue;
+                        }
+                    };
+                    self.write_value_slot(*array, value)?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicForEachInit { iter, src } => {
                     let iterable = self.read_value_slot(*src)?;
                     match self.materialize_foreach_items(bytecode, typed_fastpaths, &iterable) {
@@ -2043,10 +2002,10 @@ impl Vm {
                     item,
                     has_value,
                 } => {
-                    let iter_id = self
-                        .read_value_slot(*iter)?
-                        .to_legacy_i32()
-                        .map_err(|detail| format!("For Each iterator slot is invalid: {detail}"))?;
+                    let iter_id = crate::semantics::runtime_value_to_i32_compat(
+                        &self.read_value_slot(*iter)?,
+                        "For Each iterator slot",
+                    )?;
                     let next = if let Some(state) = self.foreach_iterators.get_mut(&iter_id) {
                         if state.next_index < state.items.len() {
                             let value = state.items[state.next_index].clone();
@@ -2066,43 +2025,39 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if Self::is_array_tag(value) { 0 } else { -1 };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    let value = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_array_lbound(&value, "LBound operand")
+                        .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUBoundArray { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if Self::is_array_tag(value) {
-                        Self::array_count(value) - 1
-                    } else {
-                        -1
-                    };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    let value = self.read_value_slot(*src)?;
+                    let out = crate::semantics::runtime_array_ubound(&value, "UBound operand")
+                        .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsArrayTag { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(
                         *dst,
-                        if Self::is_array_tag(value) { 1 } else { 0 },
+                        RuntimeValue::I32(
+                            if crate::semantics::runtime_value_is_array_compat(&value) {
+                                1
+                            } else {
+                                0
+                            },
+                        ),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarTypeTag { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if Self::is_array_tag(value) {
-                        8192 + 12
-                    } else if value == EMPTY_TAG {
-                        0
-                    } else if value == NULL_TAG {
-                        1
-                    } else if runtime_is_error_tag(value) {
-                        10
-                    } else {
-                        3
-                    };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::I32(crate::semantics::runtime_vartype_tag_bounded(&value)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarType { dst, src } => {
@@ -2133,27 +2088,19 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeNameTag { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if Self::is_array_tag(value) {
-                        1001
-                    } else {
-                        1002
-                    };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::I32(crate::semantics::runtime_typename_tag_bounded(&value)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNumericTag { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if Self::is_array_tag(value)
-                        || value == EMPTY_TAG
-                        || value == NULL_TAG
-                        || runtime_is_error_tag(value)
-                    {
-                        0
-                    } else {
-                        1
-                    };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::I32(crate::semantics::runtime_is_numeric_tag_bounded(&value)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNumeric { dst, src } => {
@@ -2179,13 +2126,13 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicIsDateTag { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    let out = if (1_000_000..=99_999_999).contains(&value) {
+                    let value = self.read_value_slot(*src)?;
+                    let out = if crate::semantics::runtime_value_is_date(&value) {
                         1
                     } else {
                         0
                     };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsObjectTag { dst, .. } => {
@@ -2634,12 +2581,11 @@ impl Vm {
                         selection_policy: descriptor.selection_policy.as_str(),
                         param_count: descriptor.param_count,
                         param_types: &param_type_strings,
-                        return_type: descriptor.return_type.as_ref().map(|rt| {
-                            // Use a leaked string for the view lifetime — this is bounded
-                            // by descriptor cardinality (small, finite).
-                            let s: &str = Box::leak(format!("{:?}", rt).into_boxed_str());
-                            s
-                        }),
+                        param_by_ref: &descriptor.param_by_ref,
+                        return_type: descriptor
+                            .return_type
+                            .as_ref()
+                            .map(|rt| Cow::Owned(format!("{:?}", rt))),
                     };
                     if let Some(violation) = view.contract_violation() {
                         let err = HalError::adapter_fault(
@@ -2663,15 +2609,19 @@ impl Vm {
                         {
                             Ok((ret_value, wb_values)) => {
                                 self.write_value_slot(*dst, ret_value)?;
-                                for (wb_idx, (arg_index, source_slot)) in
-                                    writeback_slots.iter().enumerate()
-                                {
-                                    if let Some(wb_val) = wb_values.get(wb_idx)
-                                        && let Some(target_slot) = args.get(*arg_index)
-                                    {
-                                        let _ = source_slot; // source_slot reserved for future use
-                                        self.write_value_slot(*target_slot, wb_val.clone())?;
-                                    }
+                                if let Err(detail) = self.apply_external_writebacks(
+                                    writeback_slots,
+                                    &arg_values,
+                                    &wb_values,
+                                ) {
+                                    let err = HalError::adapter_fault(
+                                        self.host_services.profile(),
+                                        CapabilityId::DynamicLinking,
+                                        "invoke_descriptor",
+                                        detail,
+                                    );
+                                    pc = self.route_host_error(pc, err)?;
+                                    continue;
                                 }
                                 pc += 1;
                             }
@@ -2722,7 +2672,7 @@ impl Vm {
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
-                    if value.to_legacy_i32().ok() == Some(0) {
+                    if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
                         self.withevents_bindings.remove(&key);
                     } else {
                         self.withevents_bindings.insert(key, value.clone());
@@ -3086,27 +3036,18 @@ impl Vm {
                     conversion,
                 } => {
                     let src_val = self.read_value_slot(*src)?;
-                    let s = match &src_val {
-                        RuntimeValue::String(s) => s.0.clone(),
-                        _ => {
-                            let token =
-                                Self::runtime_value_legacy_token(&src_val, "StrConv source")?;
-                            token.to_string()
-                        }
-                    };
-                    let conv = self.read_legacy_scalar_slot(*conversion)?;
-                    let result = match conv {
-                        1 => s.to_uppercase(),
-                        2 => s.to_lowercase(),
-                        3 => Self::proper_case(&s),
-                        _ => s,
-                    };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    let conv_val = self.read_value_slot(*conversion)?;
+                    self.write_value_slot(
+                        *dst,
+                        crate::semantics::runtime_strconv_bounded(&src_val, &conv_val)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRndDigits { dst, seed } => {
                     if let Some(seed_slot) = seed {
-                        let seed_val = self.read_legacy_scalar_slot(*seed_slot)?;
+                        let seed_val = self.read_value_slot(*seed_slot)?;
+                        let seed_val =
+                            crate::semantics::runtime_random_seed_bounded(&seed_val, "Rnd seed")?;
                         if seed_val < 0 {
                             self.rnd_state = (seed_val as u32) & 0x00FF_FFFF;
                         } else if seed_val == 0 {
@@ -3130,7 +3071,11 @@ impl Vm {
                 }
                 Instruction::IntrinsicRandomizeDigits { dst, seed } => {
                     if let Some(seed_slot) = seed {
-                        let seed_val = self.read_legacy_scalar_slot(*seed_slot)?;
+                        let seed_val = self.read_value_slot(*seed_slot)?;
+                        let seed_val = crate::semantics::runtime_random_seed_bounded(
+                            &seed_val,
+                            "Randomize seed",
+                        )?;
                         self.rnd_state = (seed_val as u32) & 0x00FF_FFFF;
                     } else {
                         self.rnd_state = 0x50000;
@@ -3160,14 +3105,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicStrReverseDigits { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
-                    let s = match &src_val {
-                        RuntimeValue::String(s) => s.0.clone(),
-                        _ => {
-                            let token =
-                                Self::runtime_value_legacy_token(&src_val, "StrReverse source")?;
-                            token.to_string()
-                        }
-                    };
+                    let s = crate::semantics::runtime_value_to_text(&src_val, "StrReverse source")?;
                     let result: String = s.chars().rev().collect();
                     self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
                     pc += 1;
@@ -3191,14 +3129,14 @@ impl Vm {
 
     fn read_legacy_scalar_slot(&self, slot: usize) -> Result<i32, String> {
         self.read_value_slot(slot)?
-            .to_legacy_i32()
+            .project_compat_slot_i32()
             .map_err(|detail| {
                 format!("runtime value in slot {slot} cannot enter legacy i32 lane: {detail}")
             })
     }
 
     fn write_legacy_scalar_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
-        self.write_value_slot(slot, RuntimeValue::from_legacy_i32(value))
+        self.write_value_slot(slot, RuntimeValue::from_compat_slot_i32(value))
     }
 
     fn read_value_slot(&self, slot: usize) -> Result<RuntimeValue, String> {
@@ -3213,6 +3151,46 @@ impl Vm {
             return Err(format!("slot out of range: {slot}"));
         }
         self.registers.registers[slot] = value;
+        Ok(())
+    }
+
+    fn apply_external_writebacks(
+        &mut self,
+        writebacks: &[ExternalCallWriteback],
+        arg_values: &[RuntimeValue],
+        wb_values: &[RuntimeValue],
+    ) -> Result<(), String> {
+        for writeback in writebacks {
+            let value = match writeback.kind {
+                ExternalCallWritebackKind::ByRefValue => {
+                    let Some(value) = wb_values.get(writeback.arg_index) else {
+                        continue;
+                    };
+                    value.clone()
+                }
+                ExternalCallWritebackKind::PointerByteArrayPayload => {
+                    let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index)
+                    else {
+                        return Err(format!(
+                            "pointer writeback arg {} is not a LongPtr value",
+                            writeback.arg_index
+                        ));
+                    };
+                    oxvba_runtime::pointer_helpers::read_back_byte_array_payload(*pointer)?
+                }
+                ExternalCallWritebackKind::PointerStringPayload => {
+                    let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index)
+                    else {
+                        return Err(format!(
+                            "pointer writeback arg {} is not a LongPtr value",
+                            writeback.arg_index
+                        ));
+                    };
+                    oxvba_runtime::pointer_helpers::read_back_string_payload(*pointer)?
+                }
+            };
+            self.write_value_slot(writeback.source_slot, value)?;
+        }
         Ok(())
     }
 
@@ -3232,10 +3210,6 @@ impl Vm {
 
     fn withevents_owner_from_key(key: i64) -> ObjectHandle {
         crate::semantics::withevents_owner_from_key(key)
-    }
-
-    fn runtime_value_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
-        crate::semantics::runtime_value_legacy_token(value, field)
     }
 
     fn proper_case(s: &str) -> String {
@@ -3452,7 +3426,7 @@ impl Vm {
     }
 
     fn default_project_dynamic_param_value(param: &ProjectDynamicParamRoute) -> RuntimeValue {
-        RuntimeValue::from_legacy_i32(param.default_value.unwrap_or(0))
+        RuntimeValue::from_compat_slot_i32(param.default_value.unwrap_or(0))
     }
 
     fn bind_project_dynamic_member_args(
@@ -3804,7 +3778,7 @@ impl Vm {
         source: &RuntimeValue,
         binding: BindingHandle,
     ) -> Vec<ObjectHandle> {
-        if source.to_legacy_i32().ok() == Some(0) {
+        if crate::semantics::runtime_value_is_explicit_zero_carrier(source) {
             return Vec::new();
         }
         self.withevents_bindings
@@ -3921,7 +3895,7 @@ impl Vm {
             .events()
             .do_events()
             .map_err(|err| err.to_string())?;
-        if value.to_legacy_i32().ok() == Some(0) {
+        if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
             return Ok(None);
         }
         Self::runtime_value_to_com_callback_token(&value, "do_events callback").map(Some)
@@ -4026,7 +4000,7 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeValue::from_legacy_i32(current + value);
+        *dst = RuntimeValue::from_compat_slot_i32(current + value);
         true
     }
 
@@ -4041,7 +4015,7 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeValue::from_legacy_i32(current - value);
+        *dst = RuntimeValue::from_compat_slot_i32(current - value);
         true
     }
 
@@ -4097,8 +4071,13 @@ impl Vm {
         instruction_len: usize,
         current_pc: usize,
     ) -> Result<usize, String> {
-        let cond = Self::runtime_value_legacy_token(cond, "jump condition")?;
-        Self::next_pc_for_jump_if_zero(cond, target_pc, instruction_len, current_pc)
+        let cond = Self::legacy_truthy_value(cond)?;
+        Self::next_pc_for_jump_if_zero(
+            if cond { -1 } else { 0 },
+            target_pc,
+            instruction_len,
+            current_pc,
+        )
     }
 
     fn len_digits(value: i32) -> i32 {
@@ -4132,34 +4111,6 @@ impl Vm {
     fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
         let zero_based_start = if start <= 1 { 0 } else { (start - 1) as usize };
         Self::slice_digits(value, zero_based_start, count)
-    }
-
-    fn mid_stmt_digits(target: i32, start: i32, count: Option<i32>, value: i32) -> i32 {
-        let base = target.to_string();
-        let repl = value.to_string();
-        let start_idx = if start <= 1 { 0 } else { (start - 1) as usize };
-        if start_idx >= base.len() {
-            return target;
-        }
-
-        let end_idx = match count {
-            Some(c) if c <= 0 => start_idx,
-            Some(c) => (start_idx + c as usize).min(base.len()),
-            None => base.len(),
-        };
-
-        let replace_len = end_idx.saturating_sub(start_idx);
-        let replace_text = if replace_len >= repl.len() {
-            repl.as_str()
-        } else {
-            &repl[..replace_len]
-        };
-
-        let mut out = String::with_capacity(base.len() - replace_len + replace_text.len());
-        out.push_str(&base[..start_idx]);
-        out.push_str(replace_text);
-        out.push_str(&base[end_idx..]);
-        out.parse::<i32>().unwrap_or(0)
     }
 
     fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
@@ -4207,21 +4158,6 @@ impl Vm {
             .unwrap_or(0)
     }
 
-    fn split_count_digits(value: i32, delimiter: i32) -> i32 {
-        let text = value.to_string();
-        let delimiter = delimiter.to_string();
-        if delimiter.is_empty() {
-            return 1;
-        }
-        text.split(&delimiter).count() as i32
-    }
-
-    fn join_digits(value: i32, _delimiter: i32) -> i32 {
-        array_len_from_tag(value)
-            .and_then(|count| i32::try_from(count).ok())
-            .unwrap_or(value)
-    }
-
     fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
         let text = value.to_string();
         let find = find.to_string();
@@ -4256,39 +4192,6 @@ impl Vm {
             std::cmp::Ordering::Equal => 0,
             std::cmp::Ordering::Greater => 1,
         }
-    }
-
-    fn like_digits(lhs: i32, pattern: i32, mode: StringCompareMode) -> i32 {
-        let lhs = Self::normalize_for_compare(lhs.to_string(), mode);
-        let pattern = Self::normalize_for_compare(pattern.to_string(), mode);
-        if lhs == pattern { -1 } else { 0 }
-    }
-
-    fn date_serial_digits(year: i32, month: i32, day: i32) -> i32 {
-        year.saturating_mul(10_000)
-            .saturating_add(month.saturating_mul(100))
-            .saturating_add(day)
-    }
-
-    fn time_serial_digits(hour: i32, minute: i32, second: i32) -> i32 {
-        hour.saturating_mul(3600)
-            .saturating_add(minute.saturating_mul(60))
-            .saturating_add(second)
-    }
-
-    fn date_add_digits(_interval: i32, number: i32, date: i32) -> i32 {
-        date.saturating_add(number)
-    }
-
-    fn date_diff_digits(_interval: i32, date1: i32, date2: i32) -> i32 {
-        date2.saturating_sub(date1)
-    }
-
-    /// Tomohiko Sakamoto's algorithm: returns 0=Sunday..6=Saturday.
-    fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
-        let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-        let y = if month < 3 { year - 1 } else { year };
-        (y + y / 4 - y / 100 + y / 400 + t[(month - 1) as usize] + day) % 7
     }
 
     fn round_i32(value: i32, digits: i32) -> i32 {
@@ -4491,17 +4394,141 @@ impl Vm {
     fn is_array_tag(value: i32) -> bool {
         runtime_is_array_tag(value)
     }
+}
 
-    fn array_count(value: i32) -> i32 {
-        array_len_from_tag(value)
-            .and_then(|count| i32::try_from(count).ok())
-            .unwrap_or(0)
+fn runtime_resized_array(
+    lower_bounds: &[i32],
+    upper_bounds: &[i32],
+    element_type: RuntimeArrayElementType,
+) -> Result<SafeArray, String> {
+    if lower_bounds.is_empty() || lower_bounds.len() != upper_bounds.len() {
+        return Err("runtime ReDim requires at least one dimension".to_string());
+    }
+    let mut len = 1usize;
+    let mut bounds = Vec::with_capacity(lower_bounds.len());
+    for (&lower_bound, &upper_bound) in lower_bounds.iter().zip(upper_bounds.iter()) {
+        if upper_bound < lower_bound {
+            return Err(format!(
+                "runtime ReDim upper bound {upper_bound} is below lower bound {lower_bound}"
+            ));
+        }
+        let count = i64::from(upper_bound) - i64::from(lower_bound) + 1;
+        let width = usize::try_from(count)
+            .map_err(|_| format!("runtime ReDim bound span {count} cannot fit in host memory"))?;
+        len = len
+            .checked_mul(width)
+            .ok_or_else(|| "runtime ReDim total array length overflowed".to_string())?;
+        bounds.push(SafeArrayBound {
+            lower: lower_bound,
+            count: u32::try_from(width)
+                .map_err(|_| format!("runtime ReDim length {width} exceeds SAFEARRAY capacity"))?,
+        });
+    }
+    let default = runtime_array_default_value(element_type);
+    let values = vec![default; len];
+    Ok(SafeArray {
+        dimensions: u8::try_from(bounds.len())
+            .map_err(|_| "runtime ReDim dimension count exceeds SAFEARRAY capacity".to_string())?,
+        len,
+        bounds: Some(bounds),
+        elements: Some(values),
+    })
+}
+
+fn runtime_resized_array_preserve(
+    current: &RuntimeValue,
+    lower_bounds: &[i32],
+    upper_bounds: &[i32],
+    element_type: RuntimeArrayElementType,
+) -> Result<SafeArray, String> {
+    let RuntimeValue::ArrayIntent(previous) = current else {
+        return Err("runtime ReDim Preserve requires an existing runtime array value".to_string());
+    };
+    if previous.dimensions as usize != lower_bounds.len()
+        || lower_bounds.len() != upper_bounds.len()
+    {
+        return Err(
+            "runtime ReDim Preserve requires the existing and resized array to have the same rank"
+                .to_string(),
+        );
+    }
+    let previous_bounds = previous
+        .bounds
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve requires bounds metadata".to_string())?;
+    let previous_values = previous
+        .elements
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve requires an owned array payload".to_string())?;
+    let mut resized = runtime_resized_array(lower_bounds, upper_bounds, element_type)?;
+    let resized_bounds = resized
+        .bounds
+        .as_ref()
+        .ok_or_else(|| "runtime ReDim Preserve failed to materialize bounds metadata".to_string())?
+        .clone();
+    let resized_values = resized.elements.as_mut().ok_or_else(|| {
+        "runtime ReDim Preserve failed to materialize an owned array payload".to_string()
+    })?;
+    for dim in 0..previous_bounds.len() {
+        let previous_bound = &previous_bounds[dim];
+        let resized_bound = &resized_bounds[dim];
+        if previous_bound.lower != resized_bound.lower {
+            return Err(
+                "runtime ReDim Preserve requires lower bounds to remain unchanged".to_string(),
+            );
+        }
+        if dim + 1 != previous_bounds.len() && previous_bound.count != resized_bound.count {
+            return Err("runtime ReDim Preserve only supports resizing the upper bound of the last dimension".to_string());
+        }
+    }
+    let last = previous_bounds.len() - 1;
+    let previous_last = previous_bounds[last].count as usize;
+    let resized_last = resized_bounds[last].count as usize;
+    let overlap = previous_last.min(resized_last);
+    let mut block_count = 1usize;
+    for bound in &previous_bounds[..last] {
+        block_count = block_count
+            .checked_mul(bound.count as usize)
+            .ok_or_else(|| "runtime ReDim Preserve block count overflowed".to_string())?;
+    }
+    for block in 0..block_count.max(1) {
+        let previous_start = block
+            .checked_mul(previous_last)
+            .ok_or_else(|| "runtime ReDim Preserve previous block offset overflowed".to_string())?;
+        let resized_start = block
+            .checked_mul(resized_last)
+            .ok_or_else(|| "runtime ReDim Preserve resized block offset overflowed".to_string())?;
+        for offset in 0..overlap {
+            resized_values[resized_start + offset] =
+                previous_values[previous_start + offset].clone();
+        }
+    }
+    Ok(resized)
+}
+
+fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> RuntimeValue {
+    match element_type {
+        RuntimeArrayElementType::Variant => RuntimeValue::Empty,
+        RuntimeArrayElementType::Integer
+        | RuntimeArrayElementType::Long
+        | RuntimeArrayElementType::Byte => RuntimeValue::I32(0),
+        RuntimeArrayElementType::LongLong | RuntimeArrayElementType::LongPtr => {
+            RuntimeValue::I64(0)
+        }
+        RuntimeArrayElementType::Single
+        | RuntimeArrayElementType::Double
+        | RuntimeArrayElementType::Currency
+        | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
+        RuntimeArrayElementType::String => RuntimeValue::String(BStr(String::new())),
+        RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DebugBreakpoint, DebugRunResult, DebugStopReason, Vm};
+    use super::{
+        DebugBreakpoint, DebugRunResult, DebugStopReason, Vm, runtime_resized_array_preserve,
+    };
     use oxvba_com::{
         ComValue, DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector,
     };
@@ -4509,7 +4536,7 @@ mod tests {
         Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
         ProjectDynamicParamRoute,
-        bytecode::{DispatchInvokeArg, StringCompareMode},
+        bytecode::{DispatchInvokeArg, RuntimeArrayElementType, StringCompareMode},
     };
     use oxvba_hal::{
         error::{HalError, HalErrorKind},
@@ -4517,9 +4544,9 @@ mod tests {
     };
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
     use oxvba_runtime::{
-        ObjectHandle, RuntimeValue,
+        F64Value, ObjectHandle, RuntimeValue,
         bstr::BStr,
-        safe_array::{ARRAY_TAG_BASE, SafeArray},
+        safe_array::{ARRAY_TAG_BASE, SafeArray, SafeArrayBound},
     };
     use std::collections::BTreeMap;
 
@@ -4924,10 +4951,14 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(
-            vm.snapshot_slots(10),
-            vec![12345, 2, 3, 5, 12, 45, 234, 3, 12345, 12345]
-        );
+        let out = vm.snapshot_slots(10);
+        let values = vm.snapshot_values(10);
+        assert_eq!(out, vec![12345, 2, 3, 5, 0, 0, 0, 3, 0, 0]);
+        assert_eq!(values[4], RuntimeValue::String(BStr("12".to_string())));
+        assert_eq!(values[5], RuntimeValue::String(BStr("45".to_string())));
+        assert_eq!(values[6], RuntimeValue::String(BStr("234".to_string())));
+        assert_eq!(values[8], RuntimeValue::String(BStr("12345".to_string())));
+        assert_eq!(values[9], RuntimeValue::String(BStr("12345".to_string())));
     }
 
     #[test]
@@ -4957,6 +4988,41 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(4), vec![19945, 2, 2, 99]);
+    }
+
+    #[test]
+    fn executes_mid_statement_string_mutation_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "ABCDE".to_string(),
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::LoadConstI32 { slot: 2, value: 2 },
+                Instruction::LoadConstString {
+                    slot: 3,
+                    value: "99".to_string(),
+                },
+                Instruction::IntrinsicMidStmtDigits {
+                    target: 0,
+                    start: 1,
+                    count: Some(2),
+                    value: 3,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 4,
+            user_slot_count: 4,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(
+            vm.snapshot_values(4)[0],
+            RuntimeValue::String(BStr("A99DE".to_string()))
+        );
     }
 
     #[test]
@@ -5024,12 +5090,18 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(15);
+        let values = vm.snapshot_values(15);
         assert_eq!(
-            vm.snapshot_slots(15),
+            out,
             vec![
-                123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1, 4, -1
+                123231, 23, 12345, 67, 12, 123, 3, 12345, 0, 0, 0, 0, -1, 4, -1
             ]
         );
+        assert_eq!(values[8], RuntimeValue::String(BStr("16745".to_string())));
+        assert_eq!(values[9], RuntimeValue::String(BStr("12345".to_string())));
+        assert_eq!(values[10], RuntimeValue::String(BStr("12345".to_string())));
+        assert_eq!(values[11], RuntimeValue::String(BStr("12345".to_string())));
     }
 
     #[test]
@@ -5189,12 +5261,18 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(34);
         let values = vm.snapshot_values(34);
-        assert_eq!(out[8], 20260228);
-        assert_eq!(out[9], 20260229);
+        assert_eq!(
+            values[8],
+            RuntimeValue::F64(F64Value::from_date_f64(46081.0))
+        );
+        assert_eq!(
+            values[9],
+            RuntimeValue::F64(F64Value::from_date_f64(46082.0))
+        );
         assert_eq!(out[10], 1);
         assert_eq!(out[11], 1);
         assert_eq!(out[12], 1);
-        assert_eq!(out[13], 20260228);
+        assert_eq!(values[13], RuntimeValue::I32(46081));
         assert_eq!(out[15], 0);
         assert_eq!(out[16], 2);
         assert_eq!(out[17], 1);
@@ -5396,6 +5474,70 @@ mod tests {
                 RuntimeValue::I32(14),
                 RuntimeValue::I32(17),
             ]))
+        );
+    }
+
+    #[test]
+    fn intrinsic_array_resize_1d_materializes_zeroed_byte_payload() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicArrayResize {
+                    dst: 1,
+                    upper_bounds: vec![0],
+                    lower_bounds: vec![0],
+                    element_type: RuntimeArrayElementType::Byte,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let values = vm.snapshot_values(2);
+        assert_eq!(
+            values[1],
+            RuntimeValue::ArrayIntent(SafeArray {
+                dimensions: 1,
+                len: 4,
+                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
+                elements: Some(vec![
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn runtime_redim_preserve_1d_retains_overlapping_byte_values() {
+        let current = RuntimeValue::ArrayIntent(SafeArray {
+            dimensions: 1,
+            len: 2,
+            bounds: Some(vec![SafeArrayBound { lower: 0, count: 2 }]),
+            elements: Some(vec![RuntimeValue::I32(90), RuntimeValue::I32(91)]),
+        });
+        let resized =
+            runtime_resized_array_preserve(&current, &[0], &[3], RuntimeArrayElementType::Byte)
+                .expect("runtime preserve should succeed");
+        assert_eq!(
+            resized,
+            SafeArray {
+                dimensions: 1,
+                len: 4,
+                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
+                elements: Some(vec![
+                    RuntimeValue::I32(90),
+                    RuntimeValue::I32(91),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ]),
+            }
         );
     }
 
@@ -5972,6 +6114,7 @@ mod tests {
                 selection_policy: "case-insensitive-canonical".to_string(),
                 param_count: 1,
                 param_types: vec![oxvba_compiler::bytecode::DeclareParamType::Long],
+                param_by_ref: vec![false],
                 return_type: Some(oxvba_compiler::bytecode::DeclareParamType::Long),
             }],
             slot_count: 2,
@@ -6019,6 +6162,7 @@ mod tests {
                 selection_policy: "case-insensitive-canonical".to_string(),
                 param_count: 1,
                 param_types: vec![oxvba_compiler::bytecode::DeclareParamType::Long],
+                param_by_ref: vec![false],
                 return_type: Some(oxvba_compiler::bytecode::DeclareParamType::Long),
             }],
             slot_count: 2,
@@ -6067,6 +6211,7 @@ mod tests {
                 selection_policy: "case-insensitive-canonical".to_string(),
                 param_count: 1,
                 param_types: vec![oxvba_compiler::bytecode::DeclareParamType::Long],
+                param_by_ref: vec![false],
                 return_type: Some(oxvba_compiler::bytecode::DeclareParamType::Long),
             }],
             slot_count: 2,
@@ -6116,6 +6261,7 @@ mod tests {
                 selection_policy: "case-insensitive-canonical".to_string(),
                 param_count: 1,
                 param_types: vec![oxvba_compiler::bytecode::DeclareParamType::Long],
+                param_by_ref: vec![false],
                 return_type: Some(oxvba_compiler::bytecode::DeclareParamType::Long),
             }],
             slot_count: 2,

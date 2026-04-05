@@ -18,10 +18,10 @@ use oxvba_project::{
     load_workspace_target as load_project_workspace_target,
 };
 use tower_lsp::lsp_types::{
-    CodeActionProviderCapability, CompletionOptions, HoverProviderCapability, OneOf,
-    RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    ServerCapabilities, ServerInfo, SignatureHelpOptions, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Url, WorkspaceSymbolOptions,
+    CodeActionProviderCapability, CompletionOptions, HoverProviderCapability, OneOf, RenameOptions,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, ServerCapabilities,
+    ServerInfo, SignatureHelpOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, Url, WorkspaceSymbolOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -540,8 +540,14 @@ mod tests {
             capabilities.hover_provider,
             Some(super::HoverProviderCapability::Simple(true))
         );
-        assert_eq!(capabilities.definition_provider, Some(super::OneOf::Left(true)));
-        assert_eq!(capabilities.references_provider, Some(super::OneOf::Left(true)));
+        assert_eq!(
+            capabilities.definition_provider,
+            Some(super::OneOf::Left(true))
+        );
+        assert_eq!(
+            capabilities.references_provider,
+            Some(super::OneOf::Left(true))
+        );
         assert_eq!(
             capabilities.document_symbol_provider,
             Some(super::OneOf::Left(true))

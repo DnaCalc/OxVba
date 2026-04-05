@@ -64,6 +64,54 @@ End Sub
 }
 
 #[test]
+fn e2e_edge_dynamic_multidim_runtime_redim_vm_jit_parity() {
+    let manifest = source_project(
+        "EdgeDynamicRuntimeArray",
+        vec![proc_module(
+            "MainModule",
+            r#"
+Option Explicit
+Option Base 1
+Public Sub Main()
+    Dim result As Long
+    Dim grid() As Long
+    ReDim grid(2, 2)
+    grid(1, 1) = 9
+    ReDim Preserve grid(2, 3)
+    If grid(1, 1) = 9 And LBound(grid) = 1 And UBound(grid) = 2 Then
+        result = 26
+    Else
+        result = -1
+    End If
+End Sub
+"#,
+        )],
+    );
+
+    let vm = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let jit = Engine::new(HostConfig {
+        enable_jit: true,
+        root_object_name: None,
+    });
+
+    let vm_snapshot = vm
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect("vm execution should succeed");
+    let jit_snapshot = jit
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect("jit execution should succeed");
+
+    assert_eq!(
+        vm_snapshot, jit_snapshot,
+        "vm/jit snapshots diverged on dynamic multidimensional runtime arrays"
+    );
+    contains_value(&vm_snapshot, RuntimeValue::I32(26));
+}
+
+#[test]
 fn e2e_edge_runtime_policy_denial_routes_through_resume_next() {
     let mut engine = Engine::new(HostConfig::default());
     let mut policy = HostPolicy::deterministic_runtime();

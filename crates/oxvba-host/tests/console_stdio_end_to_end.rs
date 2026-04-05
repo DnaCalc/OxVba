@@ -92,9 +92,13 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
             Line Input c\n\
             Debug.Print \"trace\"\n\
             End Sub";
-        let values = engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
-            .execute_source_with_value_snapshot(source)
-            .expect("console stdio execution should succeed");
+        let values = engine_with_profile(
+            RuntimeProfileId::WindowsStdio,
+            enable_jit,
+            callbacks.clone(),
+        )
+        .execute_source_with_value_snapshot(source)
+        .expect("console stdio execution should succeed");
         assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
         assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
         assert_eq!(
@@ -114,9 +118,13 @@ fn debug_print_executes_on_windows_stdio_profile_for_vm_and_jit() {
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         let source = "Sub Main()\nDebug.Print \"trace\"\nEnd Sub";
-        let values = engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
-            .execute_source_with_value_snapshot(source)
-            .expect("debug-print execution should succeed");
+        let values = engine_with_profile(
+            RuntimeProfileId::WindowsStdio,
+            enable_jit,
+            callbacks.clone(),
+        )
+        .execute_source_with_value_snapshot(source)
+        .expect("debug-print execution should succeed");
         assert_eq!(values, Vec::<RuntimeValue>::new());
         assert_eq!(
             callbacks.debug_output(),
@@ -132,9 +140,13 @@ fn debug_print_multiple_exprs_executes_on_windows_stdio_profile_for_vm_and_jit()
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         let source = "Sub Main()\nOn Error Resume Next\nError 9\nDebug.Print \"trace\", Err.LastDllError\nEnd Sub";
-        engine_with_profile(RuntimeProfileId::WindowsStdio, enable_jit, callbacks.clone())
-            .execute_source(source)
-            .expect("multi-expr debug-print execution should succeed");
+        engine_with_profile(
+            RuntimeProfileId::WindowsStdio,
+            enable_jit,
+            callbacks.clone(),
+        )
+        .execute_source(source)
+        .expect("multi-expr debug-print execution should succeed");
         assert_eq!(
             callbacks.debug_output(),
             vec!["trace\t".to_string()],

@@ -2,7 +2,7 @@
 
 Date: 2026-04-03
 Owner: Codex
-Status: in-progress
+Status: closed
 
 ## Purpose
 
@@ -109,6 +109,28 @@ Delivered so far in this lane:
 - the earlier `Private Const` host-shim suspicion is not currently reproduced by
   the minimal direct compiler probe, so it remains a narrower follow-on question
   rather than a proven active blocker
+- 2026-04-04 execution update:
+  - the bounded runtime-sized one-dimensional `ReDim` lane is now implemented
+    far enough for the normalized core fixture to compile and execute in VM and
+    JIT
+  - the demo fixture also now moves past the earlier `ReDim`, `Kill`, named
+    `Select Case` constant-label, `Beep`, and comma/equals-inside-SQL-string
+    assignment parsing boundaries
+  - the comparison-valued-expression frontier in
+    `Debug.Print "Long String is the same: " & (myStringResult = myLongString)`
+    is now delivered, together with the follow-on array-parameter and
+    fixed-array whole-value passing slices needed to keep the demo moving
+  - direct compile for the normalized demo manifest now succeeds; the frontier
+    has moved out of backend compile and into runtime/native execution
+  - current front edge:
+    - host demo row: runtime phase reached after compile succeeds
+    - CLI VM and CLI JIT rows with `--allow-filesystem-mutation true`: native
+      `STATUS_ACCESS_VIOLATION` after execution begins
+    - JIT-specific helper gap `missing helper: oxrt_array_resize_1d` was exposed
+      and fixed in-cycle; JIT now also reaches the shared native crash frontier
+  - current interpretation: SQLite is now blocked on a real runtime/native
+    crash during actual execution, not on the previous compile-time
+    expression/array barriers
 
 ## Governing Rules
 
@@ -127,6 +149,54 @@ Delivered so far in this lane:
 - `bd-sql1.16.3` bridge `VarPtr(buf(0))` and array return/assignment over that
   runtime array payload
 - `bd-sql1.16.4` rerun the SQLite fixture matrix and publish the moved boundary
+- `bd-sql1.17` comparison-valued expressions in value position, first observed
+  through the demo line
+  `Debug.Print "Long String is the same: " & (myStringResult = myLongString)`
+- `bd-sql1.18` post-compile runtime/native crash isolation in the real SQLite
+  execution lane
+  - delivered: the first shared VM/JIT `STATUS_ACCESS_VIOLATION` was isolated to
+    `SQLite3Open` / `sqlite3_open16` inside `TestOpenClose`
+  - delivered: native declare `ByRef` scalar/LongPtr container-cell marshaling
+    and caller-slot writeback for the m1 host-backed lane
+  - moved boundary: the demo now reaches `TestOpenCloseV2` in both VM and JIT
+- current next implementation frontier after that delivery:
+  - `bd-sql1.19` string-versus-`Empty` comparison in `SQLite3OpenV2`
+    is delivered; the demo now moves through `TestOpenCloseV2`, `TestError`,
+    `TestInsert`, and `TestSelect` in both VM and JIT
+  - `bd-sql1.20` is delivered; string-valued `DateValue("1 Jan 2000")` no
+    longer traps on the legacy i32 lane
+  - `bd-sql1.21` is delivered; writable `StrPtr` / `VarPtr` sync is now
+    expression-shape and boundary-kind driven rather than keyed off Windows API
+    names
+  - `bd-sql1.22` isolated the moved blob frontier honestly
+  - `bd-sql1.23` is delivered; runtime-sized byte-array element reads now work
+    in expression position, which moved SQLite through `TestBlob`
+  - `bd-sql1.24` is delivered; Windows x64 native `Double` arguments/returns
+    now use an ABI-aware call path, `DateValue` / `CDate` materialize real
+    Date-subtyped runtime values with packed-date compatibility, and `As Date`
+    procedure parameters coerce at procedure entry
+  - current evidence after those deliveries:
+    - the reduced full-order SQLite harness now completes in both VM and JIT
+      through `TestBindingReduced`, `TestDates`, `TestStrings`, `TestBackup`,
+      `TestBlob`, and the readonly checks
+    - a tracked bounded normalized fixture now exists under
+      `.external/sqliteforexcel/fixtures/Demo64NormalizedBounded/` so the full
+      upstream call order can be exercised with reduced binding-loop counts
+      while the non-reduced normalized fixture remains the terminal evidence row
+    - the real normalized fixture now completes end-to-end in CLI VM and CLI
+      JIT with `--allow-filesystem-mutation true`, including the non-reduced
+      `TestBinding` row over the full 100k loop and terminal
+      `----- All Tests Complete -----` evidence
+    - concurrent JIT/VM runs can still collide on the shared temp database path
+      and fail in `Kill ...` with Windows `os error 32`; that is evidence noise,
+      not a language/runtime frontier
+  - terminal evidence:
+    - `bd-sql1.25.1` delivered a tracked bounded-loop support row so the same
+      full call order completes quickly in automated VM/JIT evidence without
+      editing the real normalized fixture
+    - `bd-sql1.25` is delivered; the non-reduced normalized fixture now has
+      terminal completion evidence in both CLI VM and CLI JIT, so no fresh
+      runtime or semantic frontier remained underneath the final 100k loop row
 
 ## Scope
 

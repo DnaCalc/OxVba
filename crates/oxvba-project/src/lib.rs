@@ -45,16 +45,16 @@ pub use com_selection::{
 pub use error::BasProjError;
 pub use generate::{generate_basproj_xml, serialize_basproj_xml};
 pub use host_helpers::{
-    HostProjectEdit, HostProjectEditApplication, HostProjectEditIssue,
-    HostProjectEditIssueKind, HostProjectEditPlan, HostProjectEditValidation,
-    HostProjectModuleInfo, HostProjectReferenceInfo, HostProjectReferenceKind,
-    HostProjectSurface, HostWorkspaceTargetKind, ModuleIdentityInfo, ModuleIdentityRewrite,
-    PlannedModule, VbNameAttributeAction, add_com_reference_edit, add_module_edit,
-    add_project_reference_edit, apply_host_project_edit_plan,
-    apply_host_project_edits_to_basproj, apply_host_project_edits_to_basproj_path,
-    inspect_module_identity, inspect_workspace_target, plan_new_module,
-    prepare_host_project_edit_plan, reconcile_module_identity, remove_com_reference_edit,
-    remove_module_edit, remove_project_reference_edit, validate_host_project_edits,
+    HostProjectEdit, HostProjectEditApplication, HostProjectEditIssue, HostProjectEditIssueKind,
+    HostProjectEditPlan, HostProjectEditValidation, HostProjectModuleInfo,
+    HostProjectReferenceInfo, HostProjectReferenceKind, HostProjectSurface,
+    HostWorkspaceTargetKind, ModuleIdentityInfo, ModuleIdentityRewrite, PlannedModule,
+    VbNameAttributeAction, add_com_reference_edit, add_module_edit, add_project_reference_edit,
+    apply_host_project_edit_plan, apply_host_project_edits_to_basproj,
+    apply_host_project_edits_to_basproj_path, inspect_module_identity, inspect_workspace_target,
+    plan_new_module, prepare_host_project_edit_plan, reconcile_module_identity,
+    remove_com_reference_edit, remove_module_edit, remove_project_reference_edit,
+    validate_host_project_edits,
 };
 pub use load::{
     LoadedProject, infer_project_name_from_path, load_basproj, load_basproj_from_str,

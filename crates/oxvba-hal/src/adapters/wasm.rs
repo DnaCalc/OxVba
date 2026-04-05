@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue};
 
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
@@ -114,7 +114,7 @@ impl UiInteractionHal for WasmHostServices {
         if !self.policy.allow_interaction {
             return Err(self.denied(CapabilityId::UiInteraction, "msg_box"));
         }
-        let style = style.to_legacy_i32().map_err(|detail| {
+        let style = style.project_compat_slot_i32().map_err(|detail| {
             crate::HalError::adapter_fault(
                 HalProfileId::Wasm,
                 CapabilityId::UiInteraction,
@@ -167,6 +167,10 @@ impl FileSystemHal for WasmHostServices {
 
     fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
+    }
+
+    fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
     }
 
     fn seek(&self, _handle: RuntimeValue, _position: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -343,31 +347,36 @@ impl TimeLocaleHal for WasmHostServices {
         {
             let days_since_epoch = (elapsed.as_secs() / 86400) as i32;
             // VBA serial date: 1 Jan 1900 = 2. Unix epoch 1 Jan 1970 = day 25569.
-            let serial = days_since_epoch + 25569;
-            return Ok(RuntimeValue::I32(serial));
+            let serial = f64::from(days_since_epoch + 25569);
+            return Ok(RuntimeValue::F64(F64Value::from_date_f64(serial)));
         }
-        Ok(RuntimeValue::I32(20_260_301)) // deterministic fallback
+        Ok(RuntimeValue::F64(F64Value::from_date_f64(46_082.0))) // deterministic fallback
     }
 
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time()
             && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         {
-            let secs_today = (elapsed.as_secs() % 86400) as i32;
-            return Ok(RuntimeValue::I32(secs_today));
+            let secs_today = (elapsed.as_secs() % 86400) as f64
+                + f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(RuntimeValue::F64(F64Value::from_date_f64(
+                secs_today / 86_400.0,
+            )));
         }
-        Ok(RuntimeValue::I32(123_456)) // deterministic fallback
+        Ok(RuntimeValue::F64(F64Value::from_date_f64(
+            45_296.0 / 86_400.0,
+        ))) // deterministic fallback
     }
 
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time()
             && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         {
-            return Ok(RuntimeValue::I32(
-                (elapsed.as_millis() % (i32::MAX as u128)) as i32,
-            ));
+            let secs_today = (elapsed.as_secs() % 86400) as f64
+                + f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(RuntimeValue::F64(F64Value::from_single_f64(secs_today)));
         }
-        Ok(RuntimeValue::I32(42)) // deterministic fallback
+        Ok(RuntimeValue::F64(F64Value::from_single_f64(45_296.0))) // deterministic fallback
     }
 }
 
@@ -391,8 +400,8 @@ impl DynamicLinkHal for WasmHostServices {
 
 impl DiagnosticsHal for WasmHostServices {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
-        let code = code.to_legacy_i32().unwrap_or(0);
-        let payload = payload.to_legacy_i32().unwrap_or(0);
+        let code = code.project_compat_slot_i32().unwrap_or(0);
+        let payload = payload.project_compat_slot_i32().unwrap_or(0);
         Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 
@@ -406,9 +415,9 @@ mod tests {
     use crate::{
         error::HalErrorKind,
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
-        traits::{HostServices, ProcessEnvHal, UiInteractionHal},
+        traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
     };
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
     use super::WasmHostServices;
 
@@ -443,37 +452,37 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_subscribe_event(RuntimeValue::I32(1), RuntimeValue::I32(1))
+            host.subscribe_event(ObjectHandle::new(1), 1.into())
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_unsubscribe_event(1.into())
+            host.unsubscribe_event(1.into())
                 .expect_err("unsubscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_event_callback_subscription(1.into())
+            host.event_callback_subscription(1.into())
                 .expect_err("event_callback_subscription")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_event_callback_arity(1.into())
+            host.event_callback_arity(1.into())
                 .expect_err("event_callback_arity")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_event_callback_arg(RuntimeValue::I32(1), RuntimeValue::I32(0))
+            host.event_callback_arg(1.into(), 0)
                 .expect_err("event_callback_arg")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.legacy_release_event_callback(1.into())
+            host.release_event_callback(1.into())
                 .expect_err("release_event_callback")
                 .kind,
             HalErrorKind::CapabilityUnavailable
@@ -502,136 +511,4 @@ mod tests {
 
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
-impl WasmHostServices {
-    fn legacy_subscribe_event(
-        &self,
-        object: RuntimeValue,
-        event: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let object = match object {
-            RuntimeValue::ObjectHandle(handle) => handle,
-            RuntimeValue::I32(value) => ObjectHandle::new(value),
-            other => {
-                return Err(HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "subscribe_event",
-                    format!("legacy test helper requires object token, got {other:?}"),
-                ));
-            }
-        };
-        let event = match event.to_legacy_i32() {
-            Ok(value) => ComMemberToken::new(value),
-            Err(detail) => {
-                return Err(HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "subscribe_event",
-                    detail,
-                ));
-            }
-        };
-        <Self as ComHal>::subscribe_event(self, object, event)
-            .map(|value| RuntimeValue::I32(value.raw()))
-    }
-
-    fn legacy_unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
-        let subscription = subscription
-            .to_legacy_i32()
-            .map(ComSubscriptionToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "unsubscribe_event",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::unsubscribe_event(self, subscription)
-    }
-
-    fn legacy_event_callback_subscription(
-        &self,
-        callback: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_subscription",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::event_callback_subscription(self, callback)
-            .map(|value| RuntimeValue::I32(value.raw()))
-    }
-
-    fn legacy_event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_arity",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::event_callback_arity(self, callback)
-            .map(|value| RuntimeValue::I32(i32::try_from(value).unwrap_or(i32::MAX)))
-    }
-
-    fn legacy_event_callback_arg(
-        &self,
-        callback: RuntimeValue,
-        index: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_arg",
-                    detail,
-                )
-            })?;
-        let index = index.to_legacy_i32().map_err(|detail| {
-            HalError::adapter_fault(
-                self.profile(),
-                CapabilityId::ComActivationDispatch,
-                "event_callback_arg",
-                detail,
-            )
-        })?;
-        if index < 0 {
-            return Err(HalError::adapter_fault(
-                self.profile(),
-                CapabilityId::ComActivationDispatch,
-                "event_callback_arg",
-                format!("negative index {index}"),
-            ));
-        }
-        <Self as ComHal>::event_callback_arg(self, callback, index as usize)
-    }
-
-    fn legacy_release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile(),
-                    CapabilityId::ComActivationDispatch,
-                    "release_event_callback",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::release_event_callback(self, callback)
-    }
-}
+impl WasmHostServices {}

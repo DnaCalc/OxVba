@@ -18,6 +18,29 @@ struct TypecheckProcContext<'a> {
     proc_return_types: &'a HashMap<String, BoundType>,
 }
 
+fn contains_casefold_name(set: &HashSet<String>, name: &str) -> bool {
+    if set.contains(name) {
+        return true;
+    }
+    let folded = name.to_ascii_lowercase();
+    set.contains(&folded)
+        || set
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(name))
+}
+
+fn lookup_casefold_name<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Option<&'a V> {
+    if let Some(value) = map.get(name) {
+        return Some(value);
+    }
+    let folded = name.to_ascii_lowercase();
+    map.get(&folded).or_else(|| {
+        map.iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
+    })
+}
+
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
     let default_type_table = module.default_type_table;
@@ -167,6 +190,44 @@ fn check_stmt(
                     expr_ty, target_ty, target
                 ))
             }
+        }
+        BoundStmt::AssignRuntimeArrayElement {
+            name,
+            indices,
+            expr,
+            ..
+        } => {
+            ensure_declared(
+                name,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            for index in indices {
+                check_expr(
+                    index,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+            }
+            check_expr(
+                expr,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )
         }
         BoundStmt::UdtAssign {
             target,
@@ -472,6 +533,60 @@ fn check_stmt(
             }
             Ok(())
         }
+        BoundStmt::ReDimRuntime { name, bounds, .. } => {
+            ensure_declared(
+                name,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            if declared_types.get(name).copied() != Some(BoundType::Array) {
+                return Err(format!(
+                    "runtime ReDim with expression bounds currently requires a dynamically declared array variable: {name}"
+                ));
+            }
+            for bound in bounds {
+                check_expr(
+                    &bound.upper_bound,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+                let upper_ty = infer_expr_type(&bound.upper_bound, declared_types);
+                if coercion_result(upper_ty, BoundType::Long) != CoercionResult::Ok {
+                    return Err(format!(
+                        "runtime ReDim upper bound must be numeric/coercible to Long, got {:?} for {}",
+                        upper_ty, name
+                    ));
+                }
+            }
+            let element_alias = format!("{name}_0");
+            match declaration_types
+                .get(element_alias.as_str())
+                .copied()
+                .unwrap_or(BoundType::Variant)
+            {
+                BoundType::Object | BoundType::Array | BoundType::Decimal => {
+                    return Err(format!(
+                        "runtime ReDim does not yet support {:?} element arrays for {}",
+                        declaration_types
+                            .get(element_alias.as_str())
+                            .copied()
+                            .unwrap_or(BoundType::Variant),
+                        name
+                    ));
+                }
+                _ => {}
+            }
+            Ok(())
+        }
         BoundStmt::Erase { name } => {
             ensure_declared(
                 name,
@@ -658,6 +773,7 @@ fn check_stmt(
         }
         BoundStmt::FileOpen { .. }
         | BoundStmt::FileClose { .. }
+        | BoundStmt::FileKill { .. }
         | BoundStmt::FilePrint { .. }
         | BoundStmt::ConsolePrint { .. }
         | BoundStmt::FileWrite { .. }
@@ -665,6 +781,7 @@ fn check_stmt(
         | BoundStmt::ConsoleInput { .. }
         | BoundStmt::FileLineInput { .. }
         | BoundStmt::ConsoleLineInput { .. }
+        | BoundStmt::Beep
         | BoundStmt::DebugPrint { .. } => Ok(()),
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
     }
@@ -720,7 +837,7 @@ fn validate_call_site(
         declared_types,
     )?;
 
-    if let Some(params) = proc_context.proc_params.get(name) {
+    if let Some(params) = lookup_casefold_name(proc_context.proc_params, name) {
         let arg_mapping = map_call_args_to_params(name, args, params)?;
         for (idx, param) in params.iter().enumerate() {
             if param.param_array {
@@ -785,6 +902,7 @@ fn validate_call_site(
         return Ok(proc_context
             .proc_return_types
             .get(name)
+            .or_else(|| lookup_casefold_name(proc_context.proc_return_types, name))
             .copied()
             .unwrap_or(BoundType::Variant));
     }
@@ -1045,6 +1163,28 @@ fn check_expr(
             proc_context,
         )
         .map(|_| ()),
+        BoundExpr::CompareOp { lhs, rhs, .. } => {
+            check_expr(
+                lhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+            check_expr(
+                rhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )
+        }
         BoundExpr::BinaryOp { lhs, rhs, .. } => {
             check_expr(
                 lhs,
@@ -1169,6 +1309,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
         BoundExpr::ProcCall { .. } => BoundType::Variant,
+        BoundExpr::CompareOp { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
     }
 }
@@ -1713,8 +1854,8 @@ fn classify_call_mode(
     proc_params: &HashMap<String, Vec<BoundParam>>,
     declared_types: &HashMap<String, BoundType>,
 ) -> Result<CallMode, String> {
-    if proc_names.contains(name) {
-        let Some(params) = proc_params.get(name) else {
+    if contains_casefold_name(proc_names, name) {
+        let Some(params) = lookup_casefold_name(proc_params, name) else {
             return Ok(CallMode::Early);
         };
         let arg_mapping = map_call_args_to_params(name, args, params)?;
@@ -1743,7 +1884,9 @@ fn classify_call_mode(
     }
 
     if matches!(
-        declared_types.get(name),
+        declared_types
+            .get(name)
+            .or_else(|| lookup_casefold_name(declared_types, name)),
         Some(BoundType::Variant) | Some(BoundType::Object)
     ) {
         return Ok(CallMode::Late);

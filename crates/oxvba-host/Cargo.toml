@@ -18,3 +18,10 @@ thiserror.workspace = true
 [dev-dependencies]
 oxvba-project.workspace = true
 oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Variant",
+] }

@@ -171,13 +171,11 @@ impl DynamicCallRequest {
         let member = match &self.member {
             DynamicMemberSelector::Token(value) => *value,
             DynamicMemberSelector::DefaultMember => 0,
-            // Sentinel token -1 signals "unresolved by name" to downstream consumers.
-            // The primary late-bound dispatch path (`WindowsComBridge::dispatch_invoke_dynamic_runtime_value`)
-            // handles Name selectors directly via GetIDsOfNames and never reaches this conversion.
-            // This branch exists so that fallback / deterministic-projection callers that go through
-            // `try_into_com_invoke_request` can still obtain a valid `ComInvokeRequest` without
-            // erroring; those callers must handle name resolution separately if they need it.
-            DynamicMemberSelector::Name(_) => -1,
+            DynamicMemberSelector::Name(name) => {
+                return Err(format!(
+                    "dynamic member name `{name}` requires authoritative name resolution before COM lowering"
+                ));
+            }
         };
         Ok(ComInvokeRequest {
             object: self.object.into(),
@@ -258,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_call_request_name_selector_lowers_with_sentinel_token() {
+    fn dynamic_call_request_name_selector_requires_authoritative_resolution() {
         let request = DynamicCallRequest {
             object: 20_010.into(),
             member: DynamicMemberSelector::Name("Range".to_string()),
@@ -266,18 +264,9 @@ mod tests {
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
         };
 
-        let com_request = request
+        let err = request
             .try_into_com_invoke_request()
-            .expect("name-backed dynamic request should lower with sentinel token");
-        assert_eq!(com_request.object.raw(), 20_010);
-        assert_eq!(
-            com_request.member.raw(),
-            -1,
-            "Name selector should produce sentinel token -1"
-        );
-        assert_eq!(
-            com_request.invoke_kind_hint,
-            Some(ComInvokeKind::PropertyGet)
-        );
+            .expect_err("name-backed dynamic request should not lower without resolution");
+        assert!(err.contains("requires authoritative name resolution"));
     }
 }

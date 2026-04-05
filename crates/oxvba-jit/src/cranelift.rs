@@ -160,6 +160,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicTimeValueDigits { .. }
             | Instruction::IntrinsicDateAddDigits { .. }
             | Instruction::IntrinsicDateDiffDigits { .. }
+            | Instruction::IntrinsicCDateValue { .. }
             | Instruction::IntrinsicYearDigits { .. }
             | Instruction::IntrinsicMonthDigits { .. }
             | Instruction::IntrinsicDayDigits { .. }
@@ -180,6 +181,8 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicTypeNameTag { .. }
             | Instruction::IntrinsicStrPtr { .. }
             | Instruction::IntrinsicVarPtr { .. }
+            | Instruction::IntrinsicVarPtrStringVar { .. }
+            | Instruction::IntrinsicVarPtrVariantVar { .. }
             | Instruction::IntrinsicObjPtr { .. }
             | Instruction::IntrinsicIsNumericTag { .. }
             | Instruction::IntrinsicIsNumeric { .. }
@@ -201,6 +204,10 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             // Phase 2: Array
             | Instruction::IntrinsicArrayLiteral { .. }
             | Instruction::IntrinsicArrayAppend { .. }
+            | Instruction::IntrinsicArrayResize { .. }
+            | Instruction::IntrinsicArrayResizePreserve { .. }
+            | Instruction::IntrinsicArrayGet { .. }
+            | Instruction::IntrinsicArraySet { .. }
             | Instruction::IntrinsicLBoundArray { .. }
             | Instruction::IntrinsicUBoundArray { .. }
             // Phase 2: Collection
@@ -225,6 +232,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicFreeFileHost { .. }
             | Instruction::IntrinsicFileOpenHost { .. }
             | Instruction::IntrinsicFileCloseHost { .. }
+            | Instruction::IntrinsicFileKillHost { .. }
             | Instruction::IntrinsicFileReadHost { .. }
             | Instruction::IntrinsicFileWriteHost { .. }
             | Instruction::IntrinsicFilePrintHost { .. }
@@ -255,6 +263,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             // UI
             | Instruction::IntrinsicMsgBoxHost { .. }
             | Instruction::IntrinsicInputBoxHost { .. }
+            | Instruction::IntrinsicBeepHost { .. }
             | Instruction::IntrinsicDebugPrintHost { .. }
             | Instruction::IntrinsicDoEventsHost { .. }
             | Instruction::IntrinsicShellHost { .. }
@@ -489,7 +498,7 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String
     execute_bytecode_legacy(bytecode).map(|values| {
         values
             .into_iter()
-            .map(RuntimeValue::from_legacy_i32)
+            .map(RuntimeValue::from_compat_slot_i32)
             .collect()
     })
 }
@@ -730,10 +739,10 @@ pub fn execute_bytecode_rtslot(
 
         match instruction {
             Instruction::LoadConstI32 { slot, value } => {
-                // Match VM semantics: from_legacy_i32 maps special values.
+                // Match VM semantics: compat-slot projection maps special values.
                 // 0 = Empty, -1 = I32(-1) (NOT Null — LoadNull handles Null),
                 // error tags, array tags.
-                let rv = RuntimeValue::from_legacy_i32(*value);
+                let rv = RuntimeValue::from_compat_slot_i32(*value);
                 if *value == oxvba_runtime::value_tags::NULL_TAG {
                     // Special case: NULL_TAG (-1) is stored as I32(-1), not Null.
                     let payload = builder.ins().iconst(types::I64, i64::from(*value));
@@ -1745,6 +1754,20 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicCDateValue { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_cdate",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
             Instruction::IntrinsicTimeValueDigits { dst, src } => {
                 emit_extra_2slot(
                     &mut builder,
@@ -2063,6 +2086,34 @@ pub fn execute_bytecode_rtslot(
                     &mut module,
                     &helpers,
                     "oxrt_varptr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicVarPtrStringVar { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_varptr_string_var",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicVarPtrVariantVar { dst, src } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_varptr_variant_var",
                     ctx_ptr,
                     *dst,
                     *src,
@@ -2431,6 +2482,54 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicArrayGet {
+                dst,
+                array,
+                indices,
+            } => {
+                let boxed = indices
+                    .iter()
+                    .map(|slot| *slot as u32)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                let ptr_val = builder.ins().iconst(ptr_ty, boxed.as_ptr() as i64);
+                let len_val = builder.ins().iconst(types::I32, boxed.len() as i64);
+                let dst_val = builder.ins().iconst(types::I32, *dst as i64);
+                let array_val = builder.ins().iconst(types::I32, *array as i64);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_array_get"), builder.func);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, array_val, ptr_val, len_val],
+                    next_block,
+                );
+                std::mem::forget(boxed);
+            }
+            Instruction::IntrinsicArraySet {
+                array,
+                indices,
+                src,
+            } => {
+                let boxed = indices
+                    .iter()
+                    .map(|slot| *slot as u32)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                let ptr_val = builder.ins().iconst(ptr_ty, boxed.as_ptr() as i64);
+                let len_val = builder.ins().iconst(types::I32, boxed.len() as i64);
+                let array_val = builder.ins().iconst(types::I32, *array as i64);
+                let src_val = builder.ins().iconst(types::I32, *src as i64);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_array_set"), builder.func);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, array_val, ptr_val, len_val, src_val],
+                    next_block,
+                );
+                std::mem::forget(boxed);
+            }
             Instruction::IntrinsicArrayAppend { dst, array, item } => {
                 emit_extra_3slot(
                     &mut builder,
@@ -2445,6 +2544,64 @@ pub fn execute_bytecode_rtslot(
                     next_block,
                     error_dispatch_block,
                 );
+            }
+            Instruction::IntrinsicArrayResize {
+                dst,
+                upper_bounds,
+                lower_bounds,
+                element_type,
+            } => {
+                let upper_boxed = upper_bounds
+                    .iter()
+                    .map(|slot| *slot as u32)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                let lower_boxed = lower_bounds.clone().into_boxed_slice();
+                let dst_val = builder.ins().iconst(types::I32, *dst as i64);
+                let upper_ptr = builder.ins().iconst(ptr_ty, upper_boxed.as_ptr() as i64);
+                let lower_ptr = builder.ins().iconst(ptr_ty, lower_boxed.as_ptr() as i64);
+                let len_val = builder.ins().iconst(types::I32, upper_boxed.len() as i64);
+                let elem_val = builder.ins().iconst(types::I32, *element_type as i64);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_array_resize"), builder.func);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, upper_ptr, lower_ptr, len_val, elem_val],
+                    next_block,
+                );
+                std::mem::forget(upper_boxed);
+                std::mem::forget(lower_boxed);
+            }
+            Instruction::IntrinsicArrayResizePreserve {
+                dst,
+                upper_bounds,
+                lower_bounds,
+                element_type,
+            } => {
+                let upper_boxed = upper_bounds
+                    .iter()
+                    .map(|slot| *slot as u32)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                let lower_boxed = lower_bounds.clone().into_boxed_slice();
+                let dst_val = builder.ins().iconst(types::I32, *dst as i64);
+                let upper_ptr = builder.ins().iconst(ptr_ty, upper_boxed.as_ptr() as i64);
+                let lower_ptr = builder.ins().iconst(ptr_ty, lower_boxed.as_ptr() as i64);
+                let len_val = builder.ins().iconst(types::I32, upper_boxed.len() as i64);
+                let elem_val = builder.ins().iconst(types::I32, *element_type as i64);
+                let func_ref = module.declare_func_in_func(
+                    helpers.extra("oxrt_array_resize_preserve"),
+                    builder.func,
+                );
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, upper_ptr, lower_ptr, len_val, elem_val],
+                    next_block,
+                );
+                std::mem::forget(upper_boxed);
+                std::mem::forget(lower_boxed);
             }
             // ── Phase 2: Collection ──────────────────────────────────
             Instruction::IntrinsicCollectionAdd { dst, count, item } => {
@@ -2677,6 +2834,20 @@ pub fn execute_bytecode_rtslot(
                     ctx_ptr,
                     *dst,
                     *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicFileKillHost { dst, path } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_kill",
+                    ctx_ptr,
+                    *dst,
+                    *path,
                     pc,
                     next_block,
                     error_dispatch_block,
@@ -3083,6 +3254,12 @@ pub fn execute_bytecode_rtslot(
                     next_block,
                     error_dispatch_block,
                 );
+            }
+            Instruction::IntrinsicBeepHost { dst } => {
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_beep"), builder.func);
+                let dst_val = builder.ins().iconst(types::I32, *dst as i64);
+                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicDebugPrintHost { dst, data } => {
                 emit_extra_2slot(
@@ -3498,6 +3675,18 @@ impl HelperFuncIds {
             module,
             &[ptr_ty, types::I32, types::I32, ptr_ty, types::I32],
         );
+        let sig_ctx_2_ptrptr_2 = make_sig(
+            module,
+            &[ptr_ty, types::I32, ptr_ty, ptr_ty, types::I32, types::I32],
+        );
+        let sig_ctx_2_ptr_2 = make_sig(
+            module,
+            &[ptr_ty, types::I32, types::I32, ptr_ty, types::I32],
+        );
+        let sig_ctx_1_ptr_2 = make_sig(
+            module,
+            &[ptr_ty, types::I32, ptr_ty, types::I32, types::I32],
+        );
         // ValidateAssignment: fn(ctx, src, intent, kind, name_ptr, name_len, type_ptr, type_len) -> i32
         let sig_validate = make_sig(
             module,
@@ -3549,6 +3738,7 @@ impl HelperFuncIds {
             ("oxrt_date_serial", &sig_ctx_4),
             ("oxrt_time_serial", &sig_ctx_4),
             ("oxrt_date_value", &sig_ctx_2),
+            ("oxrt_cdate", &sig_ctx_2),
             ("oxrt_time_value", &sig_ctx_2),
             ("oxrt_date_add", &sig_ctx_4),
             ("oxrt_date_diff", &sig_ctx_4),
@@ -3590,6 +3780,10 @@ impl HelperFuncIds {
             // Phase 2: Array (3)
             ("oxrt_array_literal", &sig_ctx_2_ptr_1),
             ("oxrt_array_append", &sig_ctx_3),
+            ("oxrt_array_resize", &sig_ctx_2_ptrptr_2),
+            ("oxrt_array_resize_preserve", &sig_ctx_2_ptrptr_2),
+            ("oxrt_array_get", &sig_ctx_2_ptr_2),
+            ("oxrt_array_set", &sig_ctx_1_ptr_2),
             ("oxrt_lbound", &sig_ctx_2),
             ("oxrt_ubound", &sig_ctx_2),
             // Phase 2: Collection (4)
@@ -3619,6 +3813,7 @@ impl HelperFuncIds {
             ("oxrt_host_free_file", &sig_ctx_2),
             ("oxrt_host_file_open", &sig_ctx_4),
             ("oxrt_host_file_close", &sig_ctx_2),
+            ("oxrt_host_file_kill", &sig_ctx_2),
             ("oxrt_host_file_read", &sig_ctx_3),
             ("oxrt_host_file_write", &sig_ctx_3),
             ("oxrt_host_file_print", &sig_ctx_3),
@@ -3631,6 +3826,7 @@ impl HelperFuncIds {
             ("oxrt_host_console_print", &sig_ctx_3),
             ("oxrt_host_console_input", &sig_ctx_3),
             ("oxrt_host_console_line_input", &sig_ctx_2),
+            ("oxrt_host_beep", &sig_ctx_1),
             // Phase 4: COM
             ("oxrt_host_create_object", &sig_ctx_2),
             (
@@ -3664,6 +3860,8 @@ impl HelperFuncIds {
             ("oxrt_host_debug_print", &sig_ctx_3),
             ("oxrt_strptr", &sig_ctx_3),
             ("oxrt_varptr", &sig_ctx_3),
+            ("oxrt_varptr_string_var", &sig_ctx_3),
+            ("oxrt_varptr_variant_var", &sig_ctx_3),
             ("oxrt_objptr", &sig_ctx_3),
             ("oxrt_host_do_events", &sig_ctx_1),
             // Phase 4: Process/Env

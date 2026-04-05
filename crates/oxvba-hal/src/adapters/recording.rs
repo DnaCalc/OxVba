@@ -17,7 +17,7 @@ use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComSubscriptionToken, DynamicCallRequest,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Subtype, ObjectHandle, RuntimeValue};
 
 pub struct RecordingHostServices {
     inner: Arc<dyn HostServices>,
@@ -47,6 +47,25 @@ impl RecordingHostServices {
         let mut seq = self.sequence.lock().expect("sequence lock not poisoned");
         *seq += 1;
         *seq
+    }
+
+    fn encode_runtime_value(rv: &RuntimeValue) -> Option<serde_json::Value> {
+        match rv {
+            RuntimeValue::I32(value) => Some(serde_json::json!({
+                "kind": "i32",
+                "value": value
+            })),
+            RuntimeValue::F64(value) => Some(serde_json::json!({
+                "kind": "f64",
+                "value": value.as_f64(),
+                "subtype": match value.subtype() {
+                    F64Subtype::Single => "single",
+                    F64Subtype::Double => "double",
+                    F64Subtype::Date => "date",
+                }
+            })),
+            _ => None,
+        }
     }
 
     fn record_i32(
@@ -83,6 +102,26 @@ impl RecordingHostServices {
             let seq = self.next_sequence();
             let entry =
                 HalJournalEntry::new(seq, capability, operation, family, serde_json::json!(s.0));
+            self.journal
+                .lock()
+                .expect("journal lock not poisoned")
+                .entries
+                .push(entry);
+        }
+    }
+
+    fn record_runtime_value(
+        &self,
+        capability: &str,
+        operation: &str,
+        family: &str,
+        result: &HalResult<RuntimeValue>,
+    ) {
+        if let Ok(rv) = result
+            && let Some(payload) = Self::encode_runtime_value(rv)
+        {
+            let seq = self.next_sequence();
+            let entry = HalJournalEntry::new(seq, capability, operation, family, payload);
             self.journal
                 .lock()
                 .expect("journal lock not poisoned")
@@ -196,6 +235,12 @@ impl FileSystemHal for RecordingHostServices {
     fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let result = self.inner.fs().close(handle);
         self.record_i32("fs", "close", "fs.close", &result);
+        result
+    }
+
+    fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue> {
+        let result = self.inner.fs().kill(path);
+        self.record_i32("fs", "kill", "fs.kill", &result);
         result
     }
 
@@ -372,19 +417,19 @@ impl ComHal for RecordingHostServices {
 impl TimeLocaleHal for RecordingHostServices {
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
         let result = self.inner.time_locale().date_serial_now();
-        self.record_i32("time", "date_serial_now", "time.date", &result);
+        self.record_runtime_value("time", "date_serial_now", "time.date", &result);
         result
     }
 
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         let result = self.inner.time_locale().time_serial_now();
-        self.record_i32("time", "time_serial_now", "time.time", &result);
+        self.record_runtime_value("time", "time_serial_now", "time.time", &result);
         result
     }
 
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         let result = self.inner.time_locale().timer_ticks();
-        self.record_i32("time", "timer_ticks", "time.timer", &result);
+        self.record_runtime_value("time", "timer_ticks", "time.timer", &result);
         result
     }
 }
@@ -456,7 +501,14 @@ mod tests {
         assert_eq!(restored.entries.len(), 1);
         assert_eq!(restored.entries[0].operation, "timer_ticks");
         assert_eq!(restored.entries[0].capability, "time");
-        assert_eq!(restored.entries[0].result, serde_json::json!(42));
+        assert_eq!(
+            restored.entries[0].result,
+            serde_json::json!({
+                "kind": "f64",
+                "value": 45296.0,
+                "subtype": "single"
+            })
+        );
     }
 
     #[test]

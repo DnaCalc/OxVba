@@ -126,7 +126,7 @@ Current compile-time preflighted intrinsic families:
 Current COM callback/runtime note:
 - `EventPumpHal::do_events()` is still the host/event-pump intrinsic surface.
 - COM callback consumption now also has a payload-returning path via `ComHal::poll_event_callback()`.
-- legacy callback-token interrogation methods remain temporarily present for compatibility with older VM/compiler scaffolding and should be treated as transitional.
+- typed `ComHal` callback methods are the live interrogation surface; the older legacy callback-wrapper names have been retired from the adapter compatibility seams.
 
 Named preset table:
 - [`HAL_POLICY_PRESETS.md`](HAL_POLICY_PRESETS.md) defines reproducible policy bundles:

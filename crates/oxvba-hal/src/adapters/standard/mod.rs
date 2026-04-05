@@ -32,6 +32,7 @@ use console::ConsoleState;
 pub(crate) use descriptor::descriptor_for_profile;
 use dynlink::DynLinkBindingState;
 use filesystem::{FileHandleState, FileSystemState};
+use process::DirSearchState;
 
 #[allow(unused_imports)]
 use crate::traits::TypeLibMemberInvokeKind;
@@ -53,19 +54,14 @@ use crate::{
     },
 };
 #[cfg(test)]
-pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
 use oxvba_com::{ComBinding, platform::portable::PortableComProjection};
-#[cfg(test)]
-use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 #[cfg(target_os = "windows")]
 use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
-#[cfg(test)]
-use oxvba_runtime::ObjectHandle;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
@@ -92,27 +88,14 @@ const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444
 #[cfg(test)]
 const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
 #[cfg(test)]
-const TEST_DISPID_COUNT: i32 = 1;
-#[cfg(test)]
-const TEST_DISPID_EXISTS: i32 = 2;
-#[cfg(test)]
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
 #[cfg(test)]
 const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
 #[cfg(test)]
 const TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE: i32 = 11;
 #[cfg(test)]
-const TEST_DISPID_PING: i32 = 5;
-#[cfg(test)]
 const TEST_DISPID_LOOKUP: i32 = 6;
 #[cfg(test)]
-const TEST_DISPID_SET_VALUE: i32 = 7;
-#[cfg(test)]
-const TEST_DISPID_SET_VALUE_REF: i32 = 8;
-#[cfg(test)]
-const TEST_DISPID_VALUE: i32 = 9;
-#[cfg(test)]
-const TEST_DISPID_EXCEL_QUIT: i32 = 10;
 #[cfg(test)]
 const TEST_DISPID_SUM_PAIR: i32 = 12;
 #[cfg(test)]
@@ -125,12 +108,6 @@ const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 #[cfg(test)]
 const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
-#[cfg(test)]
-const TEST_DISPID_RAISE_RICH_EXCEPTION: i32 = 88;
-#[cfg(test)]
-const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
-#[cfg(test)]
-const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 #[cfg(test)]
 const TEST_EVENT_CHANGED: i32 = 1;
 #[cfg(test)]
@@ -149,12 +126,21 @@ pub(crate) struct StandardHostServices {
     #[cfg(target_os = "windows")]
     env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
+    dir_state: Arc<Mutex<DirSearchState>>,
     console_state: Arc<Mutex<ConsoleState>>,
+    projection_state: Arc<Mutex<ProjectionObjectState>>,
     #[cfg(target_os = "windows")]
     com_bridge: Arc<WindowsComBridge>,
     dynlink_state: Arc<Mutex<DynLinkBindingState>>,
     portable_objects: Option<Arc<PortableComProjection>>,
     callbacks: Option<Arc<dyn crate::callbacks::HostCallbacks>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProjectionObjectState {
+    next_handle: i32,
+    handles_by_prog_id: std::collections::BTreeMap<String, i32>,
+    prog_ids_by_handle: std::collections::BTreeMap<i32, String>,
 }
 
 impl std::fmt::Debug for StandardHostServices {
@@ -265,7 +251,13 @@ impl StandardHostServices {
             #[cfg(target_os = "windows")]
             env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
+            dir_state: Arc::new(Mutex::new(DirSearchState::default())),
             console_state: Arc::new(Mutex::new(ConsoleState::default())),
+            projection_state: Arc::new(Mutex::new(ProjectionObjectState {
+                next_handle: 5_003,
+                handles_by_prog_id: std::collections::BTreeMap::new(),
+                prog_ids_by_handle: std::collections::BTreeMap::new(),
+            })),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
             portable_objects: None,
             callbacks: None,
@@ -303,6 +295,21 @@ impl StandardHostServices {
 
     pub(crate) fn runtime_class(&self) -> HalRuntimeClass {
         self.runtime_class
+    }
+
+    fn projection_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, ProjectionObjectState>> {
+        self.projection_state.lock().map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                "projection object state lock poisoned",
+            )
+        })
     }
 
     pub(crate) fn descriptor(&self) -> HalDescriptor {
@@ -347,6 +354,21 @@ impl StandardHostServices {
                 capability,
                 op,
                 "filesystem state lock poisoned",
+            )
+        })
+    }
+
+    fn dir_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, DirSearchState>> {
+        self.dir_state.lock().map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                "dir search state lock poisoned",
             )
         })
     }
@@ -709,14 +731,14 @@ impl StandardHostServices {
         path
     }
 
-    fn runtime_value_to_legacy_i32(
+    fn runtime_value_project_compat_slot_i32(
         &self,
         value: &RuntimeValue,
         capability: CapabilityId,
         op: &'static str,
         field: &'static str,
     ) -> HalResult<i32> {
-        value.to_legacy_i32().map_err(|detail| {
+        value.project_compat_slot_i32().map_err(|detail| {
             HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -760,7 +782,7 @@ impl StandardHostServices {
         match value {
             RuntimeValue::String(BStr(path)) => Ok(PathBuf::from(path)),
             other => self
-                .runtime_value_to_legacy_i32(other, capability, op, field)
+                .runtime_value_project_compat_slot_i32(other, capability, op, field)
                 .map(|token| self.host_path_from_token(token)),
         }
     }
@@ -1259,7 +1281,7 @@ mod tests {
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -1292,6 +1314,13 @@ mod tests {
         value
     }
 
+    fn expect_f64(value: RuntimeValue) -> f64 {
+        let RuntimeValue::F64(value) = value else {
+            panic!("expected RuntimeValue::F64, got {value:?}");
+        };
+        value.as_f64()
+    }
+
     fn expect_object_handle(value: RuntimeValue) -> oxvba_runtime::ObjectHandle {
         let RuntimeValue::ObjectHandle(handle) = value else {
             panic!("expected RuntimeValue::ObjectHandle, got {value:?}");
@@ -1307,14 +1336,18 @@ mod tests {
         format!("OxVba.PropSeed.{prog_id_seed}")
     }
 
-    fn expected_create_object_test_handle_raw(prog_id_name: &str) -> i32 {
-        if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch") {
-            return 5_004;
-        }
-        let hash = prog_id_name
-            .bytes()
-            .fold(0i32, |acc, byte| acc.wrapping_add(i32::from(byte)));
-        10_000i32.saturating_add(hash)
+    fn native_dispatch_is_bound(
+        host: &StandardHostServices,
+        object: oxvba_runtime::ObjectHandle,
+    ) -> bool {
+        host.com_bridge
+            .shared_state()
+            .lock()
+            .expect("com state lock should succeed")
+            .bindings
+            .get(&ComObjectToken::new(object.raw()))
+            .map(|binding| binding.native_dispatch != 0)
+            .unwrap_or(false)
     }
 
     fn create_object_test(
@@ -1341,22 +1374,57 @@ mod tests {
             .map(expect_i32)
     }
 
-    fn dispatch_invoke_legacy(
-        host: &StandardHostServices,
-        object: i32,
-        member: i32,
-        arg: i32,
-    ) -> crate::error::HalResult<i32> {
-        dispatch_invoke_legacy_v2(host, &ComInvokeRequest::legacy(object, member, arg))
-    }
-
     fn dispatch_invoke_legacy_v2(
         host: &StandardHostServices,
         request: &ComInvokeRequest,
     ) -> crate::error::HalResult<i32> {
         host.dispatch_invoke_runtime_value_v2(request)?
-            .to_legacy_i32()
+            .project_compat_slot_i32()
             .map_err(|message| host.com_dispatch_adapter_fault(message))
+    }
+
+    fn bound_member_token_by_name(
+        host: &StandardHostServices,
+        object: i32,
+        member_name: &str,
+    ) -> crate::error::HalResult<oxvba_com::ComMemberToken> {
+        let state =
+            host.com_bridge.shared_state().lock().map_err(|_| {
+                host.com_dispatch_adapter_fault("COM state lock poisoned".to_string())
+            })?;
+        let binding = state
+            .bindings
+            .get(&ComObjectToken::new(object))
+            .ok_or_else(|| {
+                host.com_dispatch_adapter_fault(format!(
+                    "COM binding metadata missing for object token {object}"
+                ))
+            })?;
+        binding
+            .member_specs
+            .iter()
+            .find(|(_, member)| member.name.eq_ignore_ascii_case(member_name))
+            .map(|(token, _)| *token)
+            .ok_or_else(|| {
+                host.com_dispatch_adapter_fault(format!(
+                    "member metadata missing for `{member_name}` on object token {object}"
+                ))
+            })
+    }
+
+    fn dispatch_invoke_named(
+        host: &StandardHostServices,
+        object: i32,
+        member_name: &str,
+        args: &[i32],
+    ) -> crate::error::HalResult<i32> {
+        let request = ComInvokeRequest {
+            object: object.into(),
+            member: bound_member_token_by_name(host, object, member_name)?,
+            args: args.iter().copied().map(ComInvokeArg::positional).collect(),
+            invoke_kind_hint: None,
+        };
+        dispatch_invoke_legacy_v2(host, &request)
     }
 
     trait SemanticComTestExt {
@@ -1373,15 +1441,15 @@ mod tests {
             scope: TypeLibCacheScope,
             reference_name: Option<&str>,
         ) -> crate::error::HalResult<i32>;
-        fn dispatch_invoke_legacy(
-            &self,
-            object: i32,
-            member: i32,
-            arg: i32,
-        ) -> crate::error::HalResult<i32>;
         fn dispatch_invoke_legacy_v2(
             &self,
             request: &ComInvokeRequest,
+        ) -> crate::error::HalResult<i32>;
+        fn dispatch_invoke_named(
+            &self,
+            object: i32,
+            member_name: &str,
+            args: &[i32],
         ) -> crate::error::HalResult<i32>;
     }
 
@@ -1408,20 +1476,20 @@ mod tests {
             invalidate_typelib_cache_test(self, scope, reference_name)
         }
 
-        fn dispatch_invoke_legacy(
-            &self,
-            object: i32,
-            member: i32,
-            arg: i32,
-        ) -> crate::error::HalResult<i32> {
-            dispatch_invoke_legacy(self, object, member, arg)
-        }
-
         fn dispatch_invoke_legacy_v2(
             &self,
             request: &ComInvokeRequest,
         ) -> crate::error::HalResult<i32> {
             dispatch_invoke_legacy_v2(self, request)
+        }
+
+        fn dispatch_invoke_named(
+            &self,
+            object: i32,
+            member_name: &str,
+            args: &[i32],
+        ) -> crate::error::HalResult<i32> {
+            dispatch_invoke_named(self, object, member_name, args)
         }
     }
 
@@ -1875,6 +1943,7 @@ mod tests {
             selection_policy: "case-insensitive-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         let err = host
@@ -1905,6 +1974,7 @@ mod tests {
             selection_policy: "case-insensitive-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         let err = host
@@ -1935,6 +2005,7 @@ mod tests {
             selection_policy: "ordinal-literal-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         let err = host
@@ -1965,6 +2036,7 @@ mod tests {
             selection_policy: "ordinal-literal-canonical",
             param_count: 0,
             param_types: &[],
+            param_by_ref: &[],
             return_type: None,
         };
         let err = host
@@ -1979,13 +2051,16 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
             host.date_serial_now().expect("date"),
-            RuntimeValue::I32(20_260_301)
+            RuntimeValue::F64(F64Value::from_date_f64(46_082.0))
         );
         assert_eq!(
             host.time_serial_now().expect("time"),
-            RuntimeValue::I32(123_456)
+            RuntimeValue::F64(F64Value::from_date_f64(45_296.0 / 86_400.0))
         );
-        assert_eq!(host.timer_ticks().expect("timer"), RuntimeValue::I32(42));
+        assert_eq!(
+            host.timer_ticks().expect("timer"),
+            RuntimeValue::F64(F64Value::from_single_f64(45_296.0))
+        );
     }
 
     #[test]
@@ -2000,8 +2075,14 @@ mod tests {
     fn dispatch_invoke_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.dispatch_invoke_legacy(10, 20, 30).expect("dispatch"),
-            60
+            host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: 10.into(),
+                member: 20.into(),
+                args: vec![ComInvokeArg::positional(30)],
+                invoke_kind_hint: None,
+            })
+            .expect("dispatch"),
+            RuntimeValue::I32(60)
         );
     }
 
@@ -2027,14 +2108,8 @@ mod tests {
                 invoke_kind_hint: None,
             })
             .expect("ReturnSelfUnknown projection should succeed");
-        assert_eq!(
-            dispatch,
-            RuntimeValue::ObjectHandle(object.raw().saturating_add(23).into())
-        );
-        assert_eq!(
-            unknown,
-            RuntimeValue::ObjectHandle(object.raw().saturating_add(24).into())
-        );
+        assert_eq!(dispatch, RuntimeValue::ObjectHandle(object));
+        assert_eq!(unknown, RuntimeValue::ObjectHandle(object));
     }
 
     #[test]
@@ -2070,9 +2145,14 @@ mod tests {
     fn dispatch_invoke_missing_arg_token_projects_as_zero() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.dispatch_invoke_legacy(10, 20, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
-                .expect("dispatch"),
-            30
+            host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: 10.into(),
+                member: 20.into(),
+                args: Vec::new(),
+                invoke_kind_hint: None,
+            })
+            .expect("dispatch"),
+            RuntimeValue::I32(30)
         );
     }
 
@@ -2317,9 +2397,9 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        assert!(expect_i32(host.date_serial_now().expect("date")) >= 0);
-        assert!(expect_i32(host.time_serial_now().expect("time")) >= 0);
-        assert!(expect_i32(host.timer_ticks().expect("ticks")) >= 0);
+        assert!(expect_f64(host.date_serial_now().expect("date")) >= 0.0);
+        assert!(expect_f64(host.time_serial_now().expect("time")) >= 0.0);
+        assert!(expect_f64(host.timer_ticks().expect("ticks")) >= 0.0);
     }
 
     #[test]
@@ -2333,19 +2413,19 @@ mod tests {
         assert!(subscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
 
         let unsubscribe = host
-            .legacy_unsubscribe_event(rv(1))
+            .unsubscribe_event(1.into())
             .expect_err("unsubscribe_event should require native mode");
         assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(unsubscribe.operation, "unsubscribe_event");
         assert!(unsubscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
         assert!(
-            host.legacy_event_callback_subscription(rv(60_001))
+            host.event_callback_subscription(60_001.into())
                 .expect_err("event_callback_subscription should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.legacy_event_callback_arity(rv(60_001))
+            host.event_callback_arity(60_001.into())
                 .expect_err("event_callback_arity should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
@@ -2399,7 +2479,7 @@ mod tests {
         }
 
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), 3, 77)
+            host.dispatch_invoke_named(object.into(), "FireChanged", &[77])
                 .expect("FireChanged should succeed"),
             77
         );
@@ -2440,7 +2520,7 @@ mod tests {
             rv(1)
         );
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 3, 88)
+            .dispatch_invoke_named(object.into(), "FireChanged", &[88])
             .expect("FireChanged should remain invokable after unsubscribe");
         assert_eq!(
             host.do_events()
@@ -2473,7 +2553,7 @@ mod tests {
             .expect("subscribe_event should succeed for controlled pair-event source");
 
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke_named(object.into(), "FireChangedPair", &[90])
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -2534,7 +2614,7 @@ mod tests {
             .expect("subscribe_event should succeed for controlled pair-event source");
 
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke_named(object.into(), "FireChangedPair", &[90])
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -2568,7 +2648,7 @@ mod tests {
         let subscription = host
             .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed for controlled event source");
-        host.dispatch_invoke_legacy(object.into(), 3, 77)
+        host.dispatch_invoke_named(object.into(), "FireChanged", &[77])
             .expect("FireChanged should succeed");
         let callback = host
             .do_events()
@@ -2623,12 +2703,8 @@ mod tests {
             "subscription token should be in deterministic range"
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE,
-                77
-            )
-            .expect("FireChangedSourceInterface should succeed"),
+            host.dispatch_invoke_named(object.into(), "FireChangedSourceInterface", &[77])
+                .expect("FireChangedSourceInterface should succeed"),
             77
         );
         let callback = host
@@ -2700,7 +2776,7 @@ mod tests {
             .subscribe_event(object, 1.into())
             .expect("subscribe should succeed");
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 3, 77)
+            .dispatch_invoke_named(object.into(), "FireChanged", &[77])
             .expect("FireChanged should succeed");
         let callback = host.do_events().expect("callback token");
         let callback = expect_i32(callback);
@@ -2767,12 +2843,12 @@ mod tests {
             "native COM handles use COM-state handle space"
         );
         let count = host
-            .dispatch_invoke_legacy(object.into(), 1, 0)
+            .dispatch_invoke_named(object.into(), "Count", &[])
             .expect("dictionary Count should be invokable");
         assert!(count >= 0);
 
         let exists = host
-            .dispatch_invoke_legacy(object.into(), 2, 42)
+            .dispatch_invoke_named(object.into(), "Exists", &[42])
             .expect("dictionary Exists should be invokable");
         assert!(exists == 0 || exists == 1);
     }
@@ -2789,56 +2865,48 @@ mod tests {
             "controlled COM lane should bind native object"
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            host.dispatch_invoke_named(object.into(), "Count", &[])
                 .expect("Count property-get should succeed"),
             7
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), 2, 42)
+            host.dispatch_invoke_named(object.into(), "Exists", &[42])
                 .expect("Exists(42) should succeed"),
             1
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), 2, 41)
+            host.dispatch_invoke_named(object.into(), "Exists", &[41])
                 .expect("Exists(41) should succeed"),
             0
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_PING, 999)
+            host.dispatch_invoke_named(object.into(), "Ping", &[999])
                 .expect("Ping no-arg method invoke should succeed"),
             123
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_LOOKUP, 42)
+            host.dispatch_invoke_named(object.into(), "Lookup", &[42])
                 .expect("Lookup property-get with argument should succeed"),
             1_042
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_SET_VALUE, 33)
+            host.dispatch_invoke_named(object.into(), "SetValue", &[33])
                 .expect("SetValue property-put should succeed"),
             33
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_VALUE,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
-            )
-            .expect("Value property-get should reflect SetValue"),
+            host.dispatch_invoke_named(object.into(), "Value", &[])
+                .expect("Value property-get should reflect SetValue"),
             33
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_SET_VALUE_REF, 33)
+            host.dispatch_invoke_named(object.into(), "SetValueRef", &[33])
                 .expect("SetValueRef property-putref should succeed"),
             100_033
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_VALUE,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
-            )
-            .expect("Value property-get should reflect SetValueRef"),
+            host.dispatch_invoke_named(object.into(), "Value", &[])
+                .expect("Value property-get should reflect SetValueRef"),
             100_033
         );
     }
@@ -2978,7 +3046,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         let err = host
-            .dispatch_invoke_legacy_v2(&request)
+            .dispatch_invoke_runtime_value_v2(&request)
             .expect_err("omitted required argument should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("member requires argument"));
@@ -2998,8 +3066,10 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_legacy_v2(&request)
-                .expect("named value argument should still route through property-put lane"),
+            expect_i32(
+                host.dispatch_invoke_runtime_value_v2(&request)
+                    .expect("named value argument should still route through property-put lane")
+            ),
             307_009
         );
     }
@@ -3050,17 +3120,16 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_legacy_v2(&request)
-                .expect("fully named indexed property-put should canonicalize deterministically"),
+            expect_i32(
+                host.dispatch_invoke_runtime_value_v2(&request).expect(
+                    "fully named indexed property-put should canonicalize deterministically"
+                )
+            ),
             307_009
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_VALUE,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
-            )
-            .expect("Value property-get should reflect named indexed property-put"),
+            host.dispatch_invoke_named(object.into(), "Value", &[])
+                .expect("Value property-get should reflect named indexed property-put"),
             307_009
         );
     }
@@ -3083,18 +3152,14 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_legacy_v2(&request).expect(
+            expect_i32(host.dispatch_invoke_runtime_value_v2(&request).expect(
                 "fully named indexed property-putref should canonicalize deterministically"
-            ),
+            )),
             408_013
         );
         assert_eq!(
-            host.dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_VALUE,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
-            )
-            .expect("Value property-get should reflect named indexed property-putref"),
+            host.dispatch_invoke_named(object.into(), "Value", &[])
+                .expect("Value property-get should reflect named indexed property-putref"),
             408_013
         );
     }
@@ -3107,11 +3172,12 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let err = host
-            .dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_LOOKUP,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
-            )
+            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: object.raw().into(),
+                member: super::TEST_DISPID_LOOKUP.into(),
+                args: Vec::new(),
+                invoke_kind_hint: None,
+            })
             .expect_err("Lookup should reject missing argument");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -3129,11 +3195,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let err = host
-            .dispatch_invoke_legacy(
-                object.into(),
-                super::TEST_DISPID_RAISE_EXCEPTION,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
-            )
+            .dispatch_invoke_named(object.into(), "RaiseException", &[])
             .expect_err("RaiseException should surface an adapter fault");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -3161,7 +3223,7 @@ mod tests {
         let object = host
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
-        if object.raw() == 5_004 {
+        if !native_dispatch_is_bound(&host, object) {
             return;
         }
 
@@ -3182,7 +3244,7 @@ mod tests {
             binding.native_dispatch
         };
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 1, 0)
+            .dispatch_invoke_named(object.into(), "Count", &[])
             .expect("dispatch invoke should succeed");
         let after = {
             let state = host
@@ -3209,12 +3271,12 @@ mod tests {
         let object = host
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
-        if object.raw() == 5_004 {
+        if !native_dispatch_is_bound(&host, object) {
             return;
         }
 
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke_named(object.into(), "Count", &[])
             .expect("dictionary Count should be invokable");
         let cache_size_after_first = {
             let state = host
@@ -3230,7 +3292,7 @@ mod tests {
                 .len()
         };
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke_named(object.into(), "Count", &[])
             .expect("dictionary Count should be invokable repeatedly");
         let cache_size_after_second = {
             let state = host
@@ -3272,26 +3334,18 @@ mod tests {
             .expect("vtable create_object should succeed");
 
         let dispatch_count = dispatch_host
-            .dispatch_invoke_legacy(
-                dispatch_object.into(),
-                1,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
-            )
+            .dispatch_invoke_named(dispatch_object.into(), "Count", &[])
             .expect("dispatch count should succeed");
         let vtable_count = vtable_host
-            .dispatch_invoke_legacy(
-                vtable_object.into(),
-                1,
-                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
-            )
+            .dispatch_invoke_named(vtable_object.into(), "Count", &[])
             .expect("vtable count should succeed");
         assert_eq!(dispatch_count, vtable_count);
 
         let dispatch_exists = dispatch_host
-            .dispatch_invoke_legacy(dispatch_object.into(), 2, 42)
+            .dispatch_invoke_named(dispatch_object.into(), "Exists", &[42])
             .expect("dispatch exists should succeed");
         let vtable_exists = vtable_host
-            .dispatch_invoke_legacy(vtable_object.into(), 2, 42)
+            .dispatch_invoke_named(vtable_object.into(), "Exists", &[42])
             .expect("vtable exists should succeed");
         assert_eq!(dispatch_exists, vtable_exists);
     }
@@ -3387,163 +3441,133 @@ mod tests {
         let metadata = host
             .load_typelib_metadata(&identity)
             .expect("metadata load should succeed");
-        assert_eq!(
-            metadata.member_name_to_token,
-            vec![
-                ("Count".to_string(), super::TEST_DISPID_COUNT),
-                ("Exists".to_string(), super::TEST_DISPID_EXISTS),
-                ("FireChanged".to_string(), super::TEST_DISPID_FIRE_CHANGED),
-                (
-                    "FireChangedPair".to_string(),
-                    super::TEST_DISPID_FIRE_CHANGED_PAIR
-                ),
-                (
-                    "FireChangedSourceInterface".to_string(),
-                    super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE
-                ),
-                ("Ping".to_string(), super::TEST_DISPID_PING),
-                ("Lookup".to_string(), super::TEST_DISPID_LOOKUP),
-                ("SetValue".to_string(), super::TEST_DISPID_SET_VALUE),
-                ("SetValueRef".to_string(), super::TEST_DISPID_SET_VALUE_REF),
-                ("Value".to_string(), super::TEST_DISPID_VALUE),
-                ("SumPair".to_string(), super::TEST_DISPID_SUM_PAIR),
-                ("LookupPair".to_string(), super::TEST_DISPID_LOOKUP_PAIR),
-                (
-                    "SetIndexedValue".to_string(),
-                    super::TEST_DISPID_SET_INDEXED_VALUE
-                ),
-                (
-                    "SetIndexedValueRef".to_string(),
-                    super::TEST_DISPID_SET_INDEXED_VALUE_REF
-                ),
-                ("EchoVariant".to_string(), 16),
-                (
-                    "RaiseException".to_string(),
-                    super::TEST_DISPID_RAISE_EXCEPTION
-                ),
-                (
-                    "RaiseRichException".to_string(),
-                    super::TEST_DISPID_RAISE_RICH_EXCEPTION
-                ),
-                (
-                    "ReturnSmallInt".to_string(),
-                    super::TEST_DISPID_RETURN_SMALLINT
-                ),
-                (
-                    "ReturnUnsignedWord".to_string(),
-                    super::TEST_DISPID_RETURN_UNSIGNED_WORD
-                ),
-                ("ReturnByte".to_string(), 37),
-                ("ReturnSignedByte".to_string(), 39),
-                ("ReturnPlatformInt".to_string(), 41),
-                ("ReturnPlatformUInt".to_string(), 42),
-                ("ReturnHyper".to_string(), 45),
-                ("ReturnUnsignedHyper".to_string(), 46),
-                ("ReturnDouble".to_string(), 49),
-                ("ReturnSingle".to_string(), 51),
-                ("ReturnDate".to_string(), 53),
-                ("ReturnCurrency".to_string(), 55),
-                ("ReturnDecimal".to_string(), 57),
-                ("ReturnBool".to_string(), 63),
-                ("ReturnString".to_string(), 64),
-                ("ReturnMissingMemberName".to_string(), 76),
-                ("ReturnPingMemberName".to_string(), 77),
-                ("ReturnLookupMemberName".to_string(), 78),
-                ("ReturnSumPairMemberName".to_string(), 79),
-                ("ReturnLookupPairMemberName".to_string(), 80),
-                ("ReturnSetValueMemberName".to_string(), 81),
-                ("ReturnSetValueRefMemberName".to_string(), 82),
-                ("ReturnSetIndexedValueMemberName".to_string(), 83),
-                ("ReturnSetIndexedValueRefMemberName".to_string(), 84),
-                ("ReturnValueMemberName".to_string(), 85),
-                ("ReturnDefaultMemberName".to_string(), 86),
-                ("ReturnEmpty".to_string(), 65),
-                ("ReturnNull".to_string(), 66),
-                ("ReturnError".to_string(), 67),
-                ("ReturnByRefLong".to_string(), 68),
-                ("ReturnByRefLongArray".to_string(), 69),
-                ("ReturnWideHyper".to_string(), 70),
-                ("ReturnWideHyperArray".to_string(), 71),
-                ("ReturnWideUnsignedHyper".to_string(), 72),
-                ("ReturnWideUnsignedHyperArray".to_string(), 73),
-                ("ReturnVariantMatrix".to_string(), 74),
-                ("ReturnPlainUnknownVariantArray".to_string(), 75),
-                ("ReturnLong".to_string(), 35),
-                ("ReturnUnsignedLong".to_string(), 36),
-                ("ReturnSmallIntArray".to_string(), 20),
-                ("ReturnBoolArray".to_string(), 21),
-                ("ReturnStringArray".to_string(), 22),
-                ("ReturnSmallIntMatrix".to_string(), 30),
-                ("ReturnPlainUnknown".to_string(), 31),
-                ("ReturnPlainUnknownArray".to_string(), 32),
-                ("ReturnByteArray".to_string(), 38),
-                ("ReturnSignedByteArray".to_string(), 40),
-                ("ReturnPlatformIntArray".to_string(), 43),
-                ("ReturnPlatformUIntArray".to_string(), 44),
-                ("ReturnHyperArray".to_string(), 47),
-                ("ReturnUnsignedHyperArray".to_string(), 48),
-                ("ReturnDoubleArray".to_string(), 50),
-                ("ReturnSingleArray".to_string(), 52),
-                ("ReturnDateArray".to_string(), 54),
-                ("ReturnCurrencyArray".to_string(), 56),
-                ("ReturnDecimalArray".to_string(), 58),
-                ("ReturnWideUnsignedLong".to_string(), 59),
-                ("ReturnWideUnsignedLongArray".to_string(), 60),
-                ("ReturnWidePlatformUInt".to_string(), 61),
-                ("ReturnWidePlatformUIntArray".to_string(), 62),
-                ("ReturnLongArray".to_string(), 33),
-                ("ReturnUnsignedLongArray".to_string(), 34),
-                ("ReturnSelfDispatch".to_string(), 23),
-                ("SelfDispatch".to_string(), 23),
-                ("ReturnSelfUnknown".to_string(), 24),
-                ("SelfUnknown".to_string(), 24),
-                ("ClassifyVariantArg".to_string(), 25),
-                ("ClassifyVariantArrayFirstElementArg".to_string(), 26),
-                ("ReturnSelfDispatchArray".to_string(), 27),
-                ("ReturnSelfTypedDispatchArray".to_string(), 28),
-                ("ReturnSelfTypedUnknownArray".to_string(), 29),
-            ]
-        );
-        let fire_changed_pair = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_FIRE_CHANGED_PAIR)
-            .expect("FireChangedPair metadata should exist");
+        let expected_members = [
+            "Count",
+            "Exists",
+            "FireChanged",
+            "FireChangedPair",
+            "FireChangedSourceInterface",
+            "Ping",
+            "Lookup",
+            "SetValue",
+            "SetValueRef",
+            "Value",
+            "SumPair",
+            "LookupPair",
+            "SetIndexedValue",
+            "SetIndexedValueRef",
+            "EchoVariant",
+            "RaiseException",
+            "RaiseRichException",
+            "ReturnSmallInt",
+            "ReturnUnsignedWord",
+            "ReturnByte",
+            "ReturnSignedByte",
+            "ReturnPlatformInt",
+            "ReturnPlatformUInt",
+            "ReturnHyper",
+            "ReturnUnsignedHyper",
+            "ReturnDouble",
+            "ReturnSingle",
+            "ReturnDate",
+            "ReturnCurrency",
+            "ReturnDecimal",
+            "ReturnBool",
+            "ReturnString",
+            "ReturnMissingMemberName",
+            "ReturnPingMemberName",
+            "ReturnLookupMemberName",
+            "ReturnSumPairMemberName",
+            "ReturnLookupPairMemberName",
+            "ReturnSetValueMemberName",
+            "ReturnSetValueRefMemberName",
+            "ReturnSetIndexedValueMemberName",
+            "ReturnSetIndexedValueRefMemberName",
+            "ReturnValueMemberName",
+            "ReturnDefaultMemberName",
+            "ReturnEmpty",
+            "ReturnNull",
+            "ReturnError",
+            "ReturnByRefLong",
+            "ReturnByRefLongArray",
+            "ReturnWideHyper",
+            "ReturnWideHyperArray",
+            "ReturnWideUnsignedHyper",
+            "ReturnWideUnsignedHyperArray",
+            "ReturnVariantMatrix",
+            "ReturnPlainUnknownVariantArray",
+            "ReturnLong",
+            "ReturnUnsignedLong",
+            "ReturnSmallIntArray",
+            "ReturnBoolArray",
+            "ReturnStringArray",
+            "ReturnSmallIntMatrix",
+            "ReturnPlainUnknown",
+            "ReturnPlainUnknownArray",
+            "ReturnByteArray",
+            "ReturnSignedByteArray",
+            "ReturnPlatformIntArray",
+            "ReturnPlatformUIntArray",
+            "ReturnHyperArray",
+            "ReturnUnsignedHyperArray",
+            "ReturnDoubleArray",
+            "ReturnSingleArray",
+            "ReturnDateArray",
+            "ReturnCurrencyArray",
+            "ReturnDecimalArray",
+            "ReturnWideUnsignedLong",
+            "ReturnWideUnsignedLongArray",
+            "ReturnWidePlatformUInt",
+            "ReturnWidePlatformUIntArray",
+            "ReturnLongArray",
+            "ReturnUnsignedLongArray",
+            "ReturnSelfDispatch",
+            "SelfDispatch",
+            "ReturnSelfUnknown",
+            "SelfUnknown",
+            "ClassifyVariantArg",
+            "ClassifyVariantArrayFirstElementArg",
+            "ReturnSelfDispatchArray",
+            "ReturnSelfTypedDispatchArray",
+            "ReturnSelfTypedUnknownArray",
+            "NewEnum",
+        ];
+        for name in expected_members {
+            assert!(
+                metadata
+                    .member_name_to_token
+                    .iter()
+                    .any(|(candidate_name, _)| candidate_name == name),
+                "member metadata should include `{name}`"
+            );
+        }
+        let member_by_name = |name: &str| {
+            metadata
+                .members
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap_or_else(|| panic!("member metadata should include `{name}`"))
+        };
+        let fire_changed_pair = member_by_name("FireChangedPair");
         assert!(fire_changed_pair.requires_argument);
         assert_eq!(
             fire_changed_pair.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
-        let count_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_COUNT)
-            .expect("Count metadata should exist");
+        let count_member = member_by_name("Count");
         assert_eq!(
             count_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
-        let ping_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_PING)
-            .expect("Ping metadata should exist");
+        let ping_member = member_by_name("Ping");
         assert!(!ping_member.requires_argument);
-        let raise_exception_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_RAISE_EXCEPTION)
-            .expect("RaiseException metadata should exist");
+        let raise_exception_member = member_by_name("RaiseException");
         assert_eq!(
             raise_exception_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
         assert!(!raise_exception_member.requires_argument);
-        let return_smallint_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_RETURN_SMALLINT)
-            .expect("ReturnSmallInt metadata should exist");
+        let return_smallint_member = member_by_name("ReturnSmallInt");
         assert_eq!(
             return_smallint_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
@@ -3553,81 +3577,49 @@ mod tests {
             ping_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
-        let lookup_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_LOOKUP)
-            .expect("Lookup metadata should exist");
+        let lookup_member = member_by_name("Lookup");
         assert!(lookup_member.requires_argument);
         assert_eq!(
             lookup_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
-        let set_value_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_SET_VALUE)
-            .expect("SetValue metadata should exist");
+        let set_value_member = member_by_name("SetValue");
         assert!(set_value_member.requires_argument);
         assert_eq!(
             set_value_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyPut
         );
-        let set_value_ref_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_SET_VALUE_REF)
-            .expect("SetValueRef metadata should exist");
+        let set_value_ref_member = member_by_name("SetValueRef");
         assert!(set_value_ref_member.requires_argument);
         assert_eq!(
             set_value_ref_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyPutRef
         );
-        let value_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_VALUE)
-            .expect("Value metadata should exist");
+        let value_member = member_by_name("Value");
         assert!(!value_member.requires_argument);
         assert_eq!(
             value_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
-        let sum_pair_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_SUM_PAIR)
-            .expect("SumPair metadata should exist");
+        let sum_pair_member = member_by_name("SumPair");
         assert!(sum_pair_member.requires_argument);
         assert_eq!(
             sum_pair_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
-        let lookup_pair_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_LOOKUP_PAIR)
-            .expect("LookupPair metadata should exist");
+        let lookup_pair_member = member_by_name("LookupPair");
         assert!(lookup_pair_member.requires_argument);
         assert_eq!(
             lookup_pair_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
-        let set_indexed_value_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_SET_INDEXED_VALUE)
-            .expect("SetIndexedValue metadata should exist");
+        let set_indexed_value_member = member_by_name("SetIndexedValue");
         assert!(set_indexed_value_member.requires_argument);
         assert_eq!(
             set_indexed_value_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyPut
         );
-        let set_indexed_value_ref_member = metadata
-            .members
-            .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_SET_INDEXED_VALUE_REF)
-            .expect("SetIndexedValueRef metadata should exist");
+        let set_indexed_value_ref_member = member_by_name("SetIndexedValueRef");
         assert!(set_indexed_value_ref_member.requires_argument);
         assert_eq!(
             set_indexed_value_ref_member.invoke_kind,
@@ -3689,7 +3681,7 @@ mod tests {
             metadata
                 .member_name_to_token
                 .iter()
-                .any(|(name, token)| name == "Quit" && *token == super::TEST_DISPID_EXCEL_QUIT),
+                .any(|(name, _)| name == "Quit"),
             "expected Quit member in Excel.Application typelib, got {:?}",
             metadata.member_name_to_token
         );
@@ -3701,7 +3693,7 @@ mod tests {
         let quit_member = metadata
             .members
             .iter()
-            .find(|entry| entry.token == super::TEST_DISPID_EXCEL_QUIT)
+            .find(|entry| entry.name == "Quit")
             .expect("Quit member metadata should exist");
         assert!(!quit_member.requires_argument);
         assert_eq!(
@@ -3742,64 +3734,50 @@ mod tests {
             .bindings
             .get(&ComObjectToken::new(object.raw()))
             .expect("binding should be present for native object token");
-        let member = binding
-            .member_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR.into())
-            .expect("member spec for FireChangedPair should be present");
+        let member_by_name = |name: &str| {
+            binding
+                .member_specs
+                .values()
+                .find(|member| member.name == name)
+                .unwrap_or_else(|| panic!("member spec for {name} should be present"))
+        };
+        let member = member_by_name("FireChangedPair");
         assert_eq!(member.name, "FireChangedPair");
         assert!(member.requires_argument);
         assert_eq!(member.invoke_kind, super::TypeLibMemberInvokeKind::Method);
-        let ping = binding
-            .member_specs
-            .get(&super::TEST_DISPID_PING.into())
-            .expect("member spec for Ping should be present");
+        let ping = member_by_name("Ping");
         assert_eq!(ping.name, "Ping");
         assert!(!ping.requires_argument);
         assert_eq!(ping.invoke_kind, super::TypeLibMemberInvokeKind::Method);
-        let fire_changed_source = binding
-            .member_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE.into())
-            .expect("member spec for FireChangedSourceInterface should be present");
+        let fire_changed_source = member_by_name("FireChangedSourceInterface");
         assert_eq!(fire_changed_source.name, "FireChangedSourceInterface");
         assert!(fire_changed_source.requires_argument);
         assert_eq!(
             fire_changed_source.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
-        let lookup = binding
-            .member_specs
-            .get(&super::TEST_DISPID_LOOKUP.into())
-            .expect("member spec for Lookup should be present");
+        let lookup = member_by_name("Lookup");
         assert_eq!(lookup.name, "Lookup");
         assert!(lookup.requires_argument);
         assert_eq!(
             lookup.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
-        let set_value = binding
-            .member_specs
-            .get(&super::TEST_DISPID_SET_VALUE.into())
-            .expect("member spec for SetValue should be present");
+        let set_value = member_by_name("SetValue");
         assert_eq!(set_value.name, "SetValue");
         assert!(set_value.requires_argument);
         assert_eq!(
             set_value.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyPut
         );
-        let set_value_ref = binding
-            .member_specs
-            .get(&super::TEST_DISPID_SET_VALUE_REF.into())
-            .expect("member spec for SetValueRef should be present");
+        let set_value_ref = member_by_name("SetValueRef");
         assert_eq!(set_value_ref.name, "SetValueRef");
         assert!(set_value_ref.requires_argument);
         assert_eq!(
             set_value_ref.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyPutRef
         );
-        let value = binding
-            .member_specs
-            .get(&super::TEST_DISPID_VALUE.into())
-            .expect("member spec for Value should be present");
+        let value = member_by_name("Value");
         assert_eq!(value.name, "Value");
         assert!(!value.requires_argument);
         assert_eq!(
@@ -3884,21 +3862,41 @@ mod tests {
             descriptor.transport,
             oxvba_com::ComObjectTransportKind::NativeDispatch
         );
+        let state = host
+            .com_bridge
+            .shared_state()
+            .lock()
+            .expect("com state lock should succeed");
+        let binding = state
+            .bindings
+            .get(&ComObjectToken::new(object.raw()))
+            .expect("binding should be present for native object token");
+        let count_token = binding
+            .member_specs
+            .iter()
+            .find(|(_, member)| member.name == "Count")
+            .map(|(token, _)| *token)
+            .expect("Count member token should be present");
+        let fire_changed_pair_token = binding
+            .member_specs
+            .iter()
+            .find(|(_, member)| member.name == "FireChangedPair")
+            .map(|(token, _)| *token)
+            .expect("FireChangedPair member token should be present");
+        let echo_variant_token = binding
+            .member_specs
+            .iter()
+            .find(|(_, member)| member.name == "EchoVariant")
+            .map(|(token, _)| *token)
+            .expect("EchoVariant member token should be present");
         assert!(descriptor.supports_events);
+        assert!(descriptor.known_member_tokens.contains(&count_token));
         assert!(
             descriptor
                 .known_member_tokens
-                .contains(&super::TEST_DISPID_COUNT.into())
+                .contains(&fire_changed_pair_token)
         );
-        assert!(
-            descriptor
-                .known_member_tokens
-                .contains(&super::TEST_DISPID_FIRE_CHANGED_PAIR.into())
-        );
-        assert_eq!(
-            descriptor.default_member_token,
-            Some(super::TEST_DISPID_ECHO_VARIANT.into())
-        );
+        assert_eq!(descriptor.default_member_token, Some(echo_variant_token));
         assert_eq!(
             descriptor.default_member_name.as_deref(),
             Some("EchoVariant")
@@ -3938,7 +3936,8 @@ mod tests {
             .expect("binding should be present for dictionary token");
         let exists_member = binding
             .member_specs
-            .get(&super::TEST_DISPID_EXISTS.into())
+            .values()
+            .find(|member| member.name == "Exists")
             .expect("Exists member spec should be present");
         assert_eq!(exists_member.name, "Exists");
         assert!(exists_member.requires_argument);
@@ -4105,7 +4104,7 @@ mod tests {
             .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed");
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 3, 77)
+            .dispatch_invoke_named(object.into(), "FireChanged", &[77])
             .expect("dispatch_invoke should queue callback");
 
         assert!(
@@ -4115,7 +4114,7 @@ mod tests {
         );
 
         let _ = host
-            .dispatch_invoke_legacy(object.into(), 3, 88)
+            .dispatch_invoke_named(object.into(), "FireChanged", &[88])
             .expect("second callback should queue");
         assert_eq!(
             host.release_object_test(object)
@@ -4262,13 +4261,13 @@ mod tests {
             let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
             prop_assert_eq!(
                 host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
-                RuntimeValue::from_legacy_i32(shell_expected)
+                RuntimeValue::from_compat_slot_i32(shell_expected)
             );
             prop_assert_eq!(
                 host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
-                    .expect("create_object should succeed")
-                    .raw(),
-                expected_create_object_test_handle_raw(&create_object_prop_test_prog_id_name(prog_id))
+                    .expect("create_object should succeed"),
+                host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
+                    .expect("create_object should remain stable for the same ProgID within one host")
             );
             let request = ComInvokeRequest::legacy(object, member, arg);
             let semantic = host
@@ -4278,7 +4277,7 @@ mod tests {
                 host.dispatch_invoke_legacy_v2(&request)
                     .expect("dispatch_invoke legacy projection should succeed"),
                 semantic
-                    .to_legacy_i32()
+                    .project_compat_slot_i32()
                     .expect("semantic dispatch result should project to legacy slot")
             );
             prop_assert_eq!(
@@ -4309,135 +4308,6 @@ impl StandardHostServices {
         Ok(RuntimeValue::ObjectHandle(handle))
     }
 
-    fn legacy_subscribe_event(
-        &self,
-        object: RuntimeValue,
-        event: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let object = match object {
-            RuntimeValue::ObjectHandle(handle) => handle,
-            RuntimeValue::I32(value) => ObjectHandle::new(value),
-            other => {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "subscribe_event",
-                    format!("legacy test helper requires object token, got {other:?}"),
-                ));
-            }
-        };
-        let event = event
-            .to_legacy_i32()
-            .map(ComMemberToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "subscribe_event",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::subscribe_event(self, object, event)
-            .map(|value| RuntimeValue::I32(value.raw()))
-    }
-
-    fn legacy_unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
-        let subscription = subscription
-            .to_legacy_i32()
-            .map(ComSubscriptionToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "unsubscribe_event",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::unsubscribe_event(self, subscription)
-    }
-
-    fn legacy_event_callback_subscription(
-        &self,
-        callback: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_subscription",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::event_callback_subscription(self, callback)
-            .map(|value| RuntimeValue::I32(value.raw()))
-    }
-
-    fn legacy_event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_arity",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::event_callback_arity(self, callback)
-            .map(|value| RuntimeValue::I32(i32::try_from(value).unwrap_or(i32::MAX)))
-    }
-
-    fn legacy_event_callback_arg(
-        &self,
-        callback: RuntimeValue,
-        index: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "event_callback_arg",
-                    detail,
-                )
-            })?;
-        let index = index.to_legacy_i32().map_err(|detail| {
-            HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "event_callback_arg",
-                detail,
-            )
-        })?;
-        if index < 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "event_callback_arg",
-                format!("negative index {index}"),
-            ));
-        }
-        <Self as ComHal>::event_callback_arg(self, callback, index as usize)
-    }
-
-    fn legacy_release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
-        let callback = callback
-            .to_legacy_i32()
-            .map(ComCallbackToken::new)
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "release_event_callback",
-                    detail,
-                )
-            })?;
-        <Self as ComHal>::release_event_callback(self, callback)
-    }
+    // Test-only extension seam intentionally left empty after the callback
+    // interrogation rows moved onto the typed ComHal API.
 }

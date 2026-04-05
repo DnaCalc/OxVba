@@ -129,6 +129,14 @@ Binding architecture rules:
 - `oxvba-hal` owns capability gating, profile/policy selection, bootstrap, and delegation seams. It must not become the long-term owner of COM dispatch semantics or COM wire-format logic.
 - Do not thread raw external wire types through bytecode, VM slots, or host/runtime APIs as the canonical OxVba value model.
 - Layout compatibility between OxVba runtime values and external wire formats may be used as an implementation optimization, but it does not change semantic ownership or crate responsibility.
+- Known internal/external representation differences are acceptable when documented explicitly:
+  - the current string carrier may remain Rust-owned UTF-8 text even when VBA/COM boundaries require `BSTR`,
+  - object/interface identity may remain handle- or facade-based internally even when boundaries require COM interface pointers,
+  - and similar type-level differences may exist for other supported lanes.
+- Those differences must be treated as known compatibility risk surfaces:
+  - they may leak at specific boundaries from time to time,
+  - they should be monitored through conformance/evidence work,
+  - and they may be revisited later if they become a real interop blocker.
 
 Execution consequences:
 - If an external boundary is currently implemented through lossy or boundary-specific tokens, the next closure step is to introduce or refine the canonical OxVba-side carrier before broadening feature claims on top of that boundary.

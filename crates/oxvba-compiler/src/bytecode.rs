@@ -37,7 +37,22 @@ pub struct ExternalCallDescriptor {
     pub selection_policy: String,
     pub param_count: usize,
     pub param_types: Vec<DeclareParamType>,
+    pub param_by_ref: Vec<bool>,
     pub return_type: Option<DeclareParamType>,
+}
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ExternalCallWritebackKind {
+    ByRefValue,
+    PointerByteArrayPayload,
+    PointerStringPayload,
+}
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalCallWriteback {
+    pub arg_index: usize,
+    pub source_slot: usize,
+    pub kind: ExternalCallWritebackKind,
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
@@ -58,6 +73,22 @@ pub enum RuntimeAssignmentTargetKind {
     Variant,
     Object,
     Scalar,
+}
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RuntimeArrayElementType {
+    Variant,
+    Integer,
+    Long,
+    LongLong,
+    LongPtr,
+    Byte,
+    Single,
+    Double,
+    Currency,
+    Date,
+    String,
+    Boolean,
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
@@ -290,6 +321,10 @@ pub enum Instruction {
         dst: usize,
         handle: usize,
     },
+    IntrinsicFileKillHost {
+        dst: usize,
+        path: usize,
+    },
     IntrinsicFileReadHost {
         dst: usize,
         handle: usize,
@@ -351,6 +386,9 @@ pub enum Instruction {
         prompt: usize,
         default_value: Option<usize>,
     },
+    IntrinsicBeepHost {
+        dst: usize,
+    },
     IntrinsicDebugPrintHost {
         dst: usize,
         data: usize,
@@ -360,6 +398,14 @@ pub enum Instruction {
         src: usize,
     },
     IntrinsicVarPtr {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicVarPtrStringVar {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicVarPtrVariantVar {
         dst: usize,
         src: usize,
     },
@@ -459,6 +505,11 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    /// CDate() — convert value to a Date-subtyped runtime value.
+    IntrinsicCDateValue {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicStrConvDigits {
         dst: usize,
         src: usize,
@@ -554,6 +605,28 @@ pub enum Instruction {
         dst: usize,
         array: usize,
         item: usize,
+    },
+    IntrinsicArrayResize {
+        dst: usize,
+        upper_bounds: Vec<usize>,
+        lower_bounds: Vec<i32>,
+        element_type: RuntimeArrayElementType,
+    },
+    IntrinsicArrayResizePreserve {
+        dst: usize,
+        upper_bounds: Vec<usize>,
+        lower_bounds: Vec<i32>,
+        element_type: RuntimeArrayElementType,
+    },
+    IntrinsicArrayGet {
+        dst: usize,
+        array: usize,
+        indices: Vec<usize>,
+    },
+    IntrinsicArraySet {
+        array: usize,
+        indices: Vec<usize>,
+        src: usize,
     },
     IntrinsicForEachInit {
         iter: usize,
@@ -686,7 +759,7 @@ pub enum Instruction {
         descriptor_id: u32,
         symbol: DynLinkSymbol,
         args: Vec<usize>,
-        writeback_slots: Vec<(usize, usize)>,
+        writeback_slots: Vec<ExternalCallWriteback>,
     },
     IntrinsicWithEventsGet {
         dst: usize,

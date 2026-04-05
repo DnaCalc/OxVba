@@ -439,7 +439,10 @@ pub fn validate_host_project_edits(
             }
             HostProjectEdit::AddComReference(reference) => {
                 let include = normalize_include_key(&reference.include);
-                if com_reference_includes.iter().any(|existing| existing == &include) {
+                if com_reference_includes
+                    .iter()
+                    .any(|existing| existing == &include)
+                {
                     issues.push(HostProjectEditIssue {
                         edit_index,
                         kind: HostProjectEditIssueKind::AlreadyPresent,
@@ -906,11 +909,11 @@ fn vb_name_attribute_line_index(source: &str) -> Option<usize> {
 mod tests {
     use super::{
         HostProjectEditIssueKind, HostProjectReferenceKind, HostWorkspaceTargetKind,
-        VbNameAttributeAction,
-        add_com_reference_edit, add_project_reference_edit, apply_host_project_edits_to_basproj,
-        apply_host_project_edit_plan, apply_host_project_edits_to_basproj_path,
-        inspect_module_identity, inspect_workspace_target, plan_new_module,
-        prepare_host_project_edit_plan, reconcile_module_identity, validate_host_project_edits,
+        VbNameAttributeAction, add_com_reference_edit, add_project_reference_edit,
+        apply_host_project_edit_plan, apply_host_project_edits_to_basproj,
+        apply_host_project_edits_to_basproj_path, inspect_module_identity,
+        inspect_workspace_target, plan_new_module, prepare_host_project_edit_plan,
+        reconcile_module_identity, validate_host_project_edits,
     };
     use crate::{BasProjModuleKind, parse_basproj_xml};
     use std::fs;

@@ -741,11 +741,15 @@ mod tests {
         let host = EmbeddedBuildRunHost::new(&engine);
         let first_snapshot = EmbeddedWorkspaceSnapshot::new(
             EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
-            make_manifest("Public Function GetValue() As Integer\n    GetValue = 1\nEnd Function\n"),
+            make_manifest(
+                "Public Function GetValue() As Integer\n    GetValue = 1\nEnd Function\n",
+            ),
         );
         let second_snapshot = EmbeddedWorkspaceSnapshot::new(
             EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
-            make_manifest("Public Function GetValue() As Integer\n    GetValue = 2\nEnd Function\n"),
+            make_manifest(
+                "Public Function GetValue() As Integer\n    GetValue = 2\nEnd Function\n",
+            ),
         );
 
         let mut session = host
