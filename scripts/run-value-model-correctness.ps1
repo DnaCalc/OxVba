@@ -12,6 +12,26 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
+function Normalize-SelectorList {
+    param(
+        [string[]]$Values
+    )
+
+    $normalized = @()
+    foreach ($value in $Values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            continue
+        }
+        foreach ($entry in ($value -split ",")) {
+            $trimmed = $entry.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $normalized += $trimmed
+            }
+        }
+    }
+    return @($normalized)
+}
+
 function Assert-PathUnderRoot {
     param(
         [string]$CandidatePath,
@@ -318,14 +338,171 @@ try {
                 return @{ artifact = $log; log = $log }
             }
         }
+        @{
+            id = "dispatch_exception_details"
+            summary_artifact = "correctness/dispatch_exception_details.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "dispatch_exception_details.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_exception_details_surface_deterministically", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "dispatch_exception_resume_next"
+            summary_artifact = "correctness/dispatch_exception_resume_next.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "dispatch_exception_resume_next.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_exception_path_routes_through_on_error_resume_next", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "dispatch_exception_rich_excepinfo"
+            summary_artifact = "correctness/dispatch_exception_rich_excepinfo.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "dispatch_exception_rich_excepinfo.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_rich_exception_preserves_full_excepinfo_surface", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "event_callback_handler_body"
+            summary_artifact = "correctness/event_callback_handler_body.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "event_callback_handler_body.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end", "early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "event_callback_value_payload"
+            summary_artifact = "correctness/event_callback_value_payload.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "event_callback_value_payload.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end", "early_bound_project_registered_testeventserver_withevents_callback_preserves_value_payload", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "registered_event_callback_identity"
+            summary_artifact = "correctness/registered_event_callback_identity.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "registered_event_callback_identity.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_registered_lane", "windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "pointer_variant_scalar_container"
+            summary_artifact = "correctness/pointer_variant_scalar_container.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "pointer_variant_scalar_container.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "pointer_helpers_end_to_end", "windows_pointer_helper_e2e::varptr_variant_scalar_variable_exposes_scalar_variant_container_in_vm_and_jit", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "pointer_variant_decimal_container"
+            summary_artifact = "correctness/pointer_variant_decimal_container.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "pointer_variant_decimal_container.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "pointer_helpers_end_to_end", "windows_pointer_helper_e2e::varptr_variant_decimal_variable_exposes_decimal_variant_container_in_vm_and_jit", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "pointer_variant_object_rejected"
+            summary_artifact = "correctness/pointer_variant_object_rejected.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "pointer_variant_object_rejected.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "pointer_helpers_end_to_end", "windows_pointer_helper_e2e::varptr_variant_object_container_rejects_explicitly_in_vm_and_jit", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "pointer_variant_array_rejected"
+            summary_artifact = "correctness/pointer_variant_array_rejected.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "pointer_variant_array_rejected.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "pointer_helpers_end_to_end", "windows_pointer_helper_e2e::varptr_variant_array_container_rejects_explicitly_in_vm_and_jit", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "native_string_writeback_array_slot"
+            summary_artifact = "correctness/native_string_writeback_array_slot.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "native_string_writeback_array_slot.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "native_declare_string_marshalling_end_to_end", "windows_native_declare_string_e2e::widechartomultibyte_varptr_buffer_target_writes_back_array_slot_in_vm_and_jit", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
     )
 
+    $includeLaneFilter = Normalize-SelectorList -Values $IncludeLane
+    $excludeLaneFilter = Normalize-SelectorList -Values $ExcludeLane
+
     $selectedLanes = @($laneDefs)
-    if ($IncludeLane -and $IncludeLane.Count -gt 0) {
-        $selectedLanes = @($selectedLanes | Where-Object { $_.id -in $IncludeLane })
+    if ($includeLaneFilter -and $includeLaneFilter.Count -gt 0) {
+        $selectedLanes = @($selectedLanes | Where-Object { $_.id -in $includeLaneFilter })
     }
-    if ($ExcludeLane -and $ExcludeLane.Count -gt 0) {
-        $selectedLanes = @($selectedLanes | Where-Object { $_.id -notin $ExcludeLane })
+    if ($excludeLaneFilter -and $excludeLaneFilter.Count -gt 0) {
+        $selectedLanes = @($selectedLanes | Where-Object { $_.id -notin $excludeLaneFilter })
     }
     if ($selectedLanes.Count -eq 0) {
         throw "run-value-model-correctness: no lanes selected"
