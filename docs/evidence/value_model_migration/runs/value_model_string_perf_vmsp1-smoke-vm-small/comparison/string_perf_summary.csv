@@ -1,0 +1,2 @@
+"run_id","backend","workload_id","category","baseline_ms","candidate_ms","delta_ms","delta_percent","baseline_log","candidate_log"
+"vmsp1-smoke-vm-small","vm","small_strings","small","67644.43","62555.57","-5088.86","-7.52","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_string_perf_vmsp1-smoke-vm-small\baseline\perf\logs\vm_small_strings.log.txt","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_string_perf_vmsp1-smoke-vm-small\candidate\perf\logs\vm_small_strings.log.txt"

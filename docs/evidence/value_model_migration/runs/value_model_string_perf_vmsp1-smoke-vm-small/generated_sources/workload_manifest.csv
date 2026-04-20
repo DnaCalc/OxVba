@@ -1,0 +1,2 @@
+"workload_id","category","description","string_length","loop_count","item_count","statement_count","source_path"
+"small_strings","small","Short scalar string intrinsic churn","8","12000","","","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_string_perf_vmsp1-smoke-vm-small\generated_sources\small_strings.bas"
