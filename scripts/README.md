@@ -48,6 +48,7 @@
 - `run-formal-kani-sync.ps1`: hardened one-shot supervisor for remote formal lanes (`reconcile -> detect running -> start unresolved policy lanes when idle -> reconcile -> status`).
 - `async-task-runner.ps1`: helper invoked by async managers to execute commands and persist exit status.
 - `run-bench.ps1`: captures baseline-vs-optimized mixed workload timing evidence (VM + JIT) for the active stabilization profile.
+- `run-value-model-correctness.ps1`: migration-owned old/new correctness harness that materializes baseline-tag and candidate worktrees, runs the existing correctness substrate in both, and emits paired artifacts under `docs/evidence/value_model_migration/`.
 - `setup-kani.ps1`: verifies or installs Kani toolchain and prints activation instructions for required formal mode.
 - `test-path-stability.ps1`: validates scripts/tests behave correctly when executed from non-root working directories.
 - `prune-evidence-artifacts.ps1`: retention housekeeping (`LATEST + N` timestamped run artifacts) for conformance/perf evidence directories.
