@@ -224,6 +224,52 @@ The review suggests the following narrow baseline cleanup candidates:
 4. add a comparison harness that runs the fixed baseline tag and the migration
    branch/head as two artifact-producing implementations.
 
+### 5.4 Approved baseline cleanup scope and residual gap register
+
+Approved baseline cleanup scope for this workset:
+
+1. truth-surface clarification only
+   - explicitly document the old checked-in representation in the workset and
+     architecture docs
+2. projection-seam labeling only
+   - mark pointer-helper and COM translation seams as projections from the old
+     semantic-first carrier rather than intrinsic runtime layout truth
+3. bounded baseline tests only
+   - add tests that pin old representation-sensitive subset boundaries that were
+     still implicit
+4. harness/report preparation only
+   - create the old/new matrix, evidence roots, and report skeleton before the
+     real substrate rewrite starts.
+
+Explicitly not approved as baseline cleanup:
+
+1. replacing the old string carrier
+2. replacing the old value/Variant carrier
+3. changing internal object/interface identity ownership
+4. broad runtime/COM refactors done only for style or speculative cleanup.
+
+Completed baseline cleanup items in the current lane:
+
+1. the old checked-in value-model truth is now recorded in this workset and in
+   `docs/ARCHITECTURE.md`
+2. pointer-helper and COM projection seams are now marked explicitly in source
+   comments
+3. old runtime `Variant` subset-boundary tests now pin rejection of string,
+   array-intent, object-handle, and binding-handle runtime shapes.
+
+Residual baseline gaps that remain tracked rather than folded into cleanup:
+
+1. the Windows VBA 7.1 x64 fact pack still needs to be published
+   - owner: `vmm-b*`
+2. the old/new correctness, perf, and memory harness still needs to be built
+   - owner: `vmm-c*`
+3. event payload/object identity rows still need stronger explicit matrix and
+   evidence treatment
+   - owner: `vmm-c6`, then `vmm-f*`
+4. broader UDT/layout-sensitive closure still belongs to the later ABI/layout
+   lane rather than baseline cleanup
+   - owner: `vmm-g*`.
+
 ## 6. Migration Target and Execution Principles
 
 The target is a Windows VBA 7.1 x64-style internal representation across all
