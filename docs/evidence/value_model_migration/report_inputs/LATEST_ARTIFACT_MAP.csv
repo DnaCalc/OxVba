@@ -1,0 +1,9 @@
+artifact_family,selected_run_id,artifact_role,artifact_path,notes
+correctness,vmc2-smoke-mixed,summary_csv,docs/evidence/value_model_migration/runs/value_model_correctness_vmc2-smoke-mixed/correctness_summary.csv,Current bounded paired correctness smoke
+correctness,vmc2-smoke-mixed,comparison_md,docs/evidence/value_model_migration/runs/value_model_correctness_vmc2-smoke-mixed/comparison/correctness_summary.md,Current bounded paired correctness smoke
+string_perf,vmsp1-smoke-vm-small,summary_csv,docs/evidence/value_model_migration/runs/value_model_string_perf_vmsp1-smoke-vm-small/string_perf_summary.csv,Current bounded paired string perf smoke
+string_perf,vmsp1-smoke-vm-small,comparison_md,docs/evidence/value_model_migration/runs/value_model_string_perf_vmsp1-smoke-vm-small/comparison/string_perf_summary.md,Current bounded paired string perf smoke
+memory,vmmem3-smoke,layout_summary_csv,docs/evidence/value_model_migration/runs/value_model_memory_vmmem3-smoke/layout_metrics_summary.csv,Current bounded paired memory smoke
+memory,vmmem3-smoke,process_summary_csv,docs/evidence/value_model_migration/runs/value_model_memory_vmmem3-smoke/process_memory_summary.csv,Current bounded paired memory smoke
+memory,vmmem3-smoke,pointer_snapshot_summary_csv,docs/evidence/value_model_migration/runs/value_model_memory_vmmem3-smoke/pointer_snapshot_summary.csv,Current bounded paired memory smoke
+memory,vmmem3-smoke,pointer_snapshot_comparison_md,docs/evidence/value_model_migration/runs/value_model_memory_vmmem3-smoke/comparison/pointer_snapshot_summary.md,Current bounded paired memory smoke
