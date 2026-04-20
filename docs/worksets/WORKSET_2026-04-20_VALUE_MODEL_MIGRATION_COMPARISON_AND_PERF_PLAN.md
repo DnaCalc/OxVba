@@ -767,6 +767,25 @@ Deliver:
 
 This phase must happen before broad representation changes.
 
+Current repo substrate to build on:
+
+1. correctness baselines already exist in:
+   - `scripts/run-conformance.ps1`
+   - `scripts/run-project-integration-suite.ps1`
+   - `scripts/run-matrix.ps1`
+   - `scripts/run-com-early-conformance.ps1`
+2. focused representation-sensitive anchors already exist in:
+   - `crates/oxvba-host/tests/native_declare_string_marshalling_end_to_end.rs`
+   - `crates/oxvba-host/tests/pointer_helpers_end_to_end.rs`
+   - `crates/oxvba-host/tests/com_client_end_to_end.rs`
+   - `crates/oxvba-host/tests/com_client_registered_lane.rs`
+   - `crates/oxvba-host/tests/com_early_project_end_to_end.rs`
+3. coarse performance baselines already exist in:
+   - `scripts/run-bench.ps1`
+   - `scripts/run-com-early-perf.ps1`
+4. the migration harness must wrap and extend those assets rather than inventing a
+   disconnected parallel test world.
+
 Deliver:
 
 1. deterministic old/new execution runners using the fixed baseline tag and
@@ -782,6 +801,29 @@ Rationale:
 1. the migration must be driven by a stronger corpus than the current one
 2. old/new behavior must be directly comparable from the start
 3. the codebase is too large to rely on one agent session's local context.
+
+Harness-shape decisions for this repo:
+
+1. correctness comparison should be orchestrated by a new top-level old/new
+   runner that invokes the existing correctness substrate plus focused
+   representation-sensitive cargo tests
+2. performance comparison should reuse the existing benchmark conventions and add
+   a dedicated string workload runner instead of overloading the profile bench
+   lane
+3. memory comparison should capture both value/container observations
+   (`size_of`, alignment, pointer-cell-sensitive snapshots) and process-level
+   working-set observations for representative workloads
+4. canonical artifact roots should live under
+   `docs/evidence/value_model_migration/` with stable `baseline/`, `candidate/`,
+   `comparison/`, and `report_inputs/` subtrees
+5. new harness scripts should be introduced as explicit migration-owned surfaces:
+   - `scripts/run-value-model-correctness.ps1`
+   - `scripts/run-value-model-string-perf.ps1`
+   - `scripts/run-value-model-memory.ps1`
+   - `scripts/compare-value-model-results.ps1`
+6. the fixed baseline tag `pre-value-model-migration-2026-04-20` remains the
+   old lane authority for all paired runs unless a later workset explicitly
+   supersedes it.
 
 ### Phase 3. Representation migration implementation
 
@@ -1156,9 +1198,11 @@ Child beads:
    - depends on: `vmm-a4`, `vmm-b4`
    - title: `Roll out old/new matrix and evidence harness child beads`
    - outcome:
-     - create the executable child bead set for harness work
-   - completion evidence:
-     - correctness/perf/memory child beads exist explicitly
+      - refresh the executable child bead set so it is grounded in the current
+        repo harness substrate, script surfaces, and evidence roots
+    - completion evidence:
+      - correctness/perf/memory child beads exist explicitly and name the
+        current scripts/tests/artifact roots they are expected to extend
 2. `vmm-c1`
    - kind: `support`
    - priority: `P0`
@@ -1174,55 +1218,67 @@ Child beads:
    - depends on: `vmm-c1`
    - title: `Add deterministic old/new correctness runners against baseline tag and head`
    - outcome:
-     - paired correctness artifacts can be emitted for old and new
-   - completion evidence:
-     - runnable scripts exist and emit labeled old/new artifacts
+      - paired correctness artifacts can be emitted for old and new by wrapping
+        the current correctness substrate (`run-conformance`, project
+        integration, matrix, COM early conformance, and focused host tests)
+    - completion evidence:
+      - runnable scripts exist and emit labeled old/new artifacts with baseline
+        tag vs head provenance in stable artifact directories
 4. `vmm-c3`
    - kind: `delivery`
    - priority: `P0`
    - depends on: `vmm-c1`
    - title: `Add string-focused old/new perf runner`
    - outcome:
-     - string-size and string-churn timing corpus exists
-   - completion evidence:
-     - small/medium/long/many/code string workloads produce paired artifacts
+      - string-size and string-churn timing corpus exists beside the existing
+        profile and COM early perf lanes
+    - completion evidence:
+      - small/medium/long/many/code string workloads produce paired artifacts
+        with comparable baseline/head labeling
 5. `vmm-c4`
    - kind: `delivery`
    - priority: `P0`
    - depends on: `vmm-c1`
    - title: `Add old/new memory measurement runner`
    - outcome:
-     - old/new memory artifacts can be produced consistently
-   - completion evidence:
-     - size/alignment/process-memory artifacts are emitted
+      - old/new memory artifacts can be produced consistently for
+        representation-sensitive values plus process-level workloads
+    - completion evidence:
+      - size/alignment/process-memory artifacts are emitted and indexed under
+        the migration evidence root
 6. `vmm-c5`
    - kind: `support`
    - priority: `P0`
    - depends on: `vmm-c1`
    - title: `Publish evidence directory skeleton and final-report input index`
    - outcome:
-     - evidence roots and report skeleton exist
-   - completion evidence:
-     - artifact paths are documented and stable
+      - evidence roots and report-input skeleton exist under
+        `docs/evidence/value_model_migration/`
+    - completion evidence:
+      - artifact paths are documented, stable, and align with the new harness
+        scripts
 7. `vmm-c6`
    - kind: `delivery`
    - priority: `P0`
    - depends on: `vmm-c2`, `vmm-c5`
    - title: `Expand correctness corpus for under-covered event and layout-sensitive rows`
    - outcome:
-     - under-covered migration rows have test anchors before the rewrite
-   - completion evidence:
-     - missing event/layout-sensitive coverage lands and is referenced by the
-       matrix
+      - under-covered migration rows have test anchors before the rewrite,
+        especially event payload, pointer-helper, native string, and
+        layout-sensitive rows
+    - completion evidence:
+      - missing event/layout-sensitive coverage lands and is referenced by the
+        matrix
 8. `vmm-c7`
    - kind: `support`
    - priority: `P0`
    - depends on: `vmm-c2`, `vmm-c3`, `vmm-c4`, `vmm-c5`
    - title: `Capture baseline old artifacts from the fixed tag`
    - outcome:
-     - the fixed baseline tag has initial correctness/perf/memory artifacts
-   - completion evidence:
-     - baseline old artifacts are generated and indexed.
+      - the fixed baseline tag has initial correctness/perf/memory artifacts
+        captured through the same migration harness that head will use
+    - completion evidence:
+      - baseline old artifacts are generated and indexed.
 
 ### 11.7 Epic D Bead Set: String/BSTR Migration
 
@@ -1742,10 +1798,15 @@ This workset is expected to touch, at minimum, the following truth surfaces.
 1. existing benchmark scripts:
    - `scripts/run-bench.ps1`
    - `scripts/run-com-early-perf.ps1`
-2. new old/new correctness matrix scripts
-3. new old/new perf scripts
-4. new old/new memory scripts
-5. final report artifacts.
+2. new old/new correctness matrix scripts:
+   - `scripts/run-value-model-correctness.ps1`
+   - `scripts/compare-value-model-results.ps1`
+3. new old/new perf scripts:
+   - `scripts/run-value-model-string-perf.ps1`
+4. new old/new memory scripts:
+   - `scripts/run-value-model-memory.ps1`
+5. migration evidence roots under `docs/evidence/value_model_migration/`
+6. final report artifacts.
 
 ## 14. Terminal Condition
 
