@@ -24,18 +24,23 @@ const VT_R8: u16 = 5;
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 // Pointer helpers expose Windows-observable cells even though the current
-// canonical runtime string carrier is still semantic-first `BStr(String)`.
+// canonical runtime string carrier is still semantic-first `BStr`, not a raw
+// process-wide BSTR allocation.
 struct OwnedBstr(BSTR);
 
 #[cfg(target_os = "windows")]
 impl OwnedBstr {
-    fn from_text(text: &str) -> Result<Self, String> {
-        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        let bstr = unsafe { SysAllocString(wide.as_ptr()) };
+    fn from_bstr(text: &BStr) -> Result<Self, String> {
+        let core = text.owned_core();
+        let bstr = unsafe { SysAllocString(core.payload_ptr()) };
         if bstr.is_null() {
             return Err("failed to allocate BSTR backing storage for pointer helper".to_string());
         }
         Ok(Self(bstr))
+    }
+
+    fn from_text(text: &str) -> Result<Self, String> {
+        Self::from_bstr(&BStr::from(text))
     }
 
     fn as_ptr(&self) -> *mut c_void {
@@ -51,7 +56,7 @@ impl OwnedBstr {
     fn to_runtime_value(&self) -> RuntimeValue {
         let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(self.0) } as usize;
         let slice = unsafe { std::slice::from_raw_parts(self.0, len) };
-        RuntimeValue::String(BStr(String::from_utf16_lossy(slice)))
+        RuntimeValue::String(BStr::from_utf16_lossy(slice))
     }
 }
 
@@ -78,8 +83,8 @@ struct OwnedBstrCell {
 
 #[cfg(target_os = "windows")]
 impl OwnedBstrCell {
-    fn from_text(text: &str) -> Result<Self, String> {
-        let backing = OwnedBstr::from_text(text)?;
+    fn from_bstr(text: &BStr) -> Result<Self, String> {
+        let backing = OwnedBstr::from_bstr(text)?;
         let cell = Box::new(backing.as_ptr() as usize);
         Ok(Self { backing, cell })
     }
@@ -147,10 +152,9 @@ impl OwnedVariant {
                 variant.Anonymous.Anonymous.vt = VT_CY;
                 variant.Anonymous.Anonymous.Anonymous.cyVal.int64 = raw.scaled_i64();
             }
-            RuntimeValue::String(BStr(text)) => {
+            RuntimeValue::String(text) => {
                 variant.Anonymous.Anonymous.vt = VT_BSTR;
-                variant.Anonymous.Anonymous.Anonymous.bstrVal =
-                    OwnedBstr::from_text(text)?.into_raw();
+                variant.Anonymous.Anonymous.Anonymous.bstrVal = OwnedBstr::from_bstr(text)?.into_raw();
             }
             RuntimeValue::Decimal(raw) => {
                 let compat_variant = crate::Variant::from_decimal96(*raw);
@@ -264,7 +268,7 @@ impl PointerRegistry {
 
     fn read_back_string_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
         if pointer == 0 {
-            return Ok(RuntimeValue::String(BStr(String::new())));
+            return Ok(RuntimeValue::String(BStr::empty()));
         }
         let Some(entry) = self.entries.get(&(pointer as usize)) else {
             return Err(format!(
@@ -280,9 +284,7 @@ impl PointerRegistry {
                     .iter()
                     .position(|unit| *unit == 0)
                     .unwrap_or(value.len());
-                Ok(RuntimeValue::String(BStr(String::from_utf16_lossy(
-                    &value[..end],
-                ))))
+                Ok(RuntimeValue::String(BStr::from_utf16_lossy(&value[..end])))
             }
             other => Err(format!(
                 "pointer helper entry {other:?} cannot be read back as a string payload"
@@ -327,12 +329,10 @@ pub fn register_utf16_string(text: &str) -> Result<i64, String> {
     let entry = PointerEntry::Bstr(OwnedBstr::from_text(text)?);
 
     #[cfg(not(target_os = "windows"))]
-    let entry = PointerEntry::Utf16(
-        text.encode_utf16()
-            .chain(std::iter::once(0))
-            .collect::<Vec<_>>()
-            .into_boxed_slice(),
-    );
+    let entry = {
+        let core = BStr::from(text).owned_core();
+        PointerEntry::Utf16(core.payload_units_with_nul().to_vec().into_boxed_slice())
+    };
 
     let mut guard = registry()
         .lock()
@@ -348,18 +348,15 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
         RuntimeValue::F64(value) => PointerEntry::F64(Box::new(value.as_f64())),
         RuntimeValue::Currency(value) => PointerEntry::I64(Box::new(value.scaled_i64())),
         RuntimeValue::Bool(value) => PointerEntry::Bool(Box::new(if *value { -1 } else { 0 })),
-        RuntimeValue::String(BStr(value)) => {
+        RuntimeValue::String(value) => {
             #[cfg(target_os = "windows")]
             {
-                PointerEntry::Bstr(OwnedBstr::from_text(value)?)
+                PointerEntry::Bstr(OwnedBstr::from_bstr(value)?)
             }
             #[cfg(not(target_os = "windows"))]
             {
-                let data: Box<[u16]> = value
-                    .encode_utf16()
-                    .chain(std::iter::once(0))
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
+                let core = value.owned_core();
+                let data: Box<[u16]> = core.payload_units_with_nul().to_vec().into_boxed_slice();
                 PointerEntry::Utf16(data)
             }
         }
@@ -409,9 +406,7 @@ pub fn register_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> 
     #[cfg(target_os = "windows")]
     {
         let entry = match value {
-            RuntimeValue::String(BStr(text)) => {
-                PointerEntry::BstrCell(OwnedBstrCell::from_text(text)?)
-            }
+            RuntimeValue::String(text) => PointerEntry::BstrCell(OwnedBstrCell::from_bstr(text)?),
             RuntimeValue::Empty | RuntimeValue::Null => return Ok(0),
             _ => return Err("VarPtr over String requires a string variable".to_string()),
         };

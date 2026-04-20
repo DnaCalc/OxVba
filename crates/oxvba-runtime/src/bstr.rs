@@ -53,12 +53,24 @@ impl OwnedBStrCore {
 }
 
 impl BStr {
+    pub fn empty() -> Self {
+        Self(String::new())
+    }
+
+    pub fn from_utf16_lossy(units: &[u16]) -> Self {
+        Self(OwnedBStrCore::from_utf16_lossy(units).to_utf8_lossy())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     pub fn into_string(self) -> String {
         self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn to_utf16_units(&self) -> Vec<u16> {
@@ -135,5 +147,12 @@ mod tests {
         assert_eq!(value.byte_len(), 8);
         assert_eq!(value.to_utf16_units(), &[67, 97, 102, 101]);
         assert_eq!(core.payload_units_with_nul(), &[67, 97, 102, 101, 0]);
+    }
+
+    #[test]
+    fn bstr_from_utf16_lossy_uses_owned_core_path() {
+        let value = BStr::from_utf16_lossy(&[0x0041, 0xD83D, 0xDE00]);
+        assert_eq!(value.as_str(), "A😀");
+        assert!(!value.is_empty());
     }
 }
