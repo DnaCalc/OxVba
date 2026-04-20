@@ -44,19 +44,20 @@ High-level execution path:
 - late-bound `IDispatch` parity still remains below VBA/Excel behavior,
 - richer COM value transport still needs broader object/interface/SAFEARRAY coverage,
 - those lanes now proceed on the corrected architecture with `oxvba-com` as the live bridge.
-7. The runtime value-model migration is now locked to a direct rich-slot semantic-value approach:
-- `RuntimeValue` is the primary execution substrate direction,
-- typed identity carriers such as `ObjectHandle` and `BindingHandle` remain acceptable semantic leaves,
-- COM-style `Variant`/`BSTR` alignment is acceptable where it lowers boundary cost,
-- but COM layout compatibility does not transfer semantic ownership away from OxVba.
-- current internal representation is intentionally not required to equal native VBA/COM representation:
-  - strings may remain Rust-owned UTF-8 semantic values internally even when `BSTR` is required at the boundary,
-  - object/interface identity may remain handle/facade based internally instead of raw COM interface pointers,
-  - and similar representation differences may exist for other supported types.
-- those are known differences, not hidden assumptions:
+7. The checked-in implementation still uses the pre-migration semantic-first value model:
+- `RuntimeValue` is the canonical execution substrate today,
+- `BStr` in `oxvba-runtime` is currently a thin wrapper over Rust `String`,
+- typed identity carriers such as `ObjectHandle` and `BindingHandle` are still acceptable semantic leaves in the current implementation,
+- the runtime `Variant` type is currently a bounded 16-byte compatibility bridge rather than the universal internal value substrate,
+- `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than redefining the runtime around raw COM wire types.
+- Windows-facing layout truth is often projected at helper or boundary seams instead of falling out of the canonical substrate directly:
+  - `BSTR` cells for `StrPtr` / `VarPtr(String)` are synthesized in pointer-helper logic,
+  - `VARIANT` truth for COM calls is translated in `oxvba-com`,
+  - object/interface identity is still mostly handle/facade based internally instead of raw COM interface pointers.
+- those are current checked-in differences, not hidden assumptions:
   - they may leak at some boundaries from time to time,
   - they should be monitored through interop/conformance evidence,
-  - and they may be revisited later if they become a real compatibility problem.
+  - and they are now explicitly scheduled for migration in `WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md`.
 8. The next architectural step is broader than a value-carrier patch:
 - early-bound COM should converge on a synthetic reference facade in the compiler/binder,
 - late-bound COM should converge on the same internal dynamic-object protocol used for VBA objects,
@@ -68,7 +69,7 @@ Near-term architectural direction remains:
 - keep HAL contracted to host/profile/policy/bootstrap/delegation concerns
 - continue parity and facade work with COM transport/state/metadata ownership centered in `oxvba-com`
 - introduce a richer OxVba-side external value carrier so compiler/VM/host stay on semantic values while `oxvba-com` handles COM translation
-- continue converging `RuntimeValue` and the runtime `Variant` model where owned COM-style layout alignment is honest for the supported subset
+- replace the current old semantic-first string/value substrate with the Windows VBA 7.1 x64-aligned internal model described in `WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md`
 - define a unified late-bound object protocol so COM and native VBA objects share one dynamic-call model
 - make typelib-backed COM imports look like synthetic reference/project metadata to the compiler where VBA semantics allow
 - keep compiler/VM/host semantics aligned while that extraction happens in staged slices
