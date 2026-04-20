@@ -128,6 +128,9 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+// `oxvba-com` owns the COM wire seam. The current runtime still stores
+// semantic-first strings, so BSTR allocation remains an explicit projection at
+// this boundary.
 unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     SysAllocString(wide.as_ptr())
@@ -160,6 +163,9 @@ unsafe fn decimal96_to_windows(value: Decimal96) -> DECIMAL {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+// SAFEARRAY/VARIANT decoding is a boundary translation step. It reconstructs
+// semantic `ComValue` payloads from COM wire values rather than exposing the
+// canonical runtime carrier directly.
 unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, String> {
     if psa.is_null() {
         return Err("VT_ARRAY result carried null SAFEARRAY".to_string());

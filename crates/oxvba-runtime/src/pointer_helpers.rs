@@ -23,6 +23,8 @@ const VT_R8: u16 = 5;
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
+// Pointer helpers expose Windows-observable cells even though the current
+// canonical runtime string carrier is still semantic-first `BStr(String)`.
 struct OwnedBstr(BSTR);
 
 #[cfg(target_os = "windows")]
@@ -67,6 +69,8 @@ impl Drop for OwnedBstr {
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
+// `VarPtr(String)` exposes a pointer to a BSTR cell, so the old runtime builds
+// that cell here rather than exposing the canonical string carrier directly.
 struct OwnedBstrCell {
     backing: OwnedBstr,
     cell: Box<usize>,
@@ -87,6 +91,8 @@ impl OwnedBstrCell {
 }
 
 #[cfg(target_os = "windows")]
+// `VarPtr(Variant)` in the old model projects a Windows VARIANT-compatible cell
+// from `RuntimeValue`; it is not the canonical runtime value container.
 struct OwnedVariant(VARIANT);
 
 #[cfg(target_os = "windows")]
