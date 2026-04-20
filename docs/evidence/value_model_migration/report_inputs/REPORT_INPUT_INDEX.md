@@ -13,6 +13,7 @@ workset.
 | 12.5 | [05_PERFORMANCE_AND_MEMORY_RESULT.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/05_PERFORMANCE_AND_MEMORY_RESULT.md) | timing, memory, and workload-family summaries |
 | 12.6 | [06_FURTHER_MITIGATIONS.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/06_FURTHER_MITIGATIONS.md) | post-correctness optimization follow-ups |
 | all | [LATEST_ARTIFACT_MAP.csv](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/LATEST_ARTIFACT_MAP.csv) | canonical pointers to current paired run artifacts |
+| support | [BASELINE_OLD_ARTIFACT_INDEX.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/BASELINE_OLD_ARTIFACT_INDEX.md) | canonical pointers to the selected fixed-tag baseline-side artifacts |
 
 Update policy:
 
