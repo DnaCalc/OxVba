@@ -377,7 +377,7 @@ impl Variant {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr};
+    use crate::{CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
 
     use super::{VarType, Variant, VariantData};
 
@@ -565,6 +565,12 @@ mod tests {
         assert!(Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into())).is_err());
         assert!(
             Variant::from_runtime_value(&RuntimeValue::String(BStr("abc".to_string()))).is_err()
+        );
+        assert!(
+            Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3))).is_err()
+        );
+        assert!(
+            Variant::from_runtime_value(&RuntimeValue::ObjectHandle(42.into())).is_err()
         );
     }
 }
