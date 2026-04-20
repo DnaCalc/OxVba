@@ -1,0 +1,2 @@
+"workload_id","category","description","source_path"
+"cli_small_strings","string_churn","CLI run on short scalar string churn","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_memory_vmmem3-smoke\generated\sources\cli_small_strings.bas"
