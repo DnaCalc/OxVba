@@ -1,0 +1,6 @@
+# Value Model Correctness Lane Log
+
+- Worktree: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\baseline_vmc2-smoke-mixed
+- Command: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\baseline_vmc2-smoke-mixed\scripts\run-conformance.ps1 -Backend vm -ResultsPath C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_correctness_vmc2-smoke-mixed\baseline\correctness\conformance_vm.csv -IncludePattern smoke.bas
+
+conformance run: ok (1 files, backend=vm filters=smoke.bas)
