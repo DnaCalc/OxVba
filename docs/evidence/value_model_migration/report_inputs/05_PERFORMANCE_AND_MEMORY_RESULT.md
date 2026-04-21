@@ -1,16 +1,68 @@
 # Performance And Memory Result
 
-Status: placeholder
+Status: active
 
-Required content:
+Canonical artifacts:
 
-1. old/new timing summary
-2. old/new memory summary
-3. workload-family detail for:
-   - small strings
-   - long strings
-   - many strings
-   - code strings
-4. COM/native boundary timing or memory rows where relevant
-5. regressions, improvements, and any observed reduction in synthetic boundary
-   helpers or copies.
+1. string perf:
+   - run id: `vmd6-perf-check`
+   - summary:
+     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd6-perf-check/string_perf_summary.csv`
+   - comparison:
+     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd6-perf-check/comparison/string_perf_summary.csv`
+2. memory:
+   - run id: `vmd6-mem-full`
+   - layout summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/layout_metrics_summary.csv`
+   - process summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/process_memory_summary.csv`
+   - pointer snapshot summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/pointer_snapshot_summary.csv`
+
+Timing summary:
+
+1. VM:
+   - `small_strings`: candidate faster by `-16.81%`
+   - `medium_strings`: candidate slower by `+75.54%`
+   - `long_strings`: candidate slower by `+67.06%`
+   - `many_strings`: candidate slower by `+83.84%`
+   - `code_strings`: candidate slower by `+48.92%`
+2. JIT:
+   - `small_strings`: candidate slower by `+27.66%`
+   - `medium_strings`: candidate slower by `+51.84%`
+   - `long_strings`: candidate slower by `+17.03%`
+   - `many_strings`: candidate slower by `+44.85%`
+   - `code_strings`: candidate near-neutral at `+0.2%`
+
+Timing interpretation:
+
+1. the current paired string-perf signal is directional, not final, because the
+   canonical artifact is the repaired one-iteration run
+2. the resized long-string workload is now executable on both baseline and
+   candidate, which was not true for the original oversized generator
+3. the current candidate shows broad slowdown outside VM small-string churn and
+   near-neutral JIT code-string throughput.
+
+Memory summary:
+
+1. observed carrier/layout sizes and alignments did not change between baseline
+   and candidate in the current memory probe:
+   - `BStr = 24`
+   - `RuntimeValue = 64`
+   - `Variant = 16`
+   - `SafeArray = 64`
+   - `ComValue = 64`
+   - `ComInvokeArg = 88`
+   - `ComCallbackPayload = 40`
+2. working-set deltas were small in the current paired run:
+   - `cli_small_strings`: `+65536` bytes
+   - `cli_many_strings`: `+36864` bytes
+   - `cli_code_strings`: `-57344` bytes
+   - `com_variant_bstr_array`: `+53248` bytes
+
+Boundary-relevant observations:
+
+1. `com_variant_bstr_array` is included in the memory lane and currently shows a
+   small positive candidate working-set delta
+2. pointer snapshot logs for `StrPtr`, `VarPtr(String)`, and
+   `VarPtr(Variant)` were captured in the same paired memory run.

@@ -1,0 +1,10 @@
+[package]
+name = "value-model-layout-probe"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+oxvba-runtime = { path = "C:/Work/DnaCalc/OxVba/temp/value-model-migration/worktrees/candidate_vmd6-mem-full/crates/oxvba-runtime" }
+oxvba-com = { path = "C:/Work/DnaCalc/OxVba/temp/value-model-migration/worktrees/candidate_vmd6-mem-full/crates/oxvba-com" }
