@@ -1427,6 +1427,54 @@ Child beads:
    - completion evidence:
      - relevant matrix rows and discrepancy classifications are updated.
 
+Post-`vmm-d6` rollout refresh:
+
+1. `vmm-e1` starts at the current bounded carrier in
+   `crates/oxvba-runtime/src/variant.rs`
+   - current known limit:
+     `Variant::from_runtime_value` still rejects string, object-handle,
+     binding-handle, and array-intent runtime values
+   - rollout rule:
+     the bead must either remove those subset limits under the new carrier or
+     leave behind an explicit retained-adapter decision tied back to the fact
+     pack.
+2. `vmm-e2` owns the semantic/carrier reconciliation seam across:
+   - `crates/oxvba-runtime/src/runtime_value.rs`
+   - `crates/oxvba-com/src/model.rs`
+   - `crates/oxvba-com/src/windows_variant.rs`
+   - current compat-slot and coercion seams that still assume the bounded
+     runtime `Variant` subset
+   - rollout rule:
+     this bead is where the old semantic-vs-compat split must be made honest,
+     not left as an accidental half-migration.
+3. `vmm-e3` must explicitly carry forward the existing exact pointer-helper
+   variant lanes in
+   `crates/oxvba-host/tests/pointer_helpers_end_to_end.rs`
+   - scalar container
+   - decimal container
+   - object-container rejection
+   - array-container rejection
+   - rollout rule:
+     `VarPtr(Variant)` remains a first-class observable seam, not a
+     best-effort follow-up.
+4. `vmm-e4` must explicitly carry forward the current COM/SAFEARRAY-heavy
+   coverage in:
+   - `crates/oxvba-com/src/windows_variant.rs`
+   - `crates/oxvba-host/tests/com_client_end_to_end.rs`
+   - rollout focus:
+     decimal, typed SAFEARRAY, `VT_UNKNOWN`, `VT_DISPATCH`, and exact
+     boundary rebind behavior
+   - rollout rule:
+     these tests are part of the migration contract, not optional hardening.
+5. `vmm-e5` follows the validation discipline established by `vmm-d6`
+   - run a paired boundary bundle
+   - run the relevant conformance/spec-backed subset
+   - run paired perf and memory artifacts
+   - classify old/new-independent failures separately from migration-induced
+     regressions
+   - prefer a completed bounded paired perf artifact over a longer rerun that
+     stalls or leaves only partial materialization.
+
 ### 11.9 Epic F Bead Set: Interface Identity and COM Event Transport
 
 Parent:
