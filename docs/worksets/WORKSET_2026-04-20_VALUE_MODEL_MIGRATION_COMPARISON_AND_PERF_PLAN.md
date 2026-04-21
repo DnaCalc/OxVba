@@ -172,6 +172,32 @@ front of the migration:
    adapter seams
 5. current old/new comparison execution is not yet a first-class artifact lane.
 
+### 4.5 Baseline lifetime bug now explicitly recorded
+
+Current baseline finding:
+
+1. the repo's own spec and oracle evidence treat `Class_Terminate` as required
+   observable teardown behavior
+2. `Engine::create_class_instance` explicitly runs `Class_Initialize`, but the
+   ordinary internal-class runtime does not yet show a general last-reference /
+   scope-exit trigger that reliably invokes `Class_Terminate`
+3. the COM server scaffold still carries an explicit future note to trigger
+   `Class_Terminate` on final `Release`
+4. the Excel oracle capture for `class_lifecycle_terminate_fail.bas` records a
+   successful result where old OxVba errors
+5. this is now recorded as `DIV-0005`, an old-OxVba bug rather than an allowed
+   semantic alternative.
+
+Interpretation:
+
+1. lifetime/teardown-sensitive object behavior must be evaluated against
+   Excel/spec first, not against the old implementation
+2. the F lane should treat COM identity and lifetime as one problem, not two
+   loosely coupled ones
+3. the retained-wrapper migration target therefore uses `IUnknown` as the
+   internal native identity/lifetime anchor while preserving semantic
+   `ObjectHandle` as the runtime-facing carrier.
+
 ## 5. Baseline Work Before the Migration
 
 Minor baseline cleanup is justified, but only where it improves migration
@@ -440,14 +466,19 @@ Target truth:
    binary-interface truth as far as we can honestly claim
 2. any retained abstraction or indirection is documented as a deliberate
    project decision rather than accidental legacy
-3. `VT_UNKNOWN` and `VT_DISPATCH` behavior is reevaluated under the new
+3. retained native COM identity/lifetime truth is anchored on canonical
+   `IUnknown` identity, with `IDispatch` retained as the Automation invocation
+   surface where applicable
+4. `VT_UNKNOWN` and `VT_DISPATCH` behavior is reevaluated under the new
    representation.
 
 Required migration actions:
 
-1. determine where canonical interface identity truly needs to become COM
-   pointer-based and where a stable wrapper remains necessary
-2. update runtime/com carriers accordingly
+1. preserve semantic `ObjectHandle` as the runtime-facing object carrier while
+   making the retained COM wrapper explicitly `IUnknown`-anchored
+2. update retained runtime/com state so identity dedup and lifetime ownership
+   are keyed off canonical retained `IUnknown` truth rather than only retained
+   `IDispatch*`
 3. preserve lifetime, ownership, and safety semantics across callbacks and
    boundary calls
 4. retest `VT_UNKNOWN`, `VT_DISPATCH`, and `ObjPtr`
@@ -1498,6 +1529,9 @@ Current repo grounding after `vmm-e5`:
    - `crates/oxvba-com/src/windows_runtime_state.rs` is the current source of
      truth for retained native dispatch pointers, object-handle allocation,
      native-dispatch result dedup, subscription state, and callback queues.
+   - `vmm-f2` tightens this into an explicit retained `IUnknown` identity /
+     lifetime anchor rather than leaving identity keyed only by retained
+     `IDispatch*`.
 3. The current observable `VT_DISPATCH` / `VT_UNKNOWN` contract is already
    explicit enough to drive the migration.
    - object-capable `VT_DISPATCH` results rebind to `ObjectHandle` and remain
@@ -1553,9 +1587,11 @@ Child beads:
    - depends on: `vmm-f1`
    - title: `Reconcile internal interface identity carrier with COM pointer truth`
    - outcome:
-     - object/interface identity carrier changes land
+     - retained wrapper becomes explicitly `IUnknown`-anchored while
+       `ObjectHandle` remains the runtime-facing carrier
    - completion evidence:
      - identity-sensitive runtime/COM tests pass
+     - retained wrapper identity/lifetime ownership is documented honestly
 4. `vmm-f3`
    - kind: `delivery`
    - priority: `P1`
