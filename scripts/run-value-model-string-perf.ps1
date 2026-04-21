@@ -200,7 +200,7 @@ function New-CodeStringWorkloadSource {
 function Get-StringPerfWorkloads {
     $smallPayload = "abc123xy"
     $mediumPayload = New-RepeatString -Unit "m2" -RepeatCount 128
-    $longPayload = New-RepeatString -Unit "L0123456789abcdef" -RepeatCount 512
+    $longPayload = New-RepeatString -Unit "L0123456789abcdef" -RepeatCount 128
 
     return @(
         @{

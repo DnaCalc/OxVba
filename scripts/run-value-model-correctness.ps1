@@ -111,15 +111,15 @@ function Invoke-LoggedCommand {
         ""
     )
 
-    $scriptHost = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
-        "pwsh"
-    }
-    else {
-        "powershell"
-    }
-
     Push-Location $WorktreePath
     try {
+        $scriptHost = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+            "pwsh"
+        }
+        else {
+            "powershell"
+        }
+
         if ($commandName.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
             & $scriptHost -NoProfile -ExecutionPolicy Bypass -File $commandName @commandArgs 2>&1 | Tee-Object -FilePath $LogPath -Append
         }
@@ -128,6 +128,51 @@ function Invoke-LoggedCommand {
         }
         if ($LASTEXITCODE -ne 0) {
             throw "command failed (exit=$LASTEXITCODE): $commandText"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Invoke-LoggedScript {
+    param(
+        [string]$WorktreePath,
+        [string]$ScriptPath,
+        [System.Collections.Specialized.OrderedDictionary]$Parameters,
+        [string]$LogPath
+    )
+
+    $logDir = Split-Path -Parent $LogPath
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    $commandParts = New-Object System.Collections.Generic.List[string]
+    $commandParts.Add($ScriptPath)
+    foreach ($entry in $Parameters.GetEnumerator()) {
+        $commandParts.Add(("-{0}" -f $entry.Key))
+        if ($entry.Value -is [System.Array] -and -not ($entry.Value -is [string])) {
+            $commandParts.Add(("@({0})" -f (($entry.Value | ForEach-Object { [string]$_ }) -join ", ")))
+        }
+        else {
+            $commandParts.Add([string]$entry.Value)
+        }
+    }
+
+    Set-Content -Path $LogPath -Value @(
+        "# Value Model Correctness Lane Log",
+        "",
+        "- Worktree: $WorktreePath",
+        "- Command: $($commandParts -join ' ')",
+        ""
+    )
+
+    Push-Location $WorktreePath
+    try {
+        & $ScriptPath @Parameters 2>&1 | Tee-Object -FilePath $LogPath -Append
+        if ($LASTEXITCODE -ne 0) {
+            throw "command failed (exit=$LASTEXITCODE): $($commandParts -join ' ')"
         }
     }
     finally {
@@ -180,15 +225,15 @@ try {
                 if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
                 $artifact = Join-Path $laneDir "conformance_vm.csv"
                 $log = Join-Path $laneDir "conformance_vm.log.txt"
-                $command = @(
-                    (Join-Path $worktree "scripts/run-conformance.ps1"),
-                    "-Backend", "vm",
-                    "-ResultsPath", $artifact
-                )
-                foreach ($pattern in $ConformanceIncludePattern) {
-                    $command += @("-IncludePattern", $pattern)
+                $scriptPath = Join-Path $worktree "scripts/run-conformance.ps1"
+                $parameters = [ordered]@{
+                    Backend = "vm"
+                    ResultsPath = $artifact
                 }
-                Invoke-LoggedCommand -WorktreePath $worktree -Command $command -LogPath $log
+                if ($ConformanceIncludePattern -and $ConformanceIncludePattern.Count -gt 0) {
+                    $parameters["IncludePattern"] = @($ConformanceIncludePattern)
+                }
+                Invoke-LoggedScript -WorktreePath $worktree -ScriptPath $scriptPath -Parameters $parameters -LogPath $log
                 return @{ artifact = $artifact; log = $log }
             }
         }
@@ -201,15 +246,15 @@ try {
                 if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
                 $artifact = Join-Path $laneDir "conformance_jit.csv"
                 $log = Join-Path $laneDir "conformance_jit.log.txt"
-                $command = @(
-                    (Join-Path $worktree "scripts/run-conformance.ps1"),
-                    "-Backend", "jit",
-                    "-ResultsPath", $artifact
-                )
-                foreach ($pattern in $ConformanceIncludePattern) {
-                    $command += @("-IncludePattern", $pattern)
+                $scriptPath = Join-Path $worktree "scripts/run-conformance.ps1"
+                $parameters = [ordered]@{
+                    Backend = "jit"
+                    ResultsPath = $artifact
                 }
-                Invoke-LoggedCommand -WorktreePath $worktree -Command $command -LogPath $log
+                if ($ConformanceIncludePattern -and $ConformanceIncludePattern.Count -gt 0) {
+                    $parameters["IncludePattern"] = @($ConformanceIncludePattern)
+                }
+                Invoke-LoggedScript -WorktreePath $worktree -ScriptPath $scriptPath -Parameters $parameters -LogPath $log
                 return @{ artifact = $artifact; log = $log }
             }
         }
