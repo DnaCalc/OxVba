@@ -1378,8 +1378,8 @@ mod tests {
     };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_UNKNOWN,
-        VT_VARIANT, VariantClear,
+        VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_I8,
+        VT_UI8, VT_UNKNOWN, VT_VARIANT, VariantClear,
     };
     use windows_sys::Win32::{
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
@@ -1476,6 +1476,39 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read decimal variant"),
                 ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_i64_variant_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::I64(5_000_000_000);
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set i64 variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_I8);
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read i64 variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_ui8_variant_reads_wide_value_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_UI8;
+            variant.Anonymous.Anonymous.Anonymous.ullVal = 5_000_000_000;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read ui8 variant"),
+                ComValue::I64(5_000_000_000)
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1649,6 +1682,70 @@ mod tests {
                 ComValue::ArrayIntent(SafeArray::from_values(vec![
                     RuntimeValue::I32(12),
                     RuntimeValue::I32(-4),
+                    RuntimeValue::I32(321),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_i8_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_I8, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_I8) should succeed"
+            );
+            for (index, value) in [12i64, 5_000_000_000i64, -4i64].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&value as *const i64).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_I8) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_I8;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_I8 SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::I32(12),
+                    RuntimeValue::I64(5_000_000_000),
+                    RuntimeValue::I32(-4),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_ui8_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_UI8, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_UI8) should succeed"
+            );
+            for (index, value) in [12u64, 5_000_000_000u64, 321u64].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&value as *const u64).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_UI8) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_UI8;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_UI8 SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::I32(12),
+                    RuntimeValue::I64(5_000_000_000),
                     RuntimeValue::I32(321),
                 ]))
             );
