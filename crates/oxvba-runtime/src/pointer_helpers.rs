@@ -115,8 +115,9 @@ impl Drop for OwnedBstrCell {
 unsafe impl Send for OwnedBstrCell {}
 
 #[cfg(target_os = "windows")]
-// `VarPtr(Variant)` in the old model projects a Windows VARIANT-compatible cell
-// from `RuntimeValue`; it is not the canonical runtime value container.
+// `VarPtr(Variant)` materializes a Windows-observable VARIANT cell from the
+// canonical semantic Variant carrier; the raw VARIANT is still a boundary
+// projection rather than the canonical runtime container itself.
 struct OwnedVariant(VARIANT);
 
 #[cfg(target_os = "windows")]

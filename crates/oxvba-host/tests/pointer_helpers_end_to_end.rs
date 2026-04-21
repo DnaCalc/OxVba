@@ -5,7 +5,7 @@ mod windows_pointer_helper_e2e {
     use oxvba_runtime::{Decimal96, RuntimeValue, VarType, Variant};
     use windows_sys::{
         Win32::Foundation::SysStringLen,
-        Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4},
+        Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4, VT_I8},
     };
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
@@ -529,13 +529,12 @@ End Sub
 
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
-            let pointer = snapshot
-                .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
-                .expect("snapshot should contain a non-zero pointer-like value");
+            let pointer = match snapshot.last() {
+                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
+                other => panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
+                ),
+            };
             let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
                 .expect("pointer helper registry should contain VarPtr(Variant) result")
                 .cast::<VARIANT>();
@@ -588,6 +587,49 @@ End Sub
             assert_eq!(
                 variant.as_decimal96(),
                 Some(Decimal96::from_parts(123_450, 0, 0, 3, true))
+            );
+        }
+    }
+
+    #[test]
+    fn varptr_variant_wide_i64_variable_exposes_vt_i8_container_in_vm_and_jit() {
+        let source = r#"
+Sub Main()
+    Dim obj As Object
+    Dim value As Variant
+    Dim pointerValue As LongPtr
+    Set obj = CreateObject("OxVba.TestDispatch")
+    value = DispatchInvoke(obj, "ReturnWideHyper")
+    pointerValue = VarPtr(value)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot.contains(&RuntimeValue::I64(5_000_000_000)),
+                "snapshot should preserve the wide I64 Variant payload for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+            let pointer = match snapshot.last() {
+                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
+                other => panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
+                ),
+            };
+            let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
+                .expect("pointer helper registry should contain VarPtr(Variant) result")
+                .cast::<VARIANT>();
+            assert!(!raw.is_null());
+            let variant = unsafe { &*raw };
+            assert_eq!(
+                unsafe { variant.Anonymous.Anonymous.vt },
+                VT_I8,
+                "VarPtr(Variant) should expose a VT_I8 container for enable_jit={enable_jit}"
+            );
+            assert_eq!(
+                unsafe { variant.Anonymous.Anonymous.Anonymous.llVal },
+                5_000_000_000,
+                "VarPtr(Variant) should preserve the wide I64 payload for enable_jit={enable_jit}"
             );
         }
     }
