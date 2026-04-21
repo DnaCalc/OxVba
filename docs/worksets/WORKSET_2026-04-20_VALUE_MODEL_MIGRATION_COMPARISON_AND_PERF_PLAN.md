@@ -1545,6 +1545,8 @@ Child beads:
      - the intended internal identity model is fixed before broad edits
    - completion evidence:
      - interface-identity decisions are documented against evidence
+     - decision note:
+       `docs/evidence/value_model_migration/INTERFACE_IDENTITY_AND_RETAINED_WRAPPER_DECISIONS_2026-04-21.md`
 3. `vmm-f2`
    - kind: `delivery`
    - priority: `P1`
