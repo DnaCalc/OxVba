@@ -62,7 +62,7 @@ use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use oxvba_runtime::RuntimeValue;
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
 use std::{
@@ -750,7 +750,7 @@ impl StandardHostServices {
 
     fn runtime_value_to_display_text(&self, value: &RuntimeValue) -> String {
         match value {
-            RuntimeValue::String(BStr(text)) => text.clone(),
+            RuntimeValue::String(text) => text.as_str().to_string(),
             RuntimeValue::Bool(value) => {
                 if *value {
                     "True".to_string()
@@ -780,7 +780,7 @@ impl StandardHostServices {
         field: &'static str,
     ) -> HalResult<PathBuf> {
         match value {
-            RuntimeValue::String(BStr(path)) => Ok(PathBuf::from(path)),
+            RuntimeValue::String(path) => Ok(PathBuf::from(path.as_str())),
             other => self
                 .runtime_value_project_compat_slot_i32(other, capability, op, field)
                 .map(|token| self.host_path_from_token(token)),
@@ -1354,7 +1354,7 @@ mod tests {
         host: &StandardHostServices,
         prog_id_name: &str,
     ) -> crate::error::HalResult<oxvba_runtime::ObjectHandle> {
-        let prog_id = RuntimeValue::String(BStr(prog_id_name.to_string()));
+        let prog_id = RuntimeValue::String(oxvba_runtime::bstr::BStr::from(prog_id_name));
         host.create_object(prog_id).map(expect_object_handle)
     }
 

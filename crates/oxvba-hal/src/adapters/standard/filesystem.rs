@@ -48,8 +48,8 @@ pub(super) fn clamp_u64_to_i32(value: u64) -> i32 {
 
 fn format_write_field(data: &RuntimeValue) -> String {
     match data {
-        RuntimeValue::String(BStr(text)) => {
-            let escaped = text.replace('"', "\"\"");
+        RuntimeValue::String(text) => {
+            let escaped = text.as_str().replace('"', "\"\"");
             format!("\"{escaped}\"")
         }
         RuntimeValue::Bool(value) => {
@@ -123,7 +123,7 @@ fn runtime_value_from_input_field(field: &str) -> RuntimeValue {
     if let Ok(value) = field.parse::<f64>() {
         return RuntimeValue::F64(F64Value::from_f64(value));
     }
-    RuntimeValue::String(BStr(field.to_string()))
+    RuntimeValue::String(BStr::from(field))
 }
 
 fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {
@@ -180,7 +180,7 @@ impl FileSystemHal for StandardHostServices {
         if mode != 0 && !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "open"));
         }
-        if let RuntimeValue::String(BStr(path_text)) = &path {
+        if let RuntimeValue::String(path_text) = &path {
             let mut state = self.fs_lock(capability, "open")?;
             self.assert_fs_invariants(&state, "open-pre");
             let handle = if requested_handle > 0 && requested_handle <= 511 {
@@ -206,7 +206,7 @@ impl FileSystemHal for StandardHostServices {
                 })?
             };
             let host_path = if self.native_fs_enabled() {
-                let host_path = PathBuf::from(path_text);
+                let host_path = PathBuf::from(path_text.as_str());
                 if let Some(parent) = host_path.parent() {
                     fs::create_dir_all(parent).map_err(|err| {
                         HalError::adapter_fault(
@@ -512,7 +512,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "kill"));
         }
-        let RuntimeValue::String(BStr(path_text)) = path else {
+        let RuntimeValue::String(path_text) = path else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -520,9 +520,9 @@ impl FileSystemHal for StandardHostServices {
                 "path must be a string",
             ));
         };
-        if path_text.contains('*') || path_text.contains('?') {
+        if path_text.as_str().contains('*') || path_text.as_str().contains('?') {
             if self.native_fs_enabled() {
-                let matched_paths = expand_host_wildcard_paths(Path::new(&path_text))
+                let matched_paths = expand_host_wildcard_paths(Path::new(path_text.as_str()))
                     .map_err(|err| {
                         HalError::adapter_fault(
                             self.profile,
@@ -565,7 +565,7 @@ impl FileSystemHal for StandardHostServices {
             return Ok(RuntimeValue::I32(0));
         }
         if self.native_fs_enabled() {
-            let host_path = PathBuf::from(&path_text);
+            let host_path = PathBuf::from(path_text.as_str());
             #[cfg(target_os = "windows")]
             let remove_result = remove_file_with_retry(&host_path);
             #[cfg(not(target_os = "windows"))]
@@ -755,7 +755,7 @@ impl FileSystemHal for StandardHostServices {
         let actual = count.min(available);
         let bytes = entry.data[pos..pos + actual].to_vec();
         entry.position += actual as i32;
-        Ok(RuntimeValue::String(BStr(
+        Ok(RuntimeValue::String(BStr::from(
             String::from_utf8_lossy(&bytes).into_owned(),
         )))
     }
@@ -803,7 +803,7 @@ impl FileSystemHal for StandardHostServices {
             "handle",
         )?;
         let text = match &data {
-            RuntimeValue::String(BStr(s)) => format!("{s}\r\n"),
+            RuntimeValue::String(s) => format!("{s}\r\n"),
             other => {
                 let val = self.runtime_value_project_compat_slot_i32(
                     other,
@@ -861,10 +861,10 @@ impl FileSystemHal for StandardHostServices {
             if let Some(field) = fields.first() {
                 return Ok(runtime_value_from_input_field(field));
             }
-            return Ok(RuntimeValue::String(BStr(String::new())));
+            return Ok(RuntimeValue::String(BStr::empty()));
         }
         let result = fields.join(",");
-        Ok(RuntimeValue::String(BStr(result)))
+        Ok(RuntimeValue::String(BStr::from(result)))
     }
 
     fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -882,7 +882,7 @@ impl FileSystemHal for StandardHostServices {
         let entry = self.fs_entry_mut(&mut state, handle_id, "line_input")?;
         let pos = entry.position as usize;
         if pos >= entry.data.len() {
-            return Ok(RuntimeValue::String(BStr(String::new())));
+            return Ok(RuntimeValue::String(BStr::empty()));
         }
         let remaining = &entry.data[pos..];
         let line_end = remaining
@@ -898,7 +898,7 @@ impl FileSystemHal for StandardHostServices {
             .unwrap_or((remaining.len(), remaining.len()));
         let line = String::from_utf8_lossy(&remaining[..line_end.0]).into_owned();
         entry.position += line_end.1 as i32;
-        Ok(RuntimeValue::String(BStr(line)))
+        Ok(RuntimeValue::String(BStr::from(line)))
     }
 
     fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {

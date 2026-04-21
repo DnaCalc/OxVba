@@ -35,7 +35,7 @@ fn parse_console_field(raw: &str) -> RuntimeValue {
     if let Ok(value) = field.parse::<f64>() {
         return RuntimeValue::F64(F64Value::from_f64(value));
     }
-    RuntimeValue::String(BStr(field.to_string()))
+    RuntimeValue::String(BStr::from(field))
 }
 
 fn split_console_fields(line: &str) -> VecDeque<String> {
@@ -145,7 +145,7 @@ impl ConsoleHal for StandardHostServices {
                 fields.first().map(String::as_str).unwrap_or(""),
             ));
         }
-        Ok(RuntimeValue::String(BStr(fields.join(","))))
+        Ok(RuntimeValue::String(BStr::from(fields.join(","))))
     }
 
     fn line_input(&self) -> HalResult<RuntimeValue> {
@@ -154,6 +154,6 @@ impl ConsoleHal for StandardHostServices {
             return Err(self.unsupported(capability, "line_input"));
         }
         let line = self.console_read_line("line_input")?;
-        Ok(RuntimeValue::String(BStr(line)))
+        Ok(RuntimeValue::String(BStr::from(line)))
     }
 }

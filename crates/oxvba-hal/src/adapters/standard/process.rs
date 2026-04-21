@@ -24,10 +24,12 @@ impl ProcessEnvHal for StandardHostServices {
             return Err(self.denied(capability, "shell"));
         }
         if self.native_process_enabled()
-            && let RuntimeValue::String(BStr(text)) = &command
-            && !text.trim().is_empty()
+            && let RuntimeValue::String(text) = &command
+            && !text.as_str().trim().is_empty()
         {
-            let mut child = self.spawn_probe_shell_process_text(text).map_err(|err| {
+            let mut child = self
+                .spawn_probe_shell_process_text(text.as_str())
+                .map_err(|err| {
                 HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -58,7 +60,7 @@ impl ProcessEnvHal for StandardHostServices {
             }
         }
         let command = match &command {
-            RuntimeValue::String(BStr(text)) => i32::from(!text.trim().is_empty()),
+            RuntimeValue::String(text) => i32::from(!text.as_str().trim().is_empty()),
             other => self
                 .runtime_value_project_compat_slot_i32(other, capability, "shell", "command")
                 .unwrap_or(0),
@@ -75,19 +77,17 @@ impl ProcessEnvHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "environ"));
         }
-        if self.native_process_enabled()
-            && let RuntimeValue::String(BStr(name)) = &key
-        {
-            let value = std::env::var_os(name)
+        if self.native_process_enabled() && let RuntimeValue::String(name) = &key {
+            let value = std::env::var_os(name.as_str())
                 .map(|value| value.to_string_lossy().to_string())
                 .unwrap_or_default();
-            return Ok(RuntimeValue::String(BStr(value)));
+            return Ok(RuntimeValue::String(BStr::from(value)));
         }
         if self.native_process_enabled() {
             let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
                 std::env::vars_os().collect();
             if vars.is_empty() {
-                return Ok(RuntimeValue::String(BStr(String::new())));
+                return Ok(RuntimeValue::String(BStr::empty()));
             }
             vars.sort_by(|a, b| a.0.cmp(&b.0));
             let key = self
@@ -99,10 +99,10 @@ impl ProcessEnvHal for StandardHostServices {
                 vars[idx].0.to_string_lossy(),
                 vars[idx].1.to_string_lossy()
             );
-            return Ok(RuntimeValue::String(BStr(entry)));
+            return Ok(RuntimeValue::String(BStr::from(entry)));
         }
         let key = match &key {
-            RuntimeValue::String(BStr(text)) => text.len().min(i32::MAX as usize) as i32,
+            RuntimeValue::String(text) => text.as_str().len().min(i32::MAX as usize) as i32,
             other => self
                 .runtime_value_project_compat_slot_i32(other, capability, "environ", "key")
                 .unwrap_or(0),
@@ -127,7 +127,7 @@ impl ProcessEnvHal for StandardHostServices {
                 } else {
                     state.remaining.remove(0)
                 };
-                return Ok(RuntimeValue::String(BStr(next)));
+                return Ok(RuntimeValue::String(BStr::from(next)));
             }
 
             let target = self.runtime_value_to_path(&path, capability, "dir", "path")?;
@@ -155,11 +155,11 @@ impl ProcessEnvHal for StandardHostServices {
             } else {
                 Vec::new()
             };
-            return Ok(RuntimeValue::String(BStr(first)));
+            return Ok(RuntimeValue::String(BStr::from(first)));
         }
         let out = match &path {
             RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => 0,
-            RuntimeValue::String(BStr(text)) => i32::from(!text.is_empty()),
+            RuntimeValue::String(text) => i32::from(!text.is_empty()),
             other => i32::from(
                 self.runtime_value_project_compat_slot_i32(other, capability, "dir", "path")
                     .unwrap_or(0)

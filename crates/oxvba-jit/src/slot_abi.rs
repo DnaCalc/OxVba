@@ -202,7 +202,7 @@ impl RtSlot {
             TAG_STRING => {
                 let ptr = self.payload as *const BStr;
                 if ptr.is_null() {
-                    RuntimeValue::String(BStr(String::new()))
+                    RuntimeValue::String(BStr::empty())
                 } else {
                     RuntimeValue::String(unsafe { &*ptr }.clone())
                 }

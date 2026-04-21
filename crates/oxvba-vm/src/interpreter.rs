@@ -686,7 +686,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::LoadConstString { slot, value } => {
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr(value.clone())))?;
+                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(value.clone())))?;
                     pc += 1;
                 }
                 Instruction::LoadConstF64 { slot, bits } => {
@@ -831,7 +831,7 @@ impl Vm {
                     } else {
                         text[..n].to_string()
                     };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRightDigits { dst, src, count } => {
@@ -845,7 +845,7 @@ impl Vm {
                     } else {
                         text[len - n..].to_string()
                     };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidDigits {
@@ -872,7 +872,7 @@ impl Vm {
                         None => len,
                     };
                     let result = text[begin..end].to_string();
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidStmtDigits {
@@ -944,7 +944,7 @@ impl Vm {
                     let text = crate::semantics::runtime_value_to_text(&value, "LCase operand")?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::String(BStr(text.to_ascii_lowercase())),
+                        RuntimeValue::String(BStr::from(text.to_ascii_lowercase())),
                     )?;
                     pc += 1;
                 }
@@ -953,7 +953,7 @@ impl Vm {
                     let text = crate::semantics::runtime_value_to_text(&value, "UCase operand")?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::String(BStr(text.to_ascii_uppercase())),
+                        RuntimeValue::String(BStr::from(text.to_ascii_uppercase())),
                     )?;
                     pc += 1;
                 }
@@ -999,7 +999,7 @@ impl Vm {
                     let replace_text =
                         crate::semantics::runtime_value_to_text(&replace_val, "Replace replace")?;
                     let result = src_text.replace(&find_text, &replace_text);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
@@ -1007,7 +1007,7 @@ impl Vm {
                     let text = crate::semantics::runtime_value_to_text(&value, "Trim operand")?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::String(BStr(text.trim().to_string())),
+                        RuntimeValue::String(BStr::from(text.trim().to_string())),
                     )?;
                     pc += 1;
                 }
@@ -1016,7 +1016,7 @@ impl Vm {
                     let text = crate::semantics::runtime_value_to_text(&value, "LTrim operand")?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::String(BStr(text.trim_start().to_string())),
+                        RuntimeValue::String(BStr::from(text.trim_start().to_string())),
                     )?;
                     pc += 1;
                 }
@@ -1025,7 +1025,7 @@ impl Vm {
                     let text = crate::semantics::runtime_value_to_text(&value, "RTrim operand")?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::String(BStr(text.trim_end().to_string())),
+                        RuntimeValue::String(BStr::from(text.trim_end().to_string())),
                     )?;
                     pc += 1;
                 }
@@ -1449,7 +1449,7 @@ impl Vm {
                     let pointer = match &value {
                         RuntimeValue::Empty | RuntimeValue::Null => 0,
                         RuntimeValue::String(text) => {
-                            oxvba_runtime::pointer_helpers::register_utf16_string(&text.0)?
+                            oxvba_runtime::pointer_helpers::register_utf16_string(text.as_str())?
                         }
                         _ => return Err("runtime error: 13 (Type mismatch)".to_string()),
                     };
@@ -2852,12 +2852,12 @@ impl Vm {
                         .as_deref()
                         .unwrap_or("")
                         .to_string();
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr(text)))?;
+                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(text)))?;
                     pc += 1;
                 }
                 Instruction::LoadErrSource { slot } => {
                     let text = self.last_error_source.as_deref().unwrap_or("").to_string();
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr(text)))?;
+                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(text)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeOfIs {
@@ -3093,21 +3093,21 @@ impl Vm {
                     let fmt_str = if let Some(fmt_slot) = format_string {
                         let fmt_val = self.read_value_slot(*fmt_slot)?;
                         match &fmt_val {
-                            RuntimeValue::String(s) => Some(s.0.clone()),
+                            RuntimeValue::String(s) => Some(s.as_str().to_string()),
                             _ => None,
                         }
                     } else {
                         None
                     };
                     let result = Self::format_number(n, fmt_str.as_deref());
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStrReverseDigits { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
                     let s = crate::semantics::runtime_value_to_text(&src_val, "StrReverse source")?;
                     let result: String = s.chars().rev().collect();
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IncSlot { slot } => {
@@ -4519,7 +4519,7 @@ fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> Runtime
         | RuntimeArrayElementType::Double
         | RuntimeArrayElementType::Currency
         | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
-        RuntimeArrayElementType::String => RuntimeValue::String(BStr(String::new())),
+        RuntimeArrayElementType::String => RuntimeValue::String(BStr::empty()),
         RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
     }
 }

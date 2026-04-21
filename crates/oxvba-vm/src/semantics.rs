@@ -57,8 +57,8 @@ pub fn runtime_value_as_f64(value: &RuntimeValue) -> Result<f64, String> {
 
 pub fn runtime_value_to_numeric_compat(value: &RuntimeValue, field: &str) -> Result<f64, String> {
     match value {
-        RuntimeValue::String(BStr(text)) => {
-            let trimmed = text.trim();
+        RuntimeValue::String(text) => {
+            let trimmed = text.as_str().trim();
             if trimmed.is_empty() {
                 Ok(0.0)
             } else {
@@ -93,7 +93,7 @@ pub fn runtime_value_is_explicit_zero_carrier(value: &RuntimeValue) -> bool {
 pub fn runtime_value_to_text(value: &RuntimeValue, field: &str) -> Result<String, String> {
     match value {
         RuntimeValue::Empty => Ok(String::new()),
-        RuntimeValue::String(BStr(text)) => Ok(text.clone()),
+        RuntimeValue::String(text) => Ok(text.as_str().to_string()),
         RuntimeValue::I32(v) => Ok(v.to_string()),
         RuntimeValue::I64(v) => Ok(v.to_string()),
         RuntimeValue::Bool(v) => Ok(if *v {
@@ -174,7 +174,7 @@ pub fn runtime_join_bounded(
                 0
             }
         }
-        RuntimeValue::String(BStr(text)) => text.parse::<i32>().unwrap_or(0),
+        RuntimeValue::String(text) => text.as_str().parse::<i32>().unwrap_or(0),
         RuntimeValue::F64(_) | RuntimeValue::Currency(_) | RuntimeValue::Decimal(_) => {
             let numeric = runtime_value_as_f64(value)?;
             if !numeric.is_finite() || numeric < i32::MIN as f64 || numeric > i32::MAX as f64 {
@@ -209,13 +209,13 @@ pub fn runtime_strconv_bounded(
         3 => proper_case(&text),
         _ => text,
     };
-    Ok(RuntimeValue::String(BStr(result)))
+    Ok(RuntimeValue::String(BStr::from(result)))
 }
 
 pub fn runtime_chr_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Chr operand")?;
     let ch = char::from_u32(value as u32).unwrap_or('\0');
-    Ok(RuntimeValue::String(BStr(ch.to_string())))
+    Ok(RuntimeValue::String(BStr::from(ch.to_string())))
 }
 
 pub fn runtime_asc_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -230,7 +230,7 @@ pub fn runtime_asc_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 
 pub fn runtime_space_bounded(count: &RuntimeValue) -> Result<RuntimeValue, String> {
     let count = runtime_value_to_i32_compat(count, "Space count")?;
-    Ok(RuntimeValue::String(BStr(
+    Ok(RuntimeValue::String(BStr::from(
         " ".repeat(count.max(0) as usize),
     )))
 }
@@ -242,34 +242,34 @@ pub fn runtime_string_repeat_bounded(
     let count = runtime_value_to_i32_compat(count, "String$ count")?;
     let ch = match ch {
         RuntimeValue::String(s) => {
-            if s.0.is_empty() {
+            if s.is_empty() {
                 '\0'
             } else {
-                s.0.chars().next().unwrap_or('\0')
+                s.as_str().chars().next().unwrap_or('\0')
             }
         }
         other => char::from_u32(runtime_value_to_i32_compat(other, "String$ char")? as u32)
             .unwrap_or('\0'),
     };
-    Ok(RuntimeValue::String(BStr(
+    Ok(RuntimeValue::String(BStr::from(
         ch.to_string().repeat(count.max(0) as usize),
     )))
 }
 
 pub fn runtime_hex_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Hex operand")?;
-    Ok(RuntimeValue::String(BStr(format!("{:X}", value as u32))))
+    Ok(RuntimeValue::String(BStr::from(format!("{:X}", value as u32))))
 }
 
 pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Oct operand")?;
-    Ok(RuntimeValue::String(BStr(format!("{:o}", value as u32))))
+    Ok(RuntimeValue::String(BStr::from(format!("{:o}", value as u32))))
 }
 
 pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let result = match src {
-        RuntimeValue::String(BStr(s)) => {
-            let trimmed = s.trim();
+        RuntimeValue::String(s) => {
+            let trimmed = s.as_str().trim();
             if trimmed.is_empty() {
                 RuntimeValue::I32(0)
             } else if let Ok(n) = trimmed.parse::<i64>() {
@@ -452,7 +452,7 @@ pub fn runtime_month_name_bounded(src: &RuntimeValue) -> Result<RuntimeValue, St
         12 => "December",
         _ => "",
     };
-    Ok(RuntimeValue::String(BStr(name.to_string())))
+    Ok(RuntimeValue::String(BStr::from(name.to_string())))
 }
 
 pub fn runtime_date_serial_bounded(
@@ -539,12 +539,12 @@ pub fn runtime_mid_stmt_bounded(
     out.push_str(&base[end_idx..]);
 
     if matches!(target, RuntimeValue::String(_)) || matches!(value, RuntimeValue::String(_)) {
-        return Ok(RuntimeValue::String(BStr(out)));
+        return Ok(RuntimeValue::String(BStr::from(out)));
     }
     if let Ok(parsed) = out.parse::<i32>() {
         return Ok(RuntimeValue::I32(parsed));
     }
-    Ok(RuntimeValue::String(BStr(out)))
+    Ok(RuntimeValue::String(BStr::from(out)))
 }
 
 fn parse_month_token(token: &str) -> Option<i32> {
@@ -675,7 +675,7 @@ pub fn format_date_serial_digits(serial: f64) -> Result<String, String> {
 
 pub fn runtime_value_to_date_value_digits(value: &RuntimeValue) -> Result<i32, String> {
     match value {
-        RuntimeValue::String(BStr(text)) => parse_string_date_to_packed(text)
+        RuntimeValue::String(text) => parse_string_date_to_packed(text.as_str())
             .ok_or_else(|| format!("DateValue string format is not yet supported: `{text}`")),
         other => runtime_value_to_i32_compat(other, "DateValue src"),
     }
@@ -683,8 +683,8 @@ pub fn runtime_value_to_date_value_digits(value: &RuntimeValue) -> Result<i32, S
 
 pub fn runtime_value_to_cdate(value: &RuntimeValue) -> Result<RuntimeValue, String> {
     let serial = match value {
-        RuntimeValue::String(BStr(text)) => {
-            let packed = parse_string_date_to_packed(text)
+        RuntimeValue::String(text) => {
+            let packed = parse_string_date_to_packed(text.as_str())
                 .ok_or_else(|| format!("CDate string format is not yet supported: `{text}`"))?;
             packed_date_to_ole_serial(packed)?
         }
@@ -848,7 +848,7 @@ pub fn runtime_date_weekday(value: &RuntimeValue) -> Result<i32, String> {
 
 pub fn runtime_value_is_date(value: &RuntimeValue) -> bool {
     match value {
-        RuntimeValue::String(BStr(_)) => runtime_value_to_cdate(value).is_ok(),
+        RuntimeValue::String(_) => runtime_value_to_cdate(value).is_ok(),
         RuntimeValue::I32(_)
         | RuntimeValue::I64(_)
         | RuntimeValue::F64(_)
@@ -1037,7 +1037,7 @@ pub fn legacy_concat_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> RuntimeVa
     } else {
         runtime_value_to_text(rhs, "concat rhs").unwrap_or_default()
     };
-    RuntimeValue::String(BStr(format!("{lhs_str}{rhs_str}")))
+    RuntimeValue::String(BStr::from(format!("{lhs_str}{rhs_str}")))
 }
 
 pub fn legacy_neg_value(val: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -1129,16 +1129,16 @@ pub fn typed_compare_values(
     }
     match (lhs, rhs) {
         (RuntimeValue::String(a), RuntimeValue::String(b)) => {
-            let a = normalize_for_compare(a.0.clone(), mode);
-            let b = normalize_for_compare(b.0.clone(), mode);
+            let a = normalize_for_compare(a.as_str().to_string(), mode);
+            let b = normalize_for_compare(b.as_str().to_string(), mode);
             Ok(pred(a.cmp(&b)))
         }
         (RuntimeValue::String(a), RuntimeValue::Empty) => {
-            let a = normalize_for_compare(a.0.clone(), mode);
+            let a = normalize_for_compare(a.as_str().to_string(), mode);
             Ok(pred(a.cmp(&String::new())))
         }
         (RuntimeValue::Empty, RuntimeValue::String(b)) => {
-            let b = normalize_for_compare(b.0.clone(), mode);
+            let b = normalize_for_compare(b.as_str().to_string(), mode);
             Ok(pred(String::new().cmp(&b)))
         }
         (RuntimeValue::F64(a), RuntimeValue::F64(b)) => {
@@ -1840,7 +1840,7 @@ pub fn runtime_value_to_dynamic_member_selector(
     field: &str,
 ) -> Result<DynamicMemberSelector, String> {
     match value {
-        RuntimeValue::String(text) => Ok(DynamicMemberSelector::Name(text.0.clone())),
+        RuntimeValue::String(text) => Ok(DynamicMemberSelector::Name(text.as_str().to_string())),
         RuntimeValue::Empty => Ok(DynamicMemberSelector::DefaultMember),
         RuntimeValue::I32(token) => {
             if *token == 0 {

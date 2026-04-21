@@ -415,7 +415,7 @@ pub extern "C" fn oxrt_load_string(
 ) -> i32 {
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
     let s = String::from_utf8_lossy(bytes).into_owned();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(s)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(s)));
     OK
 }
 
@@ -459,7 +459,7 @@ pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32
     } else {
         text[..n].to_string()
     };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -481,7 +481,7 @@ pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u3
     } else {
         text[len - n..].to_string()
     };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -521,7 +521,7 @@ pub extern "C" fn oxrt_mid(
         None => len,
     };
     let result = text[begin..end].to_string();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -617,7 +617,7 @@ pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr(text.to_ascii_lowercase()))
+        RuntimeValue::String(BStr::from(text.to_ascii_lowercase()))
     );
     OK
 }
@@ -632,7 +632,7 @@ pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr(text.to_ascii_uppercase()))
+        RuntimeValue::String(BStr::from(text.to_ascii_uppercase()))
     );
     OK
 }
@@ -685,7 +685,7 @@ pub extern "C" fn oxrt_replace(
         Err(_) => return ERR_RUNTIME,
     };
     let result = src_text.replace(&find_text, &replace_text);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -699,7 +699,7 @@ pub extern "C" fn oxrt_trim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr(text.trim().to_string()))
+        RuntimeValue::String(BStr::from(text.trim().to_string()))
     );
     OK
 }
@@ -714,7 +714,7 @@ pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr(text.trim_start().to_string()))
+        RuntimeValue::String(BStr::from(text.trim_start().to_string()))
     );
     OK
 }
@@ -729,7 +729,7 @@ pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr(text.trim_end().to_string()))
+        RuntimeValue::String(BStr::from(text.trim_end().to_string()))
     );
     OK
 }
@@ -884,12 +884,12 @@ pub extern "C" fn oxrt_format(ctx: *mut JitContext, dst: u32, value: u32, format
     } else {
         let fmt_val = read_slot!(ctx, format_slot);
         match &fmt_val {
-            RuntimeValue::String(s) => Some(s.0.clone()),
+            RuntimeValue::String(s) => Some(s.as_str().to_string()),
             _ => None,
         }
     };
     let result = semantics::format_number(n, fmt_str.as_deref());
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -901,7 +901,7 @@ pub extern "C" fn oxrt_strreverse(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Err(_) => return ERR_RUNTIME,
     };
     let result: String = s.chars().rev().collect();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
+    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
     OK
 }
 
@@ -1212,7 +1212,7 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let pointer = match &value {
         RuntimeValue::Empty | RuntimeValue::Null => 0,
         RuntimeValue::String(value) => {
-            match oxvba_runtime::pointer_helpers::register_utf16_string(&value.0) {
+            match oxvba_runtime::pointer_helpers::register_utf16_string(value.as_str()) {
                 Ok(pointer) => pointer,
                 Err(_) => return ERR_RUNTIME,
             }
@@ -1741,7 +1741,7 @@ fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> Runtime
         | RuntimeArrayElementType::Double
         | RuntimeArrayElementType::Currency
         | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
-        RuntimeArrayElementType::String => RuntimeValue::String(BStr(String::new())),
+        RuntimeArrayElementType::String => RuntimeValue::String(BStr::empty()),
         RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
     }
 }
@@ -2116,13 +2116,13 @@ pub extern "C" fn oxrt_load_err_number(ctx: *mut JitContext, slot: u32) -> i32 {
 pub extern "C" fn oxrt_load_err_description(ctx: *mut JitContext, slot: u32) -> i32 {
     // JitContext doesn't store error description strings (simplified model).
     // Return empty string, matching the minimal JIT error model.
-    write_slot!(ctx, slot, RuntimeValue::String(BStr(String::new())));
+    write_slot!(ctx, slot, RuntimeValue::String(BStr::empty()));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_err_source(ctx: *mut JitContext, slot: u32) -> i32 {
-    write_slot!(ctx, slot, RuntimeValue::String(BStr(String::new())));
+    write_slot!(ctx, slot, RuntimeValue::String(BStr::empty()));
     OK
 }
 
