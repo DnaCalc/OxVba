@@ -13,6 +13,26 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
+function Normalize-SelectorList {
+    param(
+        [string[]]$Values
+    )
+
+    $normalized = @()
+    foreach ($value in $Values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            continue
+        }
+        foreach ($entry in ($value -split ",")) {
+            $trimmed = $entry.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $normalized += $trimmed
+            }
+        }
+    }
+    return @($normalized)
+}
+
 function Assert-PathUnderRoot {
     param(
         [string]$CandidatePath,
@@ -65,7 +85,12 @@ function Remove-DetachedWorktree {
 
     if (Test-Path $WorktreePath) {
         Assert-PathUnderRoot -CandidatePath $WorktreePath -RootPath (Join-Path $RepoRoot "temp")
-        & git -C $RepoRoot worktree remove --force $WorktreePath | Out-Null
+        try {
+            & git -C $RepoRoot worktree remove --force $WorktreePath | Out-Null
+        }
+        catch {
+            Write-Warning "run-value-model-memory: failed to remove worktree '$WorktreePath': $($_.Exception.Message)"
+        }
     }
 }
 
@@ -212,6 +237,62 @@ function Get-MemoryWorkloads {
             command = {
                 param($sourcePath)
                 @("cargo", "test", "-q", "-p", "oxvba-com", "typed_bstr_safe_array_roundtrips_through_windows_bridge", "--", "--nocapture")
+            }
+            source = $null
+        }
+        @{
+            id = "com_variant_wide_i64_array_boundary"
+            category = "com_variant"
+            description = "Host COM boundary wide I64 variant-array normalization"
+            command = {
+                param($sourcePath)
+                @(
+                    "cargo", "test", "-q", "-p", "oxvba-host", "--test", "com_client_end_to_end",
+                    "windows_com_e2e::dispatchinvoke_wide_i64_variant_array_elements_normalize_to_vt_i8_at_com_boundary",
+                    "--", "--exact", "--test-threads=1", "--nocapture"
+                )
+            }
+            source = $null
+        }
+        @{
+            id = "com_variant_decimal_array"
+            category = "com_variant"
+            description = "Host COM boundary typed decimal SAFEARRAY result"
+            command = {
+                param($sourcePath)
+                @(
+                    "cargo", "test", "-q", "-p", "oxvba-host", "--test", "com_client_end_to_end",
+                    "windows_com_e2e::dispatchinvoke_accepts_typed_decimal_safe_array_variant_results",
+                    "--", "--exact", "--test-threads=1", "--nocapture"
+                )
+            }
+            source = $null
+        }
+        @{
+            id = "com_variant_object_result"
+            category = "com_variant"
+            description = "Host COM boundary object-valued Variant rebinding"
+            command = {
+                param($sourcePath)
+                @(
+                    "cargo", "test", "-q", "-p", "oxvba-host", "--test", "com_client_end_to_end",
+                    "windows_com_e2e::dispatchinvoke_accepts_object_variant_results",
+                    "--", "--exact", "--test-threads=1", "--nocapture"
+                )
+            }
+            source = $null
+        }
+        @{
+            id = "com_variant_matrix_result"
+            category = "com_variant"
+            description = "Host COM boundary multidimensional Variant matrix result"
+            command = {
+                param($sourcePath)
+                @(
+                    "cargo", "test", "-q", "-p", "oxvba-host", "--test", "com_client_end_to_end",
+                    "windows_com_e2e::dispatchinvoke_multidim_variant_array_results_preserve_two_dimensional_shape",
+                    "--", "--exact", "--test-threads=1", "--nocapture"
+                )
             }
             source = $null
         }
@@ -490,23 +571,28 @@ try {
         }
     }
 
+    $includeWorkloadFilter = Normalize-SelectorList -Values $IncludeWorkload
+    $excludeWorkloadFilter = Normalize-SelectorList -Values $ExcludeWorkload
+    $includeSnapshotFilter = Normalize-SelectorList -Values $IncludeSnapshot
+    $excludeSnapshotFilter = Normalize-SelectorList -Values $ExcludeSnapshot
+
     $workloads = @(Get-MemoryWorkloads)
-    if ($IncludeWorkload -and $IncludeWorkload.Count -gt 0) {
-        $workloads = @($workloads | Where-Object { $_.id -in $IncludeWorkload })
+    if ($includeWorkloadFilter -and $includeWorkloadFilter.Count -gt 0) {
+        $workloads = @($workloads | Where-Object { $_.id -in $includeWorkloadFilter })
     }
-    if ($ExcludeWorkload -and $ExcludeWorkload.Count -gt 0) {
-        $workloads = @($workloads | Where-Object { $_.id -notin $ExcludeWorkload })
+    if ($excludeWorkloadFilter -and $excludeWorkloadFilter.Count -gt 0) {
+        $workloads = @($workloads | Where-Object { $_.id -notin $excludeWorkloadFilter })
     }
     if ($workloads.Count -eq 0) {
         throw "run-value-model-memory: no workloads selected"
     }
 
     $snapshots = @(Get-PointerSnapshots)
-    if ($IncludeSnapshot -and $IncludeSnapshot.Count -gt 0) {
-        $snapshots = @($snapshots | Where-Object { $_.id -in $IncludeSnapshot })
+    if ($includeSnapshotFilter -and $includeSnapshotFilter.Count -gt 0) {
+        $snapshots = @($snapshots | Where-Object { $_.id -in $includeSnapshotFilter })
     }
-    if ($ExcludeSnapshot -and $ExcludeSnapshot.Count -gt 0) {
-        $snapshots = @($snapshots | Where-Object { $_.id -notin $ExcludeSnapshot })
+    if ($excludeSnapshotFilter -and $excludeSnapshotFilter.Count -gt 0) {
+        $snapshots = @($snapshots | Where-Object { $_.id -notin $excludeSnapshotFilter })
     }
 
     $sourceManifestPath = Write-GeneratedSources -Workloads $workloads -SourceRoot (Join-Path $generatedRoot "sources")

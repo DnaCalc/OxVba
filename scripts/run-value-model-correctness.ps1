@@ -524,6 +524,230 @@ try {
             }
         }
         @{
+            id = "com_variant_scalar_classifier"
+            summary_artifact = "correctness/com_variant_scalar_classifier.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_scalar_classifier.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_classifies_scalar_variant_arguments_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_numeric_classifier"
+            summary_artifact = "correctness/com_variant_numeric_classifier.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_numeric_classifier.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_classifies_float_currency_and_decimal_arguments_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_object_classifier"
+            summary_artifact = "correctness/com_variant_object_classifier.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_object_classifier.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_classifies_object_arguments_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_array_classifier"
+            summary_artifact = "correctness/com_variant_array_classifier.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_array_classifier.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_classifies_array_arguments_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_nested_object_array_classifier"
+            summary_artifact = "correctness/com_variant_nested_object_array_classifier.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_nested_object_array_classifier.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_classifies_object_elements_inside_variant_arrays_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_object_results"
+            summary_artifact = "correctness/com_variant_object_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_object_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_accepts_object_variant_results", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_typed_array_results"
+            summary_artifact = "correctness/com_variant_typed_array_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_typed_array_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_accepts_typed_safe_array_variant_results", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_typed_float_array_results"
+            summary_artifact = "correctness/com_variant_typed_float_array_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_typed_float_array_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_accepts_typed_float_safe_array_variant_results", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_typed_currency_array_results"
+            summary_artifact = "correctness/com_variant_typed_currency_array_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_typed_currency_array_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_accepts_typed_currency_safe_array_variant_results", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_typed_decimal_array_results"
+            summary_artifact = "correctness/com_variant_typed_decimal_array_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_typed_decimal_array_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_accepts_typed_decimal_safe_array_variant_results", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_multidim_matrix_results"
+            summary_artifact = "correctness/com_variant_multidim_matrix_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_multidim_matrix_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_multidim_variant_array_results_preserve_two_dimensional_shape", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_plain_unknown_results"
+            summary_artifact = "correctness/com_variant_plain_unknown_results.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_plain_unknown_results.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_plain_unknown_results_fail_with_bounded_nondispatch_diagnostic", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_plain_unknown_arrays"
+            summary_artifact = "correctness/com_variant_plain_unknown_arrays.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_plain_unknown_arrays.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_plain_unknown_arrays_fail_with_bounded_nondispatch_diagnostic", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_plain_unknown_variant_arrays"
+            summary_artifact = "correctness/com_variant_plain_unknown_variant_arrays.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_plain_unknown_variant_arrays.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_plain_unknown_variant_arrays_fail_with_bounded_nondispatch_diagnostic", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_wide_i64_scalar_boundary"
+            summary_artifact = "correctness/com_variant_wide_i64_scalar_boundary.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_wide_i64_scalar_boundary.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_wide_i64_scalar_arguments_normalize_to_vt_i8_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
+            id = "com_variant_wide_i64_array_boundary"
+            summary_artifact = "correctness/com_variant_wide_i64_array_boundary.log.txt"
+            invoke = {
+                param($worktree, $sideRoot)
+                $laneDir = Join-Path $sideRoot "correctness"
+                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
+                $log = Join-Path $laneDir "com_variant_wide_i64_array_boundary.log.txt"
+                Invoke-LoggedCommand -WorktreePath $worktree -Command @(
+                    "cargo", "test", "-p", "oxvba-host", "--test", "com_client_end_to_end", "windows_com_e2e::dispatchinvoke_wide_i64_variant_array_elements_normalize_to_vt_i8_at_com_boundary", "--", "--exact", "--test-threads=1", "--nocapture"
+                ) -LogPath $log
+                return @{ artifact = $log; log = $log }
+            }
+        }
+        @{
             id = "native_string_writeback_array_slot"
             summary_artifact = "correctness/native_string_writeback_array_slot.log.txt"
             invoke = {
