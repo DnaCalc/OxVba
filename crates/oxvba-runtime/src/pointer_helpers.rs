@@ -129,31 +129,57 @@ impl std::fmt::Debug for OwnedVariant {
 #[cfg(target_os = "windows")]
 impl OwnedVariant {
     fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
+        let canonical = crate::Variant::from_runtime_value(value)?;
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        match value {
-            RuntimeValue::Empty => {
+        match canonical.vtype() {
+            crate::VarType::Empty => {
+                if matches!(value, RuntimeValue::ArrayIntent(_)) {
+                    return Err(
+                        "VarPtr over Variant containing an array is not yet supported"
+                            .to_string(),
+                    );
+                }
                 variant.Anonymous.Anonymous.vt = VT_EMPTY;
             }
-            RuntimeValue::Null => {
+            crate::VarType::Null => {
                 variant.Anonymous.Anonymous.vt = VT_NULL;
             }
-            RuntimeValue::ErrorCode(code) => {
+            crate::VarType::Error => {
                 variant.Anonymous.Anonymous.vt = VT_ERROR;
-                variant.Anonymous.Anonymous.Anonymous.scode = *code;
+                variant.Anonymous.Anonymous.Anonymous.scode =
+                    canonical.as_error_code().expect("error payload");
             }
-            RuntimeValue::I32(raw) => {
+            crate::VarType::Integer | crate::VarType::Long => {
                 variant.Anonymous.Anonymous.vt = VT_I4;
-                variant.Anonymous.Anonymous.Anonymous.lVal = *raw;
+                variant.Anonymous.Anonymous.Anonymous.lVal = canonical
+                    .to_runtime_value()?
+                    .as_i32_lossy()
+                    .expect("integer payload should project into i32");
             }
-            RuntimeValue::I64(raw) => {
+            crate::VarType::LongLong => {
                 variant.Anonymous.Anonymous.vt = VT_I8;
-                variant.Anonymous.Anonymous.Anonymous.llVal = *raw;
+                variant.Anonymous.Anonymous.Anonymous.llVal =
+                    canonical.as_i64().expect("i64 payload");
             }
-            RuntimeValue::Bool(raw) => {
+            crate::VarType::Boolean => {
                 variant.Anonymous.Anonymous.vt = VT_BOOL;
-                variant.Anonymous.Anonymous.Anonymous.boolVal = if *raw { -1 } else { 0 };
+                variant.Anonymous.Anonymous.Anonymous.boolVal =
+                    if canonical.as_bool().expect("bool payload") {
+                        -1
+                    } else {
+                        0
+                    };
             }
-            RuntimeValue::F64(raw) => match raw.subtype() {
+            crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
+                let raw = match canonical.to_runtime_value()? {
+                    RuntimeValue::F64(value) => value,
+                    other => {
+                        return Err(format!(
+                            "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
+                        ));
+                    }
+                };
+                match raw.subtype() {
                 crate::F64Subtype::Single => {
                     variant.Anonymous.Anonymous.vt = VT_R4;
                     variant.Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
@@ -166,18 +192,24 @@ impl OwnedVariant {
                     variant.Anonymous.Anonymous.vt = VT_DATE;
                     variant.Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
                 }
-            },
-            RuntimeValue::Currency(raw) => {
+                }
+            }
+            crate::VarType::Currency => {
                 variant.Anonymous.Anonymous.vt = VT_CY;
-                variant.Anonymous.Anonymous.Anonymous.cyVal.int64 = raw.scaled_i64();
+                variant.Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
+                    .as_currency_scaled_i64()
+                    .expect("currency payload");
             }
-            RuntimeValue::String(text) => {
+            crate::VarType::String => {
                 variant.Anonymous.Anonymous.vt = VT_BSTR;
-                variant.Anonymous.Anonymous.Anonymous.bstrVal = OwnedBstr::from_bstr(text)?.into_raw();
+                let text = canonical
+                    .as_bstr()
+                    .ok_or_else(|| "canonical string Variant lost owned BSTR payload".to_string())?;
+                variant.Anonymous.Anonymous.Anonymous.bstrVal =
+                    OwnedBstr::from_bstr(text)?.into_raw();
             }
-            RuntimeValue::Decimal(raw) => {
-                let compat_variant = crate::Variant::from_decimal96(*raw);
-                let bytes = compat_variant.to_wire_bytes();
+            crate::VarType::Decimal => {
+                let bytes = canonical.to_wire_bytes();
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         bytes.as_ptr(),
@@ -186,16 +218,17 @@ impl OwnedVariant {
                     );
                 }
             }
-            RuntimeValue::ObjectHandle(_) | RuntimeValue::BindingHandle(_) => {
+            crate::VarType::Object => {
                 return Err(
                     "VarPtr over Variant containing an object reference is not yet supported"
                         .to_string(),
                 );
             }
-            RuntimeValue::ArrayIntent(_) => {
-                return Err(
-                    "VarPtr over Variant containing an array is not yet supported".to_string(),
-                );
+            other => {
+                return Err(format!(
+                    "VarPtr over Variant containing unsupported canonical type {:?} is not yet supported",
+                    other
+                ));
             }
         }
         Ok(Self(variant))
@@ -640,7 +673,7 @@ mod tests {
         let mut wire = [0u8; 16];
         wire.copy_from_slice(bytes);
         let decimal_variant = Variant::from_wire_bytes(wire).expect("decimal compat-slot wire");
-        assert_eq!(decimal_variant.vtype, VarType::Decimal);
+        assert_eq!(decimal_variant.vtype(), VarType::Decimal);
         assert_eq!(
             decimal_variant.as_decimal96(),
             Some(Decimal96::from_parts(123_450, 0, 0, 3, false))

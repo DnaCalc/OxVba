@@ -581,7 +581,7 @@ End Sub
             wire.copy_from_slice(bytes);
             let variant = Variant::from_wire_bytes(wire).expect("decimal compat-slot wire");
             assert_eq!(
-                variant.vtype,
+                variant.vtype(),
                 VarType::Decimal,
                 "VarPtr(Variant) should expose a Decimal container for enable_jit={enable_jit}"
             );

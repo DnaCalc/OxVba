@@ -3,11 +3,11 @@ use crate::runtime_value::RuntimeValue;
 use crate::variant::{VarType, Variant};
 
 pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
-    if value.vtype == target {
-        return Ok(*value);
+    if value.vtype() == target {
+        return Ok(value.clone());
     }
 
-    match (value.vtype, target) {
+    match (value.vtype(), target) {
         // ── Widening integer paths ──
         (VarType::Integer, VarType::Long) => {
             Ok(Variant::from_i32(value.as_i16().unwrap_or(0) as i32))
@@ -91,7 +91,7 @@ pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
         ),
         _ => Err(format!(
             "unsupported coercion from {:?} to {:?}",
-            value.vtype, target
+            value.vtype(), target
         )),
     }
 }
@@ -328,13 +328,7 @@ mod tests {
             VarType::Long => Variant::from_i32(0),
             VarType::Double => Variant::from_f64(0.0),
             VarType::Boolean => Variant::from_bool(false),
-            _ => Variant {
-                vtype,
-                reserved1: 0,
-                reserved2: 0,
-                reserved3: 0,
-                data: crate::variant::VariantData { bytes: [0; 8] },
-            },
+            _ => Variant::zeroed(vtype),
         }
     }
 }
@@ -356,7 +350,7 @@ mod proptests {
                 let result = coerce_to(&value, vtype);
                 prop_assert!(result.is_ok(), "identity coercion failed for {:?}: {:?}", vtype, result);
                 let out = result.unwrap();
-                prop_assert_eq!(out.vtype, vtype);
+                prop_assert_eq!(out.vtype(), vtype);
             }
         }
 
@@ -365,7 +359,7 @@ mod proptests {
         fn prop_integer_to_long_preserves_value(v: i16) {
             let input = Variant::from_i16(v);
             let output = coerce_to(&input, VarType::Long).expect("Int->Long always succeeds");
-            prop_assert_eq!(output.vtype, VarType::Long);
+            prop_assert_eq!(output.vtype(), VarType::Long);
             prop_assert_eq!(output.as_i32(), Some(v as i32));
         }
 
@@ -374,7 +368,7 @@ mod proptests {
         fn prop_integer_to_double_preserves_value(v: i16) {
             let input = Variant::from_i16(v);
             let output = coerce_to(&input, VarType::Double).expect("Int->Double always succeeds");
-            prop_assert_eq!(output.vtype, VarType::Double);
+            prop_assert_eq!(output.vtype(), VarType::Double);
             prop_assert_eq!(output.as_f64(), Some(v as f64));
         }
 
@@ -383,7 +377,7 @@ mod proptests {
         fn prop_long_to_double_preserves_value(v: i32) {
             let input = Variant::from_i32(v);
             let output = coerce_to(&input, VarType::Double).expect("Long->Double always succeeds");
-            prop_assert_eq!(output.vtype, VarType::Double);
+            prop_assert_eq!(output.vtype(), VarType::Double);
             let f = output.as_f64().expect("result should be Double");
             // All i32 values are exactly representable in f64 (53-bit mantissa > 32 bits).
             prop_assert_eq!(f as i32, v, "Long->Double lost precision for {}", v);
@@ -405,13 +399,7 @@ mod proptests {
             VarType::Long => Variant::from_i32(0),
             VarType::Double => Variant::from_f64(0.0),
             VarType::Boolean => Variant::from_bool(false),
-            _ => Variant {
-                vtype,
-                reserved1: 0,
-                reserved2: 0,
-                reserved3: 0,
-                data: crate::variant::VariantData { bytes: [0; 8] },
-            },
+            _ => Variant::zeroed(vtype),
         }
     }
 }
