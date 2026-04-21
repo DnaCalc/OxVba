@@ -61,7 +61,7 @@ Why:
    values would widen the migration far beyond what the current code structure
    needs and would blur runtime semantics with boundary ownership/lifetime.
 
-### D2. Native COM pointer truth lives in retained boundary state
+### D2. Native COM pointer truth lives in retained boundary state and is anchored on `IUnknown`
 
 Decision:
 
@@ -69,12 +69,13 @@ Decision:
    state, not by arbitrary runtime values.
 2. The current `windows_runtime_state.rs` model is the right migration target
    direction:
-   - retained native dispatch pointer ownership
+   - retained native `IUnknown` identity/lifetime anchor ownership
+   - retained native `IDispatch` invocation pointer ownership where applicable
    - object-handle allocation
-   - repeated native-result dedup by retained native pointer
+   - repeated native-result dedup by canonical retained `IUnknown` identity
    - subscription and callback lifetime state
 3. `vmm-f2` may strengthen that retained state to better align with COM
-   identity truth, but it should not dissolve the separation between canonical
+   identity truth, but it must not dissolve the separation between canonical
    semantic identity and retained native boundary state.
 
 Why:
@@ -94,12 +95,15 @@ Decision:
 2. In practice that means:
    - canonical runtime values carry semantic identity
    - retained COM bridge state carries the native pointer anchor and lifetime
+   - the canonical retained anchor is `IUnknown`
+   - `IDispatch` is retained as the Automation invocation/projected-interface
+     surface, not as the canonical identity key by itself
    - repeated object rebinding continues to deduplicate onto stable semantic
      identity when the same native object is observed again
-3. `vmm-f2` may enrich the retained wrapper to track stronger identity truth
-   such as a canonical `IUnknown` anchor, but that happens inside retained
-   bridge state rather than by replacing `ObjectHandle` as the runtime-facing
-   carrier.
+3. `vmm-f2` owns making the `IUnknown` anchor explicit in retained bridge
+   state rather than leaving identity keyed only by retained `IDispatch*`.
+4. This happens inside retained bridge state rather than by replacing
+   `ObjectHandle` as the runtime-facing carrier.
 
 Why:
 
@@ -150,11 +154,11 @@ Why:
 
 ## Explicit Non-Decisions
 
-1. This bead does not close the question of whether retained bridge state should
-   store only `IDispatch*` or should also preserve a stronger `IUnknown`
-   identity anchor internally.
-   - that is a `vmm-f2` implementation detail as long as the stable retained
-     wrapper rule above is preserved
+1. This bead does not close the exact retained-wrapper field shape for the
+   canonical `IUnknown` anchor.
+   - whether the retained state stores both a normalized `IUnknown*` identity
+     pointer and a distinct `IDispatch*` invocation pointer, or derives one
+     from the other at controlled points, is a `vmm-f2` implementation detail
 2. This bead does not widen support for general nondispatch interface execution.
 3. This bead does not close the event payload storage migration.
    - projection callback legacy-argument transport remains active follow-on work
@@ -165,11 +169,12 @@ Why:
 ## Consequences For Follow-On Beads
 
 1. `vmm-f2`
-   - reconcile retained wrapper/native identity internals without replacing
-     canonical `ObjectHandle` as the runtime-facing object carrier
+   - reconcile retained wrapper/native identity internals around an explicit
+     `IUnknown` anchor without replacing canonical `ObjectHandle` as the
+     runtime-facing object carrier
 2. `vmm-f3`
    - preserve the current `VT_DISPATCH` / dispatch-capable-`VT_UNKNOWN`
-     rebinding contract
+     rebinding contract on top of the `IUnknown`-anchored retained wrapper
 3. `vmm-f5`
    - remove or explicitly reconcile the projection callback legacy-`i32`
      payload seam while keeping callback/subscription identity tokenized
