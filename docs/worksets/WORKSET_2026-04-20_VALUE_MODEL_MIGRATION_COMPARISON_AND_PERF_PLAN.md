@@ -1485,6 +1485,46 @@ Parent:
      - event payload/object identity truth is reconciled
      - retained wrapper decisions are explicit.
 
+Current repo grounding after `vmm-e5`:
+
+1. Canonical runtime/interface identity is still semantic, not raw COM-pointer
+   storage.
+   - `RuntimeValue` and canonical `Variant` carry `ObjectHandle` /
+     `BindingHandle`, not raw `IUnknown*` / `IDispatch*`.
+   - current object-valued Variant state lives in
+     `crates/oxvba-runtime/src/variant.rs`.
+2. Native COM pointer truth and identity dedup are currently owned by the
+   Windows COM runtime state.
+   - `crates/oxvba-com/src/windows_runtime_state.rs` is the current source of
+     truth for retained native dispatch pointers, object-handle allocation,
+     native-dispatch result dedup, subscription state, and callback queues.
+3. The current observable `VT_DISPATCH` / `VT_UNKNOWN` contract is already
+   explicit enough to drive the migration.
+   - object-capable `VT_DISPATCH` results rebind to `ObjectHandle` and remain
+     invokable through the COM/runtime seams
+   - `VT_UNKNOWN` currently means:
+     rebind through `IDispatch` if `QueryInterface(IDispatch)` succeeds;
+     otherwise fail deterministically on the bounded nondispatch diagnostic
+     path.
+4. COM event transport is currently split into two materially different lanes.
+   - native connection-point callbacks queue `ComCallbackPayload { args:
+     Vec<ComValue> }`
+   - projected event triggers still depend on legacy `i32` callback-argument
+     transport before they are widened back into `ComValue`
+   - source-interface callbacks remain explicitly bounded to the existing
+     narrow path (`single i32` source-interface sink support; broader COM-EVT-B
+     still unsupported in the current lane)
+5. The current defining correctness rows for this epic are already present and
+   should remain the rollout baseline.
+   - `crates/oxvba-host/tests/com_client_end_to_end.rs`
+     - `object_variant_results`
+     - `plain_unknown`
+   - `crates/oxvba-host/tests/com_early_project_end_to_end.rs`
+     - `registered_testeventserver_withevents_callback_*`
+   - these rows were re-run after `vmm-e5` and remained green, so the F-lane
+     starts from a stable post-Variant baseline rather than a speculative
+     branch point.
+
 Child beads:
 
 1. `vmm-f0`
