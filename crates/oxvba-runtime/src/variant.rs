@@ -387,35 +387,39 @@ impl Variant {
         }
     }
 
-    pub fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
+    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
-            RuntimeValue::Empty => Ok(Self::empty()),
-            RuntimeValue::Null => Ok(Self::null()),
-            RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
-            RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
-            RuntimeValue::I64(value) => Ok(Self::from_i64(*value)),
-            RuntimeValue::F64(value) => Ok(match value.subtype() {
+            RuntimeValue::Empty => Self::empty(),
+            RuntimeValue::Null => Self::null(),
+            RuntimeValue::ErrorCode(code) => Self::from_error_code(*code),
+            RuntimeValue::I32(value) => Self::from_i32(*value),
+            RuntimeValue::I64(value) => Self::from_i64(*value),
+            RuntimeValue::F64(value) => match value.subtype() {
                 F64Subtype::Single => Self::from_f32(value.as_f64() as f32),
                 F64Subtype::Double => Self::from_f64(value.as_f64()),
                 F64Subtype::Date => Self::from_date_f64(value.as_f64()),
-            }),
-            RuntimeValue::Decimal(value) => Ok(Self::from_decimal96(*value)),
-            RuntimeValue::Currency(value) => Ok(Self::from_currency_scaled_i64(value.scaled_i64())),
-            RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
-            RuntimeValue::String(value) => Ok(Self::from_string(value.clone())),
-            RuntimeValue::ArrayIntent(array) => Ok(Self {
+            },
+            RuntimeValue::Decimal(value) => Self::from_decimal96(*value),
+            RuntimeValue::Currency(value) => Self::from_currency_scaled_i64(value.scaled_i64()),
+            RuntimeValue::Bool(value) => Self::from_bool(*value),
+            RuntimeValue::String(value) => Self::from_string(value.clone()),
+            RuntimeValue::ArrayIntent(array) => Self {
                 core: VariantCore::from_bytes(VarType::Empty, [0; 8]),
                 owned: Some(OwnedVariantData::ArrayIntent(array.clone())),
-            }),
-            RuntimeValue::ObjectHandle(handle) => Ok(Self {
+            },
+            RuntimeValue::ObjectHandle(handle) => Self {
                 core: VariantCore::from_bytes(VarType::Object, [0; 8]),
                 owned: Some(OwnedVariantData::ObjectHandle(*handle)),
-            }),
-            RuntimeValue::BindingHandle(handle) => Ok(Self {
+            },
+            RuntimeValue::BindingHandle(handle) => Self {
                 core: VariantCore::from_bytes(VarType::Object, [0; 8]),
                 owned: Some(OwnedVariantData::BindingHandle(*handle)),
-            }),
+            },
         }
+    }
+
+    pub fn from_compat_slot_i32(value: i32) -> Self {
+        Self::from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
     }
 
     pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
@@ -490,6 +494,10 @@ impl Variant {
                 other
             )),
         }
+    }
+
+    pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
+        self.to_runtime_value()?.project_compat_slot_i32()
     }
 }
 
@@ -617,8 +625,7 @@ mod tests {
 
     #[test]
     fn variant_runtime_value_bridge_roundtrips_supported_subset() {
-        let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true))
-            .expect("bool runtime value should bridge to Variant");
+        let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true));
         assert_eq!(
             bool_variant
                 .to_runtime_value()
@@ -626,8 +633,7 @@ mod tests {
             RuntimeValue::Bool(true)
         );
 
-        let i64_variant = Variant::from_runtime_value(&RuntimeValue::I64(5_000_000_000))
-            .expect("i64 runtime value should bridge to Variant");
+        let i64_variant = Variant::from_runtime_value(&RuntimeValue::I64(5_000_000_000));
         assert_eq!(
             i64_variant
                 .to_runtime_value()
@@ -635,9 +641,7 @@ mod tests {
             RuntimeValue::I64(5_000_000_000)
         );
 
-        let string_variant =
-            Variant::from_runtime_value(&RuntimeValue::String(BStr::from("hello")))
-                .expect("string runtime value should bridge to Variant");
+        let string_variant = Variant::from_runtime_value(&RuntimeValue::String(BStr::from("hello")));
         assert_eq!(
             string_variant
                 .to_runtime_value()
@@ -645,9 +649,7 @@ mod tests {
             RuntimeValue::String(BStr::from("hello"))
         );
 
-        let double_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)))
-                .expect("double runtime value should bridge to Variant");
+        let double_variant = Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)));
         assert_eq!(
             double_variant
                 .to_runtime_value()
@@ -656,8 +658,7 @@ mod tests {
         );
 
         let single_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_single_f64(3.5)))
-                .expect("single runtime value should bridge to Variant");
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_single_f64(3.5)));
         assert_eq!(
             single_variant
                 .to_runtime_value()
@@ -666,8 +667,7 @@ mod tests {
         );
 
         let date_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_date_f64(45200.25)))
-                .expect("date runtime value should bridge to Variant");
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_date_f64(45200.25)));
         assert_eq!(
             date_variant
                 .to_runtime_value()
@@ -675,10 +675,10 @@ mod tests {
             RuntimeValue::F64(F64Value::from_date_f64(45200.25))
         );
 
-        let currency_variant = Variant::from_runtime_value(&RuntimeValue::Currency(
-            CurrencyValue::from_scaled_i64(-42_500),
-        ))
-        .expect("currency runtime value should bridge to Variant");
+        let currency_variant =
+            Variant::from_runtime_value(&RuntimeValue::Currency(CurrencyValue::from_scaled_i64(
+                -42_500,
+            )));
         assert_eq!(
             currency_variant
                 .to_runtime_value()
@@ -688,8 +688,7 @@ mod tests {
 
         let decimal_variant = Variant::from_runtime_value(&RuntimeValue::Decimal(
             Decimal96::from_parts(123_450, 0, 0, 3, false),
-        ))
-        .expect("decimal runtime value should bridge to Variant");
+        ));
         assert_eq!(
             decimal_variant
                 .to_runtime_value()
@@ -697,15 +696,13 @@ mod tests {
             RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
         );
 
-        let null_variant =
-            Variant::from_runtime_value(&RuntimeValue::Null).expect("null runtime value");
+        let null_variant = Variant::from_runtime_value(&RuntimeValue::Null);
         assert_eq!(
             null_variant.to_runtime_value().expect("null roundtrip"),
             RuntimeValue::Null
         );
 
-        let error_variant =
-            Variant::from_runtime_value(&RuntimeValue::ErrorCode(17)).expect("error runtime value");
+        let error_variant = Variant::from_runtime_value(&RuntimeValue::ErrorCode(17));
         assert_eq!(
             error_variant.to_runtime_value().expect("error roundtrip"),
             RuntimeValue::ErrorCode(17)
@@ -714,9 +711,7 @@ mod tests {
 
     #[test]
     fn variant_runtime_value_bridge_classifies_extended_owned_shapes() {
-        let array_variant =
-            Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)))
-                .expect("array runtime value should classify into canonical Variant");
+        let array_variant = Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
         assert_eq!(
             array_variant
                 .to_runtime_value()
@@ -724,9 +719,7 @@ mod tests {
             RuntimeValue::ArrayIntent(SafeArray::vector(3))
         );
 
-        let object_variant =
-            Variant::from_runtime_value(&RuntimeValue::ObjectHandle(42.into()))
-                .expect("object runtime value should classify into canonical Variant");
+        let object_variant = Variant::from_runtime_value(&RuntimeValue::ObjectHandle(42.into()));
         assert_eq!(
             object_variant
                 .to_runtime_value()
@@ -734,14 +727,23 @@ mod tests {
             RuntimeValue::ObjectHandle(42.into())
         );
 
-        let binding_variant =
-            Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into()))
-                .expect("binding runtime value should classify into canonical Variant");
+        let binding_variant = Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
         assert_eq!(
             binding_variant
                 .to_runtime_value()
                 .expect("binding Variant should bridge back"),
             RuntimeValue::BindingHandle(7.into())
+        );
+    }
+
+    #[test]
+    fn variant_compat_slot_boundary_roundtrips_supported_subset() {
+        let value = Variant::from_compat_slot_i32(42);
+        assert_eq!(value.project_compat_slot_i32().expect("compat slot"), 42);
+        let array = Variant::from_compat_slot_i32(crate::safe_array::ARRAY_TAG_BASE + 3);
+        assert_eq!(
+            array.to_runtime_value().expect("array runtime value"),
+            RuntimeValue::ArrayIntent(SafeArray::vector(3))
         );
     }
 

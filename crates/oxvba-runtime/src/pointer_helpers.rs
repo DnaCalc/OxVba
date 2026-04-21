@@ -129,7 +129,7 @@ impl std::fmt::Debug for OwnedVariant {
 #[cfg(target_os = "windows")]
 impl OwnedVariant {
     fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
-        let canonical = crate::Variant::from_runtime_value(value)?;
+        let canonical = crate::Variant::from_runtime_value(value);
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         match canonical.vtype() {
             crate::VarType::Empty => {

@@ -3,6 +3,7 @@ use crate::{
     decimal::Decimal96,
     safe_array::{SafeArray, array_tag_from_safe_array, safe_array_from_tag},
     value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
+    variant::Variant,
 };
 
 macro_rules! define_i32_handle {
@@ -244,6 +245,14 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
+    pub fn to_variant(&self) -> Variant {
+        Variant::from_runtime_value(self)
+    }
+
+    pub fn from_variant(value: &Variant) -> Result<Self, String> {
+        value.to_runtime_value()
+    }
+
     pub fn from_compat_slot_i32(value: i32) -> Self {
         if value == EMPTY_TAG {
             return Self::Empty;
@@ -462,6 +471,25 @@ mod tests {
             RuntimeValue::I64(i64::MIN)
                 .project_compat_slot_i32()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_value_variant_bridge_roundtrips_extended_shapes() {
+        let string_value = RuntimeValue::String(crate::bstr::BStr::from("abc"));
+        assert_eq!(
+            RuntimeValue::from_variant(&string_value.to_variant()).expect("string roundtrip"),
+            string_value
+        );
+        let object_value = RuntimeValue::ObjectHandle(ObjectHandle::new(42));
+        assert_eq!(
+            RuntimeValue::from_variant(&object_value.to_variant()).expect("object roundtrip"),
+            object_value
+        );
+        let array_value = RuntimeValue::ArrayIntent(SafeArray::vector(3));
+        assert_eq!(
+            RuntimeValue::from_variant(&array_value.to_variant()).expect("array roundtrip"),
+            array_value
         );
     }
 }
