@@ -8,7 +8,7 @@ use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{
-    DECIMAL, SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL,
+    DECIMAL, SysAllocStringLen, SysFreeString, SysStringLen, VARIANT_BOOL,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY, SAFEARRAYBOUND};
@@ -131,9 +131,22 @@ where
 // `oxvba-com` owns the COM wire seam. The current runtime still stores
 // semantic-first strings, so BSTR allocation remains an explicit projection at
 // this boundary.
-unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    SysAllocString(wide.as_ptr())
+unsafe fn alloc_bstr(text: &BStr) -> windows_sys::core::BSTR {
+    let core = text.owned_core();
+    let len =
+        u32::try_from(core.len_code_units()).expect("BSTR UTF-16 code-unit length should fit u32");
+    SysAllocStringLen(core.payload_ptr(), len)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn runtime_bstr_from_windows(bstr: windows_sys::core::BSTR) -> BStr {
+    if bstr.is_null() {
+        return BStr::empty();
+    }
+    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+    let slice = std::slice::from_raw_parts(bstr, len);
+    BStr::from_utf16_lossy(slice)
 }
 
 #[cfg(target_os = "windows")]
@@ -630,16 +643,11 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            let text = if element.is_null() {
-                String::new()
-            } else {
-                let len = usize::try_from(SysStringLen(element)).unwrap_or(0);
-                let slice = std::slice::from_raw_parts(element, len);
-                let text = String::from_utf16_lossy(slice);
+            let value = runtime_bstr_from_windows(element);
+            if !element.is_null() {
                 SysFreeString(element);
-                text
-            };
-            Ok(ComValue::String(BStr(text)).to_runtime_value())
+            }
+            Ok(ComValue::String(value).to_runtime_value())
         }
         other => Err(format!(
             "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_R4, VT_R8, VT_CY, VT_DATE, VT_UINT, VT_BOOL, and VT_BSTR"
@@ -1012,14 +1020,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
             }
             VT_BSTR => {
                 let bstr = *variant.Anonymous.Anonymous.Anonymous.pbstrVal;
-                let text = if bstr.is_null() {
-                    String::new()
-                } else {
-                    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-                    let slice = std::slice::from_raw_parts(bstr, len);
-                    String::from_utf16_lossy(slice)
-                };
-                ComValue::String(BStr(text))
+                ComValue::String(runtime_bstr_from_windows(bstr))
             }
             VT_DISPATCH => {
                 let dispatch = *variant.Anonymous.Anonymous.Anonymous.ppdispVal;
@@ -1100,14 +1101,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         }
         VT_BSTR => {
             let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
-            let text = if bstr.is_null() {
-                String::new()
-            } else {
-                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-                let slice = std::slice::from_raw_parts(bstr, len);
-                String::from_utf16_lossy(slice)
-            };
-            ComValue::String(BStr(text))
+            ComValue::String(runtime_bstr_from_windows(bstr))
         }
         VT_NULL => ComValue::Null,
         VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
@@ -1311,7 +1305,7 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_CY_VARENUM;
             (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = value.scaled_i64();
         }
-        ComValue::String(BStr(value)) => {
+        ComValue::String(value) => {
             (*variant).Anonymous.Anonymous.vt = VT_BSTR;
             (*variant).Anonymous.Anonymous.Anonymous.bstrVal = alloc_bstr(value);
         }
@@ -1404,6 +1398,26 @@ mod tests {
                 .expect("set string variant");
             assert_eq!(
                 variant_to_com_value(&variant).expect("read string variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn string_variant_preserves_embedded_nuls_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::String(BStr::from("A\0B"));
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set string variant with embedded nul");
+            let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
+            assert_eq!(windows_sys::Win32::Foundation::SysStringLen(bstr), 3);
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read string variant with embedded nul"),
                 value
             );
             let _ = VariantClear(&mut variant);
