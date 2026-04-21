@@ -41,3 +41,31 @@ Status: active
    - revisit trigger:
      promote the multi-iteration run once the perf harness reruns cleanly end
      to end.
+4. Current canonical Variant-perf artifact selection
+   - decision:
+     use `vme5-perf-check` as the current canonical Variant perf input
+   - evidence basis:
+     the one-iteration paired run completed across all selected Variant
+     boundary workloads after the new harness landed and smoke-validated
+   - compatibility rationale:
+     this follows the same bounded-paired-artifact rule used for the string
+     lane and avoids claiming perf closure from partial or stale runs
+   - revisit trigger:
+     promote a multi-iteration Variant perf artifact once the current lane can
+     rerun cleanly without materially extending cycle time.
+5. Variant-perf workload surface selection
+   - decision:
+     time host end-to-end exact tests for scalar classification, typed arrays,
+     object rebinding, wide-i64 normalization, and variant-matrix results
+     rather than a raw microbenchmark-only bridge harness
+   - evidence basis:
+     `vmm-e5` is specifically about observable old/new migration behavior at
+     the COM/Variant boundary, and these exact tests already define the
+     correctness contract for that boundary
+   - compatibility rationale:
+     this keeps the perf artifact aligned with user-visible migration risk
+     instead of optimizing an isolated bridge path that may not dominate the
+     real execution surface
+   - revisit trigger:
+     add lower-level bridge microbenchmarks if later optimization work needs
+     finer attribution after correctness and matrix closure are secure.

@@ -18,6 +18,20 @@ Canonical artifacts:
      `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/process_memory_summary.csv`
    - pointer snapshot summary:
      `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/pointer_snapshot_summary.csv`
+3. Variant perf:
+   - run id: `vme5-perf-check`
+   - summary:
+     `docs/evidence/value_model_migration/runs/value_model_variant_perf_vme5-perf-check/variant_perf_summary.csv`
+   - comparison:
+     `docs/evidence/value_model_migration/runs/value_model_variant_perf_vme5-perf-check/comparison/variant_perf_summary.csv`
+4. Variant memory:
+   - run id: `vme5-mem-full`
+   - layout summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vme5-mem-full/layout_metrics_summary.csv`
+   - process summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vme5-mem-full/process_memory_summary.csv`
+   - pointer snapshot summary:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vme5-mem-full/pointer_snapshot_summary.csv`
 
 Timing summary:
 
@@ -42,6 +56,13 @@ Timing interpretation:
    candidate, which was not true for the original oversized generator
 3. the current candidate shows broad slowdown outside VM small-string churn and
    near-neutral JIT code-string throughput.
+4. the current bounded Variant-perf signal is mixed rather than uniformly
+   regressive
+5. the largest current Variant slowdown is `scalar_classifier` at `+187.84%`
+6. `typed_array_results` and `typed_decimal_array_results` currently trend
+   slightly faster on candidate at `-6.59%` and `-4.94%`
+7. object rebinding, variant-matrix materialization, and wide-i64 boundary rows
+   currently show positive candidate deltas and need later attribution.
 
 Memory summary:
 
@@ -59,6 +80,16 @@ Memory summary:
    - `cli_many_strings`: `+36864` bytes
    - `cli_code_strings`: `-57344` bytes
    - `com_variant_bstr_array`: `+53248` bytes
+3. the Variant migration introduces the first large carrier-layout change seen
+   in the current probes:
+   - `Variant = 16 -> 80` bytes
+4. the Variant-heavy paired working-set rows in `vme5-mem-full` remain modest
+   despite that carrier growth:
+   - `com_variant_bstr_array`: `-53248` bytes
+   - `com_variant_wide_i64_array_boundary`: `-106496` bytes
+   - `com_variant_decimal_array`: `+61440` bytes
+   - `com_variant_object_result`: `+155648` bytes
+   - `com_variant_matrix_result`: `+53248` bytes
 
 Boundary-relevant observations:
 
@@ -66,3 +97,5 @@ Boundary-relevant observations:
    small positive candidate working-set delta
 2. pointer snapshot logs for `StrPtr`, `VarPtr(String)`, and
    `VarPtr(Variant)` were captured in the same paired memory run.
+3. the Variant-specific memory lane confirms that `VarPtr(Variant)` still has a
+   paired pointer-snapshot artifact after the new canonical carrier landed.

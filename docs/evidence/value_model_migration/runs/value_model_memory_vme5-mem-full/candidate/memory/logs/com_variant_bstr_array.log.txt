@@ -1,0 +1,19 @@
+# Value Model Memory Lane Log
+
+- Workdir: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\candidate_vme5-mem-full
+- Command: cargo test -q -p oxvba-com typed_bstr_safe_array_roundtrips_through_windows_bridge -- --nocapture
+- ExitCode: 0
+- ElapsedMs: 26121.22
+- PeakWorkingSetBytes: 11173888
+- SteadyWorkingSetBytes: 11173888
+- PeakPrivateBytes: 3211264
+- PeakVirtualBytes: 4434558976
+
+## stdout
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 85 filtered out; finished in 0.00s
+
+
+## stderr
