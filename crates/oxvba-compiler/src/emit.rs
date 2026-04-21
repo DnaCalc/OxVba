@@ -2268,7 +2268,7 @@ fn emit_external_declare_call(
             });
         }
         if let Some(pointer_writeback) =
-            external_pointer_writeback(arg_index, &arg.expr, slot_map, external_decl)
+            external_pointer_writeback(arg_index, &arg.expr, slot_map, external_decl, proc_meta)
         {
             writeback_slots.push(pointer_writeback);
         }
@@ -2300,6 +2300,7 @@ fn external_pointer_writeback(
     expr: &BoundExpr,
     slot_map: &HashMap<String, usize>,
     external_decl: &BoundExternalDecl,
+    proc_meta: &HashMap<String, EmitProcMeta>,
 ) -> Option<ExternalCallWriteback> {
     let param = external_decl.params.get(arg_index)?;
     if param.by_ref || param.ty != BoundType::LongPtr {
@@ -2332,6 +2333,27 @@ fn external_pointer_writeback(
             let BoundExpr::Var(name) = args.first()? else {
                 return None;
             };
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerStringPayload,
+            })
+        }
+        BoundExpr::IntrinsicCall { name, args }
+            if name.eq_ignore_ascii_case("varptr")
+                && args.len() == 1
+                && matches!(args.first(), Some(BoundExpr::Var(_))) =>
+        {
+            let BoundExpr::Var(name) = args.first()? else {
+                return None;
+            };
+            if current_proc_meta(proc_meta)
+                .and_then(|meta| meta.declaration_types.get(name.as_str()).copied())
+                != Some(BoundType::String)
+            {
+                return None;
+            }
             let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
             Some(ExternalCallWriteback {
                 arg_index,

@@ -148,6 +148,31 @@ End Sub
     }
 
     #[test]
+    fn sysreallocstring_varptr_string_target_writes_back_string_slot_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function SysReAllocString Lib "oleaut32" (ByVal pbstr As LongPtr, ByVal psz As LongPtr) As Long
+
+Sub Main()
+    Dim textValue As String
+    Dim status As Long
+
+    textValue = "*****"
+    status = SysReAllocString(VarPtr(textValue), StrPtr("alpha"))
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot
+                    .iter()
+                    .any(|value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")),
+                "SysReAllocString should write back through VarPtr(String) for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
     fn widechartomultibyte_varptr_buffer_target_writes_back_array_slot_in_vm_and_jit() {
         let source = r#"
 Private Const CP_UTF8 As Long = 65001

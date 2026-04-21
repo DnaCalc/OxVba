@@ -74,26 +74,45 @@ impl Drop for OwnedBstr {
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
-// `VarPtr(String)` exposes a pointer to a BSTR cell, so the old runtime builds
-// that cell here rather than exposing the canonical string carrier directly.
+// `VarPtr(String)` exposes a pointer to a BSTR cell. The helper therefore owns
+// the cell itself and whichever BSTR pointer a native call leaves in that cell.
 struct OwnedBstrCell {
-    backing: OwnedBstr,
-    cell: Box<usize>,
+    cell: Box<BSTR>,
 }
 
 #[cfg(target_os = "windows")]
 impl OwnedBstrCell {
     fn from_bstr(text: &BStr) -> Result<Self, String> {
-        let backing = OwnedBstr::from_bstr(text)?;
-        let cell = Box::new(backing.as_ptr() as usize);
-        Ok(Self { backing, cell })
+        let cell = Box::new(OwnedBstr::from_bstr(text)?.into_raw());
+        Ok(Self { cell })
     }
 
     fn as_ptr(&mut self) -> *mut c_void {
-        let _ = self.backing.as_ptr();
-        (&mut *self.cell as *mut usize).cast()
+        (&mut *self.cell as *mut BSTR).cast()
+    }
+
+    fn to_runtime_value(&self) -> RuntimeValue {
+        if (*self.cell).is_null() {
+            return RuntimeValue::String(BStr::empty());
+        }
+        let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(*self.cell) } as usize;
+        let slice = unsafe { std::slice::from_raw_parts(*self.cell, len) };
+        RuntimeValue::String(BStr::from_utf16_lossy(slice))
     }
 }
+
+#[cfg(target_os = "windows")]
+impl Drop for OwnedBstrCell {
+    fn drop(&mut self) {
+        if !(*self.cell).is_null() {
+            unsafe { SysFreeString(*self.cell) };
+            *self.cell = std::ptr::null_mut();
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for OwnedBstrCell {}
 
 #[cfg(target_os = "windows")]
 // `VarPtr(Variant)` in the old model projects a Windows VARIANT-compatible cell
@@ -278,6 +297,8 @@ impl PointerRegistry {
         match entry {
             #[cfg(target_os = "windows")]
             PointerEntry::Bstr(value) => Ok(value.to_runtime_value()),
+            #[cfg(target_os = "windows")]
+            PointerEntry::BstrCell(value) => Ok(value.to_runtime_value()),
             #[cfg(not(target_os = "windows"))]
             PointerEntry::Utf16(value) => {
                 let end = value
@@ -506,8 +527,9 @@ mod tests {
     };
     #[cfg(target_os = "windows")]
     use windows_sys::{
-        Win32::Foundation::SysStringLen,
+        Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen},
         Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4},
+        core::BSTR,
     };
 
     #[test]
@@ -556,6 +578,27 @@ mod tests {
         assert!(!payload.is_null());
         let len = unsafe { SysStringLen(payload.cast_mut()) };
         assert_eq!(len, 3);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn string_var_pointer_readback_tracks_updated_bstr_cell() {
+        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr("abc".to_string())))
+            .expect("register string var");
+        let raw = lookup_pointer(ptr)
+            .expect("lookup string var")
+            .cast::<BSTR>();
+        assert!(!raw.is_null());
+        let old_payload = unsafe { *raw };
+        if !old_payload.is_null() {
+            unsafe { SysFreeString(old_payload) };
+        }
+        let replacement = BStr::from("alpha").owned_core();
+        unsafe {
+            *raw = SysAllocString(replacement.payload_ptr());
+        }
+        let value = super::read_back_string_payload(ptr).expect("read back updated string var");
+        assert_eq!(value, RuntimeValue::String(BStr::from("alpha")));
     }
 
     #[cfg(target_os = "windows")]
