@@ -1530,20 +1530,25 @@ Child beads:
    - outcome:
      - the canonical runtime string carrier itself becomes the intended
        BSTR-aligned substrate rather than remaining `String` plus projection
-   - current staged progress:
-     - stage 1 landed: `BStr` is now opaque across production code and test
-       code, so the old `pub String` tuple shape is no longer a cross-repo API
-       dependency
-     - stage 2 landed: `BStr` now stores a UTF-16/BSTR-shaped owned core as its
-       internal source of truth, while retaining a cached UTF-8 view to keep the
-       now-stable API usable during the remaining migration
-     - stage 3 landed: canonical `Variant` string payloads no longer carry a
-       second independent `OwnedBStrCore`; they reuse the intrinsic `BStr`
-       carrier instead of reintroducing duplicated string-core truth one layer up
-     - stage 3 still does not satisfy this bead on its own; the lane remains
-       in-progress until the remaining runtime/value/perf evidence confirms that
-       the string carrier is intrinsically migrated rather than merely
-       dual-represented during transition
+  - current staged progress:
+    - stage 1 landed: `BStr` is now opaque across production code and test
+      code, so the old `pub String` tuple shape is no longer a cross-repo API
+      dependency
+    - stage 2 landed: `BStr` now stores a UTF-16/BSTR-shaped owned core as its
+      internal source of truth, while retaining a cached UTF-8 view to keep the
+      now-stable API usable during the remaining migration
+    - stage 3 landed: canonical `Variant` string payloads no longer carry a
+      second independent `OwnedBStrCore`; they reuse the intrinsic `BStr`
+      carrier instead of reintroducing duplicated string-core truth one layer up
+    - stage 4 landed: Windows pointer-helper BSTR allocation now uses
+      length-aware `SysAllocStringLen` from the canonical `BStr` core, and the
+      runtime test suite now proves embedded-NUL payload preservation for the
+      `VarPtr(String)` BSTR-cell path instead of relying on NUL-terminated
+      reconstruction
+    - stage 4 still does not satisfy this bead on its own; the lane remains
+      in-progress until the remaining runtime/value/perf evidence confirms that
+      the string carrier is intrinsically migrated rather than merely
+      dual-represented during transition
    - completion evidence:
      - runtime string carrier truth no longer depends on helper-only BSTR
        reconstruction for its canonical representation
