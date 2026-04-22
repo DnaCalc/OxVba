@@ -1896,6 +1896,13 @@ Child beads:
      - create the executable child bead set for closure/report work
    - completion evidence:
      - final doc/report closure has an explicit ready path
+   - landed 2026-04-22:
+     - the existing `vmm-h1` through `vmm-h4` child set remains sufficient
+       after the ABI/layout matrix closed
+     - no extra closure child bead is required
+     - the next ready path is now explicit: refresh truth-surface docs, publish
+       the canonical paired artifact index, finalize the discretionary decision
+       and mitigation register, then publish the final migration report
 2. `vmm-h1`
    - kind: `support`
    - priority: `P1`
