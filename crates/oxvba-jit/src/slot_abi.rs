@@ -4,7 +4,7 @@
 //! Cranelift accesses `tag` as i32 at offset 0, `payload` as i64 at offset 8.
 
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectHandle, RuntimeValue,
+    BindingHandle, CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef, RuntimeValue,
     bstr::BStr, safe_array::SafeArray,
 };
 
@@ -191,7 +191,9 @@ impl RtSlot {
             }
             TAG_BOOL => RuntimeValue::Bool(self.payload != 0),
             TAG_ERROR => RuntimeValue::ErrorCode(self.payload as i64 as i32),
-            TAG_OBJECT => RuntimeValue::ObjectHandle(ObjectHandle::new(self.payload as i64 as i32)),
+            TAG_OBJECT => RuntimeValue::Object(ObjectRef::from_compat_identity(
+                self.payload as i64 as i32,
+            )),
             TAG_BINDING => {
                 RuntimeValue::BindingHandle(BindingHandle::new(self.payload as i64 as i32))
             }
@@ -280,6 +282,7 @@ pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
         RuntimeValue::F64(v) => RtSlot::from_f64_value(v),
         RuntimeValue::Bool(v) => RtSlot::from_bool(*v),
         RuntimeValue::ErrorCode(code) => RtSlot::from_error(*code),
+        RuntimeValue::Object(h) => RtSlot::from_object(h.raw()),
         RuntimeValue::ObjectHandle(h) => RtSlot::from_object(h.raw()),
         RuntimeValue::BindingHandle(h) => RtSlot::from_binding(h.raw()),
         RuntimeValue::I64(v) => RtSlot::from_i64(*v),

@@ -439,6 +439,9 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             }
             PointerEntry::Bytes(bytes.into_boxed_slice())
         }
+        RuntimeValue::Object(handle) => {
+            PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
+        }
         RuntimeValue::ObjectHandle(handle) => {
             PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
         }
@@ -497,6 +500,16 @@ pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String>
 pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
     match value {
         RuntimeValue::Empty | RuntimeValue::Null => Ok(0),
+        RuntimeValue::Object(handle) if handle.raw() == 0 => Ok(0),
+        RuntimeValue::Object(handle) => {
+            let mut guard = registry()
+                .lock()
+                .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+            Ok(guard.insert_object_identity(
+                ObjectIdentityKey::Object(handle.raw()),
+                i64::from(handle.raw()),
+            ))
+        }
         RuntimeValue::ObjectHandle(handle) if handle.raw() == 0 => Ok(0),
         RuntimeValue::ObjectHandle(handle) => {
             let mut guard = registry()

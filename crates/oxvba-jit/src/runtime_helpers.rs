@@ -1198,7 +1198,7 @@ pub extern "C" fn oxrt_vartype(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
         RuntimeValue::String(_) => 8,
         RuntimeValue::ErrorCode(_) => 10,
         RuntimeValue::Decimal(_) => 14,
-        RuntimeValue::ObjectHandle(_) => 9,
+        RuntimeValue::Object(_) | RuntimeValue::ObjectHandle(_) => 9,
         RuntimeValue::BindingHandle(_) => 9,
         RuntimeValue::ArrayIntent(_) => 8192 + 12,
     };

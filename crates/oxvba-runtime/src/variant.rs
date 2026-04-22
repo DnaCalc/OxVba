@@ -2,7 +2,7 @@ use crate::{
     Decimal96,
     bstr::{BStr, OwnedBStrCore},
     object_ref::ObjectRef,
-    runtime_value::{BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, RuntimeValue},
+    runtime_value::{BindingHandle, CurrencyValue, F64Subtype, F64Value, RuntimeValue},
     safe_array::SafeArray,
 };
 
@@ -422,6 +422,7 @@ impl Variant {
                 core: VariantCore::from_bytes(VarType::Empty, [0; 8]),
                 owned: Some(OwnedVariantData::ArrayIntent(array.clone())),
             },
+            RuntimeValue::Object(handle) => Self::from_object_ref(handle.clone()),
             RuntimeValue::ObjectHandle(handle) => Self::from_object_ref((*handle).into()),
             RuntimeValue::BindingHandle(handle) => Self {
                 core: VariantCore::from_bytes(VarType::Object, [0; 8]),
@@ -492,9 +493,7 @@ impl Variant {
                 .map(RuntimeValue::ErrorCode)
                 .ok_or_else(|| "invalid Error variant payload".to_string()),
             VarType::Object => match &self.owned {
-                Some(OwnedVariantData::Object(handle)) => {
-                    Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())))
-                }
+                Some(OwnedVariantData::Object(handle)) => Ok(RuntimeValue::Object(handle.clone())),
                 Some(OwnedVariantData::BindingHandle(handle)) => {
                     Ok(RuntimeValue::BindingHandle(*handle))
                 }
@@ -741,12 +740,13 @@ mod tests {
                 .raw(),
             42
         );
-        assert_eq!(
-            object_variant
-                .to_runtime_value()
-                .expect("object Variant should bridge back"),
-            RuntimeValue::ObjectHandle(42.into())
-        );
+        let roundtripped = object_variant
+            .to_runtime_value()
+            .expect("object Variant should bridge back");
+        let RuntimeValue::Object(object_ref) = roundtripped else {
+            panic!("expected object-ref runtime carrier");
+        };
+        assert_eq!(object_ref.raw(), 42);
 
         let binding_variant = Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
         assert_eq!(

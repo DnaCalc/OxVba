@@ -1,6 +1,7 @@
 use crate::{
     bstr::BStr,
     decimal::Decimal96,
+    object_ref::ObjectRef,
     safe_array::{SafeArray, array_tag_from_safe_array, safe_array_from_tag},
     value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
     variant::Variant,
@@ -240,6 +241,7 @@ pub enum RuntimeValue {
     Bool(bool),
     String(BStr),
     ArrayIntent(SafeArray),
+    Object(ObjectRef),
     ObjectHandle(ObjectHandle),
     BindingHandle(BindingHandle),
 }
@@ -291,6 +293,7 @@ impl RuntimeValue {
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
                 "array intent cannot be represented in current compat slot tag".to_string()
             }),
+            Self::Object(handle) => Ok(handle.raw()),
             Self::ObjectHandle(handle) => Ok(handle.raw()),
             Self::BindingHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
@@ -317,7 +320,9 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, RuntimeValue};
+    use super::{
+        BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
+    };
     use crate::decimal::Decimal96;
 
     #[test]
@@ -482,10 +487,19 @@ mod tests {
             string_value
         );
         let object_value = RuntimeValue::ObjectHandle(ObjectHandle::new(42));
-        assert_eq!(
-            RuntimeValue::from_variant(&object_value.to_variant()).expect("object roundtrip"),
-            object_value
-        );
+        let roundtripped =
+            RuntimeValue::from_variant(&object_value.to_variant()).expect("object roundtrip");
+        let RuntimeValue::Object(object_ref) = roundtripped else {
+            panic!("expected canonical object-ref runtime carrier");
+        };
+        assert_eq!(object_ref.raw(), 42);
+        let object_ref_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
+        let roundtripped = RuntimeValue::from_variant(&object_ref_value.to_variant())
+            .expect("object-ref roundtrip");
+        let RuntimeValue::Object(object_ref) = roundtripped else {
+            panic!("expected object-ref runtime carrier");
+        };
+        assert_eq!(object_ref.raw(), 42);
         let array_value = RuntimeValue::ArrayIntent(SafeArray::vector(3));
         assert_eq!(
             RuntimeValue::from_variant(&array_value.to_variant()).expect("array roundtrip"),

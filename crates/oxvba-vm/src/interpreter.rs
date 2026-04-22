@@ -2080,7 +2080,7 @@ impl Vm {
                         RuntimeValue::String(_) => 8,   // vbString
                         RuntimeValue::ErrorCode(_) => 10, // vbError
                         RuntimeValue::Decimal(_) => 14, // vbDecimal
-                        RuntimeValue::ObjectHandle(_) => 9, // vbObject
+                        RuntimeValue::Object(_) | RuntimeValue::ObjectHandle(_) => 9, // vbObject
                         RuntimeValue::BindingHandle(_) => 9, // vbObject
                         RuntimeValue::ArrayIntent(_) => 8192 + 12, // vbArray + vbVariant
                     };
@@ -5279,6 +5279,7 @@ mod tests {
         assert_eq!(out[18], 2);
         assert_eq!(out[19], 2);
         let object_handle = match &values[20] {
+            RuntimeValue::Object(handle) => handle.raw(),
             RuntimeValue::ObjectHandle(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
@@ -5462,6 +5463,7 @@ mod tests {
         let out = vm.snapshot_slots(8);
         let values = vm.snapshot_values(8);
         let object_handle = match &values[1] {
+            RuntimeValue::Object(handle) => handle.raw(),
             RuntimeValue::ObjectHandle(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };

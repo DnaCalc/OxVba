@@ -767,6 +767,7 @@ impl StandardHostServices {
             RuntimeValue::Decimal(value) => value.to_string(),
             RuntimeValue::Currency(value) => value.to_string(),
             RuntimeValue::ArrayIntent(array) => format!("<array:{}>", array.len),
+            RuntimeValue::Object(handle) => format!("<object:{handle}>"),
             RuntimeValue::ObjectHandle(handle) => format!("<object:{handle}>"),
             RuntimeValue::BindingHandle(handle) => format!("<binding:{handle}>"),
         }

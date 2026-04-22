@@ -84,6 +84,7 @@ pub fn runtime_value_is_explicit_zero_carrier(value: &RuntimeValue) -> bool {
         RuntimeValue::I32(v) => *v == 0,
         RuntimeValue::I64(v) => *v == 0,
         RuntimeValue::Bool(v) => !*v,
+        RuntimeValue::Object(handle) => handle.raw() == 0,
         RuntimeValue::ObjectHandle(handle) => handle.raw() == 0,
         RuntimeValue::BindingHandle(handle) => handle.raw() == 0,
         _ => false,
@@ -126,6 +127,7 @@ pub fn runtime_value_to_text(value: &RuntimeValue, field: &str) -> Result<String
         RuntimeValue::ArrayIntent(_) => Err(format!(
             "{field} requires scalar text-compatible value, got array"
         )),
+        RuntimeValue::Object(handle) => Ok(handle.raw().to_string()),
         RuntimeValue::ObjectHandle(handle) => Ok(handle.raw().to_string()),
         RuntimeValue::BindingHandle(handle) => Ok(handle.raw().to_string()),
     }
@@ -876,7 +878,7 @@ pub fn legacy_truthy_value(value: &RuntimeValue) -> Result<bool, String> {
 pub fn runtime_value_is_object(value: &RuntimeValue) -> bool {
     matches!(
         value,
-        RuntimeValue::ObjectHandle(_) | RuntimeValue::BindingHandle(_)
+        RuntimeValue::Object(_) | RuntimeValue::ObjectHandle(_) | RuntimeValue::BindingHandle(_)
     )
 }
 
@@ -1209,7 +1211,7 @@ pub fn runtime_assignment_value_label(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Bool(_) => "Boolean",
         RuntimeValue::String(_) => "String",
         RuntimeValue::ArrayIntent(_) => "Array",
-        RuntimeValue::ObjectHandle(_) => "Object",
+        RuntimeValue::Object(_) | RuntimeValue::ObjectHandle(_) => "Object",
         RuntimeValue::BindingHandle(_) => "Binding",
     }
 }
@@ -1779,6 +1781,7 @@ pub fn runtime_value_to_com_object(
     field: &str,
 ) -> Result<ObjectHandle, String> {
     match value {
+        RuntimeValue::Object(handle) => Ok(ObjectHandle::new(handle.raw())),
         RuntimeValue::ObjectHandle(handle) => Ok(*handle),
         RuntimeValue::I32(raw) => Ok(ObjectHandle::new(*raw)),
         RuntimeValue::I64(raw) => i32::try_from(*raw)
@@ -2077,6 +2080,7 @@ pub fn withevents_binding_handle(
 
 pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectHandle, String> {
     match value {
+        RuntimeValue::Object(handle) => Ok(ObjectHandle::new(handle.raw())),
         RuntimeValue::ObjectHandle(handle) => Ok(*handle),
         // Project-lowered implicit root calls can omit the hidden owner carrier on
         // statement-context paths. Treat that the same as the established root-zero

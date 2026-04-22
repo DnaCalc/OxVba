@@ -104,6 +104,7 @@ impl ComValue {
             RuntimeValue::Currency(value) => Self::Currency(value),
             RuntimeValue::String(value) => Self::String(value),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array),
+            RuntimeValue::Object(handle) => Self::Object(handle.clone()),
             RuntimeValue::ObjectHandle(handle) => Self::Object(handle.into()),
             RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
         })
@@ -343,10 +344,12 @@ mod tests {
             panic!("expected ObjectRef-backed COM value");
         };
         assert_eq!(object_ref.raw(), 1234);
-        assert_eq!(
-            ComValue::Object(ObjectRef::from_compat_identity(1234)).to_runtime_value(),
-            RuntimeValue::ObjectHandle(ObjectHandle::new(1234))
-        );
+        let roundtripped =
+            ComValue::Object(ObjectRef::from_compat_identity(1234)).to_runtime_value();
+        let RuntimeValue::Object(object_ref) = roundtripped else {
+            panic!("expected object-ref runtime carrier");
+        };
+        assert_eq!(object_ref.raw(), 1234);
         assert!(
             ComValue::String(BStr("ABC".to_string()))
                 .to_runtime_token()
