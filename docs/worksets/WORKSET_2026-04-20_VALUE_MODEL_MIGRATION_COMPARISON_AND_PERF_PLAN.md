@@ -1837,6 +1837,18 @@ Child beads:
      - remaining UDT/layout-sensitive behavior is implemented or bounded
    - completion evidence:
      - layout-sensitive tests/docs are updated and unsupported cases are explicit
+   - landed 2026-04-22:
+     - [UDT_LAYOUT_BOUNDARY_STATUS_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/UDT_LAYOUT_BOUNDARY_STATUS_2026-04-22.md)
+       now records the honest migrated truth for the UDT lane
+     - compiler/runtime truth remains the bounded non-boundary deterministic
+       subset: declaration tolerance, flattened field access, nested-field
+       expansion, same-type whole-value copy lowering, and cross-type rejection
+     - focused host regression lanes for whole-UDT copy, nested UDT access, and
+       cross-type rejection passed on the migrated runtime
+     - public `udt_*` conformance fixtures passed in both VM and JIT
+     - broad native-layout and UDT-byref boundary parity remains explicitly
+       deferred to the ABI contract and ambiguity register rather than being
+       claimed as closed by the value-model migration
 6. `vmm-g5`
    - kind: `delivery`
    - priority: `P1`
