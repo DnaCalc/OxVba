@@ -9,9 +9,13 @@ use crate::{RuntimeValue, bstr::BStr};
 #[cfg(target_os = "windows")]
 use windows_sys::{
     Win32::Foundation::{SysAllocString, SysFreeString},
+    Win32::System::Com::SAFEARRAYBOUND,
+    Win32::System::Ole::{
+        SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement,
+    },
     Win32::System::Variant::{
-        VARIANT, VT_BOOL, VT_BSTR, VT_CY, VT_DATE, VT_EMPTY, VT_ERROR, VT_I4, VT_I8, VT_NULL,
-        VariantClear,
+        VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_CY, VT_DATE, VT_EMPTY, VT_ERROR, VT_I4, VT_I8,
+        VT_NULL, VT_UNKNOWN, VT_VARIANT, VariantClear,
     },
     core::BSTR,
 };
@@ -132,39 +136,184 @@ impl OwnedVariant {
     fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
         let canonical = crate::Variant::from_runtime_value(value);
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        match canonical.vtype() {
-            crate::VarType::Empty => {
-                if matches!(value, RuntimeValue::ArrayIntent(_)) {
-                    return Err(
-                        "VarPtr over Variant containing an array is not yet supported"
-                            .to_string(),
-                    );
+        unsafe { set_windows_variant_from_runtime_value(&mut variant, value, &canonical)? };
+        Ok(Self(variant))
+    }
+
+    fn as_ptr(&mut self) -> *mut c_void {
+        (&mut self.0 as *mut VARIANT).cast()
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for OwnedVariant {}
+
+#[cfg(target_os = "windows")]
+fn retained_iunknown_pointer(object: &crate::ObjectRef) -> *mut c_void {
+    let retained = object.query_iunknown();
+    let raw = retained.raw_iunknown().cast::<c_void>();
+    std::mem::forget(retained);
+    raw
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_windows_variant_array_arg(
+    variant: *mut VARIANT,
+    array: &crate::safe_array::SafeArray,
+) -> Result<(), String> {
+    let Some(values) = array.elements.as_ref() else {
+        return Err("VarPtr over Variant containing an array shape without element payload is not yet supported".to_string());
+    };
+
+    if let Some(bounds) = array.bounds.as_ref()
+        && bounds.len() > 1
+    {
+        let dims = u32::try_from(bounds.len())
+            .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
+        let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
+            .iter()
+            .map(|b| SAFEARRAYBOUND {
+                cElements: b.count,
+                lLbound: b.lower,
+            })
+            .collect();
+        let psa = SafeArrayCreate(VT_VARIANT, dims, sa_bounds.as_ptr());
+        if psa.is_null() {
+            return Err("SafeArrayCreate(VT_VARIANT) returned null".to_string());
+        }
+        let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+        for runtime_value in values {
+            let mut element: VARIANT = std::mem::zeroed();
+            if let Err(detail) = set_windows_variant_from_runtime_value(
+                &mut element,
+                runtime_value,
+                &crate::Variant::from_runtime_value(runtime_value),
+            ) {
+                let _ = VariantClear(&mut element);
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(detail);
+            }
+            let hr = SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&element as *const VARIANT).cast(),
+            );
+            let _ = VariantClear(&mut element);
+            if hr < 0 {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(format!(
+                    "SafeArrayPutElement failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
+                ));
+            }
+            let mut carry = true;
+            for (dim_idx, bound) in bounds.iter().enumerate() {
+                if !carry {
+                    break;
                 }
-                variant.Anonymous.Anonymous.vt = VT_EMPTY;
+                indices[dim_idx] += 1;
+                if indices[dim_idx] >= bound.lower + bound.count as i32 {
+                    indices[dim_idx] = bound.lower;
+                } else {
+                    carry = false;
+                }
+            }
+        }
+        (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+        (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+        return Ok(());
+    }
+
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_VARIANT, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
+    }
+    for (offset, runtime_value) in values.iter().enumerate() {
+        let mut element: VARIANT = std::mem::zeroed();
+        if let Err(detail) = set_windows_variant_from_runtime_value(
+            &mut element,
+            runtime_value,
+            &crate::Variant::from_runtime_value(runtime_value),
+        ) {
+            let _ = VariantClear(&mut element);
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(detail);
+        }
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(
+            psa.cast_const(),
+            &index,
+            (&element as *const VARIANT).cast(),
+        );
+        let _ = VariantClear(&mut element);
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_windows_variant_from_runtime_value(
+    variant: *mut VARIANT,
+    value: &RuntimeValue,
+    canonical: &crate::Variant,
+) -> Result<(), String> {
+    match value {
+        RuntimeValue::ArrayIntent(array) => {
+            set_windows_variant_array_arg(variant, array)?;
+        }
+        RuntimeValue::Object(object) => {
+            (*variant).Anonymous.Anonymous.vt = VT_UNKNOWN;
+            (*variant).Anonymous.Anonymous.Anonymous.punkVal = if object.raw() == 0 {
+                std::ptr::null_mut()
+            } else {
+                retained_iunknown_pointer(object)
+            };
+        }
+        RuntimeValue::BindingHandle(_) => {
+            return Err(
+                "VarPtr over Variant containing a binding handle is not yet supported".to_string(),
+            );
+        }
+        _ => match canonical.vtype() {
+            crate::VarType::Empty => {
+                (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
             }
             crate::VarType::Null => {
-                variant.Anonymous.Anonymous.vt = VT_NULL;
+                (*variant).Anonymous.Anonymous.vt = VT_NULL;
             }
             crate::VarType::Error => {
-                variant.Anonymous.Anonymous.vt = VT_ERROR;
-                variant.Anonymous.Anonymous.Anonymous.scode =
+                (*variant).Anonymous.Anonymous.vt = VT_ERROR;
+                (*variant).Anonymous.Anonymous.Anonymous.scode =
                     canonical.as_error_code().expect("error payload");
             }
             crate::VarType::Integer | crate::VarType::Long => {
-                variant.Anonymous.Anonymous.vt = VT_I4;
-                variant.Anonymous.Anonymous.Anonymous.lVal = canonical
+                (*variant).Anonymous.Anonymous.vt = VT_I4;
+                (*variant).Anonymous.Anonymous.Anonymous.lVal = canonical
                     .to_runtime_value()?
                     .as_i32_lossy()
                     .expect("integer payload should project into i32");
             }
             crate::VarType::LongLong => {
-                variant.Anonymous.Anonymous.vt = VT_I8;
-                variant.Anonymous.Anonymous.Anonymous.llVal =
+                (*variant).Anonymous.Anonymous.vt = VT_I8;
+                (*variant).Anonymous.Anonymous.Anonymous.llVal =
                     canonical.as_i64().expect("i64 payload");
             }
             crate::VarType::Boolean => {
-                variant.Anonymous.Anonymous.vt = VT_BOOL;
-                variant.Anonymous.Anonymous.Anonymous.boolVal =
+                (*variant).Anonymous.Anonymous.vt = VT_BOOL;
+                (*variant).Anonymous.Anonymous.Anonymous.boolVal =
                     if canonical.as_bool().expect("bool payload") {
                         -1
                     } else {
@@ -181,47 +330,45 @@ impl OwnedVariant {
                     }
                 };
                 match raw.subtype() {
-                crate::F64Subtype::Single => {
-                    variant.Anonymous.Anonymous.vt = VT_R4;
-                    variant.Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
-                }
-                crate::F64Subtype::Double => {
-                    variant.Anonymous.Anonymous.vt = VT_R8;
-                    variant.Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                }
-                crate::F64Subtype::Date => {
-                    variant.Anonymous.Anonymous.vt = VT_DATE;
-                    variant.Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                }
+                    crate::F64Subtype::Single => {
+                        (*variant).Anonymous.Anonymous.vt = VT_R4;
+                        (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
+                    }
+                    crate::F64Subtype::Double => {
+                        (*variant).Anonymous.Anonymous.vt = VT_R8;
+                        (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                    }
+                    crate::F64Subtype::Date => {
+                        (*variant).Anonymous.Anonymous.vt = VT_DATE;
+                        (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                    }
                 }
             }
             crate::VarType::Currency => {
-                variant.Anonymous.Anonymous.vt = VT_CY;
-                variant.Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
+                (*variant).Anonymous.Anonymous.vt = VT_CY;
+                (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
                     .as_currency_scaled_i64()
                     .expect("currency payload");
             }
             crate::VarType::String => {
-                variant.Anonymous.Anonymous.vt = VT_BSTR;
+                (*variant).Anonymous.Anonymous.vt = VT_BSTR;
                 let text = canonical
                     .as_bstr()
                     .ok_or_else(|| "canonical string Variant lost owned BSTR payload".to_string())?;
-                variant.Anonymous.Anonymous.Anonymous.bstrVal =
+                (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
                     OwnedBstr::from_bstr(text)?.into_raw();
             }
             crate::VarType::Decimal => {
                 let bytes = canonical.to_wire_bytes();
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        bytes.as_ptr(),
-                        (&mut variant as *mut VARIANT).cast::<u8>(),
-                        bytes.len(),
-                    );
-                }
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr(),
+                    variant.cast::<u8>(),
+                    bytes.len(),
+                );
             }
             crate::VarType::Object => {
                 return Err(
-                    "VarPtr over Variant containing an object reference is not yet supported"
+                    "VarPtr over Variant containing unsupported object carrier is not yet supported"
                         .to_string(),
                 );
             }
@@ -231,17 +378,10 @@ impl OwnedVariant {
                     other
                 ));
             }
-        }
-        Ok(Self(variant))
+        },
     }
-
-    fn as_ptr(&mut self) -> *mut c_void {
-        (&mut self.0 as *mut VARIANT).cast()
-    }
+    Ok(())
 }
-
-#[cfg(target_os = "windows")]
-unsafe impl Send for OwnedVariant {}
 
 #[cfg(target_os = "windows")]
 impl Drop for OwnedVariant {
@@ -293,7 +433,6 @@ impl PointerEntry {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ObjectIdentityKey {
-    Object(i32),
     Binding(i32),
 }
 
@@ -440,7 +579,7 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             PointerEntry::Bytes(bytes.into_boxed_slice())
         }
         RuntimeValue::Object(handle) => {
-            PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
+            PointerEntry::ObjectIdentity(Box::new(handle.raw_iunknown() as usize as i64))
         }
         RuntimeValue::BindingHandle(handle) => {
             PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
@@ -498,15 +637,7 @@ pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
     match value {
         RuntimeValue::Empty | RuntimeValue::Null => Ok(0),
         RuntimeValue::Object(handle) if handle.raw() == 0 => Ok(0),
-        RuntimeValue::Object(handle) => {
-            let mut guard = registry()
-                .lock()
-                .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-            Ok(guard.insert_object_identity(
-                ObjectIdentityKey::Object(handle.raw()),
-                i64::from(handle.raw()),
-            ))
-        }
+        RuntimeValue::Object(handle) => Ok(handle.raw_iunknown() as usize as i64),
         RuntimeValue::BindingHandle(handle) => {
             let mut guard = registry()
                 .lock()
@@ -562,7 +693,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     use windows_sys::{
         Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen},
-        Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4},
+        Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
+        Win32::System::Variant::{
+            VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        },
         core::BSTR,
     };
 
@@ -692,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn object_pointer_is_stable_for_same_runtime_identity() {
+    fn object_pointer_distinguishes_fresh_runtime_objects_from_binding_tokens() {
         let object_ptr =
             register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
                 .expect("object identity");
@@ -702,7 +836,80 @@ mod tests {
         let binding_ptr =
             register_object_pointer(&RuntimeValue::BindingHandle(BindingHandle::new(42)))
                 .expect("binding identity");
-        assert_eq!(object_ptr, same_object_ptr);
+        assert_ne!(object_ptr, same_object_ptr);
         assert_ne!(object_ptr, binding_ptr);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn object_pointer_returns_raw_iunknown_address() {
+        let object = ObjectRef::from_compat_identity(42);
+        let pointer =
+            register_object_pointer(&RuntimeValue::Object(object.clone())).expect("object pointer");
+        assert_eq!(pointer, object.raw_iunknown() as usize as i64);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_value_pointer_over_object_exposes_interface_pointer_cell() {
+        let object = ObjectRef::from_compat_identity(42);
+        let pointer = register_runtime_value_pointer(&RuntimeValue::Object(object.clone()))
+            .expect("runtime value object pointer");
+        let raw = lookup_pointer(pointer)
+            .expect("lookup object cell")
+            .cast::<i64>();
+        assert!(!raw.is_null());
+        assert_eq!(unsafe { *raw }, object.raw_iunknown() as usize as i64);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn variant_var_pointer_supports_object_payload() {
+        let object = ObjectRef::from_compat_identity(42);
+        let ptr = register_variant_var_pointer(&RuntimeValue::Object(object.clone()))
+            .expect("register object-valued variant");
+        let raw = lookup_pointer(ptr)
+            .expect("lookup variant var")
+            .cast::<VARIANT>();
+        assert!(!raw.is_null());
+        let variant = unsafe { &*raw };
+        assert_eq!(unsafe { variant.Anonymous.Anonymous.vt }, VT_UNKNOWN);
+        assert_eq!(
+            unsafe { variant.Anonymous.Anonymous.Anonymous.punkVal },
+            object.raw_iunknown().cast()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn variant_var_pointer_supports_array_payload() {
+        let ptr = register_variant_var_pointer(&RuntimeValue::ArrayIntent(
+            crate::safe_array::SafeArray::from_values(vec![
+                RuntimeValue::I32(4),
+                RuntimeValue::String(BStr::from("abc")),
+            ]),
+        ))
+        .expect("register array-valued variant");
+        let raw = lookup_pointer(ptr)
+            .expect("lookup variant var")
+            .cast::<VARIANT>();
+        assert!(!raw.is_null());
+        let variant = unsafe { &*raw };
+        assert_eq!(unsafe { variant.Anonymous.Anonymous.vt }, VT_ARRAY | VT_VARIANT);
+        let psa = unsafe { variant.Anonymous.Anonymous.Anonymous.parray };
+        assert!(!psa.is_null());
+        assert_eq!(unsafe { SafeArrayGetDim(psa) }, 1);
+
+        let mut first: VARIANT = unsafe { std::mem::zeroed() };
+        let index = 0i32;
+        let hr = unsafe {
+            SafeArrayGetElement(psa.cast_const(), &index, (&mut first as *mut VARIANT).cast())
+        };
+        assert!(hr >= 0);
+        assert_eq!(unsafe { first.Anonymous.Anonymous.vt }, VT_I4);
+        assert_eq!(unsafe { first.Anonymous.Anonymous.Anonymous.lVal }, 4);
+        unsafe {
+            VariantClear(&mut first);
+        }
     }
 }

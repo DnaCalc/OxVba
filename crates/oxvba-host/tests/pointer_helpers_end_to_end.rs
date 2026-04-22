@@ -5,7 +5,8 @@ mod windows_pointer_helper_e2e {
     use oxvba_runtime::{Decimal96, RuntimeValue, VarType, Variant};
     use windows_sys::{
         Win32::Foundation::SysStringLen,
-        Win32::System::Variant::{VARIANT, VT_BSTR, VT_I4, VT_I8},
+        Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
+        Win32::System::Variant::{VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_I8, VT_UNKNOWN, VT_VARIANT, VariantClear},
     };
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
@@ -17,17 +18,6 @@ mod windows_pointer_helper_e2e {
         engine
             .execute_source_with_value_snapshot(source)
             .expect("pointer helper probe should execute")
-    }
-
-    fn run_windows_host_backed_error(source: &str, enable_jit: bool) -> String {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
-        engine.set_host_policy(HostPolicy::interactive_dev());
-        engine
-            .execute_source_with_value_snapshot(source)
-            .expect_err("pointer helper probe should fail")
     }
 
     fn expect_i64(value: &RuntimeValue) -> i64 {
@@ -635,7 +625,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_object_container_rejects_explicitly_in_vm_and_jit() {
+    fn varptr_variant_object_container_exposes_vt_unknown_in_vm_and_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -646,18 +636,32 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let err = run_windows_host_backed_error(source, enable_jit);
-            assert!(
-                err.contains(
-                    "VarPtr over Variant containing an object reference is not yet supported"
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            let pointer = match snapshot.last() {
+                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
+                other => panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
                 ),
-                "object-valued Variant VarPtr should reject explicitly for enable_jit={enable_jit}; err={err}"
+            };
+            let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
+                .expect("pointer helper registry should contain VarPtr(Variant) result")
+                .cast::<VARIANT>();
+            assert!(!raw.is_null());
+            let variant = unsafe { &*raw };
+            assert_eq!(
+                unsafe { variant.Anonymous.Anonymous.vt },
+                VT_UNKNOWN,
+                "VarPtr(Variant) should expose a VT_UNKNOWN container for object payloads for enable_jit={enable_jit}"
+            );
+            assert!(
+                !unsafe { variant.Anonymous.Anonymous.Anonymous.punkVal }.is_null(),
+                "object-valued Variant VarPtr should expose a non-null IUnknown pointer for enable_jit={enable_jit}"
             );
         }
     }
 
     #[test]
-    fn varptr_variant_array_container_rejects_explicitly_in_vm_and_jit() {
+    fn varptr_variant_array_container_exposes_variant_safearray_in_vm_and_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -668,11 +672,41 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let err = run_windows_host_backed_error(source, enable_jit);
-            assert!(
-                err.contains("VarPtr over Variant containing an array is not yet supported"),
-                "array-valued Variant VarPtr should reject explicitly for enable_jit={enable_jit}; err={err}"
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            let pointer = match snapshot.last() {
+                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
+                other => panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
+                ),
+            };
+            let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
+                .expect("pointer helper registry should contain VarPtr(Variant) result")
+                .cast::<VARIANT>();
+            assert!(!raw.is_null());
+            let variant = unsafe { &*raw };
+            assert_eq!(
+                unsafe { variant.Anonymous.Anonymous.vt },
+                VT_ARRAY | VT_VARIANT,
+                "VarPtr(Variant) should expose a VT_ARRAY|VT_VARIANT container for enable_jit={enable_jit}"
             );
+            let psa = unsafe { variant.Anonymous.Anonymous.Anonymous.parray };
+            assert!(!psa.is_null());
+            assert_eq!(unsafe { SafeArrayGetDim(psa) }, 1);
+
+            let mut first: VARIANT = unsafe { std::mem::zeroed() };
+            let index = 0i32;
+            let hr = unsafe {
+                SafeArrayGetElement(psa.cast_const(), &index, (&mut first as *mut VARIANT).cast())
+            };
+            assert!(
+                hr >= 0,
+                "SafeArrayGetElement should read the first array element for enable_jit={enable_jit}; hr={hr:#010X}"
+            );
+            assert_eq!(unsafe { first.Anonymous.Anonymous.vt }, VT_I4);
+            assert_eq!(unsafe { first.Anonymous.Anonymous.Anonymous.lVal }, 1);
+            unsafe {
+                VariantClear(&mut first);
+            }
         }
     }
 
