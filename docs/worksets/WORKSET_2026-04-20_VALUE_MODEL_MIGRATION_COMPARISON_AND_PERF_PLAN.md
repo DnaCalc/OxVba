@@ -1819,6 +1819,15 @@ Child beads:
        bounded discovery pass is required
    - completion evidence:
      - UDT/layout lane has an honest next delivery path
+   - landed 2026-04-22:
+     - the post-`vmm-g2` audit did not expose a missing child bead
+     - the remaining open delivery scope still fits the existing `vmm-g4`
+       truth/docs pass and `vmm-g5` matrix pass
+     - current bounded UDT/runtime truth remains the non-boundary deterministic
+       subset already implemented in compiler/host execution, while broader
+       native ABI and layout-sensitive closure remains explicitly bounded by the
+       existing HAL ambiguity/spec register
+     - the next ready delivery bead remains `vmm-g4`
 5. `vmm-g4`
    - kind: `delivery`
    - priority: `P1`
