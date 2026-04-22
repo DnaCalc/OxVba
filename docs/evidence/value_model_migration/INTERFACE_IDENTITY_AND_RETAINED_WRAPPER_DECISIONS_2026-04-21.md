@@ -39,30 +39,32 @@ Current verification anchors re-run on 2026-04-21:
 
 ## Decisions
 
-### D1. Canonical migrated runtime identity remains handle-addressable, but the resolved object base is `IUnknown`-implementing
+### D1. Canonical migrated runtime identity becomes `ObjectRef`, backed by an `IUnknown`-implementing object base
 
 Decision:
 
 1. The migrated canonical runtime continues to represent COM object identity as
-   semantic object identity, not as raw `IUnknown*` / `IDispatch*` embedded
-   directly inside `RuntimeValue` or the public canonical `Variant`.
-2. `ObjectHandle` remains the canonical runtime-facing identity carrier.
-3. Resolving an `ObjectHandle` in the migrated runtime must yield a base object
+   semantic object identity, but that identity is no longer carried by a
+   standalone integer token.
+2. `ObjectHandle` does not survive as the canonical runtime-facing identity
+   carrier in the migrated model.
+3. The canonical runtime object carrier becomes `ObjectRef`.
+4. `ObjectRef` is a typed runtime object reference backed by a base object
    structure that implements `IUnknown`.
-4. The canonical `Variant` object lane remains a semantic object lane built on
-   handle identity, but the object reached through that handle is now
-   `IUnknown`-implementing rather than an ad hoc token-only lifetime record.
+5. The canonical `Variant` object lane becomes an `ObjectRef` lane rather than
+   an integer-token lane or a permanently resident raw interface-pointer lane.
 
 Why:
 
 1. The fact pack requires stable COM identity under `IUnknown`, but it does not
    require every internal runtime value carrier to physically store raw COM
    pointers at all times.
-2. Current repo behavior already uses stable semantic identity in the runtime
-   and pointer/helper surfaces, and those semantics are observable and tested.
-3. Embedding raw interface pointers directly into all canonical runtime object
-   values would widen the migration far beyond what the current code structure
-   needs and would blur runtime semantics with boundary ownership/lifetime.
+2. The current integer-token model is an implementation convenience, not the
+   architectural end state we now want.
+3. `ObjectRef` lets identity and lifetime collapse onto the same runtime object
+   reference without scattering untyped raw pointers everywhere.
+4. It removes the current split between semantic token identity and
+   COM-style reference-counted object identity.
 
 ### D2. Native COM pointer truth lives in retained boundary state and is anchored on `IUnknown`
 
@@ -75,7 +77,7 @@ Decision:
    - retained native `IUnknown` identity/lifetime anchor ownership
    - retained native `IDispatch` invocation pointer ownership where applicable
    - runtime object-base records that implement `IUnknown`
-   - object-handle allocation
+   - object-reference allocation/retention
    - repeated native-result dedup by canonical retained `IUnknown` identity
    - subscription and callback lifetime state
 3. `vmm-f2` must route runtime object lifetime through `IUnknown::AddRef` /
@@ -100,8 +102,8 @@ Decision:
    raw-pointer-everywhere strategy.
 2. In practice that means:
    - canonical runtime values carry semantic identity
-   - `ObjectHandle` remains the runtime-facing token for that identity
-   - the base object reached through that token implements `IUnknown`
+   - `ObjectRef` is the runtime-facing object identity/reference
+   - the base object reached through `ObjectRef` implements `IUnknown`
    - runtime ownership transitions use `IUnknown::AddRef` / `Release`
    - retained COM bridge state carries the native pointer anchor and lifetime
    - the canonical retained anchor is `IUnknown`
@@ -112,14 +114,15 @@ Decision:
 3. `vmm-f2` owns making the `IUnknown` anchor explicit in retained bridge
    state and in the runtime object base rather than leaving identity keyed only
    by retained `IDispatch*` or token-map entries.
-4. This happens without replacing
-   `ObjectHandle` as the runtime-facing carrier.
+4. This happens without promoting arbitrary raw interface pointers to the
+   public runtime carrier shape.
 
 Why:
 
 1. This satisfies the fact pack requirement that COM identity be stable under
    `IUnknown` semantics.
-2. It preserves the current tested handle-based runtime model.
+2. It preserves a typed runtime object abstraction instead of collapsing the
+   whole runtime onto raw pointer values.
 3. It keeps the migration scoped to observable correctness, memory, and timing
    rather than forcing a full runtime ownership rewrite.
 
@@ -166,9 +169,9 @@ Why:
 
 1. This bead does not close the exact field/layout shape of the `IUnknown`-
    implementing object base.
-   - whether `ObjectHandle` resolves through an indirection table into a boxed
-     object base, or becomes a typed handle over a stable allocation that
-     directly carries `IUnknown`, is a `vmm-f2` implementation detail
+   - whether `ObjectRef` is a thin typed retained pointer, a small wrapper over
+     one, or another equivalent typed representation remains a `vmm-f2`
+     implementation detail
 2. This bead does not close the exact retained-wrapper field shape for the
    canonical external/native `IUnknown` anchor.
    - whether the retained state stores both a normalized `IUnknown*` identity
@@ -185,11 +188,12 @@ Why:
 ## Consequences For Follow-On Beads
 
 1. `vmm-f2`
+   - replace token-only runtime object identity with canonical `ObjectRef`
    - make the runtime object base `IUnknown`-implementing
    - route runtime object lifetime through `AddRef` / `Release`
    - reconcile retained wrapper/native identity internals around an explicit
-     `IUnknown` anchor without replacing canonical `ObjectHandle` as the
-     runtime-facing object carrier
+     `IUnknown` anchor while making `ObjectRef` the canonical runtime object
+     carrier
 2. `vmm-f3`
    - preserve the current `VT_DISPATCH` / dispatch-capable-`VT_UNKNOWN`
      rebinding contract on top of the `IUnknown`-anchored retained wrapper
