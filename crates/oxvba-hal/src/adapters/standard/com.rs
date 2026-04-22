@@ -74,7 +74,7 @@ fn projection_prog_id_name(
 #[cfg(target_os = "windows")]
 fn try_bind_projection_object_metadata(
     host: &StandardHostServices,
-    object: ObjectHandle,
+    object: ObjectRef,
     prog_id_name: &str,
 ) -> HalResult<()> {
     host.com_bridge
@@ -126,7 +126,7 @@ impl ComHal for StandardHostServices {
             // The handle base mirrors the existing fallback convention.
             let object = allocate_projection_object_handle(self, prog_id_name)?;
             #[cfg(target_os = "windows")]
-            try_bind_projection_object_metadata(self, object, prog_id_name)?;
+            try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
             return Ok(RuntimeValue::Object(object.into()));
         }
         #[cfg(target_os = "windows")]
@@ -135,7 +135,7 @@ impl ComHal for StandardHostServices {
                 Ok(value) => return Ok(value),
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     let object = allocate_projection_object_handle(self, prog_id_name)?;
-                    try_bind_projection_object_metadata(self, object, prog_id_name)?;
+                    try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
                     return Ok(RuntimeValue::Object(object.into()));
                 }
                 Err(err) => return Err(err),
@@ -143,7 +143,7 @@ impl ComHal for StandardHostServices {
         }
         let object = allocate_projection_object_handle(self, prog_id_name)?;
         #[cfg(target_os = "windows")]
-        try_bind_projection_object_metadata(self, object, prog_id_name)?;
+        try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
         Ok(RuntimeValue::Object(object.into()))
     }
 
@@ -155,11 +155,11 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "release_object"));
         }
-        let object_handle = ObjectHandle::new(object.raw());
-        let removed_projection = release_projection_object_handle(self, object_handle)?;
-        let object = object.raw();
+        let removed_projection =
+            release_projection_object_handle(self, ObjectHandle::new(object.raw()))?;
+        let object_raw = object.raw();
         if !self.native_com_enabled() {
-            return Ok(RuntimeValue::I32(if removed_projection || object != 0 {
+            return Ok(RuntimeValue::I32(if removed_projection || object_raw != 0 {
                 1
             } else {
                 0
@@ -168,14 +168,14 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("release_object")?;
         #[cfg(target_os = "windows")]
         {
-            let released = unsafe { self.com_bridge.release_object(object_handle) }
+            let released = unsafe { self.com_bridge.release_object(object.clone()) }
                 .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "release_object", message)
                 })?;
             if super::com_event_trace_enabled() {
                 eprintln!(
                     "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
-                    object,
+                    object_raw,
                     released.stale_callbacks.len()
                 );
             }
@@ -197,7 +197,7 @@ impl ComHal for StandardHostServices {
         {
             let descriptor = self
                 .com_bridge
-                .describe_object(ObjectHandle::new(object.raw()))
+                .describe_object(object.clone())
                 .map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "describe_object", message)
             })?;
@@ -337,7 +337,7 @@ impl ComHal for StandardHostServices {
                 {
                     if let Some(descriptor) = self
                         .com_bridge
-                        .describe_object(ObjectHandle::new(request.object.raw()))
+                        .describe_object(request.object.clone())
                         .map_err(|message| self.com_dispatch_adapter_fault(message))?
                         && let Some((member_token, _)) = self
                             .com_bridge
@@ -411,7 +411,7 @@ impl ComHal for StandardHostServices {
         {
             let (subscription, transport, expected_arity) = unsafe {
                 self.com_bridge
-                    .subscribe_event(ObjectHandle::new(object.raw()), event)
+                    .subscribe_event(object.clone(), event)
             }
             .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "subscribe_event", message)

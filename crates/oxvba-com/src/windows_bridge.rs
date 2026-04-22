@@ -19,7 +19,7 @@ use crate::{
     subscribe_event_shared, take_polled_callback_payload, unsubscribe_event_shared,
     validate_named_arg_order,
 };
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
@@ -152,7 +152,7 @@ impl WindowsComBridge {
 
     pub fn resolve_native_dispatch_for_object(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
     ) -> Result<*mut RawIDispatch, String> {
         resolve_bound_native_dispatch_shared(&self.state, object)
     }
@@ -161,7 +161,7 @@ impl WindowsComBridge {
         &self,
         prog_id_name: &str,
         mut configure_binding: F,
-    ) -> Result<ObjectHandle, String>
+    ) -> Result<ObjectRef, String>
     where
         F: FnMut(&mut ComBinding) -> Result<(), String>,
     {
@@ -177,9 +177,9 @@ impl WindowsComBridge {
 
     pub fn bind_projection_object(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
         prog_id_name: &str,
-    ) -> Result<ObjectHandle, String> {
+    ) -> Result<ObjectRef, String> {
         let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
         let binding = binding_from_typelib_metadata(prog_id_name.to_string(), 0, metadata.as_ref());
         insert_bound_object_binding_at_handle_shared(&self.state, object, binding)
@@ -187,7 +187,7 @@ impl WindowsComBridge {
 
     pub fn describe_object(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
     ) -> Result<Option<ComObjectDescriptor>, String> {
         let state = self.lock_state("describe_object")?;
         Ok(state
@@ -204,7 +204,7 @@ impl WindowsComBridge {
 
     pub fn release_object_binding(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
     ) -> Result<ReleasedWindowsComObject, String> {
         release_object_binding_shared(&self.state, object)
     }
@@ -214,7 +214,7 @@ impl WindowsComBridge {
     /// connection-point transport teardown performed by this release path.
     pub unsafe fn release_object(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
     ) -> Result<ReleasedWindowsComObject, String> {
         let released = release_object_binding_shared(&self.state, object)?;
         for transport in released.transports.iter().copied() {
@@ -228,7 +228,7 @@ impl WindowsComBridge {
     /// refers to a live native COM binding owned by this bridge.
     pub unsafe fn subscribe_event(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
         event: ComMemberToken,
     ) -> Result<
         (
@@ -289,7 +289,7 @@ impl WindowsComBridge {
         &self,
         dispatch: *mut RawIDispatch,
         prog_id_hint: &str,
-    ) -> Result<ObjectHandle, String> {
+    ) -> Result<ObjectRef, String> {
         unsafe { bind_native_dispatch_result_shared(&self.state, dispatch, prog_id_hint) }
     }
 
@@ -400,7 +400,7 @@ impl WindowsComBridge {
         let value = invoke_result.map_err(WindowsComBridgeDispatchError::InvokeFailure)?;
         queue_projection_event_callbacks_shared(
             &self.state,
-            ObjectHandle::new(request.object.raw()),
+            request.object.clone(),
             &binding,
             request.member,
             Some(&positional_values),

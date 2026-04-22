@@ -1,5 +1,4 @@
 #[cfg(target_os = "windows")]
-use oxvba_runtime::ObjectHandle;
 #[cfg(target_os = "windows")]
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
@@ -549,7 +548,7 @@ pub fn activate_runtime_object_binding_shared<F>(
     metadata: Option<&crate::TypeLibMetadataBlob>,
     force_registered_test_dispatch: bool,
     mut configure_binding: F,
-) -> Result<ObjectHandle, String>
+) -> Result<oxvba_runtime::ObjectRef, String>
 where
     F: FnMut(&mut crate::ComBinding) -> Result<(), String>,
 {

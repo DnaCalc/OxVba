@@ -1,6 +1,6 @@
 use crate::ComValue;
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectHandle,
+    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef,
     bstr::BStr,
     safe_array::{SafeArray, SafeArrayBound},
 };
@@ -861,7 +861,7 @@ unsafe fn set_variant_array_arg<FResolve, FAddRef>(
     add_ref_dispatch: &mut FAddRef,
 ) -> Result<(), String>
 where
-    FResolve: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolve: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FAddRef: FnMut(*mut core::ffi::c_void),
 {
     let Some(values) = array.elements.as_ref() else {
@@ -1245,7 +1245,7 @@ where
 ///
 /// # Safety
 /// The caller must provide a valid writable `VARIANT` pointer. `resolve_object` must return a live
-/// `IDispatch` pointer for any provided `ObjectHandle`, and `add_ref_dispatch` must apply the
+/// `IDispatch` pointer for any provided `ObjectRef`, and `add_ref_dispatch` must apply the
 /// matching COM reference-count increment to that pointer before the variant assumes ownership.
 pub unsafe fn set_variant_from_com_value<FResolve, FAddRef>(
     variant: *mut VARIANT,
@@ -1254,7 +1254,7 @@ pub unsafe fn set_variant_from_com_value<FResolve, FAddRef>(
     add_ref_dispatch: &mut FAddRef,
 ) -> Result<(), String>
 where
-    FResolve: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolve: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FAddRef: FnMut(*mut core::ffi::c_void),
 {
     if variant.is_null() {
@@ -1313,7 +1313,7 @@ where
             set_variant_array_arg(variant, array, resolve_object, add_ref_dispatch)?;
         }
         ComValue::Object(handle) => {
-            let dispatch = resolve_object(ObjectHandle::new(handle.raw()))?;
+            let dispatch = resolve_object(handle.clone())?;
             if dispatch.is_null() {
                 return Err("object handle resolved to null IDispatch pointer".to_string());
             }

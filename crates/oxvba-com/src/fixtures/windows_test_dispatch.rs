@@ -16,7 +16,6 @@ use crate::windows_variant::{
 };
 use crate::{COM_DISPID_PROPERTYPUT, ComValue};
 use oxvba_runtime::{
-    ObjectHandle,
     value_tags::{NULL_TAG, error_tag_from_code},
 };
 use std::{
@@ -2336,7 +2335,7 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(value) => value,
                 Err(hr) => return hr,
             };
-            let mut resolve_object = |_handle: ObjectHandle| {
+            let mut resolve_object = |_handle: oxvba_runtime::ObjectRef| {
                 Err("object dispatch echo unsupported in test helper".to_string())
             };
             if set_variant_dispatch_arg(pvarresult, &value, &mut resolve_object).is_err() {
@@ -3290,12 +3289,12 @@ unsafe fn set_variant_dispatch_arg<F>(
     resolve_object: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
+    F: FnMut(oxvba_runtime::ObjectRef) -> Result<*mut RawIDispatch, String>,
 {
     if variant.is_null() {
         return Ok(());
     }
-    let mut resolve_dispatch = |handle: ObjectHandle| {
+    let mut resolve_dispatch = |handle: oxvba_runtime::ObjectRef| {
         resolve_object(handle).map(|dispatch| dispatch.cast::<core::ffi::c_void>())
     };
     let mut add_ref_dispatch = |dispatch: *mut core::ffi::c_void| {
@@ -3309,7 +3308,7 @@ where
             &mut add_ref_dispatch,
         )?,
         _ => {
-            let mut unexpected_object_resolution = |_handle: ObjectHandle| {
+            let mut unexpected_object_resolution = |_handle: oxvba_runtime::ObjectRef| {
                 Err("object dispatch resolution not expected for non-object COM value".to_string())
             };
             let mut unexpected_add_ref = |_dispatch: *mut core::ffi::c_void| {};

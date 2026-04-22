@@ -4,7 +4,7 @@ use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
     take_variant_result_runtime_value, take_variant_result_value,
 };
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
@@ -322,7 +322,7 @@ pub unsafe fn invoke_dispatch_variant_result<FResolveObject, FQueryUnknown, FAdd
     add_ref_dispatch: &mut FAddRefDispatch,
 ) -> Result<VariantResultValue, ComInvokeFailure>
 where
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
 {
@@ -430,7 +430,7 @@ pub unsafe fn invoke_dispatch_runtime_value<
     bind_dispatch_result: &mut FBindDispatch,
 ) -> Result<RuntimeValue, ComInvokeFailure>
 where
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
     FBindDispatch:
@@ -540,7 +540,7 @@ pub unsafe fn invoke_dispatch_legacy_i32_result<FResolveObject>(
     resolve_object: &mut FResolveObject,
 ) -> Result<i32, ComInvokeFailure>
 where
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
 {
     let dispatch = dispatch.cast::<RawIDispatch>();
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
@@ -644,7 +644,7 @@ pub unsafe fn invoke_dispatch_legacy_i32_result_positional<FResolveObject>(
     resolve_object: &mut FResolveObject,
 ) -> Result<i32, ComInvokeFailure>
 where
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
 {
     let dispatch = dispatch.cast::<RawIDispatch>();
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
@@ -730,7 +730,7 @@ pub unsafe fn invoke_member_spec_legacy_i32_result<FResolveNamedArgDispids, FRes
 ) -> Result<i32, ComInvokeFailure>
 where
     FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
 {
     let canonical_args;
     let args = match spec.invoke_kind {
@@ -917,7 +917,7 @@ pub unsafe fn invoke_member_spec_runtime_value<
 ) -> Result<RuntimeValue, ComInvokeFailure>
 where
     FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
     FBindDispatch:
@@ -1080,7 +1080,7 @@ pub unsafe fn invoke_direct_dispid_runtime_value<
     bind_dispatch_result: &mut FBindDispatch,
 ) -> Result<RuntimeValue, ComInvokeFailure>
 where
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
     FBindDispatch:
@@ -1212,7 +1212,7 @@ pub unsafe fn invoke_bound_dispatch_legacy_i32_result<
 where
     FKnownSpec: FnMut(crate::ComMemberToken) -> Result<Option<crate::ComMemberSpec>, String>,
     FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
-    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
 {
     if let Some(spec) = known_member_spec(member)
         .map_err(|detail| validation_failure("dispatch_invoke", member.raw(), detail))?
@@ -1547,7 +1547,7 @@ where
             crate::resolve_member_dispid_cached(
                 &mut state,
                 dispatch,
-                ObjectHandle::new(request.object.raw()),
+                request.object.clone(),
                 &binding,
                 crate::ComMemberToken::new(member),
                 None,
@@ -1610,10 +1610,11 @@ where
     )?;
     let _ = crate::windows_runtime_state::queue_projection_event_callbacks_shared(
         com_state,
-        ObjectHandle::new(request.object.raw()),
+        request.object.clone(),
         &binding,
         request.member,
         positional_values,
     )?;
     Ok(Some(value))
 }
+

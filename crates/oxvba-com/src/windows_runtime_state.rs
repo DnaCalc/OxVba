@@ -10,7 +10,7 @@ use crate::{
     unadvise_connection_point,
 };
 
-use oxvba_runtime::{ObjectHandle, ObjectRef};
+use oxvba_runtime::ObjectRef;
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -226,7 +226,7 @@ pub fn collect_stale_callbacks_for_subscription(
 
 pub fn resolve_bound_native_dispatch(
     state: &WindowsComClientState,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<*mut RawIDispatch, String> {
     let Some(binding) = state.bindings.get(&ComObjectToken::new(object.raw())) else {
         return Err(format!(
@@ -245,7 +245,7 @@ pub fn resolve_bound_native_dispatch(
 
 pub fn resolve_bound_runtime_object(
     state: &WindowsComClientState,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<ObjectRef, String> {
     let Some(binding) = state.bindings.get(&ComObjectToken::new(object.raw())) else {
         return Err(format!(
@@ -271,9 +271,9 @@ pub unsafe fn bind_native_dispatch_result(
     state: &mut WindowsComClientState,
     dispatch: *mut RawIDispatch,
     prog_id_hint: &str,
-) -> ObjectHandle {
+) -> ObjectRef {
     if dispatch.is_null() {
-        return ObjectHandle::new(0);
+        return ObjectRef::from_compat_identity(0);
     }
     let unknown = match unsafe { query_unknown_from_dispatch(dispatch) } {
         Ok(unknown) => unknown,
@@ -281,7 +281,7 @@ pub unsafe fn bind_native_dispatch_result(
             unsafe {
                 release_dispatch(dispatch);
             }
-            return ObjectHandle::new(0);
+            return ObjectRef::from_compat_identity(0);
         }
     };
     if let Some((handle, _)) = state
@@ -293,7 +293,7 @@ pub unsafe fn bind_native_dispatch_result(
             release_dispatch(dispatch);
             release_unknown(unknown.cast());
         }
-        return ObjectHandle::new(handle.raw());
+        return ObjectRef::from_compat_identity(handle.raw());
     }
     let handle = state.allocate_handle();
     let mut binding = binding_from_typelib_metadata(
@@ -304,12 +304,12 @@ pub unsafe fn bind_native_dispatch_result(
     binding.native_unknown = unknown as usize;
     binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
     state.bindings.insert(handle, binding);
-    ObjectHandle::new(handle.raw())
+    ObjectRef::from_compat_identity(handle.raw())
 }
 
 pub fn release_object_binding(
     state: &mut WindowsComClientState,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<ReleasedWindowsComObject, String> {
     let Some((binding, transports, stale_callbacks)) =
         state.release_object_state(ComObjectToken::new(object.raw()))
@@ -447,18 +447,18 @@ pub fn remove_subscription_callbacks(
 pub fn insert_bound_object_binding(
     state: &mut WindowsComClientState,
     mut binding: ComBinding,
-) -> ObjectHandle {
+) -> ObjectRef {
     let handle = state.allocate_handle();
     binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
     state.bindings.insert(handle, binding);
-    ObjectHandle::new(handle.raw())
+    ObjectRef::from_compat_identity(handle.raw())
 }
 
 pub fn insert_bound_object_binding_at_handle(
     state: &mut WindowsComClientState,
-    object: ObjectHandle,
+    object: ObjectRef,
     mut binding: ComBinding,
-) -> ObjectHandle {
+) -> ObjectRef {
     if binding.runtime_object.is_none() && object.raw() != 0 {
         binding.runtime_object = Some(ObjectRef::from_compat_identity(object.raw()));
     }
@@ -470,7 +470,7 @@ pub fn insert_bound_object_binding_at_handle(
 
 pub fn cache_member_dispid(
     state: &mut WindowsComClientState,
-    object: ObjectHandle,
+    object: ObjectRef,
     member: ComMemberToken,
     dispid: i32,
 ) {
@@ -485,7 +485,7 @@ pub fn cache_member_dispid(
 pub unsafe fn resolve_member_dispid_cached(
     state: &mut WindowsComClientState,
     dispatch: *mut RawIDispatch,
-    object: ObjectHandle,
+    object: ObjectRef,
     binding: &ComBinding,
     member: ComMemberToken,
     fallback_spec: Option<ComMemberSpec>,
@@ -558,16 +558,16 @@ fn lock_state<'a>(
 pub fn insert_bound_object_binding_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
     binding: ComBinding,
-) -> Result<ObjectHandle, String> {
+) -> Result<ObjectRef, String> {
     let mut state = lock_state(com_state, "insert_bound_object_binding")?;
     Ok(insert_bound_object_binding(&mut state, binding))
 }
 
 pub fn insert_bound_object_binding_at_handle_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
     binding: ComBinding,
-) -> Result<ObjectHandle, String> {
+) -> Result<ObjectRef, String> {
     let mut state = lock_state(com_state, "insert_bound_object_binding_at_handle")?;
     Ok(insert_bound_object_binding_at_handle(
         &mut state, object, binding,
@@ -576,7 +576,7 @@ pub fn insert_bound_object_binding_at_handle_shared(
 
 pub fn resolve_bound_native_dispatch_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<*mut RawIDispatch, String> {
     let state = lock_state(com_state, "resolve_bound_native_dispatch")?;
     resolve_bound_native_dispatch(&state, object)
@@ -584,7 +584,7 @@ pub fn resolve_bound_native_dispatch_shared(
 
 pub fn resolve_bound_runtime_object_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<ObjectRef, String> {
     let state = lock_state(com_state, "resolve_bound_runtime_object")?;
     resolve_bound_runtime_object(&state, object)
@@ -597,7 +597,7 @@ pub unsafe fn bind_native_dispatch_result_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
     dispatch: *mut RawIDispatch,
     prog_id_hint: &str,
-) -> Result<ObjectHandle, String> {
+) -> Result<ObjectRef, String> {
     let mut state = lock_state(com_state, "bind_native_dispatch_result")?;
     Ok(bind_native_dispatch_result(
         &mut state,
@@ -620,7 +620,7 @@ pub unsafe fn bind_native_runtime_object_result_shared(
 
 pub fn release_object_binding_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
 ) -> Result<ReleasedWindowsComObject, String> {
     let mut state = lock_state(com_state, "release_object_binding")?;
     release_object_binding(&mut state, object)
@@ -639,7 +639,7 @@ pub fn mark_next_callback_pumped_shared(
 /// before native connection-point subscription work is attempted.
 pub unsafe fn subscribe_event_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
     event: ComMemberToken,
 ) -> Result<(ComSubscriptionToken, WindowsComSubscriptionTransport, usize), String> {
     let (binding, expected_arity, subscription) = {
@@ -724,7 +724,7 @@ pub unsafe fn unsubscribe_event_shared(
 
 pub fn queue_projection_event_callbacks_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
-    object: ObjectHandle,
+    object: ObjectRef,
     binding: &ComBinding,
     member: ComMemberToken,
     args: Option<&[i32]>,
