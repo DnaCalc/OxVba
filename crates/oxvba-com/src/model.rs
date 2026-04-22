@@ -55,7 +55,7 @@ pub enum ComObjectTransportKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComObjectDescriptor {
-    pub object: ObjectHandle,
+    pub object: ObjectRef,
     pub prog_id_name: String,
     pub transport: ComObjectTransportKind,
     pub supports_events: bool,

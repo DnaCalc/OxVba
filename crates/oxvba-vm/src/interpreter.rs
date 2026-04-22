@@ -2373,7 +2373,7 @@ impl Vm {
                     match self
                         .host_services
                         .com()
-                        .subscribe_event(ObjectHandle::new(object.raw()), event)
+                        .subscribe_event(ObjectHandle::new(object.raw()).into(), event)
                     {
                         Ok(value) => {
                             self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
@@ -3861,7 +3861,7 @@ impl Vm {
         let descriptor = self
             .host_services
             .com()
-            .describe_object(ObjectHandle::new(object.raw()))
+            .describe_object(ObjectHandle::new(object.raw()).into())
             .map_err(|err| err.to_string())?;
         let key = Self::withevents_binding_key(owner, binding);
         let Some(descriptor) = descriptor else {
@@ -3877,7 +3877,10 @@ impl Vm {
             let subscription = self
                 .host_services
                 .com()
-                .subscribe_event(ObjectHandle::new(object.raw()), route.event_token.into())
+                .subscribe_event(
+                    ObjectHandle::new(object.raw()).into(),
+                    route.event_token.into(),
+                )
                 .map_err(|err| err.to_string())?;
             self.com_withevents_subscriptions.insert(
                 subscription,

@@ -16,7 +16,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectHandle, RuntimeValue, runtime_value_to_vba_string};
+use oxvba_runtime::{ObjectHandle, ObjectRef, RuntimeValue, runtime_value_to_vba_string};
 
 use super::StandardHostServices;
 
@@ -147,7 +147,7 @@ impl ComHal for StandardHostServices {
         Ok(RuntimeValue::Object(object.into()))
     }
 
-    fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
+    fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_object"));
@@ -155,7 +155,8 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "release_object"));
         }
-        let removed_projection = release_projection_object_handle(self, object)?;
+        let object_handle = ObjectHandle::new(object.raw());
+        let removed_projection = release_projection_object_handle(self, object_handle)?;
         let object = object.raw();
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if removed_projection || object != 0 {
@@ -167,7 +168,7 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("release_object")?;
         #[cfg(target_os = "windows")]
         {
-            let released = unsafe { self.com_bridge.release_object(ObjectHandle::new(object)) }
+            let released = unsafe { self.com_bridge.release_object(object_handle) }
                 .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "release_object", message)
                 })?;
@@ -184,7 +185,7 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
-    fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "describe_object"));
@@ -194,19 +195,22 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            let descriptor = self.com_bridge.describe_object(object).map_err(|message| {
+            let descriptor = self
+                .com_bridge
+                .describe_object(ObjectHandle::new(object.raw()))
+                .map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "describe_object", message)
             })?;
             if descriptor.is_some() || self.native_com_enabled() {
                 return Ok(descriptor);
             }
         }
-        let object_handle = object;
+        let object_handle = ObjectHandle::new(object.raw());
         let descriptor = if object_handle.raw() == 0 {
             None
         } else if let Some(prog_id_name) = projection_prog_id_name(self, object_handle)? {
             Some(ComObjectDescriptor {
-                object: object_handle,
+                object: object.clone(),
                 prog_id_name,
                 transport: ComObjectTransportKind::Projection,
                 supports_events: false,
@@ -218,7 +222,7 @@ impl ComHal for StandardHostServices {
             })
         } else {
             Some(ComObjectDescriptor {
-                object: object_handle,
+                object: object.clone(),
                 prog_id_name: projection_prog_id_name(self, object_handle)
                     .ok()
                     .flatten()
@@ -286,7 +290,7 @@ impl ComHal for StandardHostServices {
                 // path by returning the already bound object identity rather than inventing
                 // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Ok(RuntimeValue::Object(ObjectHandle::new(object).into()));
+                    return Ok(RuntimeValue::Object(ObjectRef::from_compat_identity(object)));
                 }
                 _ => {}
             }
@@ -386,11 +390,7 @@ impl ComHal for StandardHostServices {
         self.dispatch_invoke_runtime_value_v2(&lowered)
     }
 
-    fn subscribe_event(
-        &self,
-        object: ObjectHandle,
-        event: ComMemberToken,
-    ) -> HalResult<ComSubscriptionToken> {
+    fn subscribe_event(&self, object: ObjectRef, event: ComMemberToken) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "subscribe_event"));
@@ -409,8 +409,11 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("subscribe_event")?;
         #[cfg(target_os = "windows")]
         {
-            let (subscription, transport, expected_arity) =
-                unsafe { self.com_bridge.subscribe_event(object, event) }.map_err(|message| {
+            let (subscription, transport, expected_arity) = unsafe {
+                self.com_bridge
+                    .subscribe_event(ObjectHandle::new(object.raw()), event)
+            }
+            .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
                 })?;
             if super::com_event_trace_enabled() {

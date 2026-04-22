@@ -24,7 +24,7 @@ use oxvba_hal::{
 };
 use oxvba_jit::{JitEngine, cranelift};
 use oxvba_runtime::value_tags::EMPTY_TAG;
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{ObjectHandle, ObjectRef, RuntimeValue};
 use oxvba_vm::{Vm, execute_and_snapshot_with_host};
 
 use crate::{
@@ -519,7 +519,7 @@ impl Engine {
 
     pub fn subscribe_com_event_handler(
         &self,
-        object_token: ObjectHandle,
+        object_token: ObjectRef,
         event_token: i32,
         handler_symbol: &str,
     ) -> Result<ComSubscriptionToken, PhaseDiagnostic> {
@@ -563,7 +563,7 @@ impl Engine {
 
     pub fn describe_com_object(
         &self,
-        object_token: ObjectHandle,
+        object_token: ObjectRef,
     ) -> Result<Option<ComObjectDescriptor>, PhaseDiagnostic> {
         self.host_services
             .com()
@@ -1280,7 +1280,8 @@ mod tests {
         },
     };
     use oxvba_runtime::{
-        F64Value, ObjectHandle, RuntimeValue, bstr::BStr, value_tags::error_tag_from_code,
+        F64Value, ObjectHandle, ObjectRef, RuntimeValue, bstr::BStr,
+        value_tags::error_tag_from_code,
     };
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
@@ -1421,15 +1422,14 @@ End Sub";
     }
 
     #[cfg(target_os = "windows")]
-    fn create_controlled_com_object(engine: &Engine) -> oxvba_runtime::ObjectHandle {
+    fn create_controlled_com_object(engine: &Engine) -> ObjectRef {
         match engine
             .host_services
             .com()
             .create_object(RuntimeValue::String(BStr("OxVba.TestDispatch".to_string())))
             .expect("create_object should return controlled COM object")
         {
-            RuntimeValue::Object(handle) => ObjectHandle::new(handle.raw()),
-            RuntimeValue::ObjectHandle(handle) => handle,
+            RuntimeValue::Object(handle) => handle,
             other => panic!("expected object handle from create_object, got {:?}", other),
         }
     }
@@ -1485,7 +1485,7 @@ End Sub";
     #[cfg(target_os = "windows")]
     fn dispatch_controlled_com_call(
         engine: &Engine,
-        object: oxvba_runtime::ObjectHandle,
+        object: ObjectRef,
         member: i32,
         arg: i32,
     ) -> RuntimeValue {
@@ -3182,7 +3182,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(implicit_value),
                     RuntimeValue::I32(explicit_paren_value),
                     RuntimeValue::I32(sum_pair),
@@ -3270,7 +3270,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
@@ -3343,7 +3343,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 23 => {}
                 other => panic!(
@@ -3416,7 +3416,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 29 => {}
                 other => panic!(
@@ -3489,7 +3489,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 37 => {}
                 other => panic!(
@@ -3562,7 +3562,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
@@ -3635,7 +3635,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
@@ -3708,7 +3708,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 73 => {}
                 other => panic!(
@@ -3781,7 +3781,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 79 => {}
                 other => panic!(
@@ -3854,7 +3854,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
@@ -3927,8 +3927,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(result),
                 ] if root.raw() > 0
                     && other.raw() == root.raw()
@@ -4003,8 +4003,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(other_count),
                     RuntimeValue::I32(after_set_indexed_value),
                     RuntimeValue::I32(after_set_named_indexed_value),
@@ -4179,11 +4179,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -6427,8 +6427,8 @@ End Sub";
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let snapshot_handle = |value: &RuntimeValue| match value {
-                RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => Some(*handle),
-                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectHandle::new(*raw)),
+                RuntimeValue::Object(handle) if handle.raw() > 0 => Some(handle.clone()),
+                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectRef::from_compat_identity(*raw)),
                 _ => None,
             };
             let (bound_handle, other_handle) = match snapshot.as_slice() {
@@ -6457,7 +6457,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    other_handle,
+                    ObjectHandle::new(other_handle.raw()),
                     &[],
                 )
                 .unwrap_or_else(|err| {
@@ -6474,7 +6474,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    ObjectHandle::new(bound_handle.raw()),
                     &[],
                 )
                 .expect_err("bound host-backed event should route to the sink handler");
@@ -6561,7 +6561,7 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound host-backed emitter handle: {snapshot:?}"
@@ -6663,8 +6663,8 @@ End Sub";
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let snapshot_handle = |value: &RuntimeValue| match value {
-                RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => Some(*handle),
-                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectHandle::new(*raw)),
+                RuntimeValue::Object(handle) if handle.raw() > 0 => Some(handle.clone()),
+                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectRef::from_compat_identity(*raw)),
                 _ => None,
             };
             let (bound_handle, com_handle) = match snapshot.as_slice() {
@@ -6693,7 +6693,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    com_handle,
+                    ObjectHandle::new(com_handle.raw()),
                     &[],
                 )
                 .unwrap_or_else(|err| {
@@ -6710,7 +6710,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    ObjectHandle::new(bound_handle.raw()),
                     &[],
                 )
                 .expect_err("bound host-backed source should still own the event route");
@@ -6778,8 +6778,8 @@ End Sub";
                 .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
             let snapshot = runtime.snapshot_values();
             let snapshot_handle = |value: &RuntimeValue| match value {
-                RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => Some(*handle),
-                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectHandle::new(*raw)),
+                RuntimeValue::Object(handle) if handle.raw() > 0 => Some(handle.clone()),
+                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectRef::from_compat_identity(*raw)),
                 _ => None,
             };
             let (bound_handle, other_handle) = match snapshot.as_slice() {
@@ -6808,7 +6808,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    other_handle,
+                    ObjectHandle::new(other_handle.raw()),
                     &[RuntimeValue::I32(42)],
                 )
                 .unwrap_or_else(|err| {
@@ -6827,7 +6827,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    ObjectHandle::new(bound_handle.raw()),
                     &[RuntimeValue::I32(42)],
                 )
                 .expect_err("bound one-arg host-backed event should route to the sink handler");
@@ -6915,7 +6915,7 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
@@ -7022,7 +7022,7 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
                     RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
@@ -7099,7 +7099,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(5) => {}
                 other => panic!(
@@ -7160,7 +7160,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
@@ -7239,7 +7239,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
@@ -7302,7 +7302,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
@@ -7365,7 +7365,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(implicit_value),
                     RuntimeValue::I32(explicit_value),
                     RuntimeValue::I32(implicit_paren_value),
@@ -7440,7 +7440,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(sum_pair),
                     RuntimeValue::I32(lookup_pair),
                     RuntimeValue::I32(echo_value),
@@ -7515,7 +7515,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(count_value),
                     RuntimeValue::I32(exists_value),
                     RuntimeValue::I32(lookup_value),
@@ -7677,8 +7677,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(result),
                 ] if root.raw() > 0
                     && other.raw() == root.raw()
@@ -7760,7 +7760,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(implicit_value),
                     RuntimeValue::I32(explicit_paren_value),
                     RuntimeValue::I32(sum_pair),
@@ -7956,7 +7956,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
@@ -8019,7 +8019,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
@@ -8099,7 +8099,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::Object(handle),
                     RuntimeValue::I32(result),
                 ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
@@ -8163,11 +8163,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8254,11 +8254,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8329,11 +8329,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8420,11 +8420,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8495,11 +8495,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8586,11 +8586,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -8677,8 +8677,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(result),
                 ] if root.raw() > 0
                     && other.raw() == root.raw()
@@ -8743,8 +8743,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(other_count),
                     RuntimeValue::I32(after_set_indexed_value),
                     RuntimeValue::I32(after_set_named_indexed_value),
@@ -8834,8 +8834,8 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(other),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(other),
                     RuntimeValue::I32(other_count),
                     RuntimeValue::I32(after_set_indexed_value),
                     RuntimeValue::I32(after_set_named_indexed_value),
@@ -8909,11 +8909,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -9000,11 +9000,11 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
-                    RuntimeValue::ObjectHandle(child_dispatch),
-                    RuntimeValue::ObjectHandle(child_unknown),
-                    RuntimeValue::ObjectHandle(wrapped_dispatch),
-                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::Object(root),
+                    RuntimeValue::Object(child_dispatch),
+                    RuntimeValue::Object(child_unknown),
+                    RuntimeValue::Object(wrapped_dispatch),
+                    RuntimeValue::Object(wrapped_unknown),
                     RuntimeValue::I32(child_dispatch_count),
                     RuntimeValue::I32(child_unknown_count),
                     RuntimeValue::I32(wrapped_dispatch_count),
@@ -9255,7 +9255,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
@@ -9335,7 +9335,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
@@ -9398,7 +9398,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
@@ -9478,7 +9478,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
@@ -9541,7 +9541,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
@@ -9620,7 +9620,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
@@ -9683,7 +9683,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
@@ -9763,7 +9763,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
@@ -9827,7 +9827,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
@@ -9907,7 +9907,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
@@ -9971,7 +9971,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
@@ -10051,7 +10051,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
@@ -10115,7 +10115,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
@@ -10195,7 +10195,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
@@ -10259,7 +10259,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
@@ -10339,7 +10339,7 @@ End Sub";
                 });
             match snapshot.as_slice() {
                 [
-                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::Object(root),
                     RuntimeValue::I32(after_value),
                 ] if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
@@ -18943,7 +18943,7 @@ End Sub";
 
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .subscribe_com_event_handler(object.clone(), 1, "SinkA_OnChanged")
             .expect("subscribe_com_event_handler should succeed");
 
         let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
@@ -18972,7 +18972,7 @@ End Sub";
 
         let object = create_controlled_com_object(&engine);
         let descriptor = engine
-            .describe_com_object(object)
+            .describe_com_object(object.clone())
             .expect("describe_com_object should succeed")
             .expect("known COM object should produce a descriptor");
 
@@ -19003,7 +19003,7 @@ End Sub";
         let subscription = engine
             .host_services
             .com()
-            .subscribe_event(object, 1.into())
+            .subscribe_event(object.clone(), 1.into())
             .expect("subscribe_event should succeed");
 
         let _ = dispatch_controlled_com_call(&engine, object, 3, 21);
@@ -19028,7 +19028,7 @@ End Sub";
 
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
+            .subscribe_com_event_handler(object.clone(), 3, "SinkA_OnPair")
             .expect("subscribe_com_event_handler should succeed");
 
         let _ = dispatch_controlled_com_call(&engine, object, 4, 90);
@@ -19058,7 +19058,7 @@ End Sub";
 
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 2, "SinkA_OnSourceChanged")
+            .subscribe_com_event_handler(object.clone(), 2, "SinkA_OnSourceChanged")
             .expect("subscribe_com_event_handler should succeed for source-interface event");
 
         let _ = dispatch_controlled_com_call(&engine, object, 11, 55);
@@ -19103,7 +19103,7 @@ End Sub";
             .expect("project runtime session should start");
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .subscribe_com_event_handler(object.clone(), 1, "SinkA_OnChanged")
             .expect("subscribe should succeed");
         let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
@@ -19145,7 +19145,7 @@ End Sub";
             .expect("project runtime session should start");
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 1, "MissingHandler")
+            .subscribe_com_event_handler(object.clone(), 1, "MissingHandler")
             .expect("subscribe should succeed");
         let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
@@ -19186,7 +19186,7 @@ End Sub";
             .expect("project runtime session should start");
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .subscribe_com_event_handler(object.clone(), 1, "SinkA_OnChanged")
             .expect("subscribe should succeed");
         let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
@@ -19227,7 +19227,7 @@ End Sub";
             .expect("project runtime session should start");
         let object = create_controlled_com_object(&engine);
         let subscription = engine
-            .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
+            .subscribe_com_event_handler(object.clone(), 3, "SinkA_OnPair")
             .expect("subscribe should succeed");
         let _ = dispatch_controlled_com_call(&engine, object, 4, 90);
 
@@ -20936,7 +20936,7 @@ End Sub";
         .execute_source_with_value_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out[0], RuntimeValue::I32(5));
-        assert!(matches!(out[1], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[1], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[test]
@@ -20966,7 +20966,7 @@ End Sub";
             .execute_source_with_value_snapshot(source)
             .expect("Set into Variant target should preserve object call result");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -20983,7 +20983,7 @@ End Sub";
             .execute_source_with_value_snapshot(source)
             .expect("Set into Object target should preserve object call result");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -21166,7 +21166,7 @@ End Sub";
             .execute_source_with_value_snapshot(source)
             .expect("Let into Variant target should preserve object call result");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -21247,7 +21247,7 @@ End Sub";
             .execute_source_with_value_snapshot(source)
             .expect("implicit assignment into Variant target should preserve object call result");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -21367,7 +21367,7 @@ End Sub";
             assert!(
                 matches!(
                     (&out[0], &out[1]),
-                    (RuntimeValue::ObjectHandle(src), RuntimeValue::ObjectHandle(dst))
+                    (RuntimeValue::Object(src), RuntimeValue::Object(dst))
                         if src.raw() > 0 && src.raw() == dst.raw()
                 ),
                 "{label}: {out:?}"
@@ -21548,7 +21548,7 @@ End Sub";
             assert!(
                 matches!(
                     (&out[0], &out[1]),
-                    (RuntimeValue::ObjectHandle(src), RuntimeValue::ObjectHandle(dst))
+                    (RuntimeValue::Object(src), RuntimeValue::Object(dst))
                         if src.raw() > 0 && src.raw() == dst.raw()
                 ),
                 "{label}: {out:?}"
@@ -23156,7 +23156,7 @@ End Sub";
             )
             .expect("CreateObject value snapshot should succeed");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -23174,7 +23174,7 @@ End Sub";
             )
             .expect("CreateObject value snapshot should preserve object handle on JIT fallback");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(&out[0], RuntimeValue::Object(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -24946,3 +24946,4 @@ End Sub";
         );
     }
 }
+

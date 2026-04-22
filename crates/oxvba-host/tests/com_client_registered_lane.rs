@@ -3,7 +3,7 @@ mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{ObjectRef, RuntimeValue, bstr::BStr};
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
@@ -171,9 +171,9 @@ mod windows_registered_com_lane {
         .is_ok()
     }
 
-    fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+    fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
         match value {
-            RuntimeValue::ObjectHandle(handle) => *handle,
+            RuntimeValue::Object(handle) => handle.clone(),
             other => panic!("expected object handle, got {:?}", other),
         }
     }
@@ -436,7 +436,7 @@ End Sub
             .as_ref()
             .expect("ReturnSelfArray should preserve elements");
         assert_eq!(elements.len(), 1, "ReturnSelfArray length mismatch");
-        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+        let RuntimeValue::Object(handle) = &elements[0] else {
             panic!(
                 "expected first ReturnSelfArray element to be an object handle, got {:?}",
                 elements[0]
@@ -610,7 +610,7 @@ End Sub
         let poll_delay_ms = registered_event_poll_delay_ms();
 
         let subscription = match engine.subscribe_com_event_handler(
-            object,
+            object.clone(),
             event_token,
             "SinkA_OnChanged",
         ) {

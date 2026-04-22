@@ -2,6 +2,7 @@ use crate::{error::HalError, model::HalProfileId, traits::ComHal};
 use oxvba_com::{
     DynamicCallRequest, DynamicEventPayload, DynamicObjectBridge, DynamicObjectToken, DynamicValue,
 };
+use oxvba_runtime::ObjectHandle;
 
 pub struct HalComDynamicBridge<'a> {
     _profile: HalProfileId,
@@ -37,7 +38,7 @@ impl DynamicObjectBridge for HalComDynamicBridge<'_> {
         object: DynamicObjectToken,
     ) -> Result<DynamicValue, Self::Error> {
         self.com
-            .release_object(object.into())
+            .release_object(ObjectHandle::from(object).into())
             .map(|value| oxvba_com::ComValue::from_runtime_value(&value))
     }
 }

@@ -1375,7 +1375,7 @@ mod tests {
         host: &StandardHostServices,
         object: oxvba_runtime::ObjectHandle,
     ) -> crate::error::HalResult<i32> {
-        host.release_object(object).map(expect_i32)
+        host.release_object(object.into()).map(expect_i32)
     }
 
     fn invalidate_typelib_cache_test(
@@ -2415,7 +2415,7 @@ mod tests {
     fn com_event_subscription_lane_requires_native_mode() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let subscribe = host
-            .subscribe_event(ObjectHandle::new(1), 1.into())
+            .subscribe_event(ObjectHandle::new(1).into(), 1.into())
             .expect_err("subscribe_event should require native mode");
         assert_eq!(subscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(subscribe.operation, "subscribe_event");
@@ -2465,7 +2465,7 @@ mod tests {
             "controlled COM lane should bind native object"
         );
         let subscription = host
-            .subscribe_event(object, 1.into())
+            .subscribe_event(object.into(), 1.into())
             .expect("subscribe_event should succeed for controlled event source");
         assert!(subscription.raw() >= 40_001);
         {
@@ -2558,7 +2558,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR.into())
+            .subscribe_event(object.into(), super::TEST_EVENT_CHANGED_PAIR.into())
             .expect("subscribe_event should succeed for controlled pair-event source");
 
         assert_eq!(
@@ -2619,7 +2619,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR.into())
+            .subscribe_event(object.into(), super::TEST_EVENT_CHANGED_PAIR.into())
             .expect("subscribe_event should succeed for controlled pair-event source");
 
         assert_eq!(
@@ -2655,7 +2655,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object, 1.into())
+            .subscribe_event(object.into(), 1.into())
             .expect("subscribe_event should succeed for controlled event source");
         host.dispatch_invoke_named(object.into(), "FireChanged", &[77])
             .expect("FireChanged should succeed");
@@ -2691,7 +2691,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let err = host
-            .subscribe_event(object, 7.into())
+            .subscribe_event(object.into(), 7.into())
             .expect_err("unknown event token should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"));
@@ -2705,7 +2705,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object, super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into())
+            .subscribe_event(object.into(), super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into())
             .expect("controlled source-interface event token should subscribe successfully");
         assert!(
             subscription.raw() >= 40_001,
@@ -2782,7 +2782,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object, 1.into())
+            .subscribe_event(object.into(), 1.into())
             .expect("subscribe should succeed");
         let _ = host
             .dispatch_invoke_named(object.into(), "FireChanged", &[77])
@@ -3861,7 +3861,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let descriptor = host
-            .describe_object(object)
+            .describe_object(object.into())
             .expect("describe_object should succeed")
             .expect("known COM object should produce a descriptor");
 
@@ -3973,7 +3973,7 @@ mod tests {
             .create_object_test(SCRIPTING_DICTIONARY_PROG_ID_NAME)
             .expect("create_object should return dictionary token");
         let err = host
-            .subscribe_event(object, super::TEST_EVENT_CHANGED.into())
+            .subscribe_event(object.into(), super::TEST_EVENT_CHANGED.into())
             .expect_err("subscribe_event should reject fake dictionary event token");
         assert!(
             err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"),
@@ -4110,7 +4110,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return controlled COM object");
         let subscription = host
-            .subscribe_event(object, 1.into())
+            .subscribe_event(object.into(), 1.into())
             .expect("subscribe_event should succeed");
         let _ = host
             .dispatch_invoke_named(object.into(), "FireChanged", &[77])

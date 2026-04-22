@@ -17,7 +17,7 @@ use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComSubscriptionToken, DynamicCallRequest,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Subtype, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, RuntimeValue};
 
 pub struct RecordingHostServices {
     inner: Arc<dyn HostServices>,
@@ -326,11 +326,11 @@ impl ComHal for RecordingHostServices {
         self.inner.com().create_object(prog_id)
     }
 
-    fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
+    fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
         self.inner.com().release_object(object)
     }
 
-    fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         self.inner.com().describe_object(object)
     }
 
@@ -352,7 +352,7 @@ impl ComHal for RecordingHostServices {
 
     fn subscribe_event(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken> {
         self.inner.com().subscribe_event(object, event)

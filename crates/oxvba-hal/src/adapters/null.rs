@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue};
 
 #[derive(Debug, Clone)]
 pub struct NullHostServices {
@@ -191,11 +191,11 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
-    fn release_object(&self, _object: ObjectHandle) -> HalResult<RuntimeValue> {
+    fn release_object(&self, _object: ObjectRef) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
-    fn describe_object(&self, _object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, _object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
     }
 
@@ -215,7 +215,7 @@ impl ComHal for NullHostServices {
 
     fn subscribe_event(
         &self,
-        _object: ObjectHandle,
+        _object: ObjectRef,
         _event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
@@ -380,7 +380,7 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.subscribe_event(ObjectHandle::new(1), 1.into())
+            host.subscribe_event(ObjectHandle::new(1).into(), 1.into())
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable

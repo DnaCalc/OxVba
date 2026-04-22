@@ -25,7 +25,7 @@ pub use oxvba_com::{
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
     TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,8 +160,8 @@ pub trait ProcessEnvHal: Send + Sync {
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue>;
-    fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
+    fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
+    fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
     /// Canonical COM invoke seam. Implementations should translate between COM
     /// wire values and the runtime semantic value model here.
     fn dispatch_invoke_runtime_value_v2(
@@ -174,7 +174,7 @@ pub trait ComHal: Send + Sync {
     ) -> HalResult<RuntimeValue>;
     fn subscribe_event(
         &self,
-        object: ObjectHandle,
+        object: ObjectRef,
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken>;
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue>;

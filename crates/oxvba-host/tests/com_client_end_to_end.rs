@@ -3,7 +3,7 @@ mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
         safe_array::SafeArray,
     };
 
@@ -31,10 +31,9 @@ mod windows_com_e2e {
             .to_string()
     }
 
-    fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+    fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
         match value {
-            RuntimeValue::Object(handle) => ObjectHandle::new(handle.raw()),
-            RuntimeValue::ObjectHandle(handle) => *handle,
+            RuntimeValue::Object(handle) => handle.clone(),
             other => panic!("expected object handle, got {:?}", other),
         }
     }
@@ -42,11 +41,6 @@ mod windows_com_e2e {
     fn runtime_values_equivalent(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
         match (lhs, rhs) {
             (RuntimeValue::Object(lhs), RuntimeValue::Object(rhs)) => lhs.raw() == rhs.raw(),
-            (RuntimeValue::Object(lhs), RuntimeValue::ObjectHandle(rhs))
-            | (RuntimeValue::ObjectHandle(rhs), RuntimeValue::Object(lhs)) => {
-                lhs.raw() == rhs.raw()
-            }
-            (RuntimeValue::ObjectHandle(lhs), RuntimeValue::ObjectHandle(rhs)) => lhs == rhs,
             _ => lhs == rhs,
         }
     }
@@ -1161,7 +1155,7 @@ End Sub
             .as_ref()
             .expect("dispatch-array result should preserve owned elements");
         assert_eq!(elements.len(), 1, "dispatch-array result length mismatch");
-        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+        let RuntimeValue::Object(handle) = &elements[0] else {
             panic!(
                 "expected first dispatch-array element to be an object handle, got {:?}",
                 elements[0]
@@ -1203,7 +1197,7 @@ End Sub
             1,
             "typed dispatch-array result length mismatch"
         );
-        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+        let RuntimeValue::Object(handle) = &elements[0] else {
             panic!(
                 "expected first typed dispatch-array element to be an object handle, got {:?}",
                 elements[0]
@@ -1245,7 +1239,7 @@ End Sub
             1,
             "typed unknown-array result length mismatch"
         );
-        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+        let RuntimeValue::Object(handle) = &elements[0] else {
             panic!(
                 "expected first typed unknown-array element to be an object handle, got {:?}",
                 elements[0]

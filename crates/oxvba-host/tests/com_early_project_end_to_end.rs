@@ -6,7 +6,7 @@ use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue};
 
 fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
     let main_module = module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
@@ -62,9 +62,9 @@ fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool
     format!("{:?}: {}", err.phase(), err.message())
 }
 
-fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
     match value {
-        RuntimeValue::ObjectHandle(handle) => *handle,
+        RuntimeValue::Object(handle) => handle.clone(),
         other => panic!("expected object handle, got {:?}", other),
     }
 }

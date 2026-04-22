@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue};
 
 use super::standard::descriptor_for_profile;
 
@@ -273,10 +273,10 @@ impl ComHal for ReplayHostServices {
     fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
-    fn release_object(&self, _object: ObjectHandle) -> HalResult<RuntimeValue> {
+    fn release_object(&self, _object: ObjectRef) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
-    fn describe_object(&self, _object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, _object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
     }
     fn dispatch_invoke_runtime_value_v2(
@@ -293,7 +293,7 @@ impl ComHal for ReplayHostServices {
     }
     fn subscribe_event(
         &self,
-        _object: ObjectHandle,
+        _object: ObjectRef,
         _event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))

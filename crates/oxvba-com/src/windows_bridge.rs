@@ -195,7 +195,7 @@ impl WindowsComBridge {
             .get(&ComObjectToken::new(object.raw()))
             .map(|binding| {
                 binding.descriptor(
-                    object,
+                    object.into(),
                     resolve_typelib_identity_for_prog_id_name(&binding.prog_id_name)
                         .map(|identity| identity.cache_key),
                 )

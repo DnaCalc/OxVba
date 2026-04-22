@@ -2592,7 +2592,7 @@ pub extern "C" fn oxrt_host_com_subscribe(
     let host = unsafe { (*ctx).host_services() };
     match host
         .com()
-        .subscribe_event(ObjectHandle::new(object.raw()), event)
+        .subscribe_event(ObjectHandle::new(object.raw()).into(), event)
     {
         Ok(value) => {
             write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
