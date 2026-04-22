@@ -195,8 +195,11 @@ Interpretation:
 2. the F lane should treat COM identity and lifetime as one problem, not two
    loosely coupled ones
 3. the retained-wrapper migration target therefore uses `IUnknown` as the
-   internal native identity/lifetime anchor while preserving semantic
-   `ObjectHandle` as the runtime-facing carrier.
+   internal identity/lifetime anchor while preserving semantic `ObjectHandle`
+   as the runtime-facing carrier
+4. the migrated runtime object/base structure reached through `ObjectHandle`
+   must implement `IUnknown`, and runtime reference counting for object
+   lifetime must be driven through `IUnknown::AddRef` / `IUnknown::Release`.
 
 ## 5. Baseline Work Before the Migration
 
@@ -466,37 +469,45 @@ Target truth:
    binary-interface truth as far as we can honestly claim
 2. any retained abstraction or indirection is documented as a deliberate
    project decision rather than accidental legacy
-3. retained native COM identity/lifetime truth is anchored on canonical
+3. the runtime object/base structure for object-valued identities implements
+   `IUnknown`
+4. runtime object lifetime/refcounting is driven by `IUnknown::AddRef` /
+   `IUnknown::Release`
+5. retained native COM identity/lifetime truth is anchored on canonical
    `IUnknown` identity, with `IDispatch` retained as the Automation invocation
    surface where applicable
-4. `VT_UNKNOWN` and `VT_DISPATCH` behavior is reevaluated under the new
+6. `VT_UNKNOWN` and `VT_DISPATCH` behavior is reevaluated under the new
    representation.
 
 Required migration actions:
 
 1. preserve semantic `ObjectHandle` as the runtime-facing object carrier while
-   making the retained COM wrapper explicitly `IUnknown`-anchored
-2. update retained runtime/com state so identity dedup and lifetime ownership
+   making the resolved runtime object/base structure `IUnknown`-implementing
+2. route runtime object lifetime/refcounting through `IUnknown::AddRef` /
+   `IUnknown::Release`
+3. update retained runtime/com state so identity dedup and lifetime ownership
    are keyed off canonical retained `IUnknown` truth rather than only retained
    `IDispatch*`
-3. preserve lifetime, ownership, and safety semantics across callbacks and
+4. preserve lifetime, ownership, and safety semantics across callbacks and
    boundary calls
-4. retest `VT_UNKNOWN`, `VT_DISPATCH`, and `ObjPtr`
-5. document all places where the project still chooses a wrapper rather than a
+5. retest `VT_UNKNOWN`, `VT_DISPATCH`, and `ObjPtr`
+6. document all places where the project still chooses a wrapper rather than a
    raw pointer as the primary carrier.
 
 Expected code areas:
 
 1. `crates/oxvba-runtime/src/runtime_value.rs`
-2. `crates/oxvba-com/src/model.rs`
-3. `crates/oxvba-com/src/dynamic_object.rs`
-4. `crates/oxvba-com/src/windows_runtime_state.rs`
-5. `crates/oxvba-com/src/windows_variant.rs`
-6. `crates/oxvba-com/src/windows_client.rs`
-7. `crates/oxvba-com/src/windows_invoke.rs`
-8. `crates/oxvba-com/src/windows_connection_point.rs`
-9. COM host tests
-10. architecture/runtime/interop docs.
+2. `crates/oxvba-runtime/src/variant.rs`
+3. `crates/oxvba-com/src/model.rs`
+4. `crates/oxvba-com/src/dynamic_object.rs`
+5. `crates/oxvba-com/src/runtime_state.rs`
+6. `crates/oxvba-com/src/windows_runtime_state.rs`
+7. `crates/oxvba-com/src/windows_variant.rs`
+8. `crates/oxvba-com/src/windows_client.rs`
+9. `crates/oxvba-com/src/windows_invoke.rs`
+10. `crates/oxvba-com/src/windows_connection_point.rs`
+11. COM host tests
+12. architecture/runtime/interop docs.
 
 Primary baseline test anchors:
 
@@ -1530,7 +1541,8 @@ Current repo grounding after `vmm-e5`:
      truth for retained native dispatch pointers, object-handle allocation,
      native-dispatch result dedup, subscription state, and callback queues.
    - `vmm-f2` tightens this into an explicit retained `IUnknown` identity /
-     lifetime anchor rather than leaving identity keyed only by retained
+     lifetime anchor and aligns the runtime object base with `IUnknown`
+     lifetime semantics rather than leaving identity keyed only by retained
      `IDispatch*`.
 3. The current observable `VT_DISPATCH` / `VT_UNKNOWN` contract is already
    explicit enough to drive the migration.
@@ -1587,10 +1599,13 @@ Child beads:
    - depends on: `vmm-f1`
    - title: `Reconcile internal interface identity carrier with COM pointer truth`
    - outcome:
+     - runtime object/base structure becomes `IUnknown`-implementing
+     - runtime object lifetime is driven through `AddRef` / `Release`
      - retained wrapper becomes explicitly `IUnknown`-anchored while
        `ObjectHandle` remains the runtime-facing carrier
    - completion evidence:
      - identity-sensitive runtime/COM tests pass
+     - object lifetime/refcount ownership is documented honestly
      - retained wrapper identity/lifetime ownership is documented honestly
 4. `vmm-f3`
    - kind: `delivery`
