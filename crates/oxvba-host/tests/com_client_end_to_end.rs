@@ -1,5 +1,10 @@
 #[cfg(target_os = "windows")]
 mod windows_com_e2e {
+    use std::{
+        collections::HashMap,
+        sync::{Mutex, OnceLock},
+    };
+
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
@@ -7,15 +12,56 @@ mod windows_com_e2e {
         safe_array::SafeArray,
     };
 
+    fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
+        static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
+        CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn canonicalize_runtime_value(value: RuntimeValue) -> RuntimeValue {
+        match value {
+            RuntimeValue::Object(object) => {
+                let raw = object.raw();
+                let canonical = canonical_snapshot_objects()
+                    .lock()
+                    .expect("canonical object snapshot map should not be poisoned")
+                    .entry(raw)
+                    .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+                    .clone();
+                RuntimeValue::Object(canonical)
+            }
+            RuntimeValue::ArrayIntent(mut array) => {
+                if let Some(elements) = array.elements.take() {
+                    array.elements = Some(
+                        elements
+                            .into_iter()
+                            .map(canonicalize_runtime_value)
+                            .collect(),
+                    );
+                }
+                RuntimeValue::ArrayIntent(array)
+            }
+            other => other,
+        }
+    }
+
+    fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+        values
+            .into_iter()
+            .map(canonicalize_runtime_value)
+            .collect()
+    }
+
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
             enable_jit,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine
-            .execute_source_with_snapshot_phased(source)
-            .expect("windows host-backed COM lane should execute")
+        canonicalize_snapshot(
+            engine
+                .execute_source_with_snapshot_phased(source)
+                .expect("windows host-backed COM lane should execute"),
+        )
     }
 
     fn run_windows_host_backed_error(source: &str, enable_jit: bool) -> String {
