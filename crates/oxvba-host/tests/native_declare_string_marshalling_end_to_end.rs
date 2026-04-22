@@ -284,6 +284,117 @@ End Sub
     }
 
     #[test]
+    fn oleaut32_varboolfromi4_byref_boolean_writeback_round_trips_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function VarBoolFromI4 Lib "oleaut32" (ByVal inputValue As Long, ByRef outValue As Boolean) As Long
+
+Sub Main()
+    Dim outValue As Boolean
+    Dim status As Long
+    status = VarBoolFromI4(123, outValue)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot.contains(&RuntimeValue::Bool(true)),
+                "VarBoolFromI4 should populate ByRef Boolean output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn oleaut32_varr8fromi4_byref_double_writeback_round_trips_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function VarR8FromI4 Lib "oleaut32" (ByVal inputValue As Long, ByRef outValue As Double) As Long
+
+Sub Main()
+    Dim outValue As Double
+    Dim status As Long
+    status = VarR8FromI4(123, outValue)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot
+                    .iter()
+                    .any(|value| matches!(value, RuntimeValue::F64(raw) if *raw == F64Value::from_f64(123.0))),
+                "VarR8FromI4 should populate ByRef Double output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn oleaut32_varr4fromi4_byref_single_writeback_round_trips_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function VarR4FromI4 Lib "oleaut32" (ByVal inputValue As Long, ByRef outValue As Single) As Long
+
+Sub Main()
+    Dim outValue As Single
+    Dim status As Long
+    status = VarR4FromI4(123, outValue)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot
+                    .iter()
+                    .any(|value| matches!(value, RuntimeValue::F64(raw) if *raw == F64Value::from_single_f64(123.0))),
+                "VarR4FromI4 should populate ByRef Single output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn oleaut32_vari2fromi4_byref_integer_writeback_round_trips_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function VarI2FromI4 Lib "oleaut32" (ByVal inputValue As Long, ByRef outValue As Integer) As Long
+
+Sub Main()
+    Dim outValue As Integer
+    Dim status As Long
+    status = VarI2FromI4(123, outValue)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot.contains(&RuntimeValue::I32(123)),
+                "VarI2FromI4 should populate ByRef Integer output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn getdiskfreespaceexw_byref_longlong_writeback_round_trips_in_vm_and_jit() {
+        let source = r#"
+Private Declare PtrSafe Function GetDiskFreeSpaceExW Lib "kernel32" (ByVal lpDirectoryName As LongPtr, ByRef lpFreeBytesAvailableToCaller As LongLong, ByRef lpTotalNumberOfBytes As LongLong, ByRef lpTotalNumberOfFreeBytes As LongLong) As Long
+
+Sub Main()
+    Dim freeBytes As LongLong
+    Dim totalBytes As LongLong
+    Dim totalFreeBytes As LongLong
+    Dim status As Long
+    status = GetDiskFreeSpaceExW(StrPtr("C:\"), freeBytes, totalBytes, totalFreeBytes)
+End Sub
+"#;
+
+        for enable_jit in [false, true] {
+            let snapshot = run_windows_host_backed(source, enable_jit);
+            assert!(
+                snapshot.iter().any(|value| matches!(value, RuntimeValue::I64(raw) if *raw > 0)),
+                "GetDiskFreeSpaceExW should populate ByRef LongLong outputs for enable_jit={enable_jit}; snapshot={snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
     fn oleaut32_vardatefromstr_byref_date_writeback_round_trips_in_vm_and_jit() {
         let source = r#"
 Private Declare PtrSafe Function VarDateFromStr Lib "oleaut32" (ByVal inputText As LongPtr, ByVal lcid As Long, ByVal flags As Long, ByRef outValue As Date) As Long
