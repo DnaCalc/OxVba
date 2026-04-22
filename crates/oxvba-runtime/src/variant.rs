@@ -423,7 +423,6 @@ impl Variant {
                 owned: Some(OwnedVariantData::ArrayIntent(array.clone())),
             },
             RuntimeValue::Object(handle) => Self::from_object_ref(handle.clone()),
-            RuntimeValue::ObjectHandle(handle) => Self::from_object_ref((*handle).into()),
             RuntimeValue::BindingHandle(handle) => Self {
                 core: VariantCore::from_bytes(VarType::Object, [0; 8]),
                 owned: Some(OwnedVariantData::BindingHandle(*handle)),
@@ -517,7 +516,8 @@ impl Variant {
 #[cfg(test)]
 mod tests {
     use crate::{
-        CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
+        safe_array::SafeArray,
     };
 
     use super::{VarType, Variant, VariantCore, VariantData};
@@ -732,7 +732,8 @@ mod tests {
             RuntimeValue::ArrayIntent(SafeArray::vector(3))
         );
 
-        let object_variant = Variant::from_runtime_value(&RuntimeValue::ObjectHandle(42.into()));
+        let object_variant =
+            Variant::from_runtime_value(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)));
         assert_eq!(
             object_variant
                 .as_object_ref()

@@ -242,7 +242,6 @@ pub enum RuntimeValue {
     String(BStr),
     ArrayIntent(SafeArray),
     Object(ObjectRef),
-    ObjectHandle(ObjectHandle),
     BindingHandle(BindingHandle),
 }
 
@@ -294,7 +293,6 @@ impl RuntimeValue {
                 "array intent cannot be represented in current compat slot tag".to_string()
             }),
             Self::Object(handle) => Ok(handle.raw()),
-            Self::ObjectHandle(handle) => Ok(handle.raw()),
             Self::BindingHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
                 Err("string cannot be represented in current compat slot lane".to_string())
@@ -320,9 +318,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{
-        BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
-    };
+    use super::{BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue};
     use crate::decimal::Decimal96;
 
     #[test]
@@ -393,11 +389,11 @@ mod tests {
     }
 
     #[test]
-    fn runtime_value_object_handles_preserve_legacy_shape() {
+    fn runtime_value_objects_preserve_legacy_shape() {
         assert_eq!(
-            RuntimeValue::ObjectHandle(ObjectHandle::new(42))
+            RuntimeValue::Object(ObjectRef::from_compat_identity(42))
                 .project_compat_slot_i32()
-                .expect("object handle"),
+                .expect("object"),
             42
         );
     }
@@ -486,7 +482,7 @@ mod tests {
             RuntimeValue::from_variant(&string_value.to_variant()).expect("string roundtrip"),
             string_value
         );
-        let object_value = RuntimeValue::ObjectHandle(ObjectHandle::new(42));
+        let object_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
         let roundtripped =
             RuntimeValue::from_variant(&object_value.to_variant()).expect("object roundtrip");
         let RuntimeValue::Object(object_ref) = roundtripped else {

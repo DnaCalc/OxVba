@@ -296,9 +296,6 @@ pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
         RuntimeValue::Bool(v) => RtSlot::from_bool(*v),
         RuntimeValue::ErrorCode(code) => RtSlot::from_error(*code),
         RuntimeValue::Object(h) => RtSlot::from_object_ref_box(Box::new(h.clone())),
-        RuntimeValue::ObjectHandle(h) => {
-            RtSlot::from_object_ref_box(Box::new(ObjectRef::from_compat_identity(h.raw())))
-        }
         RuntimeValue::BindingHandle(h) => RtSlot::from_binding(h.raw()),
         RuntimeValue::I64(v) => RtSlot::from_i64(*v),
         RuntimeValue::Currency(c) => RtSlot::from_currency(c.scaled_i64()),

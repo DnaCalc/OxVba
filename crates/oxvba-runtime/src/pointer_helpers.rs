@@ -442,9 +442,6 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
         RuntimeValue::Object(handle) => {
             PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
         }
-        RuntimeValue::ObjectHandle(handle) => {
-            PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
-        }
         RuntimeValue::BindingHandle(handle) => {
             PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
         }
@@ -510,16 +507,6 @@ pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
                 i64::from(handle.raw()),
             ))
         }
-        RuntimeValue::ObjectHandle(handle) if handle.raw() == 0 => Ok(0),
-        RuntimeValue::ObjectHandle(handle) => {
-            let mut guard = registry()
-                .lock()
-                .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-            Ok(guard.insert_object_identity(
-                ObjectIdentityKey::Object(handle.raw()),
-                i64::from(handle.raw()),
-            ))
-        }
         RuntimeValue::BindingHandle(handle) => {
             let mut guard = registry()
                 .lock()
@@ -570,7 +557,7 @@ mod tests {
         register_string_var_pointer, register_utf16_string, register_variant_var_pointer,
     };
     use crate::{
-        BindingHandle, Decimal96, ObjectHandle, RuntimeValue, VarType, Variant, bstr::BStr,
+        BindingHandle, Decimal96, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr,
     };
     #[cfg(target_os = "windows")]
     use windows_sys::{
@@ -697,7 +684,7 @@ mod tests {
     #[test]
     fn object_pointer_requires_object_like_value() {
         assert_eq!(
-            register_object_pointer(&RuntimeValue::ObjectHandle(ObjectHandle::new(0)))
+            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(0)))
                 .expect("nothing"),
             0
         );
@@ -707,10 +694,10 @@ mod tests {
     #[test]
     fn object_pointer_is_stable_for_same_runtime_identity() {
         let object_ptr =
-            register_object_pointer(&RuntimeValue::ObjectHandle(ObjectHandle::new(42)))
+            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
                 .expect("object identity");
         let same_object_ptr =
-            register_object_pointer(&RuntimeValue::ObjectHandle(ObjectHandle::new(42)))
+            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
                 .expect("same object identity");
         let binding_ptr =
             register_object_pointer(&RuntimeValue::BindingHandle(BindingHandle::new(42)))

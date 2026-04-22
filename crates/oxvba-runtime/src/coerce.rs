@@ -130,10 +130,7 @@ pub fn runtime_value_to_vba_string(value: &RuntimeValue) -> Result<RuntimeValue,
         RuntimeValue::Null => {
             return Err("runtime error: 13 (Type mismatch)".to_string());
         }
-        RuntimeValue::Object(_)
-        | RuntimeValue::ObjectHandle(_)
-        | RuntimeValue::BindingHandle(_)
-        | RuntimeValue::ArrayIntent(_) => {
+        RuntimeValue::Object(_) | RuntimeValue::BindingHandle(_) | RuntimeValue::ArrayIntent(_) => {
             return Err(format!(
                 "cannot convert {:?} to String",
                 core::mem::discriminant(value)

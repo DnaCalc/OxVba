@@ -105,7 +105,6 @@ impl ComValue {
             RuntimeValue::String(value) => Self::String(value),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array),
             RuntimeValue::Object(handle) => Self::Object(handle.clone()),
-            RuntimeValue::ObjectHandle(handle) => Self::Object(handle.into()),
             RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
         })
     }
@@ -256,7 +255,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -339,7 +338,7 @@ mod tests {
             RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
         );
         let object_value =
-            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234)));
+            ComValue::from_runtime_value(&RuntimeValue::Object(ObjectRef::from_compat_identity(1234)));
         let ComValue::Object(object_ref) = object_value else {
             panic!("expected ObjectRef-backed COM value");
         };

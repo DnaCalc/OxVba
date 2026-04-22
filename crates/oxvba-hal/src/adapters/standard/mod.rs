@@ -768,7 +768,6 @@ impl StandardHostServices {
             RuntimeValue::Currency(value) => value.to_string(),
             RuntimeValue::ArrayIntent(array) => format!("<array:{}>", array.len),
             RuntimeValue::Object(handle) => format!("<object:{handle}>"),
-            RuntimeValue::ObjectHandle(handle) => format!("<object:{handle}>"),
             RuntimeValue::BindingHandle(handle) => format!("<binding:{handle}>"),
         }
     }
@@ -1338,7 +1337,6 @@ mod tests {
     fn expect_object_handle(value: RuntimeValue) -> oxvba_runtime::ObjectHandle {
         match value {
             RuntimeValue::Object(object_ref) => oxvba_runtime::ObjectHandle::new(object_ref.raw()),
-            RuntimeValue::ObjectHandle(handle) => handle,
             other => panic!("expected object runtime value, got {other:?}"),
         }
     }
@@ -1434,7 +1432,7 @@ mod tests {
         args: &[i32],
     ) -> crate::error::HalResult<i32> {
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: ObjectHandle::new(object).into(),
             member: bound_member_token_by_name(host, object, member_name)?,
             args: args.iter().copied().map(ComInvokeArg::positional).collect(),
             invoke_kind_hint: None,
@@ -2087,7 +2085,7 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
             host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: 10.into(),
+                object: ObjectHandle::new(10).into(),
                 member: 20.into(),
                 args: vec![ComInvokeArg::positional(30)],
                 invoke_kind_hint: None,
@@ -2105,7 +2103,7 @@ mod tests {
             .expect("create_object should return deterministic projection handle");
         let dispatch = host
             .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: object.raw().into(),
+                object: object.into(),
                 member: 23.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,
@@ -2113,7 +2111,7 @@ mod tests {
             .expect("ReturnSelfDispatch projection should succeed");
         let unknown = host
             .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: object.raw().into(),
+                object: object.into(),
                 member: 24.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,
@@ -2131,7 +2129,7 @@ mod tests {
             .expect("create_object should return deterministic projection handle");
         let err = host
             .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: object.raw().into(),
+                object: object.into(),
                 member: super::TEST_DISPID_RAISE_EXCEPTION.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,
@@ -2157,7 +2155,7 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
             host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: 10.into(),
+                object: ObjectHandle::new(10).into(),
                 member: 20.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,
@@ -2930,7 +2928,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_SUM_PAIR.into(),
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
@@ -2983,7 +2981,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_LOOKUP_PAIR.into(),
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
@@ -3009,7 +3007,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: 0.into(),
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
@@ -3032,7 +3030,7 @@ mod tests {
             .create_object_test(SCRIPTING_DICTIONARY_PROG_ID_NAME)
             .expect("create_object should return dictionary token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: 0.into(),
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
@@ -3051,7 +3049,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_LOOKUP.into(),
             args: vec![ComInvokeArg::omitted()],
             invoke_kind_hint: None,
@@ -3071,7 +3069,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE.into(),
             args: vec![ComInvokeArg::positional(7), ComInvokeArg::named(9, "value")],
             invoke_kind_hint: None,
@@ -3100,7 +3098,7 @@ mod tests {
                 RuntimeValue::Null,
             ]));
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_ECHO_VARIANT.into(),
             args: vec![ComInvokeArg::positional_value(
                 ComValue::from_runtime_value(&expected),
@@ -3122,7 +3120,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE.into(),
             args: vec![
                 ComInvokeArg::named(9, "value"),
@@ -3154,7 +3152,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.raw().into(),
+            object: object.into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE_REF.into(),
             args: vec![
                 ComInvokeArg::named(13, "value"),
@@ -3184,7 +3182,7 @@ mod tests {
             .expect("create_object should return a token");
         let err = host
             .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
-                object: object.raw().into(),
+                object: object.into(),
                 member: super::TEST_DISPID_LOOKUP.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,

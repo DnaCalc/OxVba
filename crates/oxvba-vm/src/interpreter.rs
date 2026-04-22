@@ -2080,7 +2080,7 @@ impl Vm {
                         RuntimeValue::String(_) => 8,   // vbString
                         RuntimeValue::ErrorCode(_) => 10, // vbError
                         RuntimeValue::Decimal(_) => 14, // vbDecimal
-                        RuntimeValue::Object(_) | RuntimeValue::ObjectHandle(_) => 9, // vbObject
+                        RuntimeValue::Object(_) => 9, // vbObject
                         RuntimeValue::BindingHandle(_) => 9, // vbObject
                         RuntimeValue::ArrayIntent(_) => 8192 + 12, // vbArray + vbVariant
                     };
@@ -2249,7 +2249,7 @@ impl Vm {
                         "dispatch_invoke.object",
                     ) {
                         Ok(object) => {
-                            // Also check for Nothing (ObjectHandle(0)).
+                            // Also check for Nothing (ObjectRef raw identity 0).
                             if object.raw() == 0 {
                                 pc = self.route_runtime_error(
                                     pc,
@@ -2874,17 +2874,6 @@ impl Vm {
                         RuntimeValue::Object(handle) => {
                             let handle = ObjectHandle::new(handle.raw());
                             if let Some(route) = self.project_dynamic_objects.get(&handle) {
-                                route.module_name.eq_ignore_ascii_case(type_name)
-                                    || route
-                                        .implements_interfaces
-                                        .iter()
-                                        .any(|iface| iface.eq_ignore_ascii_case(type_name))
-                            } else {
-                                false
-                            }
-                        }
-                        RuntimeValue::ObjectHandle(handle) => {
-                            if let Some(route) = self.project_dynamic_objects.get(handle) {
                                 route.module_name.eq_ignore_ascii_case(type_name)
                                     || route
                                         .implements_interfaces
@@ -5296,7 +5285,6 @@ mod tests {
         assert_eq!(out[19], 2);
         let object_handle = match &values[20] {
             RuntimeValue::Object(handle) => handle.raw(),
-            RuntimeValue::ObjectHandle(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
         assert_eq!(out[20], object_handle);
@@ -5480,7 +5468,6 @@ mod tests {
         let values = vm.snapshot_values(8);
         let object_handle = match &values[1] {
             RuntimeValue::Object(handle) => handle.raw(),
-            RuntimeValue::ObjectHandle(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
         assert_eq!(out[1], object_handle);
