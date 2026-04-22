@@ -400,7 +400,7 @@ impl WindowsComBridge {
         let value = invoke_result.map_err(WindowsComBridgeDispatchError::InvokeFailure)?;
         queue_projection_event_callbacks_shared(
             &self.state,
-            request.object,
+            ObjectHandle::new(request.object.raw()),
             &binding,
             request.member,
             Some(&positional_values),
@@ -419,7 +419,7 @@ impl WindowsComBridge {
             DynamicMemberSelector::Token(value) => {
                 return self.dispatch_invoke_runtime_value(
                     &ComInvokeRequest {
-                        object: request.object.into(),
+                        object: request.object.clone(),
                         member: ComMemberToken::new(*value),
                         args: request.args.clone().into_iter().map(Into::into).collect(),
                         invoke_kind_hint: request.call_kind_hint.map(Into::into),
@@ -430,7 +430,7 @@ impl WindowsComBridge {
             DynamicMemberSelector::DefaultMember => {
                 return self.dispatch_invoke_runtime_value(
                     &ComInvokeRequest {
-                        object: request.object.into(),
+                        object: request.object.clone(),
                         member: ComMemberToken::new(0),
                         args: request.args.clone().into_iter().map(Into::into).collect(),
                         invoke_kind_hint: request.call_kind_hint.map(Into::into),
@@ -473,7 +473,7 @@ impl WindowsComBridge {
         {
             return self.dispatch_invoke_runtime_value(
                 &ComInvokeRequest {
-                    object: request.object.into(),
+                    object: request.object.clone(),
                     member: member_token,
                     args,
                     invoke_kind_hint: request.call_kind_hint.map(Into::into),

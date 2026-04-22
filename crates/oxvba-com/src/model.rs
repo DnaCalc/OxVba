@@ -217,14 +217,14 @@ impl ComInvokeArg {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeRequest {
-    pub object: ObjectHandle,
+    pub object: ObjectRef,
     pub member: ComMemberToken,
     pub args: Vec<ComInvokeArg>,
     pub invoke_kind_hint: Option<ComInvokeKind>,
 }
 
 impl ComInvokeRequest {
-    pub fn new(object: ObjectHandle, member: ComMemberToken, args: Vec<ComInvokeArg>) -> Self {
+    pub fn new(object: ObjectRef, member: ComMemberToken, args: Vec<ComInvokeArg>) -> Self {
         Self {
             object,
             member,
@@ -239,7 +239,7 @@ impl ComInvokeRequest {
         } else {
             vec![ComInvokeArg::positional(arg)]
         };
-        Self::new(ObjectHandle::new(object), ComMemberToken::new(member), args)
+        Self::new(ObjectHandle::new(object).into(), ComMemberToken::new(member), args)
     }
 }
 
@@ -247,7 +247,7 @@ impl ComInvokeRequest {
 pub struct ComCallbackPayload {
     pub callback: ComCallbackToken,
     pub subscription: ComSubscriptionToken,
-    pub object: ObjectHandle,
+    pub object: ObjectRef,
     pub event: ComMemberToken,
     pub args: Vec<ComValue>,
 }

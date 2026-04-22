@@ -327,7 +327,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
         Some(ComCallbackPayload {
             callback,
             subscription: payload.subscription,
-            object: ObjectHandle::new(payload.object.raw()),
+            object: ObjectHandle::new(payload.object.raw()).into(),
             event: payload.event,
             args: payload.args,
         })

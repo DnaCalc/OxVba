@@ -333,7 +333,7 @@ impl ComHal for StandardHostServices {
                 {
                     if let Some(descriptor) = self
                         .com_bridge
-                        .describe_object(request.object.into())
+                        .describe_object(ObjectHandle::new(request.object.raw()))
                         .map_err(|message| self.com_dispatch_adapter_fault(message))?
                         && let Some((member_token, _)) = self
                             .com_bridge
@@ -344,7 +344,7 @@ impl ComHal for StandardHostServices {
                             .map_err(|message| self.com_dispatch_adapter_fault(message))?
                     {
                         ComInvokeRequest {
-                            object: request.object.into(),
+                            object: request.object.clone(),
                             member: member_token,
                             args: request.args.clone().into_iter().map(Into::into).collect(),
                             invoke_kind_hint: request.call_kind_hint.map(Into::into),

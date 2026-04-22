@@ -242,7 +242,7 @@ mod tests {
             },
         );
         let request = ComInvokeRequest {
-            object: ObjectHandle::new(20_001),
+            object: ObjectHandle::new(20_001).into(),
             member: ComMemberToken::new(0),
             args: vec![ComInvokeArg::named_value(ComValue::I32(19), "value")],
             invoke_kind_hint: None,
@@ -268,7 +268,7 @@ mod tests {
             },
         );
         let request = ComInvokeRequest {
-            object: ObjectHandle::new(20_001),
+            object: ObjectHandle::new(20_001).into(),
             member: ComMemberToken::new(0),
             args: vec![ComInvokeArg::positional_value(ComValue::I32(19))],
             invoke_kind_hint: None,
@@ -284,7 +284,7 @@ mod tests {
      {
         let binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         let request = ComInvokeRequest {
-            object: ObjectHandle::new(20_001),
+            object: ObjectHandle::new(20_001).into(),
             member: ComMemberToken::new(0),
             args: vec![ComInvokeArg::named_value(ComValue::I32(19), "value")],
             invoke_kind_hint: None,
@@ -306,7 +306,7 @@ mod tests {
             },
         );
         let request = ComInvokeRequest {
-            object: ObjectHandle::new(20_001),
+            object: ObjectHandle::new(20_001).into(),
             member: ComMemberToken::new(42),
             args: Vec::new(),
             invoke_kind_hint: None,

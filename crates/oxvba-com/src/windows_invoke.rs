@@ -1547,7 +1547,7 @@ where
             crate::resolve_member_dispid_cached(
                 &mut state,
                 dispatch,
-                request.object,
+                ObjectHandle::new(request.object.raw()),
                 &binding,
                 crate::ComMemberToken::new(member),
                 None,
@@ -1610,7 +1610,7 @@ where
     )?;
     let _ = crate::windows_runtime_state::queue_projection_event_callbacks_shared(
         com_state,
-        request.object,
+        ObjectHandle::new(request.object.raw()),
         &binding,
         request.member,
         positional_values,

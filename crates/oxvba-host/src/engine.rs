@@ -1490,7 +1490,7 @@ End Sub";
         arg: i32,
     ) -> RuntimeValue {
         let request = ComInvokeRequest::new(
-            object,
+            object.into(),
             member.into(),
             if arg == oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN {
                 Vec::new()

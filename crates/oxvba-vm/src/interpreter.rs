@@ -3559,7 +3559,7 @@ impl Vm {
         typed_fastpaths: bool,
         request: &DynamicCallRequest,
     ) -> Result<Option<RuntimeValue>, String> {
-        let object = ObjectHandle::from(request.object);
+        let object = ObjectHandle::new(request.object.raw());
         let Some(route) = self.project_dynamic_objects.get(&object).cloned() else {
             return Ok(None);
         };
