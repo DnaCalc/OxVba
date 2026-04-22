@@ -1,5 +1,8 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BStr(String);
+pub struct BStr {
+    utf8: String,
+    core: OwnedBStrCore,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnedBStrCore {
@@ -54,61 +57,66 @@ impl OwnedBStrCore {
 
 impl BStr {
     pub fn empty() -> Self {
-        Self(String::new())
+        Self::from(String::new())
     }
 
     pub fn from_utf16_lossy(units: &[u16]) -> Self {
-        Self(OwnedBStrCore::from_utf16_lossy(units).to_utf8_lossy())
+        let core = OwnedBStrCore::from_utf16_lossy(units);
+        Self {
+            utf8: core.to_utf8_lossy(),
+            core,
+        }
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.utf8
     }
 
     pub fn into_string(self) -> String {
-        self.0
+        self.utf8
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.utf8.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.core.len_code_units() == 0
     }
 
     pub fn to_utf16_units(&self) -> Vec<u16> {
-        self.0.encode_utf16().collect()
+        self.core.payload_units().to_vec()
     }
 
     pub fn utf16_len(&self) -> usize {
-        self.0.encode_utf16().count()
+        self.core.len_code_units()
     }
 
     pub fn byte_len(&self) -> u32 {
-        self.owned_core().len_bytes()
+        self.core.len_bytes()
     }
 
     pub fn owned_core(&self) -> OwnedBStrCore {
-        OwnedBStrCore::from_utf8(&self.0)
+        self.core.clone()
     }
 }
 
 impl From<String> for BStr {
     fn from(value: String) -> Self {
-        Self(value)
+        let core = OwnedBStrCore::from_utf8(&value);
+        Self { utf8: value, core }
     }
 }
 
 impl From<&str> for BStr {
     fn from(value: &str) -> Self {
-        Self(value.to_string())
+        Self::from(value.to_string())
     }
 }
 
 impl core::fmt::Display for BStr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.utf8)
     }
 }
 
