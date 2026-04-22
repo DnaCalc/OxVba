@@ -1688,6 +1688,19 @@ Child beads:
        `i32` callback-argument arrays
      - keep callback/subscription tokens only as queue-control identifiers
        unless new evidence shows VBA-visible identity pressure on those tokens
+   - landed 2026-04-22:
+     - `ComEventSubscription` / `ComEventCallback` now retain `ObjectRef`
+       directly, and `ComCallbackPayload.object` returns the retained callback
+       object instead of rebuilding from a compat id
+     - projection-triggered event callbacks now derive payloads from
+       `ComInvokeArg` / `ComValue` rather than requiring legacy `i32`
+       callback-argument transport before widening back into semantic values
+     - the host callback surface now preserves callback object and event
+       metadata in `ComEventCallbackDispatch`
+     - callback/subscription tokens remain explicit control-plane identifiers;
+       this bead did not reopen that no-change decision
+     - evidence note:
+       `docs/evidence/value_model_migration/COM_EVENT_CALLBACK_IDENTITY_AND_PAYLOAD_2026-04-22.md`
 7. `vmm-f6`
    - kind: `delivery`
    - priority: `P1`
