@@ -606,6 +606,18 @@ pub unsafe fn bind_native_dispatch_result_shared(
     ))
 }
 
+/// # Safety
+///
+/// dispatch must be null or carry one retained IDispatch reference owned by the caller.
+pub unsafe fn bind_native_runtime_object_result_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    dispatch: *mut RawIDispatch,
+    prog_id_hint: &str,
+) -> Result<ObjectRef, String> {
+    let handle = unsafe { bind_native_dispatch_result_shared(com_state, dispatch, prog_id_hint) }?;
+    resolve_bound_runtime_object_shared(com_state, handle)
+}
+
 pub fn release_object_binding_shared(
     com_state: &Arc<Mutex<WindowsComClientState>>,
     object: ObjectHandle,
