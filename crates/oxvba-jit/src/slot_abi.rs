@@ -35,8 +35,8 @@ pub const SLOT_SIZE: i32 = 16;
 
 /// 16-byte C-ABI slot used by JIT-compiled code.
 ///
-/// For simple types (Empty, Null, I32, F64, Bool, ErrorCode, I64, Currency),
-/// the slot is self-contained. For heap types (String, Array, Decimal),
+/// For simple types (Empty, Null, I32, F64, Bool, ErrorCode, I64, Currency, Binding),
+/// the slot is self-contained. For heap types (String, Object, Array, Decimal),
 /// the payload holds a raw pointer to a boxed value owned by the JitContext.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -114,11 +114,12 @@ impl RtSlot {
         }
     }
 
-    pub fn from_object(handle: i32) -> Self {
+    pub fn from_object_ref_box(boxed: Box<ObjectRef>) -> Self {
+        let ptr = Box::into_raw(boxed);
         Self {
             tag: TAG_OBJECT,
             _pad: 0,
-            payload: handle as i64 as u64,
+            payload: ptr as u64,
         }
     }
 
@@ -159,9 +160,9 @@ impl RtSlot {
 
     /// Convert this slot to a RuntimeValue.
     ///
-    /// For heap types (String), this clones the data — the slot retains ownership.
+    /// For heap types (String/Object), this clones the data — the slot retains ownership.
     /// # Safety
-    /// For TAG_STRING, the payload must be a valid pointer to a Box<BStr>.
+    /// For heap tags, the payload must be a valid pointer to the corresponding boxed payload.
     pub unsafe fn to_runtime_value(&self) -> RuntimeValue {
         debug_assert!(
             self.tag <= TAG_BINDING,
@@ -170,7 +171,7 @@ impl RtSlot {
         );
         // For heap tags, payload must be a valid pointer or null.
         debug_assert!(
-            !matches!(self.tag, TAG_STRING | TAG_DECIMAL | TAG_ARRAY)
+            !matches!(self.tag, TAG_STRING | TAG_OBJECT | TAG_DECIMAL | TAG_ARRAY)
                 || self.payload == 0
                 || self.payload >= 0x1000, // heuristic: reject low non-null values
             "RtSlot::to_runtime_value: suspicious heap payload {:#x} for tag {}",
@@ -191,9 +192,14 @@ impl RtSlot {
             }
             TAG_BOOL => RuntimeValue::Bool(self.payload != 0),
             TAG_ERROR => RuntimeValue::ErrorCode(self.payload as i64 as i32),
-            TAG_OBJECT => RuntimeValue::Object(ObjectRef::from_compat_identity(
-                self.payload as i64 as i32,
-            )),
+            TAG_OBJECT => {
+                let ptr = self.payload as *const ObjectRef;
+                if ptr.is_null() {
+                    RuntimeValue::Empty
+                } else {
+                    RuntimeValue::Object(unsafe { &*ptr }.clone())
+                }
+            }
             TAG_BINDING => {
                 RuntimeValue::BindingHandle(BindingHandle::new(self.payload as i64 as i32))
             }
@@ -246,6 +252,13 @@ impl RtSlot {
                     self.payload = 0;
                 }
             }
+            TAG_OBJECT => {
+                let ptr = self.payload as *mut ObjectRef;
+                if !ptr.is_null() {
+                    drop(unsafe { Box::from_raw(ptr) });
+                    self.payload = 0;
+                }
+            }
             TAG_DECIMAL => {
                 let ptr = self.payload as *mut Decimal96;
                 if !ptr.is_null() {
@@ -266,7 +279,7 @@ impl RtSlot {
 
     /// Check if this slot tag represents a heap-allocated type.
     pub fn is_heap_type(&self) -> bool {
-        matches!(self.tag, TAG_STRING | TAG_DECIMAL | TAG_ARRAY)
+        matches!(self.tag, TAG_STRING | TAG_OBJECT | TAG_DECIMAL | TAG_ARRAY)
     }
 }
 
@@ -282,8 +295,10 @@ pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
         RuntimeValue::F64(v) => RtSlot::from_f64_value(v),
         RuntimeValue::Bool(v) => RtSlot::from_bool(*v),
         RuntimeValue::ErrorCode(code) => RtSlot::from_error(*code),
-        RuntimeValue::Object(h) => RtSlot::from_object(h.raw()),
-        RuntimeValue::ObjectHandle(h) => RtSlot::from_object(h.raw()),
+        RuntimeValue::Object(h) => RtSlot::from_object_ref_box(Box::new(h.clone())),
+        RuntimeValue::ObjectHandle(h) => {
+            RtSlot::from_object_ref_box(Box::new(ObjectRef::from_compat_identity(h.raw())))
+        }
         RuntimeValue::BindingHandle(h) => RtSlot::from_binding(h.raw()),
         RuntimeValue::I64(v) => RtSlot::from_i64(*v),
         RuntimeValue::Currency(c) => RtSlot::from_currency(c.scaled_i64()),

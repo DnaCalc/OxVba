@@ -1355,12 +1355,12 @@ pub unsafe fn invoke_member_spec_runtime_value_with_shared_state(
             crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         },
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
-            crate::bind_native_dispatch_result_shared(
+            let handle = crate::bind_native_dispatch_result_shared(
                 com_state,
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
-            )
-            .map(RuntimeValue::ObjectHandle)
+            )?;
+            crate::resolve_bound_runtime_object_shared(com_state, handle).map(RuntimeValue::Object)
         },
     )
 }
@@ -1395,12 +1395,12 @@ pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
             crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         },
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
-            crate::bind_native_dispatch_result_shared(
+            let handle = crate::bind_native_dispatch_result_shared(
                 com_state,
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
-            )
-            .map(RuntimeValue::ObjectHandle)
+            )?;
+            crate::resolve_bound_runtime_object_shared(com_state, handle).map(RuntimeValue::Object)
         },
     )
 }
@@ -1441,12 +1441,12 @@ pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
             crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
         },
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| {
-            crate::bind_native_dispatch_result_shared(
+            let handle = crate::bind_native_dispatch_result_shared(
                 com_state,
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
-            )
-            .map(RuntimeValue::ObjectHandle)
+            )?;
+            crate::resolve_bound_runtime_object_shared(com_state, handle).map(RuntimeValue::Object)
         },
     )
 }

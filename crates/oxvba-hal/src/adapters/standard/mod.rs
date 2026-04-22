@@ -909,7 +909,20 @@ impl StandardHostServices {
                 Ok(())
             })
             .map_err(|message| self.com_createobject_adapter_fault(message))?;
-        Ok(RuntimeValue::ObjectHandle(handle))
+        let object_ref = self
+            .com_bridge
+            .lock_state("activate_runtime_object_value_for_prog_id_name")
+            .map_err(|message| self.com_createobject_adapter_fault(message))?
+            .bindings
+            .get(&oxvba_com::ComObjectToken::new(handle.raw()))
+            .and_then(|binding| binding.runtime_object.clone())
+            .ok_or_else(|| {
+                self.com_createobject_adapter_fault(format!(
+                    "COM-E-OBJECT-IDENTITY-MISSING: object handle {} missing retained runtime identity",
+                    handle.raw()
+                ))
+            })?;
+        Ok(RuntimeValue::Object(object_ref))
     }
 
     #[cfg(target_os = "windows")]

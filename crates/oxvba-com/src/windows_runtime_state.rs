@@ -243,6 +243,27 @@ pub fn resolve_bound_native_dispatch(
     Ok(binding.native_dispatch as *mut RawIDispatch)
 }
 
+pub fn resolve_bound_runtime_object(
+    state: &WindowsComClientState,
+    object: ObjectHandle,
+) -> Result<ObjectRef, String> {
+    let Some(binding) = state.bindings.get(&ComObjectToken::new(object.raw())) else {
+        return Err(format!(
+            "COM-E-OBJECT-MISSING: unknown COM object handle {}",
+            object.raw()
+        ));
+    };
+    binding
+        .runtime_object
+        .clone()
+        .ok_or_else(|| {
+            format!(
+                "COM-E-OBJECT-IDENTITY-MISSING: object handle {} is not backed by retained runtime identity",
+                object.raw()
+            )
+        })
+}
+
 /// # Safety
 ///
 /// dispatch must be null or carry one retained IDispatch reference owned by the caller.
@@ -559,6 +580,14 @@ pub fn resolve_bound_native_dispatch_shared(
 ) -> Result<*mut RawIDispatch, String> {
     let state = lock_state(com_state, "resolve_bound_native_dispatch")?;
     resolve_bound_native_dispatch(&state, object)
+}
+
+pub fn resolve_bound_runtime_object_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+) -> Result<ObjectRef, String> {
+    let state = lock_state(com_state, "resolve_bound_runtime_object")?;
+    resolve_bound_runtime_object(&state, object)
 }
 
 /// # Safety

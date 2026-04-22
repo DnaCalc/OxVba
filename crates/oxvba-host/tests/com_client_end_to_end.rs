@@ -33,8 +33,35 @@ mod windows_com_e2e {
 
     fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
         match value {
+            RuntimeValue::Object(handle) => ObjectHandle::new(handle.raw()),
             RuntimeValue::ObjectHandle(handle) => *handle,
             other => panic!("expected object handle, got {:?}", other),
+        }
+    }
+
+    fn runtime_values_equivalent(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
+        match (lhs, rhs) {
+            (RuntimeValue::Object(lhs), RuntimeValue::Object(rhs)) => lhs.raw() == rhs.raw(),
+            (RuntimeValue::Object(lhs), RuntimeValue::ObjectHandle(rhs))
+            | (RuntimeValue::ObjectHandle(rhs), RuntimeValue::Object(lhs)) => {
+                lhs.raw() == rhs.raw()
+            }
+            (RuntimeValue::ObjectHandle(lhs), RuntimeValue::ObjectHandle(rhs)) => lhs == rhs,
+            _ => lhs == rhs,
+        }
+    }
+
+    fn assert_snapshots_equivalent(vm: &[RuntimeValue], jit: &[RuntimeValue], context: &str) {
+        assert_eq!(
+            vm.len(),
+            jit.len(),
+            "VM/JIT snapshot length diverged on {context}: vm={vm:?} jit={jit:?}"
+        );
+        for (index, (lhs, rhs)) in vm.iter().zip(jit.iter()).enumerate() {
+            assert!(
+                runtime_values_equivalent(lhs, rhs),
+                "VM/JIT snapshots diverged on {context} at index {index}: vm={vm:?} jit={jit:?}"
+            );
         }
     }
 
@@ -865,10 +892,7 @@ End Sub
 
         let vm = run_windows_host_backed(source, false);
         let jit = run_windows_host_backed(source, true);
-        assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on object-result COM path: vm={vm:?} jit={jit:?}"
-        );
+        assert_snapshots_equivalent(&vm, &jit, "object-result COM path");
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert!(expect_object_handle(&vm[1]).raw() >= 20_001);
         assert!(expect_object_handle(&vm[2]).raw() >= 20_001);
