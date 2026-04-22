@@ -391,14 +391,16 @@ This grid is the current anti-drift truth surface for closure.
      implemented/projected/bounded classification before epic closure
 2. `Variant` / `VARIANT`
    - intrinsic target:
-     canonical runtime value carrier is Windows-shaped throughout the payload
-     model, not only at the 16-byte header/core
+      canonical runtime value carrier is Windows-shaped throughout the payload
+      model, not only at the 16-byte header/core
    - current truth:
-     `VariantCore` is Windows-shaped, but public `Variant` still carries owned
-     semantic side payloads
+      canonical `Variant` is now back to the exact 16-byte carrier for scalar,
+      string, and `ObjectRef`-backed object lanes, with clone/drop driven from
+      the payload bytes themselves; intrinsic `SAFEARRAY` and binding-handle
+      carriers remain open
    - projected truth:
-     full Windows `VARIANT` and `SAFEARRAY` truth is still materially realized
-     at boundary/helper seams
+      full Windows `VARIANT` and `SAFEARRAY` truth is still materially realized
+      at boundary/helper seams for array-sensitive lanes
    - closure implication:
      `vmm-e` remains open
 3. COM interface identity
@@ -1686,8 +1688,10 @@ Post-`vmm-d6` rollout refresh:
 1. `vmm-e1` starts at the current bounded carrier in
    `crates/oxvba-runtime/src/variant.rs`
    - current known limit:
-     `Variant::from_runtime_value` still rejects string, object-handle,
-     binding-handle, and array-intent runtime values
+      the exact 16-byte canonical carrier now covers scalar, string, and
+      `ObjectRef`-backed object values; array-intent and binding-handle lanes
+      still reject because intrinsic `SAFEARRAY` and binding carriers are not
+      finished
    - rollout rule:
      the bead must either remove those subset limits under the new carrier or
      leave behind an explicit retained-adapter decision tied back to the fact
@@ -1706,11 +1710,11 @@ Post-`vmm-d6` rollout refresh:
    `crates/oxvba-host/tests/pointer_helpers_end_to_end.rs`
    - scalar container
    - decimal container
-   - object-container rejection
-   - array-container rejection
+   - object-container support
+   - array-container support
    - rollout rule:
-     `VarPtr(Variant)` remains a first-class observable seam, not a
-     best-effort follow-up.
+      `VarPtr(Variant)` remains a first-class observable seam, not a
+      best-effort follow-up.
 4. `vmm-e4` must explicitly carry forward the current COM/SAFEARRAY-heavy
    coverage in:
    - `crates/oxvba-com/src/windows_variant.rs`
