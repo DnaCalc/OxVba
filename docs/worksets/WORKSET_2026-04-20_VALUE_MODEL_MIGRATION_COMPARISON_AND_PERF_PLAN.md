@@ -1774,6 +1774,20 @@ Child beads:
      - pointer-exposed cells line up with the migrated substrate
    - completion evidence:
      - pointer-helper tests pass and cell truth is documented
+   - landed 2026-04-22:
+     - `ObjPtr(obj)` now returns the raw runtime `IUnknown` identity pointer
+       for live `ObjectRef` values instead of a synthesized compat-identity
+       token
+     - runtime object pointer cells now store the `IUnknown` pointer value when
+       variable-storage style indirection is required
+     - `VarPtr(v As Variant)` now supports object-valued variants via
+       `VT_UNKNOWN` + retained `IUnknown*`
+     - `VarPtr(v As Variant)` now supports array-valued variants via
+       `VT_ARRAY | VT_VARIANT` + real `SAFEARRAY`
+     - bounded verification stayed green for runtime unit tests, host pointer
+       helper E2E lanes, and native declare string/writeback lanes
+     - evidence note:
+       `docs/evidence/value_model_migration/POINTER_HELPER_ABI_CELL_RECONCILIATION_2026-04-22.md`
 3. `vmm-g2`
    - kind: `delivery`
    - priority: `P1`
