@@ -1,17 +1,19 @@
 # Value Model Migration Final Report
 
 Date: 2026-04-22
-Status: final
+Status: interim, closure reopened
 Baseline tag: `pre-value-model-migration-2026-04-20`
 Baseline commit: `dd1c295b2a3d3a1530dd034d9bb4a6b4c38ea57a`
 Candidate commit for the paired evidence set: `834d580c4eef4b1df88c4a5919a6ffc88d603b71`
 
 ## 12.1 Executive result
 
-The Windows VBA 7.1 x64 value-model migration is complete. The migrated value
-model is now the active implementation, the selected paired correctness matrix
-is green across the required migration bundles, and no migration-specific
-rollout blocker remains.
+This document records the first closure attempt and the evidence gathered for
+it, but it is no longer the authoritative final closure artifact for the
+workset. The closure path was reopened after review because the implementation
+has not yet completed the stronger internal native-layout migration target for
+`BSTR`, `SAFEARRAY`, and broad struct / UDT layout, and the `VARIANT`
+migration remains only partially complete at the carrier level.
 
 The remaining known semantic divergence in the evidence set is
 `string_slice_ops_dollar.bas`. It fails on both the fixed baseline and the
