@@ -127,7 +127,7 @@ impl ComHal for StandardHostServices {
             let object = allocate_projection_object_handle(self, prog_id_name)?;
             #[cfg(target_os = "windows")]
             try_bind_projection_object_metadata(self, object, prog_id_name)?;
-            return Ok(RuntimeValue::ObjectHandle(object));
+            return Ok(RuntimeValue::Object(object.into()));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
@@ -136,7 +136,7 @@ impl ComHal for StandardHostServices {
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     let object = allocate_projection_object_handle(self, prog_id_name)?;
                     try_bind_projection_object_metadata(self, object, prog_id_name)?;
-                    return Ok(RuntimeValue::ObjectHandle(object));
+                    return Ok(RuntimeValue::Object(object.into()));
                 }
                 Err(err) => return Err(err),
             }
@@ -144,7 +144,7 @@ impl ComHal for StandardHostServices {
         let object = allocate_projection_object_handle(self, prog_id_name)?;
         #[cfg(target_os = "windows")]
         try_bind_projection_object_metadata(self, object, prog_id_name)?;
-        Ok(RuntimeValue::ObjectHandle(object))
+        Ok(RuntimeValue::Object(object.into()))
     }
 
     fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
@@ -286,7 +286,7 @@ impl ComHal for StandardHostServices {
                 // path by returning the already bound object identity rather than inventing
                 // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Ok(RuntimeValue::ObjectHandle(object.into()));
+                    return Ok(RuntimeValue::Object(ObjectHandle::new(object).into()));
                 }
                 _ => {}
             }

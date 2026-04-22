@@ -2820,7 +2820,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
                 owners,
                 next_index: 1,
             });
-        write_slot!(ctx, dst, RuntimeValue::ObjectHandle(first));
+        write_slot!(ctx, dst, RuntimeValue::Object(first.into()));
     }
     OK
 }
@@ -2843,7 +2843,7 @@ pub extern "C" fn oxrt_host_withevents_next_owner(ctx: *mut JitContext, dst: u32
         let _ = state.withevents_owner_iters.pop();
     }
     let result = next
-        .map(RuntimeValue::ObjectHandle)
+        .map(|owner| RuntimeValue::Object(owner.into()))
         .unwrap_or(RuntimeValue::I32(0));
     write_slot!(ctx, dst, result);
     OK

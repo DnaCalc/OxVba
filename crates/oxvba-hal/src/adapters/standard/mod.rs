@@ -1336,10 +1336,11 @@ mod tests {
     }
 
     fn expect_object_handle(value: RuntimeValue) -> oxvba_runtime::ObjectHandle {
-        let RuntimeValue::ObjectHandle(handle) = value else {
-            panic!("expected RuntimeValue::ObjectHandle, got {value:?}");
-        };
-        handle
+        match value {
+            RuntimeValue::Object(object_ref) => oxvba_runtime::ObjectHandle::new(object_ref.raw()),
+            RuntimeValue::ObjectHandle(handle) => handle,
+            other => panic!("expected object runtime value, got {other:?}"),
+        }
     }
 
     const TEST_DISPATCH_PROG_ID_NAME: &str = "OxVba.TestDispatch";
@@ -1796,7 +1797,7 @@ mod tests {
     fn com_object_handle_variant_uses_dispatch_pointer_lane() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let dispatch = create_oxvba_test_dispatch();
-        let value = ComValue::ObjectHandle(ObjectHandle::new(20_001));
+        let value = ComValue::Object(ObjectHandle::new(20_001).into());
         let resolve_object =
             |_handle: ObjectHandle| -> Result<*mut RawIDispatch, String> { Ok(dispatch) };
         unsafe {
@@ -1883,9 +1884,7 @@ mod tests {
                 )
                 .expect("bind dispatch result"),
         };
-        let RuntimeValue::ObjectHandle(handle) = value else {
-            panic!("expected object handle runtime value");
-        };
+        let handle = expect_object_handle(value);
         assert!(handle.raw() >= 20_001);
         assert_eq!(
             host.release_object_test(handle)
@@ -1925,9 +1924,7 @@ mod tests {
                 )
                 .expect("bind unknown-dispatch result"),
         };
-        let RuntimeValue::ObjectHandle(handle) = value else {
-            panic!("expected object handle runtime value");
-        };
+        let handle = expect_object_handle(value);
         assert!(handle.raw() >= 20_001);
         assert_eq!(
             host.release_object_test(handle)
@@ -2122,8 +2119,8 @@ mod tests {
                 invoke_kind_hint: None,
             })
             .expect("ReturnSelfUnknown projection should succeed");
-        assert_eq!(dispatch, RuntimeValue::ObjectHandle(object));
-        assert_eq!(unknown, RuntimeValue::ObjectHandle(object));
+        assert_eq!(expect_object_handle(dispatch), object);
+        assert_eq!(expect_object_handle(unknown), object);
     }
 
     #[test]
@@ -4319,7 +4316,25 @@ impl StandardHostServices {
                 .bind_native_dispatch_result(dispatch, prog_id_hint)
         }
         .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
-        Ok(RuntimeValue::ObjectHandle(handle))
+        let object_ref = self
+            .com_bridge
+            .lock_state("bind_native_dispatch_result")
+            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?
+            .bindings
+            .get(&oxvba_com::ComObjectToken::new(handle.raw()))
+            .and_then(|binding| binding.runtime_object.clone())
+            .ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!(
+                        "COM-E-OBJECT-IDENTITY-MISSING: object handle {} missing retained runtime identity",
+                        handle.raw()
+                    ),
+                )
+            })?;
+        Ok(RuntimeValue::Object(object_ref))
     }
 
     // Test-only extension seam intentionally left empty after the callback

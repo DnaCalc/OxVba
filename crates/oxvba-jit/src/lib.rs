@@ -155,7 +155,10 @@ mod tests {
             .execute_and_snapshot_values_with_host(&bytecode, host_services)
             .expect("fallback value snapshot should succeed");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        assert!(matches!(
+            out[0],
+            RuntimeValue::Object(ref object_ref) if object_ref.raw() > 0
+        ));
     }
 
     #[cfg(target_os = "windows")]
