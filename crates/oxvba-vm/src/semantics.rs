@@ -58,7 +58,8 @@ pub fn runtime_value_as_f64(value: &RuntimeValue) -> Result<f64, String> {
 pub fn runtime_value_to_numeric_compat(value: &RuntimeValue, field: &str) -> Result<f64, String> {
     match value {
         RuntimeValue::String(text) => {
-            let trimmed = text.as_str().trim();
+            let text = text.as_str();
+            let trimmed = text.trim();
             if trimmed.is_empty() {
                 Ok(0.0)
             } else {
@@ -275,7 +276,8 @@ pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let result = match src {
         RuntimeValue::String(s) => {
-            let trimmed = s.as_str().trim();
+            let text = s.as_str();
+            let trimmed = text.trim();
             if trimmed.is_empty() {
                 RuntimeValue::I32(0)
             } else if let Ok(n) = trimmed.parse::<i64>() {
@@ -681,7 +683,7 @@ pub fn format_date_serial_digits(serial: f64) -> Result<String, String> {
 
 pub fn runtime_value_to_date_value_digits(value: &RuntimeValue) -> Result<i32, String> {
     match value {
-        RuntimeValue::String(text) => parse_string_date_to_packed(text.as_str())
+        RuntimeValue::String(text) => parse_string_date_to_packed(&text.as_str())
             .ok_or_else(|| format!("DateValue string format is not yet supported: `{text}`")),
         other => runtime_value_to_i32_compat(other, "DateValue src"),
     }
@@ -690,7 +692,7 @@ pub fn runtime_value_to_date_value_digits(value: &RuntimeValue) -> Result<i32, S
 pub fn runtime_value_to_cdate(value: &RuntimeValue) -> Result<RuntimeValue, String> {
     let serial = match value {
         RuntimeValue::String(text) => {
-            let packed = parse_string_date_to_packed(text.as_str())
+            let packed = parse_string_date_to_packed(&text.as_str())
                 .ok_or_else(|| format!("CDate string format is not yet supported: `{text}`"))?;
             packed_date_to_ole_serial(packed)?
         }

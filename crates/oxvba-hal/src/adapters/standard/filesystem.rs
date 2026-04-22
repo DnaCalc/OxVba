@@ -522,7 +522,8 @@ impl FileSystemHal for StandardHostServices {
         };
         if path_text.as_str().contains('*') || path_text.as_str().contains('?') {
             if self.native_fs_enabled() {
-                let matched_paths = expand_host_wildcard_paths(Path::new(path_text.as_str()))
+                let wildcard_path = path_text.as_str();
+                let matched_paths = expand_host_wildcard_paths(Path::new(&wildcard_path))
                     .map_err(|err| {
                         HalError::adapter_fault(
                             self.profile,

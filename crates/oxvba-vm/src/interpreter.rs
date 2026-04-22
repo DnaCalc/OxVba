@@ -1470,7 +1470,8 @@ impl Vm {
                     let pointer = match &value {
                         RuntimeValue::Empty | RuntimeValue::Null => 0,
                         RuntimeValue::String(text) => {
-                            oxvba_runtime::pointer_helpers::register_utf16_string(text.as_str())?
+                            let utf8 = text.as_str();
+                            oxvba_runtime::pointer_helpers::register_utf16_string(&utf8)?
                         }
                         _ => return Err("runtime error: 13 (Type mismatch)".to_string()),
                     };

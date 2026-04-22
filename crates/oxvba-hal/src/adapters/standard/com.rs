@@ -110,7 +110,8 @@ impl ComHal for StandardHostServices {
                 "CreateObject ProgID coercion did not produce a string",
             ));
         };
-        let prog_id_name = name.as_str().trim();
+        let prog_id_text = name.as_str();
+        let prog_id_name = prog_id_text.trim();
         if prog_id_name.is_empty() {
             return Err(HalError::adapter_fault(
                 self.profile,

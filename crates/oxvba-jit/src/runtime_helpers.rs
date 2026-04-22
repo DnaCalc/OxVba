@@ -1212,7 +1212,8 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let pointer = match &value {
         RuntimeValue::Empty | RuntimeValue::Null => 0,
         RuntimeValue::String(value) => {
-            match oxvba_runtime::pointer_helpers::register_utf16_string(value.as_str()) {
+            let utf8 = value.as_str();
+            match oxvba_runtime::pointer_helpers::register_utf16_string(&utf8) {
                 Ok(pointer) => pointer,
                 Err(_) => return ERR_RUNTIME,
             }

@@ -27,8 +27,9 @@ impl ProcessEnvHal for StandardHostServices {
             && let RuntimeValue::String(text) = &command
             && !text.as_str().trim().is_empty()
         {
+            let command_text = text.as_str();
             let mut child = self
-                .spawn_probe_shell_process_text(text.as_str())
+                .spawn_probe_shell_process_text(&command_text)
                 .map_err(|err| {
                     HalError::adapter_fault(
                         self.profile,
