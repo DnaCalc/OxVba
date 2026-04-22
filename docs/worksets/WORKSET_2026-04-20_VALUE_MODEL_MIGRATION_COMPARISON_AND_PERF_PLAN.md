@@ -1747,6 +1747,24 @@ Child beads:
      - create the executable child bead set for ABI/layout work
    - completion evidence:
      - pointer-helper, native declare, UDT/layout, and validation beads exist
+   - landed 2026-04-22:
+     - post-`ObjectRef` audit confirms the child set remains honest; no extra G
+       children are required before delivery resumes
+     - `vmm-g1` is now explicitly scoped to
+       `crates/oxvba-runtime/src/pointer_helpers.rs` plus
+       `crates/oxvba-host/tests/pointer_helpers_end_to_end.rs`, with the
+       surviving bounded gaps called out directly:
+       `VarPtr(Variant)` object and array containers still reject explicitly,
+       and `ObjPtr` stability now depends on the migrated `ObjectRef`
+       substrate rather than compat-handle projection
+     - `vmm-g2` is explicitly scoped to native declare/writeback seams in
+       `windows_ffi_bridge`, host native declare tests, runtime helper
+       writeback application, and HAL writeback hooks, rather than the already
+       reconciled COM event/object lanes
+     - `vmm-g3` remains conditional and should only reopen the child structure
+       if `vmm-g2` exposes additional UDT/layout-sensitive work beyond the
+       current bounded UDT subset and native ABI ambiguity register
+     - the next ready delivery bead is `vmm-g1`
 2. `vmm-g1`
    - kind: `delivery`
    - priority: `P1`
