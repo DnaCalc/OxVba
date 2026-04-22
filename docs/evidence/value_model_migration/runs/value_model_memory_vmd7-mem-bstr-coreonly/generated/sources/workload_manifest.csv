@@ -1,0 +1,4 @@
+"workload_id","category","description","source_path"
+"cli_small_strings","string_churn","CLI run on short scalar string churn","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_memory_vmd7-mem-bstr-coreonly\generated\sources\cli_small_strings.bas"
+"cli_many_strings","string_churn","CLI run on split/join many-string churn","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_memory_vmd7-mem-bstr-coreonly\generated\sources\cli_many_strings.bas"
+"cli_code_strings","code_strings","CLI run on large source-text module with many string literals","C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_memory_vmd7-mem-bstr-coreonly\generated\sources\cli_code_strings.bas"

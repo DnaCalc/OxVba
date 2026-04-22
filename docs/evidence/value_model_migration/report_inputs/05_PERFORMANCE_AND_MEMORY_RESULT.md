@@ -1,23 +1,23 @@
 # Performance And Memory Result
 
-Status: final
+Status: in-progress
 
 Canonical artifacts:
 
 1. string perf:
-   - run id: `vmd6-perf-check`
+   - run id: `vmd7-perf-bstr-coreonly`
    - summary:
-     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd6-perf-check/string_perf_summary.csv`
+     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd7-perf-bstr-coreonly/string_perf_summary.csv`
    - comparison:
-     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd6-perf-check/comparison/string_perf_summary.csv`
+     `docs/evidence/value_model_migration/runs/value_model_string_perf_vmd7-perf-bstr-coreonly/comparison/string_perf_summary.csv`
 2. memory:
-   - run id: `vmd6-mem-full`
+   - run id: `vmd7-mem-bstr-coreonly`
    - layout summary:
-     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/layout_metrics_summary.csv`
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd7-mem-bstr-coreonly/layout_metrics_summary.csv`
    - process summary:
-     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/process_memory_summary.csv`
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd7-mem-bstr-coreonly/process_memory_summary.csv`
    - pointer snapshot summary:
-     `docs/evidence/value_model_migration/runs/value_model_memory_vmd6-mem-full/pointer_snapshot_summary.csv`
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmd7-mem-bstr-coreonly/pointer_snapshot_summary.csv`
 3. Variant perf:
    - run id: `vme5-perf-check`
    - summary:
@@ -36,17 +36,15 @@ Canonical artifacts:
 Timing summary:
 
 1. VM:
-   - `small_strings`: candidate faster by `-16.81%`
-   - `medium_strings`: candidate slower by `+75.54%`
-   - `long_strings`: candidate slower by `+67.06%`
-   - `many_strings`: candidate slower by `+83.84%`
-   - `code_strings`: candidate slower by `+48.92%`
+   - `small_strings`: candidate faster by `-6.21%`
+   - `long_strings`: candidate slower by `+8.39%`
+   - `many_strings`: candidate faster by `-4.97%`
+   - `code_strings`: candidate faster by `-17.76%`
 2. JIT:
-   - `small_strings`: candidate slower by `+27.66%`
-   - `medium_strings`: candidate slower by `+51.84%`
-   - `long_strings`: candidate slower by `+17.03%`
-   - `many_strings`: candidate slower by `+44.85%`
-   - `code_strings`: candidate near-neutral at `+0.2%`
+   - `small_strings`: candidate slower by `+3.83%`
+   - `long_strings`: candidate slower by `+52.18%`
+   - `many_strings`: candidate near-neutral at `+0.07%`
+   - `code_strings`: candidate faster by `-26.62%`
 
 Variant timing summary:
 
@@ -61,14 +59,15 @@ Variant timing summary:
 Timing interpretation:
 
 1. the canonical string-perf artifact is still a repaired one-iteration paired
-   run, so it should be treated as directional evidence rather than a final
-   stable throughput claim
+   run family, but `vmd7-perf-bstr-coreonly` is now the current bounded paired
+   artifact for the core-only `BStr` carrier
 2. the canonical Variant-perf artifact is a bounded paired run that is strong
    enough for attribution and mitigation planning but not yet a continuous perf
    gate
-3. string timing currently shows one clear improvement in VM small-string churn
-   and broad slowdown elsewhere, especially VM medium/long/many-string paths
-4. JIT code-string throughput is effectively neutral in the current artifact
+3. the core-only `BStr` carrier materially improved VM `code_strings` and JIT
+   `code_strings`, and kept VM `small_strings` / `many_strings` positive
+4. the main remaining string-timing regression in the refreshed artifact is JIT
+   `long_strings` at `+52.18%`; JIT `small_strings` is a mild regression
 5. Variant timing is mixed:
    - typed array and typed decimal-array rows improved slightly
    - scalar classification is the largest current regression
@@ -77,27 +76,30 @@ Timing interpretation:
 
 Memory summary:
 
-1. observed carrier/layout sizes and alignments did not change between baseline
-   and candidate in the string-focused memory probe:
+1. the refreshed string-focused memory probe shows the core-only `BStr`
+   carrier removed the temporary size inflation introduced by the staged
+   compatibility-cache attempt:
    - `BStr = 24`
    - `RuntimeValue = 64`
    - `SafeArray = 64`
    - `ComValue = 64`
    - `ComInvokeArg = 88`
-2. working-set deltas were small in the current paired run:
+2. the same refreshed probe confirms the string lane is no longer carrying the
+   `BStr = 56` intermediate state that forced the extra delivery slice
+3. working-set deltas were small in the current paired run:
    - `cli_small_strings`: `+65536` bytes
    - `cli_many_strings`: `+36864` bytes
    - `cli_code_strings`: `-57344` bytes
    - `com_variant_bstr_array`: `+53248` bytes
-3. the post-`ObjectRef` memory probe records the accepted representation-growth
+4. the post-`ObjectRef` memory probe records the accepted representation-growth
    deltas introduced by the full migration:
    - `Variant = 16 -> 80` bytes
    - `ObjectIdentityCarrier = 4/4 -> 8/8`
    - `ComCallbackPayload = 40 -> 48` bytes
-4. `RuntimeValue` and `ComValue` remain unchanged in the identity-smoke probe:
+5. `RuntimeValue` and `ComValue` remain unchanged in the identity-smoke probe:
    - `RuntimeValue = 64/8`
    - `ComValue = 64/8`
-5. the Variant-heavy paired working-set rows in `vme5-mem-full` remain modest
+6. the Variant-heavy paired working-set rows in `vme5-mem-full` remain modest
    despite that carrier growth:
    - `com_variant_bstr_array`: `-53248` bytes
    - `com_variant_wide_i64_array_boundary`: `-106496` bytes
