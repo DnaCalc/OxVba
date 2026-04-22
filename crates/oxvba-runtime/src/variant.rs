@@ -141,7 +141,7 @@ impl VariantCore {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OwnedVariantData {
-    String { text: BStr, core: OwnedBStrCore },
+    String(BStr),
     ArrayIntent(SafeArray),
     Object(ObjectRef),
     BindingHandle(BindingHandle),
@@ -366,32 +366,26 @@ impl Variant {
 
     pub fn from_string(value: impl Into<BStr>) -> Self {
         let text = value.into();
-        let core_view = text.owned_core();
         let mut bytes = [0u8; 8];
-        let ptr = (core_view.payload_ptr() as usize as u64).to_le_bytes();
+        let ptr = (text.owned_core().payload_ptr() as usize as u64).to_le_bytes();
         bytes.copy_from_slice(&ptr);
         Self {
             core: VariantCore::from_bytes(VarType::String, bytes),
-            owned: Some(OwnedVariantData::String {
-                text,
-                core: core_view,
-            }),
+            owned: Some(OwnedVariantData::String(text)),
         }
     }
 
     pub fn as_bstr(&self) -> Option<&BStr> {
         match &self.owned {
-            Some(OwnedVariantData::String { text, .. }) if self.vtype() == VarType::String => {
-                Some(text)
-            }
+            Some(OwnedVariantData::String(text)) if self.vtype() == VarType::String => Some(text),
             _ => None,
         }
     }
 
-    pub fn string_core(&self) -> Option<&OwnedBStrCore> {
+    pub fn string_core(&self) -> Option<OwnedBStrCore> {
         match &self.owned {
-            Some(OwnedVariantData::String { core, .. }) if self.vtype() == VarType::String => {
-                Some(core)
+            Some(OwnedVariantData::String(text)) if self.vtype() == VarType::String => {
+                Some(text.owned_core())
             }
             _ => None,
         }
