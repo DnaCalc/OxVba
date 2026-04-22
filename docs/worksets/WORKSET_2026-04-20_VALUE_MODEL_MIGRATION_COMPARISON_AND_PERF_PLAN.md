@@ -1633,6 +1633,17 @@ Child beads:
      - object transport under the new model is correct
    - completion evidence:
      - `VT_UNKNOWN` / `VT_DISPATCH` tests and imported-reference tests pass
+   - landed 2026-04-22:
+     - retained COM result rebinding now returns the retained
+       `ComBinding.runtime_object` instead of rebuilding a fresh `ObjectRef`
+       from the compat id
+     - repeated late-bound and imported-reference object results now preserve
+       identical retained `ObjectRef` identity across repeated
+       `VT_DISPATCH` / dispatch-capable `VT_UNKNOWN` rebinds
+     - bounded nondispatch `VT_UNKNOWN` scalar and array diagnostics remain
+       unchanged
+     - evidence note:
+       `docs/evidence/value_model_migration/VT_DISPATCH_VT_UNKNOWN_OBJECT_IDENTITY_2026-04-22.md`
 5. `vmm-f4`
    - kind: `support`
    - priority: `P2`
