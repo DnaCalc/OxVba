@@ -8,7 +8,7 @@ use crate::{RuntimeValue, bstr::BStr};
 
 #[cfg(target_os = "windows")]
 use windows_sys::{
-    Win32::Foundation::{SysAllocString, SysFreeString},
+    Win32::Foundation::{SysAllocStringLen, SysFreeString},
     Win32::System::Com::SAFEARRAYBOUND,
     Win32::System::Ole::{
         SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement,
@@ -27,16 +27,17 @@ const VT_R8: u16 = 5;
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
-// Pointer helpers expose Windows-observable cells even though the current
-// canonical runtime string carrier is still semantic-first `BStr`, not a raw
-// process-wide BSTR allocation.
+// Pointer helpers expose real Windows BSTR cells, allocating from the
+// canonical UTF-16/BSTR-shaped runtime string carrier.
 struct OwnedBstr(BSTR);
 
 #[cfg(target_os = "windows")]
 impl OwnedBstr {
     fn from_bstr(text: &BStr) -> Result<Self, String> {
         let core = text.owned_core();
-        let bstr = unsafe { SysAllocString(core.payload_ptr()) };
+        let len = u32::try_from(core.len_code_units())
+            .map_err(|_| "string too long to allocate BSTR backing storage".to_string())?;
+        let bstr = unsafe { SysAllocStringLen(core.payload_ptr(), len) };
         if bstr.is_null() {
             return Err("failed to allocate BSTR backing storage for pointer helper".to_string());
         }
@@ -686,7 +687,7 @@ mod tests {
     use crate::{BindingHandle, Decimal96, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use windows_sys::{
-        Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen},
+        Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen},
         Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
         Win32::System::Variant::{
             VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
@@ -755,11 +756,37 @@ mod tests {
             unsafe { SysFreeString(old_payload) };
         }
         let replacement = BStr::from("alpha").owned_core();
+        let replacement_len = u32::try_from(replacement.len_code_units()).expect("u32 length");
         unsafe {
-            *raw = SysAllocString(replacement.payload_ptr());
+            *raw = SysAllocStringLen(replacement.payload_ptr(), replacement_len);
         }
         let value = super::read_back_string_payload(ptr).expect("read back updated string var");
         assert_eq!(value, RuntimeValue::String(BStr::from("alpha")));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn string_var_pointer_preserves_embedded_nul_bstr_payload() {
+        let original = RuntimeValue::String(BStr::from("abc"));
+        let ptr = register_string_var_pointer(&original).expect("register string var");
+        let raw = lookup_pointer(ptr)
+            .expect("lookup string var")
+            .cast::<BSTR>();
+        assert!(!raw.is_null());
+        let old_payload = unsafe { *raw };
+        if !old_payload.is_null() {
+            unsafe { SysFreeString(old_payload) };
+        }
+        let replacement = BStr::from("a\0bc").owned_core();
+        let replacement_len = u32::try_from(replacement.len_code_units()).expect("u32 length");
+        unsafe {
+            *raw = SysAllocStringLen(replacement.payload_ptr(), replacement_len);
+        }
+        let payload = unsafe { *raw };
+        let len = unsafe { SysStringLen(payload) };
+        assert_eq!(len, 4);
+        let value = super::read_back_string_payload(ptr).expect("read back embedded nul string");
+        assert_eq!(value, RuntimeValue::String(BStr::from("a\0bc")));
     }
 
     #[cfg(target_os = "windows")]
