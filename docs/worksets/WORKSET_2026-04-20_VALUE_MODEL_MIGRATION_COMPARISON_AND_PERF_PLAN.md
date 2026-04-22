@@ -1858,6 +1858,22 @@ Child beads:
      - ABI/layout migration results are validated and classified
    - completion evidence:
      - ABI/layout matrix rows are updated.
+   - landed 2026-04-22:
+     - [ABI_LAYOUT_MATRIX_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/ABI_LAYOUT_MATRIX_2026-04-22.md)
+       records the closed ABI/layout matrix for the migration
+     - paired correctness run `vmg5-abi-layout-r3` passed on both baseline and
+       candidate for the selected UDT, pointer-helper, variant-container, and
+       native-writeback rows
+     - the authoritative post-`ObjectRef` layout delta table remains
+       `vmf2-mem-identity-smoke/comparison/layout_metrics.csv`, which captures
+       the intentional representation changes in `Variant`,
+       `ObjectIdentityCarrier`, and `ComCallbackPayload`
+     - remaining old/new ABI/layout differences are now classified as intended
+       migration deltas rather than unresolved regressions:
+       `IUnknown`-backed object pointer truth and `VarPtr(Variant)` support for
+       object/array payload materialization
+     - broad native struct-overlay parity and unconstrained UDT-byref native
+       ABI parity remain explicitly bounded outside the closed matrix
 
 ### 11.11 Epic H Bead Set: Final Matrix, Docs, and Report
 
