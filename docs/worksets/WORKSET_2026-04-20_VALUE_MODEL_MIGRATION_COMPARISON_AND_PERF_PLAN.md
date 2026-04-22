@@ -1931,6 +1931,13 @@ Child beads:
      - all major artifacts are indexed together
    - completion evidence:
      - correctness/perf/memory artifact sets are linked from one canonical index
+   - landed 2026-04-22:
+     - [PAIRED_RESULT_INDEX_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/PAIRED_RESULT_INDEX_2026-04-22.md)
+       now groups the selected correctness, performance, and memory artifacts by
+       migration area
+     - [REPORT_INPUT_INDEX.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/REPORT_INPUT_INDEX.md)
+       now links that grouped paired-result index alongside the flat artifact
+       map
 4. `vmm-h3`
    - kind: `support`
    - priority: `P1`
