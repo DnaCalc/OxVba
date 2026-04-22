@@ -361,6 +361,32 @@ pub unsafe fn query_dispatch_from_unknown(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+/// Attempt to obtain the canonical `IUnknown` identity pointer from a live dispatch pointer.
+///
+/// # Safety
+///
+/// `dispatch` must be a valid live COM `IDispatch` pointer whose `IUnknown`
+/// vtable can be called.
+pub unsafe fn query_unknown_from_dispatch(
+    dispatch: *mut RawIDispatch,
+) -> Result<*mut RawIUnknown, String> {
+    if dispatch.is_null() {
+        return Err("IDispatch identity query received null dispatch pointer".to_string());
+    }
+    let mut unknown: *mut core::ffi::c_void = core::ptr::null_mut();
+    let vtbl = (*dispatch).vtbl;
+    let hr = ((*vtbl).unknown.query_interface)(dispatch.cast(), &IID_IUNKNOWN, &mut unknown);
+    if hr < 0 || unknown.is_null() {
+        return Err(format!(
+            "IDispatch::QueryInterface(IUnknown) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(unknown.cast())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 /// # Safety
 ///
 /// `unknown` must be a valid live COM interface pointer whose `IUnknown` vtable can be called.

@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue, Variant,
+    CurrencyValue, Decimal96, F64Value, ObjectHandle, ObjectRef, RuntimeValue, Variant,
     bstr::BStr,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
@@ -87,7 +87,7 @@ pub enum ComValue {
     Currency(CurrencyValue),
     String(BStr),
     ArrayIntent(SafeArray),
-    ObjectHandle(ObjectHandle),
+    Object(ObjectRef),
 }
 
 impl ComValue {
@@ -104,7 +104,7 @@ impl ComValue {
             RuntimeValue::Currency(value) => Self::Currency(value),
             RuntimeValue::String(value) => Self::String(value),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array),
-            RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(handle),
+            RuntimeValue::ObjectHandle(handle) => Self::Object(handle.into()),
             RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
         })
     }
@@ -134,7 +134,7 @@ impl ComValue {
             Self::Currency(value) => RuntimeValue::Currency(*value).to_variant(),
             Self::String(value) => RuntimeValue::String(value.clone()).to_variant(),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()).to_variant(),
-            Self::ObjectHandle(handle) => RuntimeValue::ObjectHandle(*handle).to_variant(),
+            Self::Object(handle) => Variant::from_object_ref(handle.clone()),
         })
     }
 
@@ -255,7 +255,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue,
+        CurrencyValue, Decimal96, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -337,12 +337,14 @@ mod tests {
             ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500)).to_runtime_value(),
             RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
         );
+        let object_value =
+            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234)));
+        let ComValue::Object(object_ref) = object_value else {
+            panic!("expected ObjectRef-backed COM value");
+        };
+        assert_eq!(object_ref.raw(), 1234);
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234))),
-            ComValue::ObjectHandle(ObjectHandle::new(1234))
-        );
-        assert_eq!(
-            ComValue::ObjectHandle(ObjectHandle::new(1234)).to_runtime_value(),
+            ComValue::Object(ObjectRef::from_compat_identity(1234)).to_runtime_value(),
             RuntimeValue::ObjectHandle(ObjectHandle::new(1234))
         );
         assert!(

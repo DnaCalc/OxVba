@@ -3302,7 +3302,7 @@ where
         raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
     };
     match value {
-        ComValue::ObjectHandle(_) => com_set_variant_from_com_value(
+        ComValue::Object(_) => com_set_variant_from_com_value(
             variant,
             value,
             &mut resolve_dispatch,

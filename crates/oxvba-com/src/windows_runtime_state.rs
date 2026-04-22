@@ -4,12 +4,13 @@ use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComMemberSpec, ComMemberToken,
     ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue, DispatchEventSinkConfig,
     RawIDispatch, WindowsConnectionPointTransport, binding_from_typelib_metadata,
-    get_dispid_by_name, release_dispatch, source_interface_event_spec_supported,
+    get_dispid_by_name, query_unknown_from_dispatch, release_dispatch, release_unknown,
+    source_interface_event_spec_supported,
     try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
     unadvise_connection_point,
 };
 
-use oxvba_runtime::ObjectHandle;
+use oxvba_runtime::{ObjectHandle, ObjectRef};
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -77,6 +78,13 @@ impl Drop for WindowsComClientState {
                 }
                 binding.native_dispatch = 0;
             }
+            if binding.native_unknown != 0 {
+                unsafe {
+                    release_unknown(binding.native_unknown as *mut core::ffi::c_void);
+                }
+                binding.native_unknown = 0;
+            }
+            binding.runtime_object = None;
         }
         self.bindings.clear();
     }
@@ -246,25 +254,35 @@ pub unsafe fn bind_native_dispatch_result(
     if dispatch.is_null() {
         return ObjectHandle::new(0);
     }
+    let unknown = match unsafe { query_unknown_from_dispatch(dispatch) } {
+        Ok(unknown) => unknown,
+        Err(_) => {
+            unsafe {
+                release_dispatch(dispatch);
+            }
+            return ObjectHandle::new(0);
+        }
+    };
     if let Some((handle, _)) = state
         .bindings
         .iter()
-        .find(|(_, binding)| binding.native_dispatch == dispatch as usize)
+        .find(|(_, binding)| binding.native_unknown == unknown as usize)
     {
         unsafe {
             release_dispatch(dispatch);
+            release_unknown(unknown.cast());
         }
         return ObjectHandle::new(handle.raw());
     }
     let handle = state.allocate_handle();
-    state.bindings.insert(
-        handle,
-        binding_from_typelib_metadata(
-            format!("{prog_id_hint}::<invoke-result>"),
-            dispatch as usize,
-            None,
-        ),
+    let mut binding = binding_from_typelib_metadata(
+        format!("{prog_id_hint}::<invoke-result>"),
+        dispatch as usize,
+        None,
     );
+    binding.native_unknown = unknown as usize;
+    binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
+    state.bindings.insert(handle, binding);
     ObjectHandle::new(handle.raw())
 }
 
@@ -283,6 +301,11 @@ pub fn release_object_binding(
     if binding.native_dispatch != 0 {
         unsafe {
             release_dispatch(binding.native_dispatch as *mut RawIDispatch);
+        }
+    }
+    if binding.native_unknown != 0 {
+        unsafe {
+            release_unknown(binding.native_unknown as *mut core::ffi::c_void);
         }
     }
     Ok(ReleasedWindowsComObject {
@@ -402,9 +425,10 @@ pub fn remove_subscription_callbacks(
 
 pub fn insert_bound_object_binding(
     state: &mut WindowsComClientState,
-    binding: ComBinding,
+    mut binding: ComBinding,
 ) -> ObjectHandle {
     let handle = state.allocate_handle();
+    binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
     state.bindings.insert(handle, binding);
     ObjectHandle::new(handle.raw())
 }
@@ -412,8 +436,11 @@ pub fn insert_bound_object_binding(
 pub fn insert_bound_object_binding_at_handle(
     state: &mut WindowsComClientState,
     object: ObjectHandle,
-    binding: ComBinding,
+    mut binding: ComBinding,
 ) -> ObjectHandle {
+    if binding.runtime_object.is_none() && object.raw() != 0 {
+        binding.runtime_object = Some(ObjectRef::from_compat_identity(object.raw()));
+    }
     state
         .bindings
         .insert(ComObjectToken::new(object.raw()), binding);

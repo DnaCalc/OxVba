@@ -1,6 +1,7 @@
 use crate::{
     Decimal96,
     bstr::{BStr, OwnedBStrCore},
+    object_ref::ObjectRef,
     runtime_value::{BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, RuntimeValue},
     safe_array::SafeArray,
 };
@@ -142,7 +143,7 @@ impl VariantCore {
 enum OwnedVariantData {
     String { text: BStr, core: OwnedBStrCore },
     ArrayIntent(SafeArray),
-    ObjectHandle(ObjectHandle),
+    Object(ObjectRef),
     BindingHandle(BindingHandle),
 }
 
@@ -387,6 +388,20 @@ impl Variant {
         }
     }
 
+    pub fn from_object_ref(value: ObjectRef) -> Self {
+        Self {
+            core: VariantCore::from_bytes(VarType::Object, [0; 8]),
+            owned: Some(OwnedVariantData::Object(value)),
+        }
+    }
+
+    pub fn as_object_ref(&self) -> Option<&ObjectRef> {
+        match &self.owned {
+            Some(OwnedVariantData::Object(value)) if self.vtype() == VarType::Object => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::Empty => Self::empty(),
@@ -407,10 +422,7 @@ impl Variant {
                 core: VariantCore::from_bytes(VarType::Empty, [0; 8]),
                 owned: Some(OwnedVariantData::ArrayIntent(array.clone())),
             },
-            RuntimeValue::ObjectHandle(handle) => Self {
-                core: VariantCore::from_bytes(VarType::Object, [0; 8]),
-                owned: Some(OwnedVariantData::ObjectHandle(*handle)),
-            },
+            RuntimeValue::ObjectHandle(handle) => Self::from_object_ref((*handle).into()),
             RuntimeValue::BindingHandle(handle) => Self {
                 core: VariantCore::from_bytes(VarType::Object, [0; 8]),
                 owned: Some(OwnedVariantData::BindingHandle(*handle)),
@@ -480,7 +492,9 @@ impl Variant {
                 .map(RuntimeValue::ErrorCode)
                 .ok_or_else(|| "invalid Error variant payload".to_string()),
             VarType::Object => match &self.owned {
-                Some(OwnedVariantData::ObjectHandle(handle)) => Ok(RuntimeValue::ObjectHandle(*handle)),
+                Some(OwnedVariantData::Object(handle)) => {
+                    Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())))
+                }
                 Some(OwnedVariantData::BindingHandle(handle)) => {
                     Ok(RuntimeValue::BindingHandle(*handle))
                 }
@@ -720,6 +734,13 @@ mod tests {
         );
 
         let object_variant = Variant::from_runtime_value(&RuntimeValue::ObjectHandle(42.into()));
+        assert_eq!(
+            object_variant
+                .as_object_ref()
+                .expect("object ref should be retained")
+                .raw(),
+            42
+        );
         assert_eq!(
             object_variant
                 .to_runtime_value()

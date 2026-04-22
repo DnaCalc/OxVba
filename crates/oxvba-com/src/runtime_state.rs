@@ -3,13 +3,15 @@ use crate::{
     ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibEventDispatchPath,
     TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
 };
-use oxvba_runtime::ObjectHandle;
+use oxvba_runtime::{ObjectHandle, ObjectRef};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct ComBinding {
     pub prog_id_name: String,
     pub native_dispatch: usize,
+    pub native_unknown: usize,
+    pub runtime_object: Option<ObjectRef>,
     pub member_dispids: BTreeMap<ComMemberToken, i32>,
     pub member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
     pub default_member_token: Option<ComMemberToken>,
@@ -23,6 +25,8 @@ impl ComBinding {
         Self {
             prog_id_name,
             native_dispatch,
+            native_unknown: 0,
+            runtime_object: None,
             member_dispids: BTreeMap::new(),
             member_specs: BTreeMap::new(),
             default_member_token: None,

@@ -1312,8 +1312,8 @@ where
         ComValue::ArrayIntent(array) => {
             set_variant_array_arg(variant, array, resolve_object, add_ref_dispatch)?;
         }
-        ComValue::ObjectHandle(handle) => {
-            let dispatch = resolve_object(*handle)?;
+        ComValue::Object(handle) => {
+            let dispatch = resolve_object(ObjectHandle::new(handle.raw()))?;
             if dispatch.is_null() {
                 return Err("object handle resolved to null IDispatch pointer".to_string());
             }
