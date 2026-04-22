@@ -2273,7 +2273,7 @@ impl Vm {
                     };
                     let member_value = self.read_value_slot(*member)?;
                     let mut request = DynamicCallRequest {
-                        object: object.into(),
+                        object,
                         member: match Self::runtime_value_to_dynamic_member_selector(
                             &member_value,
                             "dispatch_invoke.member",
@@ -2370,7 +2370,11 @@ impl Vm {
                             continue;
                         }
                     };
-                    match self.host_services.com().subscribe_event(object, event) {
+                    match self
+                        .host_services
+                        .com()
+                        .subscribe_event(ObjectHandle::new(object.raw()), event)
+                    {
                         Ok(value) => {
                             self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
                             pc += 1;
@@ -3298,7 +3302,7 @@ impl Vm {
     fn runtime_value_to_com_object(
         value: &RuntimeValue,
         field: &str,
-    ) -> Result<ObjectHandle, String> {
+    ) -> Result<oxvba_runtime::ObjectRef, String> {
         crate::semantics::runtime_value_to_com_object(value, field)
     }
 
@@ -3361,10 +3365,10 @@ impl Vm {
         &mut self,
         bytecode: &Bytecode,
         typed_fastpaths: bool,
-        object: ObjectHandle,
+        object: oxvba_runtime::ObjectRef,
     ) -> Result<Vec<RuntimeValue>, ForEachInitError> {
         let request = DynamicCallRequest {
-            object: object.into(),
+            object: object.clone(),
             member: DynamicMemberSelector::Token(-4),
             args: Vec::new(),
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
@@ -3868,7 +3872,7 @@ impl Vm {
         let descriptor = self
             .host_services
             .com()
-            .describe_object(object)
+            .describe_object(ObjectHandle::new(object.raw()))
             .map_err(|err| err.to_string())?;
         let key = Self::withevents_binding_key(owner, binding);
         let Some(descriptor) = descriptor else {
@@ -3884,7 +3888,7 @@ impl Vm {
             let subscription = self
                 .host_services
                 .com()
-                .subscribe_event(object, route.event_token.into())
+                .subscribe_event(ObjectHandle::new(object.raw()), route.event_token.into())
                 .map_err(|err| err.to_string())?;
             self.com_withevents_subscriptions.insert(
                 subscription,

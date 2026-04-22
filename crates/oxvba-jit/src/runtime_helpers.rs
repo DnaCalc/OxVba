@@ -21,7 +21,7 @@ use oxvba_hal::error::{HalError, HalErrorKind};
 use oxvba_hal::model::CapabilityId;
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
-use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::JitContext;
@@ -2512,7 +2512,7 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     if matches!(object_val, RuntimeValue::Empty) {
         return route_host_error_code(ctx, 91);
     }
-    let object_handle =
+    let object_ref =
         match semantics::runtime_value_to_com_object(&object_val, "dispatch_invoke.object") {
             Ok(h) => {
                 if h.raw() == 0 {
@@ -2538,7 +2538,7 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     };
 
     let mut request = DynamicCallRequest {
-        object: object_handle.into(),
+        object: object_ref,
         member: member_sel,
         args: Vec::with_capacity(args_slice.len()),
         call_kind_hint: None,
@@ -2590,7 +2590,10 @@ pub extern "C" fn oxrt_host_com_subscribe(
             Err(_) => return route_host_error(ctx),
         };
     let host = unsafe { (*ctx).host_services() };
-    match host.com().subscribe_event(object, event) {
+    match host
+        .com()
+        .subscribe_event(ObjectHandle::new(object.raw()), event)
+    {
         Ok(value) => {
             write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
             OK

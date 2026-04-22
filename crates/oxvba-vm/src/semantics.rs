@@ -9,7 +9,8 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
+    bstr::BStr,
 };
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -1779,16 +1780,17 @@ pub fn proper_case(s: &str) -> String {
 pub fn runtime_value_to_com_object(
     value: &RuntimeValue,
     field: &str,
-) -> Result<ObjectHandle, String> {
+) -> Result<ObjectRef, String> {
     match value {
-        RuntimeValue::Object(handle) => Ok(ObjectHandle::new(handle.raw())),
-        RuntimeValue::ObjectHandle(handle) => Ok(*handle),
-        RuntimeValue::I32(raw) => Ok(ObjectHandle::new(*raw)),
+        RuntimeValue::Object(handle) => Ok(handle.clone()),
+        RuntimeValue::ObjectHandle(handle) => Ok((*handle).into()),
+        RuntimeValue::I32(raw) => Ok(ObjectHandle::new(*raw).into()),
         RuntimeValue::I64(raw) => i32::try_from(*raw)
             .map(ObjectHandle::new)
+            .map(Into::into)
             .map_err(|_| format!("{field} exceeds i32 handle range: {raw}")),
         other => Err(format!(
-            "{field} requires object handle-compatible carrier, got {other:?}"
+            "{field} requires object-compatible carrier, got {other:?}"
         )),
     }
 }
