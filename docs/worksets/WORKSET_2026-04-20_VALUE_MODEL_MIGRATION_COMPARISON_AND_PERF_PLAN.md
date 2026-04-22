@@ -371,11 +371,24 @@ This grid is the current anti-drift truth surface for closure.
    - intrinsic target:
      canonical runtime string storage itself becomes BSTR-aligned
    - current truth:
-     `BStr` is still `String` plus `OwnedBStrCore` projection
+     canonical `BStr` is now a core-only UTF-16/BSTR-shaped carrier with no
+     persistent UTF-8 payload field
    - projected truth:
-     real BSTR behavior is materialized at pointer-helper and COM seams
+     real BSTR allocations are still materialized at pointer-helper and COM
+     seams, and borrowed UTF-8 text is now a derived compatibility projection
+     instead of carrier state
+   - checklist result (`2026-04-22`):
+     - implemented:
+       canonical `BStr` carrier is intrinsic/core-only and matches the intended
+       UTF-16/BSTR-shaped storage model
+     - projected:
+       Windows `BSTR` allocations remain a boundary materialization concern
+     - bounded:
+       no remaining bounded caveat is recorded against the canonical string
+       carrier itself; only follow-on perf mitigation remains open
    - closure implication:
-     `vmm-d` remains open
+     `vmm-d7` delivery is complete; `vmm-d8` must record the final
+     implemented/projected/bounded classification before epic closure
 2. `Variant` / `VARIANT`
    - intrinsic target:
      canonical runtime value carrier is Windows-shaped throughout the payload
