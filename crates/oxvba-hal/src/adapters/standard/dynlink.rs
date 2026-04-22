@@ -636,7 +636,7 @@ fn marshal_runtime_to_ffi_unix(
         }
         "String" => {
             let text = match value {
-                RuntimeValue::String(s) => s.0.clone(),
+                RuntimeValue::String(s) => s.as_str().to_string(),
                 _ => String::new(),
             };
             // On Unix, we still marshal as wide string for API compatibility.
@@ -717,7 +717,7 @@ fn marshal_runtime_to_ffi(
         }
         "String" => {
             let text = match value {
-                RuntimeValue::String(s) => s.0.clone(),
+                RuntimeValue::String(s) => s.as_str().to_string(),
                 _ => String::new(),
             };
             if !ordinal_alias && alias.ends_with('A') {

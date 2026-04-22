@@ -202,7 +202,7 @@ pub fn mock_com_value_to_variant(value: &ComValue) -> MockVariant {
             // For Miri: represent BSTR as a length-prefixed string in the payload.
             // Real VARIANT stores a BSTR pointer; mock stores string length for verification.
             v.vt = VT_BSTR;
-            let len = s.0.len() as u32;
+            let len = s.len() as u32;
             v.payload[..4].copy_from_slice(&len.to_le_bytes());
         }
         _ => {

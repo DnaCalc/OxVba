@@ -30,13 +30,13 @@ impl ProcessEnvHal for StandardHostServices {
             let mut child = self
                 .spawn_probe_shell_process_text(text.as_str())
                 .map_err(|err| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "shell",
-                    format!("failed to spawn probe shell process: {err}"),
-                )
-            })?;
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "shell",
+                        format!("failed to spawn probe shell process: {err}"),
+                    )
+                })?;
             let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
             let _ = child.wait();
             return Ok(RuntimeValue::I32(child_id));
@@ -77,7 +77,9 @@ impl ProcessEnvHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "environ"));
         }
-        if self.native_process_enabled() && let RuntimeValue::String(name) = &key {
+        if self.native_process_enabled()
+            && let RuntimeValue::String(name) = &key
+        {
             let value = std::env::var_os(name.as_str())
                 .map(|value| value.to_string_lossy().to_string())
                 .unwrap_or_default();

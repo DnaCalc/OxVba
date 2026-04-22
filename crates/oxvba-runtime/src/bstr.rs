@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BStr(pub String);
+pub struct BStr(String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnedBStrCore {
@@ -67,6 +67,10 @@ impl BStr {
 
     pub fn into_string(self) -> String {
         self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -141,7 +145,7 @@ mod tests {
 
     #[test]
     fn bstr_exposes_windows_style_owned_core_view() {
-        let value = BStr("Cafe".to_string());
+        let value = BStr::from("Cafe");
         let core = value.owned_core();
         assert_eq!(value.as_str(), "Cafe");
         assert_eq!(value.byte_len(), 8);

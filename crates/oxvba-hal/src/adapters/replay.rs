@@ -205,7 +205,7 @@ impl UiInteractionHal for ReplayHostServices {
     fn input_box(&self, _prompt: RuntimeValue, _default: RuntimeValue) -> HalResult<RuntimeValue> {
         let entry = self.next_entry("input_box")?;
         let text = entry.result.as_str().unwrap_or("").to_string();
-        Ok(RuntimeValue::String(oxvba_runtime::bstr::BStr(text)))
+        Ok(RuntimeValue::String(oxvba_runtime::bstr::BStr::from(text)))
     }
 }
 

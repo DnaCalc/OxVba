@@ -352,19 +352,15 @@ unsafe fn set_windows_variant_from_runtime_value(
             }
             crate::VarType::String => {
                 (*variant).Anonymous.Anonymous.vt = VT_BSTR;
-                let text = canonical
-                    .as_bstr()
-                    .ok_or_else(|| "canonical string Variant lost owned BSTR payload".to_string())?;
+                let text = canonical.as_bstr().ok_or_else(|| {
+                    "canonical string Variant lost owned BSTR payload".to_string()
+                })?;
                 (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
                     OwnedBstr::from_bstr(text)?.into_raw();
             }
             crate::VarType::Decimal => {
                 let bytes = canonical.to_wire_bytes();
-                std::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    variant.cast::<u8>(),
-                    bytes.len(),
-                );
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), variant.cast::<u8>(), bytes.len());
             }
             crate::VarType::Object => {
                 return Err(
@@ -687,9 +683,7 @@ mod tests {
         lookup_pointer, register_object_pointer, register_runtime_value_pointer,
         register_string_var_pointer, register_utf16_string, register_variant_var_pointer,
     };
-    use crate::{
-        BindingHandle, Decimal96, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr,
-    };
+    use crate::{BindingHandle, Decimal96, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use windows_sys::{
         Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen},
@@ -723,9 +717,8 @@ mod tests {
 
     #[test]
     fn runtime_value_pointer_handles_scalars_and_strings() {
-        let string_ptr =
-            register_runtime_value_pointer(&RuntimeValue::String(BStr("xyz".to_string())))
-                .expect("register string runtime value");
+        let string_ptr = register_runtime_value_pointer(&RuntimeValue::String(BStr::from("xyz")))
+            .expect("register string runtime value");
         assert_ne!(string_ptr, 0);
         let scalar_ptr =
             register_runtime_value_pointer(&RuntimeValue::I64(42)).expect("register i64");
@@ -735,7 +728,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn string_var_pointer_exposes_bstr_cell_not_payload() {
-        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr("abc".to_string())))
+        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr::from("abc")))
             .expect("register string var");
         assert_ne!(ptr, 0);
         let raw = lookup_pointer(ptr)
@@ -751,7 +744,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn string_var_pointer_readback_tracks_updated_bstr_cell() {
-        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr("abc".to_string())))
+        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr::from("abc")))
             .expect("register string var");
         let raw = lookup_pointer(ptr)
             .expect("lookup string var")
@@ -772,7 +765,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn variant_var_pointer_materializes_variant_container() {
-        let ptr = register_variant_var_pointer(&RuntimeValue::String(BStr("abc".to_string())))
+        let ptr = register_variant_var_pointer(&RuntimeValue::String(BStr::from("abc")))
             .expect("register variant");
         assert_ne!(ptr, 0);
         let raw = lookup_pointer(ptr)
@@ -895,7 +888,10 @@ mod tests {
             .cast::<VARIANT>();
         assert!(!raw.is_null());
         let variant = unsafe { &*raw };
-        assert_eq!(unsafe { variant.Anonymous.Anonymous.vt }, VT_ARRAY | VT_VARIANT);
+        assert_eq!(
+            unsafe { variant.Anonymous.Anonymous.vt },
+            VT_ARRAY | VT_VARIANT
+        );
         let psa = unsafe { variant.Anonymous.Anonymous.Anonymous.parray };
         assert!(!psa.is_null());
         assert_eq!(unsafe { SafeArrayGetDim(psa) }, 1);
@@ -903,7 +899,11 @@ mod tests {
         let mut first: VARIANT = unsafe { std::mem::zeroed() };
         let index = 0i32;
         let hr = unsafe {
-            SafeArrayGetElement(psa.cast_const(), &index, (&mut first as *mut VARIANT).cast())
+            SafeArrayGetElement(
+                psa.cast_const(),
+                &index,
+                (&mut first as *mut VARIANT).cast(),
+            )
         };
         assert!(hr >= 0);
         assert_eq!(unsafe { first.Anonymous.Anonymous.vt }, VT_I4);

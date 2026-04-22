@@ -197,7 +197,7 @@ fn invoke_function_foreach_over_project_newenum_array_executes() {
         .invoke_procedure(&mut session, "Main", "Main", &[])
         .unwrap();
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -271,7 +271,7 @@ fn run_imported_com_newenum_foreach_bundle(enable_jit: bool) -> RuntimeValue {
 fn invoke_function_foreach_over_imported_com_newenum_executes() {
     let result = run_imported_com_newenum_foreach(false);
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -284,7 +284,7 @@ fn invoke_function_foreach_over_imported_com_newenum_vm_jit_snapshots_match() {
         vm, jit,
         "VM/JIT snapshots should match for imported COM NewEnum direct session invocation"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -297,7 +297,7 @@ fn invoke_function_foreach_over_imported_com_newenum_bundle_vm_jit_snapshots_mat
         vm, jit,
         "VM/JIT snapshots should match for imported COM NewEnum bundle session invocation"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -367,7 +367,7 @@ fn run_registered_testdispatch_foreach_bundle(enable_jit: bool) -> RuntimeValue 
 fn invoke_function_foreach_over_registered_testdispatch_executes() {
     let result = run_registered_testdispatch_foreach(false);
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -380,7 +380,7 @@ fn invoke_function_foreach_over_registered_testdispatch_vm_jit_snapshots_match()
         vm, jit,
         "VM/JIT snapshots should match for registered OxVba.TestDispatch direct session invocation"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
@@ -393,7 +393,7 @@ fn invoke_function_foreach_over_registered_testdispatch_bundle_vm_jit_snapshots_
         vm, jit,
         "VM/JIT snapshots should match for registered OxVba.TestDispatch bundle session invocation"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 // ---------------------------------------------------------------------------

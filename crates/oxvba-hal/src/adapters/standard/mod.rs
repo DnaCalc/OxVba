@@ -1568,7 +1568,7 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let handle = host
             .open(
-                RuntimeValue::String(BStr("runtime-fs-value-path.txt".to_string())),
+                RuntimeValue::String(BStr::from("runtime-fs-value-path.txt")),
                 RuntimeValue::I32(0),
             )
             .expect("open should succeed");
@@ -1671,7 +1671,7 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
         assert_eq!(
             host.msg_box(
-                RuntimeValue::String(BStr("Prompt".to_string())),
+                RuntimeValue::String(BStr::from("Prompt")),
                 RuntimeValue::I32(3),
             )
             .expect("msg_box"),
@@ -1679,11 +1679,11 @@ mod tests {
         );
         assert_eq!(
             host.input_box(
-                RuntimeValue::String(BStr("Prompt".to_string())),
-                RuntimeValue::String(BStr("Default".to_string())),
+                RuntimeValue::String(BStr::from("Prompt")),
+                RuntimeValue::String(BStr::from("Default")),
             )
             .expect("input_box"),
-            RuntimeValue::String(BStr("Default".to_string()))
+            RuntimeValue::String(BStr::from("Default"))
         );
     }
 
@@ -1742,20 +1742,20 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
             host.shell(
-                RuntimeValue::String(BStr("echo hi".to_string())),
+                RuntimeValue::String(BStr::from("echo hi")),
                 RuntimeValue::I32(0),
             )
             .expect("shell"),
             RuntimeValue::I32(1)
         );
         assert_eq!(
-            host.environ(RuntimeValue::String(BStr("PATH".to_string())))
+            host.environ(RuntimeValue::String(BStr::from("PATH")))
                 .expect("environ"),
             RuntimeValue::I32(4)
         );
         assert_eq!(
             host.dir(
-                RuntimeValue::String(BStr("folder".to_string())),
+                RuntimeValue::String(BStr::from("folder")),
                 RuntimeValue::I32(0),
             )
             .expect("dir"),
@@ -1767,7 +1767,7 @@ mod tests {
     #[test]
     fn com_string_variant_roundtrips_through_adapter_helpers() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        let value = ComValue::String(BStr("Hello".to_string()));
+        let value = ComValue::String(BStr::from("Hello"));
         let resolve_object = |_handle: ObjectRef| -> Result<*mut RawIDispatch, String> {
             Err("object dispatch resolution not expected".to_string())
         };
@@ -1825,7 +1825,7 @@ mod tests {
         let value = ComValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
             RuntimeValue::I32(4),
             RuntimeValue::Bool(true),
-            RuntimeValue::String(BStr("Hello".to_string())),
+            RuntimeValue::String(BStr::from("Hello")),
             RuntimeValue::Null,
         ]));
         let resolve_object = |_handle: ObjectRef| -> Result<*mut RawIDispatch, String> {
@@ -2298,7 +2298,7 @@ mod tests {
         );
         assert!(shell >= 1);
         let environ = host
-            .environ(RuntimeValue::String(BStr("PATH".to_string())))
+            .environ(RuntimeValue::String(BStr::from("PATH")))
             .expect("native environ should succeed");
         assert!(
             matches!(environ, RuntimeValue::String(_)),
@@ -2313,14 +2313,11 @@ mod tests {
         std::fs::write(&temp_file, "probe").expect("write temp file");
         let dir = host
             .dir(
-                RuntimeValue::String(BStr(temp_file.to_string_lossy().to_string())),
+                RuntimeValue::String(BStr::from(temp_file.to_string_lossy().to_string())),
                 rv(0),
             )
             .expect("native dir should succeed");
-        assert_eq!(
-            dir,
-            RuntimeValue::String(BStr("probe-file.txt".to_string()))
-        );
+        assert_eq!(dir, RuntimeValue::String(BStr::from("probe-file.txt")));
     }
 
     #[test]
@@ -2333,13 +2330,13 @@ mod tests {
             std::env::set_var("OXVBA_NATIVE_PROCESS_ENV_TEST", "native-process-env-value");
         }
         let out = host
-            .environ(RuntimeValue::String(BStr(
-                "OXVBA_NATIVE_PROCESS_ENV_TEST".to_string(),
+            .environ(RuntimeValue::String(BStr::from(
+                "OXVBA_NATIVE_PROCESS_ENV_TEST",
             )))
             .expect("native environ should succeed");
         assert_eq!(
             out,
-            RuntimeValue::String(BStr("native-process-env-value".to_string()))
+            RuntimeValue::String(BStr::from("native-process-env-value"))
         );
     }
 
@@ -2357,12 +2354,12 @@ mod tests {
             .join("native-file-io");
         std::fs::create_dir_all(&temp_dir).expect("create temp dir");
         let temp_file = temp_dir.join("roundtrip.txt");
-        let path = RuntimeValue::String(BStr(temp_file.to_string_lossy().to_string()));
+        let path = RuntimeValue::String(BStr::from(temp_file.to_string_lossy().to_string()));
 
         let write_handle = host.open(path.clone(), rv(1)).expect("open output");
         host.print_line(
             write_handle.clone(),
-            RuntimeValue::String(BStr("world".to_string())),
+            RuntimeValue::String(BStr::from("world")),
         )
         .expect("print_line");
         host.close(write_handle).expect("close output");
@@ -2374,7 +2371,7 @@ mod tests {
         let read_handle = host.open(path, rv(0)).expect("open input");
         assert_eq!(
             host.line_input(read_handle.clone()).expect("line_input"),
-            RuntimeValue::String(BStr("world".to_string()))
+            RuntimeValue::String(BStr::from("world"))
         );
         host.close(read_handle).expect("close input");
     }
@@ -2705,7 +2702,10 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(object.clone(), super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into())
+            .subscribe_event(
+                object.clone(),
+                super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into(),
+            )
             .expect("controlled source-interface event token should subscribe successfully");
         assert!(
             subscription.raw() >= 40_001,
@@ -3094,7 +3094,7 @@ mod tests {
             RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
                 RuntimeValue::I32(4),
                 RuntimeValue::Bool(true),
-                RuntimeValue::String(BStr("Hello".to_string())),
+                RuntimeValue::String(BStr::from("Hello")),
                 RuntimeValue::Null,
             ]));
         let request = ComInvokeRequest {

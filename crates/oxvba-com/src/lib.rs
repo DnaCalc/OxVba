@@ -85,8 +85,7 @@ pub use windows_client::{
     activate_runtime_binding, activate_runtime_dispatch, activate_runtime_object_binding_shared,
     add_ref_dispatch, get_dispid_by_name, get_dispids_by_names, guid_equals, parse_guid_canonical,
     query_dispatch_from_unknown, query_unknown_from_dispatch, release_connection_point,
-    release_dispatch, release_unknown,
-    resolve_named_argument_dispids,
+    release_dispatch, release_unknown, resolve_named_argument_dispids,
 };
 #[cfg(target_os = "windows")]
 pub use windows_connection_point::{
@@ -117,9 +116,9 @@ pub use windows_runtime_state::{
     queue_projection_event_callbacks_shared, release_callback, release_object_binding,
     release_object_binding_shared, release_subscription_transport, remove_subscription_callbacks,
     resolve_bound_native_dispatch, resolve_bound_native_dispatch_shared,
-    resolve_bound_runtime_object, resolve_bound_runtime_object_shared, resolve_member_dispid_cached,
-    resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
-    unsubscribe_event_shared,
+    resolve_bound_runtime_object, resolve_bound_runtime_object_shared,
+    resolve_member_dispid_cached, resolve_subscription_transport, subscribe_event_shared,
+    take_polled_callback_payload, unsubscribe_event_shared,
 };
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub use windows_test_dispatch::{

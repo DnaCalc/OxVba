@@ -106,9 +106,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::String(text) if text.0 == "alpha")),
+                snapshot.iter().any(
+                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
+                ),
                 "MultiByteToWideChar should write back through StrPtr target for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -139,9 +139,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::String(text) if text.0 == "alpha")),
+                snapshot.iter().any(
+                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
+                ),
                 "StrPtr writeback should not depend on the declared API name for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -164,9 +164,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")),
+                snapshot.iter().any(
+                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
+                ),
                 "SysReAllocString should write back through VarPtr(String) for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -388,7 +388,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(|value| matches!(value, RuntimeValue::I64(raw) if *raw > 0)),
+                snapshot
+                    .iter()
+                    .any(|value| matches!(value, RuntimeValue::I64(raw) if *raw > 0)),
                 "GetDiskFreeSpaceExW should populate ByRef LongLong outputs for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }

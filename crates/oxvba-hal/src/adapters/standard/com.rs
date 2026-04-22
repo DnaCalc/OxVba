@@ -158,17 +158,19 @@ impl ComHal for StandardHostServices {
         let removed_projection = release_projection_object_ref(self, &object)?;
         let object_raw = object.raw();
         if !self.native_com_enabled() {
-            return Ok(RuntimeValue::I32(if removed_projection || object_raw != 0 {
-                1
-            } else {
-                0
-            }));
+            return Ok(RuntimeValue::I32(
+                if removed_projection || object_raw != 0 {
+                    1
+                } else {
+                    0
+                },
+            ));
         }
         self.ensure_thread_com_apartment("release_object")?;
         #[cfg(target_os = "windows")]
         {
-            let released = unsafe { self.com_bridge.release_object(object.clone()) }
-                .map_err(|message| {
+            let released =
+                unsafe { self.com_bridge.release_object(object.clone()) }.map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "release_object", message)
                 })?;
             if super::com_event_trace_enabled() {
@@ -194,12 +196,17 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            let descriptor = self
-                .com_bridge
-                .describe_object(object.clone())
-                .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "describe_object", message)
-            })?;
+            let descriptor =
+                self.com_bridge
+                    .describe_object(object.clone())
+                    .map_err(|message| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "describe_object",
+                            message,
+                        )
+                    })?;
             if descriptor.is_some() || self.native_com_enabled() {
                 return Ok(descriptor);
             }
@@ -288,7 +295,9 @@ impl ComHal for StandardHostServices {
                 // path by returning the already bound object identity rather than inventing
                 // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Ok(RuntimeValue::Object(ObjectRef::from_compat_identity(object)));
+                    return Ok(RuntimeValue::Object(ObjectRef::from_compat_identity(
+                        object,
+                    )));
                 }
                 _ => {}
             }
@@ -388,7 +397,11 @@ impl ComHal for StandardHostServices {
         self.dispatch_invoke_runtime_value_v2(&lowered)
     }
 
-    fn subscribe_event(&self, object: ObjectRef, event: ComMemberToken) -> HalResult<ComSubscriptionToken> {
+    fn subscribe_event(
+        &self,
+        object: ObjectRef,
+        event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "subscribe_event"));
@@ -407,13 +420,17 @@ impl ComHal for StandardHostServices {
         self.ensure_thread_com_apartment("subscribe_event")?;
         #[cfg(target_os = "windows")]
         {
-            let (subscription, transport, expected_arity) = unsafe {
-                self.com_bridge
-                    .subscribe_event(object.clone(), event)
-            }
-            .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
-                })?;
+            let (subscription, transport, expected_arity) =
+                unsafe { self.com_bridge.subscribe_event(object.clone(), event) }.map_err(
+                    |message| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "subscribe_event",
+                            message,
+                        )
+                    },
+                )?;
             if super::com_event_trace_enabled() {
                 eprintln!(
                     "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",

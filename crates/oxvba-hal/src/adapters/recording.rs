@@ -100,8 +100,13 @@ impl RecordingHostServices {
     ) {
         if let Ok(RuntimeValue::String(s)) = result {
             let seq = self.next_sequence();
-            let entry =
-                HalJournalEntry::new(seq, capability, operation, family, serde_json::json!(s.0));
+            let entry = HalJournalEntry::new(
+                seq,
+                capability,
+                operation,
+                family,
+                serde_json::json!(s.as_str()),
+            );
             self.journal
                 .lock()
                 .expect("journal lock not poisoned")

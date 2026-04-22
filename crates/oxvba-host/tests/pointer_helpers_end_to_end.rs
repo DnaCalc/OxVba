@@ -6,7 +6,9 @@ mod windows_pointer_helper_e2e {
     use windows_sys::{
         Win32::Foundation::SysStringLen,
         Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
-        Win32::System::Variant::{VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_I8, VT_UNKNOWN, VT_VARIANT, VariantClear},
+        Win32::System::Variant::{
+            VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_I8, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        },
     };
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
@@ -696,7 +698,11 @@ End Sub
             let mut first: VARIANT = unsafe { std::mem::zeroed() };
             let index = 0i32;
             let hr = unsafe {
-                SafeArrayGetElement(psa.cast_const(), &index, (&mut first as *mut VARIANT).cast())
+                SafeArrayGetElement(
+                    psa.cast_const(),
+                    &index,
+                    (&mut first as *mut VARIANT).cast(),
+                )
             };
             assert!(
                 hr >= 0,

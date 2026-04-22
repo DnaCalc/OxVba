@@ -105,8 +105,8 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
             values,
             vec![
                 RuntimeValue::I32(42),
-                RuntimeValue::String(oxvba_runtime::bstr::BStr("hello there".to_string())),
-                RuntimeValue::String(oxvba_runtime::bstr::BStr("rest of line".to_string())),
+                RuntimeValue::String(oxvba_runtime::bstr::BStr::from("hello there")),
+                RuntimeValue::String(oxvba_runtime::bstr::BStr::from("rest of line")),
             ],
             "windows stdio host should preserve console/debug behavior for enable_jit={enable_jit}"
         );
@@ -176,8 +176,8 @@ fn console_print_and_input_execute_on_linux_stdio_profile() {
         values,
         vec![
             RuntimeValue::I32(7),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr("alpha".to_string())),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr("omega".to_string())),
+            RuntimeValue::String(oxvba_runtime::bstr::BStr::from("alpha")),
+            RuntimeValue::String(oxvba_runtime::bstr::BStr::from("omega")),
         ]
     );
 }

@@ -9,8 +9,7 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue,
-    bstr::BStr,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
 };
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -259,12 +258,18 @@ pub fn runtime_string_repeat_bounded(
 
 pub fn runtime_hex_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Hex operand")?;
-    Ok(RuntimeValue::String(BStr::from(format!("{:X}", value as u32))))
+    Ok(RuntimeValue::String(BStr::from(format!(
+        "{:X}",
+        value as u32
+    ))))
 }
 
 pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Oct operand")?;
-    Ok(RuntimeValue::String(BStr::from(format!("{:o}", value as u32))))
+    Ok(RuntimeValue::String(BStr::from(format!(
+        "{:o}",
+        value as u32
+    ))))
 }
 
 pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -1275,7 +1280,7 @@ mod tests {
     #[test]
     fn string_equals_empty_coerces_without_legacy_token_failure() {
         let out = typed_compare_values(
-            &RuntimeValue::String(BStr(String::new())),
+            &RuntimeValue::String(BStr::empty()),
             &RuntimeValue::Empty,
             StringCompareMode::Binary,
             |ord| ord == std::cmp::Ordering::Equal,
@@ -1287,7 +1292,7 @@ mod tests {
     #[test]
     fn nonempty_string_not_equal_to_empty_after_string_coercion() {
         let out = typed_compare_values(
-            &RuntimeValue::String(BStr("main".to_string())),
+            &RuntimeValue::String(BStr::from("main")),
             &RuntimeValue::Empty,
             StringCompareMode::Binary,
             |ord| ord == std::cmp::Ordering::Equal,
@@ -1298,17 +1303,16 @@ mod tests {
 
     #[test]
     fn datevalue_parses_day_month_name_year_string() {
-        let out = runtime_value_to_date_value_digits(&RuntimeValue::String(BStr(
-            "1 Jan 2000".to_string(),
-        )))
-        .expect("DateValue string should parse");
+        let out =
+            runtime_value_to_date_value_digits(&RuntimeValue::String(BStr::from("1 Jan 2000")))
+                .expect("DateValue string should parse");
         assert_eq!(out, 20000101);
     }
 
     #[test]
     fn datevalue_parses_month_name_day_year_string() {
-        let out = runtime_value_to_date_value_digits(&RuntimeValue::String(BStr(
-            "January 1, 2000".to_string(),
+        let out = runtime_value_to_date_value_digits(&RuntimeValue::String(BStr::from(
+            "January 1, 2000",
         )))
         .expect("DateValue month-first string should parse");
         assert_eq!(out, 20000101);
@@ -1323,7 +1327,7 @@ mod tests {
 
     #[test]
     fn datevalue_runtime_promotes_string_input_to_date_subtype() {
-        let out = runtime_value_to_datevalue(&RuntimeValue::String(BStr("1 Jan 2000".to_string())))
+        let out = runtime_value_to_datevalue(&RuntimeValue::String(BStr::from("1 Jan 2000")))
             .expect("DateValue runtime conversion should succeed");
         assert_eq!(out, RuntimeValue::F64(F64Value::from_date_f64(36526.0)));
     }
@@ -1337,7 +1341,7 @@ mod tests {
 
     #[test]
     fn cdate_runtime_accepts_dotted_month_name_string() {
-        let out = runtime_value_to_cdate(&RuntimeValue::String(BStr("Jan. 1, 2000".to_string())))
+        let out = runtime_value_to_cdate(&RuntimeValue::String(BStr::from("Jan. 1, 2000")))
             .expect("CDate dotted month-name string should parse");
         assert_eq!(out, RuntimeValue::F64(F64Value::from_date_f64(36526.0)));
     }
@@ -1357,8 +1361,8 @@ mod tests {
         assert!(runtime_value_is_date(&RuntimeValue::F64(
             F64Value::from_date_f64(46081.5)
         )));
-        assert!(!runtime_value_is_date(&RuntimeValue::String(BStr(
-            "not a date".to_string()
+        assert!(!runtime_value_is_date(&RuntimeValue::String(BStr::from(
+            "not a date"
         ))));
     }
 
@@ -1388,7 +1392,7 @@ mod tests {
     #[test]
     fn split_count_bounded_uses_typed_text_coercion() {
         let out = super::runtime_split_count_bounded(
-            &RuntimeValue::String(BStr("123231".to_string())),
+            &RuntimeValue::String(BStr::from("123231")),
             &RuntimeValue::I32(23),
         )
         .expect("Split should succeed");
@@ -1418,16 +1422,13 @@ mod tests {
     #[test]
     fn runtime_value_to_usize_and_array_indices_use_numeric_compatibility() {
         assert_eq!(
-            super::runtime_value_to_usize(&RuntimeValue::String(BStr("12".to_string())))
+            super::runtime_value_to_usize(&RuntimeValue::String(BStr::from("12")))
                 .expect("numeric text usize coercion should succeed"),
             12
         );
         assert_eq!(
             super::runtime_array_indices(
-                &[
-                    RuntimeValue::String(BStr("1".to_string())),
-                    RuntimeValue::I32(2),
-                ],
+                &[RuntimeValue::String(BStr::from("1")), RuntimeValue::I32(2),],
                 "array index"
             )
             .expect("numeric-compatible array indices should succeed"),
@@ -1462,8 +1463,8 @@ mod tests {
     fn like_bounded_uses_typed_text_coercion() {
         assert_eq!(
             super::runtime_like_bounded(
-                &RuntimeValue::String(BStr("ABC".to_string())),
-                &RuntimeValue::String(BStr("abc".to_string())),
+                &RuntimeValue::String(BStr::from("ABC")),
+                &RuntimeValue::String(BStr::from("abc")),
                 StringCompareMode::Text,
             )
             .expect("Like should succeed"),
@@ -1472,7 +1473,7 @@ mod tests {
         assert_eq!(
             super::runtime_like_bounded(
                 &RuntimeValue::I32(123),
-                &RuntimeValue::String(BStr("456".to_string())),
+                &RuntimeValue::String(BStr::from("456")),
                 StringCompareMode::Binary,
             )
             .expect("Like should succeed"),
@@ -1498,25 +1499,25 @@ mod tests {
     fn mid_stmt_bounded_supports_string_target_mutation() {
         assert_eq!(
             super::runtime_mid_stmt_bounded(
-                &RuntimeValue::String(BStr("ABCDE".to_string())),
+                &RuntimeValue::String(BStr::from("ABCDE")),
                 &RuntimeValue::I32(2),
                 Some(&RuntimeValue::I32(2)),
-                &RuntimeValue::String(BStr("99".to_string())),
+                &RuntimeValue::String(BStr::from("99")),
             )
             .expect("MidStmt string mutation should succeed"),
-            RuntimeValue::String(BStr("A99DE".to_string()))
+            RuntimeValue::String(BStr::from("A99DE"))
         );
     }
 
     #[test]
     fn numeric_compat_accepts_numeric_text_for_truthy_and_division_lanes() {
         assert!(
-            super::legacy_truthy_value(&RuntimeValue::String(BStr("12".to_string())))
+            super::legacy_truthy_value(&RuntimeValue::String(BStr::from("12")))
                 .expect("truthy coercion should succeed")
         );
         assert_eq!(
             super::legacy_div_values(
-                &RuntimeValue::String(BStr("12".to_string())),
+                &RuntimeValue::String(BStr::from("12")),
                 &RuntimeValue::I32(3),
             )
             .expect("division coercion should succeed"),
@@ -1527,9 +1528,9 @@ mod tests {
     #[test]
     fn char_and_format_helpers_use_typed_text_numeric_coercion() {
         assert_eq!(
-            super::runtime_chr_bounded(&RuntimeValue::String(BStr("65".to_string())))
+            super::runtime_chr_bounded(&RuntimeValue::String(BStr::from("65")))
                 .expect("Chr should coerce numeric text"),
-            RuntimeValue::String(BStr("A".to_string()))
+            RuntimeValue::String(BStr::from("A"))
         );
         assert_eq!(
             super::runtime_asc_bounded(&RuntimeValue::I32(123))
@@ -1537,34 +1538,34 @@ mod tests {
             RuntimeValue::I32('1' as i32)
         );
         assert_eq!(
-            super::runtime_space_bounded(&RuntimeValue::String(BStr("3".to_string())))
+            super::runtime_space_bounded(&RuntimeValue::String(BStr::from("3")))
                 .expect("Space should coerce numeric text"),
-            RuntimeValue::String(BStr("   ".to_string()))
+            RuntimeValue::String(BStr::from("   "))
         );
         assert_eq!(
             super::runtime_string_repeat_bounded(
                 &RuntimeValue::I32(3),
-                &RuntimeValue::String(BStr("Z".to_string())),
+                &RuntimeValue::String(BStr::from("Z")),
             )
             .expect("String$ should succeed"),
-            RuntimeValue::String(BStr("ZZZ".to_string()))
+            RuntimeValue::String(BStr::from("ZZZ"))
         );
         assert_eq!(
-            super::runtime_hex_bounded(&RuntimeValue::String(BStr("255".to_string())))
+            super::runtime_hex_bounded(&RuntimeValue::String(BStr::from("255")))
                 .expect("Hex should coerce numeric text"),
-            RuntimeValue::String(BStr("FF".to_string()))
+            RuntimeValue::String(BStr::from("FF"))
         );
         assert_eq!(
             super::runtime_oct_bounded(&RuntimeValue::I32(8)).expect("Oct should succeed"),
-            RuntimeValue::String(BStr("10".to_string()))
+            RuntimeValue::String(BStr::from("10"))
         );
         assert_eq!(
             super::runtime_strconv_bounded(
-                &RuntimeValue::String(BStr("ab".to_string())),
-                &RuntimeValue::String(BStr("1".to_string())),
+                &RuntimeValue::String(BStr::from("ab")),
+                &RuntimeValue::String(BStr::from("1")),
             )
             .expect("StrConv should coerce numeric text conversion"),
-            RuntimeValue::String(BStr("AB".to_string()))
+            RuntimeValue::String(BStr::from("AB"))
         );
         assert_eq!(
             super::runtime_val_bounded(&RuntimeValue::Bool(true)).expect("Val should coerce bool"),
@@ -1575,36 +1576,36 @@ mod tests {
     #[test]
     fn math_and_date_helpers_use_typed_numeric_coercion() {
         assert_eq!(
-            super::runtime_abs_bounded(&RuntimeValue::String(BStr("-7".to_string())))
+            super::runtime_abs_bounded(&RuntimeValue::String(BStr::from("-7")))
                 .expect("Abs should coerce numeric text"),
             RuntimeValue::I32(7)
         );
         assert_eq!(
             super::runtime_round_bounded(
-                &RuntimeValue::String(BStr("19".to_string())),
-                Some(&RuntimeValue::String(BStr("-1".to_string()))),
+                &RuntimeValue::String(BStr::from("19")),
+                Some(&RuntimeValue::String(BStr::from("-1"))),
             )
             .expect("Round should coerce numeric text"),
             RuntimeValue::I32(20)
         );
         assert_eq!(
-            super::runtime_month_name_bounded(&RuntimeValue::String(BStr("3".to_string())))
+            super::runtime_month_name_bounded(&RuntimeValue::String(BStr::from("3")))
                 .expect("MonthName should coerce numeric text"),
-            RuntimeValue::String(BStr("March".to_string()))
+            RuntimeValue::String(BStr::from("March"))
         );
         assert_eq!(
             super::runtime_date_serial_bounded(
-                &RuntimeValue::String(BStr("2026".to_string())),
-                &RuntimeValue::String(BStr("2".to_string())),
-                &RuntimeValue::String(BStr("28".to_string())),
+                &RuntimeValue::String(BStr::from("2026")),
+                &RuntimeValue::String(BStr::from("2")),
+                &RuntimeValue::String(BStr::from("28")),
             )
             .expect("DateSerial should coerce numeric text"),
             RuntimeValue::F64(F64Value::from_date_f64(46081.0))
         );
         assert_eq!(
             super::runtime_date_add_bounded(
-                &RuntimeValue::String(BStr("1".to_string())),
-                &RuntimeValue::String(BStr("3".to_string())),
+                &RuntimeValue::String(BStr::from("1")),
+                &RuntimeValue::String(BStr::from("3")),
                 &RuntimeValue::F64(F64Value::from_date_f64(46081.0)),
             )
             .expect("DateAdd should coerce numeric text"),
@@ -1627,7 +1628,7 @@ mod tests {
         );
         assert_eq!(
             super::runtime_random_seed_bounded(
-                &RuntimeValue::String(BStr("1".to_string())),
+                &RuntimeValue::String(BStr::from("1")),
                 "Randomize seed"
             )
             .expect("Randomize seed should coerce numeric text"),
@@ -1639,7 +1640,7 @@ mod tests {
     fn arithmetic_and_comparison_helpers_use_typed_numeric_coercion() {
         assert_eq!(
             super::legacy_add_values(
-                &RuntimeValue::String(BStr("12".to_string())),
+                &RuntimeValue::String(BStr::from("12")),
                 &RuntimeValue::I32(3)
             )
             .expect("add should coerce numeric text"),
@@ -1647,7 +1648,7 @@ mod tests {
         );
         assert_eq!(
             super::legacy_sub_values(
-                &RuntimeValue::String(BStr("12".to_string())),
+                &RuntimeValue::String(BStr::from("12")),
                 &RuntimeValue::I32(5)
             )
             .expect("sub should coerce numeric text"),
@@ -1655,7 +1656,7 @@ mod tests {
         );
         assert_eq!(
             super::legacy_mul_values(
-                &RuntimeValue::String(BStr("3".to_string())),
+                &RuntimeValue::String(BStr::from("3")),
                 &RuntimeValue::I32(4)
             )
             .expect("mul should coerce numeric text"),
@@ -1663,7 +1664,7 @@ mod tests {
         );
         assert_eq!(
             super::legacy_pow_values(
-                &RuntimeValue::String(BStr("2".to_string())),
+                &RuntimeValue::String(BStr::from("2")),
                 &RuntimeValue::I32(3)
             )
             .expect("pow should coerce numeric text"),
@@ -1671,7 +1672,7 @@ mod tests {
         );
         assert!(
             super::typed_compare_values(
-                &RuntimeValue::String(BStr("12".to_string())),
+                &RuntimeValue::String(BStr::from("12")),
                 &RuntimeValue::I32(12),
                 StringCompareMode::Binary,
                 |ord| ord == std::cmp::Ordering::Equal,
@@ -1775,10 +1776,7 @@ pub fn proper_case(s: &str) -> String {
 
 // ── COM Token Conversions ─────────────────────────────────────────────
 
-pub fn runtime_value_to_com_object(
-    value: &RuntimeValue,
-    field: &str,
-) -> Result<ObjectRef, String> {
+pub fn runtime_value_to_com_object(value: &RuntimeValue, field: &str) -> Result<ObjectRef, String> {
     match value {
         RuntimeValue::Object(handle) => Ok(handle.clone()),
         RuntimeValue::I32(raw) => Ok(ObjectRef::from_compat_identity(*raw)),

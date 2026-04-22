@@ -86,7 +86,9 @@ impl UiInteractionHal for StandardHostServices {
                     let prompt_text = self.runtime_value_to_display_text(&prompt);
                     let default_text = self.runtime_value_to_display_text(&default_value);
                     let result = cb.on_input_box(&prompt_text, &default_text);
-                    Ok(RuntimeValue::String(oxvba_runtime::bstr::BStr::from(result)))
+                    Ok(RuntimeValue::String(oxvba_runtime::bstr::BStr::from(
+                        result,
+                    )))
                 } else {
                     Ok(default_value)
                 }

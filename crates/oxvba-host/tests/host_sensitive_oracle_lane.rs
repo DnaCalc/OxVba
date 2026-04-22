@@ -15,7 +15,7 @@ mod windows_host_sensitive_oracle_lane {
 
     fn emit_observed(case_id: &str, value: &RuntimeValue) {
         let rendered = match value {
-            RuntimeValue::String(BStr(text)) => text.clone(),
+            RuntimeValue::String(text) => text.as_str().to_string(),
             RuntimeValue::I32(pid) if *pid > 0 => "pid>0".to_string(),
             other => format!("{other:?}"),
         };
@@ -31,10 +31,7 @@ mod windows_host_sensitive_oracle_lane {
         let out =
             run_host_backed_source("Sub Main()\nDim x\nx = Environ(\"OXVBA_ORACLE_ENV\")\nEnd Sub");
         emit_observed("CCT-035-ENV-001", &out[0]);
-        assert_eq!(
-            out[0],
-            RuntimeValue::String(BStr("oracle-033-value".to_string()))
-        );
+        assert_eq!(out[0], RuntimeValue::String(BStr::from("oracle-033-value")));
     }
 
     #[test]
@@ -51,10 +48,7 @@ mod windows_host_sensitive_oracle_lane {
         let source = format!("Sub Main()\nDim x\nx = Dir(\"{path_literal}\")\nEnd Sub");
         let out = run_host_backed_source(&source);
         emit_observed("CCT-035-DIR-001", &out[0]);
-        assert_eq!(
-            out[0],
-            RuntimeValue::String(BStr("probe-file.txt".to_string()))
-        );
+        assert_eq!(out[0], RuntimeValue::String(BStr::from("probe-file.txt")));
     }
 
     #[test]

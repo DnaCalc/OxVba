@@ -55,7 +55,7 @@ pub fn generate_marshal_to_xloper(var_name: &str) -> String {
     RuntimeValue::I32(v) => xloper12_int(v),
     RuntimeValue::F64(v) => xloper12_num(v.as_f64()),
     RuntimeValue::Bool(v) => xloper12_bool(v),
-    RuntimeValue::String(s) => xloper12_str(&s.0),
+    RuntimeValue::String(s) => xloper12_str(s.as_str()),
     RuntimeValue::Empty => xloper12_nil(),
     _ => xloper12_nil(),
 }}"#

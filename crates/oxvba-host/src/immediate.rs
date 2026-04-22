@@ -364,8 +364,8 @@ fn parse_immediate_literal(token: &str) -> Result<RuntimeValue, String> {
         return Ok(RuntimeValue::Empty);
     }
     if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-        return Ok(RuntimeValue::String(BStr(
-            trimmed[1..trimmed.len() - 1].to_string(),
+        return Ok(RuntimeValue::String(BStr::from(
+            &trimmed[1..trimmed.len() - 1],
         )));
     }
     if let Ok(value) = trimmed.parse::<i32>() {
@@ -382,7 +382,7 @@ fn parse_immediate_literal(token: &str) -> Result<RuntimeValue, String> {
 
 fn format_runtime_value_for_immediate(value: &RuntimeValue) -> String {
     match runtime_value_to_vba_string(value) {
-        Ok(RuntimeValue::String(BStr(text))) => text,
+        Ok(RuntimeValue::String(text)) => text.into_string(),
         Ok(other) => format!("{other:?}"),
         Err(_) => format!("{value:?}"),
     }
@@ -594,7 +594,7 @@ End Function
         };
         assert_eq!(
             value.runtime_value,
-            RuntimeValue::String(BStr("hello".to_string()))
+            RuntimeValue::String(BStr::from("hello"))
         );
         assert_eq!(value.display_text, "hello");
     }

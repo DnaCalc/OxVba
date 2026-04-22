@@ -36,7 +36,11 @@ impl ComBinding {
         }
     }
 
-    pub fn descriptor(&self, object: ObjectRef, typelib_cache_key: Option<String>) -> ComObjectDescriptor {
+    pub fn descriptor(
+        &self,
+        object: ObjectRef,
+        typelib_cache_key: Option<String>,
+    ) -> ComObjectDescriptor {
         ComObjectDescriptor {
             object,
             prog_id_name: self.prog_id_name.clone(),

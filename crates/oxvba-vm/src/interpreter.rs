@@ -2101,7 +2101,7 @@ impl Vm {
                         RuntimeValue::String(_) => 8,   // vbString
                         RuntimeValue::ErrorCode(_) => 10, // vbError
                         RuntimeValue::Decimal(_) => 14, // vbDecimal
-                        RuntimeValue::Object(_) => 9, // vbObject
+                        RuntimeValue::Object(_) => 9,   // vbObject
                         RuntimeValue::BindingHandle(_) => 9, // vbObject
                         RuntimeValue::ArrayIntent(_) => 8192 + 12, // vbArray + vbVariant
                     };
@@ -2706,8 +2706,9 @@ impl Vm {
                     let owner = self.read_value_slot(*owner)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     self.clear_com_withevents_owner_subscriptions(owner.clone())?;
-                    self.withevents_bindings
-                        .retain(|key, _| Self::withevents_owner_from_key(*key).raw() != owner.raw());
+                    self.withevents_bindings.retain(|key, _| {
+                        Self::withevents_owner_from_key(*key).raw() != owner.raw()
+                    });
                     self.write_value_slot(*dst, RuntimeValue::I32(0))?;
                     pc += 1;
                 }
@@ -3843,10 +3844,7 @@ impl Vm {
         Ok(())
     }
 
-    fn clear_com_withevents_owner_subscriptions(
-        &mut self,
-        owner: ObjectRef,
-    ) -> Result<(), String> {
+    fn clear_com_withevents_owner_subscriptions(&mut self, owner: ObjectRef) -> Result<(), String> {
         let keys = self
             .com_withevents_binding_subscriptions
             .keys()
@@ -4757,12 +4755,12 @@ mod tests {
     fn snapshot_values_preserve_non_legacy_runtime_values() {
         let mut vm = Vm::default();
         vm.reset_execution_state(1, false);
-        vm.write_value_slot(0, RuntimeValue::String(BStr("ABC".to_string())))
+        vm.write_value_slot(0, RuntimeValue::String(BStr::from("ABC")))
             .expect("write string runtime value");
 
         assert_eq!(
             vm.snapshot_values(1),
-            vec![RuntimeValue::String(BStr("ABC".to_string()))]
+            vec![RuntimeValue::String(BStr::from("ABC"))]
         );
         assert_eq!(vm.snapshot_slots(1), vec![EMPTY_TAG]);
     }
@@ -4847,7 +4845,7 @@ mod tests {
             &bytecode,
             0,
             &[0],
-            &[RuntimeValue::String(BStr("Prompt".to_string()))],
+            &[RuntimeValue::String(BStr::from("Prompt"))],
         )
         .expect("vm should execute msg_box host intrinsic");
 
@@ -4884,15 +4882,15 @@ mod tests {
             0,
             &[0, 1],
             &[
-                RuntimeValue::String(BStr("Prompt".to_string())),
-                RuntimeValue::String(BStr("Default".to_string())),
+                RuntimeValue::String(BStr::from("Prompt")),
+                RuntimeValue::String(BStr::from("Default")),
             ],
         )
         .expect("vm should execute input_box host intrinsic");
 
         assert_eq!(
             vm.snapshot_values(3)[2],
-            RuntimeValue::String(BStr("Default".to_string()))
+            RuntimeValue::String(BStr::from("Default"))
         );
     }
 
@@ -4977,11 +4975,11 @@ mod tests {
         let out = vm.snapshot_slots(10);
         let values = vm.snapshot_values(10);
         assert_eq!(out, vec![12345, 2, 3, 5, 0, 0, 0, 3, 0, 0]);
-        assert_eq!(values[4], RuntimeValue::String(BStr("12".to_string())));
-        assert_eq!(values[5], RuntimeValue::String(BStr("45".to_string())));
-        assert_eq!(values[6], RuntimeValue::String(BStr("234".to_string())));
-        assert_eq!(values[8], RuntimeValue::String(BStr("12345".to_string())));
-        assert_eq!(values[9], RuntimeValue::String(BStr("12345".to_string())));
+        assert_eq!(values[4], RuntimeValue::String(BStr::from("12")));
+        assert_eq!(values[5], RuntimeValue::String(BStr::from("45")));
+        assert_eq!(values[6], RuntimeValue::String(BStr::from("234")));
+        assert_eq!(values[8], RuntimeValue::String(BStr::from("12345")));
+        assert_eq!(values[9], RuntimeValue::String(BStr::from("12345")));
     }
 
     #[test]
@@ -5044,7 +5042,7 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(
             vm.snapshot_values(4)[0],
-            RuntimeValue::String(BStr("A99DE".to_string()))
+            RuntimeValue::String(BStr::from("A99DE"))
         );
     }
 
@@ -5121,10 +5119,10 @@ mod tests {
                 123231, 23, 12345, 67, 12, 123, 3, 12345, 0, 0, 0, 0, -1, 4, -1
             ]
         );
-        assert_eq!(values[8], RuntimeValue::String(BStr("16745".to_string())));
-        assert_eq!(values[9], RuntimeValue::String(BStr("12345".to_string())));
-        assert_eq!(values[10], RuntimeValue::String(BStr("12345".to_string())));
-        assert_eq!(values[11], RuntimeValue::String(BStr("12345".to_string())));
+        assert_eq!(values[8], RuntimeValue::String(BStr::from("16745")));
+        assert_eq!(values[9], RuntimeValue::String(BStr::from("12345")));
+        assert_eq!(values[10], RuntimeValue::String(BStr::from("12345")));
+        assert_eq!(values[11], RuntimeValue::String(BStr::from("12345")));
     }
 
     #[test]
@@ -6549,13 +6547,13 @@ mod tests {
             &bytecode,
             4,
             &[1],
-            &[RuntimeValue::String(BStr("ABC".to_string()))],
+            &[RuntimeValue::String(BStr::from("ABC"))],
         )
         .expect("invoke with string runtime value");
 
         assert_eq!(
             vm.snapshot_values(2)[0],
-            RuntimeValue::String(BStr("ABC".to_string()))
+            RuntimeValue::String(BStr::from("ABC"))
         );
         assert_eq!(vm.snapshot_slots(2), vec![EMPTY_TAG, EMPTY_TAG]);
     }

@@ -322,12 +322,12 @@ mod tests {
             ComValue::Currency(CurrencyValue::from_scaled_i64(125_000))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::String(BStr("ABC".to_string()))),
-            ComValue::String(BStr("ABC".to_string()))
+            ComValue::from_runtime_value(&RuntimeValue::String(BStr::from("ABC"))),
+            ComValue::String(BStr::from("ABC"))
         );
         assert_eq!(
-            ComValue::String(BStr("ABC".to_string())).to_runtime_value(),
-            RuntimeValue::String(BStr("ABC".to_string()))
+            ComValue::String(BStr::from("ABC")).to_runtime_value(),
+            RuntimeValue::String(BStr::from("ABC"))
         );
         assert_eq!(
             ComValue::F64(F64Value::from_f64(3.5)).to_runtime_value(),
@@ -341,8 +341,9 @@ mod tests {
             ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500)).to_runtime_value(),
             RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
         );
-        let object_value =
-            ComValue::from_runtime_value(&RuntimeValue::Object(ObjectRef::from_compat_identity(1234)));
+        let object_value = ComValue::from_runtime_value(&RuntimeValue::Object(
+            ObjectRef::from_compat_identity(1234),
+        ));
         let ComValue::Object(object_ref) = object_value else {
             panic!("expected ObjectRef-backed COM value");
         };
@@ -354,7 +355,7 @@ mod tests {
         };
         assert_eq!(object_ref.raw(), 1234);
         assert!(
-            ComValue::String(BStr("ABC".to_string()))
+            ComValue::String(BStr::from("ABC"))
                 .to_runtime_token()
                 .is_err()
         );
@@ -364,13 +365,13 @@ mod tests {
     fn com_value_preserves_safe_array_payload_shape() {
         let value = ComValue::ArrayIntent(SafeArray::from_values(vec![
             RuntimeValue::I32(4),
-            RuntimeValue::String(BStr("A".to_string())),
+            RuntimeValue::String(BStr::from("A")),
         ]));
         assert_eq!(
             value.to_runtime_value(),
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::I32(4),
-                RuntimeValue::String(BStr("A".to_string())),
+                RuntimeValue::String(BStr::from("A")),
             ]))
         );
         assert_eq!(

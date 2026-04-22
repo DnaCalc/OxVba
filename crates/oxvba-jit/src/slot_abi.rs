@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn heap_roundtrip_string() {
-        let original = BStr("hello".to_string());
+        let original = BStr::from("hello");
         let slot = RtSlot::from_string_box(Box::new(original.clone()));
         let value = unsafe { slot.to_runtime_value() };
         assert_eq!(value, RuntimeValue::String(original));
@@ -479,7 +479,7 @@ mod tests {
 
         #[test]
         fn prop_heap_roundtrip_string(s in ".*") {
-            let original = BStr(s);
+            let original = BStr::from(s);
             let slot = RtSlot::from_string_box(Box::new(original.clone()));
             let recovered = unsafe { slot.to_runtime_value() };
             prop_assert_eq!(recovered, RuntimeValue::String(original));

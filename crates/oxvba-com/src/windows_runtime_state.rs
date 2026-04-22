@@ -4,9 +4,8 @@ use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComInvokeArg, ComMemberSpec,
     ComMemberToken, ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue,
     DispatchEventSinkConfig, RawIDispatch, WindowsConnectionPointTransport,
-    binding_from_typelib_metadata,
-    get_dispid_by_name, query_unknown_from_dispatch, release_dispatch, release_unknown,
-    source_interface_event_spec_supported,
+    binding_from_typelib_metadata, get_dispid_by_name, query_unknown_from_dispatch,
+    release_dispatch, release_unknown, source_interface_event_spec_supported,
     try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
     unadvise_connection_point,
 };
@@ -782,19 +781,18 @@ pub fn queue_projection_event_callbacks_shared(
         ));
     }
     let mut state = lock_state(com_state, "queue_projection_event_callbacks")?;
-    Ok(state.queue_callbacks_for_source_event(
-        &object,
-        event,
-        args.as_slice(),
-        |transport| transport.is_projection(),
-    ))
+    Ok(
+        state.queue_callbacks_for_source_event(&object, event, args.as_slice(), |transport| {
+            transport.is_projection()
+        }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        WindowsComClientState, WindowsComSubscriptionTransport, event_callback_args_from_invoke_args,
-        queue_projection_event_callbacks_shared,
+        WindowsComClientState, WindowsComSubscriptionTransport,
+        event_callback_args_from_invoke_args, queue_projection_event_callbacks_shared,
     };
     use crate::{
         ComBinding, ComEventPath, ComEventSpec, ComEventSubscription, ComEventTriggerSpec,
@@ -827,9 +825,9 @@ mod tests {
         let values = event_callback_args_from_invoke_args(
             &binding,
             ComMemberToken::new(7),
-            &[ComInvokeArg::positional_value(ComValue::String(BStr::from(
-                "payload",
-            )))],
+            &[ComInvokeArg::positional_value(ComValue::String(
+                BStr::from("payload"),
+            ))],
         )
         .expect("projection callback args should be widened from invoke args")
         .expect("event trigger should be recognized");
@@ -879,9 +877,9 @@ mod tests {
             object.clone(),
             &binding,
             ComMemberToken::new(7),
-            &[ComInvokeArg::positional_value(ComValue::String(BStr::from(
-                "payload",
-            )))],
+            &[ComInvokeArg::positional_value(ComValue::String(
+                BStr::from("payload"),
+            ))],
         )
         .expect("projection callback queue should succeed");
         assert_eq!(queued, 1);

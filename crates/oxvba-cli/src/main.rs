@@ -8,7 +8,7 @@ use oxvba_host::{
     RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
     resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
-use oxvba_runtime::{RuntimeValue, bstr::BStr, value_tags::EMPTY_TAG};
+use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -2235,7 +2235,7 @@ fn format_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Decimal(value) => format!("decimal:{}", value),
         RuntimeValue::Currency(value) => format!("currency:{}", value),
         RuntimeValue::Bool(value) => format!("bool:{value}"),
-        RuntimeValue::String(BStr(value)) => format!("string:{value:?}"),
+        RuntimeValue::String(value) => format!("string:{:?}", value.as_str()),
         RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
         RuntimeValue::Object(handle) => format!("object:{handle}"),
         RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),

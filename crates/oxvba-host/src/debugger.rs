@@ -2,7 +2,7 @@ use oxvba_compiler::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProjectManifest,
 };
-use oxvba_runtime::{RuntimeValue, bstr::BStr, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, runtime_value_to_vba_string};
 use oxvba_vm::{DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop};
 use thiserror::Error;
 
@@ -300,7 +300,7 @@ fn project_slot_kind(kind: ProcedureRuntimeSlotKind) -> DebugFrameValueKind {
 
 fn format_runtime_value_for_debug(value: &RuntimeValue) -> String {
     match runtime_value_to_vba_string(value) {
-        Ok(RuntimeValue::String(BStr(text))) => text,
+        Ok(RuntimeValue::String(text)) => text.into_string(),
         Ok(other) => format!("{other:?}"),
         Err(_) => format!("{value:?}"),
     }

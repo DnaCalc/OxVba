@@ -58,7 +58,7 @@ mod windows_vba_attribute_oracle_lane {
 
     fn emit_observed(case_id: &str, value: &RuntimeValue) {
         let rendered = match value {
-            RuntimeValue::String(BStr(text)) => text.clone(),
+            RuntimeValue::String(text) => text.as_str().to_string(),
             RuntimeValue::I32(n) => n.to_string(),
             other => format!("{other:?}"),
         };
@@ -141,7 +141,7 @@ mod windows_vba_attribute_oracle_lane {
         match result {
             Ok(value) => {
                 emit_observed("CCT-050-NEWENUM-001", &value);
-                assert_eq!(value, RuntimeValue::String(BStr("41,42,".to_string())));
+                assert_eq!(value, RuntimeValue::String(BStr::from("41,42,")));
             }
             Err(err) => {
                 emit_observed_text("CCT-050-NEWENUM-001", &format!("error:{err}"));

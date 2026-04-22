@@ -2889,9 +2889,7 @@ fn expand_bound_source_line(
             ) {
                 out.push(format!(
                     "{}Call {}({})",
-                    dim_decl.leading_ws,
-                    class_initialize.lowered_name,
-                    object_handle
+                    dim_decl.leading_ws, class_initialize.lowered_name, object_handle
                 ));
             }
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);

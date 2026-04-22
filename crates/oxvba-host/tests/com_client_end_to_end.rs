@@ -45,10 +45,7 @@ mod windows_com_e2e {
     }
 
     fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-        values
-            .into_iter()
-            .map(canonicalize_runtime_value)
-            .collect()
+        values.into_iter().map(canonicalize_runtime_value).collect()
     }
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
@@ -648,8 +645,8 @@ End Sub
         assert_eq!(
             vm[11],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::String(BStr("Alpha".to_string())),
-                RuntimeValue::String(BStr("Beta".to_string())),
+                RuntimeValue::String(BStr::from("Alpha")),
+                RuntimeValue::String(BStr::from("Beta")),
             ])),
             "VT_ARRAY|VT_BSTR result should preserve string array elements"
         );
@@ -682,7 +679,7 @@ End Sub
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("Scalar BSTR".to_string())),
+            RuntimeValue::String(BStr::from("Scalar BSTR")),
             "VT_BSTR result should preserve the semantic string carrier"
         );
     }
@@ -980,11 +977,7 @@ End Sub
         let jit = run_windows_host_backed(source, true);
         assert_snapshots_equivalent(&vm, &jit, "repeated object-result identity");
         assert_same_object_identity(&vm, &[1, 2, 3, 4], "VM repeated object-result identity");
-        assert_same_object_identity(
-            &jit,
-            &[1, 2, 3, 4],
-            "JIT repeated object-result identity",
-        );
+        assert_same_object_identity(&jit, &[1, 2, 3, 4], "JIT repeated object-result identity");
     }
 
     #[test]
@@ -1596,12 +1589,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("Ping".to_string())),
+            RuntimeValue::String(BStr::from("Ping")),
             "method selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("Lookup".to_string())),
+            RuntimeValue::String(BStr::from("Lookup")),
             "indexed-property selector should remain a runtime string"
         );
         assert_eq!(
@@ -1642,12 +1635,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("SumPair".to_string())),
+            RuntimeValue::String(BStr::from("SumPair")),
             "named-method selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("LookupPair".to_string())),
+            RuntimeValue::String(BStr::from("LookupPair")),
             "named-property selector should remain a runtime string"
         );
         assert_eq!(
@@ -1692,12 +1685,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("SetValue".to_string())),
+            RuntimeValue::String(BStr::from("SetValue")),
             "property-put selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("SetValueRef".to_string())),
+            RuntimeValue::String(BStr::from("SetValueRef")),
             "property-putref selector should remain a runtime string"
         );
         assert_eq!(
@@ -1752,12 +1745,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("SetIndexedValue".to_string())),
+            RuntimeValue::String(BStr::from("SetIndexedValue")),
             "indexed property-put selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("SetIndexedValueRef".to_string())),
+            RuntimeValue::String(BStr::from("SetIndexedValueRef")),
             "indexed property-putref selector should remain a runtime string"
         );
         assert_eq!(
@@ -1812,12 +1805,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("Value".to_string())),
+            RuntimeValue::String(BStr::from("Value")),
             "value selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            RuntimeValue::String(BStr::from("EchoVariant")),
             "default-member selector should remain a runtime string"
         );
         assert_eq!(
@@ -1868,7 +1861,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            RuntimeValue::String(BStr::from("EchoVariant")),
             "call-form runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
@@ -1909,7 +1902,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            RuntimeValue::String(BStr::from("EchoVariant")),
             "named call-form runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
@@ -1950,7 +1943,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            RuntimeValue::String(BStr::from("EchoVariant")),
             "statement-context named runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
@@ -1991,7 +1984,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            RuntimeValue::String(BStr::from("EchoVariant")),
             "statement-context positional runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(

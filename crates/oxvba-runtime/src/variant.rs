@@ -231,7 +231,10 @@ impl Variant {
     }
 
     pub fn from_i64(value: i64) -> Self {
-        Self::from_core(VariantCore::from_bytes(VarType::LongLong, value.to_le_bytes()))
+        Self::from_core(VariantCore::from_bytes(
+            VarType::LongLong,
+            value.to_le_bytes(),
+        ))
     }
 
     pub fn as_i64(&self) -> Option<i64> {
@@ -256,7 +259,10 @@ impl Variant {
     }
 
     pub fn from_f64(value: f64) -> Self {
-        Self::from_core(VariantCore::from_bytes(VarType::Double, value.to_le_bytes()))
+        Self::from_core(VariantCore::from_bytes(
+            VarType::Double,
+            value.to_le_bytes(),
+        ))
     }
 
     pub fn as_f64(&self) -> Option<f64> {
@@ -267,7 +273,10 @@ impl Variant {
     }
 
     pub fn from_currency_scaled_i64(value: i64) -> Self {
-        Self::from_core(VariantCore::from_bytes(VarType::Currency, value.to_le_bytes()))
+        Self::from_core(VariantCore::from_bytes(
+            VarType::Currency,
+            value.to_le_bytes(),
+        ))
     }
 
     pub fn as_currency_scaled_i64(&self) -> Option<i64> {
@@ -654,7 +663,8 @@ mod tests {
             RuntimeValue::I64(5_000_000_000)
         );
 
-        let string_variant = Variant::from_runtime_value(&RuntimeValue::String(BStr::from("hello")));
+        let string_variant =
+            Variant::from_runtime_value(&RuntimeValue::String(BStr::from("hello")));
         assert_eq!(
             string_variant
                 .to_runtime_value()
@@ -662,7 +672,8 @@ mod tests {
             RuntimeValue::String(BStr::from("hello"))
         );
 
-        let double_variant = Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)));
+        let double_variant =
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)));
         assert_eq!(
             double_variant
                 .to_runtime_value()
@@ -688,10 +699,9 @@ mod tests {
             RuntimeValue::F64(F64Value::from_date_f64(45200.25))
         );
 
-        let currency_variant =
-            Variant::from_runtime_value(&RuntimeValue::Currency(CurrencyValue::from_scaled_i64(
-                -42_500,
-            )));
+        let currency_variant = Variant::from_runtime_value(&RuntimeValue::Currency(
+            CurrencyValue::from_scaled_i64(-42_500),
+        ));
         assert_eq!(
             currency_variant
                 .to_runtime_value()
@@ -724,7 +734,8 @@ mod tests {
 
     #[test]
     fn variant_runtime_value_bridge_classifies_extended_owned_shapes() {
-        let array_variant = Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
+        let array_variant =
+            Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
         assert_eq!(
             array_variant
                 .to_runtime_value()

@@ -354,7 +354,7 @@ mod tests {
             1
         );
         assert!(
-            RuntimeValue::String(crate::bstr::BStr("ABC".to_string()))
+            RuntimeValue::String(crate::bstr::BStr::from("ABC"))
                 .project_compat_slot_i32()
                 .is_err()
         );

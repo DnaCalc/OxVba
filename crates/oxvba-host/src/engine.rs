@@ -5,8 +5,8 @@ use std::{
 };
 
 use oxvba_com::{
-    ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken, DynamicEventPayload,
-    DynamicObjectBridge,
+    ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken,
+    DynamicEventPayload, DynamicObjectBridge,
 };
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest,
@@ -1294,8 +1294,7 @@ mod tests {
         },
     };
     use oxvba_runtime::{
-        F64Value, ObjectRef, RuntimeValue, bstr::BStr,
-        value_tags::error_tag_from_code,
+        F64Value, ObjectRef, RuntimeValue, bstr::BStr, value_tags::error_tag_from_code,
     };
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
@@ -1440,7 +1439,7 @@ End Sub";
         match engine
             .host_services
             .com()
-            .create_object(RuntimeValue::String(BStr("OxVba.TestDispatch".to_string())))
+            .create_object(RuntimeValue::String(BStr::from("OxVba.TestDispatch")))
             .expect("create_object should return controlled COM object")
         {
             RuntimeValue::Object(handle) => handle,
@@ -2246,13 +2245,13 @@ End Sub";
         assert_eq!(
             snapshot,
             vec![
-                RuntimeValue::String(BStr("A".to_string())),
+                RuntimeValue::String(BStr::from("A")),
                 RuntimeValue::I32('1' as i32),
-                RuntimeValue::String(BStr("   ".to_string())),
-                RuntimeValue::String(BStr("ZZZ".to_string())),
-                RuntimeValue::String(BStr("FF".to_string())),
-                RuntimeValue::String(BStr("10".to_string())),
-                RuntimeValue::String(BStr("AB".to_string())),
+                RuntimeValue::String(BStr::from("   ")),
+                RuntimeValue::String(BStr::from("ZZZ")),
+                RuntimeValue::String(BStr::from("FF")),
+                RuntimeValue::String(BStr::from("10")),
+                RuntimeValue::String(BStr::from("AB")),
             ]
         );
     }
@@ -2277,9 +2276,9 @@ End Sub";
         assert_eq!(
             snapshot,
             vec![
-                RuntimeValue::String(BStr("12".to_string())),
-                RuntimeValue::String(BStr("45".to_string())),
-                RuntimeValue::String(BStr("234".to_string()))
+                RuntimeValue::String(BStr::from("12")),
+                RuntimeValue::String(BStr::from("45")),
+                RuntimeValue::String(BStr::from("234"))
             ]
         );
     }
@@ -2295,8 +2294,8 @@ End Sub";
             snapshot,
             vec![
                 RuntimeValue::I32(3),
-                RuntimeValue::String(BStr("789".to_string())),
-                RuntimeValue::String(BStr("654".to_string()))
+                RuntimeValue::String(BStr::from("789")),
+                RuntimeValue::String(BStr::from("654"))
             ]
         );
     }
@@ -2321,9 +2320,9 @@ End Sub";
         assert_eq!(
             snapshot,
             vec![
-                RuntimeValue::String(BStr("16745".to_string())),
-                RuntimeValue::String(BStr("456".to_string())),
-                RuntimeValue::String(BStr("321".to_string()))
+                RuntimeValue::String(BStr::from("16745")),
+                RuntimeValue::String(BStr::from("456")),
+                RuntimeValue::String(BStr::from("321"))
             ]
         );
     }
@@ -2356,10 +2355,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("A99DE".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("A99DE"))]);
     }
 
     #[test]
@@ -2494,7 +2490,7 @@ End Sub";
             vec![
                 RuntimeValue::I32(7),
                 RuntimeValue::I32(20),
-                RuntimeValue::String(BStr("March".to_string())),
+                RuntimeValue::String(BStr::from("March")),
                 RuntimeValue::F64(F64Value::from_date_f64(46084.0))
             ]
         );
@@ -3283,10 +3279,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 19 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM Call-form handoff and preserve sentinel 19 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3356,10 +3350,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 23 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 23 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM statement-context handoff and preserve sentinel 23 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3429,10 +3421,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 29 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 29 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren Call-form handoff and preserve sentinel 29 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3502,10 +3492,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 37 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 37 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren statement-context handoff and preserve sentinel 37 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3575,10 +3563,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 67 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM named-argument Call-form handoff and preserve sentinel 67 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3648,10 +3634,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 71 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM named-argument statement-context handoff and preserve sentinel 71 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3721,10 +3705,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 73 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 73 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren named-argument Call-form handoff and preserve sentinel 73 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3794,10 +3776,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 79 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 79 => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM no-paren named-argument statement-context handoff and preserve sentinel 79 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -3867,10 +3847,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected active-project Application to own the returned COM property-put/get handoff and preserve deterministic getter witness 5013 on handle 5004 instead of failing on the scalar host root, got: {other:?}"
                 ),
@@ -7118,10 +7096,8 @@ End Sub";
                     panic!("{label} host root should return a COM-backed object: {err}")
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(5) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(5) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and dispatch result 5009, got: {other:?}"
                 ),
@@ -7179,10 +7155,8 @@ End Sub";
                     panic!("{label} host root should return an imported COM-capable object: {err}")
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and imported Count() result 5005, got: {other:?}"
                 ),
@@ -7258,10 +7232,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(1) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and yield COM-backed handle 5004 plus imported Count() result 5005, got: {other:?}"
                 ),
@@ -7321,10 +7293,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and shared-model imported property-get result 5013 after property-put traffic, got: {other:?}"
                 ),
@@ -7975,10 +7945,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(9) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported property-put/get traffic with deterministic getter witness 5013, got: {other:?}"
                 ),
@@ -8038,10 +8006,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
                     "{label}: expected COM-backed object handle 5004 and shared-model imported default-member result 5061 on the returned COM object, got: {other:?}"
                 ),
@@ -8118,10 +8084,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(handle),
-                    RuntimeValue::I32(result),
-                ] if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
+                [RuntimeValue::Object(handle), RuntimeValue::I32(result)]
+                    if handle.raw() > 0 && *result == handle.raw().saturating_add(16 + 41) => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported default-member traffic with deterministic result 5061, got: {other:?}"
                 ),
@@ -9274,10 +9238,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 43 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren Call-form imported traffic to execute and preserve sentinel 43, got: {other:?}"
                 ),
@@ -9354,10 +9316,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 43 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 43 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren Call-form traffic with sentinel 43, got: {other:?}"
                 ),
@@ -9417,10 +9377,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 53 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren statement-context imported traffic to execute and preserve sentinel 53, got: {other:?}"
                 ),
@@ -9497,10 +9455,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 53 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 53 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren statement-context traffic with sentinel 53, got: {other:?}"
                 ),
@@ -9560,10 +9516,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 19 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected host-root Call-form imported traffic to execute and preserve sentinel 19, got: {other:?}"
                 ),
@@ -9639,10 +9593,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 19 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 19 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported Call-form traffic with sentinel 19, got: {other:?}"
                 ),
@@ -9702,10 +9654,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 31 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
                     "{label}: expected host-root statement-context imported traffic to execute and preserve sentinel 31, got: {other:?}"
                 ),
@@ -9782,10 +9732,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 31 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 31 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported statement-context traffic with sentinel 31, got: {other:?}"
                 ),
@@ -9846,10 +9794,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 59 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
                     "{label}: expected host-root named-argument Call-form traffic to execute and preserve sentinel 59, got: {other:?}"
                 ),
@@ -9926,10 +9872,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 59 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 59 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument Call-form traffic with sentinel 59, got: {other:?}"
                 ),
@@ -9990,10 +9934,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 61 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
                     "{label}: expected host-root named-argument statement-context traffic to execute and preserve sentinel 61, got: {other:?}"
                 ),
@@ -10070,10 +10012,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 61 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 61 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument statement-context traffic with sentinel 61, got: {other:?}"
                 ),
@@ -10134,10 +10074,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 67 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren named-argument Call-form traffic to execute and preserve sentinel 67, got: {other:?}"
                 ),
@@ -10214,10 +10152,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 67 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 67 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument Call-form traffic with sentinel 67, got: {other:?}"
                 ),
@@ -10278,10 +10214,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 71 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected host-root no-paren named-argument statement-context traffic to execute and preserve sentinel 71, got: {other:?}"
                 ),
@@ -10358,10 +10292,8 @@ End Sub";
                     )
                 });
             match snapshot.as_slice() {
-                [
-                    RuntimeValue::Object(root),
-                    RuntimeValue::I32(after_value),
-                ] if root.raw() > 0 && *after_value == 71 => {}
+                [RuntimeValue::Object(root), RuntimeValue::I32(after_value)]
+                    if root.raw() > 0 && *after_value == 71 => {}
                 other => panic!(
                     "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument statement-context traffic with sentinel 71, got: {other:?}"
                 ),
@@ -19797,22 +19729,22 @@ End Sub";
 
     #[test]
     fn formal_v14_bstr_roundtrip_ascii() {
-        let b = oxvba_runtime::bstr::BStr("ABC".to_string());
-        assert_eq!(b.0, "ABC");
+        let b = oxvba_runtime::bstr::BStr::from("ABC");
+        assert_eq!(b.as_str(), "ABC");
     }
 
     #[test]
     fn formal_v14_bstr_concat_law() {
-        let a = oxvba_runtime::bstr::BStr("A".to_string());
-        let b = oxvba_runtime::bstr::BStr("B".to_string());
-        assert_eq!(format!("{}{}", a.0, b.0), "AB");
+        let a = oxvba_runtime::bstr::BStr::from("A");
+        let b = oxvba_runtime::bstr::BStr::from("B");
+        assert_eq!(format!("{}{}", a.as_str(), b.as_str()), "AB");
     }
 
     #[test]
     fn formal_v14_bstr_empty_identity() {
-        let empty = oxvba_runtime::bstr::BStr(String::new());
-        let text = oxvba_runtime::bstr::BStr("X".to_string());
-        assert_eq!(format!("{}{}", empty.0, text.0), "X");
+        let empty = oxvba_runtime::bstr::BStr::empty();
+        let text = oxvba_runtime::bstr::BStr::from("X");
+        assert_eq!(format!("{}{}", empty.as_str(), text.as_str()), "X");
     }
 
     #[test]
@@ -23727,10 +23659,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("hello".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("hello"))]);
     }
 
     #[test]
@@ -23740,7 +23669,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("ab".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("ab"))]);
     }
 
     #[test]
@@ -23923,7 +23852,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("he".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("he"))]);
     }
 
     #[test]
@@ -23933,10 +23862,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("llo".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("llo"))]);
     }
 
     #[test]
@@ -23946,10 +23872,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("ell".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("ell"))]);
     }
 
     #[test]
@@ -23969,10 +23892,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("herro".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("herro"))]);
     }
 
     #[test]
@@ -23982,10 +23902,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("HELLO".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("HELLO"))]);
     }
 
     #[test]
@@ -23995,7 +23912,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("hi".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("hi"))]);
     }
 
     // --- Feature 3: Date extraction functions (v523-v525) ---
@@ -24128,7 +24045,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("A".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("A"))]);
     }
 
     #[test]
@@ -24148,10 +24065,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("     ".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("     "))]);
     }
 
     #[test]
@@ -24161,10 +24075,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("XXX".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("XXX"))]);
     }
 
     #[test]
@@ -24174,7 +24085,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("Z".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("Z"))]);
     }
 
     // --- String representation: Hex, Oct (v539-v541) ---
@@ -24186,7 +24097,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("FF".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("FF"))]);
     }
 
     #[test]
@@ -24196,7 +24107,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("10".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("10"))]);
     }
 
     #[test]
@@ -24206,7 +24117,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("0".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("0"))]);
     }
 
     // --- Weekday extraction (v542-v544) ---
@@ -24250,10 +24161,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("January".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("January"))]);
     }
 
     #[test]
@@ -24263,10 +24171,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("March".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("March"))]);
     }
 
     // --- Hex/Oct negative fix (v547-v549) ---
@@ -24278,10 +24183,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("FFFFFFFF".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("FFFFFFFF"))]);
     }
 
     #[test]
@@ -24293,7 +24195,7 @@ End Sub";
             .expect("execution should succeed");
         assert_eq!(
             snapshot,
-            vec![RuntimeValue::String(BStr("37777777777".to_string()))]
+            vec![RuntimeValue::String(BStr::from("37777777777"))]
         );
     }
 
@@ -24304,10 +24206,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("FFFFFF01".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("FFFFFF01"))]);
     }
 
     // --- StrConv (v550-v554) ---
@@ -24319,10 +24218,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("HELLO".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("HELLO"))]);
     }
 
     #[test]
@@ -24332,10 +24228,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("hello".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("hello"))]);
     }
 
     #[test]
@@ -24347,7 +24240,7 @@ End Sub";
             .expect("execution should succeed");
         assert_eq!(
             snapshot,
-            vec![RuntimeValue::String(BStr("Hello World".to_string()))]
+            vec![RuntimeValue::String(BStr::from("Hello World"))]
         );
     }
 
@@ -24358,10 +24251,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("HELLO".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("HELLO"))]);
     }
 
     #[test]
@@ -24371,10 +24261,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("abc".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("abc"))]);
     }
 
     // --- Rnd/Randomize PRNG (v555-v559) ---
@@ -24457,10 +24344,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("12345".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("12345"))]);
     }
 
     #[test]
@@ -24470,10 +24354,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("3.14".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("3.14"))]);
     }
 
     #[test]
@@ -24483,7 +24364,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::String(BStr("42".to_string()))]);
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("42"))]);
     }
 
     #[test]
@@ -24493,10 +24374,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("50%".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("50%"))]);
     }
 
     #[test]
@@ -24506,10 +24384,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("2.718".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("2.718"))]);
     }
 
     #[test]
@@ -24519,10 +24394,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("-42".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("-42"))]);
     }
 
     // --- ForEach / Control Flow E2E (v566-v578) ---
@@ -24681,10 +24553,7 @@ End Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot,
-            vec![RuntimeValue::String(BStr("olleH".to_string()))]
-        );
+        assert_eq!(snapshot, vec![RuntimeValue::String(BStr::from("olleH"))]);
     }
 
     // ── Item 3: Integration tests for A1 (Implements dispatch), A2 (TypeOf...Is), A3 (Nested UDT) ──
@@ -24972,4 +24841,3 @@ End Sub";
         );
     }
 }
-

@@ -213,7 +213,7 @@ fn imported_collection_field_newenum_for_each_executes() {
         run_project_with_widget(MAIN_FOREACH_WIDGET_FUNCTION_SOURCE, PROJECT_WIDGET_SOURCE)
             .expect("collection-backed NewEnum project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn imported_collection_field_newenum_for_each_executes_with_excel_import_header(
     )
     .expect("Excel-imported collection-backed NewEnum project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn imported_collection_field_control_string_accumulator_without_foreach_starts_e
     )
     .expect("control string accumulator project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr("41,".to_string())));
+    assert_eq!(result, RuntimeValue::String(BStr::from("41,")));
 }
 
 #[test]
@@ -285,7 +285,7 @@ fn imported_collection_field_newenum_direct_session_vm_jit_matches() {
         vm, jit,
         "VM/JIT direct-session snapshots should match for project-backed collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn imported_collection_field_newenum_bundle_session_vm_jit_matches() {
         vm, jit,
         "VM/JIT bundle-session snapshots should match for project-backed collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn imported_collection_field_newenum_direct_session_vm_jit_matches_with_excel_im
         vm, jit,
         "VM/JIT direct-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }
 
 #[test]
@@ -351,5 +351,5 @@ fn imported_collection_field_newenum_bundle_session_vm_jit_matches_with_excel_im
         vm, jit,
         "VM/JIT bundle-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
 }

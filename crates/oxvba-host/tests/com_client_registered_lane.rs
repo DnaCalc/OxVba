@@ -345,7 +345,7 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::String(BStr("rank=1;len=3;lb=0;ub=2;first=1".to_string())),
+            RuntimeValue::String(BStr::from("rank=1;len=3;lb=0;ub=2;first=1")),
             "DescribeArrayShape result mismatch"
         );
     }

@@ -46,10 +46,7 @@ fn canonicalize_runtime_value(value: RuntimeValue) -> RuntimeValue {
 }
 
 fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    values
-        .into_iter()
-        .map(canonicalize_runtime_value)
-        .collect()
+    values.into_iter().map(canonicalize_runtime_value).collect()
 }
 
 fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
@@ -360,7 +357,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr("41,42,".to_string())),
+        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("41,42,")),
         "imported COM NewEnum VT_UNKNOWN/IEnumVARIANT transport should materialize through the runtime For Each lane"
     );
 }
@@ -464,11 +461,11 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr("txt".to_string()))
+        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("txt"))
     );
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr("demo".to_string()))
+        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("demo"))
     );
 }
 
@@ -530,7 +527,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr("41,42,".to_string())),
+        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("41,42,")),
         "registered OxVba.TestDispatch For Each transport should materialize through the runtime lane"
     );
 }

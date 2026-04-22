@@ -222,9 +222,9 @@ mod tests {
     #[test]
     fn runtime_value_to_vba_string_formats_currency_without_old_string_seam() {
         assert_eq!(
-            runtime_value_to_vba_string(&RuntimeValue::Currency(
-                CurrencyValue::from_scaled_i64(125_000)
-            ))
+            runtime_value_to_vba_string(&RuntimeValue::Currency(CurrencyValue::from_scaled_i64(
+                125_000
+            )))
             .expect("currency coercion"),
             RuntimeValue::String(BStr::from("12.5"))
         );

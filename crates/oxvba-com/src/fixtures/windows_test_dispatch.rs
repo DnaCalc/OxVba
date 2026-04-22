@@ -15,9 +15,7 @@ use crate::windows_variant::{
     variant_to_com_value as com_variant_to_com_value,
 };
 use crate::{COM_DISPID_PROPERTYPUT, ComValue};
-use oxvba_runtime::{
-    value_tags::{NULL_TAG, error_tag_from_code},
-};
+use oxvba_runtime::value_tags::{NULL_TAG, error_tag_from_code};
 use std::{
     collections::BTreeMap,
     sync::Mutex,

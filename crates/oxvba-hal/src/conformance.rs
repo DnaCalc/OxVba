@@ -367,7 +367,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             host.fs()
                 .write_bytes(
                     fs_probe_handle_val.clone(),
-                    RuntimeValue::String(oxvba_runtime::bstr::BStr(String::new())),
+                    RuntimeValue::String(oxvba_runtime::bstr::BStr::empty()),
                 )
                 .map(|_| ())
         } else {
@@ -382,7 +382,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             host.fs()
                 .print_line(
                     fs_probe_handle_val.clone(),
-                    RuntimeValue::String(oxvba_runtime::bstr::BStr(String::new())),
+                    RuntimeValue::String(oxvba_runtime::bstr::BStr::empty()),
                 )
                 .map(|_| ())
         } else {
@@ -453,7 +453,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.com()
-            .create_object(RuntimeValue::String(BStr("OxVba.TestDispatch".to_string())))
+            .create_object(RuntimeValue::String(BStr::from("OxVba.TestDispatch")))
             .map(|_| ()),
     );
     probe(

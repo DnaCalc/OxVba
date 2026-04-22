@@ -399,7 +399,7 @@ unsafe fn safe_array_element_typed_nd(
                 SysFreeString(bstr);
                 text
             };
-            Ok(ComValue::String(BStr(text)).to_runtime_value())
+            Ok(ComValue::String(BStr::from(text)).to_runtime_value())
         }
         other => Err(format!(
             "unsupported SAFEARRAY element vartype {other} in multi-dimensional array"
@@ -1378,8 +1378,8 @@ mod tests {
     };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_I8,
-        VT_UI8, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_I8, VT_UI8,
+        VT_UNKNOWN, VT_VARIANT, VariantClear,
     };
     use windows_sys::Win32::{
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
@@ -1389,7 +1389,7 @@ mod tests {
     #[test]
     fn string_variant_roundtrips_through_windows_bridge() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        let value = ComValue::String(BStr("Hello".to_string()));
+        let value = ComValue::String(BStr::from("Hello"));
         let mut resolve_object =
             |_handle| Err("object dispatch resolution not expected".to_string());
         let mut add_ref = |_dispatch| {};
@@ -1639,7 +1639,7 @@ mod tests {
         let value = ComValue::ArrayIntent(SafeArray::from_values(vec![
             RuntimeValue::I32(4),
             RuntimeValue::Bool(true),
-            RuntimeValue::String(BStr("Hello".to_string())),
+            RuntimeValue::String(BStr::from("Hello")),
             RuntimeValue::Null,
         ]));
         let mut resolve_object =
@@ -1954,8 +1954,8 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_BSTR SAFEARRAY"),
                 ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::String(BStr("Alpha".to_string())),
-                    RuntimeValue::String(BStr("Beta".to_string())),
+                    RuntimeValue::String(BStr::from("Alpha")),
+                    RuntimeValue::String(BStr::from("Beta")),
                 ]))
             );
             let _ = VariantClear(&mut variant);

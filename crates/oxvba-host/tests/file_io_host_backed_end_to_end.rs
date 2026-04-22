@@ -38,7 +38,7 @@ mod windows_file_io_host_backed_end_to_end {
             "ODG032-OBSERVED[CCT-033-LINE-001]={}",
             render_observed(&out[0])
         );
-        assert_eq!(out[0], RuntimeValue::String(BStr("world".to_string())));
+        assert_eq!(out[0], RuntimeValue::String(BStr::from("world")));
     }
 
     #[test]
@@ -112,10 +112,7 @@ mod windows_file_io_host_backed_end_to_end {
             "ODG032-OBSERVED[CCT-033-WRITE-001]={}",
             render_observed(&out[0])
         );
-        assert_eq!(
-            out[0],
-            RuntimeValue::String(BStr("hello,world".to_string()))
-        );
+        assert_eq!(out[0], RuntimeValue::String(BStr::from("hello,world")));
     }
 
     #[test]
@@ -158,7 +155,7 @@ mod windows_file_io_host_backed_end_to_end {
         );
         assert_eq!(
             observed,
-            &RuntimeValue::String(BStr("42|True|hello,world".to_string()))
+            &RuntimeValue::String(BStr::from("42|True|hello,world"))
         );
     }
 
@@ -275,9 +272,9 @@ mod windows_file_io_host_backed_end_to_end {
         assert_eq!(
             out,
             vec![
-                RuntimeValue::String(BStr("alpha.txt".to_string())),
-                RuntimeValue::String(BStr("apple.txt".to_string())),
-                RuntimeValue::String(BStr(String::new()))
+                RuntimeValue::String(BStr::from("alpha.txt")),
+                RuntimeValue::String(BStr::from("apple.txt")),
+                RuntimeValue::String(BStr::empty())
             ]
         );
     }
@@ -320,9 +317,9 @@ mod windows_file_io_host_backed_end_to_end {
         assert_eq!(
             out,
             vec![
-                RuntimeValue::String(BStr("alpha.txt".to_string())),
-                RuntimeValue::String(BStr("apple.txt".to_string())),
-                RuntimeValue::String(BStr(String::new()))
+                RuntimeValue::String(BStr::from("alpha.txt")),
+                RuntimeValue::String(BStr::from("apple.txt")),
+                RuntimeValue::String(BStr::empty())
             ]
         );
     }
@@ -378,7 +375,7 @@ mod windows_file_io_host_backed_end_to_end {
 
     fn render_observed(value: &RuntimeValue) -> String {
         match value {
-            RuntimeValue::String(BStr(text)) => text.clone(),
+            RuntimeValue::String(text) => text.as_str().to_string(),
             RuntimeValue::Bool(value) => value.to_string(),
             other => format!("{other:?}"),
         }
