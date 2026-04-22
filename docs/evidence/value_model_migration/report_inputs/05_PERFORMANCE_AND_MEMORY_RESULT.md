@@ -1,6 +1,6 @@
 # Performance And Memory Result
 
-Status: active
+Status: final
 
 Canonical artifacts:
 
@@ -48,42 +48,56 @@ Timing summary:
    - `many_strings`: candidate slower by `+44.85%`
    - `code_strings`: candidate near-neutral at `+0.2%`
 
+Variant timing summary:
+
+1. `scalar_classifier`: candidate slower by `+187.84%`
+2. `numeric_classifier`: candidate slower by `+13.79%`
+3. `typed_array_results`: candidate faster by `-6.59%`
+4. `typed_decimal_array_results`: candidate faster by `-4.94%`
+5. `object_results`: candidate slower by `+31.58%`
+6. `wide_i64_array_boundary`: candidate slower by `+18.8%`
+7. `variant_matrix_results`: candidate slower by `+36.72%`
+
 Timing interpretation:
 
-1. the current paired string-perf signal is directional, not final, because the
-   canonical artifact is the repaired one-iteration run
-2. the resized long-string workload is now executable on both baseline and
-   candidate, which was not true for the original oversized generator
-3. the current candidate shows broad slowdown outside VM small-string churn and
-   near-neutral JIT code-string throughput.
-4. the current bounded Variant-perf signal is mixed rather than uniformly
-   regressive
-5. the largest current Variant slowdown is `scalar_classifier` at `+187.84%`
-6. `typed_array_results` and `typed_decimal_array_results` currently trend
-   slightly faster on candidate at `-6.59%` and `-4.94%`
-7. object rebinding, variant-matrix materialization, and wide-i64 boundary rows
-   currently show positive candidate deltas and need later attribution.
+1. the canonical string-perf artifact is still a repaired one-iteration paired
+   run, so it should be treated as directional evidence rather than a final
+   stable throughput claim
+2. the canonical Variant-perf artifact is a bounded paired run that is strong
+   enough for attribution and mitigation planning but not yet a continuous perf
+   gate
+3. string timing currently shows one clear improvement in VM small-string churn
+   and broad slowdown elsewhere, especially VM medium/long/many-string paths
+4. JIT code-string throughput is effectively neutral in the current artifact
+5. Variant timing is mixed:
+   - typed array and typed decimal-array rows improved slightly
+   - scalar classification is the largest current regression
+   - object, matrix, and wide-i64 rows remain slower and are retained in the
+     mitigation backlog.
 
 Memory summary:
 
 1. observed carrier/layout sizes and alignments did not change between baseline
-   and candidate in the current memory probe:
+   and candidate in the string-focused memory probe:
    - `BStr = 24`
    - `RuntimeValue = 64`
-   - `Variant = 16`
    - `SafeArray = 64`
    - `ComValue = 64`
    - `ComInvokeArg = 88`
-   - `ComCallbackPayload = 40`
 2. working-set deltas were small in the current paired run:
    - `cli_small_strings`: `+65536` bytes
    - `cli_many_strings`: `+36864` bytes
    - `cli_code_strings`: `-57344` bytes
    - `com_variant_bstr_array`: `+53248` bytes
-3. the Variant migration introduces the first large carrier-layout change seen
-   in the current probes:
+3. the post-`ObjectRef` memory probe records the accepted representation-growth
+   deltas introduced by the full migration:
    - `Variant = 16 -> 80` bytes
-4. the Variant-heavy paired working-set rows in `vme5-mem-full` remain modest
+   - `ObjectIdentityCarrier = 4/4 -> 8/8`
+   - `ComCallbackPayload = 40 -> 48` bytes
+4. `RuntimeValue` and `ComValue` remain unchanged in the identity-smoke probe:
+   - `RuntimeValue = 64/8`
+   - `ComValue = 64/8`
+5. the Variant-heavy paired working-set rows in `vme5-mem-full` remain modest
    despite that carrier growth:
    - `com_variant_bstr_array`: `-53248` bytes
    - `com_variant_wide_i64_array_boundary`: `-106496` bytes
@@ -98,4 +112,6 @@ Boundary-relevant observations:
 2. pointer snapshot logs for `StrPtr`, `VarPtr(String)`, and
    `VarPtr(Variant)` were captured in the same paired memory run.
 3. the Variant-specific memory lane confirms that `VarPtr(Variant)` still has a
-   paired pointer-snapshot artifact after the new canonical carrier landed.
+   paired pointer-snapshot artifact after the new canonical carrier landed
+4. the authoritative identity/layout delta source for the final report is:
+   `docs/evidence/value_model_migration/runs/value_model_memory_vmf2-mem-identity-smoke/comparison/layout_metrics.csv`.
