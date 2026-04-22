@@ -1530,6 +1530,13 @@ Child beads:
    - outcome:
      - the canonical runtime string carrier itself becomes the intended
        BSTR-aligned substrate rather than remaining `String` plus projection
+   - current staged progress:
+     - stage 1 landed: `BStr` is now opaque across production code and test
+       code, so the old `pub String` tuple shape is no longer a cross-repo API
+       dependency
+     - stage 1 does not satisfy this bead on its own; the carrier itself still
+       remains UTF-8 `String` backed and must be migrated intrinsically before
+       `vmm-d7` can close
    - completion evidence:
      - runtime string carrier truth no longer depends on helper-only BSTR
        reconstruction for its canonical representation
