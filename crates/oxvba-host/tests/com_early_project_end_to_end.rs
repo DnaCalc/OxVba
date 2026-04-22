@@ -69,6 +69,17 @@ fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
     }
 }
 
+fn assert_same_object_identity(values: &[RuntimeValue], indices: &[usize], context: &str) {
+    let first = expect_object_handle(&values[indices[0]]);
+    for index in indices.iter().copied().skip(1) {
+        let next = expect_object_handle(&values[index]);
+        assert_eq!(
+            first, next,
+            "{context}: expected identical retained ObjectRef identity at indices {indices:?}, got values={values:?}"
+        );
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn registered_scripting_dictionary_available() -> bool {
     let manifest = manifest_with_reference(
@@ -2793,6 +2804,40 @@ End Sub
         out[4],
         RuntimeValue::I32(7),
         "VT_UNKNOWN imported member result should rebind through IDispatch into an invokable object handle"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_reuses_imported_object_identity_for_dispatch_and_unknown_results() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim firstDispatch As Object
+Dim secondDispatch As Object
+Dim firstUnknown
+Dim secondUnknown
+Set firstDispatch = obj.ReturnSelfDispatch()
+Set secondDispatch = obj.ReturnSelfDispatch()
+firstUnknown = obj.ReturnSelfUnknown()
+secondUnknown = obj.ReturnSelfUnknown()
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_same_object_identity(
+        &vm,
+        &[1, 2, 3, 4],
+        "VM imported repeated object-result identity",
+    );
+    assert_same_object_identity(
+        &jit,
+        &[1, 2, 3, 4],
+        "JIT imported repeated object-result identity",
     );
 }
 

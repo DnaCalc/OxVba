@@ -264,6 +264,15 @@ pub fn resolve_bound_runtime_object(
         })
 }
 
+fn retained_runtime_object(binding: &mut ComBinding, handle: ComObjectToken) -> ObjectRef {
+    if let Some(object) = binding.runtime_object.clone() {
+        return object;
+    }
+    let object = ObjectRef::from_compat_identity(handle.raw());
+    binding.runtime_object = Some(object.clone());
+    object
+}
+
 /// # Safety
 ///
 /// dispatch must be null or carry one retained IDispatch reference owned by the caller.
@@ -284,16 +293,16 @@ pub unsafe fn bind_native_dispatch_result(
             return ObjectRef::from_compat_identity(0);
         }
     };
-    if let Some((handle, _)) = state
+    if let Some((handle, binding)) = state
         .bindings
-        .iter()
+        .iter_mut()
         .find(|(_, binding)| binding.native_unknown == unknown as usize)
     {
         unsafe {
             release_dispatch(dispatch);
             release_unknown(unknown.cast());
         }
-        return ObjectRef::from_compat_identity(handle.raw());
+        return retained_runtime_object(binding, *handle);
     }
     let handle = state.allocate_handle();
     let mut binding = binding_from_typelib_metadata(
@@ -302,9 +311,9 @@ pub unsafe fn bind_native_dispatch_result(
         None,
     );
     binding.native_unknown = unknown as usize;
-    binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
+    let object = retained_runtime_object(&mut binding, handle);
     state.bindings.insert(handle, binding);
-    ObjectRef::from_compat_identity(handle.raw())
+    object
 }
 
 pub fn release_object_binding(
@@ -449,9 +458,9 @@ pub fn insert_bound_object_binding(
     mut binding: ComBinding,
 ) -> ObjectRef {
     let handle = state.allocate_handle();
-    binding.runtime_object = Some(ObjectRef::from_compat_identity(handle.raw()));
+    let object = retained_runtime_object(&mut binding, handle);
     state.bindings.insert(handle, binding);
-    ObjectRef::from_compat_identity(handle.raw())
+    object
 }
 
 pub fn insert_bound_object_binding_at_handle(
@@ -459,13 +468,21 @@ pub fn insert_bound_object_binding_at_handle(
     object: ObjectRef,
     mut binding: ComBinding,
 ) -> ObjectRef {
-    if binding.runtime_object.is_none() && object.raw() != 0 {
-        binding.runtime_object = Some(ObjectRef::from_compat_identity(object.raw()));
-    }
+    let runtime_object = if object.raw() == 0 {
+        object
+    } else {
+        if binding.runtime_object.is_none() {
+            binding.runtime_object = Some(object.clone());
+        }
+        binding
+            .runtime_object
+            .clone()
+            .expect("non-zero object binding must retain a runtime object")
+    };
     state
         .bindings
-        .insert(ComObjectToken::new(object.raw()), binding);
-    object
+        .insert(ComObjectToken::new(runtime_object.raw()), binding);
+    runtime_object
 }
 
 pub fn cache_member_dispid(

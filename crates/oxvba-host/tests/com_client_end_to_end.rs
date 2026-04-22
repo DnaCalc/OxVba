@@ -59,6 +59,17 @@ mod windows_com_e2e {
         }
     }
 
+    fn assert_same_object_identity(values: &[RuntimeValue], indices: &[usize], context: &str) {
+        let first = expect_object_handle(&values[indices[0]]);
+        for index in indices.iter().copied().skip(1) {
+            let next = expect_object_handle(&values[index]);
+            assert_eq!(
+                first, next,
+                "{context}: expected identical retained ObjectRef identity at indices {indices:?}, got values={values:?}"
+            );
+        }
+    }
+
     #[test]
     fn createobject_and_dispatchinvoke_use_controlled_native_com_server() {
         let out = run_windows_host_backed(
@@ -899,6 +910,34 @@ End Sub
             vm[4],
             RuntimeValue::I32(7),
             "VT_UNKNOWN result exposing IDispatch should rebind into an invokable object handle"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_reuses_retained_object_identity_for_dispatch_and_unknown_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim firstDispatch
+Dim secondDispatch
+Dim firstUnknown
+Dim secondUnknown
+obj = CreateObject("OxVba.TestDispatch")
+firstDispatch = DispatchInvoke(obj, "ReturnSelfDispatch")
+secondDispatch = DispatchInvoke(obj, "ReturnSelfDispatch")
+firstUnknown = DispatchInvoke(obj, "ReturnSelfUnknown")
+secondUnknown = DispatchInvoke(obj, "ReturnSelfUnknown")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_snapshots_equivalent(&vm, &jit, "repeated object-result identity");
+        assert_same_object_identity(&vm, &[1, 2, 3, 4], "VM repeated object-result identity");
+        assert_same_object_identity(
+            &jit,
+            &[1, 2, 3, 4],
+            "JIT repeated object-result identity",
         );
     }
 
