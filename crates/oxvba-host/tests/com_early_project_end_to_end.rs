@@ -1,3 +1,8 @@
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
+
 use oxvba_compiler::{
     ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind, compile_project,
     module_unit_from_source,
@@ -7,6 +12,45 @@ use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectRef, RuntimeValue};
+
+fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
+    static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
+    CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn canonicalize_runtime_value(value: RuntimeValue) -> RuntimeValue {
+    match value {
+        RuntimeValue::Object(object) => {
+            let raw = object.raw();
+            let canonical = canonical_snapshot_objects()
+                .lock()
+                .expect("canonical object snapshot map should not be poisoned")
+                .entry(raw)
+                .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+                .clone();
+            RuntimeValue::Object(canonical)
+        }
+        RuntimeValue::ArrayIntent(mut array) => {
+            if let Some(elements) = array.elements.take() {
+                array.elements = Some(
+                    elements
+                        .into_iter()
+                        .map(canonicalize_runtime_value)
+                        .collect(),
+                );
+            }
+            RuntimeValue::ArrayIntent(array)
+        }
+        other => other,
+    }
+}
+
+fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+    values
+        .into_iter()
+        .map(canonicalize_runtime_value)
+        .collect()
+}
 
 fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
     let main_module = module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
@@ -44,9 +88,11 @@ fn run_project_windows_hosted_with_policy(
         root_object_name: None,
     });
     engine.set_host_policy(policy);
-    engine
-        .execute_project_with_snapshot_phased(manifest)
-        .expect("project should execute")
+    canonicalize_snapshot(
+        engine
+            .execute_project_with_snapshot_phased(manifest)
+            .expect("project should execute"),
+    )
 }
 
 #[cfg(target_os = "windows")]
