@@ -1616,6 +1616,14 @@ Child beads:
      - retained wrapper identity/lifetime ownership is documented honestly
      - `ObjectHandle` is removed from the live runtime crates and support
        harnesses, with `ObjectRef` carried end-to-end instead
+   - landed 2026-04-22:
+     - runtime, VM, JIT, HAL, host, compiler metadata, and support harnesses
+       now carry `ObjectRef` instead of canonical `ObjectHandle`
+     - `crates/oxvba-runtime/src/object_ref.rs` now owns the canonical runtime
+       `IUnknown`-style identity/refcount substrate
+     - paired memory smoke
+       `value_model_memory_vmf2-mem-identity-smoke` records the live
+       identity-carrier delta as `ObjectIdentityCarrier`
 4. `vmm-f3`
    - kind: `delivery`
    - priority: `P1`
