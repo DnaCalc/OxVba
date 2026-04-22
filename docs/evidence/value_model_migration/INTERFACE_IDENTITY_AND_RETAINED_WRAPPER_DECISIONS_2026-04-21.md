@@ -39,7 +39,7 @@ Current verification anchors re-run on 2026-04-21:
 
 ## Decisions
 
-### D1. Canonical migrated runtime identity remains semantic-handle based
+### D1. Canonical migrated runtime identity remains handle-addressable, but the resolved object base is `IUnknown`-implementing
 
 Decision:
 
@@ -47,8 +47,11 @@ Decision:
    semantic object identity, not as raw `IUnknown*` / `IDispatch*` embedded
    directly inside `RuntimeValue` or the public canonical `Variant`.
 2. `ObjectHandle` remains the canonical runtime-facing identity carrier.
-3. The canonical `Variant` object lane remains a semantic object lane built on
-   that handle identity, not a permanently resident raw interface-pointer lane.
+3. Resolving an `ObjectHandle` in the migrated runtime must yield a base object
+   structure that implements `IUnknown`.
+4. The canonical `Variant` object lane remains a semantic object lane built on
+   handle identity, but the object reached through that handle is now
+   `IUnknown`-implementing rather than an ad hoc token-only lifetime record.
 
 Why:
 
@@ -71,12 +74,15 @@ Decision:
    direction:
    - retained native `IUnknown` identity/lifetime anchor ownership
    - retained native `IDispatch` invocation pointer ownership where applicable
+   - runtime object-base records that implement `IUnknown`
    - object-handle allocation
    - repeated native-result dedup by canonical retained `IUnknown` identity
    - subscription and callback lifetime state
-3. `vmm-f2` may strengthen that retained state to better align with COM
-   identity truth, but it must not dissolve the separation between canonical
-   semantic identity and retained native boundary state.
+3. `vmm-f2` must route runtime object lifetime through `IUnknown::AddRef` /
+   `IUnknown::Release` on those object-base records rather than through a
+   parallel bespoke reference-count discipline.
+4. This must not dissolve the separation between canonical semantic identity
+   and retained native boundary state.
 
 Why:
 
@@ -94,6 +100,9 @@ Decision:
    raw-pointer-everywhere strategy.
 2. In practice that means:
    - canonical runtime values carry semantic identity
+   - `ObjectHandle` remains the runtime-facing token for that identity
+   - the base object reached through that token implements `IUnknown`
+   - runtime ownership transitions use `IUnknown::AddRef` / `Release`
    - retained COM bridge state carries the native pointer anchor and lifetime
    - the canonical retained anchor is `IUnknown`
    - `IDispatch` is retained as the Automation invocation/projected-interface
@@ -101,8 +110,9 @@ Decision:
    - repeated object rebinding continues to deduplicate onto stable semantic
      identity when the same native object is observed again
 3. `vmm-f2` owns making the `IUnknown` anchor explicit in retained bridge
-   state rather than leaving identity keyed only by retained `IDispatch*`.
-4. This happens inside retained bridge state rather than by replacing
+   state and in the runtime object base rather than leaving identity keyed only
+   by retained `IDispatch*` or token-map entries.
+4. This happens without replacing
    `ObjectHandle` as the runtime-facing carrier.
 
 Why:
@@ -154,21 +164,29 @@ Why:
 
 ## Explicit Non-Decisions
 
-1. This bead does not close the exact retained-wrapper field shape for the
-   canonical `IUnknown` anchor.
+1. This bead does not close the exact field/layout shape of the `IUnknown`-
+   implementing object base.
+   - whether `ObjectHandle` resolves through an indirection table into a boxed
+     object base, or becomes a typed handle over a stable allocation that
+     directly carries `IUnknown`, is a `vmm-f2` implementation detail
+2. This bead does not close the exact retained-wrapper field shape for the
+   canonical external/native `IUnknown` anchor.
    - whether the retained state stores both a normalized `IUnknown*` identity
      pointer and a distinct `IDispatch*` invocation pointer, or derives one
-     from the other at controlled points, is a `vmm-f2` implementation detail
-2. This bead does not widen support for general nondispatch interface execution.
-3. This bead does not close the event payload storage migration.
+     from the other at controlled points, is also a `vmm-f2`
+     implementation detail
+3. This bead does not widen support for general nondispatch interface execution.
+4. This bead does not close the event payload storage migration.
    - projection callback legacy-argument transport remains active follow-on work
      for `vmm-f5`
-4. This bead does not promote broader COM-EVT-B/source-interface parity beyond
+5. This bead does not promote broader COM-EVT-B/source-interface parity beyond
    the currently bounded path.
 
 ## Consequences For Follow-On Beads
 
 1. `vmm-f2`
+   - make the runtime object base `IUnknown`-implementing
+   - route runtime object lifetime through `AddRef` / `Release`
    - reconcile retained wrapper/native identity internals around an explicit
      `IUnknown` anchor without replacing canonical `ObjectHandle` as the
      runtime-facing object carrier
