@@ -1534,9 +1534,13 @@ Child beads:
      - stage 1 landed: `BStr` is now opaque across production code and test
        code, so the old `pub String` tuple shape is no longer a cross-repo API
        dependency
-     - stage 1 does not satisfy this bead on its own; the carrier itself still
-       remains UTF-8 `String` backed and must be migrated intrinsically before
-       `vmm-d7` can close
+     - stage 2 landed: `BStr` now stores a UTF-16/BSTR-shaped owned core as its
+       internal source of truth, while retaining a cached UTF-8 view to keep the
+       now-stable API usable during the remaining migration
+     - stage 2 still does not satisfy this bead on its own; the lane remains
+       in-progress until the remaining runtime/value/perf evidence confirms that
+       the string carrier is intrinsically migrated rather than merely
+       dual-represented during transition
    - completion evidence:
      - runtime string carrier truth no longer depends on helper-only BSTR
        reconstruction for its canonical representation
