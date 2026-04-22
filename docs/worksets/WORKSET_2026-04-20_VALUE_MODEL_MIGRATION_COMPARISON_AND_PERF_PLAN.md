@@ -1710,6 +1710,21 @@ Child beads:
      - interface/event migration results are validated and classified
    - completion evidence:
      - interface/event matrix rows are updated.
+   - landed 2026-04-22:
+     - paired run `vmf6-interface-event-matrix-r3` passes on both baseline and
+       candidate for `dispatch_boundary`, `events_identity`,
+       `dispatch_exception_details`, `dispatch_exception_resume_next`,
+       `dispatch_exception_rich_excepinfo`, `event_callback_handler_body`, and
+       `event_callback_value_payload`
+     - the candidate-side matrix closure required fixing two stale host harness
+       assumptions: broad VM/JIT snapshot suites in
+       `com_client_end_to_end.rs` and `com_early_project_end_to_end.rs` were
+       still comparing retained `ObjectRef` allocation identity rather than
+       observable object identity
+     - the matrix closes with no remaining bounded interface/event divergence
+       between the fixed baseline and migrated head
+     - evidence note:
+       `docs/evidence/value_model_migration/INTERFACE_AND_EVENT_MATRIX_2026-04-22.md`
 
 ### 11.10 Epic G Bead Set: Struct / UDT / Native ABI / Pointer-Helper
 
