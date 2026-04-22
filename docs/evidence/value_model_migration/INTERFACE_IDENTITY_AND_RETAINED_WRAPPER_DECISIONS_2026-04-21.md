@@ -1,7 +1,8 @@
 # Interface Identity And Retained Wrapper Decisions
 
 Date: 2026-04-21
-Bead: `bd-t8rr.6.2` / `vmm-f1`
+Updated: 2026-04-22
+Bead: `bd-t8rr.6.2` / `vmm-f1`, `bd-t8rr.6.3` / `vmm-f2`
 Status: active
 
 ## Purpose
@@ -37,6 +38,14 @@ Current verification anchors re-run on 2026-04-21:
    - `registered_testeventserver_withevents_callback_invokes_handler_body`
    - `registered_testeventserver_withevents_callback_preserves_value_payload`
 
+Implementation landing verification re-run on 2026-04-22:
+
+1. `cargo check -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-vm -p oxvba-jit -p oxvba-host -p oxvba-project -p oxvba-cli`
+2. `cargo test -p oxvba-host --test com_client_end_to_end object_variant_results -- --test-threads=1 --nocapture`
+3. `cargo test -p oxvba-host --test com_client_end_to_end createobject_and_dispatchinvoke_use_controlled_native_com_server -- --test-threads=1 --nocapture`
+4. `cargo test -p oxvba-host --test invoke_procedure_tests create_class_and_invoke_sub_member -- --exact --test-threads=1`
+5. `./scripts/run-value-model-memory.ps1 -RunId vmf2-mem-identity-smoke -IncludeWorkload com_variant_object_result -IncludeSnapshot varptr_variant_cell`
+
 ## Decisions
 
 ### D1. Canonical migrated runtime identity becomes `ObjectRef`, backed by an `IUnknown`-implementing object base
@@ -66,6 +75,16 @@ Why:
 4. It removes the current split between semantic token identity and
    COM-style reference-counted object identity.
 
+Implementation note after `vmm-f2`:
+
+1. `crates/oxvba-runtime/src/object_ref.rs` now provides the canonical runtime
+   `ObjectRef` carrier.
+2. The `ObjectRef` base object exposes a runtime `IUnknown`-style vtable and
+   drives clone/drop ownership through `add_ref` / `release`.
+3. The old public `ObjectHandle` carrier has been removed from
+   `oxvba-runtime`; remaining raw integer identities are compat/projected data,
+   not the canonical runtime object identity.
+
 ### D2. Native COM pointer truth lives in retained boundary state and is anchored on `IUnknown`
 
 Decision:
@@ -93,6 +112,21 @@ Why:
    identity be anchored by `IUnknown` semantics.
 3. It allows the runtime to stay portable while still projecting Windows/VBA
    truth at observable boundaries.
+
+Implementation note after `vmm-f2`:
+
+1. `crates/oxvba-com/src/windows_runtime_state.rs` remains the retained owner
+   of native COM identity anchors, native dispatch pointers, subscriptions, and
+   callback state.
+2. Runtime-facing object values now cross VM/JIT/host/COM seams as `ObjectRef`
+   and only project back to raw compat integers at the few remaining
+   legacy-boundary seams that still require them.
+3. The paired memory smoke now records the intended object-identity carrier
+   change directly:
+   - baseline `ObjectIdentityCarrier` = 4 bytes / 4-byte alignment
+   - candidate `ObjectIdentityCarrier` = 8 bytes / 8-byte alignment
+   - artifact:
+     `docs/evidence/value_model_migration/runs/value_model_memory_vmf2-mem-identity-smoke/comparison/layout_metrics.csv`
 
 ### D3. The retained-wrapper strategy is the chosen migration direction
 

@@ -1,0 +1,28 @@
+# Value Model Memory Lane Log
+
+- Workdir: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\candidate_vmf2-mem-identity-smoke
+- Command: cargo run -q --manifest-path C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_memory_vmf2-mem-identity-smoke\generated\layout_probe_candidate\Cargo.toml
+- ExitCode: 0
+- ElapsedMs: 35932.04
+- PeakWorkingSetBytes: 11243520
+- SteadyWorkingSetBytes: 11194368
+- PeakPrivateBytes: 3477504
+- PeakVirtualBytes: 4434558976
+
+## stdout
+type_name,size_bytes,align_bytes
+RustString,24,8
+BStr,24,8
+RuntimeValue,64,8
+Variant,80,8
+SafeArray,64,8
+SafeArrayBound,8,4
+F64Value,16,8
+CurrencyValue,8,8
+ObjectIdentityCarrier,8,8
+BindingHandle,4,4
+ComValue,64,8
+ComInvokeArg,88,8
+ComCallbackPayload,48,8
+
+## stderr
