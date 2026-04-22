@@ -1,9 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::{
-    ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComMemberSpec, ComMemberToken,
-    ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue, DispatchEventSinkConfig,
-    RawIDispatch, WindowsConnectionPointTransport, binding_from_typelib_metadata,
+    ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComInvokeArg, ComMemberSpec,
+    ComMemberToken, ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue,
+    DispatchEventSinkConfig, RawIDispatch, WindowsConnectionPointTransport,
+    binding_from_typelib_metadata,
     get_dispid_by_name, query_unknown_from_dispatch, release_dispatch, release_unknown,
     source_interface_event_spec_supported,
     try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
@@ -182,40 +183,50 @@ pub fn event_is_source_interface_only(binding: &ComBinding, event: ComMemberToke
         .is_some_and(|spec| matches!(spec.path, ComEventPath::SourceInterface))
 }
 
-pub fn event_callback_args_from_member_token(
+pub fn event_callback_args_from_invoke_args(
     binding: &ComBinding,
     member: ComMemberToken,
-    args: &[i32],
-) -> Option<(ComMemberToken, Vec<ComValue>)> {
-    let trigger_spec = binding.event_trigger_specs.get(&member)?;
+    args: &[ComInvokeArg],
+) -> Result<Option<(ComMemberToken, Vec<ComValue>)>, String> {
+    let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
+        return Ok(None);
+    };
     if args.len() < trigger_spec.callback_arity {
-        return None;
+        return Ok(None);
     }
     let mut values: Vec<ComValue> = args
         .iter()
-        .copied()
         .take(trigger_spec.callback_arity)
-        .map(ComValue::I32)
-        .collect();
+        .enumerate()
+        .map(|(index, arg)| {
+            arg.value.clone().ok_or_else(|| {
+                format!(
+                    "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires concrete callback argument {}",
+                    trigger_spec.event_token.raw(),
+                    index
+                )
+            })
+        })
+        .collect::<Result<_, _>>()?;
     if trigger_spec.second_arg_is_incremented
         && values.len() >= 2
         && let ComValue::I32(first) = values[0]
     {
         values[1] = ComValue::I32(first.saturating_add(1));
     }
-    Some((trigger_spec.event_token, values))
+    Ok(Some((trigger_spec.event_token, values)))
 }
 
 pub fn collect_stale_callbacks_for_subscription(
     state: &WindowsComClientState,
     subscription: ComSubscriptionToken,
-    object: ComObjectToken,
+    object: &ObjectRef,
 ) -> BTreeSet<ComCallbackToken> {
     state
         .callbacks
         .iter()
         .filter_map(|(callback, payload)| {
-            if payload.subscription == subscription && payload.object == object {
+            if payload.subscription == subscription && payload.object.raw() == object.raw() {
                 Some(*callback)
             } else {
                 None
@@ -437,7 +448,7 @@ pub fn remove_subscription_callbacks(
         ));
     };
     let stale_callbacks =
-        collect_stale_callbacks_for_subscription(state, subscription, entry.object);
+        collect_stale_callbacks_for_subscription(state, subscription, &entry.object);
     for callback in &stale_callbacks {
         state.callbacks.remove(callback);
     }
@@ -711,7 +722,7 @@ pub unsafe fn subscribe_event_shared(
     state.subscriptions.insert(
         subscription,
         crate::ComEventSubscription {
-            object: ComObjectToken::new(object.raw()),
+            object: object.clone(),
             event,
             transport,
         },
@@ -744,18 +755,12 @@ pub fn queue_projection_event_callbacks_shared(
     object: ObjectRef,
     binding: &ComBinding,
     member: ComMemberToken,
-    args: Option<&[i32]>,
+    args: &[ComInvokeArg],
 ) -> Result<usize, String> {
-    let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
+    if !binding.event_trigger_specs.contains_key(&member) {
         return Ok(0);
-    };
-    let Some(args) = args else {
-        return Err(format!(
-            "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires legacy callback argument transport",
-            trigger_spec.event_token.raw()
-        ));
-    };
-    let Some((event, args)) = event_callback_args_from_member_token(binding, member, args) else {
+    }
+    let Some((event, args)) = event_callback_args_from_invoke_args(binding, member, args)? else {
         return Ok(0);
     };
     let Some(expected_arity) = event_signature_arity_for_binding(binding, event) else {
@@ -778,9 +783,117 @@ pub fn queue_projection_event_callbacks_shared(
     }
     let mut state = lock_state(com_state, "queue_projection_event_callbacks")?;
     Ok(state.queue_callbacks_for_source_event(
-        ComObjectToken::new(object.raw()),
+        &object,
         event,
         args.as_slice(),
         |transport| transport.is_projection(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        WindowsComClientState, WindowsComSubscriptionTransport, event_callback_args_from_invoke_args,
+        queue_projection_event_callbacks_shared,
+    };
+    use crate::{
+        ComBinding, ComEventPath, ComEventSpec, ComEventSubscription, ComEventTriggerSpec,
+        ComInvokeArg, ComMemberToken, ComValue,
+    };
+    use oxvba_runtime::{ObjectRef, bstr::BStr};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn projection_event_callback_args_accept_non_legacy_com_values() {
+        let mut binding = ComBinding::new("Test.Object".to_string(), 0);
+        binding.event_trigger_specs.insert(
+            ComMemberToken::new(7),
+            ComEventTriggerSpec {
+                event_token: ComMemberToken::new(11),
+                callback_arity: 1,
+                second_arg_is_incremented: false,
+            },
+        );
+        binding.event_specs.insert(
+            ComMemberToken::new(11),
+            ComEventSpec {
+                callback_arity: 1,
+                path: ComEventPath::Dispatch,
+                connection_point_iid: None,
+                dispatch_member_id: Some(11),
+            },
+        );
+
+        let values = event_callback_args_from_invoke_args(
+            &binding,
+            ComMemberToken::new(7),
+            &[ComInvokeArg::positional_value(ComValue::String(BStr::from(
+                "payload",
+            )))],
+        )
+        .expect("projection callback args should be widened from invoke args")
+        .expect("event trigger should be recognized");
+
+        assert_eq!(values.0.raw(), 11);
+        assert_eq!(values.1, vec![ComValue::String(BStr::from("payload"))]);
+    }
+
+    #[test]
+    fn projection_callback_queue_preserves_retained_object_identity() {
+        let object = ObjectRef::from_compat_identity(20_111);
+        let subscription = crate::ComSubscriptionToken::new(40_111);
+        let state = Arc::new(Mutex::new(WindowsComClientState::default()));
+        {
+            let mut locked = state.lock().expect("state");
+            locked.subscriptions.insert(
+                subscription,
+                ComEventSubscription {
+                    object: object.clone(),
+                    event: ComMemberToken::new(11),
+                    transport: WindowsComSubscriptionTransport::Projection,
+                },
+            );
+        }
+
+        let mut binding = ComBinding::new("Test.Object".to_string(), 0);
+        binding.event_trigger_specs.insert(
+            ComMemberToken::new(7),
+            ComEventTriggerSpec {
+                event_token: ComMemberToken::new(11),
+                callback_arity: 1,
+                second_arg_is_incremented: false,
+            },
+        );
+        binding.event_specs.insert(
+            ComMemberToken::new(11),
+            ComEventSpec {
+                callback_arity: 1,
+                path: ComEventPath::Dispatch,
+                connection_point_iid: None,
+                dispatch_member_id: Some(11),
+            },
+        );
+
+        let queued = queue_projection_event_callbacks_shared(
+            &state,
+            object.clone(),
+            &binding,
+            ComMemberToken::new(7),
+            &[ComInvokeArg::positional_value(ComValue::String(BStr::from(
+                "payload",
+            )))],
+        )
+        .expect("projection callback queue should succeed");
+        assert_eq!(queued, 1);
+
+        let payload = state
+            .lock()
+            .expect("state")
+            .take_polled_callback()
+            .expect("queued payload");
+        assert_eq!(payload.subscription, subscription);
+        assert_eq!(payload.object, object);
+        assert_eq!(payload.event.raw(), 11);
+        assert_eq!(payload.args, vec![ComValue::String(BStr::from("payload"))]);
+    }
 }

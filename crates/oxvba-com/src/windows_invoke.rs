@@ -1509,7 +1509,6 @@ where
 pub unsafe fn execute_bound_runtime_value_with_shared_state<FTryVtable, FKnownSpec>(
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
     request: &ComInvokeRequest,
-    positional_values: Option<&[i32]>,
     try_vtable_invoke: &mut FTryVtable,
     known_member_spec: &mut FKnownSpec,
 ) -> Result<Option<RuntimeValue>, String>
@@ -1613,7 +1612,7 @@ where
         request.object.clone(),
         &binding,
         request.member,
-        positional_values,
+        request.args.as_slice(),
     )?;
     Ok(Some(value))
 }

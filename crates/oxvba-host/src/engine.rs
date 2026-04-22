@@ -5,7 +5,7 @@ use std::{
 };
 
 use oxvba_com::{
-    ComCallbackToken, ComObjectDescriptor, ComSubscriptionToken, DynamicEventPayload,
+    ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken, DynamicEventPayload,
     DynamicObjectBridge,
 };
 use oxvba_compiler::{
@@ -101,6 +101,8 @@ pub struct Engine {
 pub struct ComEventCallbackDispatch {
     pub callback_token: ComCallbackToken,
     pub subscription_token: ComSubscriptionToken,
+    pub object: ObjectRef,
+    pub event: ComMemberToken,
     pub handler_symbol: String,
     pub args: Vec<RuntimeValue>,
 }
@@ -617,6 +619,8 @@ impl Engine {
         Ok(Some(ComEventCallbackDispatch {
             callback_token: callback.callback_token,
             subscription_token: callback.subscription_token,
+            object: callback.object,
+            event: callback.event,
             handler_symbol,
             args: callback.args,
         }))
@@ -1185,6 +1189,8 @@ fn normalize_callback_payload(
     Ok(ComEventCallbackDispatch {
         callback_token: payload.callback.into(),
         subscription_token: payload.subscription.into(),
+        object: payload.object,
+        event: payload.event,
         handler_symbol: String::new(),
         args: payload
             .args
@@ -18960,13 +18966,15 @@ End Sub";
             .subscribe_com_event_handler(object.clone(), 1, "SinkA_OnChanged")
             .expect("subscribe_com_event_handler should succeed");
 
-        let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
+        let _ = dispatch_controlled_com_call(&engine, object.clone(), 3, 77);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
             .expect("callback should be available");
 
         assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.object, object);
+        assert_eq!(callback.event.raw(), 1);
         assert_eq!(callback.handler_symbol, "sinka_onchanged");
         assert_eq!(callback.args, vec![RuntimeValue::I32(77)]);
         assert!(callback.callback_token.raw() >= 60_001);
@@ -19045,13 +19053,15 @@ End Sub";
             .subscribe_com_event_handler(object.clone(), 3, "SinkA_OnPair")
             .expect("subscribe_com_event_handler should succeed");
 
-        let _ = dispatch_controlled_com_call(&engine, object, 4, 90);
+        let _ = dispatch_controlled_com_call(&engine, object.clone(), 4, 90);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
             .expect("callback should be available");
 
         assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.object, object);
+        assert_eq!(callback.event.raw(), 3);
         assert_eq!(callback.handler_symbol, "sinka_onpair");
         assert_eq!(
             callback.args,
@@ -19075,13 +19085,15 @@ End Sub";
             .subscribe_com_event_handler(object.clone(), 2, "SinkA_OnSourceChanged")
             .expect("subscribe_com_event_handler should succeed for source-interface event");
 
-        let _ = dispatch_controlled_com_call(&engine, object, 11, 55);
+        let _ = dispatch_controlled_com_call(&engine, object.clone(), 11, 55);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
             .expect("callback should be available");
 
         assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.object, object);
+        assert_eq!(callback.event.raw(), 2);
         assert_eq!(callback.handler_symbol, "sinka_onsourcechanged");
         assert_eq!(callback.args, vec![RuntimeValue::I32(55)]);
         assert!(

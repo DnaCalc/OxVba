@@ -346,7 +346,6 @@ impl WindowsComBridge {
             execute_bound_runtime_value_with_shared_state(
                 &self.state,
                 request,
-                positional_values.as_deref(),
                 &mut try_vtable_invoke,
                 &mut known_member_spec,
             )
@@ -368,11 +367,11 @@ impl WindowsComBridge {
         let Some(binding) = binding else {
             return Ok(None);
         };
-        let positional_values = positional_values.ok_or_else(|| {
-            WindowsComBridgeDispatchError::Message(
+        if positional_values.is_none() {
+            return Err(WindowsComBridgeDispatchError::Message(
                 "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments".to_string(),
-            )
-        })?;
+            ));
+        }
         if binding.native_dispatch == 0 {
             return Ok(None);
         }
@@ -403,7 +402,7 @@ impl WindowsComBridge {
             request.object.clone(),
             &binding,
             request.member,
-            Some(&positional_values),
+            request.args.as_slice(),
         )
         .map_err(WindowsComBridgeDispatchError::Message)?;
         Ok(Some(RuntimeValue::I32(value)))

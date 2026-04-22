@@ -164,7 +164,7 @@ fn default_member_token_from_typelib_metadata(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventSubscription<TTransport> {
-    pub object: ComObjectToken,
+    pub object: ObjectRef,
     pub event: ComMemberToken,
     pub transport: TTransport,
 }
@@ -172,7 +172,7 @@ pub struct ComEventSubscription<TTransport> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventCallback {
     pub subscription: ComSubscriptionToken,
-    pub object: ComObjectToken,
+    pub object: ObjectRef,
     pub event: ComMemberToken,
     pub args: Vec<ComValue>,
 }
@@ -269,7 +269,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             callback,
             ComEventCallback {
                 subscription,
-                object: entry.object,
+                object: entry.object.clone(),
                 event: entry.event,
                 args: args.to_vec(),
             },
@@ -280,7 +280,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
 
     pub fn queue_callbacks_for_source_event(
         &mut self,
-        object: ComObjectToken,
+        object: &ObjectRef,
         event: ComMemberToken,
         args: &[ComValue],
         is_projection_transport: impl Fn(&TTransport) -> bool,
@@ -289,7 +289,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
-                if entry.object == object
+                if entry.object.raw() == object.raw()
                     && entry.event == event
                     && is_projection_transport(&entry.transport)
                 {
@@ -323,7 +323,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
         Some(ComCallbackPayload {
             callback,
             subscription: payload.subscription,
-            object: ObjectRef::from_compat_identity(payload.object.raw()),
+            object: payload.object,
             event: payload.event,
             args: payload.args,
         })
@@ -338,7 +338,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
-                if entry.object == object {
+                if entry.object.raw() == object.raw() {
                     Some((*subscription, entry.clone()))
                 } else {
                     None
@@ -352,7 +352,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .callbacks
             .iter()
             .filter_map(|(callback, payload)| {
-                if payload.object == object {
+                if payload.object.raw() == object.raw() {
                     Some(*callback)
                 } else {
                     None
@@ -384,24 +384,26 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
 #[cfg(test)]
 mod tests {
     use super::{ComBinding, ComEventSubscription, ComRuntimeState};
-    use crate::{ComMemberToken, ComObjectToken, ComValue};
+    use crate::{ComMemberToken, ComValue};
+    use oxvba_runtime::ObjectRef;
 
     #[test]
     fn runtime_state_queues_projection_callbacks() {
         let mut state = ComRuntimeState::<bool>::default();
         let object = state.allocate_handle();
+        let object_ref = ObjectRef::from_compat_identity(object.raw());
         let subscription = state.allocate_subscription();
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object,
+                object: object_ref.clone(),
                 event: ComMemberToken::new(11),
                 transport: true,
             },
         );
 
         let queued = state.queue_callbacks_for_source_event(
-            ComObjectToken::new(object.raw()),
+            &object_ref,
             ComMemberToken::new(11),
             &[ComValue::I32(7)],
             |transport| *transport,
@@ -412,7 +414,7 @@ mod tests {
             .take_polled_callback()
             .expect("queued callback should be available");
         assert_eq!(payload.subscription.raw(), subscription.raw());
-        assert_eq!(payload.object.raw(), object.raw());
+        assert_eq!(payload.object, object_ref);
         assert_eq!(payload.args, vec![ComValue::I32(7)]);
     }
 
@@ -427,7 +429,7 @@ mod tests {
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object,
+                object: ObjectRef::from_compat_identity(object.raw()),
                 event: ComMemberToken::new(12),
                 transport: true,
             },
