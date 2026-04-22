@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use oxvba_compiler::bytecode::ExternalCallDescriptor;
 use oxvba_hal::traits::HostServices;
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue};
 
 use crate::slot_abi::{RtSlot, rtslot_from_runtime_value};
 
@@ -18,7 +18,7 @@ use crate::slot_abi::{RtSlot, rtslot_from_runtime_value};
 /// Iterator state for WithEvents owner enumeration.
 #[derive(Debug, Default, Clone)]
 pub struct WithEventsOwnerIterator {
-    pub owners: Vec<ObjectHandle>,
+    pub owners: Vec<ObjectRef>,
     pub next_index: usize,
 }
 

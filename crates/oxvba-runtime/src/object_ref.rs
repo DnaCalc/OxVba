@@ -3,8 +3,6 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::hash::{Hash, Hasher};
 
-use crate::runtime_value::ObjectHandle;
-
 pub const RUNTIME_S_OK: i32 = 0;
 pub const RUNTIME_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 
@@ -127,12 +125,6 @@ impl ObjectRef {
     pub fn strong_count_for_test(&self) -> u32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).ref_count.load(Ordering::Acquire) }
-    }
-}
-
-impl From<ObjectHandle> for ObjectRef {
-    fn from(value: ObjectHandle) -> Self {
-        Self::from_compat_identity(value.raw())
     }
 }
 

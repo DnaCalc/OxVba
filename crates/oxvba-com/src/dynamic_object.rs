@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComSubscriptionToken, ComValue,
 };
-use oxvba_runtime::{ObjectHandle, ObjectRef};
+use oxvba_runtime::ObjectRef;
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {
@@ -31,15 +31,15 @@ define_dynamic_token!(DynamicObjectToken);
 define_dynamic_token!(DynamicSubscriptionToken);
 define_dynamic_token!(DynamicCallbackToken);
 
-impl From<ObjectHandle> for DynamicObjectToken {
-    fn from(value: ObjectHandle) -> Self {
+impl From<ObjectRef> for DynamicObjectToken {
+    fn from(value: ObjectRef) -> Self {
         Self::new(value.raw())
     }
 }
 
-impl From<DynamicObjectToken> for ObjectHandle {
+impl From<DynamicObjectToken> for ObjectRef {
     fn from(value: DynamicObjectToken) -> Self {
-        Self::new(value.raw())
+        Self::from_compat_identity(value.raw())
     }
 }
 
@@ -210,14 +210,14 @@ impl From<ComCallbackPayload> for DynamicEventPayload {
 #[cfg(test)]
 mod tests {
     use crate::{ComInvokeArg, ComInvokeKind, ComInvokeRequest, ComValue};
-    use oxvba_runtime::ObjectHandle;
+    use oxvba_runtime::ObjectRef;
 
     use super::{DynamicCallKind, DynamicCallRequest, DynamicMemberSelector};
 
     #[test]
     fn com_invoke_request_converts_to_dynamic_default_member_shape() {
         let request = ComInvokeRequest {
-            object: ObjectHandle::new(20_004).into(),
+            object: ObjectRef::from_compat_identity(20_004),
             member: 0.into(),
             args: vec![ComInvokeArg::named_value(ComValue::I32(7), "value")],
             invoke_kind_hint: Some(ComInvokeKind::PropertyPut),
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn dynamic_call_request_roundtrips_back_to_com_when_member_token_is_known() {
         let request = DynamicCallRequest {
-            object: ObjectHandle::new(20_007).into(),
+            object: ObjectRef::from_compat_identity(20_007),
             member: DynamicMemberSelector::Token(11),
             args: vec![super::DynamicCallArg {
                 value: Some(ComValue::Null),
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn dynamic_call_request_name_selector_requires_authoritative_resolution() {
         let request = DynamicCallRequest {
-            object: ObjectHandle::new(20_010).into(),
+            object: ObjectRef::from_compat_identity(20_010),
             member: DynamicMemberSelector::Name("Range".to_string()),
             args: vec![],
             call_kind_hint: Some(DynamicCallKind::PropertyGet),

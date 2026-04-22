@@ -338,7 +338,7 @@ mod tests {
         error::HalErrorKind,
         traits::{ComHal, DiagnosticsHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal},
     };
-    use oxvba_runtime::{F64Value, ObjectHandle, RuntimeValue};
+    use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue};
 
     use super::NullHostServices;
 
@@ -380,7 +380,7 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.subscribe_event(ObjectHandle::new(1).into(), 1.into())
+            host.subscribe_event(ObjectRef::from_compat_identity(1), 1.into())
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable

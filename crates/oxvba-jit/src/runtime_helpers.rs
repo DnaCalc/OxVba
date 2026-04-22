@@ -21,7 +21,7 @@ use oxvba_hal::error::{HalError, HalErrorKind};
 use oxvba_hal::model::CapabilityId;
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
-use oxvba_runtime::{F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::JitContext;
@@ -2590,10 +2590,7 @@ pub extern "C" fn oxrt_host_com_subscribe(
             Err(_) => return route_host_error(ctx),
         };
     let host = unsafe { (*ctx).host_services() };
-    match host
-        .com()
-        .subscribe_event(ObjectHandle::new(object.raw()).into(), event)
-    {
+    match host.com().subscribe_event(object, event) {
         Ok(value) => {
             write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
             OK
@@ -2723,7 +2720,7 @@ pub extern "C" fn oxrt_host_withevents_get(
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
-    let key = semantics::withevents_binding_key(owner, binding);
+    let key = semantics::withevents_binding_key(&owner, binding);
     let state = unsafe { (*ctx).host_state() };
     let value = state
         .withevents_bindings
@@ -2753,7 +2750,7 @@ pub extern "C" fn oxrt_host_withevents_set(
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
-    let key = semantics::withevents_binding_key(owner, binding);
+    let key = semantics::withevents_binding_key(&owner, binding);
     let state = unsafe { (*ctx).host_state_mut() };
     if semantics::runtime_value_is_explicit_zero_carrier(&val) {
         state.withevents_bindings.remove(&key);
@@ -2812,11 +2809,11 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
             Some(semantics::withevents_owner_from_key(*key))
         })
         .collect();
-    owners.sort_unstable();
+    owners.sort_unstable_by_key(|owner| owner.raw());
     if owners.is_empty() {
         write_slot!(ctx, dst, RuntimeValue::I32(0));
     } else {
-        let first = owners[0];
+        let first = owners[0].clone();
         state
             .withevents_owner_iters
             .push(crate::jit_context::WithEventsOwnerIterator {
@@ -2833,7 +2830,7 @@ pub extern "C" fn oxrt_host_withevents_next_owner(ctx: *mut JitContext, dst: u32
     let state = unsafe { (*ctx).host_state_mut() };
     let next = if let Some(iter) = state.withevents_owner_iters.last_mut() {
         if iter.next_index < iter.owners.len() {
-            let owner = iter.owners[iter.next_index];
+            let owner = iter.owners[iter.next_index].clone();
             iter.next_index += 1;
             Some(owner)
         } else {

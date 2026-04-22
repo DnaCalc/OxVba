@@ -26,13 +26,13 @@ use oxvba_hal::{
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
-use oxvba_runtime::{BindingHandle, F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{BindingHandle, F64Value, ObjectRef, RuntimeValue, bstr::BStr};
 
 use crate::register_file::RegisterFile;
 
 #[derive(Debug, Default, Clone)]
 struct WithEventsOwnerIterator {
-    owners: Vec<ObjectHandle>,
+    owners: Vec<ObjectRef>,
     next_index: usize,
 }
 
@@ -61,8 +61,14 @@ struct ErrorFrame {
 
 #[derive(Debug, Clone)]
 struct ComWithEventsSubscription {
-    owner_object: ObjectHandle,
+    owner_object: ObjectRef,
     route: ProjectComWithEventsRoute,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectDynamicObjectState {
+    object: ObjectRef,
+    route: ProjectDynamicObjectRoute,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +137,7 @@ pub struct Vm {
     call_stack: Vec<(usize, ErrorFrame)>,
     activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
-    project_dynamic_objects: HashMap<ObjectHandle, ProjectDynamicObjectRoute>,
+    project_dynamic_objects: HashMap<i32, ProjectDynamicObjectState>,
     foreach_iterators: HashMap<i32, ForEachIteratorState>,
     next_foreach_iterator_id: i32,
     project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
@@ -288,8 +294,23 @@ impl Vm {
     pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
         self.project_dynamic_objects = routes
             .into_iter()
-            .map(|route| (route.object_handle, route))
+            .map(|route| {
+                let raw = route.object_handle;
+                (
+                    raw,
+                    ProjectDynamicObjectState {
+                        object: ObjectRef::from_compat_identity(raw),
+                        route,
+                    },
+                )
+            })
             .collect();
+    }
+
+    pub fn project_dynamic_object_ref(&self, raw: i32) -> Option<ObjectRef> {
+        self.project_dynamic_objects
+            .get(&raw)
+            .map(|state| state.object.clone())
     }
 
     pub fn set_project_procedure_runtime_metadata(
@@ -2370,11 +2391,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    match self
-                        .host_services
-                        .com()
-                        .subscribe_event(ObjectHandle::new(object.raw()).into(), event)
-                    {
+                    match self.host_services.com().subscribe_event(object, event) {
                         Ok(value) => {
                             self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
                             pc += 1;
@@ -2654,7 +2671,7 @@ impl Vm {
                     let binding = self.read_value_slot(*binding)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
-                    let key = Self::withevents_binding_key(owner, binding);
+                    let key = Self::withevents_binding_key(&owner, binding);
                     let value = self
                         .withevents_bindings
                         .get(&key)
@@ -2674,7 +2691,7 @@ impl Vm {
                     let value = self.read_value_slot(*value)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
-                    let key = Self::withevents_binding_key(owner, binding);
+                    let key = Self::withevents_binding_key(&owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
                     if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
                         self.withevents_bindings.remove(&key);
@@ -2688,9 +2705,9 @@ impl Vm {
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
                     let owner = self.read_value_slot(*owner)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
-                    self.clear_com_withevents_owner_subscriptions(owner)?;
+                    self.clear_com_withevents_owner_subscriptions(owner.clone())?;
                     self.withevents_bindings
-                        .retain(|key, _| Self::withevents_owner_from_key(*key) != owner);
+                        .retain(|key, _| Self::withevents_owner_from_key(*key).raw() != owner.raw());
                     self.write_value_slot(*dst, RuntimeValue::I32(0))?;
                     pc += 1;
                 }
@@ -2703,11 +2720,11 @@ impl Vm {
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let mut owners = self.withevents_matching_owners(&source, binding);
-                    owners.sort_unstable();
+                    owners.sort_unstable_by_key(|owner| owner.raw());
                     if owners.is_empty() {
                         self.write_value_slot(*dst, RuntimeValue::I32(0))?;
                     } else {
-                        let first = owners[0];
+                        let first = owners[0].clone();
                         self.withevents_owner_iters.push(WithEventsOwnerIterator {
                             owners,
                             next_index: 1,
@@ -2719,7 +2736,7 @@ impl Vm {
                 Instruction::IntrinsicWithEventsNextOwner { dst } => {
                     let next = if let Some(iter) = self.withevents_owner_iters.last_mut() {
                         if iter.next_index < iter.owners.len() {
-                            let owner = iter.owners[iter.next_index];
+                            let owner = iter.owners[iter.next_index].clone();
                             iter.next_index += 1;
                             Some(owner)
                         } else {
@@ -2872,10 +2889,10 @@ impl Vm {
                     let val = self.read_value_slot(*object_slot)?;
                     let is_match = match &val {
                         RuntimeValue::Object(handle) => {
-                            let handle = ObjectHandle::new(handle.raw());
-                            if let Some(route) = self.project_dynamic_objects.get(&handle) {
-                                route.module_name.eq_ignore_ascii_case(type_name)
-                                    || route
+                            if let Some(state) = self.project_dynamic_objects.get(&handle.raw()) {
+                                state.route.module_name.eq_ignore_ascii_case(type_name)
+                                    || state
+                                        .route
                                         .implements_interfaces
                                         .iter()
                                         .any(|iface| iface.eq_ignore_ascii_case(type_name))
@@ -3205,7 +3222,7 @@ impl Vm {
             .unwrap_or(true)
     }
 
-    fn withevents_binding_key(owner: ObjectHandle, binding: BindingHandle) -> i64 {
+    fn withevents_binding_key(owner: &ObjectRef, binding: BindingHandle) -> i64 {
         crate::semantics::withevents_binding_key(owner, binding)
     }
 
@@ -3213,7 +3230,7 @@ impl Vm {
         crate::semantics::withevents_binding_from_key(key)
     }
 
-    fn withevents_owner_from_key(key: i64) -> ObjectHandle {
+    fn withevents_owner_from_key(key: i64) -> ObjectRef {
         crate::semantics::withevents_owner_from_key(key)
     }
 
@@ -3552,10 +3569,11 @@ impl Vm {
         typed_fastpaths: bool,
         request: &DynamicCallRequest,
     ) -> Result<Option<RuntimeValue>, String> {
-        let object = ObjectHandle::new(request.object.raw());
-        let Some(route) = self.project_dynamic_objects.get(&object).cloned() else {
+        let object = request.object.clone();
+        let Some(state) = self.project_dynamic_objects.get(&object.raw()).cloned() else {
             return Ok(None);
         };
+        let route = state.route;
         let mut candidates = match &request.member {
             DynamicMemberSelector::Name(name) => route
                 .members
@@ -3634,7 +3652,7 @@ impl Vm {
                     "project dynamic dispatch target {} on `{}` object {} is unresolved for {} explicit args (available: [{}]{})",
                     selector_label,
                     route.module_name,
-                    object,
+                    object.raw(),
                     request.args.len(),
                     available,
                     binding_context
@@ -3646,12 +3664,12 @@ impl Vm {
                     "project dynamic dispatch target {} on `{}` object {} is ambiguous for {} explicit args",
                     selector_label,
                     route.module_name,
-                    object,
+                    object.raw(),
                     request.args.len()
                 ));
             }
         };
-        values.insert(0, RuntimeValue::Object(object.into()));
+        values.insert(0, RuntimeValue::Object(object.clone()));
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
@@ -3774,7 +3792,7 @@ impl Vm {
         crate::semantics::withevents_binding_handle(value, field)
     }
 
-    fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectHandle, String> {
+    fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectRef, String> {
         crate::semantics::withevents_owner_handle(value, field)
     }
 
@@ -3782,7 +3800,7 @@ impl Vm {
         &self,
         source: &RuntimeValue,
         binding: BindingHandle,
-    ) -> Vec<ObjectHandle> {
+    ) -> Vec<ObjectRef> {
         if crate::semantics::runtime_value_is_explicit_zero_carrier(source) {
             return Vec::new();
         }
@@ -3827,13 +3845,13 @@ impl Vm {
 
     fn clear_com_withevents_owner_subscriptions(
         &mut self,
-        owner: ObjectHandle,
+        owner: ObjectRef,
     ) -> Result<(), String> {
         let keys = self
             .com_withevents_binding_subscriptions
             .keys()
             .copied()
-            .filter(|key| Self::withevents_owner_from_key(*key) == owner)
+            .filter(|key| Self::withevents_owner_from_key(*key).raw() == owner.raw())
             .collect::<Vec<_>>();
         for key in keys {
             self.clear_com_withevents_binding_subscriptions(key)?;
@@ -3843,7 +3861,7 @@ impl Vm {
 
     fn sync_project_com_withevents_binding(
         &mut self,
-        owner: ObjectHandle,
+        owner: ObjectRef,
         binding: BindingHandle,
         value: &RuntimeValue,
     ) -> Result<(), String> {
@@ -3861,9 +3879,9 @@ impl Vm {
         let descriptor = self
             .host_services
             .com()
-            .describe_object(ObjectHandle::new(object.raw()).into())
+            .describe_object(object.clone())
             .map_err(|err| err.to_string())?;
-        let key = Self::withevents_binding_key(owner, binding);
+        let key = Self::withevents_binding_key(&owner, binding);
         let Some(descriptor) = descriptor else {
             return Ok(());
         };
@@ -3877,15 +3895,12 @@ impl Vm {
             let subscription = self
                 .host_services
                 .com()
-                .subscribe_event(
-                    ObjectHandle::new(object.raw()).into(),
-                    route.event_token.into(),
-                )
+                .subscribe_event(object.clone(), route.event_token.into())
                 .map_err(|err| err.to_string())?;
             self.com_withevents_subscriptions.insert(
                 subscription,
                 ComWithEventsSubscription {
-                    owner_object: owner,
+                    owner_object: owner.clone(),
                     route,
                 },
             );
@@ -3961,7 +3976,7 @@ impl Vm {
                 .com()
                 .event_callback_arity(callback)
                 .map_err(|err| err.to_string())?;
-            let mut args = vec![RuntimeValue::I32(bound.owner_object.raw())];
+            let mut args = vec![RuntimeValue::Object(bound.owner_object.clone())];
             let target_symbol = match callback_arity {
                 0 => bound.route.handler_symbol.clone(),
                 1 => {
@@ -4552,7 +4567,7 @@ mod tests {
     };
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
     use oxvba_runtime::{
-        F64Value, ObjectHandle, RuntimeValue,
+        F64Value, ObjectRef, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray, SafeArrayBound},
     };
@@ -5551,7 +5566,7 @@ mod tests {
 
     #[test]
     fn project_dynamic_dispatch_binds_named_args() {
-        let object = ObjectHandle::new(71);
+        let object = 71;
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::CopySlot { dst: 2, src: 1 },
@@ -5589,7 +5604,7 @@ mod tests {
             implements_interfaces: Vec::new(),
         };
         let request = DynamicCallRequest {
-            object: object.into(),
+            object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Ping".to_string()),
             args: vec![DynamicCallArg {
                 value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(7))),
@@ -5611,7 +5626,7 @@ mod tests {
 
     #[test]
     fn project_dynamic_dispatch_matches_dispatch_id_tokens_for_newenum() {
-        let object = ObjectHandle::new(74);
+        let object = 74;
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::LoadConstI32 { slot: 1, value: 41 },
@@ -5648,7 +5663,7 @@ mod tests {
             implements_interfaces: Vec::new(),
         };
         let request = DynamicCallRequest {
-            object: object.into(),
+            object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Token(-4),
             args: Vec::new(),
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
@@ -5673,7 +5688,7 @@ mod tests {
 
     #[test]
     fn project_dynamic_dispatch_applies_optional_defaults_for_missing_and_omitted_args() {
-        let object = ObjectHandle::new(72);
+        let object = 72;
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::CopySlot { dst: 2, src: 1 },
@@ -5714,7 +5729,7 @@ mod tests {
         vm.set_project_dynamic_objects(vec![route.clone()]);
 
         let omitted_request = DynamicCallRequest {
-            object: object.into(),
+            object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Ping".to_string()),
             args: vec![],
             call_kind_hint: None,
@@ -5727,7 +5742,7 @@ mod tests {
 
         vm.set_project_dynamic_objects(vec![route]);
         let explicit_omitted_request = DynamicCallRequest {
-            object: object.into(),
+            object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Ping".to_string()),
             args: vec![DynamicCallArg {
                 value: None,
@@ -5744,7 +5759,7 @@ mod tests {
 
     #[test]
     fn project_dynamic_dispatch_packs_paramarray_values() {
-        let object = ObjectHandle::new(73);
+        let object = 73;
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::CopySlot { dst: 2, src: 1 },
@@ -5781,7 +5796,7 @@ mod tests {
             implements_interfaces: Vec::new(),
         };
         let request = DynamicCallRequest {
-            object: object.into(),
+            object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Capture".to_string()),
             args: vec![
                 DynamicCallArg {

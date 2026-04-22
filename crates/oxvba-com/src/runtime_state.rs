@@ -3,7 +3,7 @@ use crate::{
     ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibEventDispatchPath,
     TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
 };
-use oxvba_runtime::{ObjectHandle, ObjectRef};
+use oxvba_runtime::ObjectRef;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
@@ -323,7 +323,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
         Some(ComCallbackPayload {
             callback,
             subscription: payload.subscription,
-            object: ObjectHandle::new(payload.object.raw()).into(),
+            object: ObjectRef::from_compat_identity(payload.object.raw()),
             event: payload.event,
             args: payload.args,
         })

@@ -12,8 +12,6 @@ use oxvba_project::{
     BasProjModule, BasProjModuleKind, CallingConvention, ClassModuleMetadata, Instancing,
     NativeExportDescriptor,
 };
-use oxvba_runtime::ObjectHandle;
-
 /// Helper: build a minimal `CompiledProject` with the given host_exports,
 /// procedure_runtime_metadata, and project_dynamic_objects.
 fn make_compiled_project(
@@ -254,7 +252,7 @@ fn com_class_exported_when_exposed_and_creatable() {
     let modules = vec![make_class_module("src/MyClass.cls", true, true)];
 
     let dynamic_objects = vec![ProjectDynamicObjectRoute {
-        object_handle: ObjectHandle::new(42),
+        object_handle: 42,
         project_name: "TestProject".to_string(),
         module_name: "MyClass".to_string(),
         members: vec![ProjectDynamicMemberRoute {
@@ -376,7 +374,7 @@ fn com_class_with_multiple_members() {
     let modules = vec![make_class_module("src/MultiMember.cls", true, true)];
 
     let dynamic_objects = vec![ProjectDynamicObjectRoute {
-        object_handle: ObjectHandle::new(10),
+        object_handle: 10,
         project_name: "TestProject".to_string(),
         module_name: "MultiMember".to_string(),
         members: vec![
@@ -686,7 +684,7 @@ fn com_class_export_preserves_dispatch_metadata() {
     let modules = vec![make_class_module("src/Widget.cls", true, true)];
 
     let dynamic_objects = vec![ProjectDynamicObjectRoute {
-        object_handle: ObjectHandle::new(11),
+        object_handle: 11,
         project_name: "TestProject".to_string(),
         module_name: "Widget".to_string(),
         members: vec![

@@ -417,7 +417,7 @@ mod tests {
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
         traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
     };
-    use oxvba_runtime::{ObjectHandle, RuntimeValue};
+    use oxvba_runtime::{ObjectRef, RuntimeValue};
 
     use super::WasmHostServices;
 
@@ -452,7 +452,7 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.subscribe_event(ObjectHandle::new(1).into(), 1.into())
+            host.subscribe_event(ObjectRef::from_compat_identity(1), 1.into())
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable

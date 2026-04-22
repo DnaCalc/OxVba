@@ -29,7 +29,7 @@ All 152 instructions are implemented in both the interpreter and the JIT backend
 
 The interpreter operates on `RuntimeValue` slots — a 15-variant tagged value type defined in `oxvba-runtime`:
 
-`Empty`, `Null`, `ErrorCode(i32)`, `I32`, `I64`, `F64` (with Double/Single/Date subtype), `Decimal`, `Currency`, `Bool`, `String`, `ArrayIntent(SafeArray)`, `ObjectHandle`, `BindingHandle`
+`Empty`, `Null`, `ErrorCode(i32)`, `I32`, `I64`, `F64` (with Double/Single/Date subtype), `Decimal`, `Currency`, `Bool`, `String`, `ArrayIntent(SafeArray)`, `Object(ObjectRef)`, `BindingHandle`
 
 A flat `RegisterFile` (vector of `RuntimeValue` slots, initially 256, dynamically resized) provides shared register storage.
 
@@ -47,7 +47,7 @@ Pure semantic functions extracted to `crate::semantics` (~560 lines), covering:
 - Type coercion and checks (null/error propagation, f64 conversion, truthiness)
 - Arithmetic, division with VBA error codes, comparison, negation
 - Assignment validation and formatting
-- COM token conversions and WithEvents key helpers
+- COM object coercion and WithEvents key helpers
 
 Both the interpreter and JIT runtime helpers share these functions.
 

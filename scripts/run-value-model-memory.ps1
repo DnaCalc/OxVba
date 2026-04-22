@@ -378,6 +378,18 @@ function Write-LayoutProbeProject {
 
     $runtimePath = (Join-Path $WorktreePath "crates/oxvba-runtime").Replace('\', '/')
     $comPath = (Join-Path $WorktreePath "crates/oxvba-com").Replace('\', '/')
+    $runtimeLibPath = Join-Path $WorktreePath "crates/oxvba-runtime/src/lib.rs"
+    $runtimeLibText = Get-Content $runtimeLibPath -Raw
+    $usesObjectRef = $runtimeLibText.Contains("ObjectRef")
+    $usesObjectHandle = $runtimeLibText.Contains("ObjectHandle")
+    if ($usesObjectRef -and $usesObjectHandle) {
+        throw "run-value-model-memory: layout probe cannot choose between ObjectRef and ObjectHandle in '$runtimeLibPath'"
+    }
+    if ((-not $usesObjectRef) -and (-not $usesObjectHandle)) {
+        throw "run-value-model-memory: layout probe could not find ObjectRef or ObjectHandle export in '$runtimeLibPath'"
+    }
+
+    $identityImport = if ($usesObjectRef) { "ObjectRef" } else { "ObjectHandle" }
 
     Set-Content -Path (Join-Path $ProbeRoot "Cargo.toml") -Value @"
 [package]
@@ -397,7 +409,7 @@ use std::mem::{align_of, size_of};
 
 use oxvba_com::{ComCallbackPayload, ComInvokeArg, ComValue};
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue, Variant,
+    BindingHandle, CurrencyValue, F64Value, $identityImport, RuntimeValue, Variant,
     bstr::BStr,
     safe_array::{SafeArray, SafeArrayBound},
 };
@@ -416,7 +428,7 @@ fn main() {
     emit::<SafeArrayBound>("SafeArrayBound");
     emit::<F64Value>("F64Value");
     emit::<CurrencyValue>("CurrencyValue");
-    emit::<ObjectHandle>("ObjectHandle");
+    emit::<$identityImport>("ObjectIdentityCarrier");
     emit::<BindingHandle>("BindingHandle");
     emit::<ComValue>("ComValue");
     emit::<ComInvokeArg>("ComInvokeArg");

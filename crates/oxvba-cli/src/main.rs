@@ -2237,7 +2237,7 @@ fn format_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Bool(value) => format!("bool:{value}"),
         RuntimeValue::String(BStr(value)) => format!("string:{value:?}"),
         RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
-        RuntimeValue::ObjectHandle(handle) => format!("object:{handle}"),
+        RuntimeValue::Object(handle) => format!("object:{handle}"),
         RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),
     }
 }

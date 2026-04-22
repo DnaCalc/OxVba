@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectHandle, ObjectRef, RuntimeValue, Variant,
+    CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, Variant,
     bstr::BStr,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
@@ -238,7 +238,11 @@ impl ComInvokeRequest {
         } else {
             vec![ComInvokeArg::positional(arg)]
         };
-        Self::new(ObjectHandle::new(object).into(), ComMemberToken::new(member), args)
+        Self::new(
+            ObjectRef::from_compat_identity(object),
+            ComMemberToken::new(member),
+            args,
+        )
     }
 }
 

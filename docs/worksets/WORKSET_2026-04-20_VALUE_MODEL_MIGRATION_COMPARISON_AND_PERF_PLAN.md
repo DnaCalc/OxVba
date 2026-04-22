@@ -1535,25 +1535,24 @@ Parent:
 
 Current repo grounding after `vmm-e5`:
 
-1. Canonical runtime/interface identity is still semantic, not raw COM-pointer
-   storage.
-   - `RuntimeValue` and canonical `Variant` currently carry `ObjectHandle` /
-     `BindingHandle`, not raw `IUnknown*` / `IDispatch*`.
-   - current object-valued Variant state lives in
-     `crates/oxvba-runtime/src/variant.rs`.
+1. Canonical runtime/interface identity is semantic, not raw COM-pointer
+   storage, but it is no longer token-only.
+   - `RuntimeValue` now carries `ObjectRef` as the canonical object lane and
+     `BindingHandle` for non-object binding identity.
+   - canonical object-valued `Variant` state now also carries `ObjectRef`.
 2. Native COM pointer truth and identity dedup are currently owned by the
    Windows COM runtime state.
    - `crates/oxvba-com/src/windows_runtime_state.rs` is the current source of
-     truth for retained native dispatch pointers, object-handle allocation,
-     native-dispatch result dedup, subscription state, and callback queues.
-   - `vmm-f2` replaces the token-only runtime object lane with canonical
-     `ObjectRef`, tightens the retained/native lane into an explicit retained
-     `IUnknown` identity / lifetime anchor, and aligns the runtime object base
-     with `IUnknown` lifetime semantics rather than leaving identity keyed only
-     by retained `IDispatch*`.
+     truth for retained native dispatch pointers, native `IUnknown` anchors,
+     native-result dedup, subscription state, and callback queues.
+   - `vmm-f2` has now replaced the token-only runtime object lane with
+     canonical `ObjectRef`, tightened the retained/native lane into an explicit
+     retained `IUnknown` identity / lifetime anchor, and aligned the runtime
+     object base with `IUnknown` lifetime semantics rather than leaving
+     identity keyed only by retained `IDispatch*`.
 3. The current observable `VT_DISPATCH` / `VT_UNKNOWN` contract is already
    explicit enough to drive the migration.
-   - object-capable `VT_DISPATCH` results currently rebind to `ObjectHandle` and remain
+   - object-capable `VT_DISPATCH` results now rebind to `ObjectRef` and remain
      invokable through the COM/runtime seams
    - `VT_UNKNOWN` currently means:
      rebind through `IDispatch` if `QueryInterface(IDispatch)` succeeds;
@@ -1615,6 +1614,8 @@ Child beads:
      - identity-sensitive runtime/COM tests pass
      - object lifetime/refcount ownership is documented honestly
      - retained wrapper identity/lifetime ownership is documented honestly
+     - `ObjectHandle` is removed from the live runtime crates and support
+       harnesses, with `ObjectRef` carried end-to-end instead
 4. `vmm-f3`
    - kind: `delivery`
    - priority: `P1`

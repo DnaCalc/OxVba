@@ -44,16 +44,18 @@ High-level execution path:
 - late-bound `IDispatch` parity still remains below VBA/Excel behavior,
 - richer COM value transport still needs broader object/interface/SAFEARRAY coverage,
 - those lanes now proceed on the corrected architecture with `oxvba-com` as the live bridge.
-7. The checked-in implementation still uses the pre-migration semantic-first value model:
+7. The checked-in implementation is in the middle of the value-model migration and no longer uses token-only object identity:
 - `RuntimeValue` is the canonical execution substrate today,
 - `BStr` in `oxvba-runtime` is currently a thin wrapper over Rust `String`,
-- typed identity carriers such as `ObjectHandle` and `BindingHandle` are still acceptable semantic leaves in the current implementation,
+- canonical runtime object identity now flows through `ObjectRef`, whose base object implements a runtime `IUnknown`-style vtable with `AddRef` / `Release`,
+- raw integer compat identities still exist as projection/order/debug compatibility data, but they are no longer the canonical object carrier,
+- `BindingHandle` remains a typed semantic leaf for non-object binding identity,
 - the runtime `Variant` type is currently a bounded 16-byte compatibility bridge rather than the universal internal value substrate,
 - `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than redefining the runtime around raw COM wire types.
 - Windows-facing layout truth is often projected at helper or boundary seams instead of falling out of the canonical substrate directly:
   - `BSTR` cells for `StrPtr` / `VarPtr(String)` are synthesized in pointer-helper logic,
   - `VARIANT` truth for COM calls is translated in `oxvba-com`,
-  - object/interface identity is still mostly handle/facade based internally instead of raw COM interface pointers.
+  - native COM pointer truth remains retained in `oxvba-com`, while runtime object identity is now `ObjectRef` rather than a raw COM interface pointer or an integer handle.
 - those are current checked-in differences, not hidden assumptions:
   - they may leak at some boundaries from time to time,
   - they should be monitored through interop/conformance evidence,

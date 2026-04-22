@@ -9,7 +9,7 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, ObjectRef, RuntimeValue,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue,
     bstr::BStr,
 };
 
@@ -1781,10 +1781,9 @@ pub fn runtime_value_to_com_object(
 ) -> Result<ObjectRef, String> {
     match value {
         RuntimeValue::Object(handle) => Ok(handle.clone()),
-        RuntimeValue::I32(raw) => Ok(ObjectHandle::new(*raw).into()),
+        RuntimeValue::I32(raw) => Ok(ObjectRef::from_compat_identity(*raw)),
         RuntimeValue::I64(raw) => i32::try_from(*raw)
-            .map(ObjectHandle::new)
-            .map(Into::into)
+            .map(ObjectRef::from_compat_identity)
             .map_err(|_| format!("{field} exceeds i32 handle range: {raw}")),
         other => Err(format!(
             "{field} requires object-compatible carrier, got {other:?}"
@@ -2049,7 +2048,7 @@ pub fn runtime_array_ubound(array_value: &RuntimeValue, field: &str) -> Result<i
 
 // ── WithEvents Key Functions ──────────────────────────────────────────
 
-pub fn withevents_binding_key(owner: ObjectHandle, binding: BindingHandle) -> i64 {
+pub fn withevents_binding_key(owner: &ObjectRef, binding: BindingHandle) -> i64 {
     ((owner.raw() as i64) << 32) | (binding.raw() as u32 as i64)
 }
 
@@ -2057,8 +2056,8 @@ pub fn withevents_binding_from_key(key: i64) -> BindingHandle {
     BindingHandle::new((key as u32) as i32)
 }
 
-pub fn withevents_owner_from_key(key: i64) -> ObjectHandle {
-    ObjectHandle::new((key >> 32) as i32)
+pub fn withevents_owner_from_key(key: i64) -> ObjectRef {
+    ObjectRef::from_compat_identity((key >> 32) as i32)
 }
 
 pub fn withevents_binding_handle(
@@ -2077,16 +2076,16 @@ pub fn withevents_binding_handle(
     }
 }
 
-pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectHandle, String> {
+pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectRef, String> {
     match value {
-        RuntimeValue::Object(handle) => Ok(ObjectHandle::new(handle.raw())),
+        RuntimeValue::Object(handle) => Ok(handle.clone()),
         // Project-lowered implicit root calls can omit the hidden owner carrier on
         // statement-context paths. Treat that the same as the established root-zero
         // owner so the generated WithEvents backing store remains addressable.
-        RuntimeValue::Empty => Ok(ObjectHandle::new(0)),
-        RuntimeValue::I32(raw) => Ok(ObjectHandle::new(*raw)),
+        RuntimeValue::Empty => Ok(ObjectRef::from_compat_identity(0)),
+        RuntimeValue::I32(raw) => Ok(ObjectRef::from_compat_identity(*raw)),
         RuntimeValue::I64(raw) => i32::try_from(*raw)
-            .map(ObjectHandle::new)
+            .map(ObjectRef::from_compat_identity)
             .map_err(|_| format!("WithEvents {field} exceeds i32 handle range: {raw}")),
         other => Err(format!(
             "WithEvents {field} requires object-handle-compatible carrier, got {other:?}"

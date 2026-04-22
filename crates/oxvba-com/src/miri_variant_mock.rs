@@ -206,7 +206,7 @@ pub fn mock_com_value_to_variant(value: &ComValue) -> MockVariant {
             v.payload[..4].copy_from_slice(&len.to_le_bytes());
         }
         _ => {
-            // Decimal, ObjectHandle, ArrayIntent — complex types, mock as VT_EMPTY
+            // Decimal, ObjectRef, ArrayIntent — complex types, mock as VT_EMPTY
             v.vt = VT_EMPTY;
         }
     }

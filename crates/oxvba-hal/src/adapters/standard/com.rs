@@ -16,7 +16,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectHandle, ObjectRef, RuntimeValue, runtime_value_to_vba_string};
+use oxvba_runtime::{ObjectRef, RuntimeValue, runtime_value_to_vba_string};
 
 use super::StandardHostServices;
 
@@ -29,17 +29,17 @@ fn is_dispatch_fixture_prog_id_name(prog_id_name: &str) -> bool {
     })
 }
 
-fn allocate_projection_object_handle(
+fn allocate_projection_object_ref(
     host: &StandardHostServices,
     prog_id_name: &str,
-) -> HalResult<ObjectHandle> {
+) -> HalResult<ObjectRef> {
     let capability = CapabilityId::ComActivationDispatch;
     let mut state = host.projection_lock(capability, "create_object")?;
     if let Some(handle) = state.handles_by_prog_id.get(prog_id_name).copied() {
-        return Ok(ObjectHandle::new(handle));
+        return Ok(ObjectRef::from_compat_identity(handle));
     }
     state.next_handle = state.next_handle.saturating_add(1).max(1);
-    let object = ObjectHandle::new(state.next_handle);
+    let object = ObjectRef::from_compat_identity(state.next_handle);
     state
         .handles_by_prog_id
         .insert(prog_id_name.to_string(), object.raw());
@@ -49,9 +49,9 @@ fn allocate_projection_object_handle(
     Ok(object)
 }
 
-fn release_projection_object_handle(
+fn release_projection_object_ref(
     host: &StandardHostServices,
-    object: ObjectHandle,
+    object: &ObjectRef,
 ) -> HalResult<bool> {
     let capability = CapabilityId::ComActivationDispatch;
     let mut state = host.projection_lock(capability, "release_object")?;
@@ -64,7 +64,7 @@ fn release_projection_object_handle(
 
 fn projection_prog_id_name(
     host: &StandardHostServices,
-    object: ObjectHandle,
+    object: &ObjectRef,
 ) -> HalResult<Option<String>> {
     let capability = CapabilityId::ComActivationDispatch;
     let state = host.projection_lock(capability, "describe_object")?;
@@ -124,27 +124,27 @@ impl ComHal for StandardHostServices {
         {
             // Portable registry matched: return a synthetic object handle.
             // The handle base mirrors the existing fallback convention.
-            let object = allocate_projection_object_handle(self, prog_id_name)?;
+            let object = allocate_projection_object_ref(self, prog_id_name)?;
             #[cfg(target_os = "windows")]
-            try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
-            return Ok(RuntimeValue::Object(object.into()));
+            try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
+            return Ok(RuntimeValue::Object(object));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
                 Ok(value) => return Ok(value),
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
-                    let object = allocate_projection_object_handle(self, prog_id_name)?;
-                    try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
-                    return Ok(RuntimeValue::Object(object.into()));
+                    let object = allocate_projection_object_ref(self, prog_id_name)?;
+                    try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
+                    return Ok(RuntimeValue::Object(object));
                 }
                 Err(err) => return Err(err),
             }
         }
-        let object = allocate_projection_object_handle(self, prog_id_name)?;
+        let object = allocate_projection_object_ref(self, prog_id_name)?;
         #[cfg(target_os = "windows")]
-        try_bind_projection_object_metadata(self, object.into(), prog_id_name)?;
-        Ok(RuntimeValue::Object(object.into()))
+        try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
+        Ok(RuntimeValue::Object(object))
     }
 
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
@@ -155,8 +155,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "release_object"));
         }
-        let removed_projection =
-            release_projection_object_handle(self, ObjectHandle::new(object.raw()))?;
+        let removed_projection = release_projection_object_ref(self, &object)?;
         let object_raw = object.raw();
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if removed_projection || object_raw != 0 {
@@ -205,10 +204,9 @@ impl ComHal for StandardHostServices {
                 return Ok(descriptor);
             }
         }
-        let object_handle = ObjectHandle::new(object.raw());
-        let descriptor = if object_handle.raw() == 0 {
+        let descriptor = if object.raw() == 0 {
             None
-        } else if let Some(prog_id_name) = projection_prog_id_name(self, object_handle)? {
+        } else if let Some(prog_id_name) = projection_prog_id_name(self, &object)? {
             Some(ComObjectDescriptor {
                 object: object.clone(),
                 prog_id_name,
@@ -223,10 +221,10 @@ impl ComHal for StandardHostServices {
         } else {
             Some(ComObjectDescriptor {
                 object: object.clone(),
-                prog_id_name: projection_prog_id_name(self, object_handle)
+                prog_id_name: projection_prog_id_name(self, &object)
                     .ok()
                     .flatten()
-                    .unwrap_or_else(|| format!("projection:{}", object_handle.raw())),
+                    .unwrap_or_else(|| format!("projection:{}", object.raw())),
                 transport: ComObjectTransportKind::Projection,
                 supports_events: false,
                 known_member_tokens: Vec::new(),

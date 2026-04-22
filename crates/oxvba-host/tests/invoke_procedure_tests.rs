@@ -428,7 +428,7 @@ fn invoke_member_missing_object_is_error() {
 
     let result = engine.invoke_member_on_object(
         &mut session,
-        oxvba_runtime::ObjectHandle::new(999),
+        oxvba_runtime::ObjectRef::from_compat_identity(999),
         "DoWork",
         &[],
     );
@@ -524,7 +524,7 @@ fn create_class_and_invoke_sub_member() {
 
     // Invoke Increment (Sub — returns Empty)
     let result = engine
-        .invoke_member_on_object(&mut session, handle, "Increment", &[])
+        .invoke_member_on_object(&mut session, handle.clone(), "Increment", &[])
         .unwrap();
     assert_eq!(result, RuntimeValue::Empty);
 

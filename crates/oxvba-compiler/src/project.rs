@@ -10,7 +10,6 @@ use oxvba_com::{
     resolve_member_token_and_spec_from_typelib_metadata_name,
     resolve_typelib_identity_for_prog_id_name,
 };
-use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
 
 use crate::{
@@ -222,7 +221,7 @@ pub struct ProjectDynamicMemberRoute {
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicObjectRoute {
-    pub object_handle: ObjectHandle,
+    pub object_handle: i32,
     pub project_name: String,
     pub module_name: String,
     pub members: Vec<ProjectDynamicMemberRoute>,
@@ -528,7 +527,7 @@ struct MemberAttributes {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProjectDynamicInstanceBindingDraft {
-    object_handle: ObjectHandle,
+    object_handle: i32,
     project_name: String,
     module_name: String,
 }
@@ -2871,7 +2870,7 @@ fn expand_bound_source_line(
         );
         let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
         if dim_decl.as_new {
-            let object_handle = ObjectHandle::new(*next_internal_instance_id);
+            let object_handle = *next_internal_instance_id;
             dynamic_instance_bindings.push(ProjectDynamicInstanceBindingDraft {
                 object_handle,
                 project_name: target_project.clone(),
@@ -2892,7 +2891,7 @@ fn expand_bound_source_line(
                     "{}Call {}({})",
                     dim_decl.leading_ws,
                     class_initialize.lowered_name,
-                    object_handle.raw()
+                    object_handle
                 ));
             }
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
@@ -6435,7 +6434,7 @@ fn build_project_dynamic_object_routes(
                 continue;
             }
             all_bindings.push(ProjectDynamicInstanceBindingDraft {
-                object_handle: ObjectHandle::new(next_export_only_handle),
+                object_handle: next_export_only_handle,
                 project_name: current_project.clone(),
                 module_name,
             });

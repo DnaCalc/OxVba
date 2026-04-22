@@ -24,7 +24,7 @@ use oxvba_hal::{
 };
 use oxvba_jit::{JitEngine, cranelift};
 use oxvba_runtime::value_tags::EMPTY_TAG;
-use oxvba_runtime::{ObjectHandle, ObjectRef, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue};
 use oxvba_vm::{Vm, execute_and_snapshot_with_host};
 
 use crate::{
@@ -455,7 +455,7 @@ impl Engine {
         project_name: &str,
         module_name: &str,
         event_name: &str,
-        source_instance: ObjectHandle,
+        source_instance: ObjectRef,
         args: &[RuntimeValue],
     ) -> Result<bool, PhaseDiagnostic> {
         let bindings = self
@@ -490,7 +490,7 @@ impl Engine {
             let actual_args = if binding.guard_symbol_zero_arg.is_some()
                 || binding.guard_symbol_one_arg.is_some()
             {
-                let mut actual_args = vec![RuntimeValue::I32(source_instance.raw())];
+                let mut actual_args = vec![RuntimeValue::Object(source_instance.clone())];
                 actual_args.extend_from_slice(args);
                 actual_args
             } else {
@@ -728,7 +728,7 @@ impl Engine {
         &self,
         session: &mut ProjectRuntimeSession,
         class_name: &str,
-    ) -> Result<ObjectHandle, PhaseDiagnostic> {
+    ) -> Result<ObjectRef, PhaseDiagnostic> {
         let lowered = class_name.to_ascii_lowercase();
 
         // Find the dynamic object route for this class
@@ -761,14 +761,22 @@ impl Engine {
                 .map_err(PhaseDiagnostic::runtime)?;
         }
 
-        Ok(handle)
+        session
+            .vm
+            .project_dynamic_object_ref(handle)
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "object identity {} not found in project dynamic runtime state",
+                    handle
+                ))
+            })
     }
 
     /// Invoke a method on a class object instance.
     pub fn invoke_member_on_object(
         &self,
         session: &mut ProjectRuntimeSession,
-        object: ObjectHandle,
+        object: ObjectRef,
         member: &str,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, PhaseDiagnostic> {
@@ -777,7 +785,7 @@ impl Engine {
             .compiled
             .project_dynamic_objects
             .iter()
-            .find(|r| r.object_handle == object)
+            .find(|r| r.object_handle == object.raw())
             .ok_or_else(|| {
                 PhaseDiagnostic::runtime(format!(
                     "object handle {} not found in project dynamic objects",
@@ -809,7 +817,7 @@ impl Engine {
         }
 
         // Class members have an implicit `Me` parameter in slot 0.
-        // Prepend an ObjectHandle value for it, then the caller-supplied args.
+        // Prepend the canonical ObjectRef value for `Me`, then the caller-supplied args.
         let has_implicit_me = member_route.param_slots.len() > args.len();
         let full_args: Vec<RuntimeValue> = if has_implicit_me {
             let mut v = vec![RuntimeValue::Object(object.into())];
@@ -1280,7 +1288,7 @@ mod tests {
         },
     };
     use oxvba_runtime::{
-        F64Value, ObjectHandle, ObjectRef, RuntimeValue, bstr::BStr,
+        F64Value, ObjectRef, RuntimeValue, bstr::BStr,
         value_tags::error_tag_from_code,
     };
     use std::collections::HashSet;
@@ -6305,7 +6313,7 @@ End Sub";
                     "ProjectA",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(1),
+                    ObjectRef::from_compat_identity(1),
                     &[],
                 )
                 .expect_err("runtime A first event should raise its baseline branch");
@@ -6322,7 +6330,7 @@ End Sub";
                     "ProjectA",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(1),
+                    ObjectRef::from_compat_identity(1),
                     &[],
                 )
                 .expect_err("runtime A second event should see its mutated host-root state");
@@ -6339,7 +6347,7 @@ End Sub";
                     "ProjectA",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(1),
+                    ObjectRef::from_compat_identity(1),
                     &[],
                 )
                 .expect_err("runtime B first event should raise its own baseline branch");
@@ -6359,7 +6367,7 @@ End Sub";
                     "ProjectA",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(1),
+                    ObjectRef::from_compat_identity(1),
                     &[],
                 )
                 .expect_err("runtime C first event should raise its own baseline branch");
@@ -6457,7 +6465,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(other_handle.raw()),
+                    ObjectRef::from_compat_identity(other_handle.raw()),
                     &[],
                 )
                 .unwrap_or_else(|err| {
@@ -6474,7 +6482,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(bound_handle.raw()),
+                    ObjectRef::from_compat_identity(bound_handle.raw()),
                     &[],
                 )
                 .expect_err("bound host-backed event should route to the sink handler");
@@ -6561,8 +6569,10 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
-                    RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => {
+                        ObjectRef::from_compat_identity(handle.raw())
+                    }
+                    RuntimeValue::I32(raw) if *raw > 0 => ObjectRef::from_compat_identity(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound host-backed emitter handle: {snapshot:?}"
                     ),
@@ -6578,7 +6588,7 @@ End Sub";
                     "PlainProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    bound_handle.clone(),
                     &[],
                 )
                 .unwrap_or_else(|err| {
@@ -6595,7 +6605,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    bound_handle.clone(),
                     &[],
                 )
                 .expect_err("host-injected source should own the conflicting WithEvents route");
@@ -6693,7 +6703,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(com_handle.raw()),
+                    ObjectRef::from_compat_identity(com_handle.raw()),
                     &[],
                 )
                 .unwrap_or_else(|err| {
@@ -6710,7 +6720,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(bound_handle.raw()),
+                    ObjectRef::from_compat_identity(bound_handle.raw()),
                     &[],
                 )
                 .expect_err("bound host-backed source should still own the event route");
@@ -6808,7 +6818,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(other_handle.raw()),
+                    ObjectRef::from_compat_identity(other_handle.raw()),
                     &[RuntimeValue::I32(42)],
                 )
                 .unwrap_or_else(|err| {
@@ -6827,7 +6837,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    ObjectHandle::new(bound_handle.raw()),
+                    ObjectRef::from_compat_identity(bound_handle.raw()),
                     &[RuntimeValue::I32(42)],
                 )
                 .expect_err("bound one-arg host-backed event should route to the sink handler");
@@ -6915,8 +6925,10 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
-                    RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => {
+                        ObjectRef::from_compat_identity(handle.raw())
+                    }
+                    RuntimeValue::I32(raw) if *raw > 0 => ObjectRef::from_compat_identity(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
                     ),
@@ -6932,7 +6944,7 @@ End Sub";
                     "PlainProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    bound_handle.clone(),
                     &[RuntimeValue::I32(42)],
                 )
                 .unwrap_or_else(|err| {
@@ -6951,7 +6963,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    bound_handle.clone(),
                     &[RuntimeValue::I32(42)],
                 )
                 .expect_err(
@@ -7022,8 +7034,10 @@ End Sub";
             let snapshot = runtime.snapshot_values();
             let bound_handle = match snapshot.as_slice() {
                 [.., bound, _sink] => match bound {
-                    RuntimeValue::Object(handle) if handle.raw() > 0 => ObjectHandle::new(handle.raw()),
-                    RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
+                    RuntimeValue::Object(handle) if handle.raw() > 0 => {
+                        ObjectRef::from_compat_identity(handle.raw())
+                    }
+                    RuntimeValue::I32(raw) if *raw > 0 => ObjectRef::from_compat_identity(*raw),
                     _ => panic!(
                         "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
                     ),
@@ -7039,7 +7053,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle,
+                    bound_handle.into(),
                     &[RuntimeValue::I32(1), RuntimeValue::I32(2)],
                 )
                 .expect_err(
@@ -18774,7 +18788,7 @@ End Sub";
                 "ProjectA",
                 "Emitter",
                 "Changed",
-                ObjectHandle::new(1),
+                ObjectRef::from_compat_identity(1),
                 &[],
             )
             .expect_err("first bound handler should raise deterministic runtime error");
@@ -18825,7 +18839,7 @@ End Sub";
                 "ProjectA",
                 "Emitter",
                 "Changed",
-                ObjectHandle::new(1),
+                ObjectRef::from_compat_identity(1),
                 &[RuntimeValue::I32(42)],
             )
             .expect_err("host ingress should forward deterministic event arg to handler");
@@ -18876,7 +18890,7 @@ End Sub";
                 "ProjectA",
                 "Emitter",
                 "Changed",
-                ObjectHandle::new(1),
+                ObjectRef::from_compat_identity(1),
                 &[RuntimeValue::I32(1), RuntimeValue::I32(2)],
             )
             .expect_err("host ingress should reject more than one forwarded arg");
@@ -18922,7 +18936,7 @@ End Sub";
                 "ProjectA",
                 "Emitter",
                 "Changed",
-                ObjectHandle::new(1),
+                ObjectRef::from_compat_identity(1),
                 &[],
             )
             .expect_err("missing handler should fail deterministically");
