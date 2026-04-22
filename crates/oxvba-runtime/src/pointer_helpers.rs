@@ -135,9 +135,8 @@ impl std::fmt::Debug for OwnedVariant {
 #[cfg(target_os = "windows")]
 impl OwnedVariant {
     fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
-        let canonical = crate::Variant::from_runtime_value(value);
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        unsafe { set_windows_variant_from_runtime_value(&mut variant, value, &canonical)? };
+        unsafe { set_windows_variant_from_runtime_value(&mut variant, value)? };
         Ok(Self(variant))
     }
 
@@ -186,11 +185,8 @@ unsafe fn set_windows_variant_array_arg(
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for runtime_value in values {
             let mut element: VARIANT = std::mem::zeroed();
-            if let Err(detail) = set_windows_variant_from_runtime_value(
-                &mut element,
-                runtime_value,
-                &crate::Variant::from_runtime_value(runtime_value),
-            ) {
+            if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, runtime_value)
+            {
                 let _ = VariantClear(&mut element);
                 let _ = SafeArrayDestroy(psa.cast_const());
                 return Err(detail);
@@ -234,11 +230,7 @@ unsafe fn set_windows_variant_array_arg(
     }
     for (offset, runtime_value) in values.iter().enumerate() {
         let mut element: VARIANT = std::mem::zeroed();
-        if let Err(detail) = set_windows_variant_from_runtime_value(
-            &mut element,
-            runtime_value,
-            &crate::Variant::from_runtime_value(runtime_value),
-        ) {
+        if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, runtime_value) {
             let _ = VariantClear(&mut element);
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(detail);
@@ -269,7 +261,6 @@ unsafe fn set_windows_variant_array_arg(
 unsafe fn set_windows_variant_from_runtime_value(
     variant: *mut VARIANT,
     value: &RuntimeValue,
-    canonical: &crate::Variant,
 ) -> Result<(), String> {
     match value {
         RuntimeValue::ArrayIntent(array) => {
@@ -288,7 +279,9 @@ unsafe fn set_windows_variant_from_runtime_value(
                 "VarPtr over Variant containing a binding handle is not yet supported".to_string(),
             );
         }
-        _ => match canonical.vtype() {
+        _ => {
+            let canonical = crate::Variant::try_from_runtime_value(value)?;
+            match canonical.vtype() {
             crate::VarType::Empty => {
                 (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
             }
@@ -357,7 +350,7 @@ unsafe fn set_windows_variant_from_runtime_value(
                     "canonical string Variant lost owned BSTR payload".to_string()
                 })?;
                 (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
-                    OwnedBstr::from_bstr(text)?.into_raw();
+                    OwnedBstr::from_bstr(&text)?.into_raw();
             }
             crate::VarType::Decimal => {
                 let bytes = canonical.to_wire_bytes();
@@ -375,7 +368,8 @@ unsafe fn set_windows_variant_from_runtime_value(
                     other
                 ));
             }
-        },
+        }
+        }
     }
     Ok(())
 }

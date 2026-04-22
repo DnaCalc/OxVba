@@ -110,45 +110,63 @@ impl ComValue {
     }
 
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        Self::from_variant(&value.to_variant()).expect(
-            "RuntimeValue -> Variant -> ComValue bridge should remain total for current value set",
-        )
+        match value {
+            RuntimeValue::Empty => Self::Empty,
+            RuntimeValue::Null => Self::Null,
+            RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
+            RuntimeValue::Bool(value) => Self::Bool(*value),
+            RuntimeValue::I32(value) => Self::I32(*value),
+            RuntimeValue::I64(value) => Self::I64(*value),
+            RuntimeValue::F64(value) => Self::F64(*value),
+            RuntimeValue::Decimal(value) => Self::Decimal(*value),
+            RuntimeValue::Currency(value) => Self::Currency(*value),
+            RuntimeValue::String(value) => Self::String(value.clone()),
+            RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
+            RuntimeValue::Object(object) => Self::Object(object.clone()),
+            RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
+        }
     }
 
     pub fn from_runtime_token(value: i32) -> Self {
-        Self::from_variant(&Variant::from_compat_slot_i32(value)).expect(
-            "compat token -> Variant -> ComValue bridge should remain total for current token subset",
-        )
+        Self::from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
     }
 
     pub fn to_variant(&self) -> Result<Variant, String> {
         Ok(match self {
-            Self::Empty => RuntimeValue::Empty.to_variant(),
-            Self::Null => RuntimeValue::Null.to_variant(),
-            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code).to_variant(),
-            Self::Bool(value) => RuntimeValue::Bool(*value).to_variant(),
-            Self::I32(value) => RuntimeValue::I32(*value).to_variant(),
-            Self::I64(value) => RuntimeValue::I64(*value).to_variant(),
-            Self::F64(value) => RuntimeValue::F64(*value).to_variant(),
-            Self::Decimal(value) => RuntimeValue::Decimal(*value).to_variant(),
-            Self::Currency(value) => RuntimeValue::Currency(*value).to_variant(),
-            Self::String(value) => RuntimeValue::String(value.clone()).to_variant(),
-            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()).to_variant(),
+            Self::Empty => RuntimeValue::Empty.to_variant()?,
+            Self::Null => RuntimeValue::Null.to_variant()?,
+            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code).to_variant()?,
+            Self::Bool(value) => RuntimeValue::Bool(*value).to_variant()?,
+            Self::I32(value) => RuntimeValue::I32(*value).to_variant()?,
+            Self::I64(value) => RuntimeValue::I64(*value).to_variant()?,
+            Self::F64(value) => RuntimeValue::F64(*value).to_variant()?,
+            Self::Decimal(value) => RuntimeValue::Decimal(*value).to_variant()?,
+            Self::Currency(value) => RuntimeValue::Currency(*value).to_variant()?,
+            Self::String(value) => RuntimeValue::String(value.clone()).to_variant()?,
+            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()).to_variant()?,
             Self::Object(handle) => Variant::from_object_ref(handle.clone()),
         })
     }
 
     pub fn to_runtime_value(&self) -> RuntimeValue {
-        RuntimeValue::from_variant(
-            &self
-                .to_variant()
-                .expect("ComValue -> Variant bridge should remain total for current value set"),
-        )
-        .expect("Variant -> RuntimeValue bridge should remain total for current ComValue set")
+        match self {
+            Self::Empty => RuntimeValue::Empty,
+            Self::Null => RuntimeValue::Null,
+            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
+            Self::Bool(value) => RuntimeValue::Bool(*value),
+            Self::I32(value) => RuntimeValue::I32(*value),
+            Self::I64(value) => RuntimeValue::I64(*value),
+            Self::F64(value) => RuntimeValue::F64(*value),
+            Self::Decimal(value) => RuntimeValue::Decimal(*value),
+            Self::Currency(value) => RuntimeValue::Currency(*value),
+            Self::String(value) => RuntimeValue::String(value.clone()),
+            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
+            Self::Object(object) => RuntimeValue::Object(object.clone()),
+        }
     }
 
     pub fn to_runtime_token(&self) -> Result<i32, String> {
-        self.to_variant()?.project_compat_slot_i32()
+        self.to_runtime_value().project_compat_slot_i32()
     }
 
     pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {

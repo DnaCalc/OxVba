@@ -122,6 +122,21 @@ impl ObjectRef {
         self.0.as_ptr()
     }
 
+    pub unsafe fn from_raw_iunknown_owned(raw: *mut RawRuntimeIUnknown) -> Option<Self> {
+        NonNull::new(raw).map(Self)
+    }
+
+    pub unsafe fn from_raw_iunknown_addref(raw: *mut RawRuntimeIUnknown) -> Option<Self> {
+        let Some(raw) = NonNull::new(raw) else {
+            return None;
+        };
+        unsafe {
+            let vtbl = (*raw.as_ptr()).vtbl;
+            ((*vtbl).add_ref)(raw.as_ptr().cast());
+        }
+        Some(Self(raw))
+    }
+
     pub fn strong_count_for_test(&self) -> u32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).ref_count.load(Ordering::Acquire) }

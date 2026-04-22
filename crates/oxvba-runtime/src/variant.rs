@@ -1,9 +1,8 @@
 use crate::{
     Decimal96,
     bstr::{BStr, OwnedBStrCore},
-    object_ref::ObjectRef,
-    runtime_value::{BindingHandle, CurrencyValue, F64Subtype, F64Value, RuntimeValue},
-    safe_array::SafeArray,
+    object_ref::{ObjectRef, RawRuntimeIUnknown},
+    runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,23 +138,105 @@ impl VariantCore {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum OwnedVariantData {
-    String(BStr),
-    ArrayIntent(SafeArray),
-    Object(ObjectRef),
-    BindingHandle(BindingHandle),
+const RAW_BSTR_PREFIX_BYTES: usize = core::mem::size_of::<u32>();
+const RAW_BSTR_UNIT_BYTES: usize = core::mem::size_of::<u16>();
+
+fn raw_bstr_ptr_to_bytes(ptr: *mut u16) -> [u8; 8] {
+    (ptr as usize as u64).to_le_bytes()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+fn raw_iunknown_ptr_to_bytes(ptr: *mut RawRuntimeIUnknown) -> [u8; 8] {
+    (ptr as usize as u64).to_le_bytes()
+}
+
+fn bytes_to_raw_bstr(bytes: [u8; 8]) -> *mut u16 {
+    u64::from_le_bytes(bytes) as usize as *mut u16
+}
+
+fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
+    u64::from_le_bytes(bytes) as usize as *mut RawRuntimeIUnknown
+}
+
+fn raw_bstr_layout(len_units: usize) -> Result<std::alloc::Layout, String> {
+    let payload_bytes = len_units
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(RAW_BSTR_UNIT_BYTES))
+        .ok_or_else(|| "BSTR payload size overflow".to_string())?;
+    let total = RAW_BSTR_PREFIX_BYTES
+        .checked_add(payload_bytes)
+        .ok_or_else(|| "BSTR allocation size overflow".to_string())?;
+    std::alloc::Layout::from_size_align(total, core::mem::align_of::<u32>())
+        .map_err(|_| "invalid BSTR allocation layout".to_string())
+}
+
+unsafe fn raw_bstr_len_units(ptr: *mut u16) -> usize {
+    if ptr.is_null() {
+        return 0;
+    }
+    let prefix = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES).cast::<u32>() };
+    usize::try_from(unsafe { *prefix } / RAW_BSTR_UNIT_BYTES as u32).unwrap_or(0)
+}
+
+fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
+    let layout = raw_bstr_layout(units.len())?;
+    let raw = unsafe { std::alloc::alloc(layout) };
+    if raw.is_null() {
+        return Err("failed to allocate raw BSTR payload".to_string());
+    }
+    unsafe {
+        raw.cast::<u32>()
+            .write(u32::try_from(units.len() * RAW_BSTR_UNIT_BYTES).map_err(|_| {
+                "BSTR payload length should fit in u32 byte count".to_string()
+            })?);
+        let payload = raw.add(RAW_BSTR_PREFIX_BYTES).cast::<u16>();
+        core::ptr::copy_nonoverlapping(units.as_ptr(), payload, units.len());
+        payload.add(units.len()).write(0);
+        Ok(payload)
+    }
+}
+
+fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
+    let core = text.owned_core();
+    alloc_raw_bstr_from_units(core.payload_units())
+}
+
+unsafe fn clone_raw_bstr(ptr: *mut u16) -> Result<*mut u16, String> {
+    if ptr.is_null() {
+        return Ok(core::ptr::null_mut());
+    }
+    let len = unsafe { raw_bstr_len_units(ptr) };
+    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
+    alloc_raw_bstr_from_units(slice)
+}
+
+unsafe fn free_raw_bstr(ptr: *mut u16) {
+    if ptr.is_null() {
+        return;
+    }
+    let len = unsafe { raw_bstr_len_units(ptr) };
+    if let Ok(layout) = raw_bstr_layout(len) {
+        let raw = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES) };
+        unsafe { std::alloc::dealloc(raw, layout) };
+    }
+}
+
+unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
+    if ptr.is_null() {
+        return BStr::empty();
+    }
+    let len = unsafe { raw_bstr_len_units(ptr) };
+    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
+    BStr::from_utf16_lossy(slice)
+}
+
+#[repr(transparent)]
 pub struct Variant {
     core: VariantCore,
-    owned: Option<OwnedVariantData>,
 }
 
 impl Variant {
     fn from_core(core: VariantCore) -> Self {
-        Self { core, owned: None }
+        Self { core }
     }
 
     pub fn zeroed(vtype: VarType) -> Self {
@@ -191,7 +272,26 @@ impl Variant {
     }
 
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
-        Ok(Self::from_core(VariantCore::from_wire_bytes(bytes)?))
+        let core = VariantCore::from_wire_bytes(bytes)?;
+        match core.vtype {
+            VarType::String => {
+                let ptr = bytes_to_raw_bstr(core.data_bytes());
+                let cloned = unsafe { clone_raw_bstr(ptr) }?;
+                Ok(Self::from_core(VariantCore::from_bytes(
+                    VarType::String,
+                    raw_bstr_ptr_to_bytes(cloned),
+                )))
+            }
+            VarType::Object => {
+                let ptr = bytes_to_raw_iunknown(core.data_bytes());
+                let object = unsafe { ObjectRef::from_raw_iunknown_addref(ptr) };
+                Ok(match object {
+                    Some(value) => Self::from_object_ref(value),
+                    None => Self::from_core(VariantCore::from_bytes(VarType::Object, [0; 8])),
+                })
+            }
+            _ => Ok(Self::from_core(core)),
+        }
     }
 
     pub fn empty() -> Self {
@@ -366,47 +466,42 @@ impl Variant {
 
     pub fn from_string(value: impl Into<BStr>) -> Self {
         let text = value.into();
-        let mut bytes = [0u8; 8];
-        let ptr = (text.owned_core().payload_ptr() as usize as u64).to_le_bytes();
-        bytes.copy_from_slice(&ptr);
-        Self {
-            core: VariantCore::from_bytes(VarType::String, bytes),
-            owned: Some(OwnedVariantData::String(text)),
-        }
+        let raw = alloc_raw_bstr_from_bstr(&text).expect("raw BSTR allocation should succeed");
+        Self::from_core(VariantCore::from_bytes(
+            VarType::String,
+            raw_bstr_ptr_to_bytes(raw),
+        ))
     }
 
-    pub fn as_bstr(&self) -> Option<&BStr> {
-        match &self.owned {
-            Some(OwnedVariantData::String(text)) if self.vtype() == VarType::String => Some(text),
-            _ => None,
+    pub fn as_bstr(&self) -> Option<BStr> {
+        if self.vtype() != VarType::String {
+            return None;
         }
+        Some(unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) })
     }
 
     pub fn string_core(&self) -> Option<OwnedBStrCore> {
-        match &self.owned {
-            Some(OwnedVariantData::String(text)) if self.vtype() == VarType::String => {
-                Some(text.owned_core())
-            }
-            _ => None,
-        }
+        self.as_bstr().map(|text| text.owned_core())
     }
 
     pub fn from_object_ref(value: ObjectRef) -> Self {
-        Self {
-            core: VariantCore::from_bytes(VarType::Object, [0; 8]),
-            owned: Some(OwnedVariantData::Object(value)),
-        }
+        let raw = value.raw_iunknown();
+        core::mem::forget(value);
+        Self::from_core(VariantCore::from_bytes(
+            VarType::Object,
+            raw_iunknown_ptr_to_bytes(raw),
+        ))
     }
 
-    pub fn as_object_ref(&self) -> Option<&ObjectRef> {
-        match &self.owned {
-            Some(OwnedVariantData::Object(value)) if self.vtype() == VarType::Object => Some(value),
-            _ => None,
+    pub fn as_object_ref(&self) -> Option<ObjectRef> {
+        if self.vtype() != VarType::Object {
+            return None;
         }
+        unsafe { ObjectRef::from_raw_iunknown_addref(bytes_to_raw_iunknown(self.data_bytes())) }
     }
 
-    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        match value {
+    pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
+        Ok(match value {
             RuntimeValue::Empty => Self::empty(),
             RuntimeValue::Null => Self::null(),
             RuntimeValue::ErrorCode(code) => Self::from_error_code(*code),
@@ -421,30 +516,39 @@ impl Variant {
             RuntimeValue::Currency(value) => Self::from_currency_scaled_i64(value.scaled_i64()),
             RuntimeValue::Bool(value) => Self::from_bool(*value),
             RuntimeValue::String(value) => Self::from_string(value.clone()),
-            RuntimeValue::ArrayIntent(array) => Self {
-                core: VariantCore::from_bytes(VarType::Empty, [0; 8]),
-                owned: Some(OwnedVariantData::ArrayIntent(array.clone())),
-            },
-            RuntimeValue::Object(handle) => Self::from_object_ref(handle.clone()),
-            RuntimeValue::BindingHandle(handle) => Self {
-                core: VariantCore::from_bytes(VarType::Object, [0; 8]),
-                owned: Some(OwnedVariantData::BindingHandle(*handle)),
-            },
-        }
+            RuntimeValue::Object(object) => Self::from_object_ref(object.clone()),
+            RuntimeValue::ArrayIntent(_) => {
+                return Err(
+                    "canonical Variant intrinsic SAFEARRAY carrier is not implemented yet"
+                        .to_string(),
+                );
+            }
+            RuntimeValue::BindingHandle(handle) => {
+                return Err(format!(
+                    "binding handle {} does not yet have an exact canonical Variant carrier",
+                    handle.raw()
+                ));
+            }
+        })
+    }
+
+    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
+        Self::try_from_runtime_value(value)
+            .expect("runtime Variant bridge should only be used for supported exact carriers")
+    }
+
+    pub fn try_from_compat_slot_i32(value: i32) -> Result<Self, String> {
+        Self::try_from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
     }
 
     pub fn from_compat_slot_i32(value: i32) -> Self {
-        Self::from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
+        Self::try_from_compat_slot_i32(value)
+            .expect("compat slot -> Variant bridge should stay on the supported exact subset")
     }
 
     pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
         match self.vtype() {
-            VarType::Empty => {
-                if let Some(OwnedVariantData::ArrayIntent(array)) = &self.owned {
-                    return Ok(RuntimeValue::ArrayIntent(array.clone()));
-                }
-                Ok(RuntimeValue::Empty)
-            }
+            VarType::Empty => Ok(RuntimeValue::Empty),
             VarType::Null => Ok(RuntimeValue::Null),
             VarType::Integer => self
                 .as_i16()
@@ -480,12 +584,8 @@ impl Variant {
                 .ok_or_else(|| "invalid Date variant payload".to_string()),
             VarType::String => self
                 .as_bstr()
-                .cloned()
                 .map(RuntimeValue::String)
-                .ok_or_else(|| {
-                    "string Variant reconstructed from wire bytes does not own string payload"
-                        .to_string()
-                }),
+                .ok_or_else(|| "invalid String variant payload".to_string()),
             VarType::Boolean => self
                 .as_bool()
                 .map(RuntimeValue::Bool)
@@ -494,16 +594,10 @@ impl Variant {
                 .as_error_code()
                 .map(RuntimeValue::ErrorCode)
                 .ok_or_else(|| "invalid Error variant payload".to_string()),
-            VarType::Object => match &self.owned {
-                Some(OwnedVariantData::Object(handle)) => Ok(RuntimeValue::Object(handle.clone())),
-                Some(OwnedVariantData::BindingHandle(handle)) => {
-                    Ok(RuntimeValue::BindingHandle(*handle))
-                }
-                _ => Err(
-                    "object Variant reconstructed from wire bytes does not own interface identity"
-                        .to_string(),
-                ),
-            },
+            VarType::Object => self
+                .as_object_ref()
+                .map(RuntimeValue::Object)
+                .ok_or_else(|| "invalid Object variant payload".to_string()),
             other => Err(format!(
                 "runtime Variant -> RuntimeValue bridge does not yet support {:?}",
                 other
@@ -515,6 +609,91 @@ impl Variant {
         self.to_runtime_value()?.project_compat_slot_i32()
     }
 }
+
+impl Clone for Variant {
+    fn clone(&self) -> Self {
+        match self.vtype() {
+            VarType::String => {
+                let cloned =
+                    unsafe { clone_raw_bstr(bytes_to_raw_bstr(self.data_bytes())) }.expect(
+                        "cloning canonical raw BSTR payload should succeed",
+                    );
+                Self::from_core(VariantCore::from_bytes(
+                    VarType::String,
+                    raw_bstr_ptr_to_bytes(cloned),
+                ))
+            }
+            VarType::Object => match self.as_object_ref() {
+                Some(object) => Self::from_object_ref(object),
+                None => Self::from_core(self.core),
+            },
+            _ => Self::from_core(self.core),
+        }
+    }
+}
+
+impl Drop for Variant {
+    fn drop(&mut self) {
+        match self.vtype() {
+            VarType::String => unsafe {
+                free_raw_bstr(bytes_to_raw_bstr(self.data_bytes()));
+            },
+            VarType::Object => {
+                let raw = bytes_to_raw_iunknown(self.data_bytes());
+                if !raw.is_null() {
+                    unsafe {
+                        let vtbl = (*raw).vtbl;
+                        ((*vtbl).release)(raw.cast());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl core::fmt::Debug for Variant {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut dbg = f.debug_struct("Variant");
+        dbg.field("vtype", &self.vtype())
+            .field("reserved1", &self.reserved1())
+            .field("reserved2", &self.reserved2())
+            .field("reserved3", &self.reserved3());
+        match self.vtype() {
+            VarType::String => {
+                dbg.field("string", &self.as_bstr());
+            }
+            VarType::Object => {
+                dbg.field("object", &self.as_object_ref().map(|value| value.raw()));
+            }
+            _ => {
+                dbg.field("data", &self.data_bytes());
+            }
+        }
+        dbg.finish()
+    }
+}
+
+impl PartialEq for Variant {
+    fn eq(&self, other: &Self) -> bool {
+        if self.vtype() != other.vtype()
+            || self.reserved1() != other.reserved1()
+            || self.reserved2() != other.reserved2()
+            || self.reserved3() != other.reserved3()
+        {
+            return false;
+        }
+        match self.vtype() {
+            VarType::String => self.as_bstr() == other.as_bstr(),
+            VarType::Object => {
+                bytes_to_raw_iunknown(self.data_bytes()) == bytes_to_raw_iunknown(other.data_bytes())
+            }
+            _ => self.data_bytes() == other.data_bytes(),
+        }
+    }
+}
+
+impl Eq for Variant {}
 
 #[cfg(test)]
 mod tests {
@@ -556,10 +735,10 @@ mod tests {
     }
 
     #[test]
-    fn string_roundtrip_preserves_owned_payload_and_pointer_core() {
+    fn string_roundtrip_preserves_owned_pointer_payload() {
         let value = Variant::from_string("abc");
         assert_eq!(value.vtype(), VarType::String);
-        assert_eq!(value.as_bstr(), Some(&BStr::from("abc")));
+        assert_eq!(value.as_bstr(), Some(BStr::from("abc")));
         assert!(value.string_core().is_some());
         assert_ne!(u64::from_le_bytes(value.data_bytes()), 0);
     }
@@ -578,7 +757,7 @@ mod tests {
     fn com_variant_layout_shape() {
         assert_eq!(core::mem::size_of::<VariantCore>(), 16);
         assert_eq!(core::mem::size_of::<VariantData>(), 8);
-        assert!(core::mem::size_of::<Variant>() >= 16);
+        assert_eq!(core::mem::size_of::<Variant>(), 16);
     }
 
     #[test]
@@ -588,6 +767,14 @@ mod tests {
         let roundtrip = Variant::from_wire_bytes(wire).expect("wire roundtrip");
         assert_eq!(roundtrip.vtype(), VarType::Long);
         assert_eq!(roundtrip.as_i32(), Some(42));
+    }
+
+    #[test]
+    fn string_variant_wire_roundtrip_clones_bstr_payload() {
+        let original = Variant::from_string("A\0BC");
+        let wire = original.to_wire_bytes();
+        let roundtrip = Variant::from_wire_bytes(wire).expect("wire roundtrip");
+        assert_eq!(roundtrip.as_bstr(), Some(BStr::from("A\0BC")));
     }
 
     #[test]
@@ -640,8 +827,9 @@ mod tests {
     }
 
     #[test]
-    fn variant_runtime_value_bridge_roundtrips_supported_subset() {
-        let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true));
+    fn variant_runtime_value_bridge_roundtrips_supported_exact_subset() {
+        let bool_variant = Variant::try_from_runtime_value(&RuntimeValue::Bool(true))
+            .expect("bool bridge should be supported");
         assert_eq!(
             bool_variant
                 .to_runtime_value()
@@ -649,7 +837,8 @@ mod tests {
             RuntimeValue::Bool(true)
         );
 
-        let i64_variant = Variant::from_runtime_value(&RuntimeValue::I64(5_000_000_000));
+        let i64_variant = Variant::try_from_runtime_value(&RuntimeValue::I64(5_000_000_000))
+            .expect("i64 bridge should be supported");
         assert_eq!(
             i64_variant
                 .to_runtime_value()
@@ -658,7 +847,8 @@ mod tests {
         );
 
         let string_variant =
-            Variant::from_runtime_value(&RuntimeValue::String(BStr::from("hello")));
+            Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("hello")))
+                .expect("string bridge should be supported");
         assert_eq!(
             string_variant
                 .to_runtime_value()
@@ -666,86 +856,15 @@ mod tests {
             RuntimeValue::String(BStr::from("hello"))
         );
 
-        let double_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)));
-        assert_eq!(
-            double_variant
-                .to_runtime_value()
-                .expect("double Variant should bridge back"),
-            RuntimeValue::F64(F64Value::from_f64(3.5))
-        );
-
-        let single_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_single_f64(3.5)));
-        assert_eq!(
-            single_variant
-                .to_runtime_value()
-                .expect("single Variant should bridge back"),
-            RuntimeValue::F64(F64Value::from_single_f64(3.5))
-        );
-
-        let date_variant =
-            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_date_f64(45200.25)));
-        assert_eq!(
-            date_variant
-                .to_runtime_value()
-                .expect("date Variant should bridge back"),
-            RuntimeValue::F64(F64Value::from_date_f64(45200.25))
-        );
-
-        let currency_variant = Variant::from_runtime_value(&RuntimeValue::Currency(
-            CurrencyValue::from_scaled_i64(-42_500),
-        ));
-        assert_eq!(
-            currency_variant
-                .to_runtime_value()
-                .expect("currency Variant should bridge back"),
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
-        );
-
-        let decimal_variant = Variant::from_runtime_value(&RuntimeValue::Decimal(
-            Decimal96::from_parts(123_450, 0, 0, 3, false),
-        ));
-        assert_eq!(
-            decimal_variant
-                .to_runtime_value()
-                .expect("decimal Variant should bridge back"),
-            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
-        );
-
-        let null_variant = Variant::from_runtime_value(&RuntimeValue::Null);
-        assert_eq!(
-            null_variant.to_runtime_value().expect("null roundtrip"),
-            RuntimeValue::Null
-        );
-
-        let error_variant = Variant::from_runtime_value(&RuntimeValue::ErrorCode(17));
-        assert_eq!(
-            error_variant.to_runtime_value().expect("error roundtrip"),
-            RuntimeValue::ErrorCode(17)
-        );
-    }
-
-    #[test]
-    fn variant_runtime_value_bridge_classifies_extended_owned_shapes() {
-        let array_variant =
-            Variant::from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
-        assert_eq!(
-            array_variant
-                .to_runtime_value()
-                .expect("array Variant should bridge back"),
-            RuntimeValue::ArrayIntent(SafeArray::vector(3))
-        );
-
-        let object_variant =
-            Variant::from_runtime_value(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)));
-        assert_eq!(
-            object_variant
-                .as_object_ref()
-                .expect("object ref should be retained")
-                .raw(),
-            42
-        );
+        let object_variant = Variant::try_from_runtime_value(&RuntimeValue::Object(
+            ObjectRef::from_compat_identity(42),
+        ))
+        .expect("object bridge should be supported");
+        let object_ref = object_variant
+            .as_object_ref()
+            .expect("object ref should be retained");
+        assert_eq!(object_ref.raw(), 42);
+        drop(object_ref);
         let roundtripped = object_variant
             .to_runtime_value()
             .expect("object Variant should bridge back");
@@ -753,43 +872,32 @@ mod tests {
             panic!("expected object-ref runtime carrier");
         };
         assert_eq!(object_ref.raw(), 42);
+    }
 
-        let binding_variant = Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
-        assert_eq!(
-            binding_variant
-                .to_runtime_value()
-                .expect("binding Variant should bridge back"),
-            RuntimeValue::BindingHandle(7.into())
-        );
+    #[test]
+    fn variant_runtime_value_bridge_rejects_non_exact_lanes_for_now() {
+        let array = Variant::try_from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
+        assert!(array.is_err());
+
+        let binding = Variant::try_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
+        assert!(binding.is_err());
     }
 
     #[test]
     fn variant_compat_slot_boundary_roundtrips_supported_subset() {
         let value = Variant::from_compat_slot_i32(42);
         assert_eq!(value.project_compat_slot_i32().expect("compat slot"), 42);
-        let array = Variant::from_compat_slot_i32(crate::safe_array::ARRAY_TAG_BASE + 3);
-        assert_eq!(
-            array.to_runtime_value().expect("array runtime value"),
-            RuntimeValue::ArrayIntent(SafeArray::vector(3))
-        );
-    }
-
-    #[test]
-    fn string_variant_from_wire_bytes_requires_owned_payload_for_runtime_bridge() {
-        let mut wire = [0u8; 16];
-        wire[0..2].copy_from_slice(&(VarType::String as u16).to_le_bytes());
-        let variant = Variant::from_wire_bytes(wire).expect("raw string wire should decode");
-        assert!(variant.to_runtime_value().is_err());
     }
 }
 
 #[allow(unexpected_cfgs)]
 #[cfg(kani)]
 mod kani_proofs {
-    use super::VariantCore;
+    use super::{Variant, VariantCore};
 
     #[kani::proof]
     fn com_variant_layout_is_16_bytes() {
         assert_eq!(core::mem::size_of::<VariantCore>(), 16);
+        assert_eq!(core::mem::size_of::<Variant>(), 16);
     }
 }

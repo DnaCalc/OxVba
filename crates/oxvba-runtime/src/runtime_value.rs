@@ -245,8 +245,8 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
-    pub fn to_variant(&self) -> Variant {
-        Variant::from_runtime_value(self)
+    pub fn to_variant(&self) -> Result<Variant, String> {
+        Variant::try_from_runtime_value(self)
     }
 
     pub fn from_variant(value: &Variant) -> Result<Self, String> {
@@ -478,28 +478,29 @@ mod tests {
     fn runtime_value_variant_bridge_roundtrips_extended_shapes() {
         let string_value = RuntimeValue::String(crate::bstr::BStr::from("abc"));
         assert_eq!(
-            RuntimeValue::from_variant(&string_value.to_variant()).expect("string roundtrip"),
+            RuntimeValue::from_variant(&string_value.to_variant().expect("string variant"))
+                .expect("string roundtrip"),
             string_value
         );
         let object_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
         let roundtripped =
-            RuntimeValue::from_variant(&object_value.to_variant()).expect("object roundtrip");
+            RuntimeValue::from_variant(&object_value.to_variant().expect("object variant"))
+                .expect("object roundtrip");
         let RuntimeValue::Object(object_ref) = roundtripped else {
             panic!("expected canonical object-ref runtime carrier");
         };
         assert_eq!(object_ref.raw(), 42);
         let object_ref_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
-        let roundtripped = RuntimeValue::from_variant(&object_ref_value.to_variant())
+        let roundtripped = RuntimeValue::from_variant(
+            &object_ref_value.to_variant().expect("object-ref variant"),
+        )
             .expect("object-ref roundtrip");
         let RuntimeValue::Object(object_ref) = roundtripped else {
             panic!("expected object-ref runtime carrier");
         };
         assert_eq!(object_ref.raw(), 42);
         let array_value = RuntimeValue::ArrayIntent(SafeArray::vector(3));
-        assert_eq!(
-            RuntimeValue::from_variant(&array_value.to_variant()).expect("array roundtrip"),
-            array_value
-        );
+        assert!(array_value.to_variant().is_err());
     }
 }
 
