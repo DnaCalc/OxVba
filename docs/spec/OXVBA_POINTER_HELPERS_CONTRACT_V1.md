@@ -108,14 +108,12 @@ Current bounded V1 support:
 - `VarPtr(s As String)` through a native boundary cell whose contents carry a
   real `BSTR` payload pointer
 - `VarPtr(v As Variant)` through a native `VARIANT` container cell for the
-  supported scalar and string payload lanes
+  supported scalar, string, decimal, object, and array payload lanes exposed by
+  the current pointer-helper substrate
 - writable native pointer sync for the current supported `StrPtr(varString)`
   and `VarPtr(buf(0))` shapes is driven by the VBA source expression and the
   materialized boundary kind, not by a special-case list of Windows API names
 - no broader native writeback guarantee yet
-- object-, array-, and decimal-valued `Variant` container materialization
-  remains explicit unsupported territory until OxVba can expose an honest
-  boundary shape for those lanes
 
 ### `ObjPtr`
 
@@ -164,6 +162,11 @@ Current status on step 5:
   contents are the `BSTR` payload pointer, preserving the distinction from
   `StrPtr`
 - `VarPtr(v As Variant)` now returns the address of a native `VARIANT`
-  container cell for supported scalar and string current values
-- `Variant` cases carrying object references still reject explicitly because the
-  runtime does not yet have an honest COM-interface-pointer boundary to expose
+  container cell for supported scalar, string, decimal, object, and array
+  current values
+- object-valued `Variant` container materialization now exposes `VT_UNKNOWN`
+  through the current runtime/object bridge
+- array-valued `Variant` container materialization now exposes
+  `VT_ARRAY | VT_VARIANT` with a real boundary SAFEARRAY
+- `ObjPtr` now reflects the runtime object's retained `IUnknown` pointer truth
+  for the supported object categories rather than token-era compat identity

@@ -1912,6 +1912,16 @@ Child beads:
      - canonical docs match the migrated truth
    - completion evidence:
      - architecture/runtime/interop docs are updated and linked
+   - landed 2026-04-22:
+     - [ARCHITECTURE.md](/C:/Work/DnaCalc/OxVba/docs/ARCHITECTURE.md) now
+       reflects `BStr`, `ObjectRef`, and the owned semantic `Variant` carrier
+       rather than the pre-migration token-era descriptions
+     - [VM_ARCHITECTURE.md](/C:/Work/DnaCalc/OxVba/docs/VM_ARCHITECTURE.md)
+       now states the current `RuntimeValue` carrier truth and compat-slot
+       boundary caveat explicitly
+     - [OXVBA_POINTER_HELPERS_CONTRACT_V1.md](/C:/Work/DnaCalc/OxVba/docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md)
+       now matches the current pointer-helper boundary truth for object- and
+       array-valued `Variant` materialization and `IUnknown`-backed `ObjPtr`
 3. `vmm-h2`
    - kind: `support`
    - priority: `P1`

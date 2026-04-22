@@ -33,6 +33,17 @@ The interpreter operates on `RuntimeValue` slots — a 15-variant tagged value t
 
 A flat `RegisterFile` (vector of `RuntimeValue` slots, initially 256, dynamically resized) provides shared register storage.
 
+Important current carrier truth:
+
+- `RuntimeValue::String` stores `BStr`, not plain `String`
+- `RuntimeValue::Object` stores `ObjectRef`, whose base object exposes a
+  runtime `IUnknown`-style vtable and reference counting
+- the VM still projects to compat-slot `i32` lanes where required for older
+  bytecode/helper seams, but those integers are no longer the canonical object
+  carrier
+- `RuntimeValue` now round-trips through the owned semantic `Variant` carrier in
+  `oxvba-runtime` rather than relying on a separate token-era bridge model
+
 ### Call stack and register-window frames
 
 Procedure calls use a `Vec<(usize, ErrorFrame)>` call stack:

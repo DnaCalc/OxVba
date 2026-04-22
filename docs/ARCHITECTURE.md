@@ -46,16 +46,21 @@ High-level execution path:
 - those lanes now proceed on the corrected architecture with `oxvba-com` as the live bridge.
 7. The checked-in implementation is in the middle of the value-model migration and no longer uses token-only object identity:
 - `RuntimeValue` is the canonical execution substrate today,
-- `BStr` in `oxvba-runtime` is currently a thin wrapper over Rust `String`,
+- `RuntimeValue::String` now carries `BStr`, and `BStr` exposes a Windows-style
+  owned UTF-16 core view (`OwnedBStrCore`) for boundary projection,
 - canonical runtime object identity now flows through `ObjectRef`, whose base object implements a runtime `IUnknown`-style vtable with `AddRef` / `Release`,
 - raw integer compat identities still exist as projection/order/debug compatibility data, but they are no longer the canonical object carrier,
 - `BindingHandle` remains a typed semantic leaf for non-object binding identity,
-- the runtime `Variant` type is currently a bounded 16-byte compatibility bridge rather than the universal internal value substrate,
+- the runtime `Variant` type is now an owned semantic carrier over a
+  Windows-shaped 16-byte `VariantCore`, with owned side data for strings,
+  arrays, objects, and binding handles,
 - `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than redefining the runtime around raw COM wire types.
 - Windows-facing layout truth is often projected at helper or boundary seams instead of falling out of the canonical substrate directly:
   - `BSTR` cells for `StrPtr` / `VarPtr(String)` are synthesized in pointer-helper logic,
   - `VARIANT` truth for COM calls is translated in `oxvba-com`,
-  - native COM pointer truth remains retained in `oxvba-com`, while runtime object identity is now `ObjectRef` rather than a raw COM interface pointer or an integer handle.
+  - native COM pointer truth remains retained in `oxvba-com`, while runtime
+    object identity is now `ObjectRef` rather than a raw COM interface pointer
+    or an integer handle.
 - those are current checked-in differences, not hidden assumptions:
   - they may leak at some boundaries from time to time,
   - they should be monitored through interop/conformance evidence,
