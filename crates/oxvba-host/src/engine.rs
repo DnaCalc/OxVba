@@ -812,7 +812,7 @@ impl Engine {
         // Prepend an ObjectHandle value for it, then the caller-supplied args.
         let has_implicit_me = member_route.param_slots.len() > args.len();
         let full_args: Vec<RuntimeValue> = if has_implicit_me {
-            let mut v = vec![RuntimeValue::ObjectHandle(object)];
+            let mut v = vec![RuntimeValue::Object(object.into())];
             v.extend_from_slice(args);
             v
         } else {
@@ -1428,6 +1428,7 @@ End Sub";
             .create_object(RuntimeValue::String(BStr("OxVba.TestDispatch".to_string())))
             .expect("create_object should return controlled COM object")
         {
+            RuntimeValue::Object(handle) => ObjectHandle::new(handle.raw()),
             RuntimeValue::ObjectHandle(handle) => handle,
             other => panic!("expected object handle from create_object, got {:?}", other),
         }

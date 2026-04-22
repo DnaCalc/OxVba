@@ -2708,7 +2708,7 @@ impl Vm {
                             owners,
                             next_index: 1,
                         });
-                        self.write_value_slot(*dst, RuntimeValue::ObjectHandle(first))?;
+                        self.write_value_slot(*dst, RuntimeValue::Object(first.into()))?;
                     }
                     pc += 1;
                 }
@@ -2729,7 +2729,7 @@ impl Vm {
                     }
                     self.write_value_slot(
                         *dst,
-                        next.map(RuntimeValue::ObjectHandle)
+                        next.map(|owner| RuntimeValue::Object(owner.into()))
                             .unwrap_or(RuntimeValue::I32(0)),
                     )?;
                     pc += 1;
@@ -2867,6 +2867,18 @@ impl Vm {
                 } => {
                     let val = self.read_value_slot(*object_slot)?;
                     let is_match = match &val {
+                        RuntimeValue::Object(handle) => {
+                            let handle = ObjectHandle::new(handle.raw());
+                            if let Some(route) = self.project_dynamic_objects.get(&handle) {
+                                route.module_name.eq_ignore_ascii_case(type_name)
+                                    || route
+                                        .implements_interfaces
+                                        .iter()
+                                        .any(|iface| iface.eq_ignore_ascii_case(type_name))
+                            } else {
+                                false
+                            }
+                        }
                         RuntimeValue::ObjectHandle(handle) => {
                             if let Some(route) = self.project_dynamic_objects.get(handle) {
                                 route.module_name.eq_ignore_ascii_case(type_name)
@@ -3646,7 +3658,7 @@ impl Vm {
                 ));
             }
         };
-        values.insert(0, RuntimeValue::ObjectHandle(object));
+        values.insert(0, RuntimeValue::Object(object.into()));
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
