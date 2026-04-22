@@ -1947,6 +1947,11 @@ Child beads:
      - every retained discretionary choice and follow-on mitigation is recorded
    - completion evidence:
      - the decision register and mitigation list are complete and linked
+   - landed 2026-04-22:
+     - [04_DISCRETIONARY_DECISIONS.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/04_DISCRETIONARY_DECISIONS.md)
+       now records the migrated architectural and artifact-selection decisions
+     - [06_FURTHER_MITIGATIONS.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/06_FURTHER_MITIGATIONS.md)
+       now holds the post-correctness optimization and bounded-follow-on backlog
 5. `vmm-h4`
    - kind: `support`
    - priority: `P1`
