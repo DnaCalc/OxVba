@@ -2,7 +2,16 @@
 
 Date: 2026-04-20
 Owner: Codex
-Status: complete
+Status: in-progress
+
+Reopen note, 2026-04-22:
+
+The earlier closure path was too strong relative to the migration target fixed
+in this workset. The current codebase has materially migrated `IUnknown`-style
+object identity and has partially migrated `VARIANT`, but it has not yet
+completed full internal native-layout alignment for `BSTR`, `SAFEARRAY`, or
+broad struct / UDT layout. Epic and workset status were therefore reopened so
+the tracker matches the actual implementation truth.
 
 ## 1. Purpose
 
