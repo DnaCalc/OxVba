@@ -1,71 +1,109 @@
 # Discretionary Decisions
 
-Status: active
+Status: finalized
 
-1. Long-string perf workload resize
+## Retained Decisions
+
+1. Canonical runtime object identity uses `ObjectRef`
    - decision:
-     reduce the synthetic `long_strings` generator from `512` unit repeats to
-     `128` unit repeats
+     the migrated runtime carries object identity through `ObjectRef`, backed by
+     an `IUnknown`-implementing object base, rather than a standalone integer
+     token
    - evidence basis:
-     the original generator overflowed the baseline process stack before
-     producing timing data
+     `INTERFACE_IDENTITY_AND_RETAINED_WRAPPER_DECISIONS_2026-04-21.md`
    - compatibility rationale:
-     this changes only the migration perf harness workload shape; it does not
-     alter runtime semantics
+     this aligns runtime identity and lifetime with the intended COM/VBA
+     direction without turning the whole runtime into raw interface pointers
    - revisit trigger:
-     once the perf harness is stable enough to run a heavier long-string corpus
-     without stack overflow.
-2. String conformance bug classification
+     only if later evidence shows the typed `ObjectRef` layer itself blocks a
+     required observable VBA/COM behavior
+2. Native COM identity remains retained-wrapper state anchored on `IUnknown`
    - decision:
-     treat `string_slice_ops_dollar.bas` as a repo-wide OxVba bug rather than a
-     migration-induced old/new delta
+     native COM pointer truth stays in retained bridge state, with `IUnknown`
+     as the canonical external identity anchor
    - evidence basis:
-     the same mismatch (`12,45,234` expected vs `0,0,0` actual) reproduced on
-     both the fixed baseline and current `HEAD`
+     interface/event fact pack plus `vmm-f2` implementation landing
    - compatibility rationale:
-     this matches the agreed authority hierarchy: VBA/spec/conformance remain
-     authoritative over both OxVba versions
+     this preserves Windows boundary truth while keeping the canonical runtime
+     portable and semantic-first
    - revisit trigger:
-     once the slice semantics are corrected, rerun the string conformance
-     bundle and remove this exception.
-3. Current canonical string-perf artifact selection
+     only if a later boundary lane proves the retained-wrapper split cannot
+     express the required observable COM behavior
+3. Canonical runtime `Variant` is an owned semantic carrier over `VariantCore`
    - decision:
-     use `vmd6-perf-check` as the current canonical string perf input
+     keep the Windows-shaped 16-byte `VariantCore` for wire/layout truth, but
+     let the public runtime `Variant` own side data for strings, arrays,
+     objects, and binding handles
    - evidence basis:
-     the repaired one-iteration paired run completed across all five workloads
-     and both backends, while the later three-iteration rerun stalled before
-     candidate execution
+     `variant.rs`, `windows_variant.rs`, and the post-`ObjectRef` layout delta
+     artifacts
    - compatibility rationale:
-     a completed bounded paired run is more trustworthy than a partially
-     materialized longer run
+     this preserves honest boundary projection while letting the runtime own the
+     real semantic payloads it now needs
    - revisit trigger:
-     promote the multi-iteration run once the perf harness reruns cleanly end
-     to end.
-4. Current canonical Variant-perf artifact selection
+     revisit only if later profiling shows part of the owned side-data shape can
+     be reduced without changing observable behavior
+4. Carrier growth is accepted where it buys honest boundary behavior
    - decision:
-     use `vme5-perf-check` as the current canonical Variant perf input
+     accept the current observed growth in `Variant`, `ObjectIdentityCarrier`,
+     and `ComCallbackPayload`
    - evidence basis:
-     the one-iteration paired run completed across all selected Variant
-     boundary workloads after the new harness landed and smoke-validated
+     `vmf2-mem-identity-smoke/comparison/layout_metrics.csv`
    - compatibility rationale:
-     this follows the same bounded-paired-artifact rule used for the string
-     lane and avoids claiming perf closure from partial or stale runs
+     this migration was explicitly allowed to trade memory for Windows/VBA/COM
+     boundary fidelity
    - revisit trigger:
-     promote a multi-iteration Variant perf artifact once the current lane can
-     rerun cleanly without materially extending cycle time.
-5. Variant-perf workload surface selection
+     performance/memory tuning after correctness remains green
+5. Pointer helpers project real boundary shapes, not raw internal storage
    - decision:
-     time host end-to-end exact tests for scalar classification, typed arrays,
-     object rebinding, wide-i64 normalization, and variant-matrix results
-     rather than a raw microbenchmark-only bridge harness
+     keep the contract that `StrPtr`, `VarPtr`, and `ObjPtr` expose honest
+     boundary cells/pointers even when the canonical runtime storage is not
+     itself identical to VBA native memory layout
    - evidence basis:
-     `vmm-e5` is specifically about observable old/new migration behavior at
-     the COM/Variant boundary, and these exact tests already define the
-     correctness contract for that boundary
+     pointer-helper contract, ABI cell reconciliation, and ABI/layout matrix
    - compatibility rationale:
-     this keeps the perf artifact aligned with user-visible migration risk
-     instead of optimizing an isolated bridge path that may not dominate the
-     real execution surface
+     this matches how the migration is scoped: observable boundary truth first,
+     not undocumented internal layout imitation for its own sake
    - revisit trigger:
-     add lower-level bridge microbenchmarks if later optimization work needs
-     finer attribution after correctness and matrix closure are secure.
+     only if broader native UDT/layout parity is later taken in-scope
+6. `VarPtr(Variant)` now supports object and array container materialization
+   - decision:
+     keep the new `VT_UNKNOWN` and `VT_ARRAY | VT_VARIANT` materialization lanes
+     rather than preserving the old explicit rejection
+   - evidence basis:
+     `POINTER_HELPER_ABI_CELL_RECONCILIATION_2026-04-22.md` and
+     `ABI_LAYOUT_MATRIX_2026-04-22.md`
+   - compatibility rationale:
+     the old rejection was a bounded old-OxVba limitation, not the desired
+     Windows/VBA-compatible end state
+   - revisit trigger:
+     only if later evidence shows one of these lanes needs tighter scope
+7. Current canonical string-perf artifact selection
+   - decision:
+     keep `vmd6-perf-check` as the canonical string-perf input
+   - evidence basis:
+     completed paired one-iteration run across all five workloads
+   - compatibility rationale:
+     a complete bounded artifact is more trustworthy than a larger partial one
+   - revisit trigger:
+     replace it once a stable multi-iteration paired run exists
+8. Current canonical Variant-perf artifact selection
+   - decision:
+     keep `vme5-perf-check` as the canonical Variant-perf input
+   - evidence basis:
+     completed paired one-iteration Variant boundary workload run
+   - compatibility rationale:
+     same bounded-complete-artifact rule as the string lane
+   - revisit trigger:
+     replace it once a stable multi-iteration paired run exists
+9. `string_slice_ops_dollar.bas` remains classified as a repo-wide old/new bug
+   - decision:
+     keep treating that fixture as a pre-existing OxVba correctness bug rather
+     than a migration delta
+   - evidence basis:
+     it fails on both the fixed baseline and migrated `HEAD`
+   - compatibility rationale:
+     this matches the agreed authority hierarchy: VBA/spec truth remains above
+     both OxVba versions
+   - revisit trigger:
+     rerun and remove the exception once the slice semantics are fixed
