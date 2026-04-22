@@ -343,6 +343,76 @@ Execution principles:
    layout alignment may be used as an implementation choice, but truth-surface
    ownership and crate responsibility must remain explicit.
 
+### 6.1 Representation closure doctrine for this workset
+
+For this workset, representation-family closure is controlled by the canonical
+internal carrier truth, not only by boundary behavior or matrix evidence.
+
+Rules:
+
+1. a representation epic does not close merely because boundary-visible
+   behavior is Windows-like or because the selected old/new matrix is green
+2. if the canonical internal carrier is still semantic-first and Windows-like
+   truth is only projected or materialized at pointer/COM/native seams, that
+   family remains `in-progress`
+3. a bounded subset can close only when the epic title and workset scope have
+   been explicitly narrowed to that bounded subset; silent reinterpretation is
+   not allowed
+4. every still-open representation epic must end with an explicit
+   representation-closure checklist bead
+5. the final migration report cannot return to `final` status until those
+   checklist beads are complete and the workset status is consistent with them.
+
+### 6.2 Current intrinsic/projected/bounded grid
+
+This grid is the current anti-drift truth surface for closure.
+
+1. string / `BSTR`
+   - intrinsic target:
+     canonical runtime string storage itself becomes BSTR-aligned
+   - current truth:
+     `BStr` is still `String` plus `OwnedBStrCore` projection
+   - projected truth:
+     real BSTR behavior is materialized at pointer-helper and COM seams
+   - closure implication:
+     `vmm-d` remains open
+2. `Variant` / `VARIANT`
+   - intrinsic target:
+     canonical runtime value carrier is Windows-shaped throughout the payload
+     model, not only at the 16-byte header/core
+   - current truth:
+     `VariantCore` is Windows-shaped, but public `Variant` still carries owned
+     semantic side payloads
+   - projected truth:
+     full Windows `VARIANT` and `SAFEARRAY` truth is still materially realized
+     at boundary/helper seams
+   - closure implication:
+     `vmm-e` remains open
+3. COM interface identity
+   - intrinsic target:
+     canonical runtime object identity and lifetime are `IUnknown`-backed
+   - current truth:
+     `ObjectRef` and the runtime `IUnknown` substrate are materially landed
+   - closure implication:
+     this family may remain closed unless reopened by later scope expansion
+4. struct / UDT / native layout
+   - intrinsic target:
+     either real internal/native layout parity is implemented for the scoped
+     lane or the workset is explicitly narrowed
+   - current truth:
+     bounded non-boundary deterministic UDT subset only
+   - projected/bounded truth:
+     pointer/native lanes are partially reconciled, but broad struct-overlay
+     and unconstrained UDT-byref parity remain bounded
+   - closure implication:
+     `vmm-g` remains open
+5. final closure
+   - intrinsic target:
+     no family is reported as fully migrated while its intrinsic closure
+     checklist remains open
+   - closure implication:
+     `vmm-h` and the workset remain open until the family checklist beads pass.
+
 ## 7. Representation Migration Scope and Actions
 
 This section is the authoritative scope map for what changes, how it changes,
@@ -406,6 +476,18 @@ New matrix emphasis:
 4. code-string workloads
 5. BSTR boundary timing and allocation effects.
 
+Intrinsic closure checklist for this family:
+
+1. canonical runtime `BStr` is no longer fundamentally `String` plus projected
+   UTF-16 truth
+2. canonical runtime string storage itself owns the BSTR-relevant length,
+   null/empty, and pointer semantics rather than reconstructing them only at
+   helper boundaries
+3. any surviving boundary-only BSTR materialization is documented as a real
+   portability wrapper rather than as the de facto canonical carrier
+4. the family checklist bead records the final `implemented` / `projected` /
+   `bounded` state explicitly before `vmm-d` can close.
+
 ### 7.2 `Variant` / `VARIANT`
 
 Baseline facts:
@@ -464,6 +546,18 @@ New matrix emphasis:
    cases
 2. old subset-limit tests converted into new full-carrier tests
 3. memory/layout observations for the new value carrier.
+
+Intrinsic closure checklist for this family:
+
+1. canonical runtime `Variant` is no longer only a Windows-shaped core plus
+   semantic side-owned payloads for the remaining hard cases
+2. string, object, and array payload lanes are represented as part of the
+   intended internal `VARIANT` truth rather than only through helper/boundary
+   materialization
+3. `SAFEARRAY` interaction is no longer only a boundary truth for the scoped
+   internal array lane, unless the workset is explicitly narrowed
+4. the family checklist bead records the final `implemented` / `projected` /
+   `bounded` state explicitly before `vmm-e` can close.
 
 ### 7.3 COM interface identity (`IUnknown`, `IDispatch`, related interfaces)
 
@@ -614,6 +708,18 @@ Expected code areas:
 3. `crates/oxvba-host/tests/native_declare_string_marshalling_end_to_end.rs`
 4. native declare / dynlink runtime and HAL files
 5. relevant UDT tests and type/runtime docs.
+
+Intrinsic closure checklist for this family:
+
+1. if the epic title continues to claim struct / UDT / native-layout
+   reconciliation, broad native-layout truth cannot be replaced silently by a
+   bounded compiler/runtime subset
+2. either the scoped native-layout/UDT internal truth is implemented, or the
+   workset text is explicitly narrowed with the user's approval
+3. any still-bounded native ABI areas are listed as bounded rather than being
+   treated as implicitly closed
+4. the family checklist bead records the final `implemented` / `projected` /
+   `bounded` state explicitly before `vmm-g` can close.
 
 ## 8. Windows VBA 7.1 x64 Fact Pack
 
@@ -1345,7 +1451,8 @@ Parent:
    - close condition:
      - string carrier migration is landed
      - string correctness/perf/memory rows are reconciled
-     - remaining string decisions are explicitly documented.
+     - remaining string decisions are explicitly documented
+     - the intrinsic string/BSTR closure checklist bead is complete.
 
 Child beads:
 
@@ -1415,6 +1522,28 @@ Child beads:
    - completion evidence:
      - string matrix rows are updated
      - remaining divergences are classified against the authority hierarchy.
+8. `vmm-d7`
+   - kind: `delivery`
+   - priority: `P1`
+   - depends on: `vmm-d3`, `vmm-d4`, `vmm-d5`, `vmm-d6`
+   - title: `Complete intrinsic internal BSTR carrier migration`
+   - outcome:
+     - the canonical runtime string carrier itself becomes the intended
+       BSTR-aligned substrate rather than remaining `String` plus projection
+   - completion evidence:
+     - runtime string carrier truth no longer depends on helper-only BSTR
+       reconstruction for its canonical representation
+9. `vmm-d8`
+   - kind: `support`
+   - priority: `P1`
+   - depends on: `vmm-d7`
+   - title: `Run string/BSTR intrinsic closure checklist`
+   - outcome:
+     - the final string-family `implemented` / `projected` / `bounded`
+       classification is recorded before epic closure
+   - completion evidence:
+     - the workset and final report inputs explicitly state whether the string
+       lane is intrinsically migrated or still bounded.
 
 ### 11.8 Epic E Bead Set: Variant/VARIANT Migration
 
@@ -1424,7 +1553,8 @@ Parent:
    - close condition:
      - the new value/Variant substrate is landed
      - `VarPtr(Variant)` and COM variant lanes are reconciled
-     - memory/layout observations are captured.
+     - memory/layout observations are captured
+     - the intrinsic Variant/SAFEARRAY closure checklist bead is complete.
 
 Child beads:
 
@@ -1483,6 +1613,29 @@ Child beads:
      - the Variant/value migration is validated as a whole
    - completion evidence:
      - relevant matrix rows and discrepancy classifications are updated.
+7. `vmm-e6`
+   - kind: `delivery`
+   - priority: `P1`
+   - depends on: `vmm-e3`, `vmm-e4`, `vmm-e5`
+   - title: `Complete intrinsic internal Variant and SAFEARRAY carrier migration`
+   - outcome:
+     - the canonical runtime Variant/array carrier no longer relies on
+       semantic side-owned payloads or boundary-only SAFEARRAY materialization
+       for the scoped internal truth
+   - completion evidence:
+     - the workset can describe the internal Variant/SAFEARRAY carrier as
+       intrinsically migrated rather than only boundary-correct
+8. `vmm-e7`
+   - kind: `support`
+   - priority: `P1`
+   - depends on: `vmm-e6`
+   - title: `Run Variant/SAFEARRAY intrinsic closure checklist`
+   - outcome:
+     - the final Variant-family `implemented` / `projected` / `bounded`
+       classification is recorded before epic closure
+   - completion evidence:
+     - the workset and final report inputs explicitly state whether the
+       Variant/SAFEARRAY lane is intrinsically migrated or still bounded.
 
 Post-`vmm-d6` rollout refresh:
 
@@ -1743,7 +1896,8 @@ Parent:
    - close condition:
      - ABI-sensitive lanes are reconciled
      - unsupported cases are explicit
-     - layout-sensitive rows are complete.
+     - layout-sensitive rows are complete
+     - the intrinsic struct/UDT/layout closure checklist bead is complete.
 
 Child beads:
 
@@ -1883,6 +2037,29 @@ Child beads:
        object/array payload materialization
      - broad native struct-overlay parity and unconstrained UDT-byref native
        ABI parity remain explicitly bounded outside the closed matrix
+7. `vmm-g6`
+   - kind: `delivery`
+   - priority: `P1`
+   - depends on: `vmm-g5`
+   - title: `Resolve intrinsic struct/UDT layout closure status`
+   - outcome:
+     - either the scoped internal struct/UDT/native-layout truth is actually
+       delivered, or the workset is explicitly narrowed with the user's
+       approval before closure is attempted
+   - completion evidence:
+     - the family truth no longer depends on a silent substitution of bounded
+       subset behavior for broad layout closure
+8. `vmm-g7`
+   - kind: `support`
+   - priority: `P1`
+   - depends on: `vmm-g6`
+   - title: `Run struct/UDT/layout intrinsic closure checklist`
+   - outcome:
+     - the final struct-family `implemented` / `projected` / `bounded`
+       classification is recorded before epic closure
+   - completion evidence:
+     - the workset and final report inputs explicitly state whether the
+       struct/UDT/layout lane is intrinsically migrated or still bounded.
 
 ### 11.11 Epic H Bead Set: Final Matrix, Docs, and Report
 
@@ -1892,7 +2069,8 @@ Parent:
    - close condition:
      - final matrix is complete
      - docs reflect the new truth
-     - the final report is published and linked from the workset.
+     - the final report is published and linked from the workset
+     - the family closure checklist beads have all passed.
 
 Child beads:
 
@@ -1981,6 +2159,18 @@ Child beads:
        representation-growth deltas recorded explicitly, and the remaining
        non-migration follow-on mitigations called out as backlog rather than
        closure blockers
+6. `vmm-h5`
+   - kind: `support`
+   - priority: `P1`
+   - depends on: `vmm-d8`, `vmm-e7`, `vmm-f6`, `vmm-g7`, `vmm-h1`, `vmm-h2`,
+     `vmm-h3`, `vmm-h4`
+   - title: `Run final migration closure checklist and reissue final report status`
+   - outcome:
+     - final closure is approved only after the family intrinsic checklist beads
+       have passed and the report status matches that result
+   - completion evidence:
+     - the final report and workset both return to `final` / `complete` only
+       after the family closure checklist beads are closed.
 
 ### 11.12 Bead-Plan Coverage Check
 
@@ -2014,13 +2204,18 @@ Readiness check:
 4. the critical path runs through `vmm-a* -> vmm-b* -> vmm-c* -> vmm-d* -> vmm-e*`
    before splitting into `vmm-f*` and `vmm-g*`
 5. the closure path runs through `vmm-h*`
-6. the two deliberate conditional-rollout points are:
+6. no representation epic closes without its intrinsic closure checklist bead
+7. the final report cannot return to final closure state until `vmm-h5` passes
+8. the two deliberate conditional-rollout points are:
    - `vmm-f4` for event transport after interface identity work
    - `vmm-g3` for UDT/layout-sensitive closure after native ABI work.
 
 ## 12. Required Final Report
 
 The migration is not complete until a final report exists.
+
+That final report may not be marked `final` while any family intrinsic closure
+checklist bead remains open.
 
 The report must include these sections.
 
@@ -2169,3 +2364,8 @@ This workset is complete only when all of the following are true:
 5. memory and timing results are captured
 6. discretionary decisions are explicitly documented
 7. the final migration report is published.
+8. the family intrinsic closure checklist beads are complete:
+   - `vmm-d8`
+   - `vmm-e7`
+   - `vmm-g7`
+   - `vmm-h5`.
