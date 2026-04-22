@@ -1654,6 +1654,22 @@ Child beads:
        bounded discovery pass is needed
    - completion evidence:
      - event-transport lane has an honest next delivery path
+   - landed 2026-04-22:
+     - one bounded discovery pass was still needed after the `ObjectRef` /
+       retained-identity landing, but it did not require further child-bead
+       expansion
+     - the exact `vmm-f5` delivery scope is now explicit:
+       native callback payloads already store `Vec<ComValue>`, but
+       `ComRuntimeState::take_polled_callback()` still rebuilds callback-object
+       identity from a compat token instead of returning the retained
+       `ObjectRef`
+     - projection-triggered event callbacks still require legacy `i32`
+       argument transport in
+       `queue_projection_event_callbacks_shared(...)` before being widened back
+       into `ComValue`
+     - callback/subscription tokens remain intentional control-plane tokens;
+       the delivery work is object identity and payload transport, not removing
+       callback/subscription token handles
 6. `vmm-f5`
    - kind: `delivery`
    - priority: `P1`
@@ -1664,6 +1680,14 @@ Child beads:
    - completion evidence:
      - event-related tests pass and discretionary no-change decisions are
        documented where applicable
+   - concrete delivery scope after `vmm-f4`:
+     - preserve retained `ObjectRef` identity through queued callback payloads
+       instead of reconstructing callback objects from compat ids
+     - widen projection-triggered event callback argument transport onto
+       `ComValue` / `RuntimeValue` carrier paths instead of requiring legacy
+       `i32` callback-argument arrays
+     - keep callback/subscription tokens only as queue-control identifiers
+       unless new evidence shows VBA-visible identity pressure on those tokens
 7. `vmm-f6`
    - kind: `delivery`
    - priority: `P1`
