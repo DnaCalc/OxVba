@@ -1545,10 +1545,15 @@ Child beads:
       runtime test suite now proves embedded-NUL payload preservation for the
       `VarPtr(String)` BSTR-cell path instead of relying on NUL-terminated
       reconstruction
-    - stage 4 still does not satisfy this bead on its own; the lane remains
+    - stage 5 landed: `BStr` no longer stores a permanently duplicated UTF-8
+      payload beside the UTF-16/BSTR-shaped core; UTF-8 text is now a lazy
+      compatibility cache derived from the intrinsic core rather than a second
+      always-live carrier field
+    - stage 5 still does not satisfy this bead on its own; the lane remains
       in-progress until the remaining runtime/value/perf evidence confirms that
-      the string carrier is intrinsically migrated rather than merely
-      dual-represented during transition
+      the string carrier is intrinsically migrated rather than still depending
+      on a compatibility cache in ways that mask remaining layout or timing
+      consequences
    - completion evidence:
      - runtime string carrier truth no longer depends on helper-only BSTR
        reconstruction for its canonical representation
