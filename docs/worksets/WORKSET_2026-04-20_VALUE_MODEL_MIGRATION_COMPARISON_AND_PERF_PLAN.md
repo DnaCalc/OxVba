@@ -1797,6 +1797,18 @@ Child beads:
      - declare/native writeback behavior remains correct
    - completion evidence:
      - native declare tests pass under the new representation
+   - landed 2026-04-22:
+     - no additional runtime adapter rewrite was required in this bead; the
+       existing standard dynlink/writeback path stayed correct under the
+       migrated substrate
+     - executable Windows host-backed coverage now explicitly proves the
+       supported `ByRef` scalar subset for `LongPtr`, `Boolean`, `Integer`,
+       `Single`, `Double`, `LongLong`, `Currency`, and `Date`
+     - existing pointer-driven writeback lanes for `StrPtr(...)`,
+       `VarPtr(s As String)`, and `VarPtr(buf(0))` remained green alongside the
+       widened scalar subset
+     - evidence note:
+       `docs/evidence/value_model_migration/NATIVE_DECLARE_WRITEBACK_RECONCILIATION_2026-04-22.md`
 4. `vmm-g3`
    - kind: `support`
    - priority: `P2`
