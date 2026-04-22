@@ -2,7 +2,7 @@
 
 Date: 2026-04-20
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## 1. Purpose
 
@@ -1962,6 +1962,16 @@ Child beads:
    - completion evidence:
      - the report sections from section 12 are present
      - the workset links to the final report.
+   - landed 2026-04-22:
+     - [VALUE_MODEL_MIGRATION_FINAL_REPORT_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VALUE_MODEL_MIGRATION_FINAL_REPORT_2026-04-22.md)
+       is now the published closure artifact for the migration
+     - report inputs `01`, `02`, `03`, and `05` are finalized and aligned with
+       the selected paired artifact set
+     - the final report closes with the migrated value model as the active
+       implementation, a green selected correctness matrix, accepted
+       representation-growth deltas recorded explicitly, and the remaining
+       non-migration follow-on mitigations called out as backlog rather than
+       closure blockers
 
 ### 11.12 Bead-Plan Coverage Check
 
