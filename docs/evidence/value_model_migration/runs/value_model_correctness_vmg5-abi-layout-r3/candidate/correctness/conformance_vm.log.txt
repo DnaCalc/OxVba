@@ -1,0 +1,5 @@
+# Value Model Correctness Lane Log
+
+- Worktree: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\candidate_vmg5-abi-layout-r3
+- Command: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\candidate_vmg5-abi-layout-r3\scripts\run-conformance.ps1 -Backend vm -ResultsPath C:\Work\DnaCalc\OxVba\docs\evidence\value_model_migration\runs\value_model_correctness_vmg5-abi-layout-r3\candidate\correctness\conformance_vm.csv -IncludePattern @(udt_declaration_basic.bas, udt_field_access_basic.bas, udt_whole_assignment_copy.bas, udt_whole_assignment_overwrite.bas)
+

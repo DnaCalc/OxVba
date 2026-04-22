@@ -1,0 +1,169 @@
+# Value Model Correctness Lane Log
+
+- Worktree: C:\Work\DnaCalc\OxVba\temp\value-model-migration\worktrees\candidate_vmg5-abi-layout-r3
+- Command: cargo test -p oxvba-host --test pointer_helpers_end_to_end windows_pointer_helper_e2e::varptr_variant_decimal_variable_exposes_decimal_variant_container_in_vm_and_jit -- --exact --test-threads=1 --nocapture
+
+warning: multiple associated functions are never used
+    --> crates\oxvba-vm\src\interpreter.rs:3237:8
+     |
+ 178 | impl Vm {
+     | ------- associated functions in this implementation
+...
+3237 |     fn proper_case(s: &str) -> String {
+     |        ^^^^^^^^^^^
+...
+3247 |     fn either_null(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
+     |        ^^^^^^^^^^^
+...
+4106 |     fn len_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^
+...
+4120 |     fn left_digits(value: i32, count: i32) -> i32 {
+     |        ^^^^^^^^^^^
+...
+4124 |     fn right_digits(value: i32, count: i32) -> i32 {
+     |        ^^^^^^^^^^^^
+...
+4134 |     fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
+     |        ^^^^^^^^^^
+...
+4139 |     fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
+     |        ^^^^^^^^^^^^
+...
+4156 |     fn instr_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+     |        ^^^^^^^^^^^^
+...
+4162 |     fn instrrev_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+     |        ^^^^^^^^^^^^^^^
+...
+4168 |     fn to_lower_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^^^^^^
+...
+4176 |     fn to_upper_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^^^^^^
+...
+4184 |     fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
+     |        ^^^^^^^^^^^^^^
+...
+4194 |     fn trim_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^^
+...
+4198 |     fn ltrim_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^^^
+...
+4206 |     fn rtrim_digits(value: i32) -> i32 {
+     |        ^^^^^^^^^^^^
+...
+4210 |     fn strcomp_digits(lhs: i32, rhs: i32, mode: StringCompareMode) -> i32 {
+     |        ^^^^^^^^^^^^^^
+...
+4220 |     fn round_i32(value: i32, digits: i32) -> i32 {
+     |        ^^^^^^^^^
+...
+4417 |     fn is_array_tag(value: i32) -> bool {
+     |        ^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `oxvba-vm` (lib) generated 1 warning
+warning: function `len_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3256:4
+     |
+3256 | fn len_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `slice_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3270:4
+     |
+3270 | fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
+     |    ^^^^^^^^^^^^
+
+warning: function `left_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3283:4
+     |
+3283 | fn left_digits(value: i32, count: i32) -> i32 {
+     |    ^^^^^^^^^^^
+
+warning: function `right_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3287:4
+     |
+3287 | fn right_digits(value: i32, count: i32) -> i32 {
+     |    ^^^^^^^^^^^^
+
+warning: function `mid_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3297:4
+     |
+3297 | fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
+     |    ^^^^^^^^^^
+
+warning: function `instr_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3302:4
+     |
+3302 | fn instr_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+     |    ^^^^^^^^^^^^
+
+warning: function `instrrev_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3308:4
+     |
+3308 | fn instrrev_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `to_lower_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3314:4
+     |
+3314 | fn to_lower_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `to_upper_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3322:4
+     |
+3322 | fn to_upper_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `replace_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3330:4
+     |
+3330 | fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
+     |    ^^^^^^^^^^^^^^
+
+warning: function `trim_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3340:4
+     |
+3340 | fn trim_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^^
+
+warning: function `ltrim_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3344:4
+     |
+3344 | fn ltrim_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^^^
+
+warning: function `rtrim_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3352:4
+     |
+3352 | fn rtrim_digits(value: i32) -> i32 {
+     |    ^^^^^^^^^^^^
+
+warning: function `strcomp_digits` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3356:4
+     |
+3356 | fn strcomp_digits(lhs: i32, rhs: i32, mode: StringCompareMode) -> i32 {
+     |    ^^^^^^^^^^^^^^
+
+warning: function `round_i32` is never used
+    --> crates\oxvba-jit\src\runtime_helpers.rs:3366:4
+     |
+3366 | fn round_i32(value: i32, digits: i32) -> i32 {
+     |    ^^^^^^^^^
+
+warning: `oxvba-jit` (lib) generated 15 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running tests\pointer_helpers_end_to_end.rs (target\debug\deps\pointer_helpers_end_to_end-caba253886bebafd.exe)
+
+running 1 test
+test windows_pointer_helper_e2e::varptr_variant_decimal_variable_exposes_decimal_variant_container_in_vm_and_jit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.01s
+

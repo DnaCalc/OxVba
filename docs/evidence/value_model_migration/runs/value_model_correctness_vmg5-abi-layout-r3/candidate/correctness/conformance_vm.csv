@@ -1,0 +1,5 @@
+"backend","file","status","slots"
+"vm","udt_declaration_basic.bas","ok","9"
+"vm","udt_field_access_basic.bas","ok","0,7,7,7"
+"vm","udt_whole_assignment_copy.bas","ok","0,7,9,0,7,9,9"
+"vm","udt_whole_assignment_overwrite.bas","ok","0,7,6,0,7,6"
