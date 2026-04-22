@@ -1,7 +1,8 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+use std::sync::OnceLock;
+
 pub struct BStr {
-    utf8: String,
     core: OwnedBStrCore,
+    utf8_cache: OnceLock<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,23 +62,23 @@ impl BStr {
     }
 
     pub fn from_utf16_lossy(units: &[u16]) -> Self {
-        let core = OwnedBStrCore::from_utf16_lossy(units);
-        Self {
-            utf8: core.to_utf8_lossy(),
-            core,
-        }
+        Self::from_core(OwnedBStrCore::from_utf16_lossy(units))
     }
 
     pub fn as_str(&self) -> &str {
-        &self.utf8
+        self.utf8_cache
+            .get_or_init(|| self.core.to_utf8_lossy())
+            .as_str()
     }
 
     pub fn into_string(self) -> String {
-        self.utf8
+        self.utf8_cache
+            .into_inner()
+            .unwrap_or_else(|| self.core.to_utf8_lossy())
     }
 
     pub fn len(&self) -> usize {
-        self.utf8.len()
+        self.as_str().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -99,12 +100,25 @@ impl BStr {
     pub fn owned_core(&self) -> OwnedBStrCore {
         self.core.clone()
     }
+
+    fn from_core(core: OwnedBStrCore) -> Self {
+        Self {
+            core,
+            utf8_cache: OnceLock::new(),
+        }
+    }
+
+    fn from_utf8_cached(text: String) -> Self {
+        let core = OwnedBStrCore::from_utf8(&text);
+        let utf8_cache = OnceLock::new();
+        let _ = utf8_cache.set(text);
+        Self { core, utf8_cache }
+    }
 }
 
 impl From<String> for BStr {
     fn from(value: String) -> Self {
-        let core = OwnedBStrCore::from_utf8(&value);
-        Self { utf8: value, core }
+        Self::from_utf8_cached(value)
     }
 }
 
@@ -116,7 +130,34 @@ impl From<&str> for BStr {
 
 impl core::fmt::Display for BStr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(&self.utf8)
+        f.write_str(self.as_str())
+    }
+}
+
+impl Clone for BStr {
+    fn clone(&self) -> Self {
+        let cloned = Self::from_core(self.core.clone());
+        if let Some(text) = self.utf8_cache.get() {
+            let _ = cloned.utf8_cache.set(text.clone());
+        }
+        cloned
+    }
+}
+
+impl PartialEq for BStr {
+    fn eq(&self, other: &Self) -> bool {
+        self.core == other.core
+    }
+}
+
+impl Eq for BStr {}
+
+impl core::fmt::Debug for BStr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BStr")
+            .field("text", &self.as_str())
+            .field("core", &self.core)
+            .finish()
     }
 }
 
@@ -164,7 +205,17 @@ mod tests {
     #[test]
     fn bstr_from_utf16_lossy_uses_owned_core_path() {
         let value = BStr::from_utf16_lossy(&[0x0041, 0xD83D, 0xDE00]);
+        assert!(value.utf8_cache.get().is_none());
         assert_eq!(value.as_str(), "A😀");
+        assert_eq!(value.utf8_cache.get().map(String::as_str), Some("A😀"));
         assert!(!value.is_empty());
+    }
+
+    #[test]
+    fn bstr_clone_preserves_lazy_cache_state() {
+        let value = BStr::from_utf16_lossy(&[0x0041, 0x0042]);
+        let cloned = value.clone();
+        assert!(cloned.utf8_cache.get().is_none());
+        assert_eq!(cloned.as_str(), "AB");
     }
 }
