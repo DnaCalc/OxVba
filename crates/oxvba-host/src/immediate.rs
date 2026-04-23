@@ -1,5 +1,5 @@
 use oxvba_compiler::ProjectManifest;
-use oxvba_runtime::{RuntimeValue, Variant, bstr::BStr, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, Variant, runtime_value_to_vba_string};
 use thiserror::Error;
 
 use crate::engine::PhaseDiagnostic;
@@ -204,15 +204,18 @@ impl<'engine> ImmediateSession<'engine> {
                 module: "<none>".to_string(),
             })?;
 
-        let runtime_value = self
+        let variant_value = self
             .engine
-            .invoke_procedure(
+            .invoke_procedure_with_variants(
                 &mut self.runtime,
                 &module_name,
                 &parsed.procedure_name,
                 &parsed.args,
             )
             .map_err(ImmediateSessionError::Phase)?;
+        let runtime_value = variant_value
+            .to_runtime_value()
+            .map_err(|message| ImmediateSessionError::Phase(PhaseDiagnostic::runtime(message)))?;
 
         let output = if parsed.is_statement {
             ImmediateEvaluationOutput::PrintedLine(format_invoked_statement_line(
@@ -251,7 +254,7 @@ impl Engine {
 struct ParsedImmediateInvocation {
     module_name: Option<String>,
     procedure_name: String,
-    args: Vec<RuntimeValue>,
+    args: Vec<Variant>,
     is_statement: bool,
 }
 
@@ -318,7 +321,7 @@ fn parse_immediate_invocation(
     })
 }
 
-fn parse_immediate_args(args_text: &str) -> Result<Vec<RuntimeValue>, String> {
+fn parse_immediate_args(args_text: &str) -> Result<Vec<Variant>, String> {
     if args_text.is_empty() {
         return Ok(Vec::new());
     }
@@ -352,31 +355,29 @@ fn split_immediate_args(args_text: &str) -> Vec<String> {
     args
 }
 
-fn parse_immediate_literal(token: &str) -> Result<RuntimeValue, String> {
+fn parse_immediate_literal(token: &str) -> Result<Variant, String> {
     let trimmed = token.trim();
     if trimmed.is_empty() {
         return Err("Immediate argument list contains an empty argument".to_string());
     }
 
     if trimmed.eq_ignore_ascii_case("true") {
-        return Ok(RuntimeValue::Bool(true));
+        return Ok(Variant::from_bool(true));
     }
     if trimmed.eq_ignore_ascii_case("false") {
-        return Ok(RuntimeValue::Bool(false));
+        return Ok(Variant::from_bool(false));
     }
     if trimmed.eq_ignore_ascii_case("empty") {
-        return Ok(RuntimeValue::Empty);
+        return Ok(Variant::empty());
     }
     if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-        return Ok(RuntimeValue::String(BStr::from(
-            &trimmed[1..trimmed.len() - 1],
-        )));
+        return Ok(Variant::from_string(&trimmed[1..trimmed.len() - 1]));
     }
     if let Ok(value) = trimmed.parse::<i32>() {
-        return Ok(RuntimeValue::I32(value));
+        return Ok(Variant::from_i32(value));
     }
     if let Ok(value) = trimmed.parse::<i64>() {
-        return Ok(RuntimeValue::I64(value));
+        return Ok(Variant::from_i64(value));
     }
 
     Err(format!(
