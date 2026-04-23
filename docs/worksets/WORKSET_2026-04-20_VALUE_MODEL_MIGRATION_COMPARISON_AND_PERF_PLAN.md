@@ -1848,6 +1848,10 @@ Child beads:
        target-procedure arguments as `RuntimeSlot` values and writes callee
        slots through a slot-native inline invocation path; the project-symbol
        callback wrapper remains a semantic compatibility boundary
+     - progress landed: VM and JIT dynamic COM dispatch result writes now
+       preserve `DynamicValue` results as destination-slot `Variant` payloads,
+       with legacy COM error-tag normalization performed directly on the
+       Variant before the slot write
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
