@@ -41,6 +41,13 @@ Implemented:
 13. JIT `ReDim` helper paths now create typed `SAFEARRAY` payloads for the
     declared runtime element type, matching the VM-side typed SAFEARRAY
     migration.
+14. Object-valued canonical runtime `Variant` cells now use `VT_UNKNOWN`
+    (`0x000D`) for the IUnknown-backed object identity/lifetime lane rather
+    than `VT_DISPATCH`.
+15. `VarPtr(Variant)` in VM and JIT now returns the address of the actual
+    VM/JIT `Variant` slot cell for Variant variables, not a copied
+    runtime-pointer-helper projection. The older copied helper remains only as
+    a boundary/manual pointer-helper utility.
 
 Validation:
 
@@ -65,6 +72,12 @@ Validation:
    - the two failures are the same machine-local COM registration failures for
      `OxVba.TestDispatch`:
      `CLSIDFromProgID failed for OxVba.TestDispatch with HRESULT 0x800401F3`
+10. `cargo test -p oxvba-runtime --lib variant_runtime_value_bridge_roundtrips_supported_exact_subset -- --nocapture`
+    - result: `1` passed
+11. `cargo test -p oxvba-vm --lib variant_varptr_returns_actual_register_variant_cell -- --nocapture`
+    - result: `1` passed
+12. `cargo test -p oxvba-jit --lib variant_cell_pointer_exposes_actual_slot_storage -- --nocapture`
+    - result: `1` passed
 
 Remaining blocker:
 
@@ -81,7 +94,8 @@ Remaining blocker:
 4. Completion still requires an audit and migration of all remaining
    projection seams that can expose or retain general values: interpreter/JIT
    helpers, HAL callback surfaces, `SafeArray` element APIs, `ComValue`, and
-   pointer-helper behavior such as `VarPtr(Variant)`, `StrPtr`, and `ObjPtr`.
+   non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`, and generic
+   `VarPtr` over non-Variant variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
