@@ -1917,6 +1917,10 @@ Child beads:
        and the host slot-snapshot test helpers use the Variant companions and
        `Variant::project_compat_slot_i32()` instead of detouring through a
        `Vec<RuntimeValue>` first
+     - progress landed: `Variant::project_compat_slot_i32()` now projects the
+       exact legacy slot subset directly from retained `Variant` payloads rather
+       than converting through `to_runtime_value()` first, preserving the
+       existing failure diagnostics for non-representable carriers
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for
