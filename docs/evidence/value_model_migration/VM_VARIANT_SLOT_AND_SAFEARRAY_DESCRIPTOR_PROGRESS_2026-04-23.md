@@ -57,6 +57,10 @@ Implemented:
     `ComValue` at the existing conversion boundaries, so `DynamicCallArg` and
     `DynamicEventPayload` own `Variant` values rather than semantic `ComValue`
     values.
+18. COM invoke requests now retain argument payloads through `ComInvokeValue`,
+    a `Variant`-backed carrier. `ComInvokeArg` constructors still accept
+    `ComValue` for boundary compatibility, but `ComInvokeRequest.args` no
+    longer own semantic `ComValue` payloads.
 
 Validation:
 
@@ -102,6 +106,12 @@ Validation:
     - the two failures are the same machine-local COM registration failures for
       `OxVba.TestDispatch`:
       `CLSIDFromProgID failed for OxVba.TestDispatch with HRESULT 0x800401F3`
+19. `cargo test -p oxvba-com --lib model -- --nocapture`
+    - result: `8` passed
+20. `cargo test -p oxvba-com --lib invoke_policy -- --nocapture`
+    - result: `8` passed
+21. `cargo test -p oxvba-jit --lib slot_abi -- --nocapture`
+    - result: `7` passed
 
 Remaining blocker:
 
