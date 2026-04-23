@@ -1905,10 +1905,15 @@ Child beads:
      - progress landed: immediate sessions now expose `snapshot_variants()` over
        the prepared project runtime session, while immediate evaluation display
        remains on the existing `RuntimeValue` projection surface
+     - progress landed: `ComValue` Variant bridges now convert directly against
+       `Variant` accessors and constructors; the `RuntimeValue` bridge methods
+       remain compatibility projections rather than the intermediate carrier for
+       normal COM value conversions
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
-       symbol APIs, legacy SafeArray element compatibility APIs, `ComValue`, and
+       symbol APIs, legacy SafeArray element compatibility APIs, COM
+       compatibility projection APIs that still expose `RuntimeValue`, and
        remaining non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`,
        and generic `VarPtr` are audited and either migrated to exact BSTR,
        Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified as
