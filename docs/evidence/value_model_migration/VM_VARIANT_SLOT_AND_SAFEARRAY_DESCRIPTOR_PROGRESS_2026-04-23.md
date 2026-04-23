@@ -248,6 +248,12 @@ Implemented:
      `pointer_helpers::register_variant_pointer()`. The helper no longer reads
      a temporary `RuntimeValue` just to special-case `ArrayIntent` before
      falling back to the same Variant projection path.
+47i. JIT `oxrt_array_resize` and `oxrt_array_resize_preserve` now keep ReDim
+     results on the canonical Variant carrier. `ReDim Preserve` now reads the
+     existing array through `read_variant_slot()` and preserves over
+     `Variant::as_safearray()`, while both helpers write the resized SAFEARRAY
+     back with `write_variant_slot!(..., Variant::from_safearray(...))`
+     instead of detouring through `RuntimeValue::ArrayIntent`.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -852,6 +858,12 @@ Implementation progress:
     including the array lane, instead of reading a temporary `RuntimeValue`
     only to special-case `ArrayIntent` before returning to the Variant pointer
     registration path.
+37. JIT `ReDim` / `ReDim Preserve` no longer write resized arrays through the
+    compatibility `RuntimeValue::ArrayIntent` path. The retained array slot now
+    stays on the canonical Variant/SAFEARRAY carrier across resize and
+    preserve-resize writes, and the preserve helper now inspects the existing
+    array via `Variant::as_safearray()` instead of pattern-matching a temporary
+    semantic value.
 
 Remaining blocker:
 
