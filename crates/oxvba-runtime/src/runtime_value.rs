@@ -499,7 +499,11 @@ mod tests {
         };
         assert_eq!(object_ref.raw(), 42);
         let array_value = RuntimeValue::ArrayIntent(SafeArray::vector(3));
-        assert!(array_value.to_variant().is_err());
+        assert_eq!(
+            RuntimeValue::from_variant(&array_value.to_variant().expect("array variant"))
+                .expect("array roundtrip"),
+            array_value
+        );
     }
 }
 

@@ -722,6 +722,28 @@ impl SafeArray {
             Some(values),
         )
     }
+
+    pub fn raw_safearray_ptr(&self) -> *mut core::ffi::c_void {
+        self.0.as_ptr().cast()
+    }
+
+    pub fn clone_raw_safearray_ptr(&self) -> *mut core::ffi::c_void {
+        let cloned = self.clone();
+        let raw = cloned.raw_safearray_ptr();
+        core::mem::forget(cloned);
+        raw
+    }
+
+    pub unsafe fn from_raw_safearray_owned(raw: *mut core::ffi::c_void) -> Option<Self> {
+        NonNull::new(raw.cast::<RawSafeArray>()).map(Self)
+    }
+
+    pub unsafe fn clone_from_raw_safearray(raw: *mut core::ffi::c_void) -> Option<Self> {
+        let borrowed = unsafe { Self::from_raw_safearray_owned(raw) }?;
+        let cloned = borrowed.clone();
+        core::mem::forget(borrowed);
+        Some(cloned)
+    }
 }
 
 impl Clone for SafeArray {

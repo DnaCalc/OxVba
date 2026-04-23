@@ -3,6 +3,7 @@ use crate::{
     bstr::{BStr, OwnedBStrCore},
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
+    safe_array::SafeArray,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +24,7 @@ pub enum VarType {
     Decimal = 0x000E,
     Byte = 0x0011,
     LongLong = 0x0014,
+    ArrayVariant = 0x200C,
 }
 
 impl VarType {
@@ -43,6 +45,7 @@ impl VarType {
             0x000E => Some(Self::Decimal),
             0x0011 => Some(Self::Byte),
             0x0014 => Some(Self::LongLong),
+            0x200C => Some(Self::ArrayVariant),
             _ => None,
         }
     }
@@ -146,12 +149,20 @@ fn raw_iunknown_ptr_to_bytes(ptr: *mut RawRuntimeIUnknown) -> [u8; 8] {
     (ptr as usize as u64).to_le_bytes()
 }
 
+fn raw_safearray_ptr_to_bytes(ptr: *mut core::ffi::c_void) -> [u8; 8] {
+    (ptr as usize as u64).to_le_bytes()
+}
+
 fn bytes_to_raw_bstr(bytes: [u8; 8]) -> *mut u16 {
     u64::from_le_bytes(bytes) as usize as *mut u16
 }
 
 fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
     u64::from_le_bytes(bytes) as usize as *mut RawRuntimeIUnknown
+}
+
+fn bytes_to_raw_safearray(bytes: [u8; 8]) -> *mut core::ffi::c_void {
+    u64::from_le_bytes(bytes) as usize as *mut core::ffi::c_void
 }
 
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
@@ -227,6 +238,16 @@ impl Variant {
                     Some(value) => Self::from_object_ref(value),
                     None => Self::from_core(VariantCore::from_bytes(VarType::Object, [0; 8])),
                 })
+            }
+            VarType::ArrayVariant => {
+                let ptr = bytes_to_raw_safearray(core.data_bytes());
+                let Some(array) = (unsafe { SafeArray::clone_from_raw_safearray(ptr) }) else {
+                    return Ok(Self::from_core(VariantCore::from_bytes(
+                        VarType::ArrayVariant,
+                        [0; 8],
+                    )));
+                };
+                Ok(Self::from_safearray(array))
             }
             _ => Ok(Self::from_core(core)),
         }
@@ -438,6 +459,22 @@ impl Variant {
         unsafe { ObjectRef::from_raw_iunknown_addref(bytes_to_raw_iunknown(self.data_bytes())) }
     }
 
+    pub fn from_safearray(value: SafeArray) -> Self {
+        let raw = value.raw_safearray_ptr();
+        core::mem::forget(value);
+        Self::from_core(VariantCore::from_bytes(
+            VarType::ArrayVariant,
+            raw_safearray_ptr_to_bytes(raw),
+        ))
+    }
+
+    pub fn as_safearray(&self) -> Option<SafeArray> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
+    }
+
     pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
         Ok(match value {
             RuntimeValue::Empty => Self::empty(),
@@ -455,12 +492,7 @@ impl Variant {
             RuntimeValue::Bool(value) => Self::from_bool(*value),
             RuntimeValue::String(value) => Self::from_string(value.clone()),
             RuntimeValue::Object(object) => Self::from_object_ref(object.clone()),
-            RuntimeValue::ArrayIntent(_) => {
-                return Err(
-                    "canonical Variant intrinsic SAFEARRAY carrier is not implemented yet"
-                        .to_string(),
-                );
-            }
+            RuntimeValue::ArrayIntent(array) => Self::from_safearray(array.clone()),
             RuntimeValue::BindingHandle(handle) => {
                 return Err(format!(
                     "binding handle {} is an internal non-VBA token and is intentionally excluded from the canonical Variant carrier",
@@ -536,6 +568,10 @@ impl Variant {
                 .as_object_ref()
                 .map(RuntimeValue::Object)
                 .ok_or_else(|| "invalid Object variant payload".to_string()),
+            VarType::ArrayVariant => self
+                .as_safearray()
+                .map(RuntimeValue::ArrayIntent)
+                .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string()),
             other => Err(format!(
                 "runtime Variant -> RuntimeValue bridge does not yet support {:?}",
                 other
@@ -564,6 +600,10 @@ impl Clone for Variant {
                 Some(object) => Self::from_object_ref(object),
                 None => Self::from_core(self.core),
             },
+            VarType::ArrayVariant => match self.as_safearray() {
+                Some(array) => Self::from_safearray(array),
+                None => Self::from_core(self.core),
+            },
             _ => Self::from_core(self.core),
         }
     }
@@ -584,6 +624,12 @@ impl Drop for Variant {
                     }
                 }
             }
+            VarType::ArrayVariant => {
+                let raw = bytes_to_raw_safearray(self.data_bytes());
+                if let Some(array) = unsafe { SafeArray::from_raw_safearray_owned(raw) } {
+                    drop(array);
+                }
+            }
             _ => {}
         }
     }
@@ -602,6 +648,9 @@ impl core::fmt::Debug for Variant {
             }
             VarType::Object => {
                 dbg.field("object", &self.as_object_ref().map(|value| value.raw()));
+            }
+            VarType::ArrayVariant => {
+                dbg.field("array", &self.as_safearray());
             }
             _ => {
                 dbg.field("data", &self.data_bytes());
@@ -626,6 +675,7 @@ impl PartialEq for Variant {
                 bytes_to_raw_iunknown(self.data_bytes())
                     == bytes_to_raw_iunknown(other.data_bytes())
             }
+            VarType::ArrayVariant => self.as_safearray() == other.as_safearray(),
             _ => self.data_bytes() == other.data_bytes(),
         }
     }
@@ -810,14 +860,25 @@ mod tests {
             panic!("expected object-ref runtime carrier");
         };
         assert_eq!(object_ref.raw(), 42);
+
+        let array_value = RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+            RuntimeValue::I32(4),
+            RuntimeValue::String(BStr::from("payload")),
+        ]));
+        let array_variant = Variant::try_from_runtime_value(&array_value)
+            .expect("array bridge should be supported");
+        assert_eq!(array_variant.vtype(), VarType::ArrayVariant);
+        assert_ne!(u64::from_le_bytes(array_variant.data_bytes()), 0);
+        assert_eq!(
+            array_variant
+                .to_runtime_value()
+                .expect("array Variant should bridge back"),
+            array_value
+        );
     }
 
     #[test]
-    fn variant_runtime_value_bridge_rejects_array_lane_and_excludes_binding_tokens() {
-        let array =
-            Variant::try_from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
-        assert!(array.is_err());
-
+    fn variant_runtime_value_bridge_excludes_binding_tokens() {
         let binding = Variant::try_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
         assert_eq!(
             binding.expect_err("binding handles remain outside canonical Variant"),
