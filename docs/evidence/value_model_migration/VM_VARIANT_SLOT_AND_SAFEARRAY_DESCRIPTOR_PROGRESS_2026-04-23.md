@@ -98,6 +98,10 @@ Implemented:
     array with `SafeArray::from_variants()` rather than `SafeArray::from_values()`,
     keeping the enumerator payload array on the Variant carrier path after COM
     object binding/projection completes.
+27. Pointer-helper array projection paths now read array payloads through
+    `variant_elements()`. The helper still projects to byte buffers or Windows
+    `VARIANT` values at the pointer-helper boundary, but it no longer starts
+    from the legacy `SafeArray::elements()` `RuntimeValue` projection.
 
 Validation:
 
@@ -204,6 +208,12 @@ Validation:
 48. `cargo fmt --check`
     - result: passed
 49. `./scripts/check-governance.ps1`
+    - result: passed
+50. `cargo test -p oxvba-runtime --lib pointer -- --nocapture`
+    - result: `15` passed
+51. `cargo fmt --check`
+    - result: passed
+52. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
