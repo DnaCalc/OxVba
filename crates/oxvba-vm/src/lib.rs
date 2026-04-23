@@ -14,7 +14,7 @@ use oxvba_hal::{
     model::{HostPolicy, native_host_profile},
     traits::HostServices,
 };
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, Variant};
 
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
@@ -27,9 +27,16 @@ pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
 }
 
 pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_variants(bytecode)?
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
+}
+
+pub fn execute_and_snapshot_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute(bytecode)?;
-    Ok(vm.snapshot(bytecode.user_slot_count))
+    Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
 pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
@@ -40,9 +47,19 @@ pub fn execute_and_snapshot_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_variants_with_typed_fastpaths(bytecode, typed_fastpaths)?
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
+}
+
+pub fn execute_and_snapshot_variants_with_typed_fastpaths(
+    bytecode: &Bytecode,
+    typed_fastpaths: bool,
+) -> Result<Vec<Variant>, String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
-    Ok(vm.snapshot(bytecode.user_slot_count))
+    Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
 pub fn execute_and_snapshot_values_with_typed_fastpaths(
@@ -64,9 +81,19 @@ pub fn execute_and_snapshot_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_variants_with_host(bytecode, host_services)?
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
+}
+
+pub fn execute_and_snapshot_variants_with_host(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+) -> Result<Vec<Variant>, String> {
     let mut vm = Vm::new(host_services);
     vm.execute(bytecode)?;
-    Ok(vm.snapshot(bytecode.user_slot_count))
+    Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
 pub fn execute_and_snapshot_values_with_host(
@@ -81,9 +108,24 @@ pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     host_services: Arc<dyn HostServices>,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_variants_with_host_and_typed_fastpaths(
+        bytecode,
+        host_services,
+        typed_fastpaths,
+    )?
+    .into_iter()
+    .map(|value| value.to_runtime_value())
+    .collect()
+}
+
+pub fn execute_and_snapshot_variants_with_host_and_typed_fastpaths(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+    typed_fastpaths: bool,
+) -> Result<Vec<Variant>, String> {
     let mut vm = Vm::new(host_services);
     vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
-    Ok(vm.snapshot(bytecode.user_slot_count))
+    Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
 pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(

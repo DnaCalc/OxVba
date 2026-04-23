@@ -12,7 +12,7 @@ use cranelift_module::{Linkage, Module};
 use oxvba_compiler::bytecode::StringCompareMode;
 use oxvba_compiler::{Bytecode, Instruction};
 use oxvba_hal::traits::HostServices;
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, Variant};
 
 use crate::jit_context::JitContextOwned;
 use crate::runtime_helpers;
@@ -508,6 +508,17 @@ pub fn execute_bytecode_rtslot(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<RuntimeValue>, String> {
+    execute_bytecode_rtslot_variants(bytecode, host_services)?
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
+}
+
+/// Execute bytecode through the RtSlot path. Returns exact VARIANT carriers.
+pub fn execute_bytecode_rtslot_variants(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+) -> Result<Vec<Variant>, String> {
     let inlined = inline_bytecode(bytecode)?;
     if !supports_rtslot(&inlined) {
         return Err("unsupported bytecode for rtslot cranelift execution".to_string());
@@ -3540,7 +3551,7 @@ pub fn execute_bytecode_rtslot(
     // Keep string_boxes alive until after JIT execution.
     drop(string_boxes);
 
-    Ok(ctx_owned.extract_user_values())
+    Ok(ctx_owned.extract_user_variants())
 }
 
 // ── Helper function ID management ─────────────────────────────────────

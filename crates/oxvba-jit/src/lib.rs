@@ -13,8 +13,8 @@ use oxvba_hal::{
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
-use oxvba_runtime::RuntimeValue;
-use oxvba_vm::execute_and_snapshot_with_host;
+use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_vm::execute_and_snapshot_variants_with_host;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -42,7 +42,17 @@ impl JitEngine {
     }
 
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_with_host(bytecode, default_host_services())
+        self.execute_and_snapshot_variants(bytecode)?
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(JitError::Execution))
+            .collect()
+    }
+
+    pub fn execute_and_snapshot_variants(
+        &self,
+        bytecode: &Bytecode,
+    ) -> Result<Vec<Variant>, JitError> {
+        self.execute_and_snapshot_variants_with_host(bytecode, default_host_services())
     }
 
     pub fn execute_and_snapshot_values(
@@ -57,23 +67,42 @@ impl JitEngine {
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
+        self.execute_and_snapshot_variants_with_host(bytecode, host_services)?
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(JitError::Execution))
+            .collect()
+    }
+
+    pub fn execute_and_snapshot_variants_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<Variant>, JitError> {
         // Try the RtSlot path first (supports more instructions).
         // On failure, fall back to VM for proper error handling with detailed messages.
         if cranelift::supports_bytecode_rtslot(bytecode) {
-            match cranelift::execute_bytecode_rtslot(bytecode, host_services.clone()) {
+            match cranelift::execute_bytecode_rtslot_variants(bytecode, host_services.clone()) {
                 Ok(values) => return Ok(values),
                 Err(_) => {
-                    return execute_and_snapshot_with_host(bytecode, host_services)
+                    return execute_and_snapshot_variants_with_host(bytecode, host_services)
                         .map_err(JitError::Execution);
                 }
             }
         }
         // Fall back to legacy i32 path for the original 23-instruction subset.
         if cranelift::supports_bytecode(bytecode) {
-            return cranelift::execute_bytecode(bytecode).map_err(JitError::Execution);
+            return cranelift::execute_bytecode(bytecode)
+                .and_then(|values| {
+                    values
+                        .into_iter()
+                        .map(|value| Variant::try_from_runtime_value(&value))
+                        .collect()
+                })
+                .map_err(JitError::Execution);
         }
         // Fall back to VM interpreter for unsupported bytecode.
-        execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
+        execute_and_snapshot_variants_with_host(bytecode, host_services)
+            .map_err(JitError::Execution)
     }
 
     pub fn execute_and_snapshot_values_with_host(
@@ -137,6 +166,19 @@ mod tests {
             .execute_and_snapshot_values(&bytecode)
             .expect("value snapshot should succeed");
         assert_eq!(out, vec![RuntimeValue::I32(3)]);
+    }
+
+    #[test]
+    fn execute_and_snapshot_variants_exposes_jit_results_before_projection() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub")
+            .expect("compile should succeed");
+        let out = JitEngine
+            .execute_and_snapshot_variants(&bytecode)
+            .expect("variant snapshot should succeed");
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].vtype(), VarType::String);
+        assert_eq!(out[0].as_bstr(), Some(BStr::from("ABC")));
     }
 
     #[cfg(target_os = "windows")]
