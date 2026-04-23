@@ -237,6 +237,12 @@ Implemented:
      uses those Variant companions directly instead of reading back
      `RuntimeValue` payloads only to convert them immediately into `Variant`
      before the destination slot write.
+47g. VM semantics now has Variant-native array get/set companions
+     (`runtime_array_get_variant()` / `runtime_array_set_variant()`), and JIT
+     `oxrt_array_get` / `oxrt_array_set` now use those helpers with
+     `read_variant_slot()` / `write_variant_slot()` so array element access no
+     longer round-trips the array carrier and source value through
+     `RuntimeValue` before updating the slot.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -834,6 +840,9 @@ Implementation progress:
     string and byte-array lanes, and JIT external-call pointer writeback now
     consumes those Variant results directly instead of re-projecting from
     `RuntimeValue`.
+35. JIT array get/set now use Variant-native semantics companions over the
+    retained SAFEARRAY slot carrier. RuntimeValue remains only on the index
+    compatibility boundary, not as the array/source retained-value carrier.
 
 Remaining blocker:
 
