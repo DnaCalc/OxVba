@@ -102,6 +102,10 @@ Implemented:
     `variant_elements()`. The helper still projects to byte buffers or Windows
     `VARIANT` values at the pointer-helper boundary, but it no longer starts
     from the legacy `SafeArray::elements()` `RuntimeValue` projection.
+28. SafeArray debug formatting now reads `variant_elements()`, and pointer
+    byte-array readback reconstructs arrays with `SafeArray::from_variants()`
+    using `VT_UI1` element variants instead of rebuilding through
+    `RuntimeValue` elements.
 
 Validation:
 
@@ -214,6 +218,12 @@ Validation:
 51. `cargo fmt --check`
     - result: passed
 52. `./scripts/check-governance.ps1`
+    - result: passed
+53. `cargo test -p oxvba-runtime --lib "safe_array|pointer" -- --nocapture`
+    - result: compile/pass with `0` tests selected
+54. `cargo fmt --check`
+    - result: passed
+55. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
