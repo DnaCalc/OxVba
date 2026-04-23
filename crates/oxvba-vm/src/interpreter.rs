@@ -24,11 +24,15 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
-use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
+use oxvba_runtime::safe_array::{
+    SafeArray, SafeArrayBound, VT_BSTR_VALUE, VT_BOOL_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
+    VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
+};
 use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
 use oxvba_runtime::{BindingHandle, F64Value, ObjectRef, RuntimeValue, bstr::BStr};
 
-use crate::register_file::RegisterFile;
+use crate::register_file::{RegisterFile, RuntimeSlot};
 
 #[derive(Debug, Default, Clone)]
 struct WithEventsOwnerIterator {
@@ -270,7 +274,7 @@ impl Vm {
         if slot_count > self.registers.registers.len() {
             self.registers
                 .registers
-                .resize(slot_count, RuntimeValue::default());
+                .resize(slot_count, RuntimeSlot::default());
         }
     }
 
@@ -284,7 +288,13 @@ impl Vm {
 
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {
         let end = slot_count.min(self.registers.registers.len());
-        self.registers.registers[..end].to_vec()
+        self.registers.registers[..end]
+            .iter()
+            .map(|slot| {
+                slot.to_runtime_value()
+                    .expect("VM register slot must project to RuntimeValue")
+            })
+            .collect()
     }
 
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
@@ -3167,14 +3177,14 @@ impl Vm {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
-        Ok(self.registers.registers[slot].clone())
+        self.registers.registers[slot].to_runtime_value()
     }
 
     fn write_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
-        self.registers.registers[slot] = value;
+        self.registers.registers[slot] = RuntimeSlot::from_runtime_value(value)?;
         Ok(())
     }
 
@@ -4016,13 +4026,16 @@ impl Vm {
             return false;
         };
         // Null propagation: Null + anything = Null.
-        if matches!(dst, RuntimeValue::Null) {
+        if dst.is_null() {
             return true;
         }
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeValue::from_compat_slot_i32(current + value);
+        let Ok(value) = RuntimeSlot::from_compat_slot_i32(current + value) else {
+            return false;
+        };
+        *dst = value;
         true
     }
 
@@ -4031,13 +4044,16 @@ impl Vm {
             return false;
         };
         // Null propagation: Null - anything = Null.
-        if matches!(dst, RuntimeValue::Null) {
+        if dst.is_null() {
             return true;
         }
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeValue::from_compat_slot_i32(current - value);
+        let Ok(value) = RuntimeSlot::from_compat_slot_i32(current - value) else {
+            return false;
+        };
+        *dst = value;
         true
     }
 
@@ -4045,7 +4061,11 @@ impl Vm {
         let Some(value) = self.registers.registers.get(src).cloned() else {
             return false;
         };
-        self.write_value_slot(dst, value).is_ok()
+        let Some(dst) = self.registers.registers.get_mut(dst) else {
+            return false;
+        };
+        *dst = value;
+        true
     }
 
     fn fast_cmp_slots<F>(&mut self, dst: usize, lhs: usize, rhs: usize, pred: F) -> bool
@@ -4056,7 +4076,7 @@ impl Vm {
         if let (Some(l), Some(r)) = (
             self.registers.registers.get(lhs),
             self.registers.registers.get(rhs),
-        ) && (matches!(l, RuntimeValue::Null) || matches!(r, RuntimeValue::Null))
+        ) && (l.is_null() || r.is_null())
         {
             return false; // fall through to legacy_compare_values
         }
@@ -4448,7 +4468,7 @@ fn runtime_resized_array(
     }
     let default = runtime_array_default_value(element_type);
     let values = vec![default; len];
-    SafeArray::from_shape_and_values(bounds, values)
+    SafeArray::from_typed_values_nd(bounds, runtime_array_element_vartype(element_type), values)
 }
 
 fn runtime_resized_array_preserve(
@@ -4536,6 +4556,22 @@ fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> Runtime
         | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
         RuntimeArrayElementType::String => RuntimeValue::String(BStr::empty()),
         RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
+    }
+}
+
+fn runtime_array_element_vartype(element_type: RuntimeArrayElementType) -> u16 {
+    match element_type {
+        RuntimeArrayElementType::Variant => VT_VARIANT_VALUE,
+        RuntimeArrayElementType::Integer => VT_I2_VALUE,
+        RuntimeArrayElementType::Long => VT_I4_VALUE,
+        RuntimeArrayElementType::LongLong | RuntimeArrayElementType::LongPtr => VT_I8_VALUE,
+        RuntimeArrayElementType::Byte => VT_UI1_VALUE,
+        RuntimeArrayElementType::Single => VT_R4_VALUE,
+        RuntimeArrayElementType::Double => VT_R8_VALUE,
+        RuntimeArrayElementType::Currency => VT_CY_VALUE,
+        RuntimeArrayElementType::Date => VT_DATE_VALUE,
+        RuntimeArrayElementType::String => VT_BSTR_VALUE,
+        RuntimeArrayElementType::Boolean => VT_BOOL_VALUE,
     }
 }
 
@@ -5515,44 +5551,48 @@ mod tests {
         let values = vm.snapshot_values(2);
         assert_eq!(
             values[1],
-            RuntimeValue::ArrayIntent(SafeArray {
-                dimensions: 1,
-                len: 4,
-                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
-                elements: Some(vec![
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                ]),
-            })
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values_nd(
+                    vec![SafeArrayBound { lower: 0, count: 4 }],
+                    0x0011,
+                    vec![
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(0),
+                    ],
+                )
+                .expect("byte SAFEARRAY expected")
+            )
         );
     }
 
     #[test]
     fn runtime_redim_preserve_1d_retains_overlapping_byte_values() {
-        let current = RuntimeValue::ArrayIntent(SafeArray {
-            dimensions: 1,
-            len: 2,
-            bounds: Some(vec![SafeArrayBound { lower: 0, count: 2 }]),
-            elements: Some(vec![RuntimeValue::I32(90), RuntimeValue::I32(91)]),
-        });
+        let current = RuntimeValue::ArrayIntent(
+            SafeArray::from_typed_values_nd(
+                vec![SafeArrayBound { lower: 0, count: 2 }],
+                0x0011,
+                vec![RuntimeValue::I32(90), RuntimeValue::I32(91)],
+            )
+            .expect("byte SAFEARRAY expected"),
+        );
         let resized =
             runtime_resized_array_preserve(&current, &[0], &[3], RuntimeArrayElementType::Byte)
                 .expect("runtime preserve should succeed");
         assert_eq!(
             resized,
-            SafeArray {
-                dimensions: 1,
-                len: 4,
-                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
-                elements: Some(vec![
+            SafeArray::from_typed_values_nd(
+                vec![SafeArrayBound { lower: 0, count: 4 }],
+                0x0011,
+                vec![
                     RuntimeValue::I32(90),
                     RuntimeValue::I32(91),
                     RuntimeValue::I32(0),
                     RuntimeValue::I32(0),
-                ]),
-            }
+                ],
+            )
+            .expect("byte SAFEARRAY expected")
         );
     }
 

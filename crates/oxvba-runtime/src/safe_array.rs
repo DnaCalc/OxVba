@@ -684,12 +684,7 @@ impl SafeArray {
         if bounds.is_empty() {
             return None;
         }
-        let dims = self.dimensions() as usize;
-        if dims == 1 && bounds[0].lower == 0 {
-            None
-        } else {
-            Some(bounds)
-        }
+        Some(bounds)
     }
 
     fn bounds_for_shape(&self) -> Vec<SafeArrayBound> {
@@ -904,10 +899,13 @@ mod tests {
     }
 
     #[test]
-    fn safe_array_vector_has_no_bounds_metadata() {
+    fn safe_array_vector_exposes_descriptor_bounds() {
         let array = SafeArray::vector(5);
         assert_eq!(array.dimensions(), 1);
-        assert_eq!(array.bounds(), None);
+        assert_eq!(
+            array.bounds(),
+            Some(vec![SafeArrayBound { lower: 0, count: 5 }])
+        );
         assert_eq!(array.elements(), None);
     }
 

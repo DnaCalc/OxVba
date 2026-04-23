@@ -843,12 +843,12 @@ mod tests {
 
     #[test]
     fn object_pointer_distinguishes_fresh_runtime_objects_from_binding_tokens() {
-        let object_ptr =
-            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
-                .expect("object identity");
+        let object = ObjectRef::from_compat_identity(42);
+        let same_identity_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
+        let object_ptr = register_object_pointer(&RuntimeValue::Object(object.clone()))
+            .expect("object identity");
         let same_object_ptr =
-            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
-                .expect("same object identity");
+            register_object_pointer(&same_identity_value).expect("same object identity");
         let binding_ptr =
             register_object_pointer(&RuntimeValue::BindingHandle(BindingHandle::new(42)))
                 .expect("binding identity");
