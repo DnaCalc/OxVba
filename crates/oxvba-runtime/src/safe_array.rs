@@ -885,7 +885,7 @@ impl core::fmt::Debug for SafeArray {
                 &format_args!("{:#06X}", self.element_vartype()),
             )
             .field("bounds", &self.bounds())
-            .field("elements", &self.elements())
+            .field("elements", &self.variant_elements())
             .finish()
     }
 }

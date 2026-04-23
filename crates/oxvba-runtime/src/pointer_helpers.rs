@@ -484,7 +484,7 @@ impl PointerRegistry {
     fn read_back_byte_array_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
         if pointer == 0 {
             return Ok(RuntimeValue::ArrayIntent(
-                crate::safe_array::SafeArray::from_values(Vec::new()),
+                crate::safe_array::SafeArray::from_variants(Vec::new()),
             ));
         }
         let Some(entry) = self.entries.get(&(pointer as usize)) else {
@@ -494,10 +494,10 @@ impl PointerRegistry {
         };
         match entry {
             PointerEntry::Bytes(bytes) => Ok(RuntimeValue::ArrayIntent(
-                crate::safe_array::SafeArray::from_values(
+                crate::safe_array::SafeArray::from_variants(
                     bytes
                         .iter()
-                        .map(|byte| RuntimeValue::I32(i32::from(*byte)))
+                        .map(|byte| crate::Variant::from_u8(*byte))
                         .collect(),
                 ),
             )),
