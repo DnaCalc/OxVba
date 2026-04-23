@@ -1,6 +1,6 @@
 //! HAL conformance probes and report model.
 
-use oxvba_runtime::{F64Subtype, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Subtype, RuntimeValue, bstr::BStr, variant::Variant};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -699,14 +699,14 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
             SafeArrayBound { lower: 1, count: 3 },
         ];
         let values = vec![
-            RuntimeValue::I32(1),
-            RuntimeValue::I32(2),
-            RuntimeValue::I32(3),
-            RuntimeValue::I32(4),
-            RuntimeValue::I32(5),
-            RuntimeValue::I32(6),
+            Variant::from_i32(1),
+            Variant::from_i32(2),
+            Variant::from_i32(3),
+            Variant::from_i32(4),
+            Variant::from_i32(5),
+            Variant::from_i32(6),
         ];
-        let array = oxvba_runtime::safe_array::SafeArray::from_values_nd(bounds.clone(), values);
+        let array = oxvba_runtime::safe_array::SafeArray::from_variants_nd(bounds.clone(), values);
         array.dimensions() == 2 && array.len() == 6 && array.bounds().as_ref() == Some(&bounds)
     };
     if !safearray_nd_ok {
