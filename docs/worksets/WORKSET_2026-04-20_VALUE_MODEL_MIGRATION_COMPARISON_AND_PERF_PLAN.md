@@ -1935,6 +1935,10 @@ Child beads:
        and write exact slot `Variant` carriers through
        `DynamicLinkHal::invoke_symbol_variant()`, while `invoke_symbol()`
        remains a compatibility API for existing HAL callers
+     - progress landed: HAL dynamic COM bridge invocation now returns
+       `DynamicValue` from `ComHal::dispatch_invoke_dynamic_variant()`
+       directly, avoiding the older `RuntimeValue` detour for dynamic COM
+       invocation payloads
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
