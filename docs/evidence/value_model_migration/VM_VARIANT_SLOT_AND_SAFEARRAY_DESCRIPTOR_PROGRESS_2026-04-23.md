@@ -243,6 +243,21 @@ Validation:
     - result: passed
 61. `./scripts/check-governance.ps1`
     - result: passed
+62. `cargo test -p oxvba-com --lib event_callback -- --nocapture`
+    - result: `1` passed
+63. `cargo test -p oxvba-hal --lib event_callback -- --nocapture`
+    - result: `2` passed
+64. `cargo test -p oxvba-vm --lib event_callback -- --nocapture`
+    - result: compile/pass with `0` tests selected
+65. `cargo test -p oxvba-jit --lib event_callback -- --nocapture`
+    - result: compile/pass with `0` tests selected
+66. `cargo check -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-jit`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+67. `cargo fmt --check`
+    - result: passed
+68. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -261,6 +276,12 @@ Implementation progress:
 4. JIT external descriptor calls now mirror the VM path with exact slot-level
    `read_variant_slot()` / `write_variant_slot()` helpers over the `RtSlot`
    Windows `VARIANT` layout.
+5. COM event callback argument retrieval now has a Variant-native path:
+   native Windows callback state returns the queued `ComEventCallbackValue`
+   carrier, `WindowsComBridge::event_callback_variant()` exposes the retained
+   `Variant`, `ComHal::event_callback_variant()` carries it through HAL, and
+   VM/JIT event callback helpers write callback arguments directly into Variant
+   slots.
 
 Remaining blocker:
 
@@ -269,20 +290,20 @@ Remaining blocker:
    helper functions, JIT helper functions, host callbacks, legacy `SafeArray`
    compatibility element APIs, legacy dynamic-link symbol APIs, and `ComValue`
    bridges. VM register storage, JIT slot storage, `For Each` iterator storage,
-   VM/JIT WithEvents binding storage, and VM/JIT descriptor external-call
-   transport no longer retain it as their backing value store for normal VBA
-   values.
+   VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
+   and VM/JIT COM event callback argument transport no longer retain it as
+   their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
    audit before closure can be claimed.
 4. Completion still requires an audit and migration/classification of all
    remaining projection seams that can expose or retain general values:
-   interpreter/JIT helper internals outside slot storage, HAL callback surfaces,
-   legacy dynamic-link symbol APIs, legacy `SafeArray` element compatibility
-   APIs, remaining COM boundary `ComValue` projection points, and non-Variant
-   pointer-helper behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr`
-   over non-Variant variables.
+   interpreter/JIT helper internals outside slot storage, HAL surfaces that
+   still use semantic values by contract, legacy dynamic-link symbol APIs,
+   legacy `SafeArray` element compatibility APIs, remaining COM boundary
+   `ComValue` projection points, and non-Variant pointer-helper behavior such
+   as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
