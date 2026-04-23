@@ -197,6 +197,11 @@ Implemented:
 47. Immediate sessions now expose `snapshot_variants()`, forwarding the prepared
     project runtime session's exact `Variant` snapshot while leaving immediate
     evaluation result display and legacy `RuntimeValue` snapshot APIs unchanged.
+48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
+    against `Variant` accessors and constructors. The `RuntimeValue` bridge
+    methods remain as compatibility projection helpers, but the COM value bridge
+    no longer uses `RuntimeValue` as the intermediate carrier for normal
+    Variant-shaped values.
 
 Validation:
 
@@ -530,6 +535,14 @@ Validation:
       functions
 146. `./scripts/check-governance.ps1`
     - result: passed
+147. `cargo fmt --check`
+    - result: passed
+148. `cargo test -p oxvba-com --lib com_value -- --nocapture`
+    - result: `11` passed
+149. `cargo check -p oxvba-com`
+    - result: passed
+150. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -619,14 +632,18 @@ Implementation progress:
 23. Immediate sessions now have a Variant-native snapshot companion over the
     prepared project runtime session. Immediate evaluation display semantics
     remain on the existing `RuntimeValue` projection surface.
+24. `ComValue` Variant bridges now convert directly against `Variant` accessors
+    and constructors. Its `RuntimeValue` methods remain compatibility
+    projections, but normal COM value bridge conversion no longer uses
+    `RuntimeValue` as the intermediate carrier.
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
    helper functions, JIT helper functions, host callbacks, legacy `SafeArray`
-   compatibility element APIs, legacy dynamic-link symbol APIs, and `ComValue`
-   bridges. VM register storage, JIT slot storage, `For Each` iterator storage,
+   compatibility element APIs, and legacy dynamic-link symbol APIs. VM register
+   storage, JIT slot storage, `For Each` iterator storage,
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
    `ParamArray` SAFEARRAY payload construction, and VM project-dynamic callee
@@ -635,9 +652,9 @@ Remaining blocker:
    WithEvents retained-value get/set/owner-search, VM project-dynamic dispatch
    return/destination writes, VM/JIT result extraction companion APIs, VM/JIT
    public execution snapshot companion APIs, host/project snapshot companion
-   APIs, host bundle snapshot companion APIs, and immediate-session snapshot
-   companion APIs no longer retain it as their backing value store for normal
-   VBA values.
+   APIs, host bundle snapshot companion APIs, immediate-session snapshot
+   companion APIs, and `ComValue` Variant bridge conversions no longer retain it
+   as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
@@ -648,15 +665,15 @@ Remaining blocker:
    surfaces that still use semantic values by contract, HAL surfaces that still
    use semantic values by contract, legacy dynamic-link symbol APIs, legacy
    `SafeArray` element compatibility APIs documented in
-   `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, remaining COM
-   boundary `ComValue` projection points, legacy COM dispatch
+   `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
+   projection APIs that still expose `RuntimeValue`, legacy COM dispatch
    `RuntimeValue` compatibility methods, and non-Variant pointer-helper
    behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
    variables.
-6. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
+5. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
    compatibility results. They now project from Variant-backed companion
    surfaces, but they remain open classification work before the final `vmm-e6`
    closure checklist.
-5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
+6. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
