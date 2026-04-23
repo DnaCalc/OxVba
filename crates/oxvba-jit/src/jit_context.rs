@@ -171,10 +171,22 @@ impl JitContextOwned {
 
     /// Extract the user-visible slot values as RuntimeValues.
     pub fn extract_user_values(&self) -> Vec<RuntimeValue> {
+        self.extract_user_variants()
+            .into_iter()
+            .map(|value| {
+                value
+                    .to_runtime_value()
+                    .expect("JIT user VARIANT slot should project to RuntimeValue")
+            })
+            .collect()
+    }
+
+    /// Extract the exact user-visible VARIANT slot carriers.
+    pub fn extract_user_variants(&self) -> Vec<Variant> {
         let user_count = self.context.user_slot_count as usize;
         self.slots[..user_count]
             .iter()
-            .map(|slot| slot.to_runtime_value())
+            .map(|slot| slot.variant().clone())
             .collect()
     }
 

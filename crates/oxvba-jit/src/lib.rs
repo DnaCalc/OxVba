@@ -104,7 +104,8 @@ mod tests {
         model::{HalProfileId, HostPolicy},
     };
     use oxvba_runtime::{
-        F64Value, RuntimeValue,
+        F64Value, RuntimeValue, VarType,
+        bstr::BStr,
         safe_array::{SafeArray, SafeArrayBound, VT_UI1_VALUE},
     };
 
@@ -281,6 +282,25 @@ mod tests {
                 )
                 .expect("expected byte SAFEARRAY should build")
             )
+        );
+    }
+
+    #[test]
+    fn jit_context_extracts_user_variants_before_projection() {
+        let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_slot(0, RuntimeValue::I32(42));
+            ctx.context
+                .write_slot(1, RuntimeValue::String(BStr::from("ABC")));
+        }
+
+        let variants = ctx.extract_user_variants();
+        assert_eq!(variants[0].vtype(), VarType::Long);
+        assert_eq!(variants[0].as_i32(), Some(42));
+        assert_eq!(variants[1].vtype(), VarType::String);
+        assert_eq!(
+            variants[1].to_runtime_value().expect("string variant"),
+            RuntimeValue::String(BStr::from("ABC"))
         );
     }
 
