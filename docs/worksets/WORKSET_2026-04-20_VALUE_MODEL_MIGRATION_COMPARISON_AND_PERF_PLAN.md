@@ -1792,6 +1792,9 @@ Child beads:
        construct and extend internal arrays through `Variant` element vectors
        instead of retaining `RuntimeValue` vectors inside the resulting
        SAFEARRAY payloads
+     - progress landed: VM `For Each` array materialization now reads
+       SAFEARRAY payloads via `variant_elements()` and retains iterator items
+       directly as `RuntimeSlot::Variant`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
