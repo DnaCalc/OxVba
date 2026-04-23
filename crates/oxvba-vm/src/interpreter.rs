@@ -3375,11 +3375,11 @@ impl Vm {
         iterable: &RuntimeValue,
     ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
         if let RuntimeValue::ArrayIntent(array) = iterable {
-            let values = array.elements().ok_or_else(|| ForEachInitError {
+            let values = array.variant_elements().ok_or_else(|| ForEachInitError {
                 code: 13,
                 detail: "For Each array source is missing materialized element payload".to_string(),
             })?;
-            return Self::runtime_values_to_slots(values);
+            return Ok(Self::variants_to_slots(values));
         }
 
         if let Ok(object) = Self::runtime_value_to_com_object(iterable, "foreach.source") {
@@ -3425,13 +3425,13 @@ impl Vm {
 
         match runtime_value {
             RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements().ok_or_else(|| ForEachInitError {
+                let values = array.variant_elements().ok_or_else(|| ForEachInitError {
                     code: 13,
                     detail: format!(
                         "For Each NewEnum source on object {object} is missing element payload"
                     ),
                 })?;
-                Self::runtime_values_to_slots(values)
+                Ok(Self::variants_to_slots(values))
             }
             other => Err(ForEachInitError {
                 code: 13,
@@ -3442,16 +3442,8 @@ impl Vm {
         }
     }
 
-    fn runtime_values_to_slots(
-        values: Vec<RuntimeValue>,
-    ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
-        values
-            .into_iter()
-            .map(|value| {
-                RuntimeSlot::from_runtime_value(value)
-                    .map_err(|detail| ForEachInitError { code: 13, detail })
-            })
-            .collect()
+    fn variants_to_slots(values: Vec<Variant>) -> Vec<RuntimeSlot> {
+        values.into_iter().map(RuntimeSlot::Variant).collect()
     }
 
     fn validate_runtime_assignment(
