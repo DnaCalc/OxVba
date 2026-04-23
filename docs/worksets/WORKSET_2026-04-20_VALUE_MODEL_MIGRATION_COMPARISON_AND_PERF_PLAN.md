@@ -1857,6 +1857,11 @@ Child beads:
        `Variant` slots directly; `BindingHandle` remains an explicit
        non-VBA control-plane token and explicit `VT_I4` zero remains the
        clear/remove carrier
+     - progress landed: VM `For Each` next-item delivery now writes retained
+       `RuntimeSlot` values directly into the item slot, and VM WithEvents
+       retained-value get/set/owner-search helpers now keep normal retained VBA
+       values on `Variant` slots; the project COM subscription sync still
+       projects at its object-boundary check only
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
