@@ -2045,7 +2045,7 @@ impl Vm {
                     )?;
                     let next = if let Some(state) = self.foreach_iterators.get_mut(&iter_id) {
                         if state.next_index < state.items.len() {
-                            let value = state.items[state.next_index].to_runtime_value()?;
+                            let value = state.items[state.next_index].clone();
                             state.next_index += 1;
                             Some(value)
                         } else {
@@ -2058,7 +2058,7 @@ impl Vm {
                         self.foreach_iterators.remove(&iter_id);
                     }
                     self.write_value_slot(*has_value, RuntimeValue::Bool(next.is_some()))?;
-                    self.write_value_slot(*item, next.unwrap_or(RuntimeValue::Empty))?;
+                    self.write_runtime_slot(*item, next.unwrap_or_default())?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
@@ -2716,10 +2716,9 @@ impl Vm {
                     let value = self
                         .withevents_bindings
                         .get(&key)
-                        .map(RuntimeSlot::to_runtime_value)
-                        .transpose()?
-                        .unwrap_or(RuntimeValue::I32(0));
-                    self.write_value_slot(*dst, value)?;
+                        .cloned()
+                        .unwrap_or_else(|| RuntimeSlot::Variant(Variant::from_i32(0)));
+                    self.write_runtime_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsSet {
@@ -2730,19 +2729,19 @@ impl Vm {
                 } => {
                     let owner = self.read_value_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
-                    let value = self.read_value_slot(*value)?;
+                    let value = self.read_variant_slot(*value)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
-                    if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
+                    if value.as_i32() == Some(0) {
                         self.withevents_bindings.remove(&key);
                     } else {
                         self.withevents_bindings
-                            .insert(key, RuntimeSlot::from_runtime_value(value.clone())?);
+                            .insert(key, RuntimeSlot::Variant(value.clone()));
                         self.sync_project_com_withevents_binding(owner, binding, &value)?;
                     }
-                    self.write_value_slot(*dst, value)?;
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
@@ -2760,10 +2759,18 @@ impl Vm {
                     source,
                     binding,
                 } => {
-                    let source = self.read_value_slot(*source)?;
+                    let source_slot = *source;
+                    let source = self.read_value_slot(source_slot)?;
+                    let source_variant =
+                        if crate::semantics::runtime_value_is_explicit_zero_carrier(&source) {
+                            None
+                        } else {
+                            Some(self.read_variant_slot(source_slot)?)
+                        };
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
-                    let mut owners = self.withevents_matching_owners(&source, binding)?;
+                    let mut owners =
+                        self.withevents_matching_owners(&source, source_variant.as_ref(), binding);
                     owners.sort_unstable_by_key(|owner| owner.raw());
                     if owners.is_empty() {
                         self.write_value_slot(*dst, RuntimeValue::I32(0))?;
@@ -3936,21 +3943,26 @@ impl Vm {
     fn withevents_matching_owners(
         &self,
         source: &RuntimeValue,
+        source_variant: Option<&Variant>,
         binding: BindingHandle,
-    ) -> Result<Vec<ObjectRef>, String> {
+    ) -> Vec<ObjectRef> {
         if crate::semantics::runtime_value_is_explicit_zero_carrier(source) {
-            return Ok(Vec::new());
+            return Vec::new();
         }
+        let Some(source_variant) = source_variant else {
+            return Vec::new();
+        };
         let mut owners = Vec::new();
         for (key, value) in &self.withevents_bindings {
-            if value.to_runtime_value()? != *source
-                || Self::withevents_binding_from_key(*key) != binding
-            {
+            let RuntimeSlot::Variant(value) = value else {
+                continue;
+            };
+            if value != source_variant || Self::withevents_binding_from_key(*key) != binding {
                 continue;
             }
             owners.push(Self::withevents_owner_from_key(*key));
         }
-        Ok(owners)
+        owners
     }
 
     fn clear_all_com_withevents_state_best_effort(&mut self) {
@@ -3998,7 +4010,7 @@ impl Vm {
         &mut self,
         owner: ObjectRef,
         binding: BindingHandle,
-        value: &RuntimeValue,
+        value: &Variant,
     ) -> Result<(), String> {
         let Some(routes) = self
             .project_com_withevents_routes
@@ -4007,7 +4019,8 @@ impl Vm {
         else {
             return Ok(());
         };
-        let object = Self::runtime_value_to_com_object(value, "withevents.value")?;
+        let runtime_value = value.to_runtime_value()?;
+        let object = Self::runtime_value_to_com_object(&runtime_value, "withevents.value")?;
         if object.raw() == 0 {
             return Ok(());
         }
