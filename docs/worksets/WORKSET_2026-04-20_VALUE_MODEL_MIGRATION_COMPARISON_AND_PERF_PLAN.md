@@ -1835,6 +1835,10 @@ Child beads:
        `invoke_descriptor_variants()` using slot `Variant` reads; the
        no-descriptor legacy symbol-token path remains a compatibility
        projection through `RuntimeValue`
+     - progress landed: HAL conformance multidimensional SAFEARRAY shape
+       probing now constructs the probe array through `SafeArray::from_variants_nd()`
+       with canonical `Variant` elements instead of using the legacy
+       `RuntimeValue` compatibility constructor
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
