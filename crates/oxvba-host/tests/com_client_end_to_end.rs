@@ -29,15 +29,18 @@ mod windows_com_e2e {
                     .clone();
                 RuntimeValue::Object(canonical)
             }
-            RuntimeValue::ArrayIntent(mut array) => {
-                if let Some(elements) = array.elements.take() {
-                    array.elements = Some(
-                        elements
-                            .into_iter()
-                            .map(canonicalize_runtime_value)
-                            .collect(),
-                    );
-                }
+            RuntimeValue::ArrayIntent(array) => {
+                let array = match array.elements() {
+                    Some(elements) => array
+                        .replace_elements(
+                            elements
+                                .into_iter()
+                                .map(canonicalize_runtime_value)
+                                .collect(),
+                        )
+                        .expect("canonical snapshot array rewrite should preserve SAFEARRAY shape"),
+                    None => array,
+                };
                 RuntimeValue::ArrayIntent(array)
             }
             other => other,
@@ -1229,8 +1232,7 @@ End Sub
             panic!("expected SAFEARRAY result, got {:?}", vm[1]);
         };
         let elements = array
-            .elements
-            .as_ref()
+            .elements()
             .expect("dispatch-array result should preserve owned elements");
         assert_eq!(elements.len(), 1, "dispatch-array result length mismatch");
         let RuntimeValue::Object(handle) = &elements[0] else {
@@ -1267,8 +1269,7 @@ End Sub
             panic!("expected SAFEARRAY result, got {:?}", vm[1]);
         };
         let elements = array
-            .elements
-            .as_ref()
+            .elements()
             .expect("typed dispatch-array result should preserve owned elements");
         assert_eq!(
             elements.len(),
@@ -1309,8 +1310,7 @@ End Sub
             panic!("expected SAFEARRAY result, got {:?}", vm[1]);
         };
         let elements = array
-            .elements
-            .as_ref()
+            .elements()
             .expect("typed unknown-array result should preserve owned elements");
         assert_eq!(
             elements.len(),
@@ -1348,9 +1348,9 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                assert_eq!(array.dimensions, 2, "expected rank-2 array");
-                assert_eq!(array.len, 4, "expected 2x2=4 elements");
-                assert!(array.bounds.is_some(), "expected per-dimension bounds");
+                assert_eq!(array.dimensions(), 2, "expected rank-2 array");
+                assert_eq!(array.len(), 4, "expected 2x2=4 elements");
+                assert!(array.bounds().is_some(), "expected per-dimension bounds");
             }
             other => panic!("expected ArrayIntent, got {other:?}"),
         }
@@ -1375,9 +1375,9 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                assert_eq!(array.dimensions, 2, "expected rank-2 array");
-                assert_eq!(array.len, 4, "expected 2x2=4 elements");
-                assert!(array.bounds.is_some(), "expected per-dimension bounds");
+                assert_eq!(array.dimensions(), 2, "expected rank-2 array");
+                assert_eq!(array.len(), 4, "expected 2x2=4 elements");
+                assert!(array.bounds().is_some(), "expected per-dimension bounds");
             }
             other => panic!("expected ArrayIntent, got {other:?}"),
         }
@@ -2148,7 +2148,7 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements.as_ref().expect("array should have elements");
+                let values = array.elements().expect("array should have elements");
                 assert!(
                     values.contains(&RuntimeValue::I64(4_000_000_000)),
                     "expected VT_UI4 array element preserved on I64 carrier, got {values:?}"
@@ -2201,7 +2201,7 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements.as_ref().expect("array should have elements");
+                let values = array.elements().expect("array should have elements");
                 assert!(
                     values.contains(&RuntimeValue::I64(4_000_000_000)),
                     "expected VT_UINT array element preserved on I64 carrier, got {values:?}"
@@ -2254,7 +2254,7 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements.as_ref().expect("array should have elements");
+                let values = array.elements().expect("array should have elements");
                 assert!(
                     values.contains(&RuntimeValue::I64(5_000_000_000)),
                     "expected VT_I8 array element preserved on I64 carrier, got {values:?}"
@@ -2307,7 +2307,7 @@ End Sub
         );
         match &vm[1] {
             RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements.as_ref().expect("array should have elements");
+                let values = array.elements().expect("array should have elements");
                 assert!(
                     values.contains(&RuntimeValue::I64(5_000_000_000)),
                     "expected VT_UI8 array element preserved on I64 carrier, got {values:?}"

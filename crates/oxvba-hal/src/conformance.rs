@@ -707,7 +707,7 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
             RuntimeValue::I32(6),
         ];
         let array = oxvba_runtime::safe_array::SafeArray::from_values_nd(bounds.clone(), values);
-        array.dimensions == 2 && array.len == 6 && array.bounds.as_ref() == Some(&bounds)
+        array.dimensions() == 2 && array.len() == 6 && array.bounds().as_ref() == Some(&bounds)
     };
     if !safearray_nd_ok {
         failures.push("multi-dimensional SafeArray shape preservation failed".to_string());

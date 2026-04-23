@@ -162,11 +162,11 @@ unsafe fn set_windows_variant_array_arg(
     variant: *mut VARIANT,
     array: &crate::safe_array::SafeArray,
 ) -> Result<(), String> {
-    let Some(values) = array.elements.as_ref() else {
+    let Some(values) = array.elements() else {
         return Err("VarPtr over Variant containing an array shape without element payload is not yet supported".to_string());
     };
 
-    if let Some(bounds) = array.bounds.as_ref()
+    if let Some(bounds) = array.bounds()
         && bounds.len() > 1
     {
         let dims = u32::try_from(bounds.len())
@@ -185,7 +185,7 @@ unsafe fn set_windows_variant_array_arg(
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for runtime_value in values {
             let mut element: VARIANT = std::mem::zeroed();
-            if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, runtime_value)
+            if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, &runtime_value)
             {
                 let _ = VariantClear(&mut element);
                 let _ = SafeArrayDestroy(psa.cast_const());
@@ -546,7 +546,7 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             }
         }
         RuntimeValue::ArrayIntent(array) => {
-            let Some(elements) = &array.elements else {
+            let Some(elements) = array.elements() else {
                 return Err(
                     "VarPtr over array shape without element payload is not yet supported"
                         .to_string(),
@@ -556,10 +556,10 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             for element in elements {
                 match element {
                     RuntimeValue::Empty | RuntimeValue::Null => bytes.push(0),
-                    RuntimeValue::I32(value) if (0..=255).contains(value) => {
-                        bytes.push(*value as u8)
+                    RuntimeValue::I32(value) if (0..=255).contains(&value) => {
+                        bytes.push(value as u8)
                     }
-                    RuntimeValue::Bool(value) => bytes.push(if *value { 1 } else { 0 }),
+                    RuntimeValue::Bool(value) => bytes.push(if value { 1 } else { 0 }),
                     other => {
                         return Err(format!(
                             "VarPtr over array payload currently requires byte-compatible elements, got {other:?}"

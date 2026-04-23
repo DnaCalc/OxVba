@@ -864,7 +864,7 @@ where
     FResolve: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FAddRef: FnMut(*mut core::ffi::c_void),
 {
-    let Some(values) = array.elements.as_ref() else {
+    let Some(values) = array.elements() else {
         (*variant).Anonymous.Anonymous.vt = VT_I4;
         (*variant).Anonymous.Anonymous.Anonymous.lVal =
             ComValue::ArrayIntent(array.clone()).to_legacy_dispatch_token()?;
@@ -872,7 +872,7 @@ where
     };
 
     // Multi-dimensional path: use SafeArrayCreate with per-dimension bounds.
-    if let Some(bounds) = array.bounds.as_ref()
+    if let Some(bounds) = array.bounds()
         && bounds.len() > 1
     {
         let dims = u32::try_from(bounds.len())

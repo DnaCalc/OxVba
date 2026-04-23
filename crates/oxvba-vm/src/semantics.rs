@@ -153,7 +153,7 @@ pub fn runtime_join_bounded(
 ) -> Result<RuntimeValue, String> {
     let _ = runtime_value_to_text(delimiter, "Join delimiter")?;
     let out = match value {
-        RuntimeValue::ArrayIntent(array) => i32::try_from(array.len)
+        RuntimeValue::ArrayIntent(array) => i32::try_from(array.len())
             .map_err(|_| "Join array length exceeded i32 range".to_string())?,
         RuntimeValue::Empty => 0,
         RuntimeValue::I32(v) => {
@@ -1876,10 +1876,10 @@ pub fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result
 fn runtime_array_bounds(
     array: &oxvba_runtime::safe_array::SafeArray,
 ) -> Vec<oxvba_runtime::safe_array::SafeArrayBound> {
-    array.bounds.clone().unwrap_or_else(|| {
+    array.bounds().unwrap_or_else(|| {
         vec![oxvba_runtime::safe_array::SafeArrayBound {
             lower: 0,
-            count: u32::try_from(array.len).unwrap_or(u32::MAX),
+            count: u32::try_from(array.len()).unwrap_or(u32::MAX),
         }]
     })
 }
@@ -1949,8 +1949,8 @@ pub fn runtime_array_get(
             "{field} requires a runtime array value, got {array_value:?}"
         ));
     };
-    let elements = array
-        .elements
+    let elements_binding = array.elements();
+    let elements = elements_binding
         .as_ref()
         .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
     let indices = runtime_array_indices(index_values, field)?;
@@ -1973,25 +1973,24 @@ pub fn runtime_array_set(
             "{field} requires a runtime array value, got {array_value:?}"
         ));
     };
-    let mut updated = array.clone();
+    let updated = array.clone();
     let bounds = runtime_array_bounds(&updated);
     let indices = runtime_array_indices(index_values, field)?;
     let offset = runtime_array_offset(&bounds, &indices, field)?;
-    let elements = updated
-        .elements
-        .as_mut()
+    let mut elements = updated
+        .elements()
         .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
     let Some(slot) = elements.get_mut(offset) else {
         return Err(format!("{field} index {:?} is out of range", indices));
     };
     *slot = new_value.clone();
-    Ok(RuntimeValue::ArrayIntent(updated))
+    Ok(RuntimeValue::ArrayIntent(updated.replace_elements(elements)?))
 }
 
 pub fn runtime_array_lbound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {
     match array_value {
         RuntimeValue::ArrayIntent(array) => Ok(array
-            .bounds
+            .bounds()
             .as_ref()
             .and_then(|bounds| bounds.first())
             .map(|bound| bound.lower)
@@ -2013,8 +2012,9 @@ pub fn runtime_array_lbound(array_value: &RuntimeValue, field: &str) -> Result<i
 pub fn runtime_array_ubound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {
     match array_value {
         RuntimeValue::ArrayIntent(array) => {
-            let Some(bound) = array.bounds.as_ref().and_then(|bounds| bounds.first()) else {
-                return i32::try_from(array.len)
+            let bounds_binding = array.bounds();
+            let Some(bound) = bounds_binding.as_ref().and_then(|bounds| bounds.first()) else {
+                return i32::try_from(array.len())
                     .map(|len| len - 1)
                     .map_err(|_| format!("{field} array length exceeds i32 range"));
             };

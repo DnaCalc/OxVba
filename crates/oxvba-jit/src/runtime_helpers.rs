@@ -1631,13 +1631,7 @@ fn runtime_resized_array(
     }
     let default = runtime_array_default_value(element_type);
     let values = vec![default; len];
-    Ok(SafeArray {
-        dimensions: u8::try_from(bounds.len())
-            .map_err(|_| "runtime ReDim dimension count exceeds SAFEARRAY capacity".to_string())?,
-        len,
-        bounds: Some(bounds),
-        elements: Some(values),
-    })
+    SafeArray::from_shape_and_values(bounds, values)
 }
 
 fn runtime_resized_array_preserve(
@@ -1649,7 +1643,7 @@ fn runtime_resized_array_preserve(
     let RuntimeValue::ArrayIntent(previous) = current else {
         return Err("runtime ReDim Preserve requires an existing runtime array value".to_string());
     };
-    if previous.dimensions as usize != lower_bounds.len()
+    if previous.dimensions() as usize != lower_bounds.len()
         || lower_bounds.len() != upper_bounds.len()
     {
         return Err(
@@ -1657,21 +1651,21 @@ fn runtime_resized_array_preserve(
                 .to_string(),
         );
     }
-    let previous_bounds = previous
-        .bounds
+    let previous_bounds_binding = previous.bounds();
+    let previous_bounds = previous_bounds_binding
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve requires bounds metadata".to_string())?;
-    let previous_values = previous
-        .elements
+    let previous_values_binding = previous.elements();
+    let previous_values = previous_values_binding
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve requires an owned array payload".to_string())?;
-    let mut resized = runtime_resized_array(lower_bounds, upper_bounds, element_type)?;
+    let resized = runtime_resized_array(lower_bounds, upper_bounds, element_type)?;
     let resized_bounds = resized
-        .bounds
+        .bounds()
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve failed to materialize bounds metadata".to_string())?
         .clone();
-    let resized_values = resized.elements.as_mut().ok_or_else(|| {
+    let mut resized_values = resized.elements().ok_or_else(|| {
         "runtime ReDim Preserve failed to materialize an owned array payload".to_string()
     })?;
     for dim in 0..previous_bounds.len() {
@@ -1708,7 +1702,7 @@ fn runtime_resized_array_preserve(
                 previous_values[previous_start + offset].clone();
         }
     }
-    Ok(resized)
+    resized.replace_elements(resized_values)
 }
 
 fn decode_runtime_array_element_type(element_type: i32) -> Option<RuntimeArrayElementType> {
@@ -1773,7 +1767,7 @@ pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, 
     let current = read_slot!(ctx, array);
     let item = read_slot!(ctx, item);
     let mut elements = match current {
-        RuntimeValue::ArrayIntent(array) => array.elements.unwrap_or_default(),
+        RuntimeValue::ArrayIntent(array) => array.elements().unwrap_or_default(),
         RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
         _ => return ERR_RUNTIME,
     };
