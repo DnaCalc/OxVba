@@ -1756,6 +1756,11 @@ Child beads:
        `VT_UNKNOWN` for the IUnknown-backed object identity/lifetime lane, and
        VM/JIT `VarPtr(Variant)` now exposes the actual internal `Variant` slot
        cell instead of a copied runtime-pointer-helper projection
+     - progress landed: COM runtime event callback queues now retain callback
+       arguments as `Variant` through `ComEventCallbackValue` instead of
+       retaining `ComValue`; existing COM/HAL polling and callback-argument
+       APIs still project those queued variants back to `ComValue` at the
+       boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, SafeArray element APIs, `ComValue`,
        and remaining non-Variant pointer-helper behavior such as `StrPtr`,
@@ -1865,10 +1870,12 @@ Current repo grounding after `vmm-e5`:
      otherwise fail deterministically on the bounded nondispatch diagnostic
      path.
 4. COM event transport is currently split into two materially different lanes.
-   - native connection-point callbacks queue `ComCallbackPayload { args:
-     Vec<ComValue> }`
-   - projected event triggers still depend on legacy `i32` callback-argument
-     transport before they are widened back into `ComValue`
+   - native connection-point callbacks now enter through `ComValue` at the COM
+     boundary, but the retained `ComRuntimeState` callback queue stores
+     arguments as `Variant` via `ComEventCallbackValue`
+   - projected event triggers now use `ComInvokeArg` / `ComValue` at the
+     boundary and project into retained `Variant` queue payloads rather than
+     retaining semantic `ComValue` in the callback queue
    - source-interface callbacks remain explicitly bounded to the existing
      narrow path (`single i32` source-interface sink support; broader COM-EVT-B
      still unsupported in the current lane)
