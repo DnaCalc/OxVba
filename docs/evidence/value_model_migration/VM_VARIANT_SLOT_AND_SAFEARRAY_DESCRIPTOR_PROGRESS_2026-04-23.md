@@ -222,6 +222,15 @@ Implemented:
     `Me` argument as a `Variant::from_object_ref()` carrier. The existing
     `RuntimeValue` member invocation API remains a compatibility projection over
     the Variant path.
+53. Host COM event callback ingress and runtime dispatch now have Variant-native
+    companion surfaces. `ComEventCallbackVariantDispatch`,
+    `Engine::poll_com_event_callback_variants()`, and
+    `Engine::dispatch_com_event_callback_variants_into_runtime()` preserve
+    callback payloads as exact `Variant` carriers and invoke project handlers
+    through `Vm::invoke_procedure_with_variants()`. The existing
+    `ComEventCallbackDispatch` / `poll_com_event_callback()` /
+    `dispatch_com_event_callback_into_runtime()` APIs remain compatibility
+    projections.
 
 Validation:
 
@@ -609,6 +618,16 @@ Validation:
       functions
 168. `./scripts/check-governance.ps1`
     - result: passed
+169. `cargo test -p oxvba-host --lib formal_com_event_callback -- --nocapture`
+     - result: `7` passed with existing dead-code warnings in VM/JIT digit
+       helper functions
+170. `cargo fmt --check`
+     - result: passed
+171. `cargo check -p oxvba-host`
+     - result: passed with existing dead-code warnings in VM/JIT digit helper
+       functions
+172. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -716,12 +735,18 @@ Implementation progress:
 28. Host class member invocation now has a Variant-native companion and uses a
     `Variant` carrier for the implicit `Me` argument. Existing `RuntimeValue`
     member invocation remains a compatibility projection.
+29. Host COM callback ingress and project-handler dispatch now have
+    Variant-native companion APIs. Callback payload normalization keeps
+    `DynamicValue` payloads as `Variant` values, and project handler invocation
+    routes those values through the VM Variant procedure path. The old
+    `RuntimeValue` callback dispatch APIs now project into or out of the
+    Variant callback dispatch carrier.
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
-   helper functions, JIT helper functions, host callbacks, legacy `SafeArray`
+   helper functions, JIT helper functions, legacy `SafeArray`
    compatibility element APIs, and legacy dynamic-link symbol APIs. VM register
    storage, JIT slot storage, `For Each` iterator storage,
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
@@ -734,9 +759,9 @@ Remaining blocker:
    public execution snapshot companion APIs, host/project snapshot companion
    APIs, host bundle snapshot companion APIs, immediate-session snapshot
    companion APIs, `ComValue` Variant bridge conversions, embedded host
-   procedure invocation companion APIs, immediate procedure invocation, and host
-   class member invocation no longer retain it as their backing value store for
-   normal VBA values.
+   procedure invocation companion APIs, immediate procedure invocation, host
+   class member invocation, and host COM callback ingress/dispatch no longer
+   retain it as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
