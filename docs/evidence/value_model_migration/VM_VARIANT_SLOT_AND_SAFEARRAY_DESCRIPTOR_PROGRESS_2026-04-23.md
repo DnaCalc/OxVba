@@ -48,6 +48,10 @@ Implemented:
     VM/JIT `Variant` slot cell for Variant variables, not a copied
     runtime-pointer-helper projection. The older copied helper remains only as
     a boundary/manual pointer-helper utility.
+16. COM runtime event callback queues no longer retain callback arguments as
+    `ComValue`. `ComRuntimeState` now stores queued callback arguments as
+    `Variant` via `ComEventCallbackValue`, and projects back to `ComValue` only
+    when existing COM/HAL polling and callback-argument APIs are read.
 
 Validation:
 
@@ -78,6 +82,10 @@ Validation:
     - result: `1` passed
 12. `cargo test -p oxvba-jit --lib variant_cell_pointer_exposes_actual_slot_storage -- --nocapture`
     - result: `1` passed
+13. `cargo test -p oxvba-com --lib runtime_state -- --nocapture`
+    - result: `5` passed
+14. `cargo fmt --check`
+    - result: passed
 
 Remaining blocker:
 
@@ -93,9 +101,10 @@ Remaining blocker:
    audit before closure can be claimed.
 4. Completion still requires an audit and migration of all remaining
    projection seams that can expose or retain general values: interpreter/JIT
-   helpers, HAL callback surfaces, `SafeArray` element APIs, `ComValue`, and
-   non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`, and generic
-   `VarPtr` over non-Variant variables.
+   helpers, HAL callback surfaces, `SafeArray` element APIs, dynamic COM
+   request payloads that still use `ComValue`, and non-Variant pointer-helper
+   behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
+   variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
