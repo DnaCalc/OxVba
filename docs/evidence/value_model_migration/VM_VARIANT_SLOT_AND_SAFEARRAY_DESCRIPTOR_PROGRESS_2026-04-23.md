@@ -148,6 +148,11 @@ Implemented:
     subscription sync still projects to `RuntimeValue` at its object-boundary
     check, but retained storage and destination writes stay on the Variant slot
     carrier.
+38. VM project-dynamic dispatch now returns `RuntimeSlot` results from
+    project-routed members and writes dispatch destinations through
+    `write_runtime_slot()`. Object `_NewEnum` fallback wraps the retained
+    `DynamicValue` `Variant` into a slot before array inspection, leaving
+    projection only where the semantic array boundary is still required.
 
 Validation:
 
@@ -377,6 +382,17 @@ Validation:
       functions
 103. `./scripts/check-governance.ps1`
     - result: passed
+104. `cargo fmt --check`
+    - result: passed
+105. `cargo test -p oxvba-vm --lib project_dynamic -- --nocapture`
+    - result: `4` passed
+106. `cargo test -p oxvba-vm --lib foreach -- --nocapture`
+    - result: compile/pass with `0` tests selected
+107. `cargo check -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+108. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -432,6 +448,10 @@ Implementation progress:
 13. VM `For Each` next-item writes now keep iterator item delivery on the
     retained `RuntimeSlot` carrier, and VM WithEvents retained value helpers now
     keep get/set/owner enumeration on `Variant` slots for normal VBA values.
+14. VM project-dynamic dispatch now returns project-routed member results as
+    `RuntimeSlot` values and writes dynamic dispatch destinations directly from
+    those slots. Object `_NewEnum` fallback also starts from the retained
+    `DynamicValue` `Variant` rather than projecting before slot formation.
 
 Remaining blocker:
 
@@ -445,8 +465,9 @@ Remaining blocker:
    `ParamArray` SAFEARRAY payload construction, and VM project-dynamic callee
    argument binding, VM/JIT dynamic COM result slot writes, JIT WithEvents
    retained-value get/set/owner-search, VM `For Each` next-item delivery, and
-   VM WithEvents retained-value get/set/owner-search no longer retain it as
-   their backing value store for normal VBA values.
+   VM WithEvents retained-value get/set/owner-search, and VM project-dynamic
+   dispatch return/destination writes no longer retain it as their backing
+   value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
