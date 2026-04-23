@@ -359,6 +359,36 @@ mod tests {
     }
 
     #[test]
+    fn runtime_lbound_and_ubound_read_variant_array_carriers() {
+        let mut ctx = JitContextOwned::new(3, 3, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_safearray(
+                    SafeArray::from_typed_values_nd(
+                        vec![SafeArrayBound { lower: 2, count: 4 }],
+                        VT_UI1_VALUE,
+                        vec![
+                            RuntimeValue::I32(10),
+                            RuntimeValue::I32(20),
+                            RuntimeValue::I32(30),
+                            RuntimeValue::I32(40),
+                        ],
+                    )
+                    .expect("byte SAFEARRAY setup should succeed"),
+                ),
+            );
+        }
+
+        assert_eq!(runtime_helpers::oxrt_lbound(ctx.context_ptr(), 1, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_ubound(ctx.context_ptr(), 2, 0), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[1], RuntimeValue::I32(2));
+        assert_eq!(values[2], RuntimeValue::I32(5));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {

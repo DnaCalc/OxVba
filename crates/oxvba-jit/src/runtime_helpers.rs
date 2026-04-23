@@ -1981,8 +1981,8 @@ pub extern "C" fn oxrt_array_set(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_lbound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_array_lbound(&val, "LBound operand") {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_array_lbound_variant(&val, "LBound operand") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1992,8 +1992,8 @@ pub extern "C" fn oxrt_lbound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_ubound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_array_ubound(&val, "UBound operand") {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_array_ubound_variant(&val, "UBound operand") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };

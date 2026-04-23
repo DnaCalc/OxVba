@@ -1950,6 +1950,11 @@ Child beads:
        `Variant::as_safearray()`, and both helpers write the resized SAFEARRAY
        back through `write_variant_slot!(..., Variant::from_safearray(...))`
        instead of detouring through `RuntimeValue::ArrayIntent`
+     - progress landed: VM semantics now has Variant-native `LBound` /
+       `UBound` companions, and JIT `oxrt_lbound` / `oxrt_ubound` now read the
+       source array slot through `read_variant_slot()` and compute bounds
+       against the retained SAFEARRAY-backed Variant carrier rather than
+       projecting the operand through `RuntimeValue::ArrayIntent`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

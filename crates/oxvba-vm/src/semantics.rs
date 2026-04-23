@@ -2061,6 +2061,23 @@ pub fn runtime_array_lbound(array_value: &RuntimeValue, field: &str) -> Result<i
     }
 }
 
+pub fn runtime_array_lbound_variant(
+    array_value: &oxvba_runtime::Variant,
+    field: &str,
+) -> Result<i32, String> {
+    let Some(array) = array_value.as_safearray() else {
+        return Err(format!(
+            "{field} requires a SAFEARRAY-backed Variant carrier, got {array_value:?}"
+        ));
+    };
+    Ok(array
+        .bounds()
+        .as_ref()
+        .and_then(|bounds| bounds.first())
+        .map(|bound| bound.lower)
+        .unwrap_or(0))
+}
+
 pub fn runtime_array_ubound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {
     match array_value {
         RuntimeValue::ArrayIntent(array) => {
@@ -2096,6 +2113,26 @@ pub fn runtime_array_ubound(array_value: &RuntimeValue, field: &str) -> Result<i
             "{field} requires runtime array or array-tag carrier, got {other:?}"
         )),
     }
+}
+
+pub fn runtime_array_ubound_variant(
+    array_value: &oxvba_runtime::Variant,
+    field: &str,
+) -> Result<i32, String> {
+    let Some(array) = array_value.as_safearray() else {
+        return Err(format!(
+            "{field} requires a SAFEARRAY-backed Variant carrier, got {array_value:?}"
+        ));
+    };
+    let bounds_binding = array.bounds();
+    let Some(bound) = bounds_binding.as_ref().and_then(|bounds| bounds.first()) else {
+        return i32::try_from(array.len())
+            .map(|len| len - 1)
+            .map_err(|_| format!("{field} array length exceeds i32 range"));
+    };
+    let count =
+        i32::try_from(bound.count).map_err(|_| format!("{field} bound metadata overflowed"))?;
+    Ok(bound.lower + count - 1)
 }
 
 // ── WithEvents Key Functions ──────────────────────────────────────────
