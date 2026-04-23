@@ -42,7 +42,7 @@ struct WithEventsOwnerIterator {
 
 #[derive(Debug, Clone)]
 struct ForEachIteratorState {
-    items: Vec<RuntimeValue>,
+    items: Vec<RuntimeSlot>,
     next_index: usize,
 }
 
@@ -145,7 +145,7 @@ pub struct Vm {
     foreach_iterators: HashMap<i32, ForEachIteratorState>,
     next_foreach_iterator_id: i32,
     project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
-    withevents_bindings: HashMap<i64, RuntimeValue>,
+    withevents_bindings: HashMap<i64, RuntimeSlot>,
     com_withevents_subscriptions: HashMap<ComSubscriptionToken, ComWithEventsSubscription>,
     com_withevents_binding_subscriptions: HashMap<i64, Vec<ComSubscriptionToken>>,
     pending_callback_tokens: VecDeque<ComCallbackToken>,
@@ -2040,7 +2040,7 @@ impl Vm {
                     )?;
                     let next = if let Some(state) = self.foreach_iterators.get_mut(&iter_id) {
                         if state.next_index < state.items.len() {
-                            let value = state.items[state.next_index].clone();
+                            let value = state.items[state.next_index].to_runtime_value()?;
                             state.next_index += 1;
                             Some(value)
                         } else {
@@ -2686,7 +2686,8 @@ impl Vm {
                     let value = self
                         .withevents_bindings
                         .get(&key)
-                        .cloned()
+                        .map(RuntimeSlot::to_runtime_value)
+                        .transpose()?
                         .unwrap_or(RuntimeValue::I32(0));
                     self.write_value_slot(*dst, value)?;
                     pc += 1;
@@ -2707,7 +2708,8 @@ impl Vm {
                     if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
                         self.withevents_bindings.remove(&key);
                     } else {
-                        self.withevents_bindings.insert(key, value.clone());
+                        self.withevents_bindings
+                            .insert(key, RuntimeSlot::from_runtime_value(value.clone())?);
                         self.sync_project_com_withevents_binding(owner, binding, &value)?;
                     }
                     self.write_value_slot(*dst, value)?;
@@ -2731,7 +2733,7 @@ impl Vm {
                     let source = self.read_value_slot(*source)?;
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
-                    let mut owners = self.withevents_matching_owners(&source, binding);
+                    let mut owners = self.withevents_matching_owners(&source, binding)?;
                     owners.sort_unstable_by_key(|owner| owner.raw());
                     if owners.is_empty() {
                         self.write_value_slot(*dst, RuntimeValue::I32(0))?;
@@ -3361,12 +3363,13 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
         iterable: &RuntimeValue,
-    ) -> Result<Vec<RuntimeValue>, ForEachInitError> {
+    ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
         if let RuntimeValue::ArrayIntent(array) = iterable {
-            return array.elements().ok_or_else(|| ForEachInitError {
+            let values = array.elements().ok_or_else(|| ForEachInitError {
                 code: 13,
                 detail: "For Each array source is missing materialized element payload".to_string(),
-            });
+            })?;
+            return Self::runtime_values_to_slots(values);
         }
 
         if let Ok(object) = Self::runtime_value_to_com_object(iterable, "foreach.source") {
@@ -3384,7 +3387,7 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
         object: oxvba_runtime::ObjectRef,
-    ) -> Result<Vec<RuntimeValue>, ForEachInitError> {
+    ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
         let request = DynamicCallRequest {
             object: object.clone(),
             member: DynamicMemberSelector::Token(-4),
@@ -3412,12 +3415,13 @@ impl Vm {
 
         match runtime_value {
             RuntimeValue::ArrayIntent(array) => {
-                array.elements().ok_or_else(|| ForEachInitError {
+                let values = array.elements().ok_or_else(|| ForEachInitError {
                     code: 13,
                     detail: format!(
                         "For Each NewEnum source on object {object} is missing element payload"
                     ),
-                })
+                })?;
+                Self::runtime_values_to_slots(values)
             }
             other => Err(ForEachInitError {
                 code: 13,
@@ -3426,6 +3430,20 @@ impl Vm {
                 ),
             }),
         }
+    }
+
+    fn runtime_values_to_slots(
+        values: Vec<RuntimeValue>,
+    ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
+        values
+            .into_iter()
+            .map(|value| {
+                RuntimeSlot::from_runtime_value(value).map_err(|detail| ForEachInitError {
+                    code: 13,
+                    detail,
+                })
+            })
+            .collect()
     }
 
     fn validate_runtime_assignment(
@@ -3812,19 +3830,20 @@ impl Vm {
         &self,
         source: &RuntimeValue,
         binding: BindingHandle,
-    ) -> Vec<ObjectRef> {
+    ) -> Result<Vec<ObjectRef>, String> {
         if crate::semantics::runtime_value_is_explicit_zero_carrier(source) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        self.withevents_bindings
-            .iter()
-            .filter_map(|(key, value)| {
-                if value != source || Self::withevents_binding_from_key(*key) != binding {
-                    return None;
-                }
-                Some(Self::withevents_owner_from_key(*key))
-            })
-            .collect()
+        let mut owners = Vec::new();
+        for (key, value) in &self.withevents_bindings {
+            if value.to_runtime_value()? != *source
+                || Self::withevents_binding_from_key(*key) != binding
+            {
+                continue;
+            }
+            owners.push(Self::withevents_owner_from_key(*key));
+        }
+        Ok(owners)
     }
 
     fn clear_all_com_withevents_state_best_effort(&mut self) {

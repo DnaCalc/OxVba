@@ -417,6 +417,8 @@ This grid is the current anti-drift truth surface for closure.
       `SAFEARRAY*` union values; VM registers now store normal VBA values as
       `Variant` slots rather than `RuntimeValue` slots; `ReDim` now preserves
       typed SAFEARRAY element vartypes and one-dimensional descriptor bounds;
+      `For Each` iterator state and WithEvents binding state now also retain
+      values as `RuntimeSlot` values rather than `RuntimeValue` values;
       however the semantic `RuntimeValue` projection and `ComValue` bridge
       remain open consolidation blockers
    - projected truth:
@@ -1736,6 +1738,10 @@ Child beads:
        `ReDim Preserve`; this still does not close the bead because
        `RuntimeValue` remains a semantic projection across helper functions,
        host callback surfaces, SafeArray element APIs, and `ComValue` bridges
+     - progress landed: `ForEachIteratorState` and WithEvents binding state now
+       retain `RuntimeSlot` values instead of `RuntimeValue` values, reducing
+       the remaining semantic-storage footprint while keeping `RuntimeValue` as
+       a boundary/projection helper
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
