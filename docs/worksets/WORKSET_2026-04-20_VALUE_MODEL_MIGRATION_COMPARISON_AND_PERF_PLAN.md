@@ -1784,6 +1784,10 @@ Child beads:
        typed scalar conversion still performs per-element projection where
        required, but the bridge no longer owns `Vec<RuntimeValue>` as the array
        carrier
+     - progress landed: VM and JIT `ReDim` / `ReDim Preserve` helper paths now
+       allocate and preserve typed SAFEARRAY elements as canonical `Variant`
+       values using `variant_elements()` / `replace_variant_elements()`; the
+       compatibility projection bridge now handles `VT_UI1` Byte variants
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
