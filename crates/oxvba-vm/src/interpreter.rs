@@ -2343,7 +2343,7 @@ impl Vm {
                     }
                     match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
                         Ok(Some(value)) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_runtime_slot(*dst, value)?;
                             pc += 1;
                             continue;
                         }
@@ -3475,26 +3475,29 @@ impl Vm {
             args: Vec::new(),
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
         };
-        let runtime_value =
-            match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
-                Ok(Some(value)) => value,
-                Ok(None) => {
-                    let bridge = HalComDynamicBridge::new(
-                        self.host_services.profile(),
-                        self.host_services.com(),
-                    );
-                    bridge
-                        .invoke_dynamic(&request)
-                        .map(|value| value.to_runtime_value())
-                        .map_err(|err| ForEachInitError {
-                            code: 438,
-                            detail: err.message,
-                        })?
-                }
-                Err(detail) => return Err(ForEachInitError { code: 438, detail }),
-            };
+        let result_slot = match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request)
+        {
+            Ok(Some(value)) => value,
+            Ok(None) => {
+                let bridge = HalComDynamicBridge::new(
+                    self.host_services.profile(),
+                    self.host_services.com(),
+                );
+                bridge
+                    .invoke_dynamic(&request)
+                    .map(|value| RuntimeSlot::Variant(value.variant().clone()))
+                    .map_err(|err| ForEachInitError {
+                        code: 438,
+                        detail: err.message,
+                    })?
+            }
+            Err(detail) => return Err(ForEachInitError { code: 438, detail }),
+        };
 
-        match runtime_value {
+        let result_value = result_slot
+            .to_runtime_value()
+            .map_err(|detail| ForEachInitError { code: 13, detail })?;
+        match result_value {
             RuntimeValue::ArrayIntent(array) => {
                 let values = array.variant_elements().ok_or_else(|| ForEachInitError {
                     code: 13,
@@ -3687,7 +3690,7 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
         request: &DynamicCallRequest,
-    ) -> Result<Option<RuntimeValue>, String> {
+    ) -> Result<Option<RuntimeSlot>, String> {
         let object = request.object.clone();
         let Some(state) = self.project_dynamic_objects.get(&object.raw()).cloned() else {
             return Ok(None);
@@ -3812,9 +3815,8 @@ impl Vm {
         Ok(Some(
             member
                 .return_slot
-                .map(|slot| self.read_value_slot(slot))
-                .transpose()?
-                .unwrap_or(RuntimeValue::Empty),
+                .map(|slot| self.registers.registers[slot].clone())
+                .unwrap_or_default(),
         ))
     }
 
@@ -5803,7 +5805,9 @@ mod tests {
         let value = vm
             .try_invoke_project_dynamic(&bytecode, false, &request)
             .expect("dispatch should bind")
-            .expect("project-dynamic route should match");
+            .expect("project-dynamic route should match")
+            .to_runtime_value()
+            .expect("project-dynamic slot should project for assertion");
 
         assert_eq!(value, RuntimeValue::I32(8));
     }
@@ -5859,7 +5863,9 @@ mod tests {
         let value = vm
             .try_invoke_project_dynamic(&bytecode, false, &request)
             .expect("dispatch should bind")
-            .expect("project-dynamic route should match");
+            .expect("project-dynamic route should match")
+            .to_runtime_value()
+            .expect("project-dynamic slot should project for assertion");
 
         assert_eq!(
             value,
@@ -5921,7 +5927,9 @@ mod tests {
         let omitted_value = vm
             .try_invoke_project_dynamic(&bytecode, false, &omitted_request)
             .expect("dispatch should bind omitted optional")
-            .expect("project-dynamic route should match");
+            .expect("project-dynamic route should match")
+            .to_runtime_value()
+            .expect("project-dynamic slot should project for assertion");
         assert_eq!(omitted_value, RuntimeValue::I32(7));
 
         vm.set_project_dynamic_objects(vec![route]);
@@ -5937,7 +5945,9 @@ mod tests {
         let explicit_omitted_value = vm
             .try_invoke_project_dynamic(&bytecode, false, &explicit_omitted_request)
             .expect("dispatch should bind explicit omitted optional")
-            .expect("project-dynamic route should match");
+            .expect("project-dynamic route should match")
+            .to_runtime_value()
+            .expect("project-dynamic slot should project for assertion");
         assert_eq!(explicit_omitted_value, RuntimeValue::I32(7));
     }
 
@@ -6001,7 +6011,9 @@ mod tests {
         let value = vm
             .try_invoke_project_dynamic(&bytecode, false, &request)
             .expect("dispatch should bind paramarray")
-            .expect("project-dynamic route should match");
+            .expect("project-dynamic route should match")
+            .to_runtime_value()
+            .expect("project-dynamic slot should project for assertion");
 
         assert_eq!(
             value,
