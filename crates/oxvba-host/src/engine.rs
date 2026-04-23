@@ -24,8 +24,8 @@ use oxvba_hal::{
 };
 use oxvba_jit::{JitEngine, cranelift};
 use oxvba_runtime::value_tags::EMPTY_TAG;
-use oxvba_runtime::{ObjectRef, RuntimeValue};
-use oxvba_vm::{Vm, execute_and_snapshot_with_host};
+use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
 use crate::{
     events::{EventDispatcher, EventSourceKey},
@@ -136,11 +136,11 @@ fn entry_procedure_runtime_metadata(
         .or_else(|| metadata.values().find(|metadata| metadata.entry_pc == 0))
 }
 
-fn project_visible_snapshot(
-    all_slots: &[RuntimeValue],
+fn project_visible_snapshot<T: Clone>(
+    all_slots: &[T],
     metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
     fallback_count: usize,
-) -> Vec<RuntimeValue> {
+) -> Vec<T> {
     if let Some(entry) = entry_procedure_runtime_metadata(metadata) {
         let mut visible = Vec::with_capacity(entry.slots.len());
         for slot in &entry.slots {
@@ -167,16 +167,27 @@ fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
 
 impl ProjectRuntimeSession {
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        let all_slots = self.vm.snapshot(self.compiled.bytecode.slot_count);
+        self.snapshot_variants()
+            .into_iter()
+            .map(|value| {
+                value
+                    .to_runtime_value()
+                    .expect("project runtime session VARIANT snapshot should project")
+            })
+            .collect()
+    }
+
+    pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
+        self.snapshot()
+    }
+
+    pub fn snapshot_variants(&self) -> Vec<Variant> {
+        let all_slots = self.vm.snapshot_variants(self.compiled.bytecode.slot_count);
         project_visible_snapshot(
             &all_slots,
             &self.compiled.procedure_runtime_metadata,
             self.compiled.bytecode.user_slot_count,
         )
-    }
-
-    pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
-        self.snapshot()
     }
 
     pub fn snapshot_slots(&self) -> Vec<i32> {
@@ -188,8 +199,14 @@ impl ProjectRuntimeSession {
     }
 
     pub fn read_slot(&self, slot: usize) -> RuntimeValue {
-        let values = self.vm.snapshot(slot + 1);
-        values.into_iter().nth(slot).unwrap_or(RuntimeValue::Empty)
+        self.read_variant_slot(slot)
+            .to_runtime_value()
+            .unwrap_or(RuntimeValue::Empty)
+    }
+
+    pub fn read_variant_slot(&self, slot: usize) -> Variant {
+        let values = self.vm.snapshot_variants(slot + 1);
+        values.into_iter().nth(slot).unwrap_or_else(Variant::empty)
     }
 
     pub fn procedure_metadata(
@@ -894,6 +911,14 @@ impl Engine {
             .map_err(|diagnostic| diagnostic.message().to_string())
     }
 
+    pub fn execute_source_with_variant_snapshot(
+        &self,
+        source: &str,
+    ) -> Result<Vec<Variant>, String> {
+        self.execute_source_with_variant_snapshot_phased(source)
+            .map_err(|diagnostic| diagnostic.message().to_string())
+    }
+
     pub fn execute_source_with_value_snapshot(
         &self,
         source: &str,
@@ -905,6 +930,16 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        self.execute_source_with_variant_snapshot_phased(source)?
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
+            .collect()
+    }
+
+    pub fn execute_source_with_variant_snapshot_phased(
+        &self,
+        source: &str,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata(source)
             .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         self.preflight_host_sensitive_support(&bytecode)?;
@@ -915,7 +950,10 @@ impl Engine {
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             let all_slots = self
                 .jit
-                .execute_and_snapshot_with_host(&snapshot_bytecode, self.host_services.clone())
+                .execute_and_snapshot_variants_with_host(
+                    &snapshot_bytecode,
+                    self.host_services.clone(),
+                )
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             return Ok(project_visible_snapshot(
                 &all_slots,
@@ -925,7 +963,7 @@ impl Engine {
         }
 
         let all_slots =
-            execute_and_snapshot_with_host(&snapshot_bytecode, self.host_services.clone())
+            execute_and_snapshot_variants_with_host(&snapshot_bytecode, self.host_services.clone())
                 .map_err(PhaseDiagnostic::runtime)?;
         Ok(project_visible_snapshot(
             &all_slots,
@@ -945,6 +983,16 @@ impl Engine {
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        self.execute_project_with_variant_snapshot_phased(manifest)?
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
+            .collect()
+    }
+
+    pub fn execute_project_with_variant_snapshot_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         let compiled =
             compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
@@ -956,7 +1004,7 @@ impl Engine {
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             if cranelift::supports_bytecode_rtslot(&compiled.bytecode) {
-                if let Ok(values) = cranelift::execute_bytecode_rtslot(
+                if let Ok(values) = cranelift::execute_bytecode_rtslot_variants(
                     &compiled.bytecode,
                     self.host_services.clone(),
                 ) {
@@ -966,26 +1014,30 @@ impl Engine {
             if cranelift::supports_bytecode(&compiled.bytecode)
                 && let Ok(values) = cranelift::execute_bytecode(&compiled.bytecode)
             {
-                return Ok(values);
+                return values
+                    .into_iter()
+                    .map(|value| Variant::try_from_runtime_value(&value))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(PhaseDiagnostic::runtime);
             }
 
-            return self.execute_compiled_project_with_snapshot_vm(&compiled);
+            return self.execute_compiled_project_with_variant_snapshot_vm(&compiled);
         }
 
-        self.execute_compiled_project_with_snapshot_vm(&compiled)
+        self.execute_compiled_project_with_variant_snapshot_vm(&compiled)
     }
 
-    fn execute_compiled_project_with_snapshot_vm(
+    fn execute_compiled_project_with_variant_snapshot_vm(
         &self,
         compiled: &CompiledProject,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
-        let all_slots = vm.snapshot(compiled.bytecode.slot_count);
+        let all_slots = vm.snapshot_variants(compiled.bytecode.slot_count);
         Ok(project_visible_snapshot(
             &all_slots,
             &compiled.procedure_runtime_metadata,
@@ -1294,7 +1346,7 @@ mod tests {
         },
     };
     use oxvba_runtime::{
-        F64Value, ObjectRef, RuntimeValue, bstr::BStr, value_tags::error_tag_from_code,
+        F64Value, ObjectRef, RuntimeValue, VarType, bstr::BStr, value_tags::error_tag_from_code,
     };
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
@@ -23097,6 +23149,20 @@ End Sub";
         .execute_source_with_value_snapshot_phased("Sub Main()\nDim x\nx = 4\nEnd Sub")
         .expect("value snapshot should project JIT subset into runtime values");
         assert_eq!(out, vec![RuntimeValue::I32(4)]);
+    }
+
+    #[test]
+    fn variant_snapshot_api_exposes_host_results_before_projection() {
+        let out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_variant_snapshot("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub")
+        .expect("variant snapshot should succeed");
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].vtype(), VarType::String);
+        assert_eq!(out[0].as_bstr(), Some(BStr::from("ABC")));
     }
 
     #[cfg(target_os = "windows")]
