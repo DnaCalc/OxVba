@@ -397,9 +397,12 @@ This grid is the current anti-drift truth surface for closure.
       canonical `Variant` is now back to the exact 16-byte carrier for scalar,
       string, and `ObjectRef`-backed object lanes, with clone/drop driven from
       the payload bytes themselves; canonical `SafeArray` now owns a real raw
-      SAFEARRAY-style descriptor plus contiguous canonical `Variant` payload
-      storage for the intrinsic `VT_ARRAY | VT_VARIANT` lane; typed-element
-      SAFEARRAY payloads and binding-handle carriers remain open
+      SAFEARRAY-style descriptor plus contiguous canonical typed payload
+      storage, with intrinsic element-vartype preservation now landed for
+      `VT_ARRAY | VT_VARIANT`, typed scalar lanes, `VT_BSTR`, `VT_DECIMAL`,
+      `VT_DISPATCH`, and `VT_UNKNOWN`; the remaining bounded carrier gap is the
+      exact canonical binding-handle lane, not boundary-only SAFEARRAY
+      materialization
    - projected truth:
       full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
       materially realized at boundary/helper seams for array-sensitive lanes
@@ -1670,6 +1673,22 @@ Child beads:
      - the canonical runtime Variant/array carrier no longer relies on
        semantic side-owned payloads or boundary-only SAFEARRAY materialization
        for the scoped internal truth
+   - current staged progress:
+     - stage 1 landed: canonical `Variant` is now back to the exact 16-byte
+       carrier for scalar, string, and `ObjectRef`-backed object lanes, with
+       ownership/clone/drop driven from payload bytes rather than semantic
+       side-owned storage
+     - stage 2 landed: canonical `SafeArray` now owns a raw SAFEARRAY-style
+       descriptor plus contiguous typed payload storage instead of a public
+       semantic `Vec<RuntimeValue>` carrier masquerading as the internal truth
+     - stage 3 landed: intrinsic typed SAFEARRAY element-vartype preservation
+       now covers `VT_ARRAY | VT_VARIANT`, scalar lanes, `VT_BSTR`,
+       `VT_DECIMAL`, `VT_DISPATCH`, and `VT_UNKNOWN`, and the Windows bridge
+       plus host lanes assert those typed results directly instead of
+       normalizing them away
+     - remaining blocker: the canonical binding-handle lane is still bounded,
+       so this bead remains in-progress until that residual gap is either
+       implemented or explicitly narrowed out of the scoped Variant carrier
    - completion evidence:
      - the workset can describe the internal Variant/SAFEARRAY carrier as
        intrinsically migrated rather than only boundary-correct
@@ -1691,9 +1710,9 @@ Post-`vmm-d6` rollout refresh:
    `crates/oxvba-runtime/src/variant.rs`
    - current known limit:
       the exact 16-byte canonical carrier now covers scalar, string, and
-      `ObjectRef`-backed object values; array-intent and binding-handle lanes
-      still reject because intrinsic `SAFEARRAY` and binding carriers are not
-      finished
+      `ObjectRef`-backed object values; array-intent now routes through the
+      intrinsic SAFEARRAY carrier, while the remaining exact-carrier gap is the
+      canonical binding-handle lane
    - rollout rule:
      the bead must either remove those subset limits under the new carrier or
      leave behind an explicit retained-adapter decision tied back to the fact
