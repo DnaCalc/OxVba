@@ -194,6 +194,9 @@ Implemented:
 46. Host bundle execution now has `execute_bundle_with_variant_snapshot()`,
     with the existing `execute_bundle_with_snapshot()` compatibility API
     projecting from the Variant snapshot path.
+47. Immediate sessions now expose `snapshot_variants()`, forwarding the prepared
+    project runtime session's exact `Variant` snapshot while leaving immediate
+    evaluation result display and legacy `RuntimeValue` snapshot APIs unchanged.
 
 Validation:
 
@@ -517,6 +520,16 @@ Validation:
       functions
 142. `./scripts/check-governance.ps1`
     - result: passed
+143. `cargo fmt --check`
+    - result: passed
+144. `cargo test -p oxvba-host --lib immediate_session_snapshot_variants_exposes_runtime_state_before_projection -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+145. `cargo check -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+146. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -603,6 +616,9 @@ Implementation progress:
 22. Host bundle execution now has a Variant-native snapshot companion, leaving
     the existing bundle `RuntimeValue` snapshot API as a compatibility
     projection.
+23. Immediate sessions now have a Variant-native snapshot companion over the
+    prepared project runtime session. Immediate evaluation display semantics
+    remain on the existing `RuntimeValue` projection surface.
 
 Remaining blocker:
 
@@ -619,8 +635,9 @@ Remaining blocker:
    WithEvents retained-value get/set/owner-search, VM project-dynamic dispatch
    return/destination writes, VM/JIT result extraction companion APIs, VM/JIT
    public execution snapshot companion APIs, host/project snapshot companion
-   APIs, and host bundle snapshot companion APIs no longer retain it as their
-   backing value store for normal VBA values.
+   APIs, host bundle snapshot companion APIs, and immediate-session snapshot
+   companion APIs no longer retain it as their backing value store for normal
+   VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
