@@ -1839,6 +1839,13 @@ Child beads:
        probing now constructs the probe array through `SafeArray::from_variants_nd()`
        with canonical `Variant` elements instead of using the legacy
        `RuntimeValue` compatibility constructor
+     - progress landed: VM/JIT `StrPtr`, generic `VarPtr`, `VarPtr(String)`,
+       and `ObjPtr` now construct their pointer-helper boundary cells from
+       canonical slot `Variant` reads instead of first flattening through
+       semantic `RuntimeValue` slots; the generic array-buffer `VarPtr(buf(0))`
+       lane remains on the byte-payload helper path, and typed `VT_UI1`
+       SAFEARRAY replacement now coerces canonical `Empty` defaults back to
+       zero so byte-buffer pointer and native-read lanes remain green
      - progress landed: VM descriptor-backed external calls now match the JIT
        descriptor path by routing both single-argument and multi-argument
        descriptor calls through `invoke_descriptor_variants()` using slot
@@ -1945,11 +1952,10 @@ Child beads:
        symbol APIs, legacy SafeArray element compatibility APIs, COM
        compatibility projection APIs that still expose `RuntimeValue`,
        embedded/immediate/debugger compatibility display APIs that still expose
-       `RuntimeValue`, and remaining non-Variant pointer-helper behavior such as
-       `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and either migrated
-       to exact BSTR, Windows/COM `VARIANT`, and SAFEARRAY carriers or
-       explicitly classified as projection boundaries outside the internal value
-       model
+       `RuntimeValue`, and remaining manual pointer-helper / registry
+       compatibility seams are audited and either migrated to exact BSTR,
+       Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified
+       as projection boundaries outside the internal value model
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
