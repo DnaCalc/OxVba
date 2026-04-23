@@ -1930,6 +1930,11 @@ Child beads:
        preserves callback payloads as exact `Variant` values and dispatches
        through the VM Variant procedure path, while existing `RuntimeValue`
        callback APIs remain compatibility projections
+     - progress landed: dynamic-link legacy symbol-token invocation now has a
+       Variant-native companion; VM/JIT no-descriptor external-call sites pass
+       and write exact slot `Variant` carriers through
+       `DynamicLinkHal::invoke_symbol_variant()`, while `invoke_symbol()`
+       remains a compatibility API for existing HAL callers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
