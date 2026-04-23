@@ -1880,13 +1880,18 @@ Child beads:
        `Variant::as_safearray()` from the returned slot before materializing
        iterator items, leaving `RuntimeValue` projection only for an
        unsupported-value diagnostic
+     - progress landed: JIT execution context result extraction now exposes
+       `extract_user_variants()` for exact user-visible `Variant` slot
+       carriers; `extract_user_values()` remains as a public compatibility
+       projection over that Variant-native result surface
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, HAL surfaces that still use semantic values by contract,
-       legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
-       APIs, `ComValue`, and remaining non-Variant pointer-helper behavior such
-       as `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and either
-       migrated to the exact carrier or explicitly classified as projection
-       boundaries
+       helper seams, public VM/JIT snapshot/result APIs, HAL surfaces that still
+       use semantic values by contract, legacy dynamic-link symbol APIs, legacy
+       SafeArray element compatibility APIs, `ComValue`, and remaining
+       non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`, and
+       generic `VarPtr` are audited and either migrated to exact BSTR,
+       Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified as
+       projection boundaries outside the internal value model
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
