@@ -2508,9 +2508,13 @@ impl Vm {
                             continue;
                         }
                     };
-                    match self.host_services.com().event_callback_arg(callback, index) {
+                    match self
+                        .host_services
+                        .com()
+                        .event_callback_variant(callback, index)
+                    {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

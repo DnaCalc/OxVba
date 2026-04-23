@@ -2744,9 +2744,9 @@ pub extern "C" fn oxrt_host_com_event_callback_arg(
             Err(_) => return route_host_error_code(ctx, 53053),
         };
     let host = unsafe { (*ctx).host_services() };
-    match host.com().event_callback_arg(cb, idx) {
+    match host.com().event_callback_variant(cb, idx) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(err) => route_hal_error(ctx, err),

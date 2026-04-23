@@ -1,5 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use crate::runtime_state::ComEventCallbackValue;
 use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComInvokeArg, ComMemberSpec,
     ComMemberToken, ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue,
@@ -406,7 +407,7 @@ pub fn callback_arg(
     state: &WindowsComClientState,
     callback: ComCallbackToken,
     index: usize,
-) -> Result<ComValue, String> {
+) -> Result<ComEventCallbackValue, String> {
     let Some(payload) = state.callbacks.get(&callback) else {
         return Err(format!(
             "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
@@ -416,7 +417,7 @@ pub fn callback_arg(
     payload
         .args
         .get(index)
-        .map(|value| value.to_com_value())
+        .cloned()
         .ok_or_else(|| {
             format!(
                 "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",

@@ -19,7 +19,7 @@ use crate::{
     subscribe_event_shared, take_polled_callback_payload, unsubscribe_event_shared,
     validate_named_arg_order,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue};
+use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
@@ -275,7 +275,21 @@ impl WindowsComBridge {
         index: usize,
     ) -> Result<RuntimeValue, String> {
         let state = self.lock_state("event_callback_arg")?;
-        callback_arg(&state, callback, index).map(|value| value.to_runtime_value())
+        callback_arg(&state, callback, index).and_then(|value| {
+            value
+                .variant()
+                .to_runtime_value()
+                .map_err(|detail| format!("COM-E-EVENT-CALLBACK-VARIANT: {detail}"))
+        })
+    }
+
+    pub fn event_callback_variant(
+        &self,
+        callback: ComCallbackToken,
+        index: usize,
+    ) -> Result<Variant, String> {
+        let state = self.lock_state("event_callback_variant")?;
+        callback_arg(&state, callback, index).map(|value| value.variant().clone())
     }
 
     pub fn release_event_callback(&self, callback: ComCallbackToken) -> Result<(), String> {

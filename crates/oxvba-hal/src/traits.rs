@@ -189,6 +189,21 @@ pub trait ComHal: Send + Sync {
         callback: ComCallbackToken,
         index: usize,
     ) -> HalResult<RuntimeValue>;
+    fn event_callback_variant(
+        &self,
+        callback: ComCallbackToken,
+        index: usize,
+    ) -> HalResult<Variant> {
+        let value = self.event_callback_arg(callback, index)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "event_callback_variant",
+                detail,
+            )
+        })
+    }
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue>;
     fn resolve_typelib_reference(
         &self,

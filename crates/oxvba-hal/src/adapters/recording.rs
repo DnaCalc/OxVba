@@ -390,6 +390,14 @@ impl ComHal for RecordingHostServices {
         self.inner.com().event_callback_arg(callback, index)
     }
 
+    fn event_callback_variant(
+        &self,
+        callback: ComCallbackToken,
+        index: usize,
+    ) -> HalResult<Variant> {
+        self.inner.com().event_callback_variant(callback, index)
+    }
+
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         self.inner.com().release_event_callback(callback)
     }

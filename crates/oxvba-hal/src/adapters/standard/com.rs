@@ -598,6 +598,43 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
+    fn event_callback_variant(
+        &self,
+        callback: ComCallbackToken,
+        index: usize,
+    ) -> HalResult<oxvba_runtime::Variant> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "event_callback_variant"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "event_callback_variant"));
+        }
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_variant",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
+            ));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.com_bridge
+                .event_callback_variant(callback, index)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "event_callback_variant",
+                        message,
+                    )
+                })
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
+    }
+
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
