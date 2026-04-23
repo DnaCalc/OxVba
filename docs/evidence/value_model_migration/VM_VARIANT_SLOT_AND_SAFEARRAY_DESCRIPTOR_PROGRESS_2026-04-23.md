@@ -236,6 +236,11 @@ Implemented:
     no-descriptor external-call sites pass and write exact slot `Variant`
     carriers, while `invoke_symbol()` remains the compatibility method for
     existing HAL callers.
+55. HAL dynamic COM bridge invocation now returns dynamic values from
+    `ComHal::dispatch_invoke_dynamic_variant()` directly. `DynamicValue` has a
+    `from_variant()` constructor, so dynamic bridge invocation no longer
+    detours through `RuntimeValue` before returning the retained COM dynamic
+    payload.
 
 Validation:
 
@@ -646,6 +651,14 @@ Validation:
        functions
 177. `./scripts/check-governance.ps1`
      - result: passed
+178. `cargo test -p oxvba-com --lib dynamic_value_retains_payload_as_variant -- --nocapture`
+     - result: `1` passed
+179. `cargo fmt --check`
+     - result: passed
+180. `cargo check -p oxvba-com -p oxvba-hal`
+     - result: passed
+181. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -763,6 +776,11 @@ Implementation progress:
     companion path. VM/JIT no-descriptor external-call sites read slot
     `Variant` values and write returned `Variant` values directly; the legacy
     `invoke_symbol()` method remains as a HAL compatibility API.
+31. HAL dynamic COM bridge invocation now uses
+    `ComHal::dispatch_invoke_dynamic_variant()` and wraps the returned
+    `Variant` directly in `DynamicValue`. Object release remains a
+    control/status projection through the object-release API rather than a
+    retained value payload seam.
 
 Remaining blocker:
 
@@ -783,8 +801,9 @@ Remaining blocker:
    companion APIs, `ComValue` Variant bridge conversions, embedded host
    procedure invocation companion APIs, immediate procedure invocation, host
    class member invocation, host COM callback ingress/dispatch, and VM/JIT
-   no-descriptor dynamic-link symbol invocation no longer retain it as their
-   backing value store for normal VBA values.
+   no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
+   invocation no longer retain it as their backing value store for normal VBA
+   values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
