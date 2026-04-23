@@ -105,7 +105,7 @@ mod tests {
     };
     use oxvba_runtime::{
         F64Value, RuntimeValue,
-        safe_array::{SafeArray, SafeArrayBound},
+        safe_array::{SafeArray, SafeArrayBound, VT_UI1_VALUE},
     };
 
     #[test]
@@ -241,12 +241,14 @@ mod tests {
         unsafe {
             ctx.context.write_slot(
                 0,
-                RuntimeValue::ArrayIntent(SafeArray {
-                    dimensions: 1,
-                    len: 2,
-                    bounds: Some(vec![SafeArrayBound { lower: 0, count: 2 }]),
-                    elements: Some(vec![RuntimeValue::I32(90), RuntimeValue::I32(91)]),
-                }),
+                RuntimeValue::ArrayIntent(
+                    SafeArray::from_typed_values_nd(
+                        vec![SafeArrayBound { lower: 0, count: 2 }],
+                        VT_UI1_VALUE,
+                        vec![RuntimeValue::I32(90), RuntimeValue::I32(91)],
+                    )
+                    .expect("byte SAFEARRAY setup should succeed"),
+                ),
             );
             ctx.context.write_slot(1, RuntimeValue::I32(3));
         }
@@ -266,17 +268,19 @@ mod tests {
         let values = ctx.extract_user_values();
         assert_eq!(
             values[0],
-            RuntimeValue::ArrayIntent(SafeArray {
-                dimensions: 1,
-                len: 4,
-                bounds: Some(vec![SafeArrayBound { lower: 0, count: 4 }]),
-                elements: Some(vec![
-                    RuntimeValue::I32(90),
-                    RuntimeValue::I32(91),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                ]),
-            })
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values_nd(
+                    vec![SafeArrayBound { lower: 0, count: 4 }],
+                    VT_UI1_VALUE,
+                    vec![
+                        RuntimeValue::I32(90),
+                        RuntimeValue::I32(91),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(0),
+                    ],
+                )
+                .expect("expected byte SAFEARRAY should build")
+            )
         );
     }
 

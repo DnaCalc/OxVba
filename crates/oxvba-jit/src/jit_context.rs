@@ -9,9 +9,31 @@ use std::sync::Arc;
 
 use oxvba_compiler::bytecode::ExternalCallDescriptor;
 use oxvba_hal::traits::HostServices;
-use oxvba_runtime::{ObjectRef, RuntimeValue};
+use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant};
 
 use crate::slot_abi::{RtSlot, rtslot_from_runtime_value};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JitRuntimeSlot {
+    Variant(Variant),
+    BindingHandle(BindingHandle),
+}
+
+impl JitRuntimeSlot {
+    pub fn from_runtime_value(value: RuntimeValue) -> Result<Self, String> {
+        match value {
+            RuntimeValue::BindingHandle(handle) => Ok(Self::BindingHandle(handle)),
+            value => Variant::try_from_runtime_value(&value).map(Self::Variant),
+        }
+    }
+
+    pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
+        match self {
+            Self::Variant(value) => value.to_runtime_value(),
+            Self::BindingHandle(handle) => Ok(RuntimeValue::BindingHandle(*handle)),
+        }
+    }
+}
 
 // ── JitHostState: Rust-side state accessed only through helpers ────────
 
@@ -27,7 +49,7 @@ pub struct WithEventsOwnerIterator {
 /// This struct is **not** `#[repr(C)]` — it is only accessed from Rust
 /// helper functions via an opaque pointer in JitContext.
 pub struct JitHostState {
-    pub withevents_bindings: HashMap<i64, RuntimeValue>,
+    pub withevents_bindings: HashMap<i64, JitRuntimeSlot>,
     pub withevents_owner_iters: Vec<WithEventsOwnerIterator>,
     /// Raw pointer into the inlined Bytecode's external_call_descriptors.
     /// Valid for the duration of JIT execution.
@@ -152,7 +174,7 @@ impl JitContextOwned {
         let user_count = self.context.user_slot_count as usize;
         self.slots[..user_count]
             .iter()
-            .map(|slot| unsafe { slot.to_runtime_value() })
+            .map(|slot| slot.to_runtime_value())
             .collect()
     }
 
@@ -166,12 +188,7 @@ impl JitContextOwned {
 
 impl Drop for JitContextOwned {
     fn drop(&mut self) {
-        // Drop all heap-allocated slot data.
-        for slot in &mut self.slots {
-            if slot.is_heap_type() {
-                unsafe { slot.drop_heap() };
-            }
-        }
+        // RtSlot is a VARIANT owner; normal Rust drop releases BSTR/Object/SAFEARRAY payloads.
     }
 }
 
@@ -194,7 +211,7 @@ impl JitContext {
             self.slot_count
         );
         let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
-        unsafe { rt_slot.to_runtime_value() }
+        rt_slot.to_runtime_value()
     }
 
     /// Write a RuntimeValue to a slot.
@@ -213,10 +230,6 @@ impl JitContext {
             self.slot_count
         );
         let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
-        // Drop old heap data if present.
-        if rt_slot.is_heap_type() {
-            unsafe { rt_slot.drop_heap() };
-        }
         *rt_slot = rtslot_from_runtime_value(&value);
     }
 

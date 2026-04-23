@@ -16,7 +16,7 @@ use oxvba_runtime::RuntimeValue;
 
 use crate::jit_context::JitContextOwned;
 use crate::runtime_helpers;
-use crate::slot_abi::{SLOT_PAYLOAD_OFFSET, SLOT_SIZE, SLOT_TAG_OFFSET, TAG_I32};
+use crate::slot_abi::{SLOT_PAYLOAD_OFFSET, SLOT_SIZE, SLOT_VTYPE_OFFSET, VT_I4};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SegmentTerminal {
@@ -33,14 +33,14 @@ fn slot_offset(slot: usize) -> Result<i32, String> {
         .ok_or_else(|| format!("slot offset overflow: {slot}"))
 }
 
-// ── RtSlot path helpers (16-byte tagged slots) ────────────────────────
+// ── RtSlot path helpers (16-byte VARIANT slots) ───────────────────────
 
-fn rtslot_tag_offset(slot: usize) -> Result<i64, String> {
+fn rtslot_vtype_offset(slot: usize) -> Result<i64, String> {
     let slot_i32 = i32::try_from(slot).map_err(|_| format!("slot index out of range: {slot}"))?;
     let base = slot_i32
         .checked_mul(SLOT_SIZE)
         .ok_or_else(|| format!("rtslot offset overflow: {slot}"))?;
-    Ok(i64::from(base + SLOT_TAG_OFFSET))
+    Ok(i64::from(base + SLOT_VTYPE_OFFSET))
 }
 
 fn rtslot_payload_offset(slot: usize) -> Result<i64, String> {
@@ -685,12 +685,12 @@ pub fn execute_bytecode_rtslot(
             exit_block
         };
 
-        // Closures for reading/writing RtSlot tag and payload inline.
-        let read_tag = |builder: &mut FunctionBuilder,
-                        slots_ptr: cranelift_codegen::ir::Value,
-                        slot: usize|
+        // Closures for reading/writing RtSlot VARTYPE and payload inline.
+        let read_vtype = |builder: &mut FunctionBuilder,
+                          slots_ptr: cranelift_codegen::ir::Value,
+                          slot: usize|
          -> Result<cranelift_codegen::ir::Value, String> {
-            let offset = rtslot_tag_offset(slot)?;
+            let offset = rtslot_vtype_offset(slot)?;
             let addr = builder.ins().iadd_imm(slots_ptr, offset);
             Ok(builder.ins().load(types::I32, MemFlags::new(), addr, 0))
         };
@@ -704,18 +704,20 @@ pub fn execute_bytecode_rtslot(
             Ok(builder.ins().load(types::I64, MemFlags::new(), addr, 0))
         };
 
-        let write_tag_payload = |builder: &mut FunctionBuilder,
-                                 slots_ptr: cranelift_codegen::ir::Value,
-                                 slot: usize,
-                                 tag: i64,
-                                 payload: cranelift_codegen::ir::Value|
+        let write_vtype_payload = |builder: &mut FunctionBuilder,
+                                   slots_ptr: cranelift_codegen::ir::Value,
+                                   slot: usize,
+                                   vtype: i64,
+                                   payload: cranelift_codegen::ir::Value|
          -> Result<(), String> {
-            let tag_off = rtslot_tag_offset(slot)?;
+            let vtype_off = rtslot_vtype_offset(slot)?;
             let pay_off = rtslot_payload_offset(slot)?;
-            let tag_addr = builder.ins().iadd_imm(slots_ptr, tag_off);
+            let vtype_addr = builder.ins().iadd_imm(slots_ptr, vtype_off);
             let pay_addr = builder.ins().iadd_imm(slots_ptr, pay_off);
-            let tag_val = builder.ins().iconst(types::I32, tag);
-            builder.ins().store(MemFlags::new(), tag_val, tag_addr, 0);
+            let vtype_val = builder.ins().iconst(types::I32, vtype);
+            builder
+                .ins()
+                .store(MemFlags::new(), vtype_val, vtype_addr, 0);
             builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
             Ok(())
         };
@@ -739,39 +741,30 @@ pub fn execute_bytecode_rtslot(
 
         match instruction {
             Instruction::LoadConstI32 { slot, value } => {
-                // Match VM semantics: compat-slot projection maps special values.
-                // 0 = Empty, -1 = I32(-1) (NOT Null — LoadNull handles Null),
-                // error tags, array tags.
-                let rv = RuntimeValue::from_compat_slot_i32(*value);
-                if *value == oxvba_runtime::value_tags::NULL_TAG {
-                    // Special case: NULL_TAG (-1) is stored as I32(-1), not Null.
-                    let payload = builder.ins().iconst(types::I64, i64::from(*value));
-                    write_tag_payload(&mut builder, slots_ptr, *slot, TAG_I32 as i64, payload)?;
-                } else {
-                    let slot_val = crate::slot_abi::rtslot_from_runtime_value(&rv);
-                    let tag = builder.ins().iconst(types::I32, i64::from(slot_val.tag));
-                    let payload = builder.ins().iconst(types::I64, slot_val.payload as i64);
-                    let tag_off = rtslot_tag_offset(*slot)?;
-                    let pay_off = rtslot_payload_offset(*slot)?;
-                    let tag_addr = builder.ins().iadd_imm(slots_ptr, tag_off);
-                    let pay_addr = builder.ins().iadd_imm(slots_ptr, pay_off);
-                    builder.ins().store(MemFlags::new(), tag, tag_addr, 0);
-                    builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
-                }
-                builder.ins().jump(next_block, &[]);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_load_i32"), builder.func);
+                let dst_val = builder.ins().iconst(types::I32, *slot as i64);
+                let value_val = builder.ins().iconst(types::I32, i64::from(*value));
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, value_val],
+                    next_block,
+                );
             }
             Instruction::LoadConstBool { slot, value } => {
-                let slot_val =
-                    crate::slot_abi::rtslot_from_runtime_value(&RuntimeValue::Bool(*value));
-                let tag = builder.ins().iconst(types::I32, i64::from(slot_val.tag));
-                let payload = builder.ins().iconst(types::I64, slot_val.payload as i64);
-                let tag_off = rtslot_tag_offset(*slot)?;
-                let pay_off = rtslot_payload_offset(*slot)?;
-                let tag_addr = builder.ins().iadd_imm(slots_ptr, tag_off);
-                let pay_addr = builder.ins().iadd_imm(slots_ptr, pay_off);
-                builder.ins().store(MemFlags::new(), tag, tag_addr, 0);
-                builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
-                builder.ins().jump(next_block, &[]);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_load_bool"), builder.func);
+                let dst_val = builder.ins().iconst(types::I32, *slot as i64);
+                let value_val = builder
+                    .ins()
+                    .iconst(types::I32, i64::from(i32::from(*value)));
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, value_val],
+                    next_block,
+                );
             }
             Instruction::LoadConstF64 { slot, bits } => {
                 let func_ref = module.declare_func_in_func(helpers.load_f64, builder.func);
@@ -799,20 +792,15 @@ pub fn execute_bytecode_rtslot(
                 string_idx += 1;
             }
             Instruction::LoadNull { slot } => {
-                let zero = builder.ins().iconst(types::I64, 0);
-                write_tag_payload(
-                    &mut builder,
-                    slots_ptr,
-                    *slot,
-                    crate::slot_abi::TAG_NULL as i64,
-                    zero,
-                )?;
-                builder.ins().jump(next_block, &[]);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_load_null"), builder.func);
+                let dst_val = builder.ins().iconst(types::I32, *slot as i64);
+                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::AddConstI32 { slot, value } => {
-                // Inline i32 fast path: check tag == I32, then add directly.
-                let tag = read_tag(&mut builder, slots_ptr, *slot)?;
-                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
+                // Inline i32 fast path: check VT_I4, then add directly.
+                let vtype = read_vtype(&mut builder, slots_ptr, *slot)?;
+                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, vtype, VT_I4 as i64);
 
                 let fast_block = builder.create_block();
                 let slow_block = builder.create_block();
@@ -825,8 +813,8 @@ pub fn execute_bytecode_rtslot(
                 let payload = read_payload_i64(&mut builder, slots_ptr_f, *slot)?;
                 let payload_i32 = builder.ins().ireduce(types::I32, payload);
                 let result = builder.ins().iadd_imm(payload_i32, i64::from(*value));
-                let result_i64 = builder.ins().sextend(types::I64, result);
-                write_tag_payload(&mut builder, slots_ptr_f, *slot, TAG_I32 as i64, result_i64)?;
+                let result_i64 = builder.ins().uextend(types::I64, result);
+                write_vtype_payload(&mut builder, slots_ptr_f, *slot, VT_I4 as i64, result_i64)?;
                 builder.ins().jump(next_block, &[]);
 
                 // Slow path: call helper
@@ -843,8 +831,8 @@ pub fn execute_bytecode_rtslot(
                 );
             }
             Instruction::SubConstI32 { slot, value } => {
-                let tag = read_tag(&mut builder, slots_ptr, *slot)?;
-                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
+                let vtype = read_vtype(&mut builder, slots_ptr, *slot)?;
+                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, vtype, VT_I4 as i64);
 
                 let fast_block = builder.create_block();
                 let slow_block = builder.create_block();
@@ -857,8 +845,8 @@ pub fn execute_bytecode_rtslot(
                 let payload_i32 = builder.ins().ireduce(types::I32, payload);
                 let delta = builder.ins().iconst(types::I32, i64::from(*value));
                 let result = builder.ins().isub(payload_i32, delta);
-                let result_i64 = builder.ins().sextend(types::I64, result);
-                write_tag_payload(&mut builder, slots_ptr_f, *slot, TAG_I32 as i64, result_i64)?;
+                let result_i64 = builder.ins().uextend(types::I64, result);
+                write_vtype_payload(&mut builder, slots_ptr_f, *slot, VT_I4 as i64, result_i64)?;
                 builder.ins().jump(next_block, &[]);
 
                 builder.switch_to_block(slow_block);
@@ -1200,21 +1188,24 @@ pub fn execute_bytecode_rtslot(
                 cond_slot,
                 target_pc,
             } => {
-                // Read the tag+payload to determine truthiness.
-                // Fast path: if tag == I32, check payload == 0.
-                let tag = read_tag(&mut builder, slots_ptr, *cond_slot)?;
-                let is_i32_tag = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
-                let payload = read_payload_i64(&mut builder, slots_ptr, *cond_slot)?;
-                let payload_i32 = builder.ins().ireduce(types::I32, payload);
-
-                // If tag==I32: check payload==0 directly.
-                // If tag!=I32: tag==TAG_EMPTY (0) counts as zero.
-                let payload_is_zero = builder.ins().icmp_imm(IntCC::Equal, payload_i32, 0);
-                let tag_is_empty = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
-                let is_zero = builder
-                    .ins()
-                    .select(is_i32_tag, payload_is_zero, tag_is_empty);
-
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_jump_if_zero"), builder.func);
+                let src_val = builder.ins().iconst(types::I32, *cond_slot as i64);
+                let call = builder.ins().call(func_ref, &[ctx_ptr, src_val]);
+                let rc = builder.inst_results(call)[0];
+                let is_error = builder.ins().icmp_imm(IntCC::Equal, rc, -1);
+                let pc_imm = builder.ins().iconst(types::I32, pc as i64);
+                let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
+                let dispatch_block = builder.create_block();
+                builder.ins().brif(
+                    is_error,
+                    error_dispatch_block,
+                    &err_args,
+                    dispatch_block,
+                    &[],
+                );
+                builder.switch_to_block(dispatch_block);
+                let is_zero = builder.ins().icmp_imm(IntCC::Equal, rc, 1);
                 let true_block = if *target_pc < pc_blocks.len() {
                     pc_blocks[*target_pc]
                 } else {
@@ -3706,6 +3697,11 @@ impl HelperFuncIds {
 
         // Declare all phase 2-4 helpers with appropriate signatures
         let helper_sigs: &[(&str, &cranelift_codegen::ir::Signature)] = &[
+            // VARIANT slot load/branch helpers
+            ("oxrt_load_i32", &s_si),
+            ("oxrt_load_bool", &s_si),
+            ("oxrt_load_null", &sig_ctx_1),
+            ("oxrt_jump_if_zero", &sig_ctx_1),
             // Phase 2: String ops (18)
             ("oxrt_len", &sig_ctx_2),
             ("oxrt_left", &sig_ctx_3),

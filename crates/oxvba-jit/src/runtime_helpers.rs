@@ -19,12 +19,16 @@ use oxvba_compiler::bytecode::{
 use oxvba_hal::HalComDynamicBridge;
 use oxvba_hal::error::{HalError, HalErrorKind};
 use oxvba_hal::model::CapabilityId;
-use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound, is_array_tag as runtime_is_array_tag};
+use oxvba_runtime::safe_array::{
+    SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+    VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
+    VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
+};
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
 use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use oxvba_vm::semantics;
 
-use crate::jit_context::JitContext;
+use crate::jit_context::{JitContext, JitRuntimeSlot};
 // slot_abi types used indirectly via JitContext's slot array
 
 // ── Error code constants ──────────────────────────────────────────────
@@ -400,6 +404,39 @@ pub extern "C" fn oxrt_copy_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i3
     let val = read_slot!(ctx, src);
     write_slot!(ctx, dst, val);
     OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_load_i32(ctx: *mut JitContext, dst: u32, value: i32) -> i32 {
+    let value = if value == oxvba_runtime::value_tags::NULL_TAG {
+        // LoadNull is the only bytecode instruction that materializes VT_NULL.
+        RuntimeValue::I32(value)
+    } else {
+        RuntimeValue::from_compat_slot_i32(value)
+    };
+    write_slot!(ctx, dst, value);
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_load_bool(ctx: *mut JitContext, dst: u32, value: i32) -> i32 {
+    write_slot!(ctx, dst, RuntimeValue::Bool(value != 0));
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_load_null(ctx: *mut JitContext, dst: u32) -> i32 {
+    write_slot!(ctx, dst, RuntimeValue::Null);
+    OK
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_jump_if_zero(ctx: *mut JitContext, src: u32) -> i32 {
+    let val = read_slot!(ctx, src);
+    match semantics::legacy_truthy_value(&val) {
+        Ok(truthy) => i32::from(!truthy),
+        Err(_) => ERR_RUNTIME,
+    }
 }
 
 // ── LoadConstString helper ────────────────────────────────────────────
@@ -1631,7 +1668,7 @@ fn runtime_resized_array(
     }
     let default = runtime_array_default_value(element_type);
     let values = vec![default; len];
-    SafeArray::from_shape_and_values(bounds, values)
+    SafeArray::from_typed_values_nd(bounds, runtime_array_element_vartype(element_type), values)
 }
 
 fn runtime_resized_array_preserve(
@@ -1738,6 +1775,22 @@ fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> Runtime
         | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
         RuntimeArrayElementType::String => RuntimeValue::String(BStr::empty()),
         RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
+    }
+}
+
+fn runtime_array_element_vartype(element_type: RuntimeArrayElementType) -> u16 {
+    match element_type {
+        RuntimeArrayElementType::Variant => VT_VARIANT_VALUE,
+        RuntimeArrayElementType::Integer => VT_I2_VALUE,
+        RuntimeArrayElementType::Long => VT_I4_VALUE,
+        RuntimeArrayElementType::LongLong | RuntimeArrayElementType::LongPtr => VT_I8_VALUE,
+        RuntimeArrayElementType::Byte => VT_UI1_VALUE,
+        RuntimeArrayElementType::Single => VT_R4_VALUE,
+        RuntimeArrayElementType::Double => VT_R8_VALUE,
+        RuntimeArrayElementType::Currency => VT_CY_VALUE,
+        RuntimeArrayElementType::Date => VT_DATE_VALUE,
+        RuntimeArrayElementType::String => VT_BSTR_VALUE,
+        RuntimeArrayElementType::Boolean => VT_BOOL_VALUE,
     }
 }
 
@@ -2720,8 +2773,13 @@ pub extern "C" fn oxrt_host_withevents_get(
     let value = state
         .withevents_bindings
         .get(&key)
-        .cloned()
-        .unwrap_or(RuntimeValue::I32(0));
+        .map(JitRuntimeSlot::to_runtime_value)
+        .transpose();
+    let value = match value {
+        Ok(Some(value)) => value,
+        Ok(None) => RuntimeValue::I32(0),
+        Err(_) => return ERR_RUNTIME,
+    };
     write_slot!(ctx, dst, value);
     OK
 }
@@ -2750,7 +2808,11 @@ pub extern "C" fn oxrt_host_withevents_set(
     if semantics::runtime_value_is_explicit_zero_carrier(&val) {
         state.withevents_bindings.remove(&key);
     } else {
-        state.withevents_bindings.insert(key, val.clone());
+        let slot = match JitRuntimeSlot::from_runtime_value(val.clone()) {
+            Ok(slot) => slot,
+            Err(_) => return ERR_RUNTIME,
+        };
+        state.withevents_bindings.insert(key, slot);
     }
     write_slot!(ctx, dst, val);
     OK
@@ -2798,7 +2860,10 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
         .withevents_bindings
         .iter()
         .filter_map(|(key, value)| {
-            if value != &source_val || semantics::withevents_binding_from_key(*key) != binding {
+            let Ok(value) = value.to_runtime_value() else {
+                return None;
+            };
+            if value != source_val || semantics::withevents_binding_from_key(*key) != binding {
                 return None;
             }
             Some(semantics::withevents_owner_from_key(*key))
@@ -3580,6 +3645,10 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_sgn", oxrt_sgn as *const u8),
         ("oxrt_int_fix", oxrt_int_fix as *const u8),
         ("oxrt_copy_slot", oxrt_copy_slot as *const u8),
+        ("oxrt_load_i32", oxrt_load_i32 as *const u8),
+        ("oxrt_load_bool", oxrt_load_bool as *const u8),
+        ("oxrt_load_null", oxrt_load_null as *const u8),
+        ("oxrt_jump_if_zero", oxrt_jump_if_zero as *const u8),
         ("oxrt_load_string", oxrt_load_string as *const u8),
         ("oxrt_load_f64", oxrt_load_f64 as *const u8),
         // Phase 2: String ops
