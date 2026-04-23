@@ -1936,6 +1936,10 @@ Child beads:
        has Variant-native companions, and JIT external-call pointer writeback
        uses those Variant readback surfaces directly instead of converting a
        temporary `RuntimeValue` payload back into `Variant`
+     - progress landed: VM semantics now has Variant-native array get/set
+       companions, and JIT `oxrt_array_get` / `oxrt_array_set` use those
+       companions with Variant slot reads/writes so the array carrier and
+       source element no longer detour through `RuntimeValue`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

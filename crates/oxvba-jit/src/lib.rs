@@ -379,6 +379,52 @@ mod tests {
     }
 
     #[test]
+    fn runtime_array_get_and_set_preserve_variant_slot_carriers() {
+        let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_string(BStr::from("A")),
+                    Variant::from_i32(7),
+                ])),
+            );
+            ctx.context.write_slot(1, RuntimeValue::I32(1));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("B")));
+        }
+
+        let index = [1u32];
+        assert_eq!(
+            runtime_helpers::oxrt_array_get(ctx.context_ptr(), 2, 0, index.as_ptr(), 1),
+            0
+        );
+        assert_eq!(
+            unsafe { ctx.context.read_variant_slot(2) },
+            Variant::from_i32(7)
+        );
+        unsafe {
+            ctx.context.write_slot(4, RuntimeValue::I32(0));
+        }
+
+        let first_index = [4u32];
+        assert_eq!(
+            runtime_helpers::oxrt_array_set(ctx.context_ptr(), 0, first_index.as_ptr(), 1, 3),
+            0
+        );
+        let updated = unsafe { ctx.context.read_variant_slot(0) };
+        let elements = updated
+            .as_safearray()
+            .expect("updated value should stay a SAFEARRAY variant")
+            .variant_elements()
+            .expect("SAFEARRAY should expose variant elements");
+        assert_eq!(
+            elements,
+            vec![Variant::from_string(BStr::from("B")), Variant::from_i32(7)]
+        );
+    }
+
+    #[test]
     fn jit_context_extracts_user_variants_before_projection() {
         let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
         unsafe {

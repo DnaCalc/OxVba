@@ -1943,18 +1943,19 @@ pub extern "C" fn oxrt_array_get(
     index_slots_ptr: *const u32,
     index_slots_len: u32,
 ) -> i32 {
-    let array_value = read_slot!(ctx, array_slot);
+    let array_value = read_variant_slot!(ctx, array_slot);
     let index_slots =
         unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
     let index_values = index_slots
         .iter()
         .map(|slot| read_slot!(ctx, *slot))
         .collect::<Vec<_>>();
-    let value = match semantics::runtime_array_get(&array_value, &index_values, "array index") {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_slot!(ctx, dst, value);
+    let value =
+        match semantics::runtime_array_get_variant(&array_value, &index_values, "array index") {
+            Ok(value) => value,
+            Err(_) => return ERR_RUNTIME,
+        };
+    write_variant_slot!(ctx, dst, value);
     OK
 }
 
@@ -1966,15 +1967,15 @@ pub extern "C" fn oxrt_array_set(
     index_slots_len: u32,
     src_slot: u32,
 ) -> i32 {
-    let array_value = read_slot!(ctx, array_slot);
+    let array_value = read_variant_slot!(ctx, array_slot);
     let index_slots =
         unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
     let index_values = index_slots
         .iter()
         .map(|slot| read_slot!(ctx, *slot))
         .collect::<Vec<_>>();
-    let src_value = read_slot!(ctx, src_slot);
-    let value = match semantics::runtime_array_set(
+    let src_value = read_variant_slot!(ctx, src_slot);
+    let value = match semantics::runtime_array_set_variant(
         &array_value,
         &index_values,
         &src_value,
@@ -1983,7 +1984,7 @@ pub extern "C" fn oxrt_array_set(
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, array_slot, value);
+    write_variant_slot!(ctx, array_slot, value);
     OK
 }
 

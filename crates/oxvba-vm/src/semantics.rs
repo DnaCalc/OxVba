@@ -1954,12 +1954,35 @@ pub fn runtime_array_get(
         .as_ref()
         .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
     let indices = runtime_array_indices(index_values, field)?;
-    let bounds = runtime_array_bounds(array);
+    let bounds = runtime_array_bounds(&array);
     let offset = runtime_array_offset(&bounds, &indices, field)?;
     elements
         .get(offset)
         .ok_or_else(|| format!("{field} index {:?} is out of range", indices))?
         .to_runtime_value()
+}
+
+pub fn runtime_array_get_variant(
+    array_value: &oxvba_runtime::Variant,
+    index_values: &[RuntimeValue],
+    field: &str,
+) -> Result<oxvba_runtime::Variant, String> {
+    let Some(array) = array_value.as_safearray() else {
+        return Err(format!(
+            "{field} requires a runtime array value, got {array_value:?}"
+        ));
+    };
+    let elements_binding = array.variant_elements();
+    let elements = elements_binding
+        .as_ref()
+        .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
+    let indices = runtime_array_indices(index_values, field)?;
+    let bounds = runtime_array_bounds(&array);
+    let offset = runtime_array_offset(&bounds, &indices, field)?;
+    elements
+        .get(offset)
+        .cloned()
+        .ok_or_else(|| format!("{field} index {:?} is out of range", indices))
 }
 
 pub fn runtime_array_set(
@@ -1985,6 +2008,33 @@ pub fn runtime_array_set(
     };
     *slot = oxvba_runtime::Variant::try_from_runtime_value(new_value)?;
     Ok(RuntimeValue::ArrayIntent(
+        updated.replace_variant_elements(elements)?,
+    ))
+}
+
+pub fn runtime_array_set_variant(
+    array_value: &oxvba_runtime::Variant,
+    index_values: &[RuntimeValue],
+    new_value: &oxvba_runtime::Variant,
+    field: &str,
+) -> Result<oxvba_runtime::Variant, String> {
+    let Some(array) = array_value.as_safearray() else {
+        return Err(format!(
+            "{field} requires a runtime array value, got {array_value:?}"
+        ));
+    };
+    let updated = array.clone();
+    let bounds = runtime_array_bounds(&updated);
+    let indices = runtime_array_indices(index_values, field)?;
+    let offset = runtime_array_offset(&bounds, &indices, field)?;
+    let mut elements = updated
+        .variant_elements()
+        .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
+    let Some(slot) = elements.get_mut(offset) else {
+        return Err(format!("{field} index {:?} is out of range", indices));
+    };
+    *slot = new_value.clone();
+    Ok(oxvba_runtime::Variant::from_safearray(
         updated.replace_variant_elements(elements)?,
     ))
 }
