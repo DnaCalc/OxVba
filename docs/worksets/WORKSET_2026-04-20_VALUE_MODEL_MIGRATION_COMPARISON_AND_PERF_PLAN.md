@@ -1819,12 +1819,18 @@ Child beads:
        pointer equality for two separate `CreateObject` calls, matching the
        IUnknown/ObjectRef identity model where separate object instances can
        share a compatibility identity without being the same pointer identity
+     - progress landed: COM event callback argument retrieval now has a
+       Variant-native transport from queued native callback state through
+       `WindowsComBridge::event_callback_variant()` and
+       `ComHal::event_callback_variant()` into VM/JIT slot writes; the older
+       `event_callback_arg()` remains as a compatibility projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, HAL callback surfaces, legacy dynamic-link symbol APIs,
-       legacy SafeArray element compatibility APIs, `ComValue`, and remaining
-       non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`, and
-       generic `VarPtr` are audited and either migrated to the exact carrier or
-       explicitly classified as projection boundaries
+       helper seams, HAL surfaces that still use semantic values by contract,
+       legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
+       APIs, `ComValue`, and remaining non-Variant pointer-helper behavior such
+       as `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and either
+       migrated to the exact carrier or explicitly classified as projection
+       boundaries
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
