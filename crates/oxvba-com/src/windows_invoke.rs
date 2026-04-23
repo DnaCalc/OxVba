@@ -332,15 +332,16 @@ where
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
             Some(ref value) => {
-                set_variant_from_com_value(&mut variant, value, resolve_object, add_ref_dispatch)
+                let value = value.to_com_value();
+                set_variant_from_com_value(&mut variant, &value, resolve_object, add_ref_dispatch)
                     .map_err(|detail| ComInvokeFailure {
-                        label,
-                        dispid,
-                        hr: None,
-                        arg_err: None,
-                        excep: None,
-                        detail: Some(detail),
-                    })?
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                })?
             }
             None => set_variant_missing_arg(&mut variant),
         }
@@ -445,7 +446,8 @@ where
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
             Some(ref value) => {
-                set_variant_from_com_value(&mut variant, value, resolve_object, add_ref_dispatch)
+                let value = value.to_com_value();
+                set_variant_from_com_value(&mut variant, &value, resolve_object, add_ref_dispatch)
                     .map_err(|detail| validation_failure(label, dispid, detail))?
             }
             None => set_variant_missing_arg(&mut variant),
@@ -548,10 +550,11 @@ where
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
             Some(ref value) => {
+                let value = value.to_com_value();
                 let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
                 set_variant_from_com_value(
                     &mut variant,
-                    value,
+                    &value,
                     resolve_object,
                     &mut add_ref_dispatch,
                 )
@@ -818,7 +821,7 @@ where
                     .filter_map(|arg| arg.value.clone())
                     .map(|value| {
                         value.to_legacy_dispatch_token()?;
-                        Ok(value)
+                        Ok(value.to_com_value())
                     })
                     .collect();
                 if let Ok(positional_args) = positional_args {
@@ -859,7 +862,7 @@ where
                     .filter_map(|arg| arg.value.clone())
                     .map(|value| {
                         value.to_legacy_dispatch_token()?;
-                        Ok(value)
+                        Ok(value.to_com_value())
                     })
                     .collect();
                 if let Ok(positional_args) = positional_args {

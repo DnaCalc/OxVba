@@ -170,7 +170,7 @@ pub struct DynamicCallArg {
 impl From<ComInvokeArg> for DynamicCallArg {
     fn from(value: ComInvokeArg) -> Self {
         Self {
-            value: value.value.map(Into::into),
+            value: value.value.map(|value| value.to_com_value().into()),
             name: value.name,
         }
     }
@@ -179,7 +179,7 @@ impl From<ComInvokeArg> for DynamicCallArg {
 impl From<DynamicCallArg> for ComInvokeArg {
     fn from(value: DynamicCallArg) -> Self {
         Self {
-            value: value.value.map(Into::into),
+            value: value.value.map(|value| value.to_com_value().into()),
             name: value.name,
         }
     }

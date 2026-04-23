@@ -198,13 +198,16 @@ pub fn event_callback_args_from_invoke_args(
         .take(trigger_spec.callback_arity)
         .enumerate()
         .map(|(index, arg)| {
-            arg.value.clone().ok_or_else(|| {
-                format!(
-                    "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires concrete callback argument {}",
-                    trigger_spec.event_token.raw(),
-                    index
-                )
-            })
+            arg.value
+                .as_ref()
+                .map(|value| value.to_com_value())
+                .ok_or_else(|| {
+                    format!(
+                        "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires concrete callback argument {}",
+                        trigger_spec.event_token.raw(),
+                        index
+                    )
+                })
         })
         .collect::<Result<_, _>>()?;
     if trigger_spec.second_arg_is_incremented

@@ -183,36 +183,79 @@ impl ComValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComInvokeValue {
+    value: Variant,
+}
+
+impl ComInvokeValue {
+    pub fn from_com_value(value: ComValue) -> Self {
+        Self {
+            value: value
+                .to_variant()
+                .expect("COM invoke values must be exact VARIANT-compatible"),
+        }
+    }
+
+    pub fn to_com_value(&self) -> ComValue {
+        ComValue::from_variant(&self.value).expect("COM invoke VARIANT must project to ComValue")
+    }
+
+    pub fn to_runtime_token(&self) -> Result<i32, String> {
+        self.to_com_value().to_runtime_token()
+    }
+
+    pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {
+        self.to_com_value().to_legacy_dispatch_token()
+    }
+
+    pub fn variant(&self) -> &Variant {
+        &self.value
+    }
+}
+
+impl From<ComValue> for ComInvokeValue {
+    fn from(value: ComValue) -> Self {
+        Self::from_com_value(value)
+    }
+}
+
+impl From<ComInvokeValue> for ComValue {
+    fn from(value: ComInvokeValue) -> Self {
+        value.to_com_value()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeArg {
-    pub value: Option<ComValue>,
+    pub value: Option<ComInvokeValue>,
     pub name: Option<String>,
 }
 
 impl ComInvokeArg {
     pub fn positional(value: i32) -> Self {
         Self {
-            value: Some(ComValue::from_runtime_token(value)),
+            value: Some(ComValue::from_runtime_token(value).into()),
             name: None,
         }
     }
 
     pub fn named(value: i32, name: impl Into<String>) -> Self {
         Self {
-            value: Some(ComValue::from_runtime_token(value)),
+            value: Some(ComValue::from_runtime_token(value).into()),
             name: Some(name.into()),
         }
     }
 
     pub fn positional_value(value: ComValue) -> Self {
         Self {
-            value: Some(value),
+            value: Some(value.into()),
             name: None,
         }
     }
 
     pub fn named_value(value: ComValue, name: impl Into<String>) -> Self {
         Self {
-            value: Some(value),
+            value: Some(value.into()),
             name: Some(name.into()),
         }
     }
@@ -275,9 +318,9 @@ pub struct ComCallbackPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComMemberToken, ComValue};
+    use super::{ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -422,6 +465,14 @@ mod tests {
         assert_eq!(ComValue::I64(42).to_runtime_token().expect("fits i32"), 42);
         // Does not fit
         assert!(ComValue::I64(5_000_000_000).to_runtime_token().is_err());
+    }
+
+    #[test]
+    fn com_invoke_arg_retains_payload_as_variant() {
+        let arg = ComInvokeArg::positional_value(ComValue::I32(7));
+        let value = arg.value.expect("invoke arg should retain a value");
+        assert_eq!(value.variant().vtype(), VarType::Long);
+        assert_eq!(value.to_com_value(), ComValue::I32(7));
     }
 
     #[test]
