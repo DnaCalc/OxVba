@@ -5,8 +5,8 @@ use std::{
 };
 
 use oxvba_com::{
-    ComCallbackToken, ComMemberToken, ComSubscriptionToken, ComValue, DynamicCallArg,
-    DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
+    ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind,
+    DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
     Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
@@ -2330,7 +2330,7 @@ impl Vm {
                                 .map(|slot| self.read_value_slot(slot))
                                 .transpose()?
                                 .as_ref()
-                                .map(ComValue::from_runtime_value),
+                                .map(DynamicValue::from_runtime_value),
                             name: arg.name.clone(),
                         });
                     }
@@ -4604,7 +4604,7 @@ mod tests {
         DebugBreakpoint, DebugRunResult, DebugStopReason, Vm, runtime_resized_array_preserve,
     };
     use oxvba_com::{
-        ComValue, DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector,
+        DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
     };
     use oxvba_compiler::{
         Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
@@ -5674,7 +5674,7 @@ mod tests {
             object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Ping".to_string()),
             args: vec![DynamicCallArg {
-                value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(7))),
+                value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(7))),
                 name: Some("n".to_string()),
             }],
             call_kind_hint: None,
@@ -5867,11 +5867,11 @@ mod tests {
             member: DynamicMemberSelector::Name("Capture".to_string()),
             args: vec![
                 DynamicCallArg {
-                    value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(11))),
+                    value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(11))),
                     name: None,
                 },
                 DynamicCallArg {
-                    value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(14))),
+                    value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(14))),
                     name: None,
                 },
             ],

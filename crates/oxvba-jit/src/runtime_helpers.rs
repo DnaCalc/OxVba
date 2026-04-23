@@ -11,7 +11,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
-use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicObjectBridge};
+use oxvba_com::{DynamicCallArg, DynamicCallRequest, DynamicObjectBridge, DynamicValue};
 use oxvba_compiler::bytecode::{
     DispatchInvokeArg, ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
     RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -2592,7 +2592,7 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
             .slot
             .map(|slot| read_slot!(ctx, slot as u32))
             .as_ref()
-            .map(ComValue::from_runtime_value);
+            .map(DynamicValue::from_runtime_value);
         request.args.push(DynamicCallArg {
             value,
             name: arg.name.clone(),

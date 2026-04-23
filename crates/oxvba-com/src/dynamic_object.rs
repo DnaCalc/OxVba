@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComSubscriptionToken, ComValue,
 };
-use oxvba_runtime::ObjectRef;
+use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {
@@ -67,7 +67,49 @@ impl From<DynamicCallbackToken> for ComCallbackToken {
     }
 }
 
-pub type DynamicValue = ComValue;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicValue {
+    value: Variant,
+}
+
+impl DynamicValue {
+    pub fn from_com_value(value: ComValue) -> Self {
+        Self {
+            value: value
+                .to_variant()
+                .expect("dynamic COM values must be exact VARIANT-compatible"),
+        }
+    }
+
+    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
+        Self::from_com_value(ComValue::from_runtime_value(value))
+    }
+
+    pub fn to_com_value(&self) -> ComValue {
+        ComValue::from_variant(&self.value)
+            .expect("dynamic COM VARIANT payload must project to ComValue")
+    }
+
+    pub fn to_runtime_value(&self) -> RuntimeValue {
+        self.to_com_value().to_runtime_value()
+    }
+
+    pub fn variant(&self) -> &Variant {
+        &self.value
+    }
+}
+
+impl From<ComValue> for DynamicValue {
+    fn from(value: ComValue) -> Self {
+        Self::from_com_value(value)
+    }
+}
+
+impl From<DynamicValue> for ComValue {
+    fn from(value: DynamicValue) -> Self {
+        value.to_com_value()
+    }
+}
 
 pub trait DynamicObjectBridge {
     type Error;
@@ -128,7 +170,7 @@ pub struct DynamicCallArg {
 impl From<ComInvokeArg> for DynamicCallArg {
     fn from(value: ComInvokeArg) -> Self {
         Self {
-            value: value.value,
+            value: value.value.map(Into::into),
             name: value.name,
         }
     }
@@ -137,7 +179,7 @@ impl From<ComInvokeArg> for DynamicCallArg {
 impl From<DynamicCallArg> for ComInvokeArg {
     fn from(value: DynamicCallArg) -> Self {
         Self {
-            value: value.value,
+            value: value.value.map(Into::into),
             name: value.name,
         }
     }
@@ -202,7 +244,7 @@ impl From<ComCallbackPayload> for DynamicEventPayload {
             subscription: value.subscription.into(),
             object: value.object,
             event: value.event,
-            args: value.args,
+            args: value.args.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -210,9 +252,9 @@ impl From<ComCallbackPayload> for DynamicEventPayload {
 #[cfg(test)]
 mod tests {
     use crate::{ComInvokeArg, ComInvokeKind, ComInvokeRequest, ComValue};
-    use oxvba_runtime::ObjectRef;
+    use oxvba_runtime::{ObjectRef, VarType};
 
-    use super::{DynamicCallKind, DynamicCallRequest, DynamicMemberSelector};
+    use super::{DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue};
 
     #[test]
     fn com_invoke_request_converts_to_dynamic_default_member_shape() {
@@ -230,12 +272,19 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_value_retains_payload_as_variant() {
+        let value = DynamicValue::from_com_value(ComValue::I32(7));
+        assert_eq!(value.variant().vtype(), VarType::Long);
+        assert_eq!(value.to_com_value(), ComValue::I32(7));
+    }
+
+    #[test]
     fn dynamic_call_request_roundtrips_back_to_com_when_member_token_is_known() {
         let request = DynamicCallRequest {
             object: ObjectRef::from_compat_identity(20_007),
             member: DynamicMemberSelector::Token(11),
             args: vec![super::DynamicCallArg {
-                value: Some(ComValue::Null),
+                value: Some(ComValue::Null.into()),
                 name: Some("value".to_string()),
             }],
             call_kind_hint: Some(DynamicCallKind::PropertySet),

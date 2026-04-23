@@ -2956,11 +2956,11 @@ mod tests {
             member: oxvba_com::DynamicMemberSelector::Name("SumPair".to_string()),
             args: vec![
                 oxvba_com::DynamicCallArg {
-                    value: Some(oxvba_com::ComValue::I32(3)),
+                    value: Some(oxvba_com::ComValue::I32(3).into()),
                     name: None,
                 },
                 oxvba_com::DynamicCallArg {
-                    value: Some(oxvba_com::ComValue::I32(14)),
+                    value: Some(oxvba_com::ComValue::I32(14).into()),
                     name: None,
                 },
             ],

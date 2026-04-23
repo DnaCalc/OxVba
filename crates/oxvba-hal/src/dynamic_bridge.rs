@@ -24,7 +24,7 @@ impl DynamicObjectBridge for HalComDynamicBridge<'_> {
     fn invoke_dynamic(&self, request: &DynamicCallRequest) -> Result<DynamicValue, Self::Error> {
         self.com
             .dispatch_invoke_dynamic_runtime_value_v2(request)
-            .map(|value| oxvba_com::ComValue::from_runtime_value(&value))
+            .map(|value| DynamicValue::from_runtime_value(&value))
     }
 
     fn poll_dynamic_event(&self) -> Result<Option<DynamicEventPayload>, Self::Error> {
@@ -39,6 +39,6 @@ impl DynamicObjectBridge for HalComDynamicBridge<'_> {
     ) -> Result<DynamicValue, Self::Error> {
         self.com
             .release_object(ObjectRef::from_compat_identity(object.raw()))
-            .map(|value| oxvba_com::ComValue::from_runtime_value(&value))
+            .map(|value| DynamicValue::from_runtime_value(&value))
     }
 }
