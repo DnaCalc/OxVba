@@ -259,6 +259,12 @@ Implemented:
      `oxrt_ubound` now read the source slot through `read_variant_slot()` and
      compute bounds against the retained SAFEARRAY-backed Variant carrier
      instead of projecting the operand into `RuntimeValue::ArrayIntent` first.
+47k. VM semantics now also has Variant-native tag-classifier companions for
+     `runtime_vartype_tag_bounded`, `runtime_typename_tag_bounded`, and
+     `runtime_is_numeric_tag_bounded`. JIT `oxrt_vartype_tag`,
+     `oxrt_typename_tag`, and `oxrt_is_numeric_tag` now classify the retained
+     slot `Variant` directly instead of reading a temporary `RuntimeValue`
+     before checking array-shaped or scalar tag behavior.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -874,6 +880,10 @@ Implementation progress:
     Variant-native bound helpers, and the JIT array-bound lane reads the
     retained SAFEARRAY-backed `Variant` directly before writing the scalar
     result.
+39. JIT tag-classifier helpers for `VarType`, `TypeName`, and `IsNumeric`
+    array-tag classification now use Variant-native semantics companions over
+    the retained slot carrier for their tag-only paths, removing another
+    array-shape compatibility projection from the JIT helper surface.
 
 Remaining blocker:
 
