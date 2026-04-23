@@ -120,6 +120,12 @@ Implemented:
     descriptor bounds through `SafeArray::from_variants_nd()` with canonical
     `Variant` element carriers instead of constructing the probe array through
     the legacy `RuntimeValue` compatibility constructor.
+32. VM descriptor-backed external calls now mirror the JIT descriptor path:
+    descriptor calls read slot `Variant` values and route both single-argument
+    and multi-argument descriptor invocations through
+    `invoke_descriptor_variants()`. Only the no-descriptor legacy
+    symbol-token fast path still projects the first argument to `RuntimeValue`
+    for `invoke_symbol()`.
 
 Validation:
 
@@ -300,6 +306,15 @@ Validation:
       selected
 81. `./scripts/check-governance.ps1`
     - result: passed
+82. `cargo fmt --check`
+    - result: passed
+83. `cargo test -p oxvba-vm --lib external -- --nocapture`
+    - result: compile/pass with `0` tests selected
+84. `cargo check -p oxvba-vm -p oxvba-hal`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+85. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -337,6 +352,10 @@ Implementation progress:
    probe array from `Variant` elements, leaving `RuntimeValue` compatibility
    construction to tests/projection seams rather than the conformance runtime
    path.
+9. VM descriptor-backed external calls now use the Variant-native descriptor
+   transport for both single-argument and multi-argument descriptor calls. Only
+   the no-descriptor legacy symbol-token path still projects through
+   `RuntimeValue` before calling `invoke_symbol()`.
 
 Remaining blocker:
 
