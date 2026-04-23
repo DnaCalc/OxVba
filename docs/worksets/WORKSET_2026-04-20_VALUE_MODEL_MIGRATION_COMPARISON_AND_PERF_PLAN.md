@@ -1925,6 +1925,11 @@ Child beads:
        companion and uses a `Variant` carrier for the implicit `Me` argument;
        existing `RuntimeValue` member invocation remains a compatibility
        projection
+     - progress landed: host COM callback ingress and project-handler dispatch
+       now have Variant-native companion APIs; `ComEventCallbackVariantDispatch`
+       preserves callback payloads as exact `Variant` values and dispatches
+       through the VM Variant procedure path, while existing `RuntimeValue`
+       callback APIs remain compatibility projections
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
