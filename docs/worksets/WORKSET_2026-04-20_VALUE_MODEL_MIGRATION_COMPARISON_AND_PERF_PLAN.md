@@ -1788,6 +1788,10 @@ Child beads:
        allocate and preserve typed SAFEARRAY elements as canonical `Variant`
        values using `variant_elements()` / `replace_variant_elements()`; the
        compatibility projection bridge now handles `VT_UI1` Byte variants
+     - progress landed: VM and JIT intrinsic array literal/append helpers now
+       construct and extend internal arrays through `Variant` element vectors
+       instead of retaining `RuntimeValue` vectors inside the resulting
+       SAFEARRAY payloads
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
