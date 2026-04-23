@@ -1913,16 +1913,21 @@ Child beads:
        Variant-native request/result companions over a VM Variant invocation
        path; existing embedded `RuntimeValue` APIs project into and out of that
        Variant path for compatibility callers
+     - progress landed: immediate procedure invocation now parses arguments as
+       `Variant` and invokes through the host Variant procedure path; its
+       display result remains a compatibility projection because the Immediate
+       Window exposes formatted values rather than the internal runtime carrier
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
        symbol APIs, legacy SafeArray element compatibility APIs, COM
        compatibility projection APIs that still expose `RuntimeValue`,
-       embedded/immediate compatibility APIs that still expose `RuntimeValue`,
-       and remaining non-Variant pointer-helper behavior such as `StrPtr`,
-       `ObjPtr`, and generic `VarPtr` are audited and either migrated to exact
-       BSTR, Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly
-       classified as projection boundaries outside the internal value model
+       embedded/immediate compatibility display APIs that still expose
+       `RuntimeValue`, and remaining non-Variant pointer-helper behavior such as
+       `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and either migrated
+       to exact BSTR, Windows/COM `VARIANT`, and SAFEARRAY carriers or
+       explicitly classified as projection boundaries outside the internal value
+       model
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
