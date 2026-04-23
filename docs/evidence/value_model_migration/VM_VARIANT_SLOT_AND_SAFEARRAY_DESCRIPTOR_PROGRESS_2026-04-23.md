@@ -178,6 +178,12 @@ Implemented:
     carriers. The existing `snapshot()` and `snapshot_values()` APIs now project
     from that Variant-native surface and remain compatibility result APIs for
     current callers.
+44. VM and JIT public execution helpers now have Variant-native snapshot
+    surfaces. VM exposes `execute_and_snapshot_variants*()` helpers. JIT exposes
+    `JitEngine::execute_and_snapshot_variants*()` and
+    `cranelift::execute_bytecode_rtslot_variants()`. Existing
+    `RuntimeValue`-returning execution helpers now project from those Variant
+    result surfaces where the execution path can produce Variant carriers.
 
 Validation:
 
@@ -465,6 +471,22 @@ Validation:
       functions
 128. `./scripts/check-governance.ps1`
     - result: passed
+129. `cargo fmt --check`
+    - result: passed
+130. `cargo test -p oxvba-vm --lib snapshot_variants_exposes_variant_cells_before_projection -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM digit helper
+      functions
+131. `cargo test -p oxvba-jit --lib execute_and_snapshot_variants_exposes_jit_results_before_projection -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+132. `cargo check -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+133. `cargo check -p oxvba-jit`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+134. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -540,6 +562,10 @@ Implementation progress:
 19. VM result extraction now has a Variant-native result surface through
     `snapshot_variants()`, with `snapshot()` and `snapshot_values()` kept as
     public compatibility projections over that surface.
+20. VM and JIT public execution snapshot helpers now have Variant-native result
+    surfaces. Compatibility helpers still return `RuntimeValue`, but they
+    project from Variant result paths instead of making `RuntimeValue` the only
+    public execution snapshot carrier.
 
 Remaining blocker:
 
@@ -554,8 +580,9 @@ Remaining blocker:
    argument binding, VM/JIT dynamic COM result slot writes, JIT WithEvents
    retained-value get/set/owner-search, VM `For Each` next-item delivery, VM
    WithEvents retained-value get/set/owner-search, VM project-dynamic dispatch
-   return/destination writes, and VM/JIT result extraction companion APIs no
-   longer retain it as their backing value store for normal VBA values.
+   return/destination writes, VM/JIT result extraction companion APIs, and
+   VM/JIT public execution snapshot companion APIs no longer retain it as their
+   backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
