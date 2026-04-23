@@ -214,6 +214,10 @@ impl Variant {
         self.core.data_bytes()
     }
 
+    pub fn as_variant_cell_ptr(&self) -> *mut core::ffi::c_void {
+        (self as *const Self).cast_mut().cast()
+    }
+
     pub fn to_wire_bytes(&self) -> [u8; 16] {
         self.core.to_wire_bytes()
     }

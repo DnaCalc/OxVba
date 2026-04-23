@@ -70,6 +70,10 @@ impl RtSlot {
     pub fn payload_u64(&self) -> u64 {
         u64::from_le_bytes(self.variant.data_bytes())
     }
+
+    pub fn variant_cell_pointer(&self) -> i64 {
+        self.variant.as_variant_cell_ptr() as usize as i64
+    }
 }
 
 /// Convert a RuntimeValue to a VARIANT-backed JIT slot.
@@ -145,5 +149,13 @@ mod tests {
         let slot = rtslot_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
         assert_eq!(slot.vtype(), VarType::Long);
         assert_eq!(slot.to_runtime_value(), RuntimeValue::I32(7));
+    }
+
+    #[test]
+    fn variant_cell_pointer_exposes_actual_slot_storage() {
+        let slot = rtslot_from_runtime_value(&RuntimeValue::String(BStr::from("ABC")));
+        let pointer = slot.variant_cell_pointer();
+        assert_ne!(pointer, 0);
+        assert_eq!(pointer, (&slot as *const RtSlot) as usize as i64);
     }
 }

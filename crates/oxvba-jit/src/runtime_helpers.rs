@@ -1285,11 +1285,7 @@ pub extern "C" fn oxrt_varptr_string_var(ctx: *mut JitContext, dst: u32, src: u3
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_varptr_variant_var(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let value = read_slot!(ctx, src);
-    let pointer = match oxvba_runtime::pointer_helpers::register_variant_var_pointer(&value) {
-        Ok(pointer) => pointer,
-        Err(_) => return ERR_RUNTIME,
-    };
+    let pointer = unsafe { (*ctx).variant_cell_pointer(src) };
     write_slot!(ctx, dst, RuntimeValue::I64(pointer));
     OK
 }

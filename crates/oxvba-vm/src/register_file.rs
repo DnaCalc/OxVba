@@ -31,6 +31,20 @@ impl RuntimeSlot {
         }
     }
 
+    pub fn variant_cell_pointer(&self) -> Result<i64, String> {
+        match self {
+            Self::Variant(value) => Ok(value.as_variant_cell_ptr() as usize as i64),
+            Self::BindingHandle(handle) => Err(format!(
+                "VarPtr(Variant) cannot expose internal binding handle {} as a VARIANT cell",
+                handle.raw()
+            )),
+        }
+    }
+
+    pub fn is_variant_cell_pointer(&self, pointer: i64) -> bool {
+        matches!(self, Self::Variant(value) if value.as_variant_cell_ptr() as usize as i64 == pointer)
+    }
+
     pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
         match self {
             Self::Variant(value) => value.project_compat_slot_i32(),

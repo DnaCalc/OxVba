@@ -214,6 +214,25 @@ impl JitContext {
         rt_slot.to_runtime_value()
     }
 
+    /// Return the address of the actual VARIANT cell backing a JIT slot.
+    ///
+    /// # Safety
+    /// The slot index must be within bounds, and slots_ptr must be valid.
+    pub unsafe fn variant_cell_pointer(&self, slot: u32) -> i64 {
+        debug_assert!(
+            !self.slots_ptr.is_null(),
+            "JitContext::variant_cell_pointer: null slots_ptr"
+        );
+        debug_assert!(
+            slot < self.slot_count,
+            "JitContext::variant_cell_pointer: slot {} >= count {}",
+            slot,
+            self.slot_count
+        );
+        let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
+        rt_slot.variant_cell_pointer()
+    }
+
     /// Write a RuntimeValue to a slot.
     ///
     /// # Safety

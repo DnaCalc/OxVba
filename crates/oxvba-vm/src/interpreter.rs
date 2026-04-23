@@ -1503,9 +1503,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtrVariantVar { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let pointer =
-                        oxvba_runtime::pointer_helpers::register_variant_var_pointer(&value)?;
+                    let pointer = self.variant_cell_pointer(*src)?;
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
                 }
@@ -3182,6 +3180,13 @@ impl Vm {
         self.registers.registers[slot].to_runtime_value()
     }
 
+    fn variant_cell_pointer(&self, slot: usize) -> Result<i64, String> {
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        self.registers.registers[slot].variant_cell_pointer()
+    }
+
     fn write_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
@@ -4824,6 +4829,18 @@ mod tests {
             vm.read_value_slot(0).expect("read runtime value"),
             RuntimeValue::Bool(true)
         );
+    }
+
+    #[test]
+    fn variant_varptr_returns_actual_register_variant_cell() {
+        let mut vm = Vm::default();
+        vm.reset_execution_state(2, false);
+        vm.write_value_slot(0, RuntimeValue::String(BStr::from("ABC")))
+            .expect("write variant value");
+
+        let pointer = vm.variant_cell_pointer(0).expect("variant cell pointer");
+        assert_ne!(pointer, 0);
+        assert!(vm.registers.registers[0].is_variant_cell_pointer(pointer));
     }
 
     #[test]
