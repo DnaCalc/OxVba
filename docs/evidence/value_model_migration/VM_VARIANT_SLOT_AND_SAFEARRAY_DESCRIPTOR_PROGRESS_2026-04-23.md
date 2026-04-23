@@ -209,6 +209,10 @@ Implemented:
     and return values as exact `Variant` carriers; existing embedded
     `RuntimeValue` request/result APIs remain compatibility projections over
     those Variant-native paths.
+50. Immediate procedure invocation now parses literal arguments into `Variant`
+    carriers and invokes through `Engine::invoke_procedure_with_variants()`.
+    Immediate display results still project to `RuntimeValue` at the UI-facing
+    output boundary.
 
 Validation:
 
@@ -566,6 +570,16 @@ Validation:
 156. `cargo test -p oxvba-host --lib invoke_procedure_variant_request_preserves_exact_args -- --nocapture`
     - result: `1` passed with existing dead-code warnings in VM/JIT digit
       helper functions
+157. `cargo test -p oxvba-host --lib immediate -- --nocapture`
+    - result: `11` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+158. `cargo fmt --check`
+    - result: passed
+159. `cargo check -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+160. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -663,6 +677,10 @@ Implementation progress:
     companions over a VM Variant invocation path. Existing embedded
     `RuntimeValue` APIs project into and out of that Variant path for callers
     that still use the compatibility surface.
+26. Immediate procedure invocation now parses arguments as `Variant` and invokes
+    through the host Variant procedure path. Its display result remains a
+    compatibility projection because the Immediate Window exposes formatted
+    values, not the internal runtime carrier.
 
 Remaining blocker:
 
@@ -680,9 +698,9 @@ Remaining blocker:
    return/destination writes, VM/JIT result extraction companion APIs, VM/JIT
    public execution snapshot companion APIs, host/project snapshot companion
    APIs, host bundle snapshot companion APIs, immediate-session snapshot
-   companion APIs, `ComValue` Variant bridge conversions, and embedded host
-   procedure invocation companion APIs no longer retain it as their backing
-   value store for normal VBA values.
+   companion APIs, `ComValue` Variant bridge conversions, embedded host
+   procedure invocation companion APIs, and immediate procedure invocation no
+   longer retain it as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
