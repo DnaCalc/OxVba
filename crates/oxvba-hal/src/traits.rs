@@ -162,8 +162,8 @@ pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
     fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
-    /// Canonical COM invoke seam. Implementations should translate between COM
-    /// wire values and the runtime semantic value model here.
+    /// Compatibility COM invoke seam. Implementations may override the
+    /// Variant-native methods below to avoid this semantic projection.
     fn dispatch_invoke_runtime_value_v2(
         &self,
         request: &ComInvokeRequest,
@@ -172,6 +172,28 @@ pub trait ComHal: Send + Sync {
         &self,
         request: &DynamicCallRequest,
     ) -> HalResult<RuntimeValue>;
+    fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
+        let value = self.dispatch_invoke_runtime_value_v2(request)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke_variant",
+                detail,
+            )
+        })
+    }
+    fn dispatch_invoke_dynamic_variant(&self, request: &DynamicCallRequest) -> HalResult<Variant> {
+        let value = self.dispatch_invoke_dynamic_runtime_value_v2(request)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke_dynamic_variant",
+                detail,
+            )
+        })
+    }
     fn subscribe_event(
         &self,
         object: ObjectRef,

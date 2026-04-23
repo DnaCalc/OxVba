@@ -16,7 +16,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue, runtime_value_to_vba_string};
+use oxvba_runtime::{ObjectRef, RuntimeValue, Variant, runtime_value_to_vba_string};
 
 use super::StandardHostServices;
 
@@ -249,6 +249,23 @@ impl ComHal for StandardHostServices {
         &self,
         request: &ComInvokeRequest,
     ) -> HalResult<RuntimeValue> {
+        let value = self.dispatch_invoke_variant(request)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn dispatch_invoke_dynamic_runtime_value_v2(
+        &self,
+        request: &DynamicCallRequest,
+    ) -> HalResult<RuntimeValue> {
+        let value = self.dispatch_invoke_dynamic_variant(request)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         let object = request.object.raw();
         let member = request.member.raw();
         let args = request.args.as_slice();
@@ -266,7 +283,10 @@ impl ComHal for StandardHostServices {
                 request,
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
-                Ok(Some(value)) => return Ok(value),
+                Ok(Some(value)) => {
+                    return Variant::try_from_runtime_value(&value)
+                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
                     return Err(self.com_dispatch_adapter_fault(message));
@@ -296,14 +316,15 @@ impl ComHal for StandardHostServices {
                 // path by returning the already bound object identity rather than inventing
                 // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Ok(RuntimeValue::Object(ObjectRef::from_compat_identity(
-                        object,
-                    )));
+                    return Variant::try_from_runtime_value(&RuntimeValue::Object(
+                        ObjectRef::from_compat_identity(object),
+                    ))
+                    .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
                 _ => {}
             }
         }
-        Ok(RuntimeValue::I32(
+        Ok(Variant::from_i32(
             positional_values
                 .iter()
                 .fold(object.saturating_add(member), |acc, arg| {
@@ -312,10 +333,7 @@ impl ComHal for StandardHostServices {
         ))
     }
 
-    fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self,
-        request: &DynamicCallRequest,
-    ) -> HalResult<RuntimeValue> {
+    fn dispatch_invoke_dynamic_variant(&self, request: &DynamicCallRequest) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dispatch_invoke"));
@@ -329,7 +347,10 @@ impl ComHal for StandardHostServices {
                 request,
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
-                Ok(Some(value)) => return Ok(value),
+                Ok(Some(value)) => {
+                    return Variant::try_from_runtime_value(&value)
+                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
                     return Err(self.com_dispatch_adapter_fault(message));
@@ -395,7 +416,7 @@ impl ComHal for StandardHostServices {
                 })?
             }
         };
-        self.dispatch_invoke_runtime_value_v2(&lowered)
+        self.dispatch_invoke_variant(&lowered)
     }
 
     fn subscribe_event(
