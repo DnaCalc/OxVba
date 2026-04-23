@@ -396,11 +396,13 @@ This grid is the current anti-drift truth surface for closure.
    - current truth:
       canonical `Variant` is now back to the exact 16-byte carrier for scalar,
       string, and `ObjectRef`-backed object lanes, with clone/drop driven from
-      the payload bytes themselves; intrinsic `SAFEARRAY` and binding-handle
-      carriers remain open
+      the payload bytes themselves; canonical `SafeArray` now owns a real raw
+      SAFEARRAY-style descriptor plus contiguous canonical `Variant` payload
+      storage for the intrinsic `VT_ARRAY | VT_VARIANT` lane; typed-element
+      SAFEARRAY payloads and binding-handle carriers remain open
    - projected truth:
-      full Windows `VARIANT` and `SAFEARRAY` truth is still materially realized
-      at boundary/helper seams for array-sensitive lanes
+      full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
+      materially realized at boundary/helper seams for array-sensitive lanes
    - closure implication:
      `vmm-e` remains open
 3. COM interface identity
