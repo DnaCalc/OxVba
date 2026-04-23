@@ -116,6 +116,10 @@ Implemented:
     but descriptor-backed calls now read slot `Variant` values and route both
     single-argument and multi-argument descriptor calls through
     `invoke_descriptor_variants()`.
+31. HAL conformance SAFEARRAY shape probing now validates multidimensional
+    descriptor bounds through `SafeArray::from_variants_nd()` with canonical
+    `Variant` element carriers instead of constructing the probe array through
+    the legacy `RuntimeValue` compatibility constructor.
 
 Validation:
 
@@ -287,6 +291,15 @@ Validation:
       functions
 77. `./scripts/check-governance.ps1`
     - result: passed
+78. `cargo fmt --check`
+    - result: passed
+79. `cargo check -p oxvba-hal`
+    - result: passed
+80. `cargo test -p oxvba-hal conformance -- --nocapture`
+    - result: `11` passed; bin test target compile/pass with `0` tests
+      selected
+81. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -320,6 +333,10 @@ Implementation progress:
    transport for both single-argument and multi-argument descriptor calls. Only
    the no-descriptor legacy symbol-token path still projects through
    `RuntimeValue` before calling `invoke_symbol()`.
+8. HAL conformance multidimensional SAFEARRAY shape probing now constructs the
+   probe array from `Variant` elements, leaving `RuntimeValue` compatibility
+   construction to tests/projection seams rather than the conformance runtime
+   path.
 
 Remaining blocker:
 
