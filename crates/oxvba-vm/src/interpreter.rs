@@ -3494,11 +3494,19 @@ impl Vm {
             Err(detail) => return Err(ForEachInitError { code: 438, detail }),
         };
 
-        let result_value = result_slot
-            .to_runtime_value()
-            .map_err(|detail| ForEachInitError { code: 13, detail })?;
-        match result_value {
-            RuntimeValue::ArrayIntent(array) => {
+        match &result_slot {
+            RuntimeSlot::Variant(value) => {
+                let Some(array) = value.as_safearray() else {
+                    let other = result_slot
+                        .to_runtime_value()
+                        .map_err(|detail| ForEachInitError { code: 13, detail })?;
+                    return Err(ForEachInitError {
+                        code: 13,
+                        detail: format!(
+                            "For Each NewEnum source on object {object} returned unsupported value {other:?}"
+                        ),
+                    });
+                };
                 let values = array.variant_elements().ok_or_else(|| ForEachInitError {
                     code: 13,
                     detail: format!(
@@ -3507,10 +3515,11 @@ impl Vm {
                 })?;
                 Ok(Self::variants_to_slots(values))
             }
-            other => Err(ForEachInitError {
+            RuntimeSlot::BindingHandle(handle) => Err(ForEachInitError {
                 code: 13,
                 detail: format!(
-                    "For Each NewEnum source on object {object} returned unsupported value {other:?}"
+                    "For Each NewEnum source on object {object} returned unsupported BindingHandle {}",
+                    handle.raw()
                 ),
             }),
         }
