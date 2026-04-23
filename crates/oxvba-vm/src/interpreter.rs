@@ -2594,18 +2594,17 @@ impl Vm {
                         .collect::<Result<_, _>>()?;
 
                     if bytecode.external_call_descriptors.is_empty() {
-                        let first_arg = args
+                        let first_arg = arg_variants
                             .first()
-                            .map(|slot| self.read_value_slot(*slot))
-                            .transpose()?
-                            .unwrap_or(RuntimeValue::I32(0));
+                            .cloned()
+                            .unwrap_or_else(|| Variant::from_i32(0));
                         match self
                             .host_services
                             .dynlink()
-                            .invoke_symbol(*symbol, first_arg)
+                            .invoke_symbol_variant(*symbol, &first_arg)
                         {
                             Ok(value) => {
-                                self.write_value_slot(*dst, value)?;
+                                self.write_variant_slot(*dst, value)?;
                                 pc += 1;
                             }
                             Err(err) => pc = self.route_host_error(pc, err)?,

@@ -329,6 +329,40 @@ impl DynamicLinkHal for StandardHostServices {
         };
         self.invoke_descriptor(&descriptor, RuntimeValue::I32(arg))
     }
+
+    fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
+        let arg = arg.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::DynamicLinking,
+                "invoke_symbol_variant",
+                detail,
+            )
+        })?;
+        let arg = self.runtime_value_project_compat_slot_i32(
+            &arg,
+            CapabilityId::DynamicLinking,
+            "invoke_symbol_variant",
+            "arg",
+        )?;
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: symbol.raw() as u32,
+            declared_name: "<legacy>",
+            library: "<legacy>",
+            alias: "<legacy>",
+            ordinal_alias: false,
+            symbol,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "legacy-symbol",
+            param_count: 0,
+            param_types: &[],
+            param_by_ref: &[],
+            return_type: None,
+        };
+        self.invoke_descriptor_variants(&descriptor, &[Variant::from_i32(arg)])
+            .map(|(ret, _)| ret)
+    }
 }
 
 fn variants_to_runtime_values(

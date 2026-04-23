@@ -330,6 +330,28 @@ pub trait DynamicLinkHal: Send + Sync {
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue>;
+
+    /// Variant-native symbol-token invoke path retained for no-descriptor
+    /// VM/JIT external call sites.
+    fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
+        let arg = arg.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DynamicLinking,
+                "invoke_symbol_variant",
+                detail,
+            )
+        })?;
+        let ret = self.invoke_symbol(symbol, arg)?;
+        Variant::try_from_runtime_value(&ret).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DynamicLinking,
+                "invoke_symbol_variant",
+                detail,
+            )
+        })
+    }
 }
 
 fn variants_to_runtime_values(

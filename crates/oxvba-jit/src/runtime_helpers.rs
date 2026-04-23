@@ -3135,13 +3135,13 @@ pub extern "C" fn oxrt_host_invoke_symbol(
     // Fast path: no descriptors → simple invoke_symbol.
     let descriptors = unsafe { (*ctx).host_state().external_call_descriptors() };
     if descriptors.is_empty() {
-        let first_arg = arg_slots
+        let first_arg = arg_variants
             .first()
-            .map(|slot| read_slot!(ctx, *slot as u32))
-            .unwrap_or(RuntimeValue::I32(0));
-        match host.dynlink().invoke_symbol(symbol, first_arg) {
+            .cloned()
+            .unwrap_or_else(|| Variant::from_i32(0));
+        match host.dynlink().invoke_symbol_variant(symbol, &first_arg) {
             Ok(value) => {
-                write_slot!(ctx, dst, value);
+                write_variant_slot!(ctx, dst, value);
                 return OK;
             }
             Err(err) => return route_hal_error(ctx, err),

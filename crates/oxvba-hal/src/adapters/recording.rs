@@ -473,6 +473,10 @@ impl DynamicLinkHal for RecordingHostServices {
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         self.inner.dynlink().invoke_symbol(symbol, arg)
     }
+
+    fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
+        self.inner.dynlink().invoke_symbol_variant(symbol, arg)
+    }
 }
 
 impl DiagnosticsHal for RecordingHostServices {
