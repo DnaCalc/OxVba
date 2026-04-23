@@ -208,6 +208,13 @@ Implemented:
      slot-snapshot test helpers use the Variant snapshot companions and
      `Variant::project_compat_slot_i32()` rather than round-tripping through a
      `Vec<RuntimeValue>` first.
+47b. `Variant::project_compat_slot_i32()` now projects the exact legacy slot
+     subset directly from the retained `Variant` payload rather than converting
+     through `to_runtime_value()` first. Supported compat-slot carriers
+     (`Empty`, `Null`, `Integer`, `Long`, narrow `LongLong`, `Byte`, `Boolean`,
+     `Error`, `Object`, and encodable `SAFEARRAY`) stay exact, while
+     non-representable carriers still fail with the existing compatibility-lane
+     diagnostics.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
