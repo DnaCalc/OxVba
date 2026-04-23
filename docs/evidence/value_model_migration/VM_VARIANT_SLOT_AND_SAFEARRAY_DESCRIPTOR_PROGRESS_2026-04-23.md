@@ -140,6 +140,14 @@ Implemented:
     and compare retained values as `Variant` slots directly. `BindingHandle`
     remains an explicit control-plane escape outside the VBA/COM value model,
     and explicit `VT_I4` zero remains the clear/remove carrier.
+36. VM `For Each` next-item writes now copy the retained `RuntimeSlot` directly
+    into the item slot instead of projecting iterator items through
+    `RuntimeValue` before the slot write.
+37. VM WithEvents retained-value get/set/owner-search helpers now read, write,
+    and compare retained normal VBA values as `Variant` slots. The project COM
+    subscription sync still projects to `RuntimeValue` at its object-boundary
+    check, but retained storage and destination writes stay on the Variant slot
+    carrier.
 
 Validation:
 
@@ -358,6 +366,17 @@ Validation:
       functions
 98. `./scripts/check-governance.ps1`
     - result: passed
+99. `cargo fmt --check`
+    - result: passed
+100. `cargo test -p oxvba-vm --lib withevents -- --nocapture`
+    - result: `5` passed, `1` ignored
+101. `cargo test -p oxvba-vm --lib foreach -- --nocapture`
+    - result: compile/pass with `0` tests selected
+102. `cargo check -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+103. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -410,6 +429,9 @@ Implementation progress:
     the `Variant` slot carrier for normal VBA values instead of projecting the
     retained value through `RuntimeValue`; the retained `BindingHandle` lane
     remains a deliberate non-VBA control-plane exception.
+13. VM `For Each` next-item writes now keep iterator item delivery on the
+    retained `RuntimeSlot` carrier, and VM WithEvents retained value helpers now
+    keep get/set/owner enumeration on `Variant` slots for normal VBA values.
 
 Remaining blocker:
 
@@ -421,9 +443,10 @@ Remaining blocker:
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
    `ParamArray` SAFEARRAY payload construction, and VM project-dynamic callee
-   argument binding, VM/JIT dynamic COM result slot writes, and JIT WithEvents
-   retained-value get/set/owner-search no longer retain it as their backing
-   value store for normal VBA values.
+   argument binding, VM/JIT dynamic COM result slot writes, JIT WithEvents
+   retained-value get/set/owner-search, VM `For Each` next-item delivery, and
+   VM WithEvents retained-value get/set/owner-search no longer retain it as
+   their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
