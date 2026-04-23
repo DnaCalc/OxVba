@@ -159,7 +159,7 @@ unsafe fn set_windows_variant_array_arg(
     variant: *mut VARIANT,
     array: &crate::safe_array::SafeArray,
 ) -> Result<(), String> {
-    let Some(values) = array.elements() else {
+    let Some(values) = array.variant_elements() else {
         return Err("VarPtr over Variant containing an array shape without element payload is not yet supported".to_string());
     };
 
@@ -180,7 +180,8 @@ unsafe fn set_windows_variant_array_arg(
             return Err("SafeArrayCreate(VT_VARIANT) returned null".to_string());
         }
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
-        for runtime_value in values {
+        for value in values {
+            let runtime_value = value.to_runtime_value()?;
             let mut element: VARIANT = std::mem::zeroed();
             if let Err(detail) =
                 set_windows_variant_from_runtime_value(&mut element, &runtime_value)
@@ -226,9 +227,10 @@ unsafe fn set_windows_variant_array_arg(
     if psa.is_null() {
         return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
     }
-    for (offset, runtime_value) in values.iter().enumerate() {
+    for (offset, value) in values.iter().enumerate() {
+        let runtime_value = value.to_runtime_value()?;
         let mut element: VARIANT = std::mem::zeroed();
-        if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, runtime_value) {
+        if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, &runtime_value) {
             let _ = VariantClear(&mut element);
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(detail);
@@ -548,7 +550,7 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             }
         }
         RuntimeValue::ArrayIntent(array) => {
-            let Some(elements) = array.elements() else {
+            let Some(elements) = array.variant_elements() else {
                 return Err(
                     "VarPtr over array shape without element payload is not yet supported"
                         .to_string(),
@@ -556,12 +558,25 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
             };
             let mut bytes = Vec::with_capacity(elements.len());
             for element in elements {
-                match element {
-                    RuntimeValue::Empty | RuntimeValue::Null => bytes.push(0),
-                    RuntimeValue::I32(value) if (0..=255).contains(&value) => {
+                match element.vtype() {
+                    crate::VarType::Empty | crate::VarType::Null => bytes.push(0),
+                    crate::VarType::Byte => bytes.push(element.as_u8().expect("byte payload")),
+                    crate::VarType::Long => {
+                        let value = element.as_i32().expect("long payload");
+                        if !(0..=255).contains(&value) {
+                            return Err(format!(
+                                "VarPtr over array payload currently requires byte-compatible elements, got {element:?}"
+                            ));
+                        }
                         bytes.push(value as u8)
                     }
-                    RuntimeValue::Bool(value) => bytes.push(if value { 1 } else { 0 }),
+                    crate::VarType::Boolean => {
+                        bytes.push(if element.as_bool().expect("bool payload") {
+                            1
+                        } else {
+                            0
+                        })
+                    }
                     other => {
                         return Err(format!(
                             "VarPtr over array payload currently requires byte-compatible elements, got {other:?}"
