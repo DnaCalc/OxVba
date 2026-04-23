@@ -65,6 +65,11 @@ Implemented:
     `ComCallbackValue`, a `Variant`-backed carrier. Existing callback payload
     consumers can still project to `ComValue`, but `ComCallbackPayload.args` no
     longer owns semantic `ComValue` payloads.
+20. `SafeArray` now has Variant-native construction, element-read, and
+    element-replacement APIs. Existing `RuntimeValue` element APIs are
+    compatibility projections over the Variant path, and clone/equality now use
+    canonical Variant element reads rather than semantic `RuntimeValue`
+    element reads.
 
 Validation:
 
@@ -120,13 +125,19 @@ Validation:
     - result: `2` passed
 23. `cargo test -p oxvba-hal --lib poll_event_callback -- --nocapture`
     - result: compile/pass with `0` tests selected
+24. `cargo test -p oxvba-runtime --lib safe_array -- --nocapture`
+    - result: `12` passed
+25. `cargo fmt --check`
+    - result: passed
+26. `./scripts/check-governance.ps1`
+    - result: passed
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
-   helper functions, JIT helper functions, host callbacks, `SafeArray` element
-   construction APIs, and `ComValue` bridges. VM register storage, JIT slot
+   helper functions, JIT helper functions, host callbacks, legacy `SafeArray`
+   compatibility element APIs, and `ComValue` bridges. VM register storage, JIT slot
    storage, `For Each` iterator storage, and VM/JIT WithEvents binding storage
    no longer retain it as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
