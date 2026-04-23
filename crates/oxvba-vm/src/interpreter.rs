@@ -1508,10 +1508,13 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicStrPtr { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let pointer = match &value {
-                        RuntimeValue::Empty | RuntimeValue::Null => 0,
-                        RuntimeValue::String(text) => {
+                    let value = self.read_variant_slot(*src)?;
+                    let pointer = match value.vtype() {
+                        oxvba_runtime::VarType::Empty | oxvba_runtime::VarType::Null => 0,
+                        oxvba_runtime::VarType::String => {
+                            let text = value.as_bstr().ok_or_else(|| {
+                                "runtime error: invalid String Variant payload".to_string()
+                            })?;
                             let utf8 = text.as_str();
                             oxvba_runtime::pointer_helpers::register_utf16_string(&utf8)?
                         }
@@ -1521,16 +1524,23 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtr { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let pointer =
-                        oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value)?;
+                    let runtime_value = self.read_value_slot(*src)?;
+                    let pointer = match runtime_value {
+                        RuntimeValue::ArrayIntent(ref array) => {
+                            oxvba_runtime::pointer_helpers::register_array_payload_pointer(array)?
+                        }
+                        _ => {
+                            let value = self.read_variant_slot(*src)?;
+                            oxvba_runtime::pointer_helpers::register_variant_pointer(&value)?
+                        }
+                    };
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtrStringVar { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     let pointer =
-                        oxvba_runtime::pointer_helpers::register_string_var_pointer(&value)?;
+                        oxvba_runtime::pointer_helpers::register_string_variant_pointer(&value)?;
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
                 }
@@ -1540,8 +1550,9 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicObjPtr { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let pointer = oxvba_runtime::pointer_helpers::register_object_pointer(&value)?;
+                    let value = self.read_variant_slot(*src)?;
+                    let pointer =
+                        oxvba_runtime::pointer_helpers::register_object_variant_pointer(&value)?;
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
                 }

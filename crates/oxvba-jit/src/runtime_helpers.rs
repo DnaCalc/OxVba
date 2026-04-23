@@ -1265,10 +1265,13 @@ pub extern "C" fn oxrt_vartype(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let value = read_slot!(ctx, src);
-    let pointer = match &value {
-        RuntimeValue::Empty | RuntimeValue::Null => 0,
-        RuntimeValue::String(value) => {
+    let value = read_variant_slot!(ctx, src);
+    let pointer = match value.vtype() {
+        oxvba_runtime::VarType::Empty | oxvba_runtime::VarType::Null => 0,
+        oxvba_runtime::VarType::String => {
+            let Some(value) = value.as_bstr() else {
+                return ERR_RUNTIME;
+            };
             let utf8 = value.as_str();
             match oxvba_runtime::pointer_helpers::register_utf16_string(&utf8) {
                 Ok(pointer) => pointer,
@@ -1283,8 +1286,17 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let value = read_slot!(ctx, src);
-    let pointer = match oxvba_runtime::pointer_helpers::register_runtime_value_pointer(&value) {
+    let runtime_value = read_slot!(ctx, src);
+    let pointer_result = match runtime_value {
+        RuntimeValue::ArrayIntent(ref array) => {
+            oxvba_runtime::pointer_helpers::register_array_payload_pointer(array)
+        }
+        _ => {
+            let value = read_variant_slot!(ctx, src);
+            oxvba_runtime::pointer_helpers::register_variant_pointer(&value)
+        }
+    };
+    let pointer = match pointer_result {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1294,8 +1306,8 @@ pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_varptr_string_var(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let value = read_slot!(ctx, src);
-    let pointer = match oxvba_runtime::pointer_helpers::register_string_var_pointer(&value) {
+    let value = read_variant_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_string_variant_pointer(&value) {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1312,8 +1324,8 @@ pub extern "C" fn oxrt_varptr_variant_var(ctx: *mut JitContext, dst: u32, src: u
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let value = read_slot!(ctx, src);
-    let pointer = match oxvba_runtime::pointer_helpers::register_object_pointer(&value) {
+    let value = read_variant_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_object_variant_pointer(&value) {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };

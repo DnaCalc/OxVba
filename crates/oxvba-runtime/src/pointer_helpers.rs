@@ -4,7 +4,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use crate::{RuntimeValue, bstr::BStr};
+use crate::{RuntimeValue, Variant, bstr::BStr};
 
 #[cfg(target_os = "windows")]
 use windows_sys::{
@@ -15,7 +15,7 @@ use windows_sys::{
     },
     Win32::System::Variant::{
         VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_CY, VT_DATE, VT_EMPTY, VT_ERROR, VT_I4, VT_I8,
-        VT_NULL, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        VT_NULL, VT_UI1, VT_UNKNOWN, VT_VARIANT, VariantClear,
     },
     core::BSTR,
 };
@@ -131,9 +131,9 @@ impl std::fmt::Debug for OwnedVariant {
 
 #[cfg(target_os = "windows")]
 impl OwnedVariant {
-    fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
+    fn from_variant(value: &Variant) -> Result<Self, String> {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        unsafe { set_windows_variant_from_runtime_value(&mut variant, value)? };
+        unsafe { set_windows_variant_from_variant(&mut variant, value)? };
         Ok(Self(variant))
     }
 
@@ -181,11 +181,8 @@ unsafe fn set_windows_variant_array_arg(
         }
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for value in values {
-            let runtime_value = value.to_runtime_value()?;
             let mut element: VARIANT = std::mem::zeroed();
-            if let Err(detail) =
-                set_windows_variant_from_runtime_value(&mut element, &runtime_value)
-            {
+            if let Err(detail) = set_windows_variant_from_variant(&mut element, &value) {
                 let _ = VariantClear(&mut element);
                 let _ = SafeArrayDestroy(psa.cast_const());
                 return Err(detail);
@@ -228,9 +225,8 @@ unsafe fn set_windows_variant_array_arg(
         return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
     }
     for (offset, value) in values.iter().enumerate() {
-        let runtime_value = value.to_runtime_value()?;
         let mut element: VARIANT = std::mem::zeroed();
-        if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, &runtime_value) {
+        if let Err(detail) = set_windows_variant_from_variant(&mut element, value) {
             let _ = VariantClear(&mut element);
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(detail);
@@ -258,121 +254,108 @@ unsafe fn set_windows_variant_array_arg(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_windows_variant_from_runtime_value(
+unsafe fn set_windows_variant_from_variant(
     variant: *mut VARIANT,
-    value: &RuntimeValue,
+    value: &Variant,
 ) -> Result<(), String> {
-    match value {
-        RuntimeValue::ArrayIntent(array) => {
-            set_windows_variant_array_arg(variant, array)?;
+    match value.vtype() {
+        crate::VarType::Empty => {
+            (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
         }
-        RuntimeValue::Object(object) => {
+        crate::VarType::Null => {
+            (*variant).Anonymous.Anonymous.vt = VT_NULL;
+        }
+        crate::VarType::Error => {
+            (*variant).Anonymous.Anonymous.vt = VT_ERROR;
+            (*variant).Anonymous.Anonymous.Anonymous.scode =
+                value.as_error_code().expect("error payload");
+        }
+        crate::VarType::Integer | crate::VarType::Long => {
+            (*variant).Anonymous.Anonymous.vt = VT_I4;
+            (*variant).Anonymous.Anonymous.Anonymous.lVal = value
+                .to_runtime_value()?
+                .as_i32_lossy()
+                .expect("integer payload should project into i32");
+        }
+        crate::VarType::Byte => {
+            (*variant).Anonymous.Anonymous.vt = VT_UI1;
+            (*variant).Anonymous.Anonymous.Anonymous.bVal = value.as_u8().expect("byte payload");
+        }
+        crate::VarType::LongLong => {
+            (*variant).Anonymous.Anonymous.vt = VT_I8;
+            (*variant).Anonymous.Anonymous.Anonymous.llVal = value.as_i64().expect("i64 payload");
+        }
+        crate::VarType::Boolean => {
+            (*variant).Anonymous.Anonymous.vt = VT_BOOL;
+            (*variant).Anonymous.Anonymous.Anonymous.boolVal =
+                if value.as_bool().expect("bool payload") {
+                    -1
+                } else {
+                    0
+                };
+        }
+        crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
+            let raw = match value.to_runtime_value()? {
+                RuntimeValue::F64(value) => value,
+                other => {
+                    return Err(format!(
+                        "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
+                    ));
+                }
+            };
+            match raw.subtype() {
+                crate::F64Subtype::Single => {
+                    (*variant).Anonymous.Anonymous.vt = VT_R4;
+                    (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
+                }
+                crate::F64Subtype::Double => {
+                    (*variant).Anonymous.Anonymous.vt = VT_R8;
+                    (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                }
+                crate::F64Subtype::Date => {
+                    (*variant).Anonymous.Anonymous.vt = VT_DATE;
+                    (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                }
+            }
+        }
+        crate::VarType::Currency => {
+            (*variant).Anonymous.Anonymous.vt = VT_CY;
+            (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 =
+                value.as_currency_scaled_i64().expect("currency payload");
+        }
+        crate::VarType::String => {
+            (*variant).Anonymous.Anonymous.vt = VT_BSTR;
+            let text = value
+                .as_bstr()
+                .ok_or_else(|| "canonical string Variant lost owned BSTR payload".to_string())?;
+            (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
+                OwnedBstr::from_bstr(&text)?.into_raw();
+        }
+        crate::VarType::Decimal => {
+            let bytes = value.to_wire_bytes();
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), variant.cast::<u8>(), bytes.len());
+        }
+        crate::VarType::Object => {
+            let Some(object) = value.as_object_ref() else {
+                (*variant).Anonymous.Anonymous.vt = VT_UNKNOWN;
+                (*variant).Anonymous.Anonymous.Anonymous.punkVal = std::ptr::null_mut();
+                return Ok(());
+            };
             (*variant).Anonymous.Anonymous.vt = VT_UNKNOWN;
             (*variant).Anonymous.Anonymous.Anonymous.punkVal = if object.raw() == 0 {
                 std::ptr::null_mut()
             } else {
-                retained_iunknown_pointer(object)
+                retained_iunknown_pointer(&object)
             };
         }
-        RuntimeValue::BindingHandle(_) => {
-            return Err(
-                "VarPtr over Variant containing a binding handle is not yet supported".to_string(),
-            );
-        }
-        _ => {
-            let canonical = crate::Variant::try_from_runtime_value(value)?;
-            match canonical.vtype() {
-                crate::VarType::Empty => {
-                    (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
-                }
-                crate::VarType::Null => {
-                    (*variant).Anonymous.Anonymous.vt = VT_NULL;
-                }
-                crate::VarType::Error => {
-                    (*variant).Anonymous.Anonymous.vt = VT_ERROR;
-                    (*variant).Anonymous.Anonymous.Anonymous.scode =
-                        canonical.as_error_code().expect("error payload");
-                }
-                crate::VarType::Integer | crate::VarType::Long => {
-                    (*variant).Anonymous.Anonymous.vt = VT_I4;
-                    (*variant).Anonymous.Anonymous.Anonymous.lVal = canonical
-                        .to_runtime_value()?
-                        .as_i32_lossy()
-                        .expect("integer payload should project into i32");
-                }
-                crate::VarType::LongLong => {
-                    (*variant).Anonymous.Anonymous.vt = VT_I8;
-                    (*variant).Anonymous.Anonymous.Anonymous.llVal =
-                        canonical.as_i64().expect("i64 payload");
-                }
-                crate::VarType::Boolean => {
-                    (*variant).Anonymous.Anonymous.vt = VT_BOOL;
-                    (*variant).Anonymous.Anonymous.Anonymous.boolVal =
-                        if canonical.as_bool().expect("bool payload") {
-                            -1
-                        } else {
-                            0
-                        };
-                }
-                crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
-                    let raw = match canonical.to_runtime_value()? {
-                        RuntimeValue::F64(value) => value,
-                        other => {
-                            return Err(format!(
-                                "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
-                            ));
-                        }
-                    };
-                    match raw.subtype() {
-                        crate::F64Subtype::Single => {
-                            (*variant).Anonymous.Anonymous.vt = VT_R4;
-                            (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
-                        }
-                        crate::F64Subtype::Double => {
-                            (*variant).Anonymous.Anonymous.vt = VT_R8;
-                            (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                        }
-                        crate::F64Subtype::Date => {
-                            (*variant).Anonymous.Anonymous.vt = VT_DATE;
-                            (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                        }
-                    }
-                }
-                crate::VarType::Currency => {
-                    (*variant).Anonymous.Anonymous.vt = VT_CY;
-                    (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
-                        .as_currency_scaled_i64()
-                        .expect("currency payload");
-                }
-                crate::VarType::String => {
-                    (*variant).Anonymous.Anonymous.vt = VT_BSTR;
-                    let text = canonical.as_bstr().ok_or_else(|| {
-                        "canonical string Variant lost owned BSTR payload".to_string()
-                    })?;
-                    (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
-                        OwnedBstr::from_bstr(&text)?.into_raw();
-                }
-                crate::VarType::Decimal => {
-                    let bytes = canonical.to_wire_bytes();
-                    std::ptr::copy_nonoverlapping(
-                        bytes.as_ptr(),
-                        variant.cast::<u8>(),
-                        bytes.len(),
-                    );
-                }
-                crate::VarType::Object => {
-                    return Err(
-                    "VarPtr over Variant containing unsupported object carrier is not yet supported"
+        crate::VarType::ArrayVariant => {
+            let Some(array) = value.as_safearray() else {
+                return Err(
+                    "VarPtr over Variant containing null SAFEARRAY payload is not yet supported"
                         .to_string(),
                 );
-                }
-                other => {
-                    return Err(format!(
-                        "VarPtr over Variant containing unsupported canonical type {:?} is not yet supported",
-                        other
-                    ));
-                }
-            }
+            };
+            set_windows_variant_array_arg(variant, &array)?;
         }
     }
     Ok(())
@@ -530,6 +513,115 @@ pub fn register_utf16_string(text: &str) -> Result<i64, String> {
 }
 
 pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
+    let variant = Variant::try_from_runtime_value(value)?;
+    register_variant_pointer(&variant)
+}
+
+pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
+    let entry = match value.vtype() {
+        crate::VarType::Empty | crate::VarType::Null => return Ok(0),
+        crate::VarType::Integer | crate::VarType::Long => {
+            let value = value
+                .to_runtime_value()?
+                .as_i32_lossy()
+                .expect("integer payload should project into i32");
+            PointerEntry::I32(Box::new(value))
+        }
+        crate::VarType::LongLong => {
+            PointerEntry::I64(Box::new(value.as_i64().expect("LongLong Variant payload")))
+        }
+        crate::VarType::Byte => PointerEntry::I32(Box::new(i32::from(
+            value.as_u8().expect("Byte Variant payload"),
+        ))),
+        crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
+            let RuntimeValue::F64(floating) = value.to_runtime_value()? else {
+                return Err("floating Variant did not project to F64 runtime value".to_string());
+            };
+            PointerEntry::F64(Box::new(floating.as_f64()))
+        }
+        crate::VarType::Currency => PointerEntry::I64(Box::new(
+            value
+                .as_currency_scaled_i64()
+                .expect("Currency Variant payload"),
+        )),
+        crate::VarType::Boolean => PointerEntry::Bool(Box::new(
+            if value.as_bool().expect("Boolean Variant payload") {
+                -1
+            } else {
+                0
+            },
+        )),
+        crate::VarType::String => {
+            let text = value
+                .as_bstr()
+                .ok_or_else(|| "String Variant lost BSTR payload".to_string())?;
+            #[cfg(target_os = "windows")]
+            {
+                PointerEntry::Bstr(OwnedBstr::from_bstr(&text)?)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let core = text.owned_core();
+                let data: Box<[u16]> = core.payload_units_with_nul().to_vec().into_boxed_slice();
+                PointerEntry::Utf16(data)
+            }
+        }
+        crate::VarType::ArrayVariant => {
+            let Some(array) = value.as_safearray() else {
+                return Err("VarPtr over null SAFEARRAY payload is not yet supported".to_string());
+            };
+            byte_array_pointer_entry(&array)?
+        }
+        crate::VarType::Object => {
+            let Some(handle) = value.as_object_ref() else {
+                return Ok(0);
+            };
+            PointerEntry::ObjectIdentity(Box::new(handle.raw_iunknown() as usize as i64))
+        }
+        crate::VarType::Error => PointerEntry::I32(Box::new(
+            value.as_error_code().expect("Error Variant payload"),
+        )),
+        crate::VarType::Decimal => {
+            return Err("VarPtr/ObjPtr over Decimal is not yet supported".to_string());
+        }
+    };
+
+    let mut guard = registry()
+        .lock()
+        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+    Ok(guard.insert(entry))
+}
+
+fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<PointerEntry, String> {
+    let Some(elements) = array.elements() else {
+        return Err(
+            "VarPtr over array shape without element payload is not yet supported".to_string(),
+        );
+    };
+    let mut bytes = Vec::with_capacity(elements.len());
+    for element in elements {
+        match element {
+            RuntimeValue::Empty | RuntimeValue::Null => bytes.push(0),
+            RuntimeValue::I32(value) => {
+                if !(0..=255).contains(&value) {
+                    return Err(format!(
+                        "VarPtr over array payload currently requires byte-compatible elements, got {element:?}"
+                    ));
+                }
+                bytes.push(value as u8)
+            }
+            RuntimeValue::Bool(value) => bytes.push(if value { 1 } else { 0 }),
+            other => {
+                return Err(format!(
+                    "VarPtr over array payload currently requires byte-compatible elements, got {other:?}"
+                ));
+            }
+        }
+    }
+    Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
+}
+
+fn legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
     let entry = match value {
         RuntimeValue::Empty | RuntimeValue::Null => return Ok(0),
         RuntimeValue::I32(value) => PointerEntry::I32(Box::new(*value)),
@@ -549,43 +641,7 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
                 PointerEntry::Utf16(data)
             }
         }
-        RuntimeValue::ArrayIntent(array) => {
-            let Some(elements) = array.variant_elements() else {
-                return Err(
-                    "VarPtr over array shape without element payload is not yet supported"
-                        .to_string(),
-                );
-            };
-            let mut bytes = Vec::with_capacity(elements.len());
-            for element in elements {
-                match element.vtype() {
-                    crate::VarType::Empty | crate::VarType::Null => bytes.push(0),
-                    crate::VarType::Byte => bytes.push(element.as_u8().expect("byte payload")),
-                    crate::VarType::Long => {
-                        let value = element.as_i32().expect("long payload");
-                        if !(0..=255).contains(&value) {
-                            return Err(format!(
-                                "VarPtr over array payload currently requires byte-compatible elements, got {element:?}"
-                            ));
-                        }
-                        bytes.push(value as u8)
-                    }
-                    crate::VarType::Boolean => {
-                        bytes.push(if element.as_bool().expect("bool payload") {
-                            1
-                        } else {
-                            0
-                        })
-                    }
-                    other => {
-                        return Err(format!(
-                            "VarPtr over array payload currently requires byte-compatible elements, got {other:?}"
-                        ));
-                    }
-                }
-            }
-            PointerEntry::Bytes(bytes.into_boxed_slice())
-        }
+        RuntimeValue::ArrayIntent(array) => byte_array_pointer_entry(array)?,
         RuntimeValue::Object(handle) => {
             PointerEntry::ObjectIdentity(Box::new(handle.raw_iunknown() as usize as i64))
         }
@@ -605,6 +661,100 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
 }
 
 pub fn register_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
+    let variant = Variant::try_from_runtime_value(value)?;
+    register_string_variant_pointer(&variant)
+}
+
+pub fn register_string_variant_pointer(value: &Variant) -> Result<i64, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let entry = match value.vtype() {
+            crate::VarType::String => {
+                let text = value
+                    .as_bstr()
+                    .ok_or_else(|| "String Variant lost BSTR payload".to_string())?;
+                PointerEntry::BstrCell(OwnedBstrCell::from_bstr(&text)?)
+            }
+            crate::VarType::Empty | crate::VarType::Null => return Ok(0),
+            _ => return Err("VarPtr over String requires a string variable".to_string()),
+        };
+
+        let mut guard = registry()
+            .lock()
+            .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+        return Ok(guard.insert(entry));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        register_variant_pointer(value)
+    }
+}
+
+pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
+    let variant = Variant::try_from_runtime_value(value)?;
+    register_variant_var_variant_pointer(&variant)
+}
+
+pub fn register_variant_var_variant_pointer(value: &Variant) -> Result<i64, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let entry = PointerEntry::VariantCell(OwnedVariant::from_variant(value)?);
+        let mut guard = registry()
+            .lock()
+            .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+        return Ok(guard.insert(entry));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        register_variant_pointer(value)
+    }
+}
+
+pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
+    match Variant::try_from_runtime_value(value) {
+        Ok(variant) => register_object_variant_pointer(&variant),
+        Err(_) => match value {
+            RuntimeValue::BindingHandle(handle) => {
+                let mut guard = registry()
+                    .lock()
+                    .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+                Ok(guard.insert_object_identity(
+                    ObjectIdentityKey::Binding(handle.raw()),
+                    i64::from(handle.raw()),
+                ))
+            }
+            _ => Err("ObjPtr requires an object reference".to_string()),
+        },
+    }
+}
+
+pub fn register_object_variant_pointer(value: &Variant) -> Result<i64, String> {
+    match value.vtype() {
+        crate::VarType::Empty | crate::VarType::Null => Ok(0),
+        crate::VarType::Object => match value.as_object_ref() {
+            Some(handle) if handle.raw() == 0 => Ok(0),
+            Some(handle) => Ok(handle.raw_iunknown() as usize as i64),
+            None => Ok(0),
+        },
+        _ => Err("ObjPtr requires an object reference".to_string()),
+    }
+}
+
+pub fn register_legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
+    legacy_runtime_value_pointer(value)
+}
+
+pub fn register_array_payload_pointer(array: &crate::safe_array::SafeArray) -> Result<i64, String> {
+    let entry = byte_array_pointer_entry(array)?;
+    let mut guard = registry()
+        .lock()
+        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+    Ok(guard.insert(entry))
+}
+
+pub fn register_legacy_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     #[cfg(target_os = "windows")]
     {
         let entry = match value {
@@ -621,14 +771,15 @@ pub fn register_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> 
 
     #[cfg(not(target_os = "windows"))]
     {
-        register_runtime_value_pointer(value)
+        legacy_runtime_value_pointer(value)
     }
 }
 
-pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
+pub fn register_legacy_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     #[cfg(target_os = "windows")]
     {
-        let entry = PointerEntry::VariantCell(OwnedVariant::from_runtime_value(value)?);
+        let variant = Variant::try_from_runtime_value(value)?;
+        let entry = PointerEntry::VariantCell(OwnedVariant::from_variant(&variant)?);
         let mut guard = registry()
             .lock()
             .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
@@ -637,11 +788,11 @@ pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String>
 
     #[cfg(not(target_os = "windows"))]
     {
-        register_runtime_value_pointer(value)
+        legacy_runtime_value_pointer(value)
     }
 }
 
-pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
+pub fn register_legacy_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
     match value {
         RuntimeValue::Empty | RuntimeValue::Null => Ok(0),
         RuntimeValue::Object(handle) if handle.raw() == 0 => Ok(0),
@@ -693,7 +844,9 @@ pub fn register_byte_buffer(bytes: Vec<u8>) -> Result<i64, String> {
 mod tests {
     use super::{
         lookup_pointer, register_object_pointer, register_runtime_value_pointer,
-        register_string_var_pointer, register_utf16_string, register_variant_var_pointer,
+        register_string_var_pointer, register_string_variant_pointer, register_utf16_string,
+        register_variant_pointer, register_variant_var_pointer,
+        register_variant_var_variant_pointer,
     };
     use crate::{BindingHandle, Decimal96, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
@@ -737,6 +890,16 @@ mod tests {
         assert_ne!(scalar_ptr, 0);
     }
 
+    #[test]
+    fn variant_pointer_handles_canonical_scalars_and_strings() {
+        let string_ptr = register_variant_pointer(&Variant::from_string(BStr::from("xyz")))
+            .expect("register string variant");
+        assert_ne!(string_ptr, 0);
+        let scalar_ptr =
+            register_variant_pointer(&Variant::from_i64(42)).expect("register i64 variant");
+        assert_ne!(scalar_ptr, 0);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn string_var_pointer_exposes_bstr_cell_not_payload() {
@@ -745,6 +908,22 @@ mod tests {
         assert_ne!(ptr, 0);
         let raw = lookup_pointer(ptr)
             .expect("lookup string var")
+            .cast::<usize>();
+        assert!(!raw.is_null());
+        let payload = unsafe { *raw as *const u16 };
+        assert!(!payload.is_null());
+        let len = unsafe { SysStringLen(payload.cast_mut()) };
+        assert_eq!(len, 3);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn string_variant_pointer_exposes_bstr_cell_not_payload() {
+        let ptr = register_string_variant_pointer(&Variant::from_string(BStr::from("abc")))
+            .expect("register string variant var");
+        assert_ne!(ptr, 0);
+        let raw = lookup_pointer(ptr)
+            .expect("lookup string variant var")
             .cast::<usize>();
         assert!(!raw.is_null());
         let payload = unsafe { *raw as *const u16 };
@@ -844,6 +1023,23 @@ mod tests {
             decimal_variant.as_decimal96(),
             Some(Decimal96::from_parts(123_450, 0, 0, 3, false))
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn variant_var_pointer_accepts_canonical_variant_input() {
+        let ptr = register_variant_var_variant_pointer(&Variant::from_string(BStr::from("abc")))
+            .expect("register canonical variant");
+        assert_ne!(ptr, 0);
+        let raw = lookup_pointer(ptr)
+            .expect("lookup canonical variant")
+            .cast::<VARIANT>();
+        assert!(!raw.is_null());
+        let variant = unsafe { &*raw };
+        assert_eq!(unsafe { variant.Anonymous.Anonymous.vt }, VT_BSTR);
+        let payload = unsafe { variant.Anonymous.Anonymous.Anonymous.bstrVal };
+        let len = unsafe { SysStringLen(payload) };
+        assert_eq!(len, 3);
     }
 
     #[test]

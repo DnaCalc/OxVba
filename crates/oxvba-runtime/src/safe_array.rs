@@ -1,5 +1,5 @@
 use crate::{
-    CurrencyValue, Decimal96, F64Value, RuntimeValue, Variant,
+    CurrencyValue, Decimal96, F64Value, RuntimeValue, VarType, Variant,
     bstr::BStr,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
 };
@@ -487,7 +487,11 @@ unsafe fn encode_element_variant(
         unsafe { ptr.cast::<Variant>().write(value.clone()) };
         return Ok(());
     }
-    let value = value.to_runtime_value()?;
+    let value = if matches!(value.vtype(), VarType::Empty) {
+        RuntimeValue::I32(0)
+    } else {
+        value.to_runtime_value()?
+    };
     unsafe { encode_element(kind, payload, index, &value) }
 }
 
