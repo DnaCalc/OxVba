@@ -110,6 +110,12 @@ Implemented:
     from retained argument `Variant` values with `SafeArray::from_variants()`
     instead of converting each argument to `RuntimeValue` before array
     construction.
+30. JIT descriptor-backed external calls now avoid constructing a
+    `Vec<RuntimeValue>` for descriptor arguments. The no-descriptor legacy
+    `invoke_symbol` path still projects the first argument to `RuntimeValue`,
+    but descriptor-backed calls now read slot `Variant` values and route both
+    single-argument and multi-argument descriptor calls through
+    `invoke_descriptor_variants()`.
 
 Validation:
 
@@ -270,6 +276,17 @@ Validation:
     - result: `8` passed
 72. `./scripts/check-governance.ps1`
     - result: passed
+73. `cargo fmt --check`
+    - result: passed
+74. `cargo test -p oxvba-jit --lib external -- --nocapture`
+    - result: compile/pass with `0` tests selected
+75. `cargo test -p oxvba-jit --lib dynlink -- --nocapture`
+    - result: compile/pass with `0` tests selected
+76. `cargo check -p oxvba-jit -p oxvba-hal -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+77. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -299,6 +316,10 @@ Implementation progress:
    binder still returns through the existing semantic API boundary, but this
    production array-construction path no longer creates the payload from
    `RuntimeValue` elements.
+7. JIT descriptor-backed external calls now use the Variant-native descriptor
+   transport for both single-argument and multi-argument descriptor calls. Only
+   the no-descriptor legacy symbol-token path still projects through
+   `RuntimeValue` before calling `invoke_symbol()`.
 
 Remaining blocker:
 
