@@ -1872,6 +1872,10 @@ Child beads:
        records that remaining `RuntimeValue` SAFEARRAY API hits are currently
        compatibility API definitions and tests/property fixtures by scan; this
        does not close the public compatibility API classification question
+     - progress landed: HAL COM dispatch now exposes Variant-native direct and
+       dynamic dispatch methods, and the standard host routes the legacy
+       `RuntimeValue` COM dispatch methods as compatibility projections over
+       those Variant paths
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
