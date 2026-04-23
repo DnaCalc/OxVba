@@ -1,5 +1,5 @@
 use oxvba_compiler::ProjectManifest;
-use oxvba_runtime::{RuntimeValue, bstr::BStr, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, Variant, bstr::BStr, runtime_value_to_vba_string};
 use thiserror::Error;
 
 use crate::engine::PhaseDiagnostic;
@@ -147,6 +147,10 @@ impl<'engine> ImmediateSession<'engine> {
 
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
         self.runtime.snapshot()
+    }
+
+    pub fn snapshot_variants(&self) -> Vec<Variant> {
+        self.runtime.snapshot_variants()
     }
 
     pub fn into_runtime(self) -> ProjectRuntimeSession {
@@ -412,7 +416,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{RuntimeValue, VarType, bstr::BStr};
 
     use super::{
         ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
@@ -597,6 +601,35 @@ End Function
             RuntimeValue::String(BStr::from("hello"))
         );
         assert_eq!(value.display_text, "hello");
+    }
+
+    #[test]
+    fn immediate_session_snapshot_variants_exposes_runtime_state_before_projection() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Dim lastText As String
+
+Public Function EchoText(value As String) As String
+    lastText = value
+    EchoText = value
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        session
+            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .expect("evaluate");
+        let variants = session.snapshot_variants();
+
+        assert!(variants.iter().any(|value| {
+            value.vtype() == VarType::String && value.as_bstr() == Some(BStr::from("hello"))
+        }));
     }
 
     #[test]
