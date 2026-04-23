@@ -184,6 +184,13 @@ Implemented:
     `cranelift::execute_bytecode_rtslot_variants()`. Existing
     `RuntimeValue`-returning execution helpers now project from those Variant
     result surfaces where the execution path can produce Variant carriers.
+45. Host/project execution snapshot APIs now have Variant-native companion
+    surfaces. `Engine::execute_source_with_variant_snapshot*()`,
+    `Engine::execute_project_with_variant_snapshot_phased()`,
+    `ProjectRuntimeSession::snapshot_variants()`, and
+    `ProjectRuntimeSession::read_variant_slot()` expose host-visible results as
+    exact `Variant` carriers before the legacy `RuntimeValue` snapshot APIs
+    project them for existing callers.
 
 Validation:
 
@@ -487,6 +494,16 @@ Validation:
       functions
 134. `./scripts/check-governance.ps1`
     - result: passed
+135. `cargo fmt --check`
+    - result: passed
+136. `cargo test -p oxvba-host --lib variant_snapshot_api_exposes_host_results_before_projection -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+137. `cargo check -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+138. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -566,6 +583,10 @@ Implementation progress:
     surfaces. Compatibility helpers still return `RuntimeValue`, but they
     project from Variant result paths instead of making `RuntimeValue` the only
     public execution snapshot carrier.
+21. Host/project snapshot APIs now have Variant-native companion surfaces for
+    source execution, project execution, prepared project sessions, and direct
+    session slot reads. Existing host `RuntimeValue` snapshot APIs remain
+    compatibility projections for existing callers.
 
 Remaining blocker:
 
@@ -580,18 +601,20 @@ Remaining blocker:
    argument binding, VM/JIT dynamic COM result slot writes, JIT WithEvents
    retained-value get/set/owner-search, VM `For Each` next-item delivery, VM
    WithEvents retained-value get/set/owner-search, VM project-dynamic dispatch
-   return/destination writes, VM/JIT result extraction companion APIs, and
-   VM/JIT public execution snapshot companion APIs no longer retain it as their
-   backing value store for normal VBA values.
+   return/destination writes, VM/JIT result extraction companion APIs, VM/JIT
+   public execution snapshot companion APIs, and host/project snapshot
+   companion APIs no longer retain it as their backing value store for normal
+   VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
    audit before closure can be claimed.
 4. Completion still requires an audit and migration/classification of all
    remaining projection seams that can expose or retain general values:
-   interpreter/JIT helper internals outside slot storage, HAL surfaces that
-   still use semantic values by contract, legacy dynamic-link symbol APIs,
-   legacy `SafeArray` element compatibility APIs documented in
+   interpreter/JIT helper internals outside slot storage, host and immediate
+   surfaces that still use semantic values by contract, HAL surfaces that still
+   use semantic values by contract, legacy dynamic-link symbol APIs, legacy
+   `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, remaining COM
    boundary `ComValue` projection points, legacy COM dispatch
    `RuntimeValue` compatibility methods, and non-Variant pointer-helper
