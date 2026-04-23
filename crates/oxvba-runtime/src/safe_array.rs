@@ -349,6 +349,18 @@ unsafe fn decode_element(
     })
 }
 
+unsafe fn decode_element_variant(
+    kind: SafeArrayElementKind,
+    payload: *const u8,
+    index: usize,
+) -> Result<Variant, String> {
+    let ptr = unsafe { payload.add(payload_offset(kind, index)) };
+    if kind == SafeArrayElementKind::Variant {
+        return Ok(unsafe { &*ptr.cast::<Variant>() }.clone());
+    }
+    Variant::try_from_runtime_value(&unsafe { decode_element(kind, payload, index) }?)
+}
+
 unsafe fn encode_element(
     kind: SafeArrayElementKind,
     payload: *mut u8,
@@ -464,6 +476,21 @@ unsafe fn encode_element(
     Ok(())
 }
 
+unsafe fn encode_element_variant(
+    kind: SafeArrayElementKind,
+    payload: *mut u8,
+    index: usize,
+    value: &Variant,
+) -> Result<(), String> {
+    let ptr = unsafe { payload.add(payload_offset(kind, index)) };
+    if kind == SafeArrayElementKind::Variant {
+        unsafe { ptr.cast::<Variant>().write(value.clone()) };
+        return Ok(());
+    }
+    let value = value.to_runtime_value()?;
+    unsafe { encode_element(kind, payload, index, &value) }
+}
+
 unsafe fn drop_element(kind: SafeArrayElementKind, payload: *mut u8, index: usize) {
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     match kind {
@@ -494,9 +521,9 @@ unsafe fn free_payload(kind: SafeArrayElementKind, payload: *mut core::ffi::c_vo
     }
 }
 
-fn alloc_payload_from_values(
+fn alloc_payload_from_variants(
     kind: SafeArrayElementKind,
-    values: &[RuntimeValue],
+    values: &[Variant],
 ) -> Result<*mut core::ffi::c_void, String> {
     if values.is_empty() {
         return Ok(core::ptr::null_mut());
@@ -508,7 +535,9 @@ fn alloc_payload_from_values(
     }
     let mut initialized = 0usize;
     while initialized < values.len() {
-        if let Err(err) = unsafe { encode_element(kind, raw, initialized, &values[initialized]) } {
+        if let Err(err) =
+            unsafe { encode_element_variant(kind, raw, initialized, &values[initialized]) }
+        {
             let mut index = 0usize;
             while index < initialized {
                 unsafe { drop_element(kind, raw, index) };
@@ -564,10 +593,10 @@ impl SafeArray {
         SafeArrayElementKind::from_vartype(element_vt).is_some()
     }
 
-    fn from_bounds_and_runtime_values(
+    fn from_bounds_and_variants(
         bounds: Vec<SafeArrayBound>,
         element_vt: u16,
-        values: Option<Vec<RuntimeValue>>,
+        values: Option<Vec<Variant>>,
     ) -> Result<Self, String> {
         let kind = SafeArrayElementKind::from_vartype(element_vt).ok_or_else(|| {
             format!("unsupported intrinsic SAFEARRAY element vartype 0x{element_vt:04X}")
@@ -582,7 +611,7 @@ impl SafeArray {
                         expected_len
                     ));
                 }
-                alloc_payload_from_values(kind, &values)?
+                alloc_payload_from_variants(kind, &values)?
             }
             None => core::ptr::null_mut(),
         };
@@ -594,6 +623,22 @@ impl SafeArray {
             }
         };
         Ok(Self(header))
+    }
+
+    fn from_bounds_and_runtime_values(
+        bounds: Vec<SafeArrayBound>,
+        element_vt: u16,
+        values: Option<Vec<RuntimeValue>>,
+    ) -> Result<Self, String> {
+        let values = values
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| Variant::try_from_runtime_value(&value))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        Self::from_bounds_and_variants(bounds, element_vt, values)
     }
 
     pub fn vector(len: usize) -> Self {
@@ -648,6 +693,42 @@ impl SafeArray {
         Self::from_bounds_and_runtime_values(bounds, VT_VARIANT_VALUE, Some(values))
     }
 
+    pub fn from_variants(values: Vec<Variant>) -> Self {
+        let len = values.len();
+        Self::from_bounds_and_variants(
+            default_bounds_for_len(len).expect("value bounds should fit SAFEARRAY capacity"),
+            VT_VARIANT_VALUE,
+            Some(values),
+        )
+        .expect("SAFEARRAY payload allocation should succeed for supported canonical variants")
+    }
+
+    pub fn from_variants_nd(bounds: Vec<SafeArrayBound>, values: Vec<Variant>) -> Self {
+        Self::from_bounds_and_variants(bounds, VT_VARIANT_VALUE, Some(values)).expect(
+            "SAFEARRAY nd payload allocation should succeed for supported canonical variants",
+        )
+    }
+
+    pub fn from_typed_variants(element_vt: u16, values: Vec<Variant>) -> Result<Self, String> {
+        let len = values.len();
+        Self::from_bounds_and_variants(default_bounds_for_len(len)?, element_vt, Some(values))
+    }
+
+    pub fn from_typed_variants_nd(
+        bounds: Vec<SafeArrayBound>,
+        element_vt: u16,
+        values: Vec<Variant>,
+    ) -> Result<Self, String> {
+        Self::from_bounds_and_variants(bounds, element_vt, Some(values))
+    }
+
+    pub fn from_shape_and_variants(
+        bounds: Vec<SafeArrayBound>,
+        values: Vec<Variant>,
+    ) -> Result<Self, String> {
+        Self::from_bounds_and_variants(bounds, VT_VARIANT_VALUE, Some(values))
+    }
+
     pub fn dimensions(&self) -> u8 {
         unsafe { (*self.0.as_ptr()).c_dims as u8 }
     }
@@ -693,6 +774,19 @@ impl SafeArray {
     }
 
     pub fn elements(&self) -> Option<Vec<RuntimeValue>> {
+        self.variant_elements().map(|values| {
+            values
+                .into_iter()
+                .map(|value| {
+                    value
+                        .to_runtime_value()
+                        .expect("SAFEARRAY Variant element should project to RuntimeValue")
+                })
+                .collect()
+        })
+    }
+
+    pub fn variant_elements(&self) -> Option<Vec<Variant>> {
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
             return None;
@@ -702,8 +796,8 @@ impl SafeArray {
         let mut index = 0usize;
         while index < self.len() {
             values.push(
-                unsafe { decode_element(kind, data, index) }
-                    .expect("SAFEARRAY intrinsic payload should decode into RuntimeValue"),
+                unsafe { decode_element_variant(kind, data, index) }
+                    .expect("SAFEARRAY intrinsic payload should decode into Variant"),
             );
             index += 1;
         }
@@ -712,6 +806,14 @@ impl SafeArray {
 
     pub fn replace_elements(&self, values: Vec<RuntimeValue>) -> Result<Self, String> {
         Self::from_bounds_and_runtime_values(
+            self.bounds_for_shape(),
+            self.element_vartype(),
+            Some(values),
+        )
+    }
+
+    pub fn replace_variant_elements(&self, values: Vec<Variant>) -> Result<Self, String> {
+        Self::from_bounds_and_variants(
             self.bounds_for_shape(),
             self.element_vartype(),
             Some(values),
@@ -744,12 +846,12 @@ impl SafeArray {
 impl Clone for SafeArray {
     fn clone(&self) -> Self {
         let bounds = self.bounds_for_shape();
-        match self.elements() {
+        match self.variant_elements() {
             Some(values) => {
-                Self::from_bounds_and_runtime_values(bounds, self.element_vartype(), Some(values))
+                Self::from_bounds_and_variants(bounds, self.element_vartype(), Some(values))
                     .expect("cloning canonical SAFEARRAY with values should succeed")
             }
-            None => Self::from_bounds_and_runtime_values(bounds, self.element_vartype(), None)
+            None => Self::from_bounds_and_variants(bounds, self.element_vartype(), None)
                 .expect("cloning shape-only SAFEARRAY should succeed"),
         }
     }
@@ -794,7 +896,7 @@ impl PartialEq for SafeArray {
             && self.len() == other.len()
             && self.element_vartype() == other.element_vartype()
             && self.bounds() == other.bounds()
-            && self.elements() == other.elements()
+            && self.variant_elements() == other.variant_elements()
     }
 }
 
@@ -843,7 +945,7 @@ mod tests {
         VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag, array_tag_from_safe_array,
         marshal_dispatch_argument, safe_array_from_tag,
     };
-    use crate::{ObjectRef, RuntimeValue, bstr::BStr};
+    use crate::{ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
     #[test]
     fn safe_array_tag_roundtrip_for_vector_shape() {
@@ -874,6 +976,40 @@ mod tests {
             Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
         );
         assert_eq!(array_tag_from_safe_array(&array), Some(ARRAY_TAG_BASE + 2));
+    }
+
+    #[test]
+    fn safe_array_variant_api_preserves_canonical_payload_shape() {
+        let array = SafeArray::from_variants(vec![
+            Variant::try_from_runtime_value(&RuntimeValue::I32(4)).expect("variant"),
+            Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("A")))
+                .expect("variant"),
+        ]);
+        let elements = array
+            .variant_elements()
+            .expect("variant SAFEARRAY should expose variants");
+        assert_eq!(
+            elements[0].to_runtime_value().unwrap(),
+            RuntimeValue::I32(4)
+        );
+        assert_eq!(
+            elements[1].to_runtime_value().unwrap(),
+            RuntimeValue::String(BStr::from("A"))
+        );
+        let replaced = array
+            .replace_variant_elements(vec![
+                Variant::try_from_runtime_value(&RuntimeValue::I32(9)).expect("variant"),
+                Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("B")))
+                    .expect("variant"),
+            ])
+            .expect("replace variant elements");
+        assert_eq!(
+            replaced.elements(),
+            Some(vec![
+                RuntimeValue::I32(9),
+                RuntimeValue::String(BStr::from("B"))
+            ])
+        );
     }
 
     #[test]
