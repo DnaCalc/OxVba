@@ -1841,21 +1841,26 @@ impl Vm {
                 Instruction::IntrinsicArrayLiteral { dst, values } => {
                     let elements = values
                         .iter()
-                        .map(|slot| self.read_value_slot(*slot))
+                        .map(|slot| {
+                            self.read_value_slot(*slot)
+                                .and_then(|value| Variant::try_from_runtime_value(&value))
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     self.write_value_slot(
                         *dst,
                         RuntimeValue::ArrayIntent(
-                            oxvba_runtime::safe_array::SafeArray::from_values(elements),
+                            oxvba_runtime::safe_array::SafeArray::from_variants(elements),
                         ),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayAppend { dst, array, item } => {
                     let current = self.read_value_slot(*array)?;
-                    let item = self.read_value_slot(*item)?;
+                    let item = Variant::try_from_runtime_value(&self.read_value_slot(*item)?)?;
                     let mut elements = match current {
-                        RuntimeValue::ArrayIntent(array) => array.elements().unwrap_or_default(),
+                        RuntimeValue::ArrayIntent(array) => {
+                            array.variant_elements().unwrap_or_default()
+                        }
                         RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
                         other => {
                             pc = self.route_runtime_error(
@@ -1872,7 +1877,7 @@ impl Vm {
                     self.write_value_slot(
                         *dst,
                         RuntimeValue::ArrayIntent(
-                            oxvba_runtime::safe_array::SafeArray::from_values(elements),
+                            oxvba_runtime::safe_array::SafeArray::from_variants(elements),
                         ),
                     )?;
                     pc += 1;

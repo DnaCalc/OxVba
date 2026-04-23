@@ -1801,12 +1801,18 @@ pub extern "C" fn oxrt_array_literal(
     let slot_indices = unsafe { std::slice::from_raw_parts(slots_ptr, slots_len as usize) };
     let mut elements = Vec::with_capacity(slots_len as usize);
     for &slot in slot_indices {
-        elements.push(read_slot!(ctx, slot));
+        let value = read_slot!(ctx, slot);
+        let Ok(value) = Variant::try_from_runtime_value(&value) else {
+            return ERR_RUNTIME;
+        };
+        elements.push(value);
     }
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(elements),)
+        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_variants(
+            elements
+        ),)
     );
     OK
 }
@@ -1814,9 +1820,12 @@ pub extern "C" fn oxrt_array_literal(
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, item: u32) -> i32 {
     let current = read_slot!(ctx, array);
-    let item = read_slot!(ctx, item);
+    let item = match Variant::try_from_runtime_value(&read_slot!(ctx, item)) {
+        Ok(item) => item,
+        Err(_) => return ERR_RUNTIME,
+    };
     let mut elements = match current {
-        RuntimeValue::ArrayIntent(array) => array.elements().unwrap_or_default(),
+        RuntimeValue::ArrayIntent(array) => array.variant_elements().unwrap_or_default(),
         RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
         _ => return ERR_RUNTIME,
     };
@@ -1824,7 +1833,9 @@ pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, 
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(elements),)
+        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_variants(
+            elements
+        ),)
     );
     OK
 }
