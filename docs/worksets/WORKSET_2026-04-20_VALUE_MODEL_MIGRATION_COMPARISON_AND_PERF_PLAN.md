@@ -1867,6 +1867,11 @@ Child beads:
        directly from those slots; object `_NewEnum` fallback also wraps the
        retained `DynamicValue` `Variant` into a slot before semantic array
        inspection
+     - support audit landed:
+       `docs/evidence/value_model_migration/SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`
+       records that remaining `RuntimeValue` SAFEARRAY API hits are currently
+       compatibility API definitions and tests/property fixtures by scan; this
+       does not close the public compatibility API classification question
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
