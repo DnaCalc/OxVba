@@ -106,6 +106,10 @@ Implemented:
     byte-array readback reconstructs arrays with `SafeArray::from_variants()`
     using `VT_UI1` element variants instead of rebuilding through
     `RuntimeValue` elements.
+29. VM dynamic-dispatch `ParamArray` binding now constructs the array payload
+    from retained argument `Variant` values with `SafeArray::from_variants()`
+    instead of converting each argument to `RuntimeValue` before array
+    construction.
 
 Validation:
 
@@ -258,6 +262,14 @@ Validation:
     - result: passed
 68. `./scripts/check-governance.ps1`
     - result: passed
+69. `cargo fmt --check`
+    - result: passed
+70. `cargo test -p oxvba-vm --lib project_dynamic -- --nocapture`
+    - result: `4` passed
+71. `cargo test -p oxvba-vm --lib array -- --nocapture`
+    - result: `8` passed
+72. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -282,6 +294,11 @@ Implementation progress:
    `Variant`, `ComHal::event_callback_variant()` carries it through HAL, and
    VM/JIT event callback helpers write callback arguments directly into Variant
    slots.
+6. VM project-dynamic `ParamArray` binding now uses `Variant` element carriers
+   when building the internal SAFEARRAY payload. The public dynamic-dispatch
+   binder still returns through the existing semantic API boundary, but this
+   production array-construction path no longer creates the payload from
+   `RuntimeValue` elements.
 
 Remaining blocker:
 
@@ -291,8 +308,9 @@ Remaining blocker:
    compatibility element APIs, legacy dynamic-link symbol APIs, and `ComValue`
    bridges. VM register storage, JIT slot storage, `For Each` iterator storage,
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
-   and VM/JIT COM event callback argument transport no longer retain it as
-   their backing value store for normal VBA values.
+   VM/JIT COM event callback argument transport, and VM dynamic-dispatch
+   `ParamArray` SAFEARRAY payload construction no longer retain it as their
+   backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
