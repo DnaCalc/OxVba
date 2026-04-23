@@ -412,7 +412,10 @@ This grid is the current anti-drift truth surface for closure.
       explicitly as an internal non-VBA token outside the canonical `VARIANT`
       scope rather than as a missing Variant/SAFEARRAY carrier lane; this is
       still not sufficient because the general internal value model has not yet
-      become the exact Windows/COM `VARIANT` representation everywhere
+      become the exact Windows/COM `VARIANT` representation everywhere;
+      `Variant` now also owns `VT_ARRAY | VT_VARIANT` payloads as real
+      `SAFEARRAY*` union values, but the semantic `RuntimeValue` enum remains
+      the open consolidation blocker
    - projected truth:
       full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
       materially realized at boundary/helper seams for array-sensitive lanes
@@ -1719,6 +1722,10 @@ Child beads:
      - correction landed: the preceding stages are intermediate progress only;
        this bead remains open until the internal late-bound/general value used
        for `Dim x` is exactly the Windows/COM `VARIANT` representation
+     - progress landed: `Variant` now supports `VT_ARRAY | VT_VARIANT` and
+       stores the array payload as a real owned `SAFEARRAY*` union pointer,
+       including clone/drop and runtime bridge coverage; this does not close the
+       bead because `RuntimeValue` remains a separate semantic enum carrier
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
