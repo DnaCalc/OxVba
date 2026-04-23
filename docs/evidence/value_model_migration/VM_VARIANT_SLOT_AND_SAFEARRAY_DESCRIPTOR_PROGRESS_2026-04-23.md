@@ -75,6 +75,12 @@ Implemented:
     `SAFEARRAY` values from `variant_elements()`. Typed scalar conversion still
     performs per-element projection where needed, but the bridge no longer
     owns `Vec<RuntimeValue>` as its array carrier.
+22. VM and JIT `ReDim` / `ReDim Preserve` helper paths now allocate default
+    typed SAFEARRAY elements as canonical `Variant` values and preserve overlap
+    through `variant_elements()` / `replace_variant_elements()`, keeping the
+    resize carrier on the native Variant path. The legacy runtime projection
+    bridge now also handles `VT_UI1` Byte variants so compatibility reads of
+    typed Byte arrays do not fail.
 
 Validation:
 
@@ -141,6 +147,16 @@ Validation:
 28. `cargo fmt --check`
     - result: passed
 29. `./scripts/check-governance.ps1`
+    - result: passed
+30. `cargo test -p oxvba-runtime --lib variant_runtime_value_bridge_roundtrips_supported_exact_subset -- --nocapture`
+    - result: `1` passed
+31. `cargo test -p oxvba-vm --lib runtime_redim_preserve_1d_retains_overlapping_byte_values -- --nocapture`
+    - result: `1` passed
+32. `cargo test -p oxvba-jit --lib runtime_preserve_resize_helper_retains_existing_byte_values -- --nocapture`
+    - result: `1` passed
+33. `cargo fmt --check`
+    - result: passed
+34. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
