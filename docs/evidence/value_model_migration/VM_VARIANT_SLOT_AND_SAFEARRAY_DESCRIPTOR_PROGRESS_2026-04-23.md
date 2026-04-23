@@ -168,6 +168,11 @@ Implemented:
     `RuntimeSlot::Variant` and reads `Variant::as_safearray()` directly before
     materializing iterator item slots. `to_runtime_value()` remains only for the
     unsupported-value diagnostic message on non-array variants.
+42. JIT execution context result extraction now has a Variant-native
+    `extract_user_variants()` path that returns exact user-visible `Variant`
+    slot carriers. The existing `extract_user_values()` API remains as a
+    compatibility projection over those carriers for current public snapshot
+    callers.
 
 Validation:
 
@@ -431,6 +436,17 @@ Validation:
       functions
 118. `./scripts/check-governance.ps1`
     - result: passed
+119. `cargo fmt --check`
+    - result: passed
+120. `cargo test -p oxvba-jit --lib jit_context_extracts_user_variants_before_projection -- --nocapture`
+    - result: `1` passed
+121. `cargo test -p oxvba-jit --lib slot_abi -- --nocapture`
+    - result: `7` passed
+122. `cargo check -p oxvba-jit`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+123. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -500,6 +516,9 @@ Implementation progress:
 17. VM object `_NewEnum` array inspection now uses `Variant::as_safearray()`
     from the returned slot rather than projecting the returned slot to
     `RuntimeValue` before checking for an array.
+18. JIT result extraction now has a Variant-native result surface through
+    `extract_user_variants()`, with `extract_user_values()` kept as a public
+    compatibility projection.
 
 Remaining blocker:
 
@@ -530,6 +549,9 @@ Remaining blocker:
    `RuntimeValue` compatibility methods, and non-Variant pointer-helper
    behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
    variables.
+6. Public VM/JIT snapshot APIs still expose `RuntimeValue` compatibility
+   results. They now project from Variant-backed slots, but they remain open
+   classification work before the final `vmm-e6` closure checklist.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
