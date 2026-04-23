@@ -1,6 +1,19 @@
 # Variant/SAFEARRAY Intrinsic Closure Checklist (2026-04-23)
 
-Status: `in-progress` epic, `vmm-e6` delivery satisfied, `vmm-e7` checklist artifact published
+Status: `superseded`
+
+Superseded by:
+
+1. [EXACT_NATIVE_REPRESENTATION_TARGET_CORRECTION_2026-04-23.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/EXACT_NATIVE_REPRESENTATION_TARGET_CORRECTION_2026-04-23.md)
+
+This artifact is retained as intermediate progress evidence only. It must not
+be used as a closure artifact for the Variant/SAFEARRAY migration because it
+accepted native-shaped internal carriers where the migration target requires
+the canonical internal late-bound/general value to be exactly the Windows/COM
+`VARIANT`, with real `BSTR`, `SAFEARRAY*`, and interface-pointer payloads.
+
+Original status at publication: `in-progress` epic, `vmm-e6` delivery
+satisfied, `vmm-e7` checklist artifact published.
 
 Scope:
 

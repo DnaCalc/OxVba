@@ -13,7 +13,8 @@ workset.
 | 12.5 | [05_PERFORMANCE_AND_MEMORY_RESULT.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/05_PERFORMANCE_AND_MEMORY_RESULT.md) | timing, memory, and workload-family summaries |
 | 12.6 | [06_FURTHER_MITIGATIONS.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/06_FURTHER_MITIGATIONS.md) | post-correctness optimization follow-ups |
 | all | [LATEST_ARTIFACT_MAP.csv](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/LATEST_ARTIFACT_MAP.csv) | canonical pointers to current paired run artifacts |
-| support | [VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md) | canonical implemented/projected/bounded checklist artifact for the Variant/SAFEARRAY family |
+| support | [EXACT_NATIVE_REPRESENTATION_TARGET_CORRECTION_2026-04-23.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/EXACT_NATIVE_REPRESENTATION_TARGET_CORRECTION_2026-04-23.md) | binding correction: completion requires exact internal BSTR, VARIANT, and SAFEARRAY representations |
+| support | [VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md) | superseded intermediate-progress checklist for the Variant/SAFEARRAY family |
 | support | [PAIRED_RESULT_INDEX_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/PAIRED_RESULT_INDEX_2026-04-22.md) | grouped correctness/perf/memory index for the selected paired artifacts |
 | support | [BASELINE_OLD_ARTIFACT_INDEX.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/BASELINE_OLD_ARTIFACT_INDEX.md) | canonical pointers to the selected fixed-tag baseline-side artifacts |
 
