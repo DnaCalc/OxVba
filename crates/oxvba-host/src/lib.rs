@@ -24,8 +24,8 @@ pub use embedded::{
     EmbeddedRunSessionError, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
-    ComEventCallbackDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
-    ProjectRuntimeSession,
+    ComEventCallbackDispatch, ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
+    PhaseDiagnostic, ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,

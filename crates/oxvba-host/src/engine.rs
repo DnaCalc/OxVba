@@ -107,6 +107,33 @@ pub struct ComEventCallbackDispatch {
     pub args: Vec<RuntimeValue>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComEventCallbackVariantDispatch {
+    pub callback_token: ComCallbackToken,
+    pub subscription_token: ComSubscriptionToken,
+    pub object: ObjectRef,
+    pub event: ComMemberToken,
+    pub handler_symbol: String,
+    pub args: Vec<Variant>,
+}
+
+impl ComEventCallbackVariantDispatch {
+    pub fn to_runtime_dispatch(&self) -> Result<ComEventCallbackDispatch, String> {
+        Ok(ComEventCallbackDispatch {
+            callback_token: self.callback_token,
+            subscription_token: self.subscription_token,
+            object: self.object.clone(),
+            event: self.event,
+            handler_symbol: self.handler_symbol.clone(),
+            args: self
+                .args
+                .iter()
+                .map(Variant::to_runtime_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+}
+
 pub struct ProjectRuntimeSession {
     compiled: CompiledProject,
     vm: Vm,
@@ -593,6 +620,18 @@ impl Engine {
     pub fn poll_com_event_callback(
         &self,
     ) -> Result<Option<ComEventCallbackDispatch>, PhaseDiagnostic> {
+        self.poll_com_event_callback_variants()?
+            .map(|callback| {
+                callback
+                    .to_runtime_dispatch()
+                    .map_err(PhaseDiagnostic::runtime)
+            })
+            .transpose()
+    }
+
+    pub fn poll_com_event_callback_variants(
+        &self,
+    ) -> Result<Option<ComEventCallbackVariantDispatch>, PhaseDiagnostic> {
         let _ = self
             .host_services
             .events()
@@ -633,7 +672,7 @@ impl Engine {
                 ))
             })?;
 
-        Ok(Some(ComEventCallbackDispatch {
+        Ok(Some(ComEventCallbackVariantDispatch {
             callback_token: callback.callback_token,
             subscription_token: callback.subscription_token,
             object: callback.object,
@@ -909,10 +948,43 @@ impl Engine {
         Ok(true)
     }
 
+    pub fn poll_and_dispatch_next_com_event_callback_variants(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+    ) -> Result<bool, PhaseDiagnostic> {
+        let Some(callback) = self.poll_com_event_callback_variants()? else {
+            return Ok(false);
+        };
+        self.dispatch_com_event_callback_variants_into_runtime(runtime, &callback)?;
+        Ok(true)
+    }
+
     pub fn dispatch_com_event_callback_into_runtime(
         &self,
         runtime: &mut ProjectRuntimeSession,
         callback: &ComEventCallbackDispatch,
+    ) -> Result<(), PhaseDiagnostic> {
+        let variant_args = callback
+            .args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PhaseDiagnostic::runtime)?;
+        let callback = ComEventCallbackVariantDispatch {
+            callback_token: callback.callback_token,
+            subscription_token: callback.subscription_token,
+            object: callback.object.clone(),
+            event: callback.event,
+            handler_symbol: callback.handler_symbol.clone(),
+            args: variant_args,
+        };
+        self.dispatch_com_event_callback_variants_into_runtime(runtime, &callback)
+    }
+
+    pub fn dispatch_com_event_callback_variants_into_runtime(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+        callback: &ComEventCallbackVariantDispatch,
     ) -> Result<(), PhaseDiagnostic> {
         let (resolved_symbol, metadata) =
             self.resolve_runtime_handler_metadata(runtime, &callback.handler_symbol)?;
@@ -926,7 +998,7 @@ impl Engine {
         }
         runtime
             .vm
-            .invoke_procedure_with_values(
+            .invoke_procedure_with_variants(
                 &runtime.compiled.bytecode,
                 metadata.entry_pc,
                 &metadata.param_slots,
@@ -1281,8 +1353,8 @@ impl Engine {
 
 fn normalize_callback_payload(
     payload: DynamicEventPayload,
-) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
-    Ok(ComEventCallbackDispatch {
+) -> Result<ComEventCallbackVariantDispatch, PhaseDiagnostic> {
+    Ok(ComEventCallbackVariantDispatch {
         callback_token: payload.callback.into(),
         subscription_token: payload.subscription.into(),
         object: payload.object,
@@ -1291,7 +1363,7 @@ fn normalize_callback_payload(
         args: payload
             .args
             .into_iter()
-            .map(|value| value.to_runtime_value())
+            .map(|value| value.variant().clone())
             .collect(),
     })
 }
@@ -18995,11 +19067,20 @@ End Sub";
             .expect("subscribe_com_event_handler should succeed");
 
         let _ = dispatch_controlled_com_call(&engine, object.clone(), 3, 77);
-        let callback = engine
-            .poll_com_event_callback()
+        let variant_callback = engine
+            .poll_com_event_callback_variants()
             .expect("callback poll should succeed")
             .expect("callback should be available");
 
+        assert_eq!(variant_callback.subscription_token, subscription);
+        assert_eq!(variant_callback.object, object);
+        assert_eq!(variant_callback.event.raw(), 1);
+        assert_eq!(variant_callback.handler_symbol, "sinka_onchanged");
+        assert_eq!(variant_callback.args[0].vtype(), VarType::Long);
+        assert_eq!(variant_callback.args[0].as_i32(), Some(77));
+        let callback = variant_callback
+            .to_runtime_dispatch()
+            .expect("callback payload should project for compatibility");
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.object, object);
         assert_eq!(callback.event.raw(), 1);
@@ -19082,11 +19163,23 @@ End Sub";
             .expect("subscribe_com_event_handler should succeed");
 
         let _ = dispatch_controlled_com_call(&engine, object.clone(), 4, 90);
-        let callback = engine
-            .poll_com_event_callback()
+        let variant_callback = engine
+            .poll_com_event_callback_variants()
             .expect("callback poll should succeed")
             .expect("callback should be available");
 
+        assert_eq!(variant_callback.subscription_token, subscription);
+        assert_eq!(variant_callback.object, object);
+        assert_eq!(variant_callback.event.raw(), 3);
+        assert_eq!(variant_callback.handler_symbol, "sinka_onpair");
+        assert_eq!(variant_callback.args.len(), 2);
+        assert_eq!(variant_callback.args[0].vtype(), VarType::Long);
+        assert_eq!(variant_callback.args[0].as_i32(), Some(90));
+        assert_eq!(variant_callback.args[1].vtype(), VarType::Long);
+        assert_eq!(variant_callback.args[1].as_i32(), Some(91));
+        let callback = variant_callback
+            .to_runtime_dispatch()
+            .expect("callback payload should project for compatibility");
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.object, object);
         assert_eq!(callback.event.raw(), 3);
@@ -19162,7 +19255,7 @@ End Sub";
         let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
         let err = engine
-            .poll_and_dispatch_next_com_event_callback(&mut runtime)
+            .poll_and_dispatch_next_com_event_callback_variants(&mut runtime)
             .expect_err("runtime handler should raise deterministic callback code");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("runtime error: 177"));
