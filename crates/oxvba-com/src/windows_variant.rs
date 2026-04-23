@@ -83,10 +83,10 @@ where
             }
         };
         let _ = VariantClear(&mut element);
-        values.push(value);
+        values.push(Variant::try_from_runtime_value(&value)?);
     }
     Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
-        SafeArray::from_values(values),
+        SafeArray::from_variants(values),
     ))
 }
 
