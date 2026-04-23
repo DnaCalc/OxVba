@@ -1917,12 +1917,16 @@ Child beads:
        `Variant` and invokes through the host Variant procedure path; its
        display result remains a compatibility projection because the Immediate
        Window exposes formatted values rather than the internal runtime carrier
+     - progress landed: debugger frame value projection now reads `Variant`
+       slots first and exposes a `DebugFrameVariantValue` companion; existing
+       debugger frame/evaluation values remain compatibility projections for
+       UI/display callers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
        symbol APIs, legacy SafeArray element compatibility APIs, COM
        compatibility projection APIs that still expose `RuntimeValue`,
-       embedded/immediate compatibility display APIs that still expose
+       embedded/immediate/debugger compatibility display APIs that still expose
        `RuntimeValue`, and remaining non-Variant pointer-helper behavior such as
        `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and either migrated
        to exact BSTR, Windows/COM `VARIANT`, and SAFEARRAY carriers or
