@@ -85,6 +85,10 @@ impl DynamicValue {
         Self::from_com_value(ComValue::from_runtime_value(value))
     }
 
+    pub fn from_variant(value: Variant) -> Self {
+        Self { value }
+    }
+
     pub fn to_com_value(&self) -> ComValue {
         ComValue::from_variant(&self.value)
             .expect("dynamic COM VARIANT payload must project to ComValue")
