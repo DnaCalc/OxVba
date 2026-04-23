@@ -52,6 +52,11 @@ Implemented:
     `ComValue`. `ComRuntimeState` now stores queued callback arguments as
     `Variant` via `ComEventCallbackValue`, and projects back to `ComValue` only
     when existing COM/HAL polling and callback-argument APIs are read.
+17. Dynamic COM request/event payloads no longer use `DynamicValue = ComValue`.
+    `DynamicValue` is now a `Variant`-backed carrier that accepts and projects
+    `ComValue` at the existing conversion boundaries, so `DynamicCallArg` and
+    `DynamicEventPayload` own `Variant` values rather than semantic `ComValue`
+    values.
 
 Validation:
 
@@ -86,6 +91,17 @@ Validation:
     - result: `5` passed
 14. `cargo fmt --check`
     - result: passed
+15. `cargo test -p oxvba-com --lib dynamic_object -- --nocapture`
+    - result: `4` passed
+16. `cargo test -p oxvba-hal --lib dispatch_invoke_dynamic_projection_resolves_name_selector_for_testdispatch -- --nocapture`
+    - result: `1` passed
+17. `cargo test -p oxvba-vm --lib project_dynamic -- --nocapture`
+    - result: `4` passed
+18. `cargo test -p oxvba-jit --lib -- --nocapture`
+    - result: `30` passed, `2` failed
+    - the two failures are the same machine-local COM registration failures for
+      `OxVba.TestDispatch`:
+      `CLSIDFromProgID failed for OxVba.TestDispatch with HRESULT 0x800401F3`
 
 Remaining blocker:
 
@@ -101,8 +117,8 @@ Remaining blocker:
    audit before closure can be claimed.
 4. Completion still requires an audit and migration of all remaining
    projection seams that can expose or retain general values: interpreter/JIT
-   helpers, HAL callback surfaces, `SafeArray` element APIs, dynamic COM
-   request payloads that still use `ComValue`, and non-Variant pointer-helper
+   helpers, HAL callback surfaces, `SafeArray` element APIs, remaining COM
+   boundary `ComValue` projection points, and non-Variant pointer-helper
    behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
    variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
