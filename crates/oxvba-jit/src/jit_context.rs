@@ -11,7 +11,7 @@ use oxvba_compiler::bytecode::ExternalCallDescriptor;
 use oxvba_hal::traits::HostServices;
 use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant};
 
-use crate::slot_abi::{RtSlot, rtslot_from_runtime_value};
+use crate::slot_abi::RtSlot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JitRuntimeSlot {
@@ -212,18 +212,11 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
-        debug_assert!(
-            !self.slots_ptr.is_null(),
-            "JitContext::read_slot: null slots_ptr"
-        );
-        debug_assert!(
-            slot < self.slot_count,
-            "JitContext::read_slot: slot {} >= count {}",
-            slot,
-            self.slot_count
-        );
-        let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
-        rt_slot.to_runtime_value()
+        unsafe {
+            self.read_variant_slot(slot)
+                .to_runtime_value()
+                .expect("JIT VARIANT slot should project to RuntimeValue")
+        }
     }
 
     /// Read the exact VARIANT carrier from a slot.
@@ -269,18 +262,11 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
-        debug_assert!(
-            !self.slots_ptr.is_null(),
-            "JitContext::write_slot: null slots_ptr"
-        );
-        debug_assert!(
-            slot < self.slot_count,
-            "JitContext::write_slot: slot {} >= count {}",
-            slot,
-            self.slot_count
-        );
-        let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
-        *rt_slot = rtslot_from_runtime_value(&value);
+        let variant = match value {
+            RuntimeValue::BindingHandle(handle) => Variant::from_i32(handle.raw()),
+            value => Variant::from_runtime_value(&value),
+        };
+        unsafe { self.write_variant_slot(slot, variant) };
     }
 
     /// Write an exact VARIANT carrier to a slot.

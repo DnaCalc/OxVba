@@ -1924,6 +1924,10 @@ Child beads:
      - progress landed: `Variant::try_from_compat_slot_i32()` now decodes the
        legacy tag subset directly into canonical `Variant` carriers instead of
        detouring through `RuntimeValue::from_compat_slot_i32()`
+     - progress landed: JIT `JitContext::read_slot()` / `write_slot()` now
+       treat the `RuntimeValue` slot API as a compatibility projection over
+       `read_variant_slot()` / `write_variant_slot()` instead of maintaining a
+       separate non-Variant slot read/write path
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

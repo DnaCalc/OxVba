@@ -133,7 +133,7 @@ mod tests {
         model::{HalProfileId, HostPolicy},
     };
     use oxvba_runtime::{
-        F64Value, RuntimeValue, VarType,
+        F64Value, RuntimeValue, VarType, Variant,
         bstr::BStr,
         safe_array::{SafeArray, SafeArrayBound, VT_UI1_VALUE},
     };
@@ -344,6 +344,24 @@ mod tests {
             variants[1].to_runtime_value().expect("string variant"),
             RuntimeValue::String(BStr::from("ABC"))
         );
+    }
+
+    #[test]
+    fn jit_context_runtime_value_slot_api_projects_through_variant_accessors() {
+        let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_slot(0, RuntimeValue::BindingHandle(7.into()));
+            assert_eq!(ctx.context.read_variant_slot(0).as_i32(), Some(7));
+            assert_eq!(ctx.context.read_slot(0), RuntimeValue::I32(7));
+
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("ABC")));
+            assert_eq!(
+                ctx.context.read_slot(1),
+                RuntimeValue::String(BStr::from("ABC"))
+            );
+        }
     }
 
     #[test]
