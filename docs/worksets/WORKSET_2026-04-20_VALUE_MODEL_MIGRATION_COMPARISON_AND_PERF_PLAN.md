@@ -1742,6 +1742,21 @@ Child beads:
        retain `RuntimeSlot` values instead of `RuntimeValue` values, reducing
        the remaining semantic-storage footprint while keeping `RuntimeValue` as
        a boundary/projection helper
+     - progress landed: JIT `RtSlot` is no longer a private tag/payload
+       structure; it is a transparent owner of the canonical 16-byte
+       `Variant`, generated Long fast paths now inspect `VT_I4` plus the
+       VARIANT union payload, and load/branch helpers preserve overwrite/drop
+       and semantic truthiness behavior for non-scalar carriers
+     - progress landed: JIT WithEvents retained state now uses
+       `JitRuntimeSlot`, keeping normal VBA values in `Variant` form and
+       retaining `BindingHandle` only as an explicit non-VBA side token; JIT
+       `ReDim` helpers now create typed SAFEARRAY payloads for declared array
+       element types
+     - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
+       helper seams, HAL callback surfaces, SafeArray element APIs, `ComValue`,
+       and pointer-helper behavior such as `VarPtr(Variant)`, `StrPtr`, and
+       `ObjPtr` are audited and either migrated to the exact carrier or
+       explicitly classified as projection boundaries
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
