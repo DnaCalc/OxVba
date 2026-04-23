@@ -9,7 +9,12 @@ mod windows_com_e2e {
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
-        safe_array::SafeArray,
+        safe_array::{
+            SafeArray, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+            VT_DECIMAL_VALUE, VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE,
+            VT_I8_VALUE, VT_INT_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE, VT_UI4_VALUE,
+            VT_UI8_VALUE, VT_UINT_VALUE, VT_UNKNOWN_VALUE,
+        },
     };
 
     fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
@@ -557,100 +562,166 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(-4),
-                RuntimeValue::I32(321),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_I2_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(-4),
+                        RuntimeValue::I32(321),
+                    ],
+                )
+                .expect("typed i2 array"),
+            ),
             "VT_ARRAY|VT_I2 result should preserve scalar array elements"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(0),
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(255),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_UI1_VALUE,
+                    vec![
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(255),
+                    ],
+                )
+                .expect("typed ui1 array"),
+            ),
             "VT_ARRAY|VT_UI1 result should preserve byte array elements on the current i32 carrier lane"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(-5),
-                RuntimeValue::I32(0),
-                RuntimeValue::I32(120),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_I1_VALUE,
+                    vec![
+                        RuntimeValue::I32(-5),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(120),
+                    ],
+                )
+                .expect("typed i1 array"),
+            ),
             "VT_ARRAY|VT_I1 result should preserve signed byte array elements on the current i32 carrier lane"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(-70_000),
-                RuntimeValue::I32(0),
-                RuntimeValue::I32(12),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_INT_VALUE,
+                    vec![
+                        RuntimeValue::I32(-70_000),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(12),
+                    ],
+                )
+                .expect("typed int array"),
+            ),
             "VT_ARRAY|VT_INT result should preserve platform int array elements"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(4_096),
-                RuntimeValue::I32(70_000),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_UINT_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(4_096),
+                        RuntimeValue::I32(70_000),
+                    ],
+                )
+                .expect("typed uint array"),
+            ),
             "VT_ARRAY|VT_UINT result should preserve platform uint array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(-70_000),
-                RuntimeValue::I32(0),
-                RuntimeValue::I32(12),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_I8_VALUE,
+                    vec![
+                        RuntimeValue::I32(-70_000),
+                        RuntimeValue::I32(0),
+                        RuntimeValue::I32(12),
+                    ],
+                )
+                .expect("typed i8 array"),
+            ),
             "VT_ARRAY|VT_I8 result should preserve hyper array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(4_096),
-                RuntimeValue::I32(70_000),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_UI8_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(4_096),
+                        RuntimeValue::I32(70_000),
+                    ],
+                )
+                .expect("typed ui8 array"),
+            ),
             "VT_ARRAY|VT_UI8 result should preserve unsigned hyper array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(-4),
-                RuntimeValue::I32(70_000),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_I4_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(-4),
+                        RuntimeValue::I32(70_000),
+                    ],
+                )
+                .expect("typed i4 array"),
+            ),
             "VT_ARRAY|VT_I4 result should preserve 32-bit signed array elements"
         );
         assert_eq!(
             vm[9],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(4_096),
-                RuntimeValue::I32(70_000),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_UI4_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(4_096),
+                        RuntimeValue::I32(70_000),
+                    ],
+                )
+                .expect("typed ui4 array"),
+            ),
             "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[10],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::Bool(true),
-                RuntimeValue::Bool(false),
-                RuntimeValue::Bool(true),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_BOOL_VALUE,
+                    vec![
+                        RuntimeValue::Bool(true),
+                        RuntimeValue::Bool(false),
+                        RuntimeValue::Bool(true),
+                    ],
+                )
+                .expect("typed bool array"),
+            ),
             "VT_ARRAY|VT_BOOL result should preserve boolean array elements"
         );
         assert_eq!(
             vm[11],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::String(BStr::from("Alpha")),
-                RuntimeValue::String(BStr::from("Beta")),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_BSTR_VALUE,
+                    vec![
+                        RuntimeValue::String(BStr::from("Alpha")),
+                        RuntimeValue::String(BStr::from("Beta")),
+                    ],
+                )
+                .expect("typed bstr array"),
+            ),
             "VT_ARRAY|VT_BSTR result should preserve string array elements"
         );
     }
@@ -789,29 +860,47 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::F64(F64Value::from_f64(12.5)),
-                RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                RuntimeValue::F64(F64Value::from_f64(321.0)),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_R8_VALUE,
+                    vec![
+                        RuntimeValue::F64(F64Value::from_f64(12.5)),
+                        RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                        RuntimeValue::F64(F64Value::from_f64(321.0)),
+                    ],
+                )
+                .expect("typed r8 array"),
+            ),
             "VT_ARRAY|VT_R8 result should preserve float array elements on the semantic f64 carrier"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::F64(F64Value::from_single_f64(12.5)),
-                RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
-                RuntimeValue::F64(F64Value::from_single_f64(321.0)),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_R4_VALUE,
+                    vec![
+                        RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+                        RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
+                        RuntimeValue::F64(F64Value::from_single_f64(321.0)),
+                    ],
+                )
+                .expect("typed r4 array"),
+            ),
             "VT_ARRAY|VT_R4 result should preserve float array elements with Single subtype"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
-                RuntimeValue::F64(F64Value::from_date_f64(12.5)),
-                RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_DATE_VALUE,
+                    vec![
+                        RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+                        RuntimeValue::F64(F64Value::from_date_f64(12.5)),
+                        RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
+                    ],
+                )
+                .expect("typed date array"),
+            ),
             "VT_ARRAY|VT_DATE result should preserve automation date payloads with Date subtype"
         );
     }
@@ -861,11 +950,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
-                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
-                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_CY_VALUE,
+                    vec![
+                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
+                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+                    ],
+                )
+                .expect("typed currency array"),
+            ),
             "VT_ARRAY|VT_CY result should preserve exact scaled currency elements"
         );
     }
@@ -915,11 +1010,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
-                RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
-                RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_DECIMAL_VALUE,
+                    vec![
+                        RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+                        RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
+                        RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
+                    ],
+                )
+                .expect("typed decimal array"),
+            ),
             "VT_ARRAY|VT_DECIMAL result should preserve exact decimal elements"
         );
     }
@@ -1268,6 +1369,7 @@ End Sub
         let RuntimeValue::ArrayIntent(array) = &vm[1] else {
             panic!("expected SAFEARRAY result, got {:?}", vm[1]);
         };
+        assert_eq!(array.element_vartype(), VT_DISPATCH_VALUE);
         let elements = array
             .elements()
             .expect("typed dispatch-array result should preserve owned elements");
@@ -1309,6 +1411,7 @@ End Sub
         let RuntimeValue::ArrayIntent(array) = &vm[1] else {
             panic!("expected SAFEARRAY result, got {:?}", vm[1]);
         };
+        assert_eq!(array.element_vartype(), VT_UNKNOWN_VALUE);
         let elements = array
             .elements()
             .expect("typed unknown-array result should preserve owned elements");
@@ -2484,11 +2587,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(12),
-                RuntimeValue::I32(-4),
-                RuntimeValue::I32(321),
-            ])),
+            RuntimeValue::ArrayIntent(
+                SafeArray::from_typed_values(
+                    VT_I4_VALUE,
+                    vec![
+                        RuntimeValue::I32(12),
+                        RuntimeValue::I32(-4),
+                        RuntimeValue::I32(321),
+                    ],
+                )
+                .expect("typed i4 array"),
+            ),
             "BYREF Long array results should be transparently dereferenced to the VT_ARRAY|VT_I4 carrier values"
         );
     }

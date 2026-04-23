@@ -2,7 +2,12 @@ use crate::ComValue;
 use oxvba_runtime::{
     CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef,
     bstr::BStr,
-    safe_array::{SafeArray, SafeArrayBound},
+    safe_array::{
+        SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+        VT_DECIMAL_VALUE, VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE,
+        VT_INT_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE, VT_UI2_VALUE, VT_UI4_VALUE,
+        VT_UI8_VALUE, VT_UINT_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE,
+    },
 };
 use std::ffi::c_void;
 
@@ -228,8 +233,7 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         bounds.push(SafeArrayBound { lower, count });
     }
 
-    if dims == 1 {
-        // Single-dimension fast path: iterate directly by index.
+    let values = if dims == 1 {
         let lower = bounds[0].lower;
         let upper = lower + bounds[0].count as i32 - 1;
         let mut values = Vec::with_capacity(total_len);
@@ -240,10 +244,8 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
                 element_vt,
             )?);
         }
-        Ok(ComValue::ArrayIntent(SafeArray::from_values(values)))
+        values
     } else {
-        // Multi-dimensional path: iterate in column-major order (first dimension varies fastest).
-        // Use SafeArrayGetElement with a multi-dimensional index array.
         let mut values = Vec::with_capacity(total_len);
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
 
@@ -251,7 +253,6 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
             let value = safe_array_element_nd(psa.cast_const(), &indices, element_vt)?;
             values.push(value);
 
-            // Increment indices in column-major order (first dimension varies fastest).
             let mut carry = true;
             for (dim_idx, bound) in bounds.iter().enumerate() {
                 if !carry {
@@ -265,10 +266,23 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
                 }
             }
         }
-        Ok(ComValue::ArrayIntent(SafeArray::from_values_nd(
-            bounds, values,
-        )))
-    }
+        values
+    };
+
+    let array = if element_vt != VT_VARIANT_VALUE
+        && SafeArray::supports_intrinsic_element_vartype(element_vt)
+    {
+        if dims == 1 {
+            SafeArray::from_typed_values(element_vt, values)?
+        } else {
+            SafeArray::from_typed_values_nd(bounds, element_vt, values)?
+        }
+    } else if dims == 1 {
+        SafeArray::from_values(values)
+    } else {
+        SafeArray::from_values_nd(bounds, values)
+    };
+    Ok(ComValue::ArrayIntent(array))
 }
 
 #[cfg(target_os = "windows")]
@@ -841,15 +855,21 @@ where
         }
     }
 
-    if dims == 1 {
-        Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
-            SafeArray::from_values(values),
-        ))
+    let array = if element_vt != VT_VARIANT_VALUE
+        && SafeArray::supports_intrinsic_element_vartype(element_vt)
+    {
+        if dims == 1 {
+            SafeArray::from_typed_values(element_vt, values)?
+        } else {
+            SafeArray::from_typed_values_nd(bounds, element_vt, values)?
+        }
+    } else if dims == 1 {
+        SafeArray::from_values(values)
     } else {
-        Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
-            SafeArray::from_values_nd(bounds, values),
-        ))
-    }
+        SafeArray::from_values_nd(bounds, values)
+    };
+
+    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(array))
 }
 
 #[cfg(target_os = "windows")]
@@ -870,6 +890,13 @@ where
             ComValue::ArrayIntent(array.clone()).to_legacy_dispatch_token()?;
         return Ok(());
     };
+
+    let element_vt = array.element_vartype();
+    if element_vt != VT_VARIANT_VALUE
+        && SafeArray::supports_intrinsic_element_vartype(element_vt)
+    {
+        return set_typed_array_arg(variant, array, &values, resolve_object, add_ref_dispatch);
+    }
 
     // Multi-dimensional path: use SafeArrayCreate with per-dimension bounds.
     if let Some(bounds) = array.bounds()
@@ -967,6 +994,227 @@ where
         }
     }
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn runtime_value_to_i64(value: &oxvba_runtime::RuntimeValue) -> Result<i64, String> {
+    match value {
+        oxvba_runtime::RuntimeValue::I32(value) => Ok(i64::from(*value)),
+        oxvba_runtime::RuntimeValue::I64(value) => Ok(*value),
+        other => Err(format!("expected integer-compatible SAFEARRAY element, got {other:?}")),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn runtime_value_to_f64(value: &oxvba_runtime::RuntimeValue) -> Result<f64, String> {
+    match value {
+        oxvba_runtime::RuntimeValue::F64(value) => Ok(value.as_f64()),
+        other => Err(format!("expected floating-point SAFEARRAY element, got {other:?}")),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn put_typed_safe_array_element(
+    psa: *mut SAFEARRAY,
+    indices: &[i32],
+    element_vt: u16,
+    value: &oxvba_runtime::RuntimeValue,
+    resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
+    add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
+) -> Result<(), String> {
+    let hr = match element_vt {
+        VT_I1_VALUE => {
+            let scalar = i8::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i8).cast())
+        }
+        VT_UI1_VALUE => {
+            let scalar = u8::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u8).cast())
+        }
+        VT_I2_VALUE => {
+            let scalar = i16::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i16).cast())
+        }
+        VT_UI2_VALUE => {
+            let scalar = u16::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u16).cast())
+        }
+        VT_I4_VALUE | VT_INT_VALUE => {
+            let scalar = i32::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i32).cast())
+        }
+        VT_UI4_VALUE | VT_UINT_VALUE => {
+            let scalar = u32::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u32).cast())
+        }
+        VT_I8_VALUE => {
+            let scalar = runtime_value_to_i64(value)?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i64).cast())
+        }
+        VT_UI8_VALUE => {
+            let scalar = u64::try_from(runtime_value_to_i64(value)?)
+                .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u64).cast())
+        }
+        VT_R4_VALUE => {
+            let scalar = runtime_value_to_f64(value)? as f32;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const f32).cast())
+        }
+        VT_R8_VALUE | VT_DATE_VALUE => {
+            let scalar = runtime_value_to_f64(value)?;
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const f64).cast())
+        }
+        VT_CY_VALUE => {
+            let oxvba_runtime::RuntimeValue::Currency(currency) = value else {
+                return Err(format!("expected Currency SAFEARRAY element, got {value:?}"));
+            };
+            let scalar = CY {
+                int64: currency.scaled_i64(),
+            };
+            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const CY).cast())
+        }
+        VT_BOOL_VALUE => {
+            let oxvba_runtime::RuntimeValue::Bool(boolean) = value else {
+                return Err(format!("expected Bool SAFEARRAY element, got {value:?}"));
+            };
+            let scalar: VARIANT_BOOL = if *boolean { -1 } else { 0 };
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const VARIANT_BOOL).cast(),
+            )
+        }
+        VT_BSTR_VALUE => {
+            let oxvba_runtime::RuntimeValue::String(text) = value else {
+                return Err(format!("expected String SAFEARRAY element, got {value:?}"));
+            };
+            let bstr = alloc_bstr(text);
+            let hr = SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), bstr.cast());
+            SysFreeString(bstr);
+            hr
+        }
+        VT_DISPATCH_VALUE => {
+            let oxvba_runtime::RuntimeValue::Object(object) = value else {
+                return Err(format!("expected Object SAFEARRAY element, got {value:?}"));
+            };
+            let dispatch = resolve_object(object.clone())?;
+            add_ref_dispatch(dispatch);
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&dispatch as *const *mut core::ffi::c_void).cast(),
+            )
+        }
+        VT_UNKNOWN_VALUE => {
+            let oxvba_runtime::RuntimeValue::Object(object) = value else {
+                return Err(format!("expected Object SAFEARRAY element, got {value:?}"));
+            };
+            let unknown = object.query_iunknown().raw_iunknown().cast::<core::ffi::c_void>();
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&unknown as *const *mut core::ffi::c_void).cast(),
+            )
+        }
+        VT_DECIMAL_VALUE => {
+            let oxvba_runtime::RuntimeValue::Decimal(decimal) = value else {
+                return Err(format!("expected Decimal SAFEARRAY element, got {value:?}"));
+            };
+            let scalar = decimal96_to_windows(*decimal);
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const DECIMAL).cast(),
+            )
+        }
+        other => {
+            return Err(format!(
+                "unsupported intrinsic SAFEARRAY element vartype 0x{other:04X}"
+            ));
+        }
+    };
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayPutElement failed with HRESULT {:#010X} at indices {indices:?}",
+            hr as u32
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_typed_array_arg(
+    variant: *mut VARIANT,
+    array: &SafeArray,
+    values: &[oxvba_runtime::RuntimeValue],
+    resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
+    add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
+) -> Result<(), String> {
+    let element_vt = array.element_vartype();
+    let bounds = array.bounds().unwrap_or_else(|| {
+        vec![SafeArrayBound {
+            lower: 0,
+            count: u32::try_from(array.len()).unwrap_or(u32::MAX),
+        }]
+    });
+    let dims = u32::try_from(bounds.len())
+        .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
+    let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
+        .iter()
+        .map(|b| SAFEARRAYBOUND {
+            cElements: b.count,
+            lLbound: b.lower,
+        })
+        .collect();
+    let psa = if bounds.len() == 1 && bounds[0].lower == 0 {
+        SafeArrayCreateVector(element_vt, 0, bounds[0].count)
+    } else {
+        SafeArrayCreate(element_vt, dims, sa_bounds.as_ptr())
+    };
+    if psa.is_null() {
+        return Err(format!(
+            "SafeArrayCreate(0x{element_vt:04X}) returned null"
+        ));
+    }
+
+    let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+    for value in values {
+        if let Err(err) = put_typed_safe_array_element(
+            psa,
+            &indices,
+            element_vt,
+            value,
+            resolve_object,
+            add_ref_dispatch,
+        ) {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(err);
+        }
+        let mut carry = true;
+        for (dim_idx, bound) in bounds.iter().enumerate() {
+            if !carry {
+                break;
+            }
+            indices[dim_idx] += 1;
+            if indices[dim_idx] >= bound.lower + bound.count as i32 {
+                indices[dim_idx] = bound.lower;
+            } else {
+                carry = false;
+            }
+        }
+    }
+
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | element_vt;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
 }
@@ -1374,7 +1622,11 @@ mod tests {
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray,
+        CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr,
+        safe_array::{
+            SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
+            VT_I2_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,
+        },
     };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
@@ -1679,11 +1931,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_I2 SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::I32(12),
-                    RuntimeValue::I32(-4),
-                    RuntimeValue::I32(321),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_I2_VALUE,
+                        vec![
+                            RuntimeValue::I32(12),
+                            RuntimeValue::I32(-4),
+                            RuntimeValue::I32(321),
+                        ],
+                    )
+                    .expect("typed i2 array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1711,11 +1969,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_I8 SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::I32(12),
-                    RuntimeValue::I64(5_000_000_000),
-                    RuntimeValue::I32(-4),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_I8_VALUE,
+                        vec![
+                            RuntimeValue::I32(12),
+                            RuntimeValue::I64(5_000_000_000),
+                            RuntimeValue::I32(-4),
+                        ],
+                    )
+                    .expect("typed i8 array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1743,11 +2007,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_UI8 SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::I32(12),
-                    RuntimeValue::I64(5_000_000_000),
-                    RuntimeValue::I32(321),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_UI8_VALUE,
+                        vec![
+                            RuntimeValue::I32(12),
+                            RuntimeValue::I64(5_000_000_000),
+                            RuntimeValue::I32(321),
+                        ],
+                    )
+                    .expect("typed ui8 array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1775,11 +2045,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_R4_VARENUM SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::F64(F64Value::from_single_f64(12.5)),
-                    RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
-                    RuntimeValue::F64(F64Value::from_single_f64(321.0)),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_R4_VALUE,
+                        vec![
+                            RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+                            RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
+                            RuntimeValue::F64(F64Value::from_single_f64(321.0)),
+                        ],
+                    )
+                    .expect("typed r4 array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1811,11 +2087,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_CY_VARENUM SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
-                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
-                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_CY_VALUE,
+                        vec![
+                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
+                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+                        ],
+                    )
+                    .expect("typed currency array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1854,11 +2136,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_DECIMAL SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
-                    RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
-                    RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_DECIMAL_VALUE,
+                        vec![
+                            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+                            RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
+                            RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
+                        ],
+                    )
+                    .expect("typed decimal array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1886,11 +2174,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_DATE_VARENUM SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
-                    RuntimeValue::F64(F64Value::from_date_f64(12.5)),
-                    RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_DATE_VALUE,
+                        vec![
+                            RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+                            RuntimeValue::F64(F64Value::from_date_f64(12.5)),
+                            RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
+                        ],
+                    )
+                    .expect("typed date array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1918,11 +2212,17 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_R8_VARENUM SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::F64(F64Value::from_f64(12.5)),
-                    RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                    RuntimeValue::F64(F64Value::from_f64(321.0)),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_R8_VALUE,
+                        vec![
+                            RuntimeValue::F64(F64Value::from_f64(12.5)),
+                            RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                            RuntimeValue::F64(F64Value::from_f64(321.0)),
+                        ],
+                    )
+                    .expect("typed r8 array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
@@ -1953,10 +2253,16 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.parray = psa;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_BSTR SAFEARRAY"),
-                ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::String(BStr::from("Alpha")),
-                    RuntimeValue::String(BStr::from("Beta")),
-                ]))
+                ComValue::ArrayIntent(
+                    SafeArray::from_typed_values(
+                        VT_BSTR_VALUE,
+                        vec![
+                            RuntimeValue::String(BStr::from("Alpha")),
+                            RuntimeValue::String(BStr::from("Beta")),
+                        ],
+                    )
+                    .expect("typed bstr array"),
+                )
             );
             let _ = VariantClear(&mut variant);
         }
