@@ -377,9 +377,10 @@ This grid is the current anti-drift truth surface for closure.
    - intrinsic target:
      canonical runtime string storage itself is the BSTR representation
    - current truth:
-     canonical `BStr` is now a core-only UTF-16/BSTR-shaped carrier with no
-     persistent UTF-8 payload field, but it is not yet the exact internal BSTR
-     representation required by this workset
+     canonical `BStr` is now a pointer-sized owner of a raw BSTR payload;
+     Windows builds allocate, clone, measure, and free through `SysAllocStringLen`,
+     `SysStringLen`, and `SysFreeString`, while non-Windows builds retain the
+     same length-prefix-plus-UTF-16-payload layout as a COM-compatible emulation
    - projected truth:
      real BSTR allocations are still materialized at pointer-helper and COM
      seams, and borrowed UTF-8 text is now a derived compatibility projection
@@ -387,11 +388,14 @@ This grid is the current anti-drift truth surface for closure.
    - checklist result (`2026-04-23 correction`):
      - superseded:
        prior closure language treated BSTR-shaped storage as sufficient
+     - implemented:
+       `vmm-d7` delivered the internal BSTR carrier replacement; `OwnedBStrCore`
+       is now only a compatibility snapshot/view
      - still open:
-       the internal OxVba string type must become the actual BSTR
-       representation before the family can close
+       `vmm-d8` must record the string/BSTR intrinsic closure checklist before
+       the family can close
    - closure implication:
-     `vmm-d7` and `vmm-d8` are reopened
+     `vmm-d7` is complete; `vmm-d8` remains open
 2. `Variant` / `VARIANT`
    - intrinsic target:
       canonical runtime late-bound/general value carrier is exactly the
@@ -1597,6 +1601,11 @@ Child beads:
     - stage 6 still does not satisfy this bead; the 2026-04-23 correction
       clarifies that BSTR-shaped/core-only UTF-16 storage is progress, not
       closure, because the internal OxVba string type must become BSTR
+    - stage 7 landed: `BStr` is a pointer-sized raw BSTR owner, using
+      `SysAllocStringLen` / `SysStringLen` / `SysFreeString` on Windows and a
+      COM-compatible raw layout emulation on non-Windows; `Variant`,
+      `SafeArray`, pointer-helper, and COM string conversion paths clone from
+      that canonical payload rather than rebuilding from boxed UTF-16 storage
    - completion evidence:
      - runtime string carrier truth is BSTR, and boundary/helper seams no
        longer create the only real BSTR representation
