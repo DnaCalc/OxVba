@@ -254,6 +254,11 @@ Implemented:
      `Variant::as_safearray()`, while both helpers write the resized SAFEARRAY
      back with `write_variant_slot!(..., Variant::from_safearray(...))`
      instead of detouring through `RuntimeValue::ArrayIntent`.
+47j. VM semantics now has Variant-native `runtime_array_lbound_variant()` and
+     `runtime_array_ubound_variant()` companions, and JIT `oxrt_lbound` /
+     `oxrt_ubound` now read the source slot through `read_variant_slot()` and
+     compute bounds against the retained SAFEARRAY-backed Variant carrier
+     instead of projecting the operand into `RuntimeValue::ArrayIntent` first.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -864,6 +869,11 @@ Implementation progress:
     preserve-resize writes, and the preserve helper now inspects the existing
     array via `Variant::as_safearray()` instead of pattern-matching a temporary
     semantic value.
+38. JIT `LBound` / `UBound` no longer need a `RuntimeValue::ArrayIntent`
+    projection for normal array-slot operands. VM semantics now exposes
+    Variant-native bound helpers, and the JIT array-bound lane reads the
+    retained SAFEARRAY-backed `Variant` directly before writing the scalar
+    result.
 
 Remaining blocker:
 
