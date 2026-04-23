@@ -203,6 +203,11 @@ Implemented:
 47. Immediate sessions now expose `snapshot_variants()`, forwarding the prepared
     project runtime session's exact `Variant` snapshot while leaving immediate
     evaluation result display and legacy `RuntimeValue` snapshot APIs unchanged.
+47a. Host legacy slot snapshots now project directly from retained `Variant`
+     snapshot carriers. `ProjectRuntimeSession::snapshot_slots()` and the host
+     slot-snapshot test helpers use the Variant snapshot companions and
+     `Variant::project_compat_slot_i32()` rather than round-tripping through a
+     `Vec<RuntimeValue>` first.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
