@@ -225,22 +225,61 @@ Validation:
     - result: passed
 55. `./scripts/check-governance.ps1`
     - result: passed
+56. `cargo test -p oxvba-hal dynlink -- --nocapture`
+    - result: `7` passed
+    - note: the existing COM/dynlink property now asserts stable
+      `ObjectRef::compat_identity()` rather than full `ObjectRef` pointer
+      equality, because separate `CreateObject` calls intentionally produce
+      distinct IUnknown/ObjectRef instances even when their compatibility
+      identity is stable
+57. `cargo test -p oxvba-vm --lib external -- --nocapture`
+    - result: compile/pass with `0` tests selected
+58. `cargo test -p oxvba-jit --lib external -- --nocapture`
+    - result: compile/pass with `0` tests selected
+59. `cargo check -p oxvba-hal -p oxvba-vm -p oxvba-jit`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+60. `cargo fmt --check`
+    - result: passed
+61. `./scripts/check-governance.ps1`
+    - result: passed
+
+Implementation progress:
+
+1. HAL dynamic-link descriptor multi-call now has a `Variant`-native transport:
+   `DynamicLinkHal::invoke_descriptor_variants()` and
+   `invoke_bound_variants()` return `(Variant, Vec<Variant>)`.
+2. The Standard host overrides the descriptor variant path so VM/JIT
+   descriptor calls preserve canonical slot payloads through the host boundary;
+   the old `RuntimeValue` descriptor multi-call remains as a compatibility
+   projection for older adapters.
+3. VM external descriptor calls now read source slots as `Variant`, write
+   return values with `write_variant_slot()`, and apply ByRef writebacks as
+   `Variant` payloads. Pointer string/byte-array writebacks still call
+   pointer-helper APIs, but immediately convert those boundary projections back
+   into `Variant` before slot writeback.
+4. JIT external descriptor calls now mirror the VM path with exact slot-level
+   `read_variant_slot()` / `write_variant_slot()` helpers over the `RtSlot`
+   Windows `VARIANT` layout.
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
    helper functions, JIT helper functions, host callbacks, legacy `SafeArray`
-   compatibility element APIs, and `ComValue` bridges. VM register storage, JIT slot
-   storage, `For Each` iterator storage, and VM/JIT WithEvents binding storage
-   no longer retain it as their backing value store for normal VBA values.
+   compatibility element APIs, legacy dynamic-link symbol APIs, and `ComValue`
+   bridges. VM register storage, JIT slot storage, `For Each` iterator storage,
+   VM/JIT WithEvents binding storage, and VM/JIT descriptor external-call
+   transport no longer retain it as their backing value store for normal VBA
+   values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
    audit before closure can be claimed.
-4. Completion still requires an audit and migration of all remaining
-   projection seams that can expose or retain general values: interpreter/JIT
-   helpers, HAL callback surfaces, legacy `SafeArray` element compatibility
+4. Completion still requires an audit and migration/classification of all
+   remaining projection seams that can expose or retain general values:
+   interpreter/JIT helper internals outside slot storage, HAL callback surfaces,
+   legacy dynamic-link symbol APIs, legacy `SafeArray` element compatibility
    APIs, remaining COM boundary `ComValue` projection points, and non-Variant
    pointer-helper behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr`
    over non-Variant variables.
