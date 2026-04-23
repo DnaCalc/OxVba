@@ -1852,6 +1852,11 @@ Child beads:
        preserve `DynamicValue` results as destination-slot `Variant` payloads,
        with legacy COM error-tag normalization performed directly on the
        Variant before the slot write
+     - progress landed: JIT WithEvents retained-value get/set/owner-search
+       helpers now read, write, and compare normal retained VBA values as
+       `Variant` slots directly; `BindingHandle` remains an explicit
+       non-VBA control-plane token and explicit `VT_I4` zero remains the
+       clear/remove carrier
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
