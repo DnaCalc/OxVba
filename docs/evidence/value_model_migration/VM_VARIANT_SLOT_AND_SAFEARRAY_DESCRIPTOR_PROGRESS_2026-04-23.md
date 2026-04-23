@@ -231,6 +231,11 @@ Implemented:
     `ComEventCallbackDispatch` / `poll_com_event_callback()` /
     `dispatch_com_event_callback_into_runtime()` APIs remain compatibility
     projections.
+54. Dynamic-link legacy symbol-token invocation now has a Variant-native
+    companion path. `DynamicLinkHal::invoke_symbol_variant()` lets VM/JIT
+    no-descriptor external-call sites pass and write exact slot `Variant`
+    carriers, while `invoke_symbol()` remains the compatibility method for
+    existing HAL callers.
 
 Validation:
 
@@ -628,6 +633,19 @@ Validation:
        functions
 172. `./scripts/check-governance.ps1`
      - result: passed
+173. `cargo test -p oxvba-vm --lib external -- --nocapture`
+     - result: compile/pass with `0` tests selected; existing dead-code
+       warnings in VM digit helper functions
+174. `cargo test -p oxvba-jit --lib external -- --nocapture`
+     - result: compile/pass with `0` tests selected; existing dead-code
+       warnings in VM/JIT digit helper functions
+175. `cargo fmt --check`
+     - result: passed
+176. `cargo check -p oxvba-hal -p oxvba-vm -p oxvba-jit`
+     - result: passed with existing dead-code warnings in VM/JIT digit helper
+       functions
+177. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -741,13 +759,17 @@ Implementation progress:
     routes those values through the VM Variant procedure path. The old
     `RuntimeValue` callback dispatch APIs now project into or out of the
     Variant callback dispatch carrier.
+30. Dynamic-link legacy symbol-token invocation now has a Variant-native
+    companion path. VM/JIT no-descriptor external-call sites read slot
+    `Variant` values and write returned `Variant` values directly; the legacy
+    `invoke_symbol()` method remains as a HAL compatibility API.
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
    helper functions, JIT helper functions, legacy `SafeArray`
-   compatibility element APIs, and legacy dynamic-link symbol APIs. VM register
+   compatibility element APIs, and legacy dynamic-link compatibility APIs. VM register
    storage, JIT slot storage, `For Each` iterator storage,
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
@@ -760,8 +782,9 @@ Remaining blocker:
    APIs, host bundle snapshot companion APIs, immediate-session snapshot
    companion APIs, `ComValue` Variant bridge conversions, embedded host
    procedure invocation companion APIs, immediate procedure invocation, host
-   class member invocation, and host COM callback ingress/dispatch no longer
-   retain it as their backing value store for normal VBA values.
+   class member invocation, host COM callback ingress/dispatch, and VM/JIT
+   no-descriptor dynamic-link symbol invocation no longer retain it as their
+   backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
@@ -772,7 +795,7 @@ Remaining blocker:
    remaining projection seams that can expose or retain general values:
    interpreter/JIT helper internals outside slot storage, host and immediate
    surfaces that still use semantic values by contract, HAL surfaces that still
-   use semantic values by contract, legacy dynamic-link symbol APIs, legacy
+   use semantic values by contract, legacy dynamic-link compatibility APIs, legacy
    `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
    projection APIs that still expose `RuntimeValue`, legacy COM dispatch
