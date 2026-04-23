@@ -25,7 +25,7 @@ use oxvba_runtime::safe_array::{
     VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
 };
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
-use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::{JitContext, JitRuntimeSlot};
@@ -1662,9 +1662,9 @@ fn runtime_resized_array(
                 .map_err(|_| format!("runtime ReDim length {width} exceeds SAFEARRAY capacity"))?,
         });
     }
-    let default = runtime_array_default_value(element_type);
+    let default = runtime_array_default_variant(element_type);
     let values = vec![default; len];
-    SafeArray::from_typed_values_nd(bounds, runtime_array_element_vartype(element_type), values)
+    SafeArray::from_typed_variants_nd(bounds, runtime_array_element_vartype(element_type), values)
 }
 
 fn runtime_resized_array_preserve(
@@ -1688,7 +1688,7 @@ fn runtime_resized_array_preserve(
     let previous_bounds = previous_bounds_binding
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve requires bounds metadata".to_string())?;
-    let previous_values_binding = previous.elements();
+    let previous_values_binding = previous.variant_elements();
     let previous_values = previous_values_binding
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve requires an owned array payload".to_string())?;
@@ -1698,7 +1698,7 @@ fn runtime_resized_array_preserve(
         .as_ref()
         .ok_or_else(|| "runtime ReDim Preserve failed to materialize bounds metadata".to_string())?
         .clone();
-    let mut resized_values = resized.elements().ok_or_else(|| {
+    let mut resized_values = resized.variant_elements().ok_or_else(|| {
         "runtime ReDim Preserve failed to materialize an owned array payload".to_string()
     })?;
     for dim in 0..previous_bounds.len() {
@@ -1735,7 +1735,7 @@ fn runtime_resized_array_preserve(
                 previous_values[previous_start + offset].clone();
         }
     }
-    resized.replace_elements(resized_values)
+    resized.replace_variant_elements(resized_values)
 }
 
 fn decode_runtime_array_element_type(element_type: i32) -> Option<RuntimeArrayElementType> {
@@ -1756,21 +1756,21 @@ fn decode_runtime_array_element_type(element_type: i32) -> Option<RuntimeArrayEl
     })
 }
 
-fn runtime_array_default_value(element_type: RuntimeArrayElementType) -> RuntimeValue {
+fn runtime_array_default_variant(element_type: RuntimeArrayElementType) -> Variant {
     match element_type {
-        RuntimeArrayElementType::Variant => RuntimeValue::Empty,
-        RuntimeArrayElementType::Integer
-        | RuntimeArrayElementType::Long
-        | RuntimeArrayElementType::Byte => RuntimeValue::I32(0),
+        RuntimeArrayElementType::Variant => Variant::empty(),
+        RuntimeArrayElementType::Integer => Variant::from_i16(0),
+        RuntimeArrayElementType::Long => Variant::from_i32(0),
+        RuntimeArrayElementType::Byte => Variant::from_u8(0),
         RuntimeArrayElementType::LongLong | RuntimeArrayElementType::LongPtr => {
-            RuntimeValue::I64(0)
+            Variant::from_i64(0)
         }
-        RuntimeArrayElementType::Single
-        | RuntimeArrayElementType::Double
-        | RuntimeArrayElementType::Currency
-        | RuntimeArrayElementType::Date => RuntimeValue::F64(F64Value::from_f64(0.0)),
-        RuntimeArrayElementType::String => RuntimeValue::String(BStr::empty()),
-        RuntimeArrayElementType::Boolean => RuntimeValue::Bool(false),
+        RuntimeArrayElementType::Single => Variant::from_f32(0.0),
+        RuntimeArrayElementType::Double => Variant::from_f64(0.0),
+        RuntimeArrayElementType::Currency => Variant::from_currency_scaled_i64(0),
+        RuntimeArrayElementType::Date => Variant::from_date_f64(0.0),
+        RuntimeArrayElementType::String => Variant::from_string(BStr::empty()),
+        RuntimeArrayElementType::Boolean => Variant::from_bool(false),
     }
 }
 

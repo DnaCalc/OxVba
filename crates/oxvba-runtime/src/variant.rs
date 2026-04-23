@@ -536,6 +536,10 @@ impl Variant {
                 .as_i64()
                 .map(RuntimeValue::I64)
                 .ok_or_else(|| "invalid LongLong variant payload".to_string()),
+            VarType::Byte => self
+                .as_u8()
+                .map(|value| RuntimeValue::I32(i32::from(value)))
+                .ok_or_else(|| "invalid Byte variant payload".to_string()),
             VarType::Single => self
                 .as_f32()
                 .map(|value| RuntimeValue::F64(F64Value::from_single_f64(value as f64)))
@@ -576,10 +580,6 @@ impl Variant {
                 .as_safearray()
                 .map(RuntimeValue::ArrayIntent)
                 .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string()),
-            other => Err(format!(
-                "runtime Variant -> RuntimeValue bridge does not yet support {:?}",
-                other
-            )),
         }
     }
 
