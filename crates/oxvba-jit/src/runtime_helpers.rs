@@ -25,7 +25,7 @@ use oxvba_runtime::safe_array::{
     VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
 };
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
-use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, VarType, Variant, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::{JitContext, JitRuntimeSlot};
@@ -1833,41 +1833,36 @@ pub extern "C" fn oxrt_array_literal(
     let slot_indices = unsafe { std::slice::from_raw_parts(slots_ptr, slots_len as usize) };
     let mut elements = Vec::with_capacity(slots_len as usize);
     for &slot in slot_indices {
-        let value = read_slot!(ctx, slot);
-        let Ok(value) = Variant::try_from_runtime_value(&value) else {
-            return ERR_RUNTIME;
-        };
-        elements.push(value);
+        elements.push(read_variant_slot!(ctx, slot));
     }
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_variants(
+        Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(
             elements
-        ),)
+        ))
     );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, item: u32) -> i32 {
-    let current = read_slot!(ctx, array);
-    let item = match Variant::try_from_runtime_value(&read_slot!(ctx, item)) {
-        Ok(item) => item,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let mut elements = match current {
-        RuntimeValue::ArrayIntent(array) => array.variant_elements().unwrap_or_default(),
-        RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
+    let current = read_variant_slot!(ctx, array);
+    let item = read_variant_slot!(ctx, item);
+    let mut elements = match current.as_safearray() {
+        Some(array) => array.variant_elements().unwrap_or_default(),
+        None if matches!(current.vtype(), VarType::Empty) || current.as_i32() == Some(0) => {
+            Vec::new()
+        }
         _ => return ERR_RUNTIME,
     };
     elements.push(item);
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_variants(
+        Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(
             elements
-        ),)
+        ))
     );
     OK
 }

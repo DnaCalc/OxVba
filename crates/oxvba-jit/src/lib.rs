@@ -328,6 +328,57 @@ mod tests {
     }
 
     #[test]
+    fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
+        let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("A")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(7));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("B")));
+        }
+
+        let items = [0u32, 1u32];
+        assert_eq!(
+            runtime_helpers::oxrt_array_literal(ctx.context_ptr(), 2, items.as_ptr(), 2),
+            0
+        );
+        let literal = unsafe { ctx.context.read_variant_slot(2) };
+        let literal_elements = literal
+            .as_safearray()
+            .expect("literal should produce SAFEARRAY")
+            .variant_elements()
+            .expect("SAFEARRAY should expose variant elements");
+        assert_eq!(
+            literal_elements,
+            vec![Variant::from_string(BStr::from("A")), Variant::from_i32(7)]
+        );
+
+        assert_eq!(
+            runtime_helpers::oxrt_array_append(ctx.context_ptr(), 4, 2, 3),
+            0
+        );
+        let appended = unsafe { ctx.context.read_variant_slot(4) };
+        let appended_elements = appended
+            .as_safearray()
+            .expect("append should preserve SAFEARRAY carrier")
+            .variant_elements()
+            .expect("SAFEARRAY should expose variant elements");
+        assert_eq!(
+            appended_elements,
+            vec![
+                Variant::from_string(BStr::from("A")),
+                Variant::from_i32(7),
+                Variant::from_string(BStr::from("B"))
+            ]
+        );
+        assert_eq!(
+            unsafe { ctx.context.read_slot(4) },
+            RuntimeValue::ArrayIntent(SafeArray::from_variants(appended_elements))
+        );
+    }
+
+    #[test]
     fn jit_context_extracts_user_variants_before_projection() {
         let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
         unsafe {

@@ -1928,6 +1928,10 @@ Child beads:
        treat the `RuntimeValue` slot API as a compatibility projection over
        `read_variant_slot()` / `write_variant_slot()` instead of maintaining a
        separate non-Variant slot read/write path
+     - progress landed: JIT `oxrt_array_literal` and `oxrt_array_append` now
+       consume exact slot `Variant` carriers directly and write the resulting
+       SAFEARRAY back through `write_variant_slot()`, removing the old
+       read-`RuntimeValue`/rebuild-`Variant` detour from that helper family
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for
