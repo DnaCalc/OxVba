@@ -899,6 +899,13 @@ mod tests {
         assert_eq!(payload.subscription, subscription);
         assert_eq!(payload.object, object);
         assert_eq!(payload.event.raw(), 11);
-        assert_eq!(payload.args, vec![ComValue::String(BStr::from("payload"))]);
+        assert_eq!(
+            payload
+                .args
+                .iter()
+                .map(|value| value.to_com_value())
+                .collect::<Vec<_>>(),
+            vec![ComValue::String(BStr::from("payload"))]
+        );
     }
 }

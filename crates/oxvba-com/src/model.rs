@@ -308,17 +308,52 @@ impl ComInvokeRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComCallbackValue {
+    value: Variant,
+}
+
+impl ComCallbackValue {
+    pub fn from_com_value(value: ComValue) -> Self {
+        Self {
+            value: value
+                .to_variant()
+                .expect("COM callback values must be exact VARIANT-compatible"),
+        }
+    }
+
+    pub fn to_com_value(&self) -> ComValue {
+        ComValue::from_variant(&self.value).expect("COM callback VARIANT must project to ComValue")
+    }
+
+    pub fn variant(&self) -> &Variant {
+        &self.value
+    }
+}
+
+impl From<ComValue> for ComCallbackValue {
+    fn from(value: ComValue) -> Self {
+        Self::from_com_value(value)
+    }
+}
+
+impl From<ComCallbackValue> for ComValue {
+    fn from(value: ComCallbackValue) -> Self {
+        value.to_com_value()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComCallbackPayload {
     pub callback: ComCallbackToken,
     pub subscription: ComSubscriptionToken,
     pub object: ObjectRef,
     pub event: ComMemberToken,
-    pub args: Vec<ComValue>,
+    pub args: Vec<ComCallbackValue>,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ComInvokeArg, ComMemberToken, ComValue};
+    use super::{ComCallbackValue, ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType,
         bstr::BStr,
@@ -471,6 +506,13 @@ mod tests {
     fn com_invoke_arg_retains_payload_as_variant() {
         let arg = ComInvokeArg::positional_value(ComValue::I32(7));
         let value = arg.value.expect("invoke arg should retain a value");
+        assert_eq!(value.variant().vtype(), VarType::Long);
+        assert_eq!(value.to_com_value(), ComValue::I32(7));
+    }
+
+    #[test]
+    fn com_callback_value_retains_payload_as_variant() {
+        let value = ComCallbackValue::from_com_value(ComValue::I32(7));
         assert_eq!(value.variant().vtype(), VarType::Long);
         assert_eq!(value.to_com_value(), ComValue::I32(7));
     }

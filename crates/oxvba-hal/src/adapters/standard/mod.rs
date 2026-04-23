@@ -2636,7 +2636,14 @@ mod tests {
         assert_eq!(payload.subscription.raw(), subscription.raw());
         assert_eq!(payload.object.raw(), object.raw());
         assert_eq!(payload.event.raw(), super::TEST_EVENT_CHANGED_PAIR);
-        assert_eq!(payload.args, vec![ComValue::I32(90), ComValue::I32(91)]);
+        assert_eq!(
+            payload
+                .args
+                .iter()
+                .map(|value| value.to_com_value())
+                .collect::<Vec<_>>(),
+            vec![ComValue::I32(90), ComValue::I32(91)]
+        );
         assert!(
             host.poll_event_callback()
                 .expect("poll_event_callback should succeed when queue is empty")

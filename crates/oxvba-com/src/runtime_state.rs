@@ -1,7 +1,7 @@
 use crate::{
-    ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComObjectToken,
-    ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibEventDispatchPath,
-    TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
+    ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComMemberToken, ComObjectDescriptor,
+    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
+    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
 };
 use oxvba_runtime::{ObjectRef, Variant};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -365,6 +365,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
                 .args
                 .iter()
                 .map(ComEventCallbackValue::to_com_value)
+                .map(ComCallbackValue::from_com_value)
                 .collect(),
         })
     }
@@ -455,7 +456,7 @@ mod tests {
             .expect("queued callback should be available");
         assert_eq!(payload.subscription.raw(), subscription.raw());
         assert_eq!(payload.object, object_ref);
-        assert_eq!(payload.args, vec![ComValue::I32(7)]);
+        assert_eq!(payload.args[0].to_com_value(), ComValue::I32(7));
     }
 
     #[test]
@@ -487,7 +488,7 @@ mod tests {
         let projected = state
             .take_polled_callback()
             .expect("queued callback should still project through public payload");
-        assert_eq!(projected.args, vec![ComValue::I32(9)]);
+        assert_eq!(projected.args[0].to_com_value(), ComValue::I32(9));
     }
 
     #[test]

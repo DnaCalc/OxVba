@@ -244,7 +244,11 @@ impl From<ComCallbackPayload> for DynamicEventPayload {
             subscription: value.subscription.into(),
             object: value.object,
             event: value.event,
-            args: value.args.into_iter().map(Into::into).collect(),
+            args: value
+                .args
+                .into_iter()
+                .map(|value| value.to_com_value().into())
+                .collect(),
         }
     }
 }

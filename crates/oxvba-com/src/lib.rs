@@ -46,8 +46,8 @@ pub use invoke_policy::{
 };
 
 pub use model::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
-    ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
+    ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComInvokeArg, ComInvokeKind,
+    ComInvokeRequest, ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
     ComSubscriptionToken, ComValue, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 pub use platform::portable::PortableComProjection;
