@@ -68,6 +68,12 @@ Implemented:
 20. `SafeArray` now has Variant-native construction, element-read, and
     element-replacement APIs. Existing `RuntimeValue` element APIs are
     compatibility projections over the Variant path, and clone/equality now use
+21. VM/JIT `StrPtr`, generic `VarPtr`, `VarPtr(String)`, and `ObjPtr` now read
+    canonical slot `Variant` values before constructing boundary pointer cells.
+    The generic `VarPtr` array-buffer lane stays on the byte-payload path for
+    `VarPtr(buf(0))`, and typed `VT_UI1` SAFEARRAY replacement now coerces
+    canonical `Empty` default slots back to zero during typed element encoding
+    so byte-buffer pointer/native lanes stay green.
     canonical Variant element reads rather than semantic `RuntimeValue`
     element reads.
 21. The Windows `VARIANT`/`SAFEARRAY` bridge now constructs internal
@@ -819,12 +825,17 @@ Remaining blocker:
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
    projection APIs that still expose `RuntimeValue`, legacy COM dispatch
    `RuntimeValue` compatibility methods, embedded/immediate compatibility APIs
-   that still expose `RuntimeValue`, and non-Variant pointer-helper behavior
-   such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant variables.
+   that still expose `RuntimeValue`, and any remaining non-Variant
+   pointer-helper/manual registry utilities that still accept semantic values
+   by contract.
 5. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
    compatibility results. They now project from Variant-backed companion
    surfaces, but they remain open classification work before the final `vmm-e6`
    closure checklist.
+6. Post-run host evidence for `VarPtr(Variant)` must treat the returned pointer
+   as an actual VM/JIT slot address rather than a long-lived registry-owned
+   helper cell. Runtime unit coverage still verifies the Windows container-cell
+   materialization path separately via pointer-helper boundary helpers.
 6. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
