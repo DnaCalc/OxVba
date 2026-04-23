@@ -1795,6 +1795,10 @@ Child beads:
      - progress landed: VM `For Each` array materialization now reads
        SAFEARRAY payloads via `variant_elements()` and retains iterator items
        directly as `RuntimeSlot::Variant`
+     - progress landed: VM semantic array get/set now read and replace
+       SAFEARRAY payload slots through `variant_elements()` /
+       `replace_variant_elements()`, keeping `RuntimeValue` only at the
+       semantic API boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
