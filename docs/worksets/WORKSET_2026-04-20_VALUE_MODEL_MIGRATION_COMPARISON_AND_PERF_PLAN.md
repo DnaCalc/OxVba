@@ -1799,6 +1799,9 @@ Child beads:
        SAFEARRAY payload slots through `variant_elements()` /
        `replace_variant_elements()`, keeping `RuntimeValue` only at the
        semantic API boundary
+     - progress landed: Windows `IEnumVARIANT` materialization now builds the
+       resulting internal array through `SafeArray::from_variants()` after COM
+       projection/binding, rather than retaining a `RuntimeValue` vector
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
