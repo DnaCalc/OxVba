@@ -2798,14 +2798,14 @@ pub extern "C" fn oxrt_host_withevents_get(
     let value = state
         .withevents_bindings
         .get(&key)
-        .map(JitRuntimeSlot::to_runtime_value)
-        .transpose();
-    let value = match value {
-        Ok(Some(value)) => value,
-        Ok(None) => RuntimeValue::I32(0),
-        Err(_) => return ERR_RUNTIME,
+        .cloned()
+        .unwrap_or_else(|| JitRuntimeSlot::Variant(Variant::from_i32(0)));
+    match value {
+        JitRuntimeSlot::Variant(value) => write_variant_slot!(ctx, dst, value),
+        JitRuntimeSlot::BindingHandle(handle) => {
+            write_slot!(ctx, dst, RuntimeValue::BindingHandle(handle))
+        }
     };
-    write_slot!(ctx, dst, value);
     OK
 }
 
@@ -2819,7 +2819,7 @@ pub extern "C" fn oxrt_host_withevents_set(
 ) -> i32 {
     let owner_val = read_slot!(ctx, owner_slot);
     let binding_val = read_slot!(ctx, binding_slot);
-    let val = read_slot!(ctx, value);
+    let val = read_variant_slot!(ctx, value);
     let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
@@ -2830,16 +2830,14 @@ pub extern "C" fn oxrt_host_withevents_set(
     };
     let key = semantics::withevents_binding_key(&owner, binding);
     let state = unsafe { (*ctx).host_state_mut() };
-    if semantics::runtime_value_is_explicit_zero_carrier(&val) {
+    if val.as_i32() == Some(0) {
         state.withevents_bindings.remove(&key);
     } else {
-        let slot = match JitRuntimeSlot::from_runtime_value(val.clone()) {
-            Ok(slot) => slot,
-            Err(_) => return ERR_RUNTIME,
-        };
-        state.withevents_bindings.insert(key, slot);
+        state
+            .withevents_bindings
+            .insert(key, JitRuntimeSlot::Variant(val.clone()));
     }
-    write_slot!(ctx, dst, val);
+    write_variant_slot!(ctx, dst, val);
     OK
 }
 
@@ -2880,15 +2878,16 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
         write_slot!(ctx, dst, RuntimeValue::I32(0));
         return OK;
     }
+    let source_variant = read_variant_slot!(ctx, source);
     let state = unsafe { (*ctx).host_state_mut() };
     let mut owners: Vec<_> = state
         .withevents_bindings
         .iter()
         .filter_map(|(key, value)| {
-            let Ok(value) = value.to_runtime_value() else {
+            let JitRuntimeSlot::Variant(value) = value else {
                 return None;
             };
-            if value != source_val || semantics::withevents_binding_from_key(*key) != binding {
+            if value != &source_variant || semantics::withevents_binding_from_key(*key) != binding {
                 return None;
             }
             Some(semantics::withevents_owner_from_key(*key))
