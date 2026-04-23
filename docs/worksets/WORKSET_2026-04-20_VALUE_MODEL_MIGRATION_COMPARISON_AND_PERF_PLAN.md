@@ -1802,6 +1802,9 @@ Child beads:
      - progress landed: Windows `IEnumVARIANT` materialization now builds the
        resulting internal array through `SafeArray::from_variants()` after COM
        projection/binding, rather than retaining a `RuntimeValue` vector
+     - progress landed: pointer-helper array projection paths now read
+       SAFEARRAY payloads through `variant_elements()` and only project to byte
+       buffers or Windows `VARIANT` values at the pointer-helper boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
