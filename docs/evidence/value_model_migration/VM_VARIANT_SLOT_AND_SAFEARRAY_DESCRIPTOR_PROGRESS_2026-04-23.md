@@ -173,6 +173,11 @@ Implemented:
     slot carriers. The existing `extract_user_values()` API remains as a
     compatibility projection over those carriers for current public snapshot
     callers.
+43. VM execution context result extraction now has a Variant-native
+    `snapshot_variants()` path that returns exact user-visible `Variant` slot
+    carriers. The existing `snapshot()` and `snapshot_values()` APIs now project
+    from that Variant-native surface and remain compatibility result APIs for
+    current callers.
 
 Validation:
 
@@ -447,6 +452,19 @@ Validation:
       functions
 123. `./scripts/check-governance.ps1`
     - result: passed
+124. `cargo fmt --check`
+    - result: passed
+125. `cargo test -p oxvba-vm --lib snapshot_variants_exposes_variant_cells_before_projection -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM digit helper
+      functions
+126. `cargo test -p oxvba-vm --lib snapshot_values_preserve_non_legacy_runtime_values -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM digit helper
+      functions
+127. `cargo check -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+128. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -519,6 +537,9 @@ Implementation progress:
 18. JIT result extraction now has a Variant-native result surface through
     `extract_user_variants()`, with `extract_user_values()` kept as a public
     compatibility projection.
+19. VM result extraction now has a Variant-native result surface through
+    `snapshot_variants()`, with `snapshot()` and `snapshot_values()` kept as
+    public compatibility projections over that surface.
 
 Remaining blocker:
 
@@ -531,10 +552,10 @@ Remaining blocker:
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
    `ParamArray` SAFEARRAY payload construction, and VM project-dynamic callee
    argument binding, VM/JIT dynamic COM result slot writes, JIT WithEvents
-   retained-value get/set/owner-search, VM `For Each` next-item delivery, and
-   VM WithEvents retained-value get/set/owner-search, and VM project-dynamic
-   dispatch return/destination writes no longer retain it as their backing
-   value store for normal VBA values.
+   retained-value get/set/owner-search, VM `For Each` next-item delivery, VM
+   WithEvents retained-value get/set/owner-search, VM project-dynamic dispatch
+   return/destination writes, and VM/JIT result extraction companion APIs no
+   longer retain it as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
@@ -549,9 +570,10 @@ Remaining blocker:
    `RuntimeValue` compatibility methods, and non-Variant pointer-helper
    behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
    variables.
-6. Public VM/JIT snapshot APIs still expose `RuntimeValue` compatibility
-   results. They now project from Variant-backed slots, but they remain open
-   classification work before the final `vmm-e6` closure checklist.
+6. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
+   compatibility results. They now project from Variant-backed companion
+   surfaces, but they remain open classification work before the final `vmm-e6`
+   closure checklist.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
