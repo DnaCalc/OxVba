@@ -913,8 +913,26 @@ pub fn runtime_vartype_tag_bounded(value: &RuntimeValue) -> i32 {
     }
 }
 
+pub fn runtime_vartype_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
+    match value.vtype() {
+        oxvba_runtime::VarType::Empty => 0,
+        oxvba_runtime::VarType::Null => 1,
+        oxvba_runtime::VarType::Error => 10,
+        oxvba_runtime::VarType::ArrayVariant => 8192 + 12,
+        _ => 3,
+    }
+}
+
 pub fn runtime_typename_tag_bounded(value: &RuntimeValue) -> i32 {
     if runtime_value_is_array_compat(value) {
+        1001
+    } else {
+        1002
+    }
+}
+
+pub fn runtime_typename_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
+    if matches!(value.vtype(), oxvba_runtime::VarType::ArrayVariant) {
         1001
     } else {
         1002
@@ -935,6 +953,16 @@ pub fn runtime_is_numeric_tag_bounded(value: &RuntimeValue) -> i32 {
         {
             0
         }
+        _ => 1,
+    }
+}
+
+pub fn runtime_is_numeric_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
+    match value.vtype() {
+        oxvba_runtime::VarType::Empty
+        | oxvba_runtime::VarType::Null
+        | oxvba_runtime::VarType::Error
+        | oxvba_runtime::VarType::ArrayVariant => 0,
         _ => 1,
     }
 }

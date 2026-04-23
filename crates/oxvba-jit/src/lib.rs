@@ -389,6 +389,38 @@ mod tests {
     }
 
     #[test]
+    fn runtime_tag_classifiers_read_variant_array_carriers() {
+        let mut ctx = JitContextOwned::new(4, 4, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_safearray(SafeArray::from_values(vec![
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(2),
+                ])),
+            );
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_vartype_tag(ctx.context_ptr(), 1, 0),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_typename_tag(ctx.context_ptr(), 2, 0),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_numeric_tag(ctx.context_ptr(), 3, 0),
+            0
+        );
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[1], RuntimeValue::I32(8204));
+        assert_eq!(values[2], RuntimeValue::I32(1001));
+        assert_eq!(values[3], RuntimeValue::I32(0));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {

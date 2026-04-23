@@ -1955,6 +1955,11 @@ Child beads:
        source array slot through `read_variant_slot()` and compute bounds
        against the retained SAFEARRAY-backed Variant carrier rather than
        projecting the operand through `RuntimeValue::ArrayIntent`
+     - progress landed: VM semantics now has Variant-native tag-classifier
+       companions for `VarTypeTag`, `TypeNameTag`, and `IsNumericTag`, and the
+       matching JIT helpers now classify the retained slot `Variant` directly
+       for those tag-only paths instead of reading a temporary `RuntimeValue`
+       first
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

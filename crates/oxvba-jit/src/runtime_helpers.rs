@@ -1227,8 +1227,8 @@ pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let code = semantics::runtime_vartype_tag_bounded(&val);
+    let val = read_variant_slot!(ctx, src);
+    let code = semantics::runtime_vartype_tag_bounded_variant(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(code));
     OK
 }
@@ -1326,16 +1326,16 @@ pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = semantics::runtime_typename_tag_bounded(&val);
+    let val = read_variant_slot!(ctx, src);
+    let out = semantics::runtime_typename_tag_bounded_variant(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = semantics::runtime_is_numeric_tag_bounded(&val);
+    let val = read_variant_slot!(ctx, src);
+    let out = semantics::runtime_is_numeric_tag_bounded_variant(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
