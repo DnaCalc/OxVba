@@ -94,6 +94,10 @@ Implemented:
     `variant_elements()` / `replace_variant_elements()`. The semantic API still
     returns and accepts `RuntimeValue` at its boundary, but the array payload
     mutation path no longer uses `RuntimeValue` as the stored element carrier.
+26. Windows `IEnumVARIANT` materialization now builds the resulting internal
+    array with `SafeArray::from_variants()` rather than `SafeArray::from_values()`,
+    keeping the enumerator payload array on the Variant carrier path after COM
+    object binding/projection completes.
 
 Validation:
 
@@ -192,6 +196,14 @@ Validation:
 44. `cargo fmt --check`
     - result: passed
 45. `./scripts/check-governance.ps1`
+    - result: passed
+46. `cargo test -p oxvba-com --lib unknown_enumvariant_result_materializes_to_runtime_array -- --nocapture`
+    - result: `1` passed
+47. `cargo test -p oxvba-com --lib windows_variant -- --nocapture`
+    - result: `28` passed
+48. `cargo fmt --check`
+    - result: passed
+49. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
