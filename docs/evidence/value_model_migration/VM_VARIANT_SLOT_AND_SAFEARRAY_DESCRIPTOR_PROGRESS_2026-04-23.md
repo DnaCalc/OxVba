@@ -243,6 +243,11 @@ Implemented:
      `read_variant_slot()` / `write_variant_slot()` so array element access no
      longer round-trips the array carrier and source value through
      `RuntimeValue` before updating the slot.
+47h. JIT `oxrt_varptr` now reads the canonical slot `Variant` directly and
+     routes all payload kinds, including SAFEARRAY-backed array values, through
+     `pointer_helpers::register_variant_pointer()`. The helper no longer reads
+     a temporary `RuntimeValue` just to special-case `ArrayIntent` before
+     falling back to the same Variant projection path.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -843,6 +848,10 @@ Implementation progress:
 35. JIT array get/set now use Variant-native semantics companions over the
     retained SAFEARRAY slot carrier. RuntimeValue remains only on the index
     compatibility boundary, not as the array/source retained-value carrier.
+36. JIT `VarPtr` now uses the exact slot `Variant` as its sole input carrier,
+    including the array lane, instead of reading a temporary `RuntimeValue`
+    only to special-case `ArrayIntent` before returning to the Variant pointer
+    registration path.
 
 Remaining blocker:
 
