@@ -1894,6 +1894,11 @@ Child beads:
        `RuntimeValue` helper APIs remain compatibility projections over those
        Variant result paths where the execution path can produce Variant
        carriers
+     - progress landed: host/project execution snapshot APIs now have
+       Variant-native companion surfaces for source execution, project
+       execution, prepared project session snapshots, and direct session slot
+       reads; existing host `RuntimeValue` snapshot APIs remain compatibility
+       projections for existing callers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
