@@ -23,6 +23,10 @@ Implemented:
 7. A brittle object-pointer unit test was corrected to keep the object alive
    while comparing against binding-token identity, avoiding allocator-address
    reuse as a false failure.
+8. `ForEachIteratorState` now stores materialized items as `RuntimeSlot`
+   values rather than `RuntimeValue` values.
+9. `withevents_bindings` now stores bound values as `RuntimeSlot` values
+   rather than `RuntimeValue` values.
 
 Validation:
 
@@ -34,13 +38,18 @@ Validation:
    - the two failures are machine-local COM registration failures for
      `OxVba.TestDispatch`:
      `CLSIDFromProgID failed for OxVba.TestDispatch with HRESULT 0x800401F3`
+5. `cargo test -p oxvba-vm --lib withevents`
+   - result: `5` passed, `1` ignored
+6. `cargo test -p oxvba-vm --lib foreach`
+   - result: compile/pass with `0` tests selected
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
    helper functions, host callbacks, `SafeArray` element construction APIs, and
-   `ComValue` bridges.
+   `ComValue` bridges. VM register storage, `For Each` iterator storage, and
+   WithEvents binding storage no longer retain it as their backing value store.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
