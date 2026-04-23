@@ -164,6 +164,10 @@ Implemented:
     `dispatch_invoke_runtime_value_v2()` /
     `dispatch_invoke_dynamic_runtime_value_v2()` as compatibility projections
     from the Variant path.
+41. VM object `_NewEnum` array inspection now matches on the returned
+    `RuntimeSlot::Variant` and reads `Variant::as_safearray()` directly before
+    materializing iterator item slots. `to_runtime_value()` remains only for the
+    unsupported-value diagnostic message on non-array variants.
 
 Validation:
 
@@ -416,6 +420,17 @@ Validation:
     - result: `7` passed; bin test target compile/pass with `0` tests selected
 113. `./scripts/check-governance.ps1`
     - result: passed
+114. `cargo fmt --check`
+    - result: passed
+115. `cargo test -p oxvba-vm --lib foreach -- --nocapture`
+    - result: compile/pass with `0` tests selected
+116. `cargo test -p oxvba-vm --lib project_dynamic -- --nocapture`
+    - result: `4` passed
+117. `cargo check -p oxvba-vm`
+    - result: passed with existing dead-code warnings in VM digit helper
+      functions
+118. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -482,6 +497,9 @@ Implementation progress:
 16. HAL COM dispatch now has Variant-native direct and dynamic dispatch seams.
     Existing `RuntimeValue` COM dispatch methods remain as compatibility
     projections over the Variant path for older callers.
+17. VM object `_NewEnum` array inspection now uses `Variant::as_safearray()`
+    from the returned slot rather than projecting the returned slot to
+    `RuntimeValue` before checking for an array.
 
 Remaining blocker:
 
