@@ -1984,7 +1984,9 @@ pub fn runtime_array_set(
         return Err(format!("{field} index {:?} is out of range", indices));
     };
     *slot = new_value.clone();
-    Ok(RuntimeValue::ArrayIntent(updated.replace_elements(elements)?))
+    Ok(RuntimeValue::ArrayIntent(
+        updated.replace_elements(elements)?,
+    ))
 }
 
 pub fn runtime_array_lbound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {

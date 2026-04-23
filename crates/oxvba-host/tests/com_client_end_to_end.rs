@@ -8,12 +8,13 @@ mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue,
+        bstr::BStr,
         safe_array::{
-            SafeArray, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
-            VT_DECIMAL_VALUE, VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE,
-            VT_I8_VALUE, VT_INT_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE, VT_UI4_VALUE,
-            VT_UI8_VALUE, VT_UINT_VALUE, VT_UNKNOWN_VALUE,
+            SafeArray, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
+            VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_INT_VALUE,
+            VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE, VT_UI4_VALUE, VT_UI8_VALUE, VT_UINT_VALUE,
+            VT_UNKNOWN_VALUE,
         },
     };
 

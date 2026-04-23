@@ -25,7 +25,7 @@ use oxvba_hal::{
     traits::{DynLinkDescriptorView, HostServices},
 };
 use oxvba_runtime::safe_array::{
-    SafeArray, SafeArrayBound, VT_BSTR_VALUE, VT_BOOL_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
+    SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
 };
@@ -3438,10 +3438,8 @@ impl Vm {
         values
             .into_iter()
             .map(|value| {
-                RuntimeSlot::from_runtime_value(value).map_err(|detail| ForEachInitError {
-                    code: 13,
-                    detail,
-                })
+                RuntimeSlot::from_runtime_value(value)
+                    .map_err(|detail| ForEachInitError { code: 13, detail })
             })
             .collect()
     }
@@ -4554,7 +4552,8 @@ fn runtime_resized_array_preserve(
             .checked_mul(resized_last)
             .ok_or_else(|| "runtime ReDim Preserve resized block offset overflowed".to_string())?;
         for offset in 0..overlap {
-            resized_values[resized_start + offset] = previous_values[previous_start + offset].clone();
+            resized_values[resized_start + offset] =
+                previous_values[previous_start + offset].clone();
         }
     }
     resized.replace_elements(resized_values)
