@@ -220,6 +220,12 @@ Implemented:
      `RuntimeValue::from_compat_slot_i32()`. Empty/null/error/array tags and
      plain legacy integers now bridge straight into retained `Variant` payloads
      on the exact subset boundary.
+47d. JIT `JitContext::read_slot()` / `write_slot()` now treat the
+     `RuntimeValue` slot API as a compatibility projection over the existing
+     Variant-native slot accessors. Legacy writes first project into the
+     canonical `Variant` carrier, including the explicit `BindingHandle ->
+     VT_I4` compatibility lane, and legacy reads now project back from
+     `read_variant_slot()` instead of bypassing the Variant path.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -804,6 +810,11 @@ Implementation progress:
     `Variant` directly in `DynamicValue`. Object release remains a
     control/status projection through the object-release API rather than a
     retained value payload seam.
+32. JIT `JitContext` legacy slot read/write helpers now project through
+    `read_variant_slot()` / `write_variant_slot()` instead of maintaining a
+    separate `RuntimeValue` slot-storage path. The compatibility API remains
+    open classification work, but the JIT context no longer bypasses the
+    canonical Variant slot carrier when that API is used.
 
 Remaining blocker:
 
