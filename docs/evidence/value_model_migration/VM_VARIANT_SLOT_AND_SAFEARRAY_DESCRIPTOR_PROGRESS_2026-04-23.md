@@ -70,6 +70,11 @@ Implemented:
     compatibility projections over the Variant path, and clone/equality now use
     canonical Variant element reads rather than semantic `RuntimeValue`
     element reads.
+21. The Windows `VARIANT`/`SAFEARRAY` bridge now constructs internal
+    `SafeArray` values from `Variant` element vectors and emits Windows
+    `SAFEARRAY` values from `variant_elements()`. Typed scalar conversion still
+    performs per-element projection where needed, but the bridge no longer
+    owns `Vec<RuntimeValue>` as its array carrier.
 
 Validation:
 
@@ -131,6 +136,12 @@ Validation:
     - result: passed
 26. `./scripts/check-governance.ps1`
     - result: passed
+27. `cargo test -p oxvba-com --lib windows_variant -- --nocapture`
+    - result: `28` passed
+28. `cargo fmt --check`
+    - result: passed
+29. `./scripts/check-governance.ps1`
+    - result: passed
 
 Remaining blocker:
 
@@ -146,10 +157,10 @@ Remaining blocker:
    audit before closure can be claimed.
 4. Completion still requires an audit and migration of all remaining
    projection seams that can expose or retain general values: interpreter/JIT
-   helpers, HAL callback surfaces, `SafeArray` element APIs, remaining COM
-   boundary `ComValue` projection points, and non-Variant pointer-helper
-   behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
-   variables.
+   helpers, HAL callback surfaces, legacy `SafeArray` element compatibility
+   APIs, remaining COM boundary `ComValue` projection points, and non-Variant
+   pointer-helper behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr`
+   over non-Variant variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
