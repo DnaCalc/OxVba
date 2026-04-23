@@ -1766,6 +1766,10 @@ Child beads:
        `ComValue`; `DynamicCallArg` and `DynamicEventPayload` therefore retain
        variants internally and project to `ComValue` only at COM conversion
        boundaries
+     - progress landed: COM invoke requests now retain argument payloads as
+       `ComInvokeValue`, a `Variant`-backed carrier; `ComInvokeArg`
+       constructors continue to accept `ComValue` for boundary compatibility,
+       but `ComInvokeRequest.args` no longer own semantic `ComValue` payloads
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, SafeArray element APIs, `ComValue`,
        and remaining non-Variant pointer-helper behavior such as `StrPtr`,
@@ -1883,6 +1887,8 @@ Current repo grounding after `vmm-e5`:
      retaining semantic `ComValue` in the callback queue
    - dynamic COM request/event payloads now retain `DynamicValue` as a
      `Variant`-backed carrier instead of aliasing `ComValue`
+   - COM invoke request arguments now retain `ComInvokeValue` as a
+     `Variant`-backed carrier instead of owning `ComValue` directly
    - source-interface callbacks remain explicitly bounded to the existing
      narrow path (`single i32` source-interface sink support; broader COM-EVT-B
      still unsupported in the current lane)
