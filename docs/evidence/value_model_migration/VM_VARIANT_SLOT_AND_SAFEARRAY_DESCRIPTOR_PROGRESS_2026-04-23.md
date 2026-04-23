@@ -86,6 +86,10 @@ Implemented:
     `RuntimeValue` element vectors. Slot reads still project through the
     existing semantic execution APIs, but the resulting SAFEARRAY payload uses
     the native Variant path.
+24. VM `For Each` array materialization now reads array payloads through
+    `variant_elements()` and retains iterator items as `RuntimeSlot::Variant`
+    directly, removing the old `RuntimeValue`-to-slot conversion helper from
+    that path.
 
 Validation:
 
@@ -170,6 +174,12 @@ Validation:
 37. `cargo fmt --check`
     - result: passed
 38. `./scripts/check-governance.ps1`
+    - result: passed
+39. `cargo test -p oxvba-vm --lib foreach -- --nocapture`
+    - result: compile/pass with `0` tests selected
+40. `cargo fmt --check`
+    - result: passed
+41. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
