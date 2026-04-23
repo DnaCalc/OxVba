@@ -289,18 +289,34 @@ impl Vm {
     }
 
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {
-        let end = slot_count.min(self.registers.registers.len());
-        self.registers.registers[..end]
-            .iter()
-            .map(|slot| {
-                slot.to_runtime_value()
-                    .expect("VM register slot must project to RuntimeValue")
+        self.snapshot_variants(slot_count)
+            .into_iter()
+            .map(|variant| {
+                variant
+                    .to_runtime_value()
+                    .expect("VM variant snapshot must project to RuntimeValue")
             })
             .collect()
     }
 
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot(slot_count)
+    }
+
+    pub fn snapshot_variants(&self, slot_count: usize) -> Vec<Variant> {
+        let end = slot_count.min(self.registers.registers.len());
+        self.registers.registers[..end]
+            .iter()
+            .map(|slot| match slot {
+                RuntimeSlot::Variant(value) => value.clone(),
+                RuntimeSlot::BindingHandle(handle) => {
+                    panic!(
+                        "VM register slot contains non-VBA BindingHandle {}",
+                        handle.raw()
+                    )
+                }
+            })
+            .collect()
     }
 
     pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
@@ -4944,6 +4960,19 @@ mod tests {
             vec![RuntimeValue::String(BStr::from("ABC"))]
         );
         assert_eq!(vm.snapshot_slots(1), vec![EMPTY_TAG]);
+    }
+
+    #[test]
+    fn snapshot_variants_exposes_variant_cells_before_projection() {
+        let mut vm = Vm::default();
+        vm.reset_execution_state(1, false);
+        vm.write_value_slot(0, RuntimeValue::String(BStr::from("ABC")))
+            .expect("write string runtime value");
+
+        let variants = vm.snapshot_variants(1);
+
+        assert_eq!(variants[0].vtype(), oxvba_runtime::VarType::String);
+        assert_eq!(variants[0].as_bstr(), Some(BStr::from("ABC")));
     }
 
     #[test]
