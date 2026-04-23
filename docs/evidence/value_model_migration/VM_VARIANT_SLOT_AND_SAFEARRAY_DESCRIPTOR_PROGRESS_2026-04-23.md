@@ -215,6 +215,11 @@ Implemented:
      `Error`, `Object`, and encodable `SAFEARRAY`) stay exact, while
      non-representable carriers still fail with the existing compatibility-lane
      diagnostics.
+47c. `Variant::try_from_compat_slot_i32()` now decodes the legacy tag subset
+     directly into canonical `Variant` carriers rather than detouring through
+     `RuntimeValue::from_compat_slot_i32()`. Empty/null/error/array tags and
+     plain legacy integers now bridge straight into retained `Variant` payloads
+     on the exact subset boundary.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
