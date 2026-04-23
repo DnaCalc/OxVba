@@ -1805,6 +1805,9 @@ Child beads:
      - progress landed: pointer-helper array projection paths now read
        SAFEARRAY payloads through `variant_elements()` and only project to byte
        buffers or Windows `VARIANT` values at the pointer-helper boundary
+     - progress landed: SafeArray debug formatting and pointer byte-array
+       readback now use Variant element APIs rather than the legacy
+       `RuntimeValue` element projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
