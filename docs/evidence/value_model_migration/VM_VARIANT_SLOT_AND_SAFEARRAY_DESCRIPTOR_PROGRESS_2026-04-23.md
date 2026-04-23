@@ -61,6 +61,10 @@ Implemented:
     a `Variant`-backed carrier. `ComInvokeArg` constructors still accept
     `ComValue` for boundary compatibility, but `ComInvokeRequest.args` no
     longer own semantic `ComValue` payloads.
+19. Polled COM callback payloads now retain callback arguments through
+    `ComCallbackValue`, a `Variant`-backed carrier. Existing callback payload
+    consumers can still project to `ComValue`, but `ComCallbackPayload.args` no
+    longer owns semantic `ComValue` payloads.
 
 Validation:
 
@@ -112,6 +116,10 @@ Validation:
     - result: `8` passed
 21. `cargo test -p oxvba-jit --lib slot_abi -- --nocapture`
     - result: `7` passed
+22. `cargo test -p oxvba-hal --lib event_callback -- --nocapture`
+    - result: `2` passed
+23. `cargo test -p oxvba-hal --lib poll_event_callback -- --nocapture`
+    - result: compile/pass with `0` tests selected
 
 Remaining blocker:
 
