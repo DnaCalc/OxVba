@@ -3590,7 +3590,7 @@ impl Vm {
                         param.name
                     ));
                 };
-                param_array_items.push(value.to_runtime_value());
+                param_array_items.push(value.variant().clone());
                 next_positional = index;
                 continue;
             }
@@ -3609,7 +3609,7 @@ impl Vm {
         }
 
         if let Some(index) = param_array_index {
-            bound[index] = Some(RuntimeValue::ArrayIntent(SafeArray::from_values(
+            bound[index] = Some(RuntimeValue::ArrayIntent(SafeArray::from_variants(
                 param_array_items,
             )));
         }
@@ -3619,7 +3619,7 @@ impl Vm {
                 continue;
             }
             bound[index] = Some(if param.param_array {
-                RuntimeValue::ArrayIntent(SafeArray::from_values(Vec::new()))
+                RuntimeValue::ArrayIntent(SafeArray::from_variants(Vec::new()))
             } else if param.optional {
                 Self::default_project_dynamic_param_value(param)
             } else {
