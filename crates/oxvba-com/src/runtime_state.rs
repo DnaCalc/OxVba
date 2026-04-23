@@ -3,7 +3,7 @@ use crate::{
     ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibEventDispatchPath,
     TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
 };
-use oxvba_runtime::ObjectRef;
+use oxvba_runtime::{ObjectRef, Variant};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
@@ -174,11 +174,40 @@ pub struct ComEventSubscription<TTransport> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComEventCallbackValue {
+    value: Variant,
+}
+
+impl ComEventCallbackValue {
+    pub fn from_com_value(value: &ComValue) -> Self {
+        Self {
+            value: value
+                .to_variant()
+                .expect("COM event callback values must be exact VARIANT-compatible"),
+        }
+    }
+
+    pub fn to_com_value(&self) -> ComValue {
+        ComValue::from_variant(&self.value)
+            .expect("queued COM event callback VARIANT must project to ComValue")
+    }
+
+    pub fn variant(&self) -> &Variant {
+        &self.value
+    }
+}
+
+// COM event callbacks can enter from native connection point threads. The
+// retained VARIANT owns or addrefs its BSTR, SAFEARRAY, and IUnknown payloads.
+unsafe impl Send for ComEventCallbackValue {}
+unsafe impl Sync for ComEventCallbackValue {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventCallback {
     pub subscription: ComSubscriptionToken,
     pub object: ObjectRef,
     pub event: ComMemberToken,
-    pub args: Vec<ComValue>,
+    pub args: Vec<ComEventCallbackValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,7 +304,10 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
                 subscription,
                 object: entry.object.clone(),
                 event: entry.event,
-                args: args.to_vec(),
+                args: args
+                    .iter()
+                    .map(ComEventCallbackValue::from_com_value)
+                    .collect(),
             },
         );
         self.pending_callbacks.push_back(callback);
@@ -329,7 +361,11 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             subscription: payload.subscription,
             object: payload.object,
             event: payload.event,
-            args: payload.args,
+            args: payload
+                .args
+                .iter()
+                .map(ComEventCallbackValue::to_com_value)
+                .collect(),
         })
     }
 
@@ -389,7 +425,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
 mod tests {
     use super::{ComBinding, ComEventSubscription, ComRuntimeState};
     use crate::{ComMemberToken, ComValue};
-    use oxvba_runtime::ObjectRef;
+    use oxvba_runtime::{ObjectRef, VarType};
 
     #[test]
     fn runtime_state_queues_projection_callbacks() {
@@ -420,6 +456,38 @@ mod tests {
         assert_eq!(payload.subscription.raw(), subscription.raw());
         assert_eq!(payload.object, object_ref);
         assert_eq!(payload.args, vec![ComValue::I32(7)]);
+    }
+
+    #[test]
+    fn runtime_state_retains_callback_args_as_variants() {
+        let mut state = ComRuntimeState::<bool>::default();
+        let object = state.allocate_handle();
+        let object_ref = ObjectRef::from_compat_identity(object.raw());
+        let subscription = state.allocate_subscription();
+        state.subscriptions.insert(
+            subscription,
+            ComEventSubscription {
+                object: object_ref,
+                event: ComMemberToken::new(12),
+                transport: true,
+            },
+        );
+
+        assert!(state.queue_callback_for_subscription(subscription, &[ComValue::I32(9)]));
+        let callback = *state
+            .pending_callbacks
+            .front()
+            .expect("queued callback token should be retained");
+        let payload = state
+            .callbacks
+            .get(&callback)
+            .expect("queued callback payload should be retained");
+        assert_eq!(payload.args[0].variant().vtype(), VarType::Long);
+
+        let projected = state
+            .take_polled_callback()
+            .expect("queued callback should still project through public payload");
+        assert_eq!(projected.args, vec![ComValue::I32(9)]);
     }
 
     #[test]

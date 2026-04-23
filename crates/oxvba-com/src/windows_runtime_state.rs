@@ -410,13 +410,17 @@ pub fn callback_arg(
             callback.raw()
         ));
     };
-    payload.args.get(index).cloned().ok_or_else(|| {
-        format!(
-            "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",
-            index,
-            payload.args.len()
-        )
-    })
+    payload
+        .args
+        .get(index)
+        .map(|value| value.to_com_value())
+        .ok_or_else(|| {
+            format!(
+                "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",
+                index,
+                payload.args.len()
+            )
+        })
 }
 
 pub fn release_callback(
