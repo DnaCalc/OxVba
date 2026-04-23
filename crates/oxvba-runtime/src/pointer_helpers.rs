@@ -54,12 +54,6 @@ impl OwnedBstr {
         std::mem::forget(self);
         raw
     }
-
-    fn to_runtime_value(&self) -> RuntimeValue {
-        let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(self.0) } as usize;
-        let slice = unsafe { std::slice::from_raw_parts(self.0, len) };
-        RuntimeValue::String(BStr::from_utf16_lossy(slice))
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -91,15 +85,6 @@ impl OwnedBstrCell {
 
     fn as_ptr(&mut self) -> *mut c_void {
         (&mut *self.cell as *mut BSTR).cast()
-    }
-
-    fn to_runtime_value(&self) -> RuntimeValue {
-        if (*self.cell).is_null() {
-            return RuntimeValue::String(BStr::empty());
-        }
-        let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(*self.cell) } as usize;
-        let slice = unsafe { std::slice::from_raw_parts(*self.cell, len) };
-        RuntimeValue::String(BStr::from_utf16_lossy(slice))
     }
 }
 
@@ -436,9 +421,9 @@ impl PointerRegistry {
         pointer
     }
 
-    fn read_back_string_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
+    fn read_back_string_payload_variant(&self, pointer: i64) -> Result<Variant, String> {
         if pointer == 0 {
-            return Ok(RuntimeValue::String(BStr::empty()));
+            return Ok(Variant::from_string(BStr::empty()));
         }
         let Some(entry) = self.entries.get(&(pointer as usize)) else {
             return Err(format!(
@@ -447,16 +432,28 @@ impl PointerRegistry {
         };
         match entry {
             #[cfg(target_os = "windows")]
-            PointerEntry::Bstr(value) => Ok(value.to_runtime_value()),
+            PointerEntry::Bstr(value) => {
+                let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(value.0) } as usize;
+                let slice = unsafe { std::slice::from_raw_parts(value.0, len) };
+                Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
+            }
             #[cfg(target_os = "windows")]
-            PointerEntry::BstrCell(value) => Ok(value.to_runtime_value()),
+            PointerEntry::BstrCell(value) => {
+                if (*value.cell).is_null() {
+                    return Ok(Variant::from_string(BStr::empty()));
+                }
+                let len =
+                    unsafe { windows_sys::Win32::Foundation::SysStringLen(*value.cell) } as usize;
+                let slice = unsafe { std::slice::from_raw_parts(*value.cell, len) };
+                Ok(Variant::from_string(BStr::from_utf16_lossy(slice)))
+            }
             #[cfg(not(target_os = "windows"))]
             PointerEntry::Utf16(value) => {
                 let end = value
                     .iter()
                     .position(|unit| *unit == 0)
                     .unwrap_or(value.len());
-                Ok(RuntimeValue::String(BStr::from_utf16_lossy(&value[..end])))
+                Ok(Variant::from_string(BStr::from_utf16_lossy(&value[..end])))
             }
             other => Err(format!(
                 "pointer helper entry {other:?} cannot be read back as a string payload"
@@ -464,9 +461,14 @@ impl PointerRegistry {
         }
     }
 
-    fn read_back_byte_array_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
+    fn read_back_string_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
+        self.read_back_string_payload_variant(pointer)?
+            .to_runtime_value()
+    }
+
+    fn read_back_byte_array_payload_variant(&self, pointer: i64) -> Result<Variant, String> {
         if pointer == 0 {
-            return Ok(RuntimeValue::ArrayIntent(
+            return Ok(Variant::from_safearray(
                 crate::safe_array::SafeArray::from_variants(Vec::new()),
             ));
         }
@@ -476,7 +478,7 @@ impl PointerRegistry {
             ));
         };
         match entry {
-            PointerEntry::Bytes(bytes) => Ok(RuntimeValue::ArrayIntent(
+            PointerEntry::Bytes(bytes) => Ok(Variant::from_safearray(
                 crate::safe_array::SafeArray::from_variants(
                     bytes
                         .iter()
@@ -488,6 +490,11 @@ impl PointerRegistry {
                 "pointer helper entry {other:?} cannot be read back as a byte-array payload"
             )),
         }
+    }
+
+    fn read_back_byte_array_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
+        self.read_back_byte_array_payload_variant(pointer)?
+            .to_runtime_value()
     }
 }
 
@@ -826,11 +833,25 @@ pub fn read_back_string_payload(pointer: i64) -> Result<RuntimeValue, String> {
     guard.read_back_string_payload(pointer)
 }
 
+pub fn read_back_string_payload_variant(pointer: i64) -> Result<Variant, String> {
+    let guard = registry()
+        .lock()
+        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+    guard.read_back_string_payload_variant(pointer)
+}
+
 pub fn read_back_byte_array_payload(pointer: i64) -> Result<RuntimeValue, String> {
     let guard = registry()
         .lock()
         .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
     guard.read_back_byte_array_payload(pointer)
+}
+
+pub fn read_back_byte_array_payload_variant(pointer: i64) -> Result<Variant, String> {
+    let guard = registry()
+        .lock()
+        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
+    guard.read_back_byte_array_payload_variant(pointer)
 }
 
 pub fn register_byte_buffer(bytes: Vec<u8>) -> Result<i64, String> {
@@ -952,6 +973,9 @@ mod tests {
         }
         let value = super::read_back_string_payload(ptr).expect("read back updated string var");
         assert_eq!(value, RuntimeValue::String(BStr::from("alpha")));
+        let variant =
+            super::read_back_string_payload_variant(ptr).expect("read back updated string var");
+        assert_eq!(variant, Variant::from_string(BStr::from("alpha")));
     }
 
     #[cfg(target_os = "windows")]
@@ -977,6 +1001,33 @@ mod tests {
         assert_eq!(len, 4);
         let value = super::read_back_string_payload(ptr).expect("read back embedded nul string");
         assert_eq!(value, RuntimeValue::String(BStr::from("a\0bc")));
+        let variant =
+            super::read_back_string_payload_variant(ptr).expect("read back embedded nul string");
+        assert_eq!(variant, Variant::from_string(BStr::from("a\0bc")));
+    }
+
+    #[test]
+    fn byte_buffer_pointer_readback_exposes_variant_array_payload() {
+        let ptr = super::register_byte_buffer(vec![1, 2, 3]).expect("register byte buffer");
+        let variant =
+            super::read_back_byte_array_payload_variant(ptr).expect("read back byte buffer");
+        let elements = variant
+            .as_safearray()
+            .expect("variant should carry SAFEARRAY")
+            .variant_elements()
+            .expect("SAFEARRAY should expose variant elements");
+        assert_eq!(
+            elements,
+            vec![
+                Variant::from_u8(1),
+                Variant::from_u8(2),
+                Variant::from_u8(3)
+            ]
+        );
+        assert_eq!(
+            super::read_back_byte_array_payload(ptr).expect("runtime read back"),
+            RuntimeValue::ArrayIntent(crate::safe_array::SafeArray::from_variants(elements))
+        );
     }
 
     #[cfg(target_os = "windows")]

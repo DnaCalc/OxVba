@@ -1932,6 +1932,10 @@ Child beads:
        consume exact slot `Variant` carriers directly and write the resulting
        SAFEARRAY back through `write_variant_slot()`, removing the old
        read-`RuntimeValue`/rebuild-`Variant` detour from that helper family
+     - progress landed: pointer-helper string/byte-array payload readback now
+       has Variant-native companions, and JIT external-call pointer writeback
+       uses those Variant readback surfaces directly instead of converting a
+       temporary `RuntimeValue` payload back into `Variant`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for
