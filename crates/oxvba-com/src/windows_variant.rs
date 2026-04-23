@@ -12,9 +12,7 @@ use oxvba_runtime::{
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{
-    DECIMAL, SysAllocStringLen, SysFreeString, SysStringLen, VARIANT_BOOL,
-};
+use windows_sys::Win32::Foundation::{DECIMAL, SysFreeString, SysStringLen, VARIANT_BOOL};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY, SAFEARRAYBOUND};
 #[cfg(target_os = "windows")]
@@ -133,14 +131,9 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-// `oxvba-com` owns the COM wire seam. The current runtime still stores
-// semantic-first strings, so BSTR allocation remains an explicit projection at
-// this boundary.
 unsafe fn alloc_bstr(text: &BStr) -> windows_sys::core::BSTR {
-    let core = text.owned_core();
-    let len =
-        u32::try_from(core.len_code_units()).expect("BSTR UTF-16 code-unit length should fit u32");
-    SysAllocStringLen(core.payload_ptr(), len)
+    text.clone_raw_bstr()
+        .expect("BSTR clone for COM boundary should succeed")
 }
 
 #[cfg(target_os = "windows")]
@@ -892,9 +885,7 @@ where
     };
 
     let element_vt = array.element_vartype();
-    if element_vt != VT_VARIANT_VALUE
-        && SafeArray::supports_intrinsic_element_vartype(element_vt)
-    {
+    if element_vt != VT_VARIANT_VALUE && SafeArray::supports_intrinsic_element_vartype(element_vt) {
         return set_typed_array_arg(variant, array, &values, resolve_object, add_ref_dispatch);
     }
 
@@ -1003,7 +994,9 @@ fn runtime_value_to_i64(value: &oxvba_runtime::RuntimeValue) -> Result<i64, Stri
     match value {
         oxvba_runtime::RuntimeValue::I32(value) => Ok(i64::from(*value)),
         oxvba_runtime::RuntimeValue::I64(value) => Ok(*value),
-        other => Err(format!("expected integer-compatible SAFEARRAY element, got {other:?}")),
+        other => Err(format!(
+            "expected integer-compatible SAFEARRAY element, got {other:?}"
+        )),
     }
 }
 
@@ -1011,7 +1004,9 @@ fn runtime_value_to_i64(value: &oxvba_runtime::RuntimeValue) -> Result<i64, Stri
 fn runtime_value_to_f64(value: &oxvba_runtime::RuntimeValue) -> Result<f64, String> {
     match value {
         oxvba_runtime::RuntimeValue::F64(value) => Ok(value.as_f64()),
-        other => Err(format!("expected floating-point SAFEARRAY element, got {other:?}")),
+        other => Err(format!(
+            "expected floating-point SAFEARRAY element, got {other:?}"
+        )),
     }
 }
 
@@ -1029,58 +1024,104 @@ unsafe fn put_typed_safe_array_element(
         VT_I1_VALUE => {
             let scalar = i8::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i8).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const i8).cast(),
+            )
         }
         VT_UI1_VALUE => {
             let scalar = u8::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u8).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const u8).cast(),
+            )
         }
         VT_I2_VALUE => {
             let scalar = i16::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i16).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const i16).cast(),
+            )
         }
         VT_UI2_VALUE => {
             let scalar = u16::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u16).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const u16).cast(),
+            )
         }
         VT_I4_VALUE | VT_INT_VALUE => {
             let scalar = i32::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i32).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const i32).cast(),
+            )
         }
         VT_UI4_VALUE | VT_UINT_VALUE => {
             let scalar = u32::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u32).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const u32).cast(),
+            )
         }
         VT_I8_VALUE => {
             let scalar = runtime_value_to_i64(value)?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const i64).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const i64).cast(),
+            )
         }
         VT_UI8_VALUE => {
             let scalar = u64::try_from(runtime_value_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const u64).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const u64).cast(),
+            )
         }
         VT_R4_VALUE => {
             let scalar = runtime_value_to_f64(value)? as f32;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const f32).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const f32).cast(),
+            )
         }
         VT_R8_VALUE | VT_DATE_VALUE => {
             let scalar = runtime_value_to_f64(value)?;
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const f64).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const f64).cast(),
+            )
         }
         VT_CY_VALUE => {
             let oxvba_runtime::RuntimeValue::Currency(currency) = value else {
-                return Err(format!("expected Currency SAFEARRAY element, got {value:?}"));
+                return Err(format!(
+                    "expected Currency SAFEARRAY element, got {value:?}"
+                ));
             };
             let scalar = CY {
                 int64: currency.scaled_i64(),
             };
-            SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), (&scalar as *const CY).cast())
+            SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&scalar as *const CY).cast(),
+            )
         }
         VT_BOOL_VALUE => {
             let oxvba_runtime::RuntimeValue::Bool(boolean) = value else {
@@ -1118,7 +1159,10 @@ unsafe fn put_typed_safe_array_element(
             let oxvba_runtime::RuntimeValue::Object(object) = value else {
                 return Err(format!("expected Object SAFEARRAY element, got {value:?}"));
             };
-            let unknown = object.query_iunknown().raw_iunknown().cast::<core::ffi::c_void>();
+            let unknown = object
+                .query_iunknown()
+                .raw_iunknown()
+                .cast::<core::ffi::c_void>();
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1182,9 +1226,7 @@ unsafe fn set_typed_array_arg(
         SafeArrayCreate(element_vt, dims, sa_bounds.as_ptr())
     };
     if psa.is_null() {
-        return Err(format!(
-            "SafeArrayCreate(0x{element_vt:04X}) returned null"
-        ));
+        return Err(format!("SafeArrayCreate(0x{element_vt:04X}) returned null"));
     }
 
     let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
@@ -1622,10 +1664,11 @@ mod tests {
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr,
+        CurrencyValue, Decimal96, F64Value, RuntimeValue,
+        bstr::BStr,
         safe_array::{
-            SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
-            VT_I2_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,
+            SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_I2_VALUE,
+            VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,
         },
     };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};

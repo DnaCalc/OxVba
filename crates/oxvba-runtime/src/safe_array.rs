@@ -183,67 +183,19 @@ pub struct SafeArray(NonNull<RawSafeArray>);
 unsafe impl Send for SafeArray {}
 unsafe impl Sync for SafeArray {}
 
-const RAW_BSTR_PREFIX_BYTES: usize = core::mem::size_of::<u32>();
-const RAW_BSTR_UNIT_BYTES: usize = core::mem::size_of::<u16>();
-
-fn raw_bstr_layout(len_units: usize) -> Result<std::alloc::Layout, String> {
-    let payload_bytes = len_units
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(RAW_BSTR_UNIT_BYTES))
-        .ok_or_else(|| "BSTR payload size overflow".to_string())?;
-    let total = RAW_BSTR_PREFIX_BYTES
-        .checked_add(payload_bytes)
-        .ok_or_else(|| "BSTR allocation size overflow".to_string())?;
-    std::alloc::Layout::from_size_align(total, core::mem::align_of::<u32>())
-        .map_err(|_| "invalid BSTR allocation layout".to_string())
-}
-
-unsafe fn raw_bstr_len_units(ptr: *mut u16) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-    let prefix = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES).cast::<u32>() };
-    usize::try_from(unsafe { *prefix } / RAW_BSTR_UNIT_BYTES as u32).unwrap_or(0)
-}
-
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
-    let core = text.owned_core();
-    let units = core.payload_units();
-    let layout = raw_bstr_layout(units.len())?;
-    let raw = unsafe { std::alloc::alloc(layout) };
-    if raw.is_null() {
-        return Err("failed to allocate raw BSTR payload".to_string());
-    }
-    unsafe {
-        raw.cast::<u32>()
-            .write(u32::try_from(units.len() * RAW_BSTR_UNIT_BYTES).map_err(|_| {
-                "BSTR payload length should fit in u32 byte count".to_string()
-            })?);
-        let payload = raw.add(RAW_BSTR_PREFIX_BYTES).cast::<u16>();
-        core::ptr::copy_nonoverlapping(units.as_ptr(), payload, units.len());
-        payload.add(units.len()).write(0);
-        Ok(payload)
-    }
+    text.clone_raw_bstr()
 }
 
 unsafe fn free_raw_bstr(ptr: *mut u16) {
-    if ptr.is_null() {
-        return;
-    }
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    if let Ok(layout) = raw_bstr_layout(len) {
-        let raw = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES) };
-        unsafe { std::alloc::dealloc(raw, layout) };
-    }
+    let _ = unsafe { BStr::from_raw_bstr(ptr) };
 }
 
 unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
-    if ptr.is_null() {
-        return BStr::empty();
-    }
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
-    BStr::from_utf16_lossy(slice)
+    let text = unsafe { BStr::from_raw_bstr(ptr) };
+    let cloned = text.clone();
+    core::mem::forget(text);
+    cloned
 }
 
 fn bounds_layout(dimensions: usize) -> Result<std::alloc::Layout, String> {
@@ -324,14 +276,18 @@ fn runtime_i64(value: &RuntimeValue) -> Result<i64, String> {
     match value {
         RuntimeValue::I32(value) => Ok(i64::from(*value)),
         RuntimeValue::I64(value) => Ok(*value),
-        other => Err(format!("expected integer-compatible SAFEARRAY element, got {other:?}")),
+        other => Err(format!(
+            "expected integer-compatible SAFEARRAY element, got {other:?}"
+        )),
     }
 }
 
 fn runtime_f64(value: &RuntimeValue) -> Result<f64, String> {
     match value {
         RuntimeValue::F64(value) => Ok(value.as_f64()),
-        other => Err(format!("expected floating-point SAFEARRAY element, got {other:?}")),
+        other => Err(format!(
+            "expected floating-point SAFEARRAY element, got {other:?}"
+        )),
     }
 }
 
@@ -342,8 +298,7 @@ unsafe fn decode_element(
 ) -> Result<RuntimeValue, String> {
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     Ok(match kind {
-        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }
-            .to_runtime_value()?,
+        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.to_runtime_value()?,
         SafeArrayElementKind::I1 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<i8>() })),
         SafeArrayElementKind::Ui1 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<u8>() })),
         SafeArrayElementKind::I2 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<i16>() })),
@@ -357,21 +312,30 @@ unsafe fn decode_element(
         SafeArrayElementKind::I8 => RuntimeValue::I64(unsafe { *ptr.cast::<i64>() }),
         SafeArrayElementKind::Ui8 => {
             let value = unsafe { *ptr.cast::<u64>() };
-            RuntimeValue::I64(
-                i64::try_from(value)
-                    .map_err(|_| format!("VT_UI8 SAFEARRAY element {value} exceeds i64 carrier range"))?,
-            )
+            RuntimeValue::I64(i64::try_from(value).map_err(|_| {
+                format!("VT_UI8 SAFEARRAY element {value} exceeds i64 carrier range")
+            })?)
         }
         SafeArrayElementKind::R4 => {
-            RuntimeValue::F64(F64Value::from_single_f64(f64::from(unsafe { *ptr.cast::<f32>() })))
+            RuntimeValue::F64(F64Value::from_single_f64(f64::from(unsafe {
+                *ptr.cast::<f32>()
+            })))
         }
-        SafeArrayElementKind::R8 => RuntimeValue::F64(F64Value::from_f64(unsafe { *ptr.cast::<f64>() })),
+        SafeArrayElementKind::R8 => {
+            RuntimeValue::F64(F64Value::from_f64(unsafe { *ptr.cast::<f64>() }))
+        }
         SafeArrayElementKind::Currency => {
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(unsafe { *ptr.cast::<i64>() }))
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(unsafe {
+                *ptr.cast::<i64>()
+            }))
         }
-        SafeArrayElementKind::Date => RuntimeValue::F64(F64Value::from_date_f64(unsafe { *ptr.cast::<f64>() })),
+        SafeArrayElementKind::Date => {
+            RuntimeValue::F64(F64Value::from_date_f64(unsafe { *ptr.cast::<f64>() }))
+        }
         SafeArrayElementKind::Bool => RuntimeValue::Bool(unsafe { *ptr.cast::<i16>() } != 0),
-        SafeArrayElementKind::BStr => RuntimeValue::String(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) }),
+        SafeArrayElementKind::BStr => {
+            RuntimeValue::String(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) })
+        }
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => {
             let raw = bytes_to_raw_iunknown(unsafe { *ptr.cast::<[u8; 8]>() });
             let Some(object) = (unsafe { ObjectRef::from_raw_iunknown_addref(raw) }) else {
@@ -394,42 +358,48 @@ unsafe fn encode_element(
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
     match kind {
         SafeArrayElementKind::Variant => {
-            unsafe { ptr.cast::<Variant>().write(Variant::try_from_runtime_value(value)?) };
+            unsafe {
+                ptr.cast::<Variant>()
+                    .write(Variant::try_from_runtime_value(value)?)
+            };
         }
         SafeArrayElementKind::I1 => unsafe {
-            ptr.cast::<i8>().write(
-                i8::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?,
-            );
+            ptr.cast::<i8>()
+                .write(i8::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_I1 SAFEARRAY element")
+                })?);
         },
         SafeArrayElementKind::Ui1 => unsafe {
             ptr.cast::<u8>().write(
-                u8::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?,
+                u8::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_UI1 SAFEARRAY element")
+                })?,
             );
         },
         SafeArrayElementKind::I2 => unsafe {
-            ptr.cast::<i16>().write(
-                i16::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?,
-            );
+            ptr.cast::<i16>()
+                .write(i16::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_I2 SAFEARRAY element")
+                })?);
         },
         SafeArrayElementKind::Ui2 => unsafe {
             ptr.cast::<u16>().write(
-                u16::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?,
+                u16::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_UI2 SAFEARRAY element")
+                })?,
             );
         },
         SafeArrayElementKind::I4 | SafeArrayElementKind::Int => unsafe {
-            ptr.cast::<i32>().write(
-                i32::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?,
-            );
+            ptr.cast::<i32>()
+                .write(i32::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_I4 SAFEARRAY element")
+                })?);
         },
         SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => unsafe {
             ptr.cast::<u32>().write(
-                u32::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?,
+                u32::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_UI4 SAFEARRAY element")
+                })?,
             );
         },
         SafeArrayElementKind::I8 => unsafe {
@@ -437,8 +407,9 @@ unsafe fn encode_element(
         },
         SafeArrayElementKind::Ui8 => unsafe {
             ptr.cast::<u64>().write(
-                u64::try_from(runtime_i64(value)?)
-                    .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?,
+                u64::try_from(runtime_i64(value)?).map_err(|_| {
+                    format!("value {value:?} does not fit VT_UI8 SAFEARRAY element")
+                })?,
             );
         },
         SafeArrayElementKind::R4 => unsafe {
@@ -449,18 +420,25 @@ unsafe fn encode_element(
         },
         SafeArrayElementKind::Currency => match value {
             RuntimeValue::Currency(value) => unsafe { ptr.cast::<i64>().write(value.scaled_i64()) },
-            other => return Err(format!("expected Currency SAFEARRAY element, got {other:?}")),
+            other => {
+                return Err(format!(
+                    "expected Currency SAFEARRAY element, got {other:?}"
+                ));
+            }
         },
         SafeArrayElementKind::Date => unsafe {
             ptr.cast::<f64>().write(runtime_f64(value)?);
         },
         SafeArrayElementKind::Bool => match value {
-            RuntimeValue::Bool(value) => unsafe { ptr.cast::<i16>().write(if *value { -1 } else { 0 }) },
+            RuntimeValue::Bool(value) => unsafe {
+                ptr.cast::<i16>().write(if *value { -1 } else { 0 })
+            },
             other => return Err(format!("expected Bool SAFEARRAY element, got {other:?}")),
         },
         SafeArrayElementKind::BStr => match value {
             RuntimeValue::String(value) => unsafe {
-                ptr.cast::<*mut u16>().write(alloc_raw_bstr_from_bstr(value)?)
+                ptr.cast::<*mut u16>()
+                    .write(alloc_raw_bstr_from_bstr(value)?)
             },
             other => return Err(format!("expected String SAFEARRAY element, got {other:?}")),
         },
@@ -591,8 +569,9 @@ impl SafeArray {
         element_vt: u16,
         values: Option<Vec<RuntimeValue>>,
     ) -> Result<Self, String> {
-        let kind = SafeArrayElementKind::from_vartype(element_vt)
-            .ok_or_else(|| format!("unsupported intrinsic SAFEARRAY element vartype 0x{element_vt:04X}"))?;
+        let kind = SafeArrayElementKind::from_vartype(element_vt).ok_or_else(|| {
+            format!("unsupported intrinsic SAFEARRAY element vartype 0x{element_vt:04X}")
+        })?;
         let expected_len = bounds_total_len(&bounds)?;
         let pv_data = match values {
             Some(values) => {
@@ -687,7 +666,8 @@ impl SafeArray {
         if dims == 0 {
             return Vec::new();
         }
-        let ptr = unsafe { core::ptr::addr_of!((*self.0.as_ptr()).rgsabound).cast::<SafeArrayBound>() };
+        let ptr =
+            unsafe { core::ptr::addr_of!((*self.0.as_ptr()).rgsabound).cast::<SafeArrayBound>() };
         unsafe { core::slice::from_raw_parts(ptr, dims) }.to_vec()
     }
 
@@ -736,7 +716,11 @@ impl SafeArray {
     }
 
     pub fn replace_elements(&self, values: Vec<RuntimeValue>) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(self.bounds_for_shape(), self.element_vartype(), Some(values))
+        Self::from_bounds_and_runtime_values(
+            self.bounds_for_shape(),
+            self.element_vartype(),
+            Some(values),
+        )
     }
 }
 
@@ -744,8 +728,10 @@ impl Clone for SafeArray {
     fn clone(&self) -> Self {
         let bounds = self.bounds_for_shape();
         match self.elements() {
-            Some(values) => Self::from_bounds_and_runtime_values(bounds, self.element_vartype(), Some(values))
-                .expect("cloning canonical SAFEARRAY with values should succeed"),
+            Some(values) => {
+                Self::from_bounds_and_runtime_values(bounds, self.element_vartype(), Some(values))
+                    .expect("cloning canonical SAFEARRAY with values should succeed")
+            }
             None => Self::from_bounds_and_runtime_values(bounds, self.element_vartype(), None)
                 .expect("cloning shape-only SAFEARRAY should succeed"),
         }
@@ -775,7 +761,10 @@ impl core::fmt::Debug for SafeArray {
         f.debug_struct("SafeArray")
             .field("dimensions", &self.dimensions())
             .field("len", &self.len())
-            .field("element_vartype", &format_args!("{:#06X}", self.element_vartype()))
+            .field(
+                "element_vartype",
+                &format_args!("{:#06X}", self.element_vartype()),
+            )
             .field("bounds", &self.bounds())
             .field("elements", &self.elements())
             .finish()
@@ -833,9 +822,9 @@ pub fn marshal_dispatch_argument(value: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        ARRAY_TAG_BASE, VT_BSTR_VALUE, VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE,
-        VT_VARIANT_VALUE, SafeArray, SafeArrayBound, array_len_from_tag,
-        array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
+        ARRAY_TAG_BASE, SafeArray, SafeArrayBound, VT_BSTR_VALUE, VT_DISPATCH_VALUE, VT_I2_VALUE,
+        VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag, array_tag_from_safe_array,
+        marshal_dispatch_argument, safe_array_from_tag,
     };
     use crate::{ObjectRef, RuntimeValue, bstr::BStr};
 
@@ -927,7 +916,10 @@ mod tests {
         )
         .expect("typed array");
         assert_eq!(array.element_vartype(), VT_I2_VALUE);
-        assert_eq!(array.elements(), Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)]));
+        assert_eq!(
+            array.elements(),
+            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+        );
     }
 
     #[test]

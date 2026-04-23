@@ -8,7 +8,7 @@ use crate::{RuntimeValue, bstr::BStr};
 
 #[cfg(target_os = "windows")]
 use windows_sys::{
-    Win32::Foundation::{SysAllocStringLen, SysFreeString},
+    Win32::Foundation::SysFreeString,
     Win32::System::Com::SAFEARRAYBOUND,
     Win32::System::Ole::{
         SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement,
@@ -27,19 +27,16 @@ const VT_R8: u16 = 5;
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
-// Pointer helpers expose real Windows BSTR cells, allocating from the
-// canonical UTF-16/BSTR-shaped runtime string carrier.
+// Pointer helpers expose real Windows BSTR cells by cloning the canonical
+// runtime BSTR payload.
 struct OwnedBstr(BSTR);
 
 #[cfg(target_os = "windows")]
 impl OwnedBstr {
     fn from_bstr(text: &BStr) -> Result<Self, String> {
-        let core = text.owned_core();
-        let len = u32::try_from(core.len_code_units())
-            .map_err(|_| "string too long to allocate BSTR backing storage".to_string())?;
-        let bstr = unsafe { SysAllocStringLen(core.payload_ptr(), len) };
+        let bstr = text.clone_raw_bstr()?;
         if bstr.is_null() {
-            return Err("failed to allocate BSTR backing storage for pointer helper".to_string());
+            return Ok(Self(std::ptr::null_mut()));
         }
         Ok(Self(bstr))
     }
@@ -185,7 +182,8 @@ unsafe fn set_windows_variant_array_arg(
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for runtime_value in values {
             let mut element: VARIANT = std::mem::zeroed();
-            if let Err(detail) = set_windows_variant_from_runtime_value(&mut element, &runtime_value)
+            if let Err(detail) =
+                set_windows_variant_from_runtime_value(&mut element, &runtime_value)
             {
                 let _ = VariantClear(&mut element);
                 let _ = SafeArrayDestroy(psa.cast_const());
@@ -282,93 +280,97 @@ unsafe fn set_windows_variant_from_runtime_value(
         _ => {
             let canonical = crate::Variant::try_from_runtime_value(value)?;
             match canonical.vtype() {
-            crate::VarType::Empty => {
-                (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
-            }
-            crate::VarType::Null => {
-                (*variant).Anonymous.Anonymous.vt = VT_NULL;
-            }
-            crate::VarType::Error => {
-                (*variant).Anonymous.Anonymous.vt = VT_ERROR;
-                (*variant).Anonymous.Anonymous.Anonymous.scode =
-                    canonical.as_error_code().expect("error payload");
-            }
-            crate::VarType::Integer | crate::VarType::Long => {
-                (*variant).Anonymous.Anonymous.vt = VT_I4;
-                (*variant).Anonymous.Anonymous.Anonymous.lVal = canonical
-                    .to_runtime_value()?
-                    .as_i32_lossy()
-                    .expect("integer payload should project into i32");
-            }
-            crate::VarType::LongLong => {
-                (*variant).Anonymous.Anonymous.vt = VT_I8;
-                (*variant).Anonymous.Anonymous.Anonymous.llVal =
-                    canonical.as_i64().expect("i64 payload");
-            }
-            crate::VarType::Boolean => {
-                (*variant).Anonymous.Anonymous.vt = VT_BOOL;
-                (*variant).Anonymous.Anonymous.Anonymous.boolVal =
-                    if canonical.as_bool().expect("bool payload") {
-                        -1
-                    } else {
-                        0
+                crate::VarType::Empty => {
+                    (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
+                }
+                crate::VarType::Null => {
+                    (*variant).Anonymous.Anonymous.vt = VT_NULL;
+                }
+                crate::VarType::Error => {
+                    (*variant).Anonymous.Anonymous.vt = VT_ERROR;
+                    (*variant).Anonymous.Anonymous.Anonymous.scode =
+                        canonical.as_error_code().expect("error payload");
+                }
+                crate::VarType::Integer | crate::VarType::Long => {
+                    (*variant).Anonymous.Anonymous.vt = VT_I4;
+                    (*variant).Anonymous.Anonymous.Anonymous.lVal = canonical
+                        .to_runtime_value()?
+                        .as_i32_lossy()
+                        .expect("integer payload should project into i32");
+                }
+                crate::VarType::LongLong => {
+                    (*variant).Anonymous.Anonymous.vt = VT_I8;
+                    (*variant).Anonymous.Anonymous.Anonymous.llVal =
+                        canonical.as_i64().expect("i64 payload");
+                }
+                crate::VarType::Boolean => {
+                    (*variant).Anonymous.Anonymous.vt = VT_BOOL;
+                    (*variant).Anonymous.Anonymous.Anonymous.boolVal =
+                        if canonical.as_bool().expect("bool payload") {
+                            -1
+                        } else {
+                            0
+                        };
+                }
+                crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
+                    let raw = match canonical.to_runtime_value()? {
+                        RuntimeValue::F64(value) => value,
+                        other => {
+                            return Err(format!(
+                                "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
+                            ));
+                        }
                     };
-            }
-            crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
-                let raw = match canonical.to_runtime_value()? {
-                    RuntimeValue::F64(value) => value,
-                    other => {
-                        return Err(format!(
-                            "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
-                        ));
-                    }
-                };
-                match raw.subtype() {
-                    crate::F64Subtype::Single => {
-                        (*variant).Anonymous.Anonymous.vt = VT_R4;
-                        (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
-                    }
-                    crate::F64Subtype::Double => {
-                        (*variant).Anonymous.Anonymous.vt = VT_R8;
-                        (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                    }
-                    crate::F64Subtype::Date => {
-                        (*variant).Anonymous.Anonymous.vt = VT_DATE;
-                        (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                    match raw.subtype() {
+                        crate::F64Subtype::Single => {
+                            (*variant).Anonymous.Anonymous.vt = VT_R4;
+                            (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
+                        }
+                        crate::F64Subtype::Double => {
+                            (*variant).Anonymous.Anonymous.vt = VT_R8;
+                            (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                        }
+                        crate::F64Subtype::Date => {
+                            (*variant).Anonymous.Anonymous.vt = VT_DATE;
+                            (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
+                        }
                     }
                 }
-            }
-            crate::VarType::Currency => {
-                (*variant).Anonymous.Anonymous.vt = VT_CY;
-                (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
-                    .as_currency_scaled_i64()
-                    .expect("currency payload");
-            }
-            crate::VarType::String => {
-                (*variant).Anonymous.Anonymous.vt = VT_BSTR;
-                let text = canonical.as_bstr().ok_or_else(|| {
-                    "canonical string Variant lost owned BSTR payload".to_string()
-                })?;
-                (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
-                    OwnedBstr::from_bstr(&text)?.into_raw();
-            }
-            crate::VarType::Decimal => {
-                let bytes = canonical.to_wire_bytes();
-                std::ptr::copy_nonoverlapping(bytes.as_ptr(), variant.cast::<u8>(), bytes.len());
-            }
-            crate::VarType::Object => {
-                return Err(
+                crate::VarType::Currency => {
+                    (*variant).Anonymous.Anonymous.vt = VT_CY;
+                    (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = canonical
+                        .as_currency_scaled_i64()
+                        .expect("currency payload");
+                }
+                crate::VarType::String => {
+                    (*variant).Anonymous.Anonymous.vt = VT_BSTR;
+                    let text = canonical.as_bstr().ok_or_else(|| {
+                        "canonical string Variant lost owned BSTR payload".to_string()
+                    })?;
+                    (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
+                        OwnedBstr::from_bstr(&text)?.into_raw();
+                }
+                crate::VarType::Decimal => {
+                    let bytes = canonical.to_wire_bytes();
+                    std::ptr::copy_nonoverlapping(
+                        bytes.as_ptr(),
+                        variant.cast::<u8>(),
+                        bytes.len(),
+                    );
+                }
+                crate::VarType::Object => {
+                    return Err(
                     "VarPtr over Variant containing unsupported object carrier is not yet supported"
                         .to_string(),
                 );
+                }
+                other => {
+                    return Err(format!(
+                        "VarPtr over Variant containing unsupported canonical type {:?} is not yet supported",
+                        other
+                    ));
+                }
             }
-            other => {
-                return Err(format!(
-                    "VarPtr over Variant containing unsupported canonical type {:?} is not yet supported",
-                    other
-                ));
-            }
-        }
         }
     }
     Ok(())

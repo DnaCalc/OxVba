@@ -138,9 +138,6 @@ impl VariantCore {
     }
 }
 
-const RAW_BSTR_PREFIX_BYTES: usize = core::mem::size_of::<u32>();
-const RAW_BSTR_UNIT_BYTES: usize = core::mem::size_of::<u16>();
-
 fn raw_bstr_ptr_to_bytes(ptr: *mut u16) -> [u8; 8] {
     (ptr as usize as u64).to_le_bytes()
 }
@@ -157,76 +154,15 @@ fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
     u64::from_le_bytes(bytes) as usize as *mut RawRuntimeIUnknown
 }
 
-fn raw_bstr_layout(len_units: usize) -> Result<std::alloc::Layout, String> {
-    let payload_bytes = len_units
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(RAW_BSTR_UNIT_BYTES))
-        .ok_or_else(|| "BSTR payload size overflow".to_string())?;
-    let total = RAW_BSTR_PREFIX_BYTES
-        .checked_add(payload_bytes)
-        .ok_or_else(|| "BSTR allocation size overflow".to_string())?;
-    std::alloc::Layout::from_size_align(total, core::mem::align_of::<u32>())
-        .map_err(|_| "invalid BSTR allocation layout".to_string())
-}
-
-unsafe fn raw_bstr_len_units(ptr: *mut u16) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-    let prefix = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES).cast::<u32>() };
-    usize::try_from(unsafe { *prefix } / RAW_BSTR_UNIT_BYTES as u32).unwrap_or(0)
-}
-
-fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
-    let layout = raw_bstr_layout(units.len())?;
-    let raw = unsafe { std::alloc::alloc(layout) };
-    if raw.is_null() {
-        return Err("failed to allocate raw BSTR payload".to_string());
-    }
-    unsafe {
-        raw.cast::<u32>()
-            .write(u32::try_from(units.len() * RAW_BSTR_UNIT_BYTES).map_err(|_| {
-                "BSTR payload length should fit in u32 byte count".to_string()
-            })?);
-        let payload = raw.add(RAW_BSTR_PREFIX_BYTES).cast::<u16>();
-        core::ptr::copy_nonoverlapping(units.as_ptr(), payload, units.len());
-        payload.add(units.len()).write(0);
-        Ok(payload)
-    }
-}
-
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
-    let core = text.owned_core();
-    alloc_raw_bstr_from_units(core.payload_units())
-}
-
-unsafe fn clone_raw_bstr(ptr: *mut u16) -> Result<*mut u16, String> {
-    if ptr.is_null() {
-        return Ok(core::ptr::null_mut());
-    }
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
-    alloc_raw_bstr_from_units(slice)
-}
-
-unsafe fn free_raw_bstr(ptr: *mut u16) {
-    if ptr.is_null() {
-        return;
-    }
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    if let Ok(layout) = raw_bstr_layout(len) {
-        let raw = unsafe { ptr.cast::<u8>().sub(RAW_BSTR_PREFIX_BYTES) };
-        unsafe { std::alloc::dealloc(raw, layout) };
-    }
+    text.clone_raw_bstr()
 }
 
 unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
-    if ptr.is_null() {
-        return BStr::empty();
-    }
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
-    BStr::from_utf16_lossy(slice)
+    let text = unsafe { BStr::from_raw_bstr(ptr) };
+    let cloned = text.clone();
+    core::mem::forget(text);
+    cloned
 }
 
 #[repr(transparent)]
@@ -276,7 +212,9 @@ impl Variant {
         match core.vtype {
             VarType::String => {
                 let ptr = bytes_to_raw_bstr(core.data_bytes());
-                let cloned = unsafe { clone_raw_bstr(ptr) }?;
+                let text = unsafe { raw_bstr_to_bstr(ptr) };
+                let cloned = text.raw_bstr();
+                core::mem::forget(text);
                 Ok(Self::from_core(VariantCore::from_bytes(
                     VarType::String,
                     raw_bstr_ptr_to_bytes(cloned),
@@ -614,13 +552,12 @@ impl Clone for Variant {
     fn clone(&self) -> Self {
         match self.vtype() {
             VarType::String => {
-                let cloned =
-                    unsafe { clone_raw_bstr(bytes_to_raw_bstr(self.data_bytes())) }.expect(
-                        "cloning canonical raw BSTR payload should succeed",
-                    );
+                let cloned = unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) };
+                let raw = cloned.raw_bstr();
+                core::mem::forget(cloned);
                 Self::from_core(VariantCore::from_bytes(
                     VarType::String,
-                    raw_bstr_ptr_to_bytes(cloned),
+                    raw_bstr_ptr_to_bytes(raw),
                 ))
             }
             VarType::Object => match self.as_object_ref() {
@@ -636,7 +573,7 @@ impl Drop for Variant {
     fn drop(&mut self) {
         match self.vtype() {
             VarType::String => unsafe {
-                free_raw_bstr(bytes_to_raw_bstr(self.data_bytes()));
+                let _ = BStr::from_raw_bstr(bytes_to_raw_bstr(self.data_bytes()));
             },
             VarType::Object => {
                 let raw = bytes_to_raw_iunknown(self.data_bytes());
@@ -686,7 +623,8 @@ impl PartialEq for Variant {
         match self.vtype() {
             VarType::String => self.as_bstr() == other.as_bstr(),
             VarType::Object => {
-                bytes_to_raw_iunknown(self.data_bytes()) == bytes_to_raw_iunknown(other.data_bytes())
+                bytes_to_raw_iunknown(self.data_bytes())
+                    == bytes_to_raw_iunknown(other.data_bytes())
             }
             _ => self.data_bytes() == other.data_bytes(),
         }
@@ -876,7 +814,8 @@ mod tests {
 
     #[test]
     fn variant_runtime_value_bridge_rejects_array_lane_and_excludes_binding_tokens() {
-        let array = Variant::try_from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
+        let array =
+            Variant::try_from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
         assert!(array.is_err());
 
         let binding = Variant::try_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));

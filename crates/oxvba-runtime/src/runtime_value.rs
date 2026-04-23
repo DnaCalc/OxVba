@@ -491,10 +491,9 @@ mod tests {
         };
         assert_eq!(object_ref.raw(), 42);
         let object_ref_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
-        let roundtripped = RuntimeValue::from_variant(
-            &object_ref_value.to_variant().expect("object-ref variant"),
-        )
-            .expect("object-ref roundtrip");
+        let roundtripped =
+            RuntimeValue::from_variant(&object_ref_value.to_variant().expect("object-ref variant"))
+                .expect("object-ref roundtrip");
         let RuntimeValue::Object(object_ref) = roundtripped else {
             panic!("expected object-ref runtime carrier");
         };
