@@ -1779,6 +1779,11 @@ Child beads:
        element APIs are compatibility projections over the Variant path, and
        clone/equality read canonical Variant elements instead of semantic
        `RuntimeValue` elements
+     - progress landed: the Windows `VARIANT`/`SAFEARRAY` bridge now reads and
+       writes internal `SafeArray` payloads through `Variant` element vectors;
+       typed scalar conversion still performs per-element projection where
+       required, but the bridge no longer owns `Vec<RuntimeValue>` as the array
+       carrier
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, legacy SafeArray element
        compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
