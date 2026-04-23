@@ -158,6 +158,12 @@ Implemented:
     The scan did not identify a current production payload-retention path that
     owns `Vec<RuntimeValue>` as the internal SAFEARRAY carrier, but the public
     compatibility APIs remain open classification work.
+40. `ComHal` now exposes Variant-native dispatch methods:
+    `dispatch_invoke_variant()` and `dispatch_invoke_dynamic_variant()`. The
+    standard host implements those as the primary path and leaves
+    `dispatch_invoke_runtime_value_v2()` /
+    `dispatch_invoke_dynamic_runtime_value_v2()` as compatibility projections
+    from the Variant path.
 
 Validation:
 
@@ -402,6 +408,14 @@ Validation:
     - result: remaining hits are compatibility API definitions and
       tests/property fixtures; no production retained-payload `Vec<RuntimeValue>`
       path was identified by this scan
+110. `cargo fmt --check`
+    - result: passed
+111. `cargo check -p oxvba-hal`
+    - result: passed
+112. `cargo test -p oxvba-hal dynlink -- --nocapture`
+    - result: `7` passed; bin test target compile/pass with `0` tests selected
+113. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -465,6 +479,9 @@ Implementation progress:
     classifies remaining `RuntimeValue` SAFEARRAY hits as compatibility/test
     surfaces by current scan, but does not close the public compatibility API
     question.
+16. HAL COM dispatch now has Variant-native direct and dynamic dispatch seams.
+    Existing `RuntimeValue` COM dispatch methods remain as compatibility
+    projections over the Variant path for older callers.
 
 Remaining blocker:
 
@@ -491,7 +508,8 @@ Remaining blocker:
    still use semantic values by contract, legacy dynamic-link symbol APIs,
    legacy `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, remaining COM
-   boundary `ComValue` projection points, and non-Variant pointer-helper
+   boundary `ComValue` projection points, legacy COM dispatch
+   `RuntimeValue` compatibility methods, and non-Variant pointer-helper
    behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
    variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
