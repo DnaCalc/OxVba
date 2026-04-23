@@ -1830,6 +1830,11 @@ Child beads:
        `RuntimeValue` before array construction; the dynamic-dispatch binder
        still exposes the existing semantic API boundary, so this is progress
        toward the exact carrier, not closure
+     - progress landed: JIT descriptor-backed external calls now route both
+       single-argument and multi-argument descriptor calls through
+       `invoke_descriptor_variants()` using slot `Variant` reads; the
+       no-descriptor legacy symbol-token path remains a compatibility
+       projection through `RuntimeValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
