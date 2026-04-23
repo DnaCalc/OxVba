@@ -2634,10 +2634,8 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     let bridge = HalComDynamicBridge::new(host.profile(), host.com());
     match bridge.invoke_dynamic(&request) {
         Ok(value) => {
-            // Normalize: COM dispatch may return error tags as I32 instead of ErrorCode.
-            let rv = value.to_runtime_value();
-            let rv = normalize_com_result(rv);
-            write_slot!(ctx, dst, rv);
+            // Normalize: COM dispatch may return error tags as I32 instead of VT_ERROR.
+            write_variant_slot!(ctx, dst, normalize_com_result_variant(value.variant()));
             OK
         }
         Err(err) => route_hal_error(ctx, err),
@@ -3337,17 +3335,14 @@ fn route_hal_error(ctx: *mut JitContext, err: HalError) -> i32 {
     route_host_error_code(ctx, code)
 }
 
-/// Normalize a COM dispatch result: if it's an I32 that encodes a legacy error tag,
-/// convert it to a proper ErrorCode. This matches the VM's implicit normalization
-/// through from_legacy_i32.
-fn normalize_com_result(value: RuntimeValue) -> RuntimeValue {
-    if let RuntimeValue::I32(v) = &value
-        && runtime_is_error_tag(*v)
-        && let Some(code) = oxvba_runtime::value_tags::error_code_from_tag(*v)
+fn normalize_com_result_variant(value: &Variant) -> Variant {
+    if let Some(value) = value.as_i32()
+        && runtime_is_error_tag(value)
+        && let Some(code) = oxvba_runtime::value_tags::error_code_from_tag(value)
     {
-        return RuntimeValue::ErrorCode(code);
+        return Variant::from_error_code(code);
     }
-    value
+    value.clone()
 }
 
 fn compat_i32_slot(ctx: *mut JitContext, slot: u32, field: &str) -> Result<i32, ()> {

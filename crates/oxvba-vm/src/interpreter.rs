@@ -29,7 +29,9 @@ use oxvba_runtime::safe_array::{
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
 };
-use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
+use oxvba_runtime::value_tags::{
+    EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag,
+};
 use oxvba_runtime::{BindingHandle, F64Value, ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
@@ -2363,7 +2365,10 @@ impl Vm {
                     );
                     match bridge.invoke_dynamic(&request) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value.to_runtime_value())?;
+                            self.write_variant_slot(
+                                *dst,
+                                Self::normalize_dynamic_result_variant(value.variant()),
+                            )?;
                             self.pump_project_com_withevents_callbacks(bytecode, typed_fastpaths)?;
                             pc += 1;
                         }
@@ -3503,6 +3508,16 @@ impl Vm {
 
     fn variants_to_slots(values: Vec<Variant>) -> Vec<RuntimeSlot> {
         values.into_iter().map(RuntimeSlot::Variant).collect()
+    }
+
+    fn normalize_dynamic_result_variant(value: &Variant) -> Variant {
+        if let Some(value) = value.as_i32()
+            && is_error_tag(value)
+            && let Some(code) = error_code_from_tag(value)
+        {
+            return Variant::from_error_code(code);
+        }
+        value.clone()
     }
 
     fn validate_runtime_assignment(
