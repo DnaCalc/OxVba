@@ -213,6 +213,10 @@ Implemented:
     carriers and invokes through `Engine::invoke_procedure_with_variants()`.
     Immediate display results still project to `RuntimeValue` at the UI-facing
     output boundary.
+51. Debugger frame value projection now reads `Variant` slots first through a
+    `DebugFrameVariantValue` companion and projects the existing
+    `DebugFrameValue` compatibility shape from that carrier. Debugger display
+    text and identifier evaluation remain UI-facing projection surfaces.
 
 Validation:
 
@@ -580,6 +584,16 @@ Validation:
       functions
 160. `./scripts/check-governance.ps1`
     - result: passed
+161. `cargo test -p oxvba-host --lib debugger -- --nocapture`
+    - result: `4` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+162. `cargo fmt --check`
+    - result: passed
+163. `cargo check -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+164. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -681,6 +695,9 @@ Implementation progress:
     through the host Variant procedure path. Its display result remains a
     compatibility projection because the Immediate Window exposes formatted
     values, not the internal runtime carrier.
+27. Debugger frame value projection now reads `Variant` slots first and exposes
+    a `DebugFrameVariantValue` companion. Existing debugger frame/evaluation
+    values remain compatibility projections for UI/display callers.
 
 Remaining blocker:
 
@@ -701,6 +718,8 @@ Remaining blocker:
    companion APIs, `ComValue` Variant bridge conversions, embedded host
    procedure invocation companion APIs, and immediate procedure invocation no
    longer retain it as their backing value store for normal VBA values.
+   Debugger frame value projection now starts from Variant slot reads before
+   compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
