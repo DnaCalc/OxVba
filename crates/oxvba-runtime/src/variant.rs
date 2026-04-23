@@ -525,7 +525,7 @@ impl Variant {
             }
             RuntimeValue::BindingHandle(handle) => {
                 return Err(format!(
-                    "binding handle {} does not yet have an exact canonical Variant carrier",
+                    "binding handle {} is an internal non-VBA token and is intentionally excluded from the canonical Variant carrier",
                     handle.raw()
                 ));
             }
@@ -875,12 +875,15 @@ mod tests {
     }
 
     #[test]
-    fn variant_runtime_value_bridge_rejects_non_exact_lanes_for_now() {
+    fn variant_runtime_value_bridge_rejects_array_lane_and_excludes_binding_tokens() {
         let array = Variant::try_from_runtime_value(&RuntimeValue::ArrayIntent(SafeArray::vector(3)));
         assert!(array.is_err());
 
         let binding = Variant::try_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
-        assert!(binding.is_err());
+        assert_eq!(
+            binding.expect_err("binding handles remain outside canonical Variant"),
+            "binding handle 7 is an internal non-VBA token and is intentionally excluded from the canonical Variant carrier"
+        );
     }
 
     #[test]
