@@ -10,7 +10,8 @@ pub mod runner;
 
 pub use debugger::{
     DebugEvaluationRequest, DebugEvaluationResult, DebugFrame, DebugFrameValue,
-    DebugFrameValueKind, DebugPauseState, DebugSession, DebugSessionError, HostDebugRunResult,
+    DebugFrameValueKind, DebugFrameVariantValue, DebugPauseState, DebugSession, DebugSessionError,
+    HostDebugRunResult,
 };
 pub use embedded::{
     EmbeddedBuildRequest, EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,

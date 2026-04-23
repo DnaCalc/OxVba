@@ -2,7 +2,7 @@ use oxvba_compiler::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProjectManifest,
 };
-use oxvba_runtime::{RuntimeValue, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, Variant, runtime_value_to_vba_string};
 use oxvba_vm::{DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop};
 use thiserror::Error;
 
@@ -23,6 +23,28 @@ pub struct DebugFrameValue {
     pub kind: DebugFrameValueKind,
     pub runtime_value: RuntimeValue,
     pub display_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugFrameVariantValue {
+    pub name: String,
+    pub slot: usize,
+    pub kind: DebugFrameValueKind,
+    pub variant_value: Variant,
+    pub display_text: String,
+}
+
+impl DebugFrameVariantValue {
+    pub fn to_runtime_value(&self) -> Result<DebugFrameValue, String> {
+        let runtime_value = self.variant_value.to_runtime_value()?;
+        Ok(DebugFrameValue {
+            name: self.name.clone(),
+            slot: self.slot,
+            kind: self.kind,
+            display_text: self.display_text.clone(),
+            runtime_value,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -269,13 +291,32 @@ impl<'engine> DebugSession<'engine> {
     }
 
     fn project_frame_value(&self, slot: &ProcedureRuntimeSlotMetadata) -> DebugFrameValue {
-        let runtime_value = self.runtime.read_slot(slot.slot);
-        DebugFrameValue {
+        self.project_frame_variant_value(slot)
+            .to_runtime_value()
+            .unwrap_or_else(|_| DebugFrameValue {
+                name: slot.name.clone(),
+                slot: slot.slot,
+                kind: project_slot_kind(slot.kind.clone()),
+                runtime_value: RuntimeValue::Empty,
+                display_text: String::new(),
+            })
+    }
+
+    fn project_frame_variant_value(
+        &self,
+        slot: &ProcedureRuntimeSlotMetadata,
+    ) -> DebugFrameVariantValue {
+        let variant_value = self.runtime.read_variant_slot(slot.slot);
+        let display_text = variant_value
+            .to_runtime_value()
+            .map(|runtime_value| format_runtime_value_for_debug(&runtime_value))
+            .unwrap_or_else(|_| format!("{variant_value:?}"));
+        DebugFrameVariantValue {
             name: slot.name.clone(),
             slot: slot.slot,
             kind: project_slot_kind(slot.kind.clone()),
-            display_text: format_runtime_value_for_debug(&runtime_value),
-            runtime_value,
+            display_text,
+            variant_value,
         }
     }
 }
@@ -311,7 +352,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{RuntimeValue, VarType};
     use oxvba_vm::DebugStopReason;
 
     use super::{DebugEvaluationRequest, DebugFrameValueKind, HostDebugRunResult};
@@ -387,6 +428,15 @@ mod tests {
             .expect("y should be visible in callee");
         assert_eq!(y.value.runtime_value, RuntimeValue::I32(4));
         assert_eq!(y.value.kind, DebugFrameValueKind::Parameter);
+        let y_slot = current
+            .values
+            .iter()
+            .find(|value| value.name.eq_ignore_ascii_case("y"))
+            .expect("y frame value")
+            .slot;
+        let y_variant = session.runtime().read_variant_slot(y_slot);
+        assert_eq!(y_variant.vtype(), VarType::Long);
+        assert_eq!(y_variant.as_i32(), Some(4));
     }
 
     #[test]
