@@ -1691,12 +1691,12 @@ fn runtime_resized_array(
 }
 
 fn runtime_resized_array_preserve(
-    current: &RuntimeValue,
+    current: &Variant,
     lower_bounds: &[i32],
     upper_bounds: &[i32],
     element_type: RuntimeArrayElementType,
 ) -> Result<SafeArray, String> {
-    let RuntimeValue::ArrayIntent(previous) = current else {
+    let Some(previous) = current.as_safearray() else {
         return Err("runtime ReDim Preserve requires an existing runtime array value".to_string());
     };
     if previous.dimensions() as usize != lower_bounds.len()
@@ -1887,7 +1887,7 @@ pub extern "C" fn oxrt_array_resize(
         Ok(array) => array,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::ArrayIntent(array));
+    write_variant_slot!(ctx, dst, Variant::from_safearray(array));
     OK
 }
 
@@ -1913,7 +1913,7 @@ pub extern "C" fn oxrt_array_resize_preserve(
             Err(_) => return ERR_RUNTIME,
         }
     }
-    let current = read_slot!(ctx, dst);
+    let current = read_variant_slot!(ctx, dst);
     let Some(element_type) = decode_runtime_array_element_type(element_type) else {
         return ERR_RUNTIME;
     };
@@ -1922,7 +1922,7 @@ pub extern "C" fn oxrt_array_resize_preserve(
             Ok(array) => array,
             Err(_) => return ERR_RUNTIME,
         };
-    write_slot!(ctx, dst, RuntimeValue::ArrayIntent(array));
+    write_variant_slot!(ctx, dst, Variant::from_safearray(array));
     OK
 }
 

@@ -1944,6 +1944,12 @@ Child beads:
        for every payload kind, including array-valued slots, and routes all
        cases through `register_variant_pointer()` instead of reading a
        temporary `RuntimeValue` only to special-case `ArrayIntent`
+     - progress landed: JIT `oxrt_array_resize` / `oxrt_array_resize_preserve`
+       now keep resized arrays on the canonical Variant carrier. `ReDim
+       Preserve` reads the existing array via `read_variant_slot()` /
+       `Variant::as_safearray()`, and both helpers write the resized SAFEARRAY
+       back through `write_variant_slot!(..., Variant::from_safearray(...))`
+       instead of detouring through `RuntimeValue::ArrayIntent`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

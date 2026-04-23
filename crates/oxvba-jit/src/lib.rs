@@ -279,12 +279,44 @@ mod tests {
     }
 
     #[test]
-    fn runtime_preserve_resize_helper_retains_existing_byte_values() {
+    fn runtime_array_resize_paths_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
         unsafe {
-            ctx.context.write_slot(
+            ctx.context.write_slot(1, RuntimeValue::I32(2));
+        }
+
+        let resized_upper_bounds = [1u32];
+        let resized_lower_bounds = [0i32];
+        let rc = runtime_helpers::oxrt_array_resize(
+            ctx.context_ptr(),
+            0,
+            resized_upper_bounds.as_ptr(),
+            resized_lower_bounds.as_ptr(),
+            1,
+            RuntimeArrayElementType::Byte as i32,
+        );
+        assert_eq!(rc, 0);
+
+        let resized = unsafe { ctx.context.read_variant_slot(0) };
+        let resized_array = resized
+            .as_safearray()
+            .expect("array resize should keep a SAFEARRAY-backed variant carrier");
+        assert_eq!(resized_array.element_vartype(), VT_UI1_VALUE);
+        assert_eq!(
+            resized_array.elements().as_deref(),
+            Some(
+                &[
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ][..]
+            )
+        );
+
+        unsafe {
+            ctx.context.write_variant_slot(
                 0,
-                RuntimeValue::ArrayIntent(
+                Variant::from_safearray(
                     SafeArray::from_typed_values_nd(
                         vec![SafeArrayBound { lower: 0, count: 2 }],
                         VT_UI1_VALUE,
@@ -308,21 +340,20 @@ mod tests {
         );
         assert_eq!(rc, 0);
 
-        let values = ctx.extract_user_values();
+        let preserved = unsafe { ctx.context.read_variant_slot(0) };
+        let preserved_array = preserved
+            .as_safearray()
+            .expect("array resize preserve should keep a SAFEARRAY-backed variant carrier");
+        assert_eq!(preserved_array.element_vartype(), VT_UI1_VALUE);
         assert_eq!(
-            values[0],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values_nd(
-                    vec![SafeArrayBound { lower: 0, count: 4 }],
-                    VT_UI1_VALUE,
-                    vec![
-                        RuntimeValue::I32(90),
-                        RuntimeValue::I32(91),
-                        RuntimeValue::I32(0),
-                        RuntimeValue::I32(0),
-                    ],
-                )
-                .expect("expected byte SAFEARRAY should build")
+            preserved_array.elements().as_deref(),
+            Some(
+                &[
+                    RuntimeValue::I32(90),
+                    RuntimeValue::I32(91),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ][..]
             )
         );
     }
