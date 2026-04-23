@@ -217,6 +217,11 @@ Implemented:
     `DebugFrameVariantValue` companion and projects the existing
     `DebugFrameValue` compatibility shape from that carrier. Debugger display
     text and identifier evaluation remain UI-facing projection surfaces.
+52. Host class member invocation now has
+    `Engine::invoke_member_on_object_with_variants()`, including the implicit
+    `Me` argument as a `Variant::from_object_ref()` carrier. The existing
+    `RuntimeValue` member invocation API remains a compatibility projection over
+    the Variant path.
 
 Validation:
 
@@ -594,6 +599,16 @@ Validation:
       functions
 164. `./scripts/check-governance.ps1`
     - result: passed
+165. `cargo test -p oxvba-host --test invoke_procedure_tests create_class_and_invoke_member_returns_value -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+166. `cargo fmt --check`
+    - result: passed
+167. `cargo check -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+168. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -698,6 +713,9 @@ Implementation progress:
 27. Debugger frame value projection now reads `Variant` slots first and exposes
     a `DebugFrameVariantValue` companion. Existing debugger frame/evaluation
     values remain compatibility projections for UI/display callers.
+28. Host class member invocation now has a Variant-native companion and uses a
+    `Variant` carrier for the implicit `Me` argument. Existing `RuntimeValue`
+    member invocation remains a compatibility projection.
 
 Remaining blocker:
 
@@ -716,8 +734,9 @@ Remaining blocker:
    public execution snapshot companion APIs, host/project snapshot companion
    APIs, host bundle snapshot companion APIs, immediate-session snapshot
    companion APIs, `ComValue` Variant bridge conversions, embedded host
-   procedure invocation companion APIs, and immediate procedure invocation no
-   longer retain it as their backing value store for normal VBA values.
+   procedure invocation companion APIs, immediate procedure invocation, and host
+   class member invocation no longer retain it as their backing value store for
+   normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
