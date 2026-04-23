@@ -218,7 +218,7 @@ impl ProjectRuntimeSession {
     }
 
     pub fn snapshot_slots(&self) -> Vec<i32> {
-        project_runtime_values_to_legacy_slots(self.snapshot())
+        project_variants_to_legacy_slots(self.snapshot_variants())
     }
 
     pub fn compiled(&self) -> &CompiledProject {
@@ -257,7 +257,7 @@ impl Default for Engine {
     }
 }
 
-fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
+fn project_variants_to_legacy_slots(values: Vec<Variant>) -> Vec<i32> {
     values
         .into_iter()
         .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
@@ -1371,21 +1371,21 @@ fn normalize_callback_payload(
 #[cfg(test)]
 impl Engine {
     fn execute_source_slots_test(&self, source: &str) -> Result<Vec<i32>, String> {
-        self.execute_source_with_snapshot(source)
-            .map(project_runtime_values_to_legacy_slots)
+        self.execute_source_with_variant_snapshot(source)
+            .map(project_variants_to_legacy_slots)
     }
 
     fn execute_source_slots_test_phased(&self, source: &str) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_source_with_snapshot_phased(source)
-            .map(project_runtime_values_to_legacy_slots)
+        self.execute_source_with_variant_snapshot_phased(source)
+            .map(project_variants_to_legacy_slots)
     }
 
     fn execute_project_slots_test_phased(
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_project_with_snapshot_phased(manifest)
-            .map(project_runtime_values_to_legacy_slots)
+        self.execute_project_with_variant_snapshot_phased(manifest)
+            .map(project_variants_to_legacy_slots)
     }
 }
 

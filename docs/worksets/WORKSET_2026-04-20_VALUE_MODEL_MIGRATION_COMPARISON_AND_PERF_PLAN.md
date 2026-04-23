@@ -1912,6 +1912,11 @@ Child beads:
      - progress landed: immediate sessions now expose `snapshot_variants()` over
        the prepared project runtime session, while immediate evaluation display
        remains on the existing `RuntimeValue` projection surface
+     - progress landed: host legacy slot snapshots now project directly from
+       retained `Variant` snapshot carriers; `ProjectRuntimeSession::snapshot_slots()`
+       and the host slot-snapshot test helpers use the Variant companions and
+       `Variant::project_compat_slot_i32()` instead of detouring through a
+       `Vec<RuntimeValue>` first
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for
