@@ -1774,11 +1774,17 @@ Child beads:
        `ComCallbackValue`, a `Variant`-backed carrier; callback consumers can
        still project those payload values to `ComValue`, but
        `ComCallbackPayload.args` no longer own semantic `ComValue` payloads
+     - progress landed: `SafeArray` now exposes Variant-native construction,
+       element-read, and element-replacement APIs; the legacy `RuntimeValue`
+       element APIs are compatibility projections over the Variant path, and
+       clone/equality read canonical Variant elements instead of semantic
+       `RuntimeValue` elements
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, HAL callback surfaces, SafeArray element APIs, `ComValue`,
-       and remaining non-Variant pointer-helper behavior such as `StrPtr`,
-       `ObjPtr`, and generic `VarPtr` are audited and either migrated to the
-       exact carrier or explicitly classified as projection boundaries
+       helper seams, HAL callback surfaces, legacy SafeArray element
+       compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
+       behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and
+       either migrated to the exact carrier or explicitly classified as
+       projection boundaries
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
