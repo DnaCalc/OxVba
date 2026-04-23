@@ -3,8 +3,8 @@ use crate::{
     bstr::{BStr, OwnedBStrCore},
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
-    safe_array::{SafeArray, array_tag_from_safe_array},
-    value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
+    safe_array::{SafeArray, array_tag_from_safe_array, safe_array_from_tag},
+    value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -513,7 +513,19 @@ impl Variant {
     }
 
     pub fn try_from_compat_slot_i32(value: i32) -> Result<Self, String> {
-        Self::try_from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
+        if value == EMPTY_TAG {
+            return Ok(Self::empty());
+        }
+        if value == NULL_TAG {
+            return Ok(Self::null());
+        }
+        if is_error_tag(value) {
+            return Ok(Self::from_error_code(error_code_from_tag(value).unwrap_or(0)));
+        }
+        if let Some(array) = safe_array_from_tag(value) {
+            return Ok(Self::from_safearray(array));
+        }
+        Ok(Self::from_i32(value))
     }
 
     pub fn from_compat_slot_i32(value: i32) -> Self {
@@ -984,6 +996,26 @@ mod tests {
                 .expect_err("overflow should stay outside compat slot lane"),
             "i64 value 5000000000 cannot be represented in current compat slot lane"
         );
+    }
+
+    #[test]
+    fn compat_slot_variant_bridge_preserves_tagged_shapes_without_runtime_value_detour() {
+        let empty = Variant::try_from_compat_slot_i32(crate::value_tags::EMPTY_TAG)
+            .expect("empty compat slot");
+        assert_eq!(empty.vtype(), VarType::Empty);
+
+        let null = Variant::try_from_compat_slot_i32(crate::value_tags::NULL_TAG)
+            .expect("null compat slot");
+        assert_eq!(null.vtype(), VarType::Null);
+
+        let error = Variant::try_from_compat_slot_i32(crate::value_tags::error_tag_from_code(17))
+            .expect("error compat slot");
+        assert_eq!(error.as_error_code(), Some(17));
+
+        let array = Variant::try_from_compat_slot_i32(crate::safe_array::ARRAY_TAG_BASE + 2)
+            .expect("array compat slot");
+        assert_eq!(array.vtype(), VarType::ArrayVariant);
+        assert_eq!(array.as_safearray().expect("array").len(), 2);
     }
 }
 

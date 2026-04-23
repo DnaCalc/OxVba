@@ -1921,6 +1921,9 @@ Child beads:
        exact legacy slot subset directly from retained `Variant` payloads rather
        than converting through `to_runtime_value()` first, preserving the
        existing failure diagnostics for non-representable carriers
+     - progress landed: `Variant::try_from_compat_slot_i32()` now decodes the
+       legacy tag subset directly into canonical `Variant` carriers instead of
+       detouring through `RuntimeValue::from_compat_slot_i32()`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for
