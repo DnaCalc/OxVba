@@ -231,6 +231,12 @@ Implemented:
      as `RuntimeValue` only to convert straight back into `Variant` before
      building the SAFEARRAY payload, and destination writes now use
      `write_variant_slot()` with `Variant::from_safearray(...)`.
+47f. Pointer-helper string and byte-array readback now have Variant-native
+     companions: `read_back_string_payload_variant()` and
+     `read_back_byte_array_payload_variant()`. JIT external-call writeback now
+     uses those Variant companions directly instead of reading back
+     `RuntimeValue` payloads only to convert them immediately into `Variant`
+     before the destination slot write.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -824,6 +830,10 @@ Implementation progress:
     `read_variant_slot()` and materialize result arrays with
     `write_variant_slot()` rather than detouring through `RuntimeValue`
     conversions for both element collection and destination writes.
+34. Pointer-helper payload readback now has Variant-native companions for
+    string and byte-array lanes, and JIT external-call pointer writeback now
+    consumes those Variant results directly instead of re-projecting from
+    `RuntimeValue`.
 
 Remaining blocker:
 
