@@ -1286,17 +1286,8 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let runtime_value = read_slot!(ctx, src);
-    let pointer_result = match runtime_value {
-        RuntimeValue::ArrayIntent(ref array) => {
-            oxvba_runtime::pointer_helpers::register_array_payload_pointer(array)
-        }
-        _ => {
-            let value = read_variant_slot!(ctx, src);
-            oxvba_runtime::pointer_helpers::register_variant_pointer(&value)
-        }
-    };
-    let pointer = match pointer_result {
+    let value = read_variant_slot!(ctx, src);
+    let pointer = match oxvba_runtime::pointer_helpers::register_variant_pointer(&value) {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };

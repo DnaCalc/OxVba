@@ -1940,6 +1940,10 @@ Child beads:
        companions, and JIT `oxrt_array_get` / `oxrt_array_set` use those
        companions with Variant slot reads/writes so the array carrier and
        source element no longer detour through `RuntimeValue`
+     - progress landed: JIT `oxrt_varptr` now reads the exact slot `Variant`
+       for every payload kind, including array-valued slots, and routes all
+       cases through `register_variant_pointer()` instead of reading a
+       temporary `RuntimeValue` only to special-case `ArrayIntent`
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

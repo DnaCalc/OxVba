@@ -425,6 +425,43 @@ mod tests {
     }
 
     #[test]
+    fn runtime_varptr_uses_variant_array_carrier_directly() {
+        let mut ctx = JitContextOwned::new(3, 3, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_u8(1),
+                    Variant::from_u8(2),
+                    Variant::from_u8(3),
+                ])),
+            );
+        }
+
+        assert_eq!(runtime_helpers::oxrt_varptr(ctx.context_ptr(), 1, 0), 0);
+        let RuntimeValue::I64(pointer) = (unsafe { ctx.context.read_slot(1) }) else {
+            panic!("VarPtr should return LongPtr carrier");
+        };
+        assert_ne!(pointer, 0);
+        let read_back =
+            oxvba_runtime::pointer_helpers::read_back_byte_array_payload_variant(pointer)
+                .expect("pointer helper should read back byte-array payload");
+        let elements = read_back
+            .as_safearray()
+            .expect("VarPtr(array) should preserve SAFEARRAY payload")
+            .variant_elements()
+            .expect("SAFEARRAY should expose variant elements");
+        assert_eq!(
+            elements,
+            vec![
+                Variant::from_u8(1),
+                Variant::from_u8(2),
+                Variant::from_u8(3)
+            ]
+        );
+    }
+
+    #[test]
     fn jit_context_extracts_user_variants_before_projection() {
         let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
         unsafe {
