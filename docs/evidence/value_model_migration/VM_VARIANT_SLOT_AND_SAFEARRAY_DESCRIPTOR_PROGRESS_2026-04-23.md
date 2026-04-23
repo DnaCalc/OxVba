@@ -81,6 +81,11 @@ Implemented:
     resize carrier on the native Variant path. The legacy runtime projection
     bridge now also handles `VT_UI1` Byte variants so compatibility reads of
     typed Byte arrays do not fail.
+23. VM and JIT intrinsic array literal/append helpers now construct and extend
+    internal arrays through `Variant` element vectors instead of storing
+    `RuntimeValue` element vectors. Slot reads still project through the
+    existing semantic execution APIs, but the resulting SAFEARRAY payload uses
+    the native Variant path.
 
 Validation:
 
@@ -157,6 +162,14 @@ Validation:
 33. `cargo fmt --check`
     - result: passed
 34. `./scripts/check-governance.ps1`
+    - result: passed
+35. `cargo test -p oxvba-vm --lib array -- --nocapture`
+    - result: `8` passed
+36. `cargo test -p oxvba-jit --lib array -- --nocapture`
+    - result: compile/pass with `0` tests selected
+37. `cargo fmt --check`
+    - result: passed
+38. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
