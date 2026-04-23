@@ -92,20 +92,81 @@ pub enum ComValue {
 
 impl ComValue {
     pub fn from_variant(value: &Variant) -> Result<Self, String> {
-        Ok(match RuntimeValue::from_variant(value)? {
-            RuntimeValue::Empty => Self::Empty,
-            RuntimeValue::Null => Self::Null,
-            RuntimeValue::ErrorCode(code) => Self::ErrorCode(code),
-            RuntimeValue::Bool(value) => Self::Bool(value),
-            RuntimeValue::I32(value) => Self::I32(value),
-            RuntimeValue::I64(value) => Self::I64(value),
-            RuntimeValue::F64(value) => Self::F64(value),
-            RuntimeValue::Decimal(value) => Self::Decimal(value),
-            RuntimeValue::Currency(value) => Self::Currency(value),
-            RuntimeValue::String(value) => Self::String(value),
-            RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array),
-            RuntimeValue::Object(handle) => Self::Object(handle.clone()),
-            RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
+        Ok(match value.vtype() {
+            oxvba_runtime::VarType::Empty => Self::Empty,
+            oxvba_runtime::VarType::Null => Self::Null,
+            oxvba_runtime::VarType::Integer => Self::I32(
+                value
+                    .as_i16()
+                    .ok_or_else(|| "invalid Integer VARIANT payload".to_string())?
+                    as i32,
+            ),
+            oxvba_runtime::VarType::Long => Self::I32(
+                value
+                    .as_i32()
+                    .ok_or_else(|| "invalid Long VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::LongLong => Self::I64(
+                value
+                    .as_i64()
+                    .ok_or_else(|| "invalid LongLong VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::Byte => Self::I32(i32::from(
+                value
+                    .as_u8()
+                    .ok_or_else(|| "invalid Byte VARIANT payload".to_string())?,
+            )),
+            oxvba_runtime::VarType::Single => Self::F64(F64Value::from_single_f64(
+                value
+                    .as_f32()
+                    .ok_or_else(|| "invalid Single VARIANT payload".to_string())?
+                    as f64,
+            )),
+            oxvba_runtime::VarType::Double => Self::F64(F64Value::from_f64(
+                value
+                    .as_f64()
+                    .ok_or_else(|| "invalid Double VARIANT payload".to_string())?,
+            )),
+            oxvba_runtime::VarType::Decimal => Self::Decimal(
+                value
+                    .as_decimal96()
+                    .ok_or_else(|| "invalid Decimal VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::Currency => Self::Currency(CurrencyValue::from_scaled_i64(
+                value
+                    .as_currency_scaled_i64()
+                    .ok_or_else(|| "invalid Currency VARIANT payload".to_string())?,
+            )),
+            oxvba_runtime::VarType::Date => Self::F64(F64Value::from_date_f64(
+                value
+                    .as_date_f64()
+                    .ok_or_else(|| "invalid Date VARIANT payload".to_string())?,
+            )),
+            oxvba_runtime::VarType::String => Self::String(
+                value
+                    .as_bstr()
+                    .ok_or_else(|| "invalid String VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::Boolean => Self::Bool(
+                value
+                    .as_bool()
+                    .ok_or_else(|| "invalid Boolean VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::Error => Self::ErrorCode(
+                value
+                    .as_error_code()
+                    .ok_or_else(|| "invalid Error VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::Object => Self::Object(
+                value
+                    .as_object_ref()
+                    .ok_or_else(|| "invalid Object VARIANT payload".to_string())?,
+            ),
+            oxvba_runtime::VarType::ArrayVariant => Self::ArrayIntent(
+                value
+                    .as_safearray()
+                    .ok_or_else(|| "invalid SAFEARRAY VARIANT payload".to_string())?,
+            ),
         })
     }
 
@@ -133,17 +194,21 @@ impl ComValue {
 
     pub fn to_variant(&self) -> Result<Variant, String> {
         Ok(match self {
-            Self::Empty => RuntimeValue::Empty.to_variant()?,
-            Self::Null => RuntimeValue::Null.to_variant()?,
-            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code).to_variant()?,
-            Self::Bool(value) => RuntimeValue::Bool(*value).to_variant()?,
-            Self::I32(value) => RuntimeValue::I32(*value).to_variant()?,
-            Self::I64(value) => RuntimeValue::I64(*value).to_variant()?,
-            Self::F64(value) => RuntimeValue::F64(*value).to_variant()?,
-            Self::Decimal(value) => RuntimeValue::Decimal(*value).to_variant()?,
-            Self::Currency(value) => RuntimeValue::Currency(*value).to_variant()?,
-            Self::String(value) => RuntimeValue::String(value.clone()).to_variant()?,
-            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()).to_variant()?,
+            Self::Empty => Variant::empty(),
+            Self::Null => Variant::null(),
+            Self::ErrorCode(code) => Variant::from_error_code(*code),
+            Self::Bool(value) => Variant::from_bool(*value),
+            Self::I32(value) => Variant::from_i32(*value),
+            Self::I64(value) => Variant::from_i64(*value),
+            Self::F64(value) => match value.subtype() {
+                oxvba_runtime::F64Subtype::Single => Variant::from_f32(value.as_f64() as f32),
+                oxvba_runtime::F64Subtype::Double => Variant::from_f64(value.as_f64()),
+                oxvba_runtime::F64Subtype::Date => Variant::from_date_f64(value.as_f64()),
+            },
+            Self::Decimal(value) => Variant::from_decimal96(*value),
+            Self::Currency(value) => Variant::from_currency_scaled_i64(value.scaled_i64()),
+            Self::String(value) => Variant::from_string(value.clone()),
+            Self::ArrayIntent(array) => Variant::from_safearray(array.clone()),
             Self::Object(handle) => Variant::from_object_ref(handle.clone()),
         })
     }
