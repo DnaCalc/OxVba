@@ -90,6 +90,10 @@ Implemented:
     `variant_elements()` and retains iterator items as `RuntimeSlot::Variant`
     directly, removing the old `RuntimeValue`-to-slot conversion helper from
     that path.
+25. VM semantic array get/set now read and replace payload slots through
+    `variant_elements()` / `replace_variant_elements()`. The semantic API still
+    returns and accepts `RuntimeValue` at its boundary, but the array payload
+    mutation path no longer uses `RuntimeValue` as the stored element carrier.
 
 Validation:
 
@@ -180,6 +184,14 @@ Validation:
 40. `cargo fmt --check`
     - result: passed
 41. `./scripts/check-governance.ps1`
+    - result: passed
+42. `cargo test -p oxvba-vm --lib runtime_array -- --nocapture`
+    - result: compile/pass with `0` tests selected
+43. `cargo test -p oxvba-vm --lib array -- --nocapture`
+    - result: `8` passed
+44. `cargo fmt --check`
+    - result: passed
+45. `./scripts/check-governance.ps1`
     - result: passed
 
 Remaining blocker:
