@@ -131,6 +131,11 @@ Implemented:
     inline invocation path. Existing project-symbol callbacks can still enter
     through the semantic `RuntimeValue` wrapper, but dynamic dispatch no longer
     builds a `Vec<RuntimeValue>` before entering the target procedure.
+34. VM and JIT dynamic COM dispatch result writes now retain `DynamicValue`
+    results as `Variant` slot payloads instead of projecting through
+    `RuntimeValue` before writing the destination slot. Legacy COM error-tag
+    normalization is preserved by converting `VT_I4` error tags to `VT_ERROR`
+    before the slot write.
 
 Validation:
 
@@ -329,6 +334,17 @@ Validation:
       functions
 89. `./scripts/check-governance.ps1`
     - result: passed
+90. `cargo fmt --check`
+    - result: passed
+91. `cargo test -p oxvba-vm --lib dynamic -- --nocapture`
+    - result: `4` passed
+92. `cargo test -p oxvba-jit --lib dynamic -- --nocapture`
+    - result: compile/pass with `0` tests selected
+93. `cargo check -p oxvba-vm -p oxvba-jit`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+94. `./scripts/check-governance.ps1`
+    - result: passed
 
 Implementation progress:
 
@@ -374,6 +390,9 @@ Implementation progress:
     `RuntimeSlot` values and writes callee slots through a slot-native inline
     invocation path. The project-symbol callback wrapper remains a semantic
     compatibility boundary.
+11. VM and JIT dynamic COM dispatch result writes now preserve the retained
+    `DynamicValue` as a slot `Variant`, with legacy error-tag normalization
+    performed directly on the Variant before writing the destination slot.
 
 Remaining blocker:
 
@@ -385,8 +404,8 @@ Remaining blocker:
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
    `ParamArray` SAFEARRAY payload construction, and VM project-dynamic callee
-   argument binding no longer retain it as their backing value store for normal
-   VBA values.
+   argument binding, and VM/JIT dynamic COM result slot writes no longer
+   retain it as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
