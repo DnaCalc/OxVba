@@ -1921,6 +1921,10 @@ Child beads:
        slots first and exposes a `DebugFrameVariantValue` companion; existing
        debugger frame/evaluation values remain compatibility projections for
        UI/display callers
+     - progress landed: host class member invocation now has a Variant-native
+       companion and uses a `Variant` carrier for the implicit `Me` argument;
+       existing `RuntimeValue` member invocation remains a compatibility
+       projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
