@@ -1,6 +1,6 @@
 use crate::ComValue;
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef,
+    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectRef, VarType, Variant,
     bstr::BStr,
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
@@ -231,11 +231,8 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         let upper = lower + bounds[0].count as i32 - 1;
         let mut values = Vec::with_capacity(total_len);
         for index in lower..=upper {
-            values.push(safe_array_element_to_runtime_value(
-                psa.cast_const(),
-                index,
-                element_vt,
-            )?);
+            let value = safe_array_element_to_runtime_value(psa.cast_const(), index, element_vt)?;
+            values.push(Variant::try_from_runtime_value(&value)?);
         }
         values
     } else {
@@ -244,6 +241,7 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
 
         for _ in 0..total_len {
             let value = safe_array_element_nd(psa.cast_const(), &indices, element_vt)?;
+            let value = Variant::try_from_runtime_value(&value)?;
             values.push(value);
 
             let mut carry = true;
@@ -266,14 +264,14 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         && SafeArray::supports_intrinsic_element_vartype(element_vt)
     {
         if dims == 1 {
-            SafeArray::from_typed_values(element_vt, values)?
+            SafeArray::from_typed_variants(element_vt, values)?
         } else {
-            SafeArray::from_typed_values_nd(bounds, element_vt, values)?
+            SafeArray::from_typed_variants_nd(bounds, element_vt, values)?
         }
     } else if dims == 1 {
-        SafeArray::from_values(values)
+        SafeArray::from_variants(values)
     } else {
-        SafeArray::from_values_nd(bounds, values)
+        SafeArray::from_variants_nd(bounds, values)
     };
     Ok(ComValue::ArrayIntent(array))
 }
@@ -727,7 +725,7 @@ where
     }
 
     // Helper closure: extract one element by indices for variant/dispatch/unknown/typed paths.
-    let mut extract_element = |indices: &[i32]| -> Result<oxvba_runtime::RuntimeValue, String> {
+    let mut extract_element = |indices: &[i32]| -> Result<Variant, String> {
         if element_vt == VT_VARIANT {
             let mut element: VARIANT = std::mem::zeroed();
             let hr = SafeArrayGetElement(
@@ -756,7 +754,7 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Ok(value);
+            return Variant::try_from_runtime_value(&value);
         }
         if element_vt == VT_UNKNOWN {
             let mut unknown: *mut c_void = std::ptr::null_mut();
@@ -789,7 +787,7 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Ok(value);
+            return Variant::try_from_runtime_value(&value);
         }
         if element_vt == VT_DISPATCH {
             let mut dispatch: *mut c_void = std::ptr::null_mut();
@@ -822,9 +820,10 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Ok(value);
+            return Variant::try_from_runtime_value(&value);
         }
-        safe_array_element_typed_nd(psa.cast_const(), indices, element_vt)
+        let value = safe_array_element_typed_nd(psa.cast_const(), indices, element_vt)?;
+        Variant::try_from_runtime_value(&value)
     };
 
     let mut values = Vec::with_capacity(total_len);
@@ -852,14 +851,14 @@ where
         && SafeArray::supports_intrinsic_element_vartype(element_vt)
     {
         if dims == 1 {
-            SafeArray::from_typed_values(element_vt, values)?
+            SafeArray::from_typed_variants(element_vt, values)?
         } else {
-            SafeArray::from_typed_values_nd(bounds, element_vt, values)?
+            SafeArray::from_typed_variants_nd(bounds, element_vt, values)?
         }
     } else if dims == 1 {
-        SafeArray::from_values(values)
+        SafeArray::from_variants(values)
     } else {
-        SafeArray::from_values_nd(bounds, values)
+        SafeArray::from_variants_nd(bounds, values)
     };
 
     Ok(oxvba_runtime::RuntimeValue::ArrayIntent(array))
@@ -877,7 +876,7 @@ where
     FResolve: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FAddRef: FnMut(*mut core::ffi::c_void),
 {
-    let Some(values) = array.elements() else {
+    let Some(values) = array.variant_elements() else {
         (*variant).Anonymous.Anonymous.vt = VT_I4;
         (*variant).Anonymous.Anonymous.Anonymous.lVal =
             ComValue::ArrayIntent(array.clone()).to_legacy_dispatch_token()?;
@@ -909,9 +908,9 @@ where
         }
         // Iterate in column-major order matching the bounds.
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
-        for runtime_value in values.iter() {
+        for value in values.iter() {
             let mut element: VARIANT = std::mem::zeroed();
-            let value = ComValue::from_runtime_value(runtime_value);
+            let value = ComValue::from_variant(value)?;
             if let Err(detail) =
                 set_variant_from_com_value(&mut element, &value, resolve_object, add_ref_dispatch)
             {
@@ -958,9 +957,9 @@ where
     if psa.is_null() {
         return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
     }
-    for (offset, runtime_value) in values.iter().enumerate() {
+    for (offset, value) in values.iter().enumerate() {
         let mut element: VARIANT = std::mem::zeroed();
-        let value = ComValue::from_runtime_value(runtime_value);
+        let value = ComValue::from_variant(value)?;
         if let Err(detail) =
             set_variant_from_com_value(&mut element, &value, resolve_object, add_ref_dispatch)
         {
@@ -990,10 +989,23 @@ where
 }
 
 #[cfg(target_os = "windows")]
-fn runtime_value_to_i64(value: &oxvba_runtime::RuntimeValue) -> Result<i64, String> {
-    match value {
-        oxvba_runtime::RuntimeValue::I32(value) => Ok(i64::from(*value)),
-        oxvba_runtime::RuntimeValue::I64(value) => Ok(*value),
+fn variant_to_i64(value: &Variant) -> Result<i64, String> {
+    match value.vtype() {
+        VarType::Integer => value
+            .as_i16()
+            .map(i64::from)
+            .ok_or_else(|| "invalid Integer SAFEARRAY element".to_string()),
+        VarType::Long => value
+            .as_i32()
+            .map(i64::from)
+            .ok_or_else(|| "invalid Long SAFEARRAY element".to_string()),
+        VarType::LongLong => value
+            .as_i64()
+            .ok_or_else(|| "invalid LongLong SAFEARRAY element".to_string()),
+        VarType::Byte => value
+            .as_u8()
+            .map(i64::from)
+            .ok_or_else(|| "invalid Byte SAFEARRAY element".to_string()),
         other => Err(format!(
             "expected integer-compatible SAFEARRAY element, got {other:?}"
         )),
@@ -1001,9 +1013,18 @@ fn runtime_value_to_i64(value: &oxvba_runtime::RuntimeValue) -> Result<i64, Stri
 }
 
 #[cfg(target_os = "windows")]
-fn runtime_value_to_f64(value: &oxvba_runtime::RuntimeValue) -> Result<f64, String> {
-    match value {
-        oxvba_runtime::RuntimeValue::F64(value) => Ok(value.as_f64()),
+fn variant_to_f64(value: &Variant) -> Result<f64, String> {
+    match value.vtype() {
+        VarType::Single => value
+            .as_f32()
+            .map(f64::from)
+            .ok_or_else(|| "invalid Single SAFEARRAY element".to_string()),
+        VarType::Double => value
+            .as_f64()
+            .ok_or_else(|| "invalid Double SAFEARRAY element".to_string()),
+        VarType::Date => value
+            .as_date_f64()
+            .ok_or_else(|| "invalid Date SAFEARRAY element".to_string()),
         other => Err(format!(
             "expected floating-point SAFEARRAY element, got {other:?}"
         )),
@@ -1016,13 +1037,13 @@ unsafe fn put_typed_safe_array_element(
     psa: *mut SAFEARRAY,
     indices: &[i32],
     element_vt: u16,
-    value: &oxvba_runtime::RuntimeValue,
+    value: &Variant,
     resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
 ) -> Result<(), String> {
     let hr = match element_vt {
         VT_I1_VALUE => {
-            let scalar = i8::try_from(runtime_value_to_i64(value)?)
+            let scalar = i8::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I1 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1031,7 +1052,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_UI1_VALUE => {
-            let scalar = u8::try_from(runtime_value_to_i64(value)?)
+            let scalar = u8::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI1 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1040,7 +1061,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_I2_VALUE => {
-            let scalar = i16::try_from(runtime_value_to_i64(value)?)
+            let scalar = i16::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I2 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1049,7 +1070,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_UI2_VALUE => {
-            let scalar = u16::try_from(runtime_value_to_i64(value)?)
+            let scalar = u16::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI2 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1058,7 +1079,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_I4_VALUE | VT_INT_VALUE => {
-            let scalar = i32::try_from(runtime_value_to_i64(value)?)
+            let scalar = i32::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_I4 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1067,7 +1088,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_UI4_VALUE | VT_UINT_VALUE => {
-            let scalar = u32::try_from(runtime_value_to_i64(value)?)
+            let scalar = u32::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI4 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1076,7 +1097,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_I8_VALUE => {
-            let scalar = runtime_value_to_i64(value)?;
+            let scalar = variant_to_i64(value)?;
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1084,7 +1105,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_UI8_VALUE => {
-            let scalar = u64::try_from(runtime_value_to_i64(value)?)
+            let scalar = u64::try_from(variant_to_i64(value)?)
                 .map_err(|_| format!("value {value:?} does not fit VT_UI8 SAFEARRAY element"))?;
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1093,7 +1114,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_R4_VALUE => {
-            let scalar = runtime_value_to_f64(value)? as f32;
+            let scalar = variant_to_f64(value)? as f32;
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1101,7 +1122,7 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_R8_VALUE | VT_DATE_VALUE => {
-            let scalar = runtime_value_to_f64(value)?;
+            let scalar = variant_to_f64(value)?;
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1109,14 +1130,10 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_CY_VALUE => {
-            let oxvba_runtime::RuntimeValue::Currency(currency) = value else {
-                return Err(format!(
-                    "expected Currency SAFEARRAY element, got {value:?}"
-                ));
-            };
-            let scalar = CY {
-                int64: currency.scaled_i64(),
-            };
+            let scaled = value
+                .as_currency_scaled_i64()
+                .ok_or_else(|| format!("expected Currency SAFEARRAY element, got {value:?}"))?;
+            let scalar = CY { int64: scaled };
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1124,10 +1141,10 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_BOOL_VALUE => {
-            let oxvba_runtime::RuntimeValue::Bool(boolean) = value else {
-                return Err(format!("expected Bool SAFEARRAY element, got {value:?}"));
-            };
-            let scalar: VARIANT_BOOL = if *boolean { -1 } else { 0 };
+            let boolean = value
+                .as_bool()
+                .ok_or_else(|| format!("expected Bool SAFEARRAY element, got {value:?}"))?;
+            let scalar: VARIANT_BOOL = if boolean { -1 } else { 0 };
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1135,19 +1152,19 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_BSTR_VALUE => {
-            let oxvba_runtime::RuntimeValue::String(text) = value else {
-                return Err(format!("expected String SAFEARRAY element, got {value:?}"));
-            };
-            let bstr = alloc_bstr(text);
+            let text = value
+                .as_bstr()
+                .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?;
+            let bstr = alloc_bstr(&text);
             let hr = SafeArrayPutElement(psa.cast_const(), indices.as_ptr(), bstr.cast());
             SysFreeString(bstr);
             hr
         }
         VT_DISPATCH_VALUE => {
-            let oxvba_runtime::RuntimeValue::Object(object) = value else {
-                return Err(format!("expected Object SAFEARRAY element, got {value:?}"));
-            };
-            let dispatch = resolve_object(object.clone())?;
+            let object = value
+                .as_object_ref()
+                .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
+            let dispatch = resolve_object(object)?;
             add_ref_dispatch(dispatch);
             SafeArrayPutElement(
                 psa.cast_const(),
@@ -1156,9 +1173,9 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_UNKNOWN_VALUE => {
-            let oxvba_runtime::RuntimeValue::Object(object) = value else {
-                return Err(format!("expected Object SAFEARRAY element, got {value:?}"));
-            };
+            let object = value
+                .as_object_ref()
+                .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
             let unknown = object
                 .query_iunknown()
                 .raw_iunknown()
@@ -1170,10 +1187,10 @@ unsafe fn put_typed_safe_array_element(
             )
         }
         VT_DECIMAL_VALUE => {
-            let oxvba_runtime::RuntimeValue::Decimal(decimal) = value else {
-                return Err(format!("expected Decimal SAFEARRAY element, got {value:?}"));
-            };
-            let scalar = decimal96_to_windows(*decimal);
+            let decimal = value
+                .as_decimal96()
+                .ok_or_else(|| format!("expected Decimal SAFEARRAY element, got {value:?}"))?;
+            let scalar = decimal96_to_windows(decimal);
             SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
@@ -1200,7 +1217,7 @@ unsafe fn put_typed_safe_array_element(
 unsafe fn set_typed_array_arg(
     variant: *mut VARIANT,
     array: &SafeArray,
-    values: &[oxvba_runtime::RuntimeValue],
+    values: &[Variant],
     resolve_object: &mut impl FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     add_ref_dispatch: &mut impl FnMut(*mut core::ffi::c_void),
 ) -> Result<(), String> {
