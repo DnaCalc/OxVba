@@ -1888,6 +1888,12 @@ Child beads:
        `snapshot_variants()` for exact user-visible `Variant` slot carriers;
        `snapshot()` and `snapshot_values()` remain public compatibility
        projections over that Variant-native result surface
+     - progress landed: VM and JIT public execution snapshot helpers now have
+       Variant-native result surfaces (`execute_and_snapshot_variants*()` and
+       `cranelift::execute_bytecode_rtslot_variants()`), while existing
+       `RuntimeValue` helper APIs remain compatibility projections over those
+       Variant result paths where the execution path can produce Variant
+       carriers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
