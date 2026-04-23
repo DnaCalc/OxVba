@@ -1844,6 +1844,10 @@ Child beads:
        descriptor calls through `invoke_descriptor_variants()` using slot
        `Variant` reads; the no-descriptor legacy symbol-token path remains a
        compatibility projection through `RuntimeValue`
+     - progress landed: VM project-dynamic argument binding now carries bound
+       target-procedure arguments as `RuntimeSlot` values and writes callee
+       slots through a slot-native inline invocation path; the project-symbol
+       callback wrapper remains a semantic compatibility boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
