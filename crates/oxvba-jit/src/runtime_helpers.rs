@@ -3130,19 +3130,18 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         unsafe { std::slice::from_raw_parts(writeback_ptr, writeback_len as usize) }
     };
 
-    let arg_values: Vec<RuntimeValue> = arg_slots
-        .iter()
-        .map(|slot| read_slot!(ctx, *slot as u32))
-        .collect();
     let arg_variants: Vec<Variant> = arg_slots
         .iter()
         .map(|slot| read_variant_slot!(ctx, *slot as u32))
         .collect();
-    let first_arg = arg_values.first().cloned().unwrap_or(RuntimeValue::I32(0));
 
     // Fast path: no descriptors → simple invoke_symbol.
     let descriptors = unsafe { (*ctx).host_state().external_call_descriptors() };
     if descriptors.is_empty() {
+        let first_arg = arg_slots
+            .first()
+            .map(|slot| read_slot!(ctx, *slot as u32))
+            .unwrap_or(RuntimeValue::I32(0));
         match host.dynlink().invoke_symbol(symbol, first_arg) {
             Ok(value) => {
                 write_slot!(ctx, dst, value);
@@ -3195,7 +3194,7 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         return route_host_error_code(ctx, 53073);
     }
 
-    if arg_values.len() > 1 || !writeback_slots.is_empty() {
+    if arg_variants.len() > 1 || !writeback_slots.is_empty() {
         match host
             .dynlink()
             .invoke_descriptor_variants(&view, &arg_variants)
@@ -3212,9 +3211,17 @@ pub extern "C" fn oxrt_host_invoke_symbol(
             Err(err) => route_hal_error(ctx, err),
         }
     } else {
-        match host.dynlink().invoke_descriptor(&view, first_arg) {
-            Ok(value) => {
-                write_slot!(ctx, dst, value);
+        match host
+            .dynlink()
+            .invoke_descriptor_variants(&view, &arg_variants)
+        {
+            Ok((ret_value, wb_values)) => {
+                write_variant_slot!(ctx, dst, ret_value);
+                if let Err(_detail) =
+                    apply_external_writebacks(ctx, writeback_slots, &arg_variants, &wb_values)
+                {
+                    return route_host_error_code(ctx, 53073);
+                }
                 OK
             }
             Err(err) => route_hal_error(ctx, err),
