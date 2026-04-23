@@ -153,6 +153,11 @@ Implemented:
     `write_runtime_slot()`. Object `_NewEnum` fallback wraps the retained
     `DynamicValue` `Variant` into a slot before array inspection, leaving
     projection only where the semantic array boundary is still required.
+39. SAFEARRAY `RuntimeValue` API usage has been audited in
+    [SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md](SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md).
+    The scan did not identify a current production payload-retention path that
+    owns `Vec<RuntimeValue>` as the internal SAFEARRAY carrier, but the public
+    compatibility APIs remain open classification work.
 
 Validation:
 
@@ -393,6 +398,10 @@ Validation:
       functions
 108. `./scripts/check-governance.ps1`
     - result: passed
+109. `rg -n "SafeArray::from_values|from_values_nd|from_typed_values|from_shape_and_values|\.elements\(\)|replace_elements\(" crates/oxvba-runtime crates/oxvba-vm crates/oxvba-jit crates/oxvba-com crates/oxvba-hal --glob "*.rs"`
+    - result: remaining hits are compatibility API definitions and
+      tests/property fixtures; no production retained-payload `Vec<RuntimeValue>`
+      path was identified by this scan
 
 Implementation progress:
 
@@ -452,6 +461,10 @@ Implementation progress:
     `RuntimeSlot` values and writes dynamic dispatch destinations directly from
     those slots. Object `_NewEnum` fallback also starts from the retained
     `DynamicValue` `Variant` rather than projecting before slot formation.
+15. The SAFEARRAY legacy API scan is now recorded as support evidence. It
+    classifies remaining `RuntimeValue` SAFEARRAY hits as compatibility/test
+    surfaces by current scan, but does not close the public compatibility API
+    question.
 
 Remaining blocker:
 
@@ -476,9 +489,11 @@ Remaining blocker:
    remaining projection seams that can expose or retain general values:
    interpreter/JIT helper internals outside slot storage, HAL surfaces that
    still use semantic values by contract, legacy dynamic-link symbol APIs,
-   legacy `SafeArray` element compatibility APIs, remaining COM boundary
-   `ComValue` projection points, and non-Variant pointer-helper behavior such
-   as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant variables.
+   legacy `SafeArray` element compatibility APIs documented in
+   `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, remaining COM
+   boundary `ComValue` projection points, and non-Variant pointer-helper
+   behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
+   variables.
 5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
