@@ -226,6 +226,11 @@ Implemented:
      canonical `Variant` carrier, including the explicit `BindingHandle ->
      VT_I4` compatibility lane, and legacy reads now project back from
      `read_variant_slot()` instead of bypassing the Variant path.
+47e. JIT `oxrt_array_literal` and `oxrt_array_append` now consume and write
+     exact slot `Variant` carriers directly. Those helpers no longer read slots
+     as `RuntimeValue` only to convert straight back into `Variant` before
+     building the SAFEARRAY payload, and destination writes now use
+     `write_variant_slot()` with `Variant::from_safearray(...)`.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -815,6 +820,10 @@ Implementation progress:
     separate `RuntimeValue` slot-storage path. The compatibility API remains
     open classification work, but the JIT context no longer bypasses the
     canonical Variant slot carrier when that API is used.
+33. JIT array literal/append helpers now read slot inputs through
+    `read_variant_slot()` and materialize result arrays with
+    `write_variant_slot()` rather than detouring through `RuntimeValue`
+    conversions for both element collection and destination writes.
 
 Remaining blocker:
 
