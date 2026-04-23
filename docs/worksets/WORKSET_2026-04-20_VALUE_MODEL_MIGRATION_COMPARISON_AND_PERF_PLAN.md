@@ -1808,12 +1808,23 @@ Child beads:
      - progress landed: SafeArray debug formatting and pointer byte-array
        readback now use Variant element APIs rather than the legacy
        `RuntimeValue` element projection
+     - progress landed: HAL dynamic-link descriptor multi-call now exposes a
+       Variant-native path (`invoke_descriptor_variants` /
+       `invoke_bound_variants`), and both VM and JIT external descriptor calls
+       use exact slot-level Variant reads/writes for return values and ByRef
+       writebacks; the older `RuntimeValue` multi-call remains only as a
+       compatibility projection for HAL adapters and legacy symbol-token APIs
+     - progress landed: the HAL COM/dynlink projection property now asserts
+       stable `ObjectRef::compat_identity()` instead of full `ObjectRef`
+       pointer equality for two separate `CreateObject` calls, matching the
+       IUnknown/ObjectRef identity model where separate object instances can
+       share a compatibility identity without being the same pointer identity
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, HAL callback surfaces, legacy SafeArray element
-       compatibility APIs, `ComValue`, and remaining non-Variant pointer-helper
-       behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` are audited and
-       either migrated to the exact carrier or explicitly classified as
-       projection boundaries
+       helper seams, HAL callback surfaces, legacy dynamic-link symbol APIs,
+       legacy SafeArray element compatibility APIs, `ComValue`, and remaining
+       non-Variant pointer-helper behavior such as `StrPtr`, `ObjPtr`, and
+       generic `VarPtr` are audited and either migrated to the exact carrier or
+       explicitly classified as projection boundaries
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
