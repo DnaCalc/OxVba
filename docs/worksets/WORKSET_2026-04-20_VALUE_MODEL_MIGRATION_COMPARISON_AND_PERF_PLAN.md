@@ -1752,11 +1752,15 @@ Child beads:
        retaining `BindingHandle` only as an explicit non-VBA side token; JIT
        `ReDim` helpers now create typed SAFEARRAY payloads for declared array
        element types
+     - progress landed: object-valued canonical runtime `Variant` cells now use
+       `VT_UNKNOWN` for the IUnknown-backed object identity/lifetime lane, and
+       VM/JIT `VarPtr(Variant)` now exposes the actual internal `Variant` slot
+       cell instead of a copied runtime-pointer-helper projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL callback surfaces, SafeArray element APIs, `ComValue`,
-       and pointer-helper behavior such as `VarPtr(Variant)`, `StrPtr`, and
-       `ObjPtr` are audited and either migrated to the exact carrier or
-       explicitly classified as projection boundaries
+       and remaining non-Variant pointer-helper behavior such as `StrPtr`,
+       `ObjPtr`, and generic `VarPtr` are audited and either migrated to the
+       exact carrier or explicitly classified as projection boundaries
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
