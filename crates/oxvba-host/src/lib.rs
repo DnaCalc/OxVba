@@ -15,11 +15,12 @@ pub use debugger::{
 pub use embedded::{
     EmbeddedBuildRequest, EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
     EmbeddedBuildStatus, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
-    EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureRequest, EmbeddedInvokeResult,
-    EmbeddedInvokeStatus, EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget,
-    EmbeddedResetKind, EmbeddedResetRequest, EmbeddedResetResult, EmbeddedResetStatus,
-    EmbeddedRunRequest, EmbeddedRunResult, EmbeddedRunSession, EmbeddedRunSessionError,
-    EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+    EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureRequest,
+    EmbeddedInvokeProcedureVariantRequest, EmbeddedInvokeResult, EmbeddedInvokeStatus,
+    EmbeddedInvokeVariantResult, EmbeddedOutputChannel, EmbeddedOutputLine,
+    EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedResetResult,
+    EmbeddedResetStatus, EmbeddedRunRequest, EmbeddedRunResult, EmbeddedRunSession,
+    EmbeddedRunSessionError, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
     ComEventCallbackDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,

@@ -701,6 +701,23 @@ impl Engine {
         procedure: &str,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, PhaseDiagnostic> {
+        let variants = args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PhaseDiagnostic::runtime)?;
+        self.invoke_procedure_with_variants(session, module, procedure, &variants)
+            .and_then(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
+    }
+
+    /// Invoke a specific procedure by module and name with exact Variant args.
+    pub fn invoke_procedure_with_variants(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        module: &str,
+        procedure: &str,
+        args: &[Variant],
+    ) -> Result<Variant, PhaseDiagnostic> {
         // The procedure_runtime_metadata keys use the `pmr_{project}_{module}_{procedure}` format.
         // Try the full key first, then fall back to suffix matching.
         let suffix = format!(
@@ -729,7 +746,7 @@ impl Engine {
 
         session
             .vm
-            .invoke_procedure_with_values(
+            .invoke_procedure_with_variants(
                 &session.compiled.bytecode,
                 metadata.entry_pc,
                 &metadata.param_slots,
@@ -739,8 +756,8 @@ impl Engine {
 
         // Read return value from return_slot if present
         match metadata.return_slot {
-            Some(slot) => Ok(session.read_slot(slot)),
-            None => Ok(RuntimeValue::Empty),
+            Some(slot) => Ok(session.read_variant_slot(slot)),
+            None => Ok(Variant::empty()),
         }
     }
 

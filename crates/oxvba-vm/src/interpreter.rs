@@ -505,6 +505,20 @@ impl Vm {
         arg_slots: &[usize],
         args: &[RuntimeValue],
     ) -> Result<(), String> {
+        let variants = args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.invoke_procedure_with_variants(bytecode, entry_pc, arg_slots, &variants)
+    }
+
+    pub fn invoke_procedure_with_variants(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[Variant],
+    ) -> Result<(), String> {
         if arg_slots.len() != args.len() {
             return Err(format!(
                 "argument shape mismatch: {} slots for {} values",
@@ -530,7 +544,7 @@ impl Vm {
 
         self.reset_execution_state(bytecode.slot_count, true);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
-            self.write_value_slot(*slot, value.clone())?;
+            self.write_variant_slot(*slot, value.clone())?;
         }
 
         let result = self.execute_loop(
@@ -4762,7 +4776,7 @@ mod tests {
     };
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
     use oxvba_runtime::{
-        F64Value, ObjectRef, RuntimeValue,
+        F64Value, ObjectRef, RuntimeValue, VarType, Variant,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray, SafeArrayBound},
     };
@@ -6760,6 +6774,33 @@ mod tests {
         assert_eq!(vm.snapshot_values(2)[0], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_values(2)[1], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_slots(2), vec![1, 1]);
+    }
+
+    #[test]
+    fn invoke_procedure_with_variants_preserves_exact_carrier() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::Jump { target_pc: 4 },
+                Instruction::Halt,
+                Instruction::Halt,
+                Instruction::Halt,
+                Instruction::CopySlot { dst: 0, src: 1 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::default();
+        vm.invoke_procedure_with_variants(&bytecode, 4, &[1], &[Variant::from_string("ABC")])
+            .expect("invoke with variant value");
+
+        let variants = vm.snapshot_variants(2);
+        assert_eq!(variants[0].vtype(), VarType::String);
+        assert_eq!(variants[0].as_bstr(), Some(BStr::from("ABC")));
+        assert_eq!(variants[1].vtype(), VarType::String);
+        assert_eq!(variants[1].as_bstr(), Some(BStr::from("ABC")));
     }
 
     #[test]

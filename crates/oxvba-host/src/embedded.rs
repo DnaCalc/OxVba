@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use oxvba_compiler::{ProjectManifest, compile_project};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, Variant};
 use thiserror::Error;
 
 use crate::Engine;
@@ -220,6 +220,42 @@ impl EmbeddedInvokeProcedureRequest {
     pub fn new(target: EmbeddedProcedureTarget, args: Vec<RuntimeValue>) -> Self {
         Self { target, args }
     }
+
+    pub fn to_variant_request(&self) -> Result<EmbeddedInvokeProcedureVariantRequest, String> {
+        let args = self
+            .args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(EmbeddedInvokeProcedureVariantRequest::new(
+            self.target.clone(),
+            args,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedInvokeProcedureVariantRequest {
+    pub target: EmbeddedProcedureTarget,
+    pub args: Vec<Variant>,
+}
+
+impl EmbeddedInvokeProcedureVariantRequest {
+    pub fn new(target: EmbeddedProcedureTarget, args: Vec<Variant>) -> Self {
+        Self { target, args }
+    }
+
+    pub fn to_runtime_request(&self) -> Result<EmbeddedInvokeProcedureRequest, String> {
+        let args = self
+            .args
+            .iter()
+            .map(Variant::to_runtime_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(EmbeddedInvokeProcedureRequest::new(
+            self.target.clone(),
+            args,
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,6 +295,48 @@ impl EmbeddedInvokeResult {
             diagnostics,
             return_value: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedInvokeVariantResult {
+    pub target: EmbeddedInvocationTarget,
+    pub status: EmbeddedInvokeStatus,
+    pub diagnostics: Vec<PhaseDiagnostic>,
+    pub return_value: Option<Variant>,
+}
+
+impl EmbeddedInvokeVariantResult {
+    pub fn completed(target: EmbeddedInvocationTarget, return_value: Option<Variant>) -> Self {
+        Self {
+            target,
+            status: EmbeddedInvokeStatus::Completed,
+            diagnostics: Vec::new(),
+            return_value,
+        }
+    }
+
+    pub fn failed(target: EmbeddedInvocationTarget, diagnostics: Vec<PhaseDiagnostic>) -> Self {
+        Self {
+            target,
+            status: EmbeddedInvokeStatus::Failed,
+            diagnostics,
+            return_value: None,
+        }
+    }
+
+    pub fn to_runtime_result(&self) -> Result<EmbeddedInvokeResult, String> {
+        let return_value = self
+            .return_value
+            .as_ref()
+            .map(Variant::to_runtime_value)
+            .transpose()?;
+        Ok(EmbeddedInvokeResult {
+            target: self.target.clone(),
+            status: self.status,
+            diagnostics: self.diagnostics.clone(),
+            return_value,
+        })
     }
 }
 
@@ -407,6 +485,15 @@ impl<'engine> EmbeddedRunSession<'engine> {
         &mut self,
         request: &EmbeddedInvokeEntryPointRequest,
     ) -> Result<EmbeddedInvokeResult, EmbeddedRunSessionError> {
+        self.invoke_entry_point_variant(request)?
+            .to_runtime_result()
+            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))
+    }
+
+    pub fn invoke_entry_point_variant(
+        &mut self,
+        request: &EmbeddedInvokeEntryPointRequest,
+    ) -> Result<EmbeddedInvokeVariantResult, EmbeddedRunSessionError> {
         self.ensure_matching_workspace(&request.workspace)?;
         let runtime = self
             .engine
@@ -415,7 +502,7 @@ impl<'engine> EmbeddedRunSession<'engine> {
         self.workspace = request.workspace.clone();
         self.run_result.workspace = request.workspace.clone();
         self.runtime = runtime;
-        Ok(EmbeddedInvokeResult::completed(
+        Ok(EmbeddedInvokeVariantResult::completed(
             EmbeddedInvocationTarget::EntryPoint(request.workspace.clone()),
             None,
         ))
@@ -425,16 +512,28 @@ impl<'engine> EmbeddedRunSession<'engine> {
         &mut self,
         request: &EmbeddedInvokeProcedureRequest,
     ) -> Result<EmbeddedInvokeResult, EmbeddedRunSessionError> {
+        let request = request
+            .to_variant_request()
+            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))?;
+        self.invoke_procedure_variant(&request)?
+            .to_runtime_result()
+            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))
+    }
+
+    pub fn invoke_procedure_variant(
+        &mut self,
+        request: &EmbeddedInvokeProcedureVariantRequest,
+    ) -> Result<EmbeddedInvokeVariantResult, EmbeddedRunSessionError> {
         let return_value = self
             .engine
-            .invoke_procedure(
+            .invoke_procedure_with_variants(
                 &mut self.runtime,
                 &request.target.module_name,
                 &request.target.procedure_name,
                 &request.args,
             )
             .map_err(EmbeddedRunSessionError::Phase)?;
-        Ok(EmbeddedInvokeResult::completed(
+        Ok(EmbeddedInvokeVariantResult::completed(
             EmbeddedInvocationTarget::Procedure(request.target.clone()),
             Some(return_value),
         ))
@@ -475,13 +574,14 @@ mod tests {
     use super::{
         EmbeddedBuildRequest, EmbeddedBuildRunEvent, EmbeddedBuildRunHost, EmbeddedBuildStatus,
         EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
-        EmbeddedInvokeProcedureRequest, EmbeddedOutputChannel, EmbeddedOutputLine,
-        EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
-        EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+        EmbeddedInvokeProcedureRequest, EmbeddedInvokeProcedureVariantRequest,
+        EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget, EmbeddedResetKind,
+        EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedRunStatus, EmbeddedWorkspaceInput,
+        EmbeddedWorkspaceSnapshot,
     };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{RuntimeValue, VarType, Variant};
 
     fn make_manifest(source: &str) -> ProjectManifest {
         ProjectManifest {
@@ -539,6 +639,22 @@ mod tests {
         assert_eq!(request.target.module_name, "Module1");
         assert_eq!(request.target.procedure_name, "Main");
         assert_eq!(request.args, vec![RuntimeValue::I32(42)]);
+    }
+
+    #[test]
+    fn invoke_procedure_variant_request_preserves_exact_args() {
+        let request = EmbeddedInvokeProcedureVariantRequest::new(
+            EmbeddedProcedureTarget::new("Module1", "Main"),
+            vec![Variant::from_string("ABC")],
+        );
+
+        assert_eq!(request.target.module_name, "Module1");
+        assert_eq!(request.target.procedure_name, "Main");
+        assert_eq!(request.args[0].vtype(), VarType::String);
+        assert_eq!(
+            request.to_runtime_request().expect("runtime request").args,
+            vec![RuntimeValue::String("ABC".into())]
+        );
     }
 
     #[test]
@@ -643,6 +759,30 @@ mod tests {
             ))
             .expect("invoke");
         assert_eq!(result.return_value, Some(RuntimeValue::I32(42)));
+    }
+
+    #[test]
+    fn embedded_run_session_invokes_procedure_with_variant_args() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let request = EmbeddedRunRequest::new(EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::disk_only("App.basproj"),
+            make_manifest(
+                "Public Function Echo(ByVal value As String) As String\n    Echo = value\nEnd Function\n",
+            ),
+        ));
+
+        let mut session = host.run_project(&request).expect("run session");
+        let result = session
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
+                EmbeddedProcedureTarget::new("Module1", "Echo"),
+                vec![Variant::from_string("ABC")],
+            ))
+            .expect("invoke");
+
+        let return_value = result.return_value.expect("return value");
+        assert_eq!(return_value.vtype(), VarType::String);
+        assert_eq!(return_value.as_bstr(), Some("ABC".into()));
     }
 
     #[test]
