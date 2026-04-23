@@ -1902,6 +1902,9 @@ Child beads:
      - progress landed: host bundle execution now has a Variant-native snapshot
        companion (`execute_bundle_with_variant_snapshot()`), leaving the
        existing bundle `RuntimeValue` snapshot API as a compatibility projection
+     - progress landed: immediate sessions now expose `snapshot_variants()` over
+       the prepared project runtime session, while immediate evaluation display
+       remains on the existing `RuntimeValue` projection surface
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
