@@ -2553,17 +2553,17 @@ impl Vm {
                     args,
                     writeback_slots,
                 } => {
-                    let arg_values: Vec<RuntimeValue> = args
-                        .iter()
-                        .map(|slot| self.read_value_slot(*slot))
-                        .collect::<Result<_, _>>()?;
                     let arg_variants: Vec<Variant> = args
                         .iter()
                         .map(|slot| self.read_variant_slot(*slot))
                         .collect::<Result<_, _>>()?;
-                    let first_arg = arg_values.first().cloned().unwrap_or(RuntimeValue::I32(0));
 
                     if bytecode.external_call_descriptors.is_empty() {
+                        let first_arg = args
+                            .first()
+                            .map(|slot| self.read_value_slot(*slot))
+                            .transpose()?
+                            .unwrap_or(RuntimeValue::I32(0));
                         match self
                             .host_services
                             .dynlink()
@@ -2644,7 +2644,7 @@ impl Vm {
                         continue;
                     }
 
-                    if arg_values.len() > 1 || !writeback_slots.is_empty() {
+                    if arg_variants.len() > 1 || !writeback_slots.is_empty() {
                         match self
                             .host_services
                             .dynlink()
@@ -2674,10 +2674,24 @@ impl Vm {
                         match self
                             .host_services
                             .dynlink()
-                            .invoke_descriptor(&view, first_arg)
+                            .invoke_descriptor_variants(&view, &arg_variants)
                         {
-                            Ok(value) => {
-                                self.write_value_slot(*dst, value)?;
+                            Ok((ret_value, wb_values)) => {
+                                self.write_variant_slot(*dst, ret_value)?;
+                                if let Err(detail) = self.apply_external_writebacks(
+                                    writeback_slots,
+                                    &arg_variants,
+                                    &wb_values,
+                                ) {
+                                    let err = HalError::adapter_fault(
+                                        self.host_services.profile(),
+                                        CapabilityId::DynamicLinking,
+                                        "invoke_descriptor",
+                                        detail,
+                                    );
+                                    pc = self.route_host_error(pc, err)?;
+                                    continue;
+                                }
                                 pc += 1;
                             }
                             Err(err) => pc = self.route_host_error(pc, err)?,
