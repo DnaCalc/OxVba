@@ -27,6 +27,20 @@ Implemented:
    values rather than `RuntimeValue` values.
 9. `withevents_bindings` now stores bound values as `RuntimeSlot` values
    rather than `RuntimeValue` values.
+10. `crates/oxvba-jit/src/slot_abi.rs` no longer defines a custom
+    tag/payload slot. `RtSlot` is now a transparent owner for the canonical
+    16-byte `Variant` carrier: `VARTYPE` at offset `0`, reserved words at
+    offsets `2/4/6`, and the 8-byte union payload at offset `8`.
+11. JIT generated fast paths now inspect `VT_I4` and the VARIANT union payload
+    for Long arithmetic rather than using a private JIT tag. Loads and
+    conditional branching use runtime helpers where overwrite/drop or semantic
+    truthiness can involve non-scalar carriers.
+12. JIT WithEvents retained state now stores `JitRuntimeSlot` values instead
+    of `RuntimeValue` values, keeping normal VBA values in `Variant` form and
+    retaining `BindingHandle` only as the explicit non-VBA side token.
+13. JIT `ReDim` helper paths now create typed `SAFEARRAY` payloads for the
+    declared runtime element type, matching the VM-side typed SAFEARRAY
+    migration.
 
 Validation:
 
@@ -42,18 +56,32 @@ Validation:
    - result: `5` passed, `1` ignored
 6. `cargo test -p oxvba-vm --lib foreach`
    - result: compile/pass with `0` tests selected
+7. `cargo test -p oxvba-jit --lib slot_abi -- --nocapture`
+   - result: `6` passed
+8. `cargo test -p oxvba-jit --lib runtime_preserve_resize_helper_retains_existing_byte_values -- --nocapture`
+   - result: `1` passed
+9. `cargo test -p oxvba-jit --lib -- --nocapture`
+   - result: `29` passed, `2` failed
+   - the two failures are the same machine-local COM registration failures for
+     `OxVba.TestDispatch`:
+     `CLSIDFromProgID failed for OxVba.TestDispatch with HRESULT 0x800401F3`
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
-   helper functions, host callbacks, `SafeArray` element construction APIs, and
-   `ComValue` bridges. VM register storage, `For Each` iterator storage, and
-   WithEvents binding storage no longer retain it as their backing value store.
+   helper functions, JIT helper functions, host callbacks, `SafeArray` element
+   construction APIs, and `ComValue` bridges. VM register storage, JIT slot
+   storage, `For Each` iterator storage, and VM/JIT WithEvents binding storage
+   no longer retain it as their backing value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
    audit before closure can be claimed.
-4. Completion still requires the internal late-bound/general value used for
-   `Dim x` to be exactly Windows/COM `VARIANT` as the actual carrier, not only
-   VM register storage plus semantic projections.
+4. Completion still requires an audit and migration of all remaining
+   projection seams that can expose or retain general values: interpreter/JIT
+   helpers, HAL callback surfaces, `SafeArray` element APIs, `ComValue`, and
+   pointer-helper behavior such as `VarPtr(Variant)`, `StrPtr`, and `ObjPtr`.
+5. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
+   slot writes project it to `VT_I4` rather than inventing a custom VARIANT
+   tag, while retained internal side lanes keep it separate where needed.
