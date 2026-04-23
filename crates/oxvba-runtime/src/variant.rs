@@ -18,7 +18,7 @@ pub enum VarType {
     Currency = 0x0006,
     Date = 0x0007,
     String = 0x0008,
-    Object = 0x0009,
+    Object = 0x000D,
     Error = 0x000A,
     Boolean = 0x000B,
     Decimal = 0x000E,
@@ -39,7 +39,7 @@ impl VarType {
             0x0006 => Some(Self::Currency),
             0x0007 => Some(Self::Date),
             0x0008 => Some(Self::String),
-            0x0009 => Some(Self::Object),
+            0x000D => Some(Self::Object),
             0x000A => Some(Self::Error),
             0x000B => Some(Self::Boolean),
             0x000E => Some(Self::Decimal),
@@ -848,6 +848,7 @@ mod tests {
             ObjectRef::from_compat_identity(42),
         ))
         .expect("object bridge should be supported");
+        assert_eq!(object_variant.vtype() as u16, 0x000D);
         let object_ref = object_variant
             .as_object_ref()
             .expect("object ref should be retained");
