@@ -3,7 +3,7 @@ use crate::{
     model::{CapabilityId, HalProfileId},
     traits::{DynLinkDescriptorView, DynamicLinkHal},
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, RuntimeValue, Variant};
 use std::collections::BTreeMap;
 
 use super::StandardHostServices;
@@ -295,6 +295,16 @@ impl DynamicLinkHal for StandardHostServices {
             .map(|rv| (rv, Vec::new()))
     }
 
+    fn invoke_descriptor_variants(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        let args = variants_to_runtime_values(self.profile, args)?;
+        let (ret, writebacks) = self.invoke_descriptor_multi(descriptor, &args)?;
+        runtime_result_to_variants(self.profile, ret, writebacks)
+    }
+
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         let arg = self.runtime_value_project_compat_slot_i32(
             &arg,
@@ -319,6 +329,53 @@ impl DynamicLinkHal for StandardHostServices {
         };
         self.invoke_descriptor(&descriptor, RuntimeValue::I32(arg))
     }
+}
+
+fn variants_to_runtime_values(
+    profile: HalProfileId,
+    args: &[Variant],
+) -> HalResult<Vec<RuntimeValue>> {
+    args.iter()
+        .map(|value| {
+            value.to_runtime_value().map_err(|detail| {
+                HalError::adapter_fault(
+                    profile,
+                    CapabilityId::DynamicLinking,
+                    "invoke_descriptor_variants",
+                    detail,
+                )
+            })
+        })
+        .collect()
+}
+
+fn runtime_result_to_variants(
+    profile: HalProfileId,
+    ret: RuntimeValue,
+    writebacks: Vec<RuntimeValue>,
+) -> HalResult<(Variant, Vec<Variant>)> {
+    let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
+        HalError::adapter_fault(
+            profile,
+            CapabilityId::DynamicLinking,
+            "invoke_descriptor_variants",
+            detail,
+        )
+    })?;
+    let writebacks = writebacks
+        .iter()
+        .map(|value| {
+            Variant::try_from_runtime_value(value).map_err(|detail| {
+                HalError::adapter_fault(
+                    profile,
+                    CapabilityId::DynamicLinking,
+                    "invoke_descriptor_variants",
+                    detail,
+                )
+            })
+        })
+        .collect::<HalResult<Vec<_>>>()?;
+    Ok((ret, writebacks))
 }
 
 // ── m1-native-ffi invocation ──

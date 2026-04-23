@@ -2553,6 +2553,10 @@ impl Vm {
                         .iter()
                         .map(|slot| self.read_value_slot(*slot))
                         .collect::<Result<_, _>>()?;
+                    let arg_variants: Vec<Variant> = args
+                        .iter()
+                        .map(|slot| self.read_variant_slot(*slot))
+                        .collect::<Result<_, _>>()?;
                     let first_arg = arg_values.first().cloned().unwrap_or(RuntimeValue::I32(0));
 
                     if bytecode.external_call_descriptors.is_empty() {
@@ -2640,13 +2644,13 @@ impl Vm {
                         match self
                             .host_services
                             .dynlink()
-                            .invoke_descriptor_multi(&view, &arg_values)
+                            .invoke_descriptor_variants(&view, &arg_variants)
                         {
                             Ok((ret_value, wb_values)) => {
-                                self.write_value_slot(*dst, ret_value)?;
+                                self.write_variant_slot(*dst, ret_value)?;
                                 if let Err(detail) = self.apply_external_writebacks(
                                     writeback_slots,
-                                    &arg_values,
+                                    &arg_variants,
                                     &wb_values,
                                 ) {
                                     let err = HalError::adapter_fault(
@@ -3185,6 +3189,19 @@ impl Vm {
         self.registers.registers[slot].to_runtime_value()
     }
 
+    fn read_variant_slot(&self, slot: usize) -> Result<Variant, String> {
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        match &self.registers.registers[slot] {
+            RuntimeSlot::Variant(value) => Ok(value.clone()),
+            RuntimeSlot::BindingHandle(handle) => Err(format!(
+                "slot {slot} contains internal BindingHandle {} and cannot be passed as a Variant",
+                handle.raw()
+            )),
+        }
+    }
+
     fn variant_cell_pointer(&self, slot: usize) -> Result<i64, String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
@@ -3200,11 +3217,19 @@ impl Vm {
         Ok(())
     }
 
+    fn write_variant_slot(&mut self, slot: usize, value: Variant) -> Result<(), String> {
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        self.registers.registers[slot] = RuntimeSlot::Variant(value);
+        Ok(())
+    }
+
     fn apply_external_writebacks(
         &mut self,
         writebacks: &[ExternalCallWriteback],
-        arg_values: &[RuntimeValue],
-        wb_values: &[RuntimeValue],
+        arg_values: &[Variant],
+        wb_values: &[Variant],
     ) -> Result<(), String> {
         for writeback in writebacks {
             let value = match writeback.kind {
@@ -3215,27 +3240,35 @@ impl Vm {
                     value.clone()
                 }
                 ExternalCallWritebackKind::PointerByteArrayPayload => {
-                    let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index)
+                    let Some(pointer) = arg_values
+                        .get(writeback.arg_index)
+                        .and_then(Variant::as_i64)
                     else {
                         return Err(format!(
                             "pointer writeback arg {} is not a LongPtr value",
                             writeback.arg_index
                         ));
                     };
-                    oxvba_runtime::pointer_helpers::read_back_byte_array_payload(*pointer)?
+                    Variant::try_from_runtime_value(
+                        &oxvba_runtime::pointer_helpers::read_back_byte_array_payload(pointer)?,
+                    )?
                 }
                 ExternalCallWritebackKind::PointerStringPayload => {
-                    let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index)
+                    let Some(pointer) = arg_values
+                        .get(writeback.arg_index)
+                        .and_then(Variant::as_i64)
                     else {
                         return Err(format!(
                             "pointer writeback arg {} is not a LongPtr value",
                             writeback.arg_index
                         ));
                     };
-                    oxvba_runtime::pointer_helpers::read_back_string_payload(*pointer)?
+                    Variant::try_from_runtime_value(
+                        &oxvba_runtime::pointer_helpers::read_back_string_payload(pointer)?,
+                    )?
                 }
             };
-            self.write_value_slot(writeback.source_slot, value)?;
+            self.write_variant_slot(writeback.source_slot, value)?;
         }
         Ok(())
     }

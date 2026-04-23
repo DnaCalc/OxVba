@@ -4279,12 +4279,11 @@ mod tests {
                 host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
                 RuntimeValue::from_compat_slot_i32(shell_expected)
             );
-            prop_assert_eq!(
-                host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
-                    .expect("create_object should succeed"),
-                host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
-                    .expect("create_object should remain stable for the same ProgID within one host")
-            );
+            let first_object = host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
+                .expect("create_object should succeed");
+            let second_object = host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
+                .expect("create_object should remain stable for the same ProgID within one host");
+            prop_assert_eq!(first_object.compat_identity(), second_object.compat_identity());
             let request = ComInvokeRequest::legacy(object, member, arg);
             let semantic = host
                 .dispatch_invoke_runtime_value_v2(&request)

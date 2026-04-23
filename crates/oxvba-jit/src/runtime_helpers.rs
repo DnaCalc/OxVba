@@ -52,6 +52,26 @@ macro_rules! write_slot {
     }};
 }
 
+macro_rules! read_variant_slot {
+    ($ctx:expr, $slot:expr) => {{
+        debug_assert!(
+            !$ctx.is_null(),
+            "read_variant_slot: null JitContext pointer"
+        );
+        unsafe { (*$ctx).read_variant_slot($slot) }
+    }};
+}
+
+macro_rules! write_variant_slot {
+    ($ctx:expr, $slot:expr, $value:expr) => {{
+        debug_assert!(
+            !$ctx.is_null(),
+            "write_variant_slot: null JitContext pointer"
+        );
+        unsafe { (*$ctx).write_variant_slot($slot, $value) }
+    }};
+}
+
 // ── Arithmetic helpers ────────────────────────────────────────────────
 
 /// AddSlots: dst = lhs + rhs
@@ -3114,6 +3134,10 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         .iter()
         .map(|slot| read_slot!(ctx, *slot as u32))
         .collect();
+    let arg_variants: Vec<Variant> = arg_slots
+        .iter()
+        .map(|slot| read_variant_slot!(ctx, *slot as u32))
+        .collect();
     let first_arg = arg_values.first().cloned().unwrap_or(RuntimeValue::I32(0));
 
     // Fast path: no descriptors → simple invoke_symbol.
@@ -3172,11 +3196,14 @@ pub extern "C" fn oxrt_host_invoke_symbol(
     }
 
     if arg_values.len() > 1 || !writeback_slots.is_empty() {
-        match host.dynlink().invoke_descriptor_multi(&view, &arg_values) {
+        match host
+            .dynlink()
+            .invoke_descriptor_variants(&view, &arg_variants)
+        {
             Ok((ret_value, wb_values)) => {
-                write_slot!(ctx, dst, ret_value);
+                write_variant_slot!(ctx, dst, ret_value);
                 if let Err(_detail) =
-                    apply_external_writebacks(ctx, writeback_slots, &arg_values, &wb_values)
+                    apply_external_writebacks(ctx, writeback_slots, &arg_variants, &wb_values)
                 {
                     return route_host_error_code(ctx, 53073);
                 }
@@ -3198,8 +3225,8 @@ pub extern "C" fn oxrt_host_invoke_symbol(
 fn apply_external_writebacks(
     ctx: *mut JitContext,
     writebacks: &[ExternalCallWriteback],
-    arg_values: &[RuntimeValue],
-    wb_values: &[RuntimeValue],
+    arg_values: &[Variant],
+    wb_values: &[Variant],
 ) -> Result<(), String> {
     for writeback in writebacks {
         let value = match writeback.kind {
@@ -3210,25 +3237,35 @@ fn apply_external_writebacks(
                 value.clone()
             }
             ExternalCallWritebackKind::PointerByteArrayPayload => {
-                let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index) else {
+                let Some(pointer) = arg_values
+                    .get(writeback.arg_index)
+                    .and_then(Variant::as_i64)
+                else {
                     return Err(format!(
                         "pointer writeback arg {} is not a LongPtr value",
                         writeback.arg_index
                     ));
                 };
-                oxvba_runtime::pointer_helpers::read_back_byte_array_payload(*pointer)?
+                Variant::try_from_runtime_value(
+                    &oxvba_runtime::pointer_helpers::read_back_byte_array_payload(pointer)?,
+                )?
             }
             ExternalCallWritebackKind::PointerStringPayload => {
-                let Some(RuntimeValue::I64(pointer)) = arg_values.get(writeback.arg_index) else {
+                let Some(pointer) = arg_values
+                    .get(writeback.arg_index)
+                    .and_then(Variant::as_i64)
+                else {
                     return Err(format!(
                         "pointer writeback arg {} is not a LongPtr value",
                         writeback.arg_index
                     ));
                 };
-                oxvba_runtime::pointer_helpers::read_back_string_payload(*pointer)?
+                Variant::try_from_runtime_value(
+                    &oxvba_runtime::pointer_helpers::read_back_string_payload(pointer)?,
+                )?
             }
         };
-        write_slot!(ctx, writeback.source_slot as u32, value);
+        write_variant_slot!(ctx, writeback.source_slot as u32, value);
     }
     Ok(())
 }

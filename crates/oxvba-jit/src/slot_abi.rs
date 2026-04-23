@@ -63,6 +63,14 @@ impl RtSlot {
             .expect("JIT VARIANT slot should carry a runtime-supported value")
     }
 
+    pub fn variant(&self) -> &Variant {
+        &self.variant
+    }
+
+    pub fn from_variant(variant: Variant) -> Self {
+        Self { variant }
+    }
+
     pub fn vtype(&self) -> VarType {
         self.variant.vtype()
     }

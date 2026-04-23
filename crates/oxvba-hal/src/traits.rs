@@ -9,8 +9,8 @@
 //! - `FreeFile`: CONF-discovered-ms-vbal-250520-f945507e-0286
 
 use crate::{
-    error::HalResult,
-    model::{HalDescriptor, HalProfileId, HostPolicy},
+    error::{HalError, HalResult},
+    model::{CapabilityId, HalDescriptor, HalProfileId, HostPolicy},
     project::{
         HostExtensionModuleChange, ProjectDescriptor, ProjectReferenceDescriptor,
         ResolvedProjectReference,
@@ -25,7 +25,7 @@ pub use oxvba_com::{
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
     TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue, Variant};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +248,20 @@ pub trait DynamicLinkHal: Send + Sync {
         self.invoke_bound(binding, arg).map(|rv| (rv, Vec::new()))
     }
 
+    /// Variant-native multi-argument invoke path.
+    ///
+    /// This is the canonical transport for VM/JIT slots. The `RuntimeValue`
+    /// multi-call remains as a compatibility projection for older HAL adapters.
+    fn invoke_bound_variants(
+        &self,
+        binding: BindingHandle,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        let args = variants_to_runtime_values(args, "invoke_bound_variants")?;
+        let (ret, writebacks) = self.invoke_bound_multi(binding, &args)?;
+        runtime_result_to_variants(ret, writebacks, "invoke_bound_variants")
+    }
+
     /// Descriptor-driven invoke path used by VM/host integrations.
     fn invoke_descriptor(
         &self,
@@ -266,8 +280,66 @@ pub trait DynamicLinkHal: Send + Sync {
             .map(|rv| (rv, Vec::new()))
     }
 
+    /// Descriptor-driven Variant-native multi-arg invoke path.
+    fn invoke_descriptor_variants(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        let args = variants_to_runtime_values(args, "invoke_descriptor_variants")?;
+        let (ret, writebacks) = self.invoke_descriptor_multi(descriptor, &args)?;
+        runtime_result_to_variants(ret, writebacks, "invoke_descriptor_variants")
+    }
+
     /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue>;
+}
+
+fn variants_to_runtime_values(
+    args: &[Variant],
+    operation: &'static str,
+) -> HalResult<Vec<RuntimeValue>> {
+    args.iter()
+        .map(|value| {
+            value.to_runtime_value().map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::DynamicLinking,
+                    operation,
+                    detail,
+                )
+            })
+        })
+        .collect()
+}
+
+fn runtime_result_to_variants(
+    ret: RuntimeValue,
+    writebacks: Vec<RuntimeValue>,
+    operation: &'static str,
+) -> HalResult<(Variant, Vec<Variant>)> {
+    let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
+        HalError::adapter_fault(
+            HalProfileId::Null,
+            CapabilityId::DynamicLinking,
+            operation,
+            detail,
+        )
+    })?;
+    let writebacks = writebacks
+        .iter()
+        .map(|value| {
+            Variant::try_from_runtime_value(value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::DynamicLinking,
+                    operation,
+                    detail,
+                )
+            })
+        })
+        .collect::<HalResult<Vec<_>>>()?;
+    Ok((ret, writebacks))
 }
 
 pub trait DiagnosticsHal: Send + Sync {

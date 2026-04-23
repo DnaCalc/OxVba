@@ -214,6 +214,25 @@ impl JitContext {
         rt_slot.to_runtime_value()
     }
 
+    /// Read the exact VARIANT carrier from a slot.
+    ///
+    /// # Safety
+    /// The slot index must be within bounds, and slots_ptr must be valid.
+    pub unsafe fn read_variant_slot(&self, slot: u32) -> Variant {
+        debug_assert!(
+            !self.slots_ptr.is_null(),
+            "JitContext::read_variant_slot: null slots_ptr"
+        );
+        debug_assert!(
+            slot < self.slot_count,
+            "JitContext::read_variant_slot: slot {} >= count {}",
+            slot,
+            self.slot_count
+        );
+        let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
+        rt_slot.variant().clone()
+    }
+
     /// Return the address of the actual VARIANT cell backing a JIT slot.
     ///
     /// # Safety
@@ -250,6 +269,25 @@ impl JitContext {
         );
         let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
         *rt_slot = rtslot_from_runtime_value(&value);
+    }
+
+    /// Write an exact VARIANT carrier to a slot.
+    ///
+    /// # Safety
+    /// The slot index must be within bounds, and slots_ptr must be valid.
+    pub unsafe fn write_variant_slot(&mut self, slot: u32, value: Variant) {
+        debug_assert!(
+            !self.slots_ptr.is_null(),
+            "JitContext::write_variant_slot: null slots_ptr"
+        );
+        debug_assert!(
+            slot < self.slot_count,
+            "JitContext::write_variant_slot: slot {} >= count {}",
+            slot,
+            self.slot_count
+        );
+        let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
+        *rt_slot = RtSlot::from_variant(value);
     }
 
     /// Get a reference to the host services Arc.

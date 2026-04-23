@@ -17,7 +17,7 @@ use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComSubscriptionToken, DynamicCallRequest,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, RuntimeValue, Variant};
 
 pub struct RecordingHostServices {
     inner: Arc<dyn HostServices>,
@@ -450,6 +450,16 @@ impl DynamicLinkHal for RecordingHostServices {
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
         self.inner.dynlink().invoke_descriptor(descriptor, arg)
+    }
+
+    fn invoke_descriptor_variants(
+        &self,
+        descriptor: &crate::traits::DynLinkDescriptorView<'_>,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        self.inner
+            .dynlink()
+            .invoke_descriptor_variants(descriptor, args)
     }
 
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
