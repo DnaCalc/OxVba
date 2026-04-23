@@ -202,6 +202,13 @@ Implemented:
     methods remain as compatibility projection helpers, but the COM value bridge
     no longer uses `RuntimeValue` as the intermediate carrier for normal
     Variant-shaped values.
+49. VM and host embedded procedure invocation now have Variant-native companion
+    paths. `Vm::invoke_procedure_with_variants()`,
+    `Engine::invoke_procedure_with_variants()`, and
+    `EmbeddedRunSession::invoke_procedure_variant()` carry procedure arguments
+    and return values as exact `Variant` carriers; existing embedded
+    `RuntimeValue` request/result APIs remain compatibility projections over
+    those Variant-native paths.
 
 Validation:
 
@@ -543,6 +550,22 @@ Validation:
     - result: passed
 150. `./scripts/check-governance.ps1`
     - result: passed
+151. `cargo test -p oxvba-vm --lib invoke_procedure_with_variants_preserves_exact_carrier -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM digit helper
+      functions
+152. `cargo test -p oxvba-host --lib embedded_run_session_invokes_procedure_with_variant_args -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
+153. `cargo fmt --check`
+    - result: passed
+154. `cargo check -p oxvba-vm -p oxvba-host`
+    - result: passed with existing dead-code warnings in VM/JIT digit helper
+      functions
+155. `./scripts/check-governance.ps1`
+    - result: passed
+156. `cargo test -p oxvba-host --lib invoke_procedure_variant_request_preserves_exact_args -- --nocapture`
+    - result: `1` passed with existing dead-code warnings in VM/JIT digit
+      helper functions
 
 Implementation progress:
 
@@ -636,6 +659,10 @@ Implementation progress:
     and constructors. Its `RuntimeValue` methods remain compatibility
     projections, but normal COM value bridge conversion no longer uses
     `RuntimeValue` as the intermediate carrier.
+25. Embedded host procedure invocation now has Variant-native request/result
+    companions over a VM Variant invocation path. Existing embedded
+    `RuntimeValue` APIs project into and out of that Variant path for callers
+    that still use the compatibility surface.
 
 Remaining blocker:
 
@@ -653,8 +680,9 @@ Remaining blocker:
    return/destination writes, VM/JIT result extraction companion APIs, VM/JIT
    public execution snapshot companion APIs, host/project snapshot companion
    APIs, host bundle snapshot companion APIs, immediate-session snapshot
-   companion APIs, and `ComValue` Variant bridge conversions no longer retain it
-   as their backing value store for normal VBA values.
+   companion APIs, `ComValue` Variant bridge conversions, and embedded host
+   procedure invocation companion APIs no longer retain it as their backing
+   value store for normal VBA values.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
@@ -667,9 +695,9 @@ Remaining blocker:
    `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
    projection APIs that still expose `RuntimeValue`, legacy COM dispatch
-   `RuntimeValue` compatibility methods, and non-Variant pointer-helper
-   behavior such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant
-   variables.
+   `RuntimeValue` compatibility methods, embedded/immediate compatibility APIs
+   that still expose `RuntimeValue`, and non-Variant pointer-helper behavior
+   such as `StrPtr`, `ObjPtr`, and generic `VarPtr` over non-Variant variables.
 5. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
    compatibility results. They now project from Variant-backed companion
    surfaces, but they remain open classification work before the final `vmm-e6`
