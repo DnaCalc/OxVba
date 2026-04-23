@@ -8,7 +8,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig};
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use oxvba_runtime::{RuntimeValue, VarType, Variant, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
     ProjectManifest {
@@ -487,7 +487,7 @@ fn create_class_and_invoke_member_returns_value() {
     let result = engine
         .invoke_member_on_object(
             &mut session,
-            handle,
+            handle.clone(),
             "Add",
             &[RuntimeValue::I32(10), RuntimeValue::I32(32)],
         )
@@ -497,6 +497,17 @@ fn create_class_and_invoke_member_returns_value() {
         RuntimeValue::I32(v) => assert_eq!(v, 42),
         other => panic!("Expected I32(42), got {other:?}"),
     }
+
+    let variant_result = engine
+        .invoke_member_on_object_with_variants(
+            &mut session,
+            handle,
+            "Add",
+            &[Variant::from_i32(10), Variant::from_i32(32)],
+        )
+        .unwrap();
+    assert_eq!(variant_result.vtype(), VarType::Long);
+    assert_eq!(variant_result.as_i32(), Some(42));
 }
 
 #[test]

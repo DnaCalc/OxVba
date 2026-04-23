@@ -818,6 +818,23 @@ impl Engine {
         member: &str,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, PhaseDiagnostic> {
+        let variants = args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PhaseDiagnostic::runtime)?;
+        self.invoke_member_on_object_with_variants(session, object, member, &variants)
+            .and_then(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
+    }
+
+    /// Invoke a method on a class object instance with exact Variant args.
+    pub fn invoke_member_on_object_with_variants(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        object: ObjectRef,
+        member: &str,
+        args: &[Variant],
+    ) -> Result<Variant, PhaseDiagnostic> {
         // Find the dynamic object route for this handle
         let route = session
             .compiled
@@ -857,8 +874,8 @@ impl Engine {
         // Class members have an implicit `Me` parameter in slot 0.
         // Prepend the canonical ObjectRef value for `Me`, then the caller-supplied args.
         let has_implicit_me = member_route.param_slots.len() > args.len();
-        let full_args: Vec<RuntimeValue> = if has_implicit_me {
-            let mut v = vec![RuntimeValue::Object(object.into())];
+        let full_args: Vec<Variant> = if has_implicit_me {
+            let mut v = vec![Variant::from_object_ref(object)];
             v.extend_from_slice(args);
             v
         } else {
@@ -867,7 +884,7 @@ impl Engine {
 
         session
             .vm
-            .invoke_procedure_with_values(
+            .invoke_procedure_with_variants(
                 &session.compiled.bytecode,
                 member_route.entry_pc,
                 &member_route.param_slots,
@@ -876,8 +893,8 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)?;
 
         match member_route.return_slot {
-            Some(slot) => Ok(session.read_slot(slot)),
-            None => Ok(RuntimeValue::Empty),
+            Some(slot) => Ok(session.read_variant_slot(slot)),
+            None => Ok(Variant::empty()),
         }
     }
 
