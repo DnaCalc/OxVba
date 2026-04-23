@@ -400,9 +400,9 @@ This grid is the current anti-drift truth surface for closure.
       SAFEARRAY-style descriptor plus contiguous canonical typed payload
       storage, with intrinsic element-vartype preservation now landed for
       `VT_ARRAY | VT_VARIANT`, typed scalar lanes, `VT_BSTR`, `VT_DECIMAL`,
-      `VT_DISPATCH`, and `VT_UNKNOWN`; the remaining bounded carrier gap is the
-      exact canonical binding-handle lane, not boundary-only SAFEARRAY
-      materialization
+      `VT_DISPATCH`, and `VT_UNKNOWN`; `BindingHandle` is now treated
+      explicitly as an internal non-VBA token outside the canonical `VARIANT`
+      scope rather than as a missing Variant/SAFEARRAY carrier lane
    - projected truth:
       full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
       materially realized at boundary/helper seams for array-sensitive lanes
@@ -1686,9 +1686,10 @@ Child beads:
        `VT_DECIMAL`, `VT_DISPATCH`, and `VT_UNKNOWN`, and the Windows bridge
        plus host lanes assert those typed results directly instead of
        normalizing them away
-     - remaining blocker: the canonical binding-handle lane is still bounded,
-       so this bead remains in-progress until that residual gap is either
-       implemented or explicitly narrowed out of the scoped Variant carrier
+     - residual scope decision landed: `BindingHandle` is an internal host /
+       dynlink token, not a VBA/COM value-model type, so it is explicitly
+       narrowed out of the canonical `Variant` carrier scope instead of being
+       misclassified as a missing SAFEARRAY/VARIANT migration lane
    - completion evidence:
      - the workset can describe the internal Variant/SAFEARRAY carrier as
        intrinsically migrated rather than only boundary-correct
@@ -1710,9 +1711,9 @@ Post-`vmm-d6` rollout refresh:
    `crates/oxvba-runtime/src/variant.rs`
    - current known limit:
       the exact 16-byte canonical carrier now covers scalar, string, and
-      `ObjectRef`-backed object values; array-intent now routes through the
-      intrinsic SAFEARRAY carrier, while the remaining exact-carrier gap is the
-      canonical binding-handle lane
+      `ObjectRef`-backed object values, and array-intent now routes through the
+      intrinsic SAFEARRAY carrier; `BindingHandle` is explicitly excluded from
+      canonical Variant scope because it is an internal non-VBA token
    - rollout rule:
      the bead must either remove those subset limits under the new carrier or
      leave behind an explicit retained-adapter decision tied back to the fact
