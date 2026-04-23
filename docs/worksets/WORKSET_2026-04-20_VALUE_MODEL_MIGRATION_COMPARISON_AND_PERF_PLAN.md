@@ -352,15 +352,21 @@ Rules:
 
 1. a representation epic does not close merely because boundary-visible
    behavior is Windows-like or because the selected old/new matrix is green
-2. if the canonical internal carrier is still semantic-first and Windows-like
+2. for this workset, `BSTR` means the canonical internal string type is the
+   actual BSTR representation, not a BSTR-shaped or UTF-16-compatible project
+   carrier
+3. for this workset, `VARIANT` means the canonical internal late-bound/general
+   value used for `Dim x` is exactly the Windows/COM `VARIANT` representation,
+   including real `BSTR`, `SAFEARRAY*`, and interface-pointer union payloads
+4. if the canonical internal carrier is still semantic-first and Windows-like
    truth is only projected or materialized at pointer/COM/native seams, that
    family remains `in-progress`
-3. a bounded subset can close only when the epic title and workset scope have
+5. a bounded subset can close only when the epic title and workset scope have
    been explicitly narrowed to that bounded subset; silent reinterpretation is
    not allowed
-4. every still-open representation epic must end with an explicit
+6. every still-open representation epic must end with an explicit
    representation-closure checklist bead
-5. the final migration report cannot return to `final` status until those
+7. the final migration report cannot return to `final` status until those
    checklist beads are complete and the workset status is consistent with them.
 
 ### 6.2 Current intrinsic/projected/bounded grid
@@ -369,30 +375,28 @@ This grid is the current anti-drift truth surface for closure.
 
 1. string / `BSTR`
    - intrinsic target:
-     canonical runtime string storage itself becomes BSTR-aligned
+     canonical runtime string storage itself is the BSTR representation
    - current truth:
      canonical `BStr` is now a core-only UTF-16/BSTR-shaped carrier with no
-     persistent UTF-8 payload field
+     persistent UTF-8 payload field, but it is not yet the exact internal BSTR
+     representation required by this workset
    - projected truth:
      real BSTR allocations are still materialized at pointer-helper and COM
      seams, and borrowed UTF-8 text is now a derived compatibility projection
      instead of carrier state
-   - checklist result (`2026-04-22`):
-     - implemented:
-       canonical `BStr` carrier is intrinsic/core-only and matches the intended
-       UTF-16/BSTR-shaped storage model
-     - projected:
-       Windows `BSTR` allocations remain a boundary materialization concern
-     - bounded:
-       no remaining bounded caveat is recorded against the canonical string
-       carrier itself; only follow-on perf mitigation remains open
+   - checklist result (`2026-04-23 correction`):
+     - superseded:
+       prior closure language treated BSTR-shaped storage as sufficient
+     - still open:
+       the internal OxVba string type must become the actual BSTR
+       representation before the family can close
    - closure implication:
-     `vmm-d7` delivery is complete; `vmm-d8` must record the final
-     implemented/projected/bounded classification before epic closure
+     `vmm-d7` and `vmm-d8` are reopened
 2. `Variant` / `VARIANT`
    - intrinsic target:
-      canonical runtime value carrier is Windows-shaped throughout the payload
-      model, not only at the 16-byte header/core
+      canonical runtime late-bound/general value carrier is exactly the
+      Windows/COM `VARIANT` representation, including real `BSTR`,
+      `SAFEARRAY*`, and interface-pointer payloads
    - current truth:
       canonical `Variant` is now back to the exact 16-byte carrier for scalar,
       string, and `ObjectRef`-backed object lanes, with clone/drop driven from
@@ -402,26 +406,22 @@ This grid is the current anti-drift truth surface for closure.
       `VT_ARRAY | VT_VARIANT`, typed scalar lanes, `VT_BSTR`, `VT_DECIMAL`,
       `VT_DISPATCH`, and `VT_UNKNOWN`; `BindingHandle` is now treated
       explicitly as an internal non-VBA token outside the canonical `VARIANT`
-      scope rather than as a missing Variant/SAFEARRAY carrier lane
+      scope rather than as a missing Variant/SAFEARRAY carrier lane; this is
+      still not sufficient because the general internal value model has not yet
+      become the exact Windows/COM `VARIANT` representation everywhere
    - projected truth:
       full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
       materially realized at boundary/helper seams for array-sensitive lanes
-   - checklist result (`2026-04-23`):
-     - implemented:
-       canonical `Variant` is exact 16-byte for the scoped value lanes and
-       canonical `SafeArray` now preserves typed payload storage internally,
-       including typed interface-array element vartypes
-     - projected:
-       native Windows `VARIANT` / `SAFEARRAY` / interface-pointer objects still
-       materialize at COM and pointer-helper boundaries where host ABI truth is
-       required
-     - bounded:
-       no remaining bounded caveat is recorded against the scoped canonical
-       Variant/SAFEARRAY carrier itself; `BindingHandle` is explicitly outside
-       scope as an internal non-VBA token
+   - checklist result (`2026-04-23 correction`):
+     - superseded:
+       `VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md` accepted
+       native-shaped carriers as closure evidence
+     - still open:
+       `Dim x` / general late-bound internal storage must be exactly
+       Windows/COM `VARIANT`; array payloads must be real `SAFEARRAY*`
+       payloads in the union slot
    - closure implication:
-     `vmm-e6` delivery is complete; `vmm-e7` must record the final
-     implemented/projected/bounded classification before epic closure
+     `vmm-e6` and `vmm-e7` are reopened
 3. COM interface identity
    - intrinsic target:
      canonical runtime object identity and lifetime are `IUnknown`-backed
@@ -462,12 +462,11 @@ Baseline facts:
 
 Target truth:
 
-1. internal string representation becomes Windows VBA 7.1 x64-style BSTR-like
-   storage as far as can be ascertained
+1. internal string representation becomes BSTR
 2. string identity, length, null/empty behavior, and pointer exposure line up
    with Windows/VBA expectations
-3. temporary boundary projections are reduced where internal truth now already
-   matches the observable truth.
+3. helper or COM-boundary BSTR materialization is not accepted as the canonical
+   internal representation.
 
 Required migration actions:
 
@@ -512,13 +511,12 @@ New matrix emphasis:
 
 Intrinsic closure checklist for this family:
 
-1. canonical runtime `BStr` is no longer fundamentally `String` plus projected
-   UTF-16 truth
-2. canonical runtime string storage itself owns the BSTR-relevant length,
-   null/empty, and pointer semantics rather than reconstructing them only at
-   helper boundaries
-3. any surviving boundary-only BSTR materialization is documented as a real
-   portability wrapper rather than as the de facto canonical carrier
+1. canonical runtime `BStr` is the BSTR representation, not `String`,
+   BSTR-shaped UTF-16 storage, or a projection wrapper
+2. canonical runtime string storage itself owns BSTR length, pointer,
+   null/empty, and lifetime semantics
+3. boundary code consumes or adapts the canonical BSTR representation rather
+   than constructing the only real BSTR at the boundary
 4. the family checklist bead records the final `implemented` / `projected` /
    `bounded` state explicitly before `vmm-d` can close.
 
@@ -535,17 +533,23 @@ Baseline facts:
 
 Target truth:
 
-1. OxVba's internal value containers converge on Windows VBA 7.1 x64-style
-   `Variant` / `VARIANT`-compatible representation as far as can be clean-room
-   established
+1. OxVba's internal late-bound/general value container used for `Dim x` is
+   exactly the Windows/COM `VARIANT` representation as defined by Windows
+   headers and COM Automation specifications
 2. subtype storage, width, alignment, reserved fields, decimal/currency/date
-   handling, and pointer-bearing payloads are reworked accordingly
-3. pointer-helper truth for `VarPtr(Variant)` becomes a direct consequence of
+   handling, and pointer-bearing payloads match that `VARIANT`
+3. string payloads are real `BSTR` pointers in the union slot
+4. array payloads are real `SAFEARRAY*` pointers in the union slot
+5. object/interface payloads are real COM-compatible interface pointers in the
+   union slot
+6. pointer-helper truth for `VarPtr(Variant)` becomes a direct consequence of
    the internal model wherever honest.
 
 Required migration actions:
 
-1. decide the new canonical runtime value/container split
+1. remove the separate semantic-first late-bound value carrier for `Dim x`
+   storage, or make it a transparent wrapper over the exact internal
+   Windows/COM `VARIANT`
 2. define how strings, objects, arrays, decimal, currency, and date live in the
    new value carrier
 3. reconcile `RuntimeValue`, `Variant`, and `ComValue` so the new internal
@@ -583,11 +587,11 @@ New matrix emphasis:
 
 Intrinsic closure checklist for this family:
 
-1. canonical runtime `Variant` is no longer only a Windows-shaped core plus
-   semantic side-owned payloads for the remaining hard cases
-2. string, object, and array payload lanes are represented as part of the
-   intended internal `VARIANT` truth rather than only through helper/boundary
-   materialization
+1. canonical runtime late-bound/general value storage is exactly Windows/COM
+   `VARIANT`
+2. string, object, and array payload lanes are represented in the actual
+   `VARIANT` union payload as real `BSTR`, interface pointer, and `SAFEARRAY*`
+   values
 3. `SAFEARRAY` interaction is no longer only a boundary truth for the scoped
    internal array lane, unless the workset is explicitly narrowed
 4. the family checklist bead records the final `implemented` / `projected` /
@@ -1483,7 +1487,7 @@ Parent:
 
 1. `vmm-d`
    - close condition:
-     - string carrier migration is landed
+     - internal string type is the actual BSTR representation
      - string correctness/perf/memory rows are reconciled
      - remaining string decisions are explicitly documented
      - the intrinsic string/BSTR closure checklist bead is complete.
@@ -1562,8 +1566,8 @@ Child beads:
    - depends on: `vmm-d3`, `vmm-d4`, `vmm-d5`, `vmm-d6`
    - title: `Complete intrinsic internal BSTR carrier migration`
    - outcome:
-     - the canonical runtime string carrier itself becomes the intended
-       BSTR-aligned substrate rather than remaining `String` plus projection
+     - the canonical runtime string carrier itself becomes BSTR rather than
+       remaining `String`, BSTR-shaped storage, or boundary projection
   - current staged progress:
     - stage 1 landed: `BStr` is now opaque across production code and test
       code, so the old `pub String` tuple shape is no longer a cross-repo API
@@ -1590,14 +1594,12 @@ Child beads:
     - a bounded paired memory refresh against the stage-5 candidate showed why
       that step was necessary: `BStr` had inflated to `56` bytes and `Variant`
       to `80` bytes while the always-live/lazy-cache hybrid was still in place
-    - stage 6 still does not satisfy this bead on its own; the lane remains
-      in-progress until the remaining runtime/value/perf evidence confirms that
-      the string carrier is intrinsically migrated rather than still depending
-      on downstream UTF-8 projection churn in ways that mask the final layout or
-      timing consequences of the core-only carrier
+    - stage 6 still does not satisfy this bead; the 2026-04-23 correction
+      clarifies that BSTR-shaped/core-only UTF-16 storage is progress, not
+      closure, because the internal OxVba string type must become BSTR
    - completion evidence:
-     - runtime string carrier truth no longer depends on helper-only BSTR
-       reconstruction for its canonical representation
+     - runtime string carrier truth is BSTR, and boundary/helper seams no
+       longer create the only real BSTR representation
 9. `vmm-d8`
    - kind: `support`
    - priority: `P1`
@@ -1616,7 +1618,8 @@ Parent:
 
 1. `vmm-e`
    - close condition:
-     - the new value/Variant substrate is landed
+     - the internal late-bound/general value substrate is exactly Windows/COM
+       `VARIANT`
      - `VarPtr(Variant)` and COM variant lanes are reconciled
      - memory/layout observations are captured
      - the intrinsic Variant/SAFEARRAY closure checklist bead is complete.
@@ -1684,9 +1687,9 @@ Child beads:
    - depends on: `vmm-e3`, `vmm-e4`, `vmm-e5`
    - title: `Complete intrinsic internal Variant and SAFEARRAY carrier migration`
    - outcome:
-     - the canonical runtime Variant/array carrier no longer relies on
-       semantic side-owned payloads or boundary-only SAFEARRAY materialization
-       for the scoped internal truth
+     - the canonical runtime late-bound/general value carrier is exactly
+       Windows/COM `VARIANT`, with real `BSTR`, `SAFEARRAY*`, and
+       interface-pointer payloads in the union slot
    - current staged progress:
      - stage 1 landed: canonical `Variant` is now back to the exact 16-byte
        carrier for scalar, string, and `ObjectRef`-backed object lanes, with
@@ -1704,9 +1707,13 @@ Child beads:
        dynlink token, not a VBA/COM value-model type, so it is explicitly
        narrowed out of the canonical `Variant` carrier scope instead of being
        misclassified as a missing SAFEARRAY/VARIANT migration lane
+     - correction landed: the preceding stages are intermediate progress only;
+       this bead remains open until the internal late-bound/general value used
+       for `Dim x` is exactly the Windows/COM `VARIANT` representation
    - completion evidence:
-     - the workset can describe the internal Variant/SAFEARRAY carrier as
-       intrinsically migrated rather than only boundary-correct
+     - the workset can describe the internal late-bound/general value carrier
+       as exactly Windows/COM `VARIANT`, not only native-shaped or
+       boundary-correct
 8. `vmm-e7`
    - kind: `support`
    - priority: `P1`
