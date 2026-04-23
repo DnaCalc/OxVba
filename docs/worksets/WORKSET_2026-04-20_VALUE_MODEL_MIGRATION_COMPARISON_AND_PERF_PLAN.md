@@ -1862,6 +1862,11 @@ Child beads:
        retained-value get/set/owner-search helpers now keep normal retained VBA
        values on `Variant` slots; the project COM subscription sync still
        projects at its object-boundary check only
+     - progress landed: VM project-dynamic dispatch now returns project-routed
+       member results as `RuntimeSlot` values and writes dispatch destinations
+       directly from those slots; object `_NewEnum` fallback also wraps the
+       retained `DynamicValue` `Variant` into a slot before semantic array
+       inspection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
