@@ -3243,6 +3243,14 @@ impl Vm {
         Ok(())
     }
 
+    fn write_runtime_slot(&mut self, slot: usize, value: RuntimeSlot) -> Result<(), String> {
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        self.registers.registers[slot] = value;
+        Ok(())
+    }
+
     fn apply_external_writebacks(
         &mut self,
         writebacks: &[ExternalCallWriteback],
@@ -3532,10 +3540,16 @@ impl Vm {
         RuntimeValue::from_compat_slot_i32(param.default_value.unwrap_or(0))
     }
 
+    fn default_project_dynamic_param_slot(
+        param: &ProjectDynamicParamRoute,
+    ) -> Result<RuntimeSlot, String> {
+        RuntimeSlot::from_runtime_value(Self::default_project_dynamic_param_value(param))
+    }
+
     fn bind_project_dynamic_member_args(
         member: &ProjectDynamicMemberRoute,
         request_args: &[DynamicCallArg],
-    ) -> Result<Vec<RuntimeValue>, String> {
+    ) -> Result<Vec<RuntimeSlot>, String> {
         if member.params.len() != member.visible_param_count {
             return Err(format!(
                 "member metadata mismatch: {} visible params but {} param routes",
@@ -3544,7 +3558,7 @@ impl Vm {
             ));
         }
 
-        let mut bound: Vec<Option<RuntimeValue>> = vec![None; member.params.len()];
+        let mut bound: Vec<Option<RuntimeSlot>> = vec![None; member.params.len()];
         let mut param_array_items = Vec::new();
         let param_array_index = member.params.iter().position(|param| param.param_array);
         let mut next_positional = 0usize;
@@ -3571,8 +3585,8 @@ impl Vm {
                     return Err(format!("argument `{}` is bound more than once", param.name));
                 }
                 bound[index] = Some(match &arg.value {
-                    Some(value) => value.to_runtime_value(),
-                    None if param.optional => Self::default_project_dynamic_param_value(param),
+                    Some(value) => RuntimeSlot::Variant(value.variant().clone()),
+                    None if param.optional => Self::default_project_dynamic_param_slot(param)?,
                     None => {
                         return Err(format!(
                             "required argument `{}` cannot be omitted",
@@ -3610,8 +3624,8 @@ impl Vm {
             }
 
             bound[index] = Some(match &arg.value {
-                Some(value) => value.to_runtime_value(),
-                None if param.optional => Self::default_project_dynamic_param_value(param),
+                Some(value) => RuntimeSlot::Variant(value.variant().clone()),
+                None if param.optional => Self::default_project_dynamic_param_slot(param)?,
                 None => {
                     return Err(format!(
                         "required argument `{}` cannot be omitted",
@@ -3623,9 +3637,9 @@ impl Vm {
         }
 
         if let Some(index) = param_array_index {
-            bound[index] = Some(RuntimeValue::ArrayIntent(SafeArray::from_variants(
-                param_array_items,
-            )));
+            bound[index] = Some(RuntimeSlot::from_runtime_value(RuntimeValue::ArrayIntent(
+                SafeArray::from_variants(param_array_items),
+            ))?);
         }
 
         for (index, param) in member.params.iter().enumerate() {
@@ -3633,9 +3647,11 @@ impl Vm {
                 continue;
             }
             bound[index] = Some(if param.param_array {
-                RuntimeValue::ArrayIntent(SafeArray::from_variants(Vec::new()))
+                RuntimeSlot::from_runtime_value(RuntimeValue::ArrayIntent(
+                    SafeArray::from_variants(Vec::new()),
+                ))?
             } else if param.optional {
-                Self::default_project_dynamic_param_value(param)
+                Self::default_project_dynamic_param_slot(param)?
             } else {
                 return Err(format!("missing required argument `{}`", param.name));
             });
@@ -3750,7 +3766,10 @@ impl Vm {
                 ));
             }
         };
-        values.insert(0, RuntimeValue::Object(object.clone()));
+        values.insert(
+            0,
+            RuntimeSlot::from_runtime_value(RuntimeValue::Object(object.clone()))?,
+        );
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
@@ -3761,7 +3780,7 @@ impl Vm {
                 values.len()
             ));
         }
-        self.invoke_procedure_inline_with_values(
+        self.invoke_procedure_inline_with_slots(
             bytecode,
             member.entry_pc,
             &member.param_slots,
@@ -3783,6 +3802,28 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[RuntimeValue],
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
+        let args = args
+            .iter()
+            .cloned()
+            .map(RuntimeSlot::from_runtime_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.invoke_procedure_inline_with_slots(
+            bytecode,
+            entry_pc,
+            arg_slots,
+            &args,
+            typed_fastpaths,
+        )
+    }
+
+    fn invoke_procedure_inline_with_slots(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[RuntimeSlot],
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         if arg_slots.len() != args.len() {
@@ -3815,7 +3856,7 @@ impl Vm {
         self.clear_error_state();
 
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
-            self.write_value_slot(*slot, value.clone())?;
+            self.write_runtime_slot(*slot, value.clone())?;
         }
 
         let result = self.execute_loop(bytecode, entry_pc, entry_pc, typed_fastpaths, true);
