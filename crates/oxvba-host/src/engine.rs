@@ -1095,6 +1095,16 @@ impl Engine {
         &self,
         bundle: &oxvba_compiler::OxBundle,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        self.execute_bundle_with_variant_snapshot(bundle)?
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
+            .collect()
+    }
+
+    pub fn execute_bundle_with_variant_snapshot(
+        &self,
+        bundle: &oxvba_compiler::OxBundle,
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if let Some(ref bindings) = bundle.event_dispatch_bindings
             && let Ok(mut dispatcher) = self.event_dispatcher.lock()
         {
@@ -1111,7 +1121,7 @@ impl Engine {
         }
         vm.execute(&bundle.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
-        Ok(vm.snapshot_values(bundle.bytecode.user_slot_count))
+        Ok(vm.snapshot_variants(bundle.bytecode.user_slot_count))
     }
 
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
