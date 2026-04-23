@@ -1824,6 +1824,12 @@ Child beads:
        `WindowsComBridge::event_callback_variant()` and
        `ComHal::event_callback_variant()` into VM/JIT slot writes; the older
        `event_callback_arg()` remains as a compatibility projection
+     - progress landed: VM project-dynamic `ParamArray` binding now builds the
+       internal SAFEARRAY payload from retained argument `Variant` values with
+       `SafeArray::from_variants()` instead of projecting each argument to
+       `RuntimeValue` before array construction; the dynamic-dispatch binder
+       still exposes the existing semantic API boundary, so this is progress
+       toward the exact carrier, not closure
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, HAL surfaces that still use semantic values by contract,
        legacy dynamic-link symbol APIs, legacy SafeArray element compatibility
