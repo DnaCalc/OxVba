@@ -406,8 +406,22 @@ This grid is the current anti-drift truth surface for closure.
    - projected truth:
       full Windows `VARIANT` and typed-element `SAFEARRAY` truth is still
       materially realized at boundary/helper seams for array-sensitive lanes
+   - checklist result (`2026-04-23`):
+     - implemented:
+       canonical `Variant` is exact 16-byte for the scoped value lanes and
+       canonical `SafeArray` now preserves typed payload storage internally,
+       including typed interface-array element vartypes
+     - projected:
+       native Windows `VARIANT` / `SAFEARRAY` / interface-pointer objects still
+       materialize at COM and pointer-helper boundaries where host ABI truth is
+       required
+     - bounded:
+       no remaining bounded caveat is recorded against the scoped canonical
+       Variant/SAFEARRAY carrier itself; `BindingHandle` is explicitly outside
+       scope as an internal non-VBA token
    - closure implication:
-     `vmm-e` remains open
+     `vmm-e6` delivery is complete; `vmm-e7` must record the final
+     implemented/projected/bounded classification before epic closure
 3. COM interface identity
    - intrinsic target:
      canonical runtime object identity and lifetime are `IUnknown`-backed
@@ -1703,7 +1717,9 @@ Child beads:
        classification is recorded before epic closure
    - completion evidence:
      - the workset and final report inputs explicitly state whether the
-       Variant/SAFEARRAY lane is intrinsically migrated or still bounded.
+       Variant/SAFEARRAY lane is intrinsically migrated or still bounded, with
+       the checklist result recorded in
+       `docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md`.
 
 Post-`vmm-d6` rollout refresh:
 
