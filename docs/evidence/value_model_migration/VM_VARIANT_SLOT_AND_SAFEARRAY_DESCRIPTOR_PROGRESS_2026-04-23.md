@@ -1138,6 +1138,13 @@ Implementation progress:
     `Timer`, writing returned values as retained Variants. `Now` reads the
     retained date/time Variants before the existing semantic combiner and then
     writes the combined date/time value back as a retained Variant.
+76. VM and JIT file-system host helpers now use
+    `FileSystemHal::*_variant(...)` companions for `Open`, `Close`, `Kill`,
+    `FreeFile`, `Input#`, `Line Input#`, `Print#`, `Write#`, `EOF`, `LOF`,
+    `Seek`, and `Loc`, reading and writing slot-facing values as retained
+    Variants. `Open` mode/file-number, `EOF` truthiness, and `Seek` position
+    arithmetic still use the existing compatibility coercion/classification
+    semantics where VBA behavior requires numeric or Boolean interpretation.
 
 Remaining blocker:
 
@@ -1166,10 +1173,11 @@ Remaining blocker:
    argument binding, and VM project COM WithEvents callback inline arguments,
    and host event ingress guarded dispatch arguments, and host class
    initializer lifecycle dispatch, VM/JIT console `Print` host helper
-   dispatch, VM/JIT UI `MsgBox` / `InputBox` host helper dispatch, and VM/JIT
+   dispatch, VM/JIT UI `MsgBox` / `InputBox` host helper dispatch, VM/JIT
    diagnostics/event-pump host helper dispatch, VM/JIT process/environment
-   host helper dispatch, and VM/JIT time/locale host helper dispatch no longer
-   retain it as their backing value store for normal VBA values.
+   host helper dispatch, VM/JIT time/locale host helper dispatch, and VM/JIT
+   file-system host helper dispatch no longer retain it as their backing value
+   store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
