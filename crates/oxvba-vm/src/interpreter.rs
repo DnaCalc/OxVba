@@ -3863,28 +3863,6 @@ impl Vm {
         ))
     }
 
-    fn invoke_procedure_inline_with_values(
-        &mut self,
-        bytecode: &Bytecode,
-        entry_pc: usize,
-        arg_slots: &[usize],
-        args: &[RuntimeValue],
-        typed_fastpaths: bool,
-    ) -> Result<(), String> {
-        let args = args
-            .iter()
-            .cloned()
-            .map(RuntimeSlot::from_runtime_value)
-            .collect::<Result<Vec<_>, _>>()?;
-        self.invoke_procedure_inline_with_slots(
-            bytecode,
-            entry_pc,
-            arg_slots,
-            &args,
-            typed_fastpaths,
-        )
-    }
-
     fn invoke_procedure_inline_with_slots(
         &mut self,
         bytecode: &Bytecode,
@@ -4117,11 +4095,11 @@ impl Vm {
         Self::runtime_value_to_com_callback_token(&value, "do_events callback").map(Some)
     }
 
-    fn invoke_project_symbol_inline(
+    fn invoke_project_symbol_inline_with_variants(
         &mut self,
         bytecode: &Bytecode,
         symbol: &str,
-        args: &[RuntimeValue],
+        args: &[Variant],
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         let normalized = symbol.trim().to_ascii_lowercase();
@@ -4130,11 +4108,16 @@ impl Vm {
             .get(&normalized)
             .cloned()
             .ok_or_else(|| format!("project procedure metadata missing for `{normalized}`"))?;
-        self.invoke_procedure_inline_with_values(
+        let args = args
+            .iter()
+            .cloned()
+            .map(RuntimeSlot::Variant)
+            .collect::<Vec<_>>();
+        self.invoke_procedure_inline_with_slots(
             bytecode,
             metadata.entry_pc,
             &metadata.param_slots,
-            args,
+            &args,
             typed_fastpaths,
         )
     }
@@ -4169,14 +4152,14 @@ impl Vm {
                 .com()
                 .event_callback_arity(callback)
                 .map_err(|err| err.to_string())?;
-            let mut args = vec![RuntimeValue::Object(bound.owner_object.clone())];
+            let mut args = vec![Variant::from_object_ref(bound.owner_object.clone())];
             let target_symbol = match callback_arity {
                 0 => bound.route.handler_symbol.clone(),
                 1 => {
                     let arg0 = self
                         .host_services
                         .com()
-                        .event_callback_arg(callback, 0)
+                        .event_callback_variant(callback, 0)
                         .map_err(|err| err.to_string())?;
                     args.push(arg0);
                     bound.route.handler_symbol.clone()
@@ -4189,8 +4172,12 @@ impl Vm {
                     ));
                 }
             };
-            let invoke_result =
-                self.invoke_project_symbol_inline(bytecode, &target_symbol, &args, typed_fastpaths);
+            let invoke_result = self.invoke_project_symbol_inline_with_variants(
+                bytecode,
+                &target_symbol,
+                &args,
+                typed_fastpaths,
+            );
             let release_result = self
                 .host_services
                 .com()

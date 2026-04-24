@@ -2127,6 +2127,10 @@ Child beads:
        `Me` argument as an object-valued retained `Variant` slot before inline
        procedure invocation, instead of routing it through
        `RuntimeValue::Object`
+     - progress landed: VM project COM WithEvents callback pumping now builds
+       inline handler arguments as retained `Variant` carriers, including the
+       owner object and callback payload values, and removed the now-unused
+       project-symbol inline `RuntimeValue` helper
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
