@@ -289,6 +289,10 @@ impl Vm {
     }
 
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {
+        self.snapshot_compat_values(slot_count)
+    }
+
+    pub fn snapshot_compat_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_variants(slot_count)
             .into_iter()
             .map(|variant| {
@@ -300,7 +304,7 @@ impl Vm {
     }
 
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
-        self.snapshot(slot_count)
+        self.snapshot_compat_values(slot_count)
     }
 
     pub fn snapshot_variants(&self, slot_count: usize) -> Vec<Variant> {

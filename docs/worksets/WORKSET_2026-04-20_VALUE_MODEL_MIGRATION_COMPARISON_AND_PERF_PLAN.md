@@ -2035,6 +2035,11 @@ Child beads:
        `JitEngine::execute_and_snapshot_variants()` no longer detours that
        fallback path through `RuntimeValue::from_compat_slot_i32()` and
        `Variant::try_from_runtime_value()`
+     - progress landed: VM/JIT public snapshot/result compatibility APIs now
+       have explicit `*_compat_values*` aliases over the Variant-native
+       execution paths, making the `Variant -> RuntimeValue` compatibility
+       boundary named and auditable while preserving the legacy method names as
+       delegating aliases
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

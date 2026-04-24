@@ -36,16 +36,27 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
         .collect()
 }
 
+fn project_variants_to_compat_values(values: Vec<Variant>) -> Result<Vec<RuntimeValue>, JitError> {
+    values
+        .into_iter()
+        .map(|value| value.to_runtime_value().map_err(JitError::Execution))
+        .collect()
+}
+
 impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
         Ok(())
     }
 
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_variants(bytecode)?
-            .into_iter()
-            .map(|value| value.to_runtime_value().map_err(JitError::Execution))
-            .collect()
+        self.execute_and_snapshot_compat_values(bytecode)
+    }
+
+    pub fn execute_and_snapshot_compat_values(
+        &self,
+        bytecode: &Bytecode,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        project_variants_to_compat_values(self.execute_and_snapshot_variants(bytecode)?)
     }
 
     pub fn execute_and_snapshot_variants(
@@ -59,7 +70,7 @@ impl JitEngine {
         &self,
         bytecode: &Bytecode,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot(bytecode)
+        self.execute_and_snapshot_compat_values(bytecode)
     }
 
     pub fn execute_and_snapshot_with_host(
@@ -67,10 +78,17 @@ impl JitEngine {
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_variants_with_host(bytecode, host_services)?
-            .into_iter()
-            .map(|value| value.to_runtime_value().map_err(JitError::Execution))
-            .collect()
+        self.execute_and_snapshot_compat_values_with_host(bytecode, host_services)
+    }
+
+    pub fn execute_and_snapshot_compat_values_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        project_variants_to_compat_values(
+            self.execute_and_snapshot_variants_with_host(bytecode, host_services)?,
+        )
     }
 
     pub fn execute_and_snapshot_variants_with_host(
@@ -103,7 +121,7 @@ impl JitEngine {
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_with_host(bytecode, host_services)
+        self.execute_and_snapshot_compat_values_with_host(bytecode, host_services)
     }
 }
 
@@ -172,6 +190,27 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].vtype(), VarType::String);
         assert_eq!(out[0].as_bstr(), Some(BStr::from("ABC")));
+    }
+
+    #[test]
+    fn execute_and_snapshot_compat_values_projects_variant_results() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub")
+            .expect("compile should succeed");
+        let variants = JitEngine
+            .execute_and_snapshot_variants(&bytecode)
+            .expect("variant snapshot should succeed");
+        let compat = JitEngine
+            .execute_and_snapshot_compat_values(&bytecode)
+            .expect("compat snapshot should succeed");
+
+        assert_eq!(compat, vec![RuntimeValue::String(BStr::from("ABC"))]);
+        assert_eq!(
+            compat,
+            variants
+                .into_iter()
+                .map(|value| value.to_runtime_value().expect("variant projection"))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

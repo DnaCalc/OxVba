@@ -21,16 +21,28 @@ pub use interpreter::{
     DebugStopReason, Vm,
 };
 
+fn project_snapshot_variants_to_compat_values(
+    values: Vec<Variant>,
+) -> Result<Vec<RuntimeValue>, String> {
+    values
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
+}
+
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute(bytecode)
 }
 
 pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_variants(bytecode)?
-        .into_iter()
-        .map(|value| value.to_runtime_value())
-        .collect()
+    execute_and_snapshot_compat_values(bytecode)
+}
+
+pub fn execute_and_snapshot_compat_values(
+    bytecode: &Bytecode,
+) -> Result<Vec<RuntimeValue>, String> {
+    project_snapshot_variants_to_compat_values(execute_and_snapshot_variants(bytecode)?)
 }
 
 pub fn execute_and_snapshot_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
@@ -40,17 +52,24 @@ pub fn execute_and_snapshot_variants(bytecode: &Bytecode) -> Result<Vec<Variant>
 }
 
 pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot(bytecode)
+    execute_and_snapshot_compat_values(bytecode)
 }
 
 pub fn execute_and_snapshot_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_variants_with_typed_fastpaths(bytecode, typed_fastpaths)?
-        .into_iter()
-        .map(|value| value.to_runtime_value())
-        .collect()
+    execute_and_snapshot_compat_values_with_typed_fastpaths(bytecode, typed_fastpaths)
+}
+
+pub fn execute_and_snapshot_compat_values_with_typed_fastpaths(
+    bytecode: &Bytecode,
+    typed_fastpaths: bool,
+) -> Result<Vec<RuntimeValue>, String> {
+    project_snapshot_variants_to_compat_values(execute_and_snapshot_variants_with_typed_fastpaths(
+        bytecode,
+        typed_fastpaths,
+    )?)
 }
 
 pub fn execute_and_snapshot_variants_with_typed_fastpaths(
@@ -66,7 +85,7 @@ pub fn execute_and_snapshot_values_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_with_typed_fastpaths(bytecode, typed_fastpaths)
+    execute_and_snapshot_compat_values_with_typed_fastpaths(bytecode, typed_fastpaths)
 }
 
 pub fn execute_with_host(
@@ -81,10 +100,17 @@ pub fn execute_and_snapshot_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_variants_with_host(bytecode, host_services)?
-        .into_iter()
-        .map(|value| value.to_runtime_value())
-        .collect()
+    execute_and_snapshot_compat_values_with_host(bytecode, host_services)
+}
+
+pub fn execute_and_snapshot_compat_values_with_host(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+) -> Result<Vec<RuntimeValue>, String> {
+    project_snapshot_variants_to_compat_values(execute_and_snapshot_variants_with_host(
+        bytecode,
+        host_services,
+    )?)
 }
 
 pub fn execute_and_snapshot_variants_with_host(
@@ -100,7 +126,7 @@ pub fn execute_and_snapshot_values_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_with_host(bytecode, host_services)
+    execute_and_snapshot_compat_values_with_host(bytecode, host_services)
 }
 
 pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
@@ -108,14 +134,23 @@ pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     host_services: Arc<dyn HostServices>,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_variants_with_host_and_typed_fastpaths(
+    execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
         bytecode,
         host_services,
         typed_fastpaths,
-    )?
-    .into_iter()
-    .map(|value| value.to_runtime_value())
-    .collect()
+    )
+}
+
+pub fn execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+    typed_fastpaths: bool,
+) -> Result<Vec<RuntimeValue>, String> {
+    project_snapshot_variants_to_compat_values(execute_and_snapshot_variants_with_host_and_typed_fastpaths(
+        bytecode,
+        host_services,
+        typed_fastpaths,
+    )?)
 }
 
 pub fn execute_and_snapshot_variants_with_host_and_typed_fastpaths(
@@ -133,7 +168,11 @@ pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
     host_services: Arc<dyn HostServices>,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
-    execute_and_snapshot_with_host_and_typed_fastpaths(bytecode, host_services, typed_fastpaths)
+    execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
+        bytecode,
+        host_services,
+        typed_fastpaths,
+    )
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
@@ -145,13 +184,35 @@ fn default_host_services() -> Arc<dyn HostServices> {
 
 #[cfg(test)]
 mod tests {
+    use oxvba_compiler::compile;
+    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+
     use oxvba_hal::model::native_host_profile;
 
-    use super::default_host_services;
+    use super::{default_host_services, execute_and_snapshot_compat_values, execute_and_snapshot_variants};
 
     #[test]
     fn default_host_services_follow_native_host_profile() {
         let host = default_host_services();
         assert_eq!(host.profile(), native_host_profile());
+    }
+
+    #[test]
+    fn compat_snapshot_api_projects_variant_snapshot_results() {
+        let bytecode = compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub")
+            .expect("compile should succeed");
+
+        let variants = execute_and_snapshot_variants(&bytecode).expect("variant snapshot");
+        let compat = execute_and_snapshot_compat_values(&bytecode).expect("compat snapshot");
+
+        assert_eq!(variants.len(), 1);
+        assert_eq!(compat, vec![RuntimeValue::String(BStr::from("ABC"))]);
+        assert_eq!(
+            compat,
+            variants
+                .into_iter()
+                .map(|value| value.to_runtime_value().expect("variant projection"))
+                .collect::<Vec<_>>()
+        );
     }
 }
