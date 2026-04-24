@@ -327,6 +327,11 @@ Implemented:
      `Variant -> RuntimeValue` boundary directly while preserving the older
      `snapshot()` / `snapshot_values()` / `read_slot()` entrypoints as
      delegating compatibility aliases.
+51r. Typed SAFEARRAY element decoding now constructs `Variant` carriers
+     directly for intrinsic element kinds instead of decoding to
+     `RuntimeValue` and immediately converting back to `Variant`.
+     `SafeArray::variant_elements()` therefore preserves typed payload carriers
+     before the existing `SafeArray::elements()` compatibility projection.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -985,6 +990,10 @@ Implementation progress:
     explicit compatibility aliases for the `Variant -> RuntimeValue`
     projection boundary, reducing another unnamed public compatibility seam in
     the value-model migration surface.
+50. Typed SAFEARRAY `variant_elements()` decoding now remains Variant-native
+    across intrinsic element kinds, removing an internal
+    `SAFEARRAY typed payload -> RuntimeValue -> Variant` detour while leaving
+    the legacy `elements()` compatibility projection in place.
 
 Remaining blocker:
 
