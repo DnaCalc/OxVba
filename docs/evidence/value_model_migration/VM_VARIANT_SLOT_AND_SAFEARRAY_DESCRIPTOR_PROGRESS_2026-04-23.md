@@ -1038,6 +1038,10 @@ Implementation progress:
     `Variant` carriers directly and call the Variant-native bound helpers,
     keeping SAFEARRAY bound inspection out of the `RuntimeValue::ArrayIntent`
     compatibility path for those interpreter instructions.
+58. VM generic `VarPtr` now detects array carriers from the retained
+    `Variant::as_safearray()` path and registers the SAFEARRAY payload pointer
+    directly, while non-array sources still register the exact retained Variant
+    cell.
 
 Remaining blocker:
 
