@@ -2185,6 +2185,10 @@ Child beads:
      - progress landed: VM and JIT process/environment host helpers now route
        `Shell`, `Environ`, and `Dir` through `ProcessEnvHal` Variant
        companions, including Variant-native default style/attribute arguments
+     - progress landed: standard process/environment HAL `shell_variant`,
+       `environ_variant`, and `dir_variant` now implement retained Variant
+       handling directly instead of inheriting the trait-level `RuntimeValue`
+       fallback projection
      - progress landed: VM and JIT time/locale host helpers now route `Date`,
        `Time`, `Now`, and `Timer` through `TimeLocaleHal` Variant companions;
        `Now` now combines retained Date/Time Variant carriers directly before

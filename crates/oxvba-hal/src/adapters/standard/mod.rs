@@ -855,6 +855,31 @@ impl StandardHostServices {
         }
     }
 
+    fn variant_to_path(
+        &self,
+        value: &Variant,
+        capability: CapabilityId,
+        op: &'static str,
+        field: &'static str,
+    ) -> HalResult<PathBuf> {
+        match value.vtype() {
+            VarType::String => value
+                .as_bstr()
+                .map(|path| PathBuf::from(path.as_str()))
+                .ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} has an invalid BSTR payload"),
+                    )
+                }),
+            _ => self
+                .variant_project_compat_slot_i32(value, capability, op, field)
+                .map(|token| self.host_path_from_token(token)),
+        }
+    }
+
     #[cfg(target_os = "windows")]
     fn spawn_probe_shell_process(&self, command: i32) -> std::io::Result<std::process::Child> {
         Command::new("cmd")
@@ -1755,6 +1780,38 @@ mod tests {
         let timer = crate::traits::TimeLocaleHal::timer_ticks_variant(&host)
             .expect("variant timer");
         assert_eq!(timer.as_f32(), Some(45_296.0_f32));
+    }
+
+    #[test]
+    fn process_variant_companions_are_direct() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_process_spawn: true,
+                ..HostPolicy::default()
+            },
+        );
+
+        let shell = crate::traits::ProcessEnvHal::shell_variant(
+            &host,
+            Variant::from_string("probe"),
+            Variant::from_i32(0),
+        )
+        .expect("variant shell");
+        assert_eq!(shell, Variant::from_i32(1));
+
+        let environ =
+            crate::traits::ProcessEnvHal::environ_variant(&host, Variant::from_string("PATH"))
+                .expect("variant environ");
+        assert_eq!(environ, Variant::from_i32(4));
+
+        let dir = crate::traits::ProcessEnvHal::dir_variant(
+            &host,
+            Variant::from_string("anything"),
+            Variant::from_i32(0),
+        )
+        .expect("variant dir");
+        assert_eq!(dir, Variant::from_i32(1));
     }
 
     #[test]
