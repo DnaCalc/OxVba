@@ -1158,6 +1158,11 @@ Implementation progress:
     `RuntimeValue` first. The object/member selector inputs still use the
     existing compatibility coercions because they are dispatch control-plane
     selectors/tokens rather than normal argument payload storage.
+79. VM project COM WithEvents callback pumping now polls pending host callback
+    tokens through `EventPumpHal::do_events_variant(...)` and decodes the
+    returned callback token directly from the retained Variant carrier. The
+    zero/no-callback token check remains a control-plane token classification,
+    not normal VBA value storage.
 
 Remaining blocker:
 
@@ -1194,6 +1199,8 @@ Remaining blocker:
    longer retain it as their backing value store for normal VBA values.
    VM/JIT dynamic COM dispatch argument payloads now also enter
    `DynamicValue` as retained Variants rather than through `RuntimeValue`.
+   VM project COM WithEvents callback polling now also consumes retained
+   Variant callback-token carriers from the event pump.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
