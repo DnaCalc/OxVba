@@ -1455,15 +1455,15 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicMsgBoxHost { dst, prompt, style } => {
-                    let prompt = self.read_value_slot(*prompt)?;
+                    let prompt = self.read_variant_slot(*prompt)?;
                     let style = if let Some(slot) = style {
-                        self.read_value_slot(*slot)?
+                        self.read_variant_slot(*slot)?
                     } else {
-                        RuntimeValue::I32(1)
+                        Variant::from_i32(1)
                     };
-                    match self.host_services.ui().msg_box(prompt, style) {
+                    match self.host_services.ui().msg_box_variant(prompt, style) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1474,15 +1474,19 @@ impl Vm {
                     prompt,
                     default_value,
                 } => {
-                    let prompt = self.read_value_slot(*prompt)?;
+                    let prompt = self.read_variant_slot(*prompt)?;
                     let default_value = if let Some(slot) = default_value {
-                        self.read_value_slot(*slot)?
+                        self.read_variant_slot(*slot)?
                     } else {
-                        RuntimeValue::I32(0)
+                        Variant::from_i32(0)
                     };
-                    match self.host_services.ui().input_box(prompt, default_value) {
+                    match self
+                        .host_services
+                        .ui()
+                        .input_box_variant(prompt, default_value)
+                    {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

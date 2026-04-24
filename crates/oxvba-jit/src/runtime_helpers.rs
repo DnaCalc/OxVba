@@ -2924,15 +2924,15 @@ pub extern "C" fn oxrt_host_msgbox(
     style_slot: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let prompt_val = read_slot!(ctx, prompt);
+    let prompt_val = read_variant_slot!(ctx, prompt);
     let style = if style_slot == u32::MAX {
-        RuntimeValue::I32(1)
+        Variant::from_i32(1)
     } else {
-        read_slot!(ctx, style_slot)
+        read_variant_slot!(ctx, style_slot)
     };
-    match host.ui().msg_box(prompt_val, style) {
+    match host.ui().msg_box_variant(prompt_val, style) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2947,15 +2947,15 @@ pub extern "C" fn oxrt_host_inputbox(
     default_slot: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let prompt_val = read_slot!(ctx, prompt);
+    let prompt_val = read_variant_slot!(ctx, prompt);
     let default_val = if default_slot == u32::MAX {
-        RuntimeValue::I32(0)
+        Variant::from_i32(0)
     } else {
-        read_slot!(ctx, default_slot)
+        read_variant_slot!(ctx, default_slot)
     };
-    match host.ui().input_box(prompt_val, default_val) {
+    match host.ui().input_box_variant(prompt_val, default_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

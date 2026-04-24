@@ -137,12 +137,68 @@ pub trait ConsoleHal: Send + Sync {
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
     fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn msg_box_variant(&self, prompt: Variant, style: Variant) -> HalResult<Variant> {
+        let prompt = prompt.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::UiInteraction,
+                "msg_box_variant",
+                detail,
+            )
+        })?;
+        let style = style.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::UiInteraction,
+                "msg_box_variant",
+                detail,
+            )
+        })?;
+        self.msg_box(prompt, style).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::UiInteraction,
+                    "msg_box_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
     fn input_box(
         &self,
         prompt: RuntimeValue,
         default_value: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
+    fn input_box_variant(&self, prompt: Variant, default_value: Variant) -> HalResult<Variant> {
+        let prompt = prompt.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::UiInteraction,
+                "input_box_variant",
+                detail,
+            )
+        })?;
+        let default_value = default_value.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::UiInteraction,
+                "input_box_variant",
+                detail,
+            )
+        })?;
+        self.input_box(prompt, default_value).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::UiInteraction,
+                    "input_box_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait EventPumpHal: Send + Sync {

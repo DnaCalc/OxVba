@@ -2149,6 +2149,10 @@ Child beads:
        Variant carriers for the printed argument and returned status while
        leaving the older `RuntimeValue` HAL method as an adapter compatibility
        implementation
+     - progress landed: VM and JIT UI `MsgBox` / `InputBox` host helpers now
+       route through `UiInteractionHal` Variant companions, including
+       Variant-native omitted optional defaults for prompt style/default text
+       values
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
