@@ -3607,14 +3607,8 @@ impl Vm {
         }
     }
 
-    fn default_project_dynamic_param_value(param: &ProjectDynamicParamRoute) -> RuntimeValue {
-        RuntimeValue::from_compat_slot_i32(param.default_value.unwrap_or(0))
-    }
-
-    fn default_project_dynamic_param_slot(
-        param: &ProjectDynamicParamRoute,
-    ) -> Result<RuntimeSlot, String> {
-        RuntimeSlot::from_runtime_value(Self::default_project_dynamic_param_value(param))
+    fn default_project_dynamic_param_slot(param: &ProjectDynamicParamRoute) -> RuntimeSlot {
+        RuntimeSlot::Variant(Variant::from_i32(param.default_value.unwrap_or(0)))
     }
 
     fn bind_project_dynamic_member_args(
@@ -3657,7 +3651,7 @@ impl Vm {
                 }
                 bound[index] = Some(match &arg.value {
                     Some(value) => RuntimeSlot::Variant(value.variant().clone()),
-                    None if param.optional => Self::default_project_dynamic_param_slot(param)?,
+                    None if param.optional => Self::default_project_dynamic_param_slot(param),
                     None => {
                         return Err(format!(
                             "required argument `{}` cannot be omitted",
@@ -3696,7 +3690,7 @@ impl Vm {
 
             bound[index] = Some(match &arg.value {
                 Some(value) => RuntimeSlot::Variant(value.variant().clone()),
-                None if param.optional => Self::default_project_dynamic_param_slot(param)?,
+                None if param.optional => Self::default_project_dynamic_param_slot(param),
                 None => {
                     return Err(format!(
                         "required argument `{}` cannot be omitted",
@@ -3722,7 +3716,7 @@ impl Vm {
                     Vec::new(),
                 )))
             } else if param.optional {
-                Self::default_project_dynamic_param_slot(param)?
+                Self::default_project_dynamic_param_slot(param)
             } else {
                 return Err(format!("missing required argument `{}`", param.name));
             });
@@ -6139,7 +6133,12 @@ mod tests {
         let omitted_value = vm
             .try_invoke_project_dynamic(&bytecode, false, &omitted_request)
             .expect("dispatch should bind omitted optional")
-            .expect("project-dynamic route should match")
+            .expect("project-dynamic route should match");
+        assert!(matches!(
+            &omitted_value,
+            RuntimeSlot::Variant(value) if value.as_i32() == Some(7)
+        ));
+        let omitted_value = omitted_value
             .to_runtime_value()
             .expect("project-dynamic slot should project for assertion");
         assert_eq!(omitted_value, RuntimeValue::I32(7));
@@ -6157,7 +6156,12 @@ mod tests {
         let explicit_omitted_value = vm
             .try_invoke_project_dynamic(&bytecode, false, &explicit_omitted_request)
             .expect("dispatch should bind explicit omitted optional")
-            .expect("project-dynamic route should match")
+            .expect("project-dynamic route should match");
+        assert!(matches!(
+            &explicit_omitted_value,
+            RuntimeSlot::Variant(value) if value.as_i32() == Some(7)
+        ));
+        let explicit_omitted_value = explicit_omitted_value
             .to_runtime_value()
             .expect("project-dynamic slot should project for assertion");
         assert_eq!(explicit_omitted_value, RuntimeValue::I32(7));

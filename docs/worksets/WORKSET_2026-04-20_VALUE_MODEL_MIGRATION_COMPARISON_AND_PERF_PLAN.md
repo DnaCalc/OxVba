@@ -2136,6 +2136,10 @@ Child beads:
        `Variant::from_object_ref(...)` and invokes project handlers through
        `Vm::invoke_procedure_with_variants(...)`; the previous RuntimeValue API
        remains as a compatibility wrapper
+     - progress landed: VM project dynamic optional default binding now builds
+       callee argument slots as `RuntimeSlot::Variant(Variant::from_i32(...))`
+       directly instead of creating a temporary `RuntimeValue` only to rewrap
+       it as a Variant slot
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
