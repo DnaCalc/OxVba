@@ -265,6 +265,12 @@ Implemented:
      `oxrt_typename_tag`, and `oxrt_is_numeric_tag` now classify the retained
      slot `Variant` directly instead of reading a temporary `RuntimeValue`
      before checking array-shaped or scalar tag behavior.
+47l. JIT simple type predicates now also read the retained slot `Variant`
+     directly for non-coercive cases. `oxrt_is_numeric`, `oxrt_is_error`,
+     `oxrt_is_null`, `oxrt_is_empty`, and `oxrt_is_array_tag` no longer
+     project the source slot through `RuntimeValue` just to answer those
+     carrier-shape questions; they classify the canonical `Variant` payload
+     directly.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -884,6 +890,9 @@ Implementation progress:
     array-tag classification now use Variant-native semantics companions over
     the retained slot carrier for their tag-only paths, removing another
     array-shape compatibility projection from the JIT helper surface.
+40. JIT simple retained-carrier predicates for numeric/error/null/empty/array
+    shape now classify the slot `Variant` directly rather than reading a
+    temporary `RuntimeValue` for those non-coercive checks.
 
 Remaining blocker:
 
