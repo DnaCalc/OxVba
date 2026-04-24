@@ -2199,6 +2199,10 @@ Child beads:
        Variant companions, leaving only the required numeric/Boolean
        compatibility coercions for mode/file-number, `EOF`, and `Seek`
        arithmetic
+     - progress landed: standard file-system `close_variant`, `eof_variant`,
+       `lof_variant`, `free_file_variant`, and `loc_variant` now implement
+       retained Variant status/handle carriers directly; text/byte payload
+       companions remain pending as the next standard file-system slice
      - progress landed: VM and JIT file `Seek` helper paths now decode the
        host `Loc` return carrier through a Variant-native numeric compatibility
        decoder before writing the retained `Seek` result Variant, removing the

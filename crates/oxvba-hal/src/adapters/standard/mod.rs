@@ -1815,6 +1815,34 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_status_variant_companions_are_direct() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+
+        let free = crate::traits::FileSystemHal::free_file_variant(&host, Variant::from_i32(0))
+            .expect("variant freefile");
+        assert_eq!(free, Variant::from_i32(1));
+
+        let handle = host.open(rv(123), rv(0)).expect("open deterministic file");
+        let handle_variant = Variant::from_i32(expect_i32(handle));
+
+        let loc = crate::traits::FileSystemHal::loc_variant(&host, handle_variant.clone())
+            .expect("variant loc");
+        assert_eq!(loc, Variant::from_i32(0));
+
+        let lof = crate::traits::FileSystemHal::lof_variant(&host, handle_variant.clone())
+            .expect("variant lof");
+        assert_eq!(lof, Variant::from_i32(super::filesystem::pseudo_file_len_from_path_token(123)));
+
+        let eof = crate::traits::FileSystemHal::eof_variant(&host, handle_variant.clone())
+            .expect("variant eof");
+        assert_eq!(eof, Variant::from_i32(0));
+
+        let closed = crate::traits::FileSystemHal::close_variant(&host, handle_variant)
+            .expect("variant close");
+        assert_eq!(closed, Variant::from_i32(1));
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn com_force_registered_testdispatch_is_cached_at_host_construction() {
         let _guard = env_lock().lock().expect("env lock should be available");

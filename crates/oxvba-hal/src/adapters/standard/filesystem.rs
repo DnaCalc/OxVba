@@ -3,7 +3,7 @@ use crate::{
     model::CapabilityId,
     traits::FileSystemHal,
 };
-use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};
@@ -504,6 +504,59 @@ impl FileSystemHal for StandardHostServices {
         }
     }
 
+    fn close_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "close"));
+        }
+        let handle = self.variant_project_compat_slot_i32(&handle, capability, "close", "handle")?;
+        let mut state = self.fs_lock(capability, "close")?;
+        self.assert_fs_invariants(&state, "close-pre");
+        if handle == 0 {
+            let drained: Vec<FileHandleState> = state.handles.values().cloned().collect();
+            let count = drained.len() as i32;
+            state.handles.clear();
+            for entry in drained {
+                if entry.mode != 0
+                    && let Some(host_path) = entry.host_path.as_ref()
+                {
+                    fs::write(host_path, &entry.data).map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "close",
+                            format!("failed to flush host path {}: {err}", host_path.display()),
+                        )
+                    })?;
+                }
+            }
+            self.assert_fs_invariants(&state, "close-all-post");
+            Ok(Variant::from_i32(count))
+        } else if let Some(entry) = state.handles.remove(&handle) {
+            if entry.mode != 0
+                && let Some(host_path) = entry.host_path.as_ref()
+            {
+                fs::write(host_path, &entry.data).map_err(|err| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "close",
+                        format!("failed to flush host path {}: {err}", host_path.display()),
+                    )
+                })?;
+            }
+            self.assert_fs_invariants(&state, "close-post");
+            Ok(Variant::from_i32(1))
+        } else {
+            Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "close",
+                format!("invalid file handle: {handle}"),
+            ))
+        }
+    }
+
     fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -687,6 +740,21 @@ impl FileSystemHal for StandardHostServices {
         }))
     }
 
+    fn eof_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "eof"));
+        }
+        let handle = self.variant_project_compat_slot_i32(&handle, capability, "eof", "handle")?;
+        let mut state = self.fs_lock(capability, "eof")?;
+        let entry = self.fs_entry_mut(&mut state, handle, "eof")?;
+        Ok(Variant::from_i32(if entry.position >= entry.len {
+            1
+        } else {
+            0
+        }))
+    }
+
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -697,6 +765,17 @@ impl FileSystemHal for StandardHostServices {
         let mut state = self.fs_lock(capability, "lof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
         Ok(RuntimeValue::I32(entry.len))
+    }
+
+    fn lof_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "lof"));
+        }
+        let handle = self.variant_project_compat_slot_i32(&handle, capability, "lof", "handle")?;
+        let mut state = self.fs_lock(capability, "lof")?;
+        let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
+        Ok(Variant::from_i32(entry.len))
     }
 
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -733,6 +812,42 @@ impl FileSystemHal for StandardHostServices {
             end
         );
         Ok(RuntimeValue::I32(candidate))
+    }
+
+    fn free_file_variant(&self, range_selector: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "free_file"));
+        }
+        let range_selector = self.variant_project_compat_slot_i32(
+            &range_selector,
+            capability,
+            "free_file",
+            "range_selector",
+        )?;
+        let (start, end) = if range_selector == 1 {
+            (256, 511)
+        } else {
+            (1, 255)
+        };
+        let state = self.fs_lock(capability, "free_file")?;
+        self.assert_fs_invariants(&state, "free_file");
+        let candidate = state.first_free_in(start, end).ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "free_file",
+                format!("no free file number in range {start}..={end}"),
+            )
+        })?;
+        hal_contract_assert!(
+            (start..=end).contains(&candidate),
+            "op=free_file returned {} outside range {}..={}",
+            candidate,
+            start,
+            end
+        );
+        Ok(Variant::from_i32(candidate))
     }
 
     fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -912,6 +1027,17 @@ impl FileSystemHal for StandardHostServices {
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
         Ok(RuntimeValue::I32(entry.position))
+    }
+
+    fn loc_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "loc"));
+        }
+        let handle_id = self.variant_project_compat_slot_i32(&handle, capability, "loc", "handle")?;
+        let mut state = self.fs_lock(capability, "loc")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
+        Ok(Variant::from_i32(entry.position))
     }
 }
 
