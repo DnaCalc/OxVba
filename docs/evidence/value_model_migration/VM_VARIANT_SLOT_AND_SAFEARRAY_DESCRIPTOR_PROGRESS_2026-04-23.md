@@ -1079,6 +1079,11 @@ Implementation progress:
     subscription sync now inspects bound object-valued Variants via
     `Variant::as_object_ref()` rather than projecting the binding through
     `RuntimeValue` before `describe_object()` / `subscribe_event()`.
+65. VM `TypeOf...Is` now reads the object operand from the retained
+    object-valued `Variant` slot and uses `Variant::as_object_ref()` for
+    project dynamic object lookup, instead of projecting the operand to
+    `RuntimeValue::Object` before class/interface comparison. The boolean
+    result remains on the existing scalar compatibility output path.
 
 Remaining blocker:
 
@@ -1102,8 +1107,8 @@ Remaining blocker:
    no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
    invocation/release, VM/JIT `CreateObject` host-return storage, and VM/JIT
    COM event unsubscribe/release status writes, and VM/JIT WithEvents
-   owner-iteration/status outputs no longer retain it as their backing value
-   store for normal VBA values.
+   owner-iteration/status outputs, and VM `TypeOf...Is` object operand lookup
+   no longer retain it as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
