@@ -277,6 +277,13 @@ Implemented:
      `Long` values inside the i16 range and the current `LongLong -> vbLong`
      compatibility mapping, while removing the slot-level `RuntimeValue`
      projection from the JIT helper path.
+47n. JIT `oxrt_is_date_tag` now also reads the retained slot `Variant`
+     directly. VM semantics now has a Variant-native
+     `runtime_variant_is_date()` helper that preserves the current `CDate`
+     compatibility heuristic for string parsing, packed-date integer
+     recognition, and truncating `Byte`/`Currency`/`Decimal` numeric fallback
+     instead of projecting the slot through `RuntimeValue` before testing date
+     compatibility.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -903,6 +910,10 @@ Implementation progress:
     retained slot carrier. The helper preserves the current oracle-tracked
     compatibility heuristic rather than switching semantics to a raw VARTYPE
     mirror during this migration bead.
+42. JIT `IsDate` now uses a Variant-native date-classification helper over the
+    retained slot carrier, preserving the current string parse, packed-date
+    integer, and truncating numeric `CDate` compatibility heuristics while
+    removing another semantic slot-projection seam from the JIT helper path.
 
 Remaining blocker:
 
