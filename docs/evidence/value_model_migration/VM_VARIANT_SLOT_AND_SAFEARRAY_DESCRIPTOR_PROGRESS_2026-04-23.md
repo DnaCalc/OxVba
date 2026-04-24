@@ -1095,6 +1095,12 @@ Implementation progress:
     project-symbol inline helper that accepted `RuntimeValue` arguments was
     removed because this callback path now invokes with `RuntimeSlot::Variant`
     arguments directly.
+68. Host event ingress now has a Variant-native
+    `dispatch_host_event_variants_into_runtime` path. Guarded event dispatch
+    prepends the source instance as `Variant::from_object_ref(...)` and invokes
+    project handlers with `Vm::invoke_procedure_with_variants(...)`; the
+    legacy `dispatch_host_event_into_runtime` method remains as a
+    `RuntimeValue -> Variant` compatibility wrapper for existing callers.
 
 Remaining blocker:
 
@@ -1120,8 +1126,9 @@ Remaining blocker:
    COM event unsubscribe/release status writes, and VM/JIT WithEvents
    owner-iteration/status outputs, and VM `TypeOf...Is` object operand lookup
    and VM project dynamic dispatch implicit `Me` binding, and VM project COM
-   WithEvents callback inline arguments no longer retain it as their backing
-   value store for normal VBA values.
+   WithEvents callback inline arguments, and host event ingress guarded
+   dispatch arguments no longer retain it as their backing value store for
+   normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
