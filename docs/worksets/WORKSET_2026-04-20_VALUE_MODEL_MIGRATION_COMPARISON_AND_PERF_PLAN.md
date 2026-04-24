@@ -2050,6 +2050,11 @@ Child beads:
        `SafeArray::variant_elements()` no longer detours through
        `RuntimeValue` before returning Variant carriers; `SafeArray::elements()`
        remains the explicit semantic compatibility projection
+     - progress landed: standard HAL legacy dynamic-link symbol-token Variant
+       invocation now projects the token argument directly from `Variant` and
+       returns a `Variant` result directly for the deterministic m0 lane,
+       removing another no-descriptor `Variant -> RuntimeValue -> Variant`
+       detour from `invoke_symbol_variant()`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

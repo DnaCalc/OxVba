@@ -62,7 +62,7 @@ use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, Variant};
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
 use std::{
@@ -748,6 +748,23 @@ impl StandardHostServices {
         })
     }
 
+    fn variant_project_compat_slot_i32(
+        &self,
+        value: &Variant,
+        capability: CapabilityId,
+        op: &'static str,
+        field: &'static str,
+    ) -> HalResult<i32> {
+        value.project_compat_slot_i32().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!("{field} cannot enter the legacy runtime token lane: {detail}"),
+            )
+        })
+    }
+
     fn runtime_value_to_display_text(&self, value: &RuntimeValue) -> String {
         match value {
             RuntimeValue::String(text) => text.as_str().to_string(),
@@ -1294,7 +1311,7 @@ mod tests {
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -2053,6 +2070,23 @@ mod tests {
             .expect_err("ordinal alias without #digits should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("must start with `#`"));
+    }
+
+    #[test]
+    fn dynlink_legacy_symbol_variant_invoke_projects_variant_token_directly() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+
+        let result = host
+            .invoke_symbol_variant(7.into(), &Variant::from_i32(5))
+            .expect("variant symbol invoke should succeed");
+
+        assert_eq!(result, Variant::from_i32(12));
     }
 
     #[test]

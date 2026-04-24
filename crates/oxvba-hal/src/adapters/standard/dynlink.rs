@@ -331,37 +331,41 @@ impl DynamicLinkHal for StandardHostServices {
     }
 
     fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
-        let arg = arg.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                self.profile,
-                CapabilityId::DynamicLinking,
-                "invoke_symbol_variant",
-                detail,
-            )
-        })?;
-        let arg = self.runtime_value_project_compat_slot_i32(
-            &arg,
+        let capability = CapabilityId::DynamicLinking;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "invoke_symbol_variant"));
+        }
+        if !self.policy.allow_dynamic_link {
+            return Err(self.denied(capability, "invoke_symbol_variant"));
+        }
+        let arg = self.variant_project_compat_slot_i32(
+            arg,
             CapabilityId::DynamicLinking,
             "invoke_symbol_variant",
             "arg",
         )?;
-        let descriptor = DynLinkDescriptorView {
-            descriptor_id: symbol.raw() as u32,
-            declared_name: "<legacy>",
-            library: "<legacy>",
-            alias: "<legacy>",
-            ordinal_alias: false,
-            symbol,
-            marshal_lane: "m0-deterministic",
-            calling_convention: "platform-default",
-            selection_policy: "legacy-symbol",
-            param_count: 0,
-            param_types: &[],
-            param_by_ref: &[],
-            return_type: None,
-        };
-        self.invoke_descriptor_variants(&descriptor, &[Variant::from_i32(arg)])
-            .map(|(ret, _)| ret)
+        if self.native_mode_enabled()
+            && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
+        {
+            return match symbol.raw() {
+                s if s == external_symbol_token("host", "ping", "hostping") => {
+                    Ok(Variant::from_i32(arg.saturating_add(1)))
+                }
+                s if s == external_symbol_token("host", "double", "hostdouble") => {
+                    Ok(Variant::from_i32(arg.saturating_mul(2)))
+                }
+                _ => Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol_variant",
+                    format!(
+                        "unsupported symbol token {} in host-backed lane",
+                        symbol
+                    ),
+                )),
+            };
+        }
+        Ok(Variant::from_i32(symbol.raw().saturating_add(arg)))
     }
 }
 
