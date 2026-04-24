@@ -503,6 +503,17 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String
     })
 }
 
+/// Execute bytecode through the legacy 4-byte slot path and project results
+/// directly to exact Variant carriers.
+pub fn execute_bytecode_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
+    execute_bytecode_legacy(bytecode).map(|values| {
+        values
+            .into_iter()
+            .map(Variant::from_compat_slot_i32)
+            .collect()
+    })
+}
+
 /// Execute bytecode through the RtSlot path. Returns typed RuntimeValues.
 pub fn execute_bytecode_rtslot(
     bytecode: &Bytecode,

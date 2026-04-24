@@ -91,14 +91,7 @@ impl JitEngine {
         }
         // Fall back to legacy i32 path for the original 23-instruction subset.
         if cranelift::supports_bytecode(bytecode) {
-            return cranelift::execute_bytecode(bytecode)
-                .and_then(|values| {
-                    values
-                        .into_iter()
-                        .map(|value| Variant::try_from_runtime_value(&value))
-                        .collect()
-                })
-                .map_err(JitError::Execution);
+            return cranelift::execute_bytecode_variants(bytecode).map_err(JitError::Execution);
         }
         // Fall back to VM interpreter for unsupported bytecode.
         execute_and_snapshot_variants_with_host(bytecode, host_services)
@@ -179,6 +172,19 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].vtype(), VarType::String);
         assert_eq!(out[0].as_bstr(), Some(BStr::from("ABC")));
+    }
+
+    #[test]
+    fn execute_bytecode_variants_legacy_subset_reads_compat_slots_directly() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub")
+            .expect("compile should succeed");
+        assert!(cranelift::supports_bytecode(&bytecode));
+
+        let out = cranelift::execute_bytecode_variants(&bytecode)
+            .expect("legacy variant execution should succeed");
+
+        assert_eq!(out, vec![Variant::from_compat_slot_i32(3)]);
+        assert_eq!(out[0].as_i32(), Some(3));
     }
 
     #[cfg(target_os = "windows")]

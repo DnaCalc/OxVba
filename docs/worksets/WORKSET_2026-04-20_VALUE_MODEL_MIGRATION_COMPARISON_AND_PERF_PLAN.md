@@ -2029,6 +2029,12 @@ Child beads:
        `IsNumericTag`, `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`,
        `IsEmpty`), aligning VM classification with the already-migrated JIT
        path instead of projecting each slot through `RuntimeValue` first
+     - progress landed: the legacy 4-byte Cranelift fallback lane now projects
+       compat slot results directly into exact `Variant` carriers through
+       `execute_bytecode_variants()`, so
+       `JitEngine::execute_and_snapshot_variants()` no longer detours that
+       fallback path through `RuntimeValue::from_compat_slot_i32()` and
+       `Variant::try_from_runtime_value()`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
