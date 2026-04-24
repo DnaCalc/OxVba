@@ -2060,6 +2060,12 @@ Child beads:
        projecting the token argument directly from `Variant` and returning a
        `Variant` result without entering the semantic multi-invoke
        compatibility path
+     - progress landed: VM intrinsic array literal and append instructions now
+       read retained source `Variant` slots and write the resulting
+       `VT_ARRAY | VT_VARIANT` SAFEARRAY carrier directly with
+       `Variant::from_safearray(SafeArray::from_variants(...))`, leaving
+       `RuntimeValue::ArrayIntent` at the explicit compatibility projection
+       boundary rather than inside those interpreter instruction paths
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

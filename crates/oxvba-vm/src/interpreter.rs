@@ -1888,44 +1888,37 @@ impl Vm {
                 Instruction::IntrinsicArrayLiteral { dst, values } => {
                     let elements = values
                         .iter()
-                        .map(|slot| {
-                            self.read_value_slot(*slot)
-                                .and_then(|value| Variant::try_from_runtime_value(&value))
-                        })
+                        .map(|slot| self.read_variant_slot(*slot))
                         .collect::<Result<Vec<_>, _>>()?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::ArrayIntent(
-                            oxvba_runtime::safe_array::SafeArray::from_variants(elements),
-                        ),
+                        Variant::from_safearray(SafeArray::from_variants(elements)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayAppend { dst, array, item } => {
-                    let current = self.read_value_slot(*array)?;
-                    let item = Variant::try_from_runtime_value(&self.read_value_slot(*item)?)?;
-                    let mut elements = match current {
-                        RuntimeValue::ArrayIntent(array) => {
-                            array.variant_elements().unwrap_or_default()
-                        }
-                        RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
-                        other => {
-                            pc = self.route_runtime_error(
-                                pc,
-                                13,
-                                Some(&format!(
-                                    "__oxvba_array_append expects an array or empty source, got {other:?}"
-                                )),
-                            )?;
-                            continue;
-                        }
+                    let current = self.read_variant_slot(*array)?;
+                    let item = self.read_variant_slot(*item)?;
+                    let mut elements = if let Some(array) = current.as_safearray() {
+                        array.variant_elements().unwrap_or_default()
+                    } else if current.vtype() == oxvba_runtime::VarType::Empty
+                        || current.as_i32() == Some(0)
+                    {
+                        Vec::new()
+                    } else {
+                        pc = self.route_runtime_error(
+                            pc,
+                            13,
+                            Some(&format!(
+                                "__oxvba_array_append expects an array or empty source, got {current:?}"
+                            )),
+                        )?;
+                        continue;
                     };
                     elements.push(item);
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::ArrayIntent(
-                            oxvba_runtime::safe_array::SafeArray::from_variants(elements),
-                        ),
+                        Variant::from_safearray(SafeArray::from_variants(elements)),
                     )?;
                     pc += 1;
                 }
@@ -5744,6 +5737,54 @@ mod tests {
     }
 
     #[test]
+    fn intrinsic_array_literal_and_append_preserve_retained_variant_payloads() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "alpha".to_string(),
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 7 },
+                Instruction::IntrinsicArrayLiteral {
+                    dst: 2,
+                    values: vec![0, 1],
+                },
+                Instruction::LoadConstBool {
+                    slot: 3,
+                    value: true,
+                },
+                Instruction::IntrinsicArrayAppend {
+                    dst: 4,
+                    array: 2,
+                    item: 3,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 5,
+            user_slot_count: 5,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(5);
+        let array = variants[4]
+            .as_safearray()
+            .expect("array append should produce a retained SAFEARRAY Variant");
+        let elements = array
+            .variant_elements()
+            .expect("array append should preserve Variant elements");
+
+        assert_eq!(elements.len(), 3);
+        assert_eq!(elements[0].vtype(), oxvba_runtime::VarType::String);
+        assert_eq!(elements[0].as_bstr(), Some(BStr::from("alpha")));
+        assert_eq!(elements[1].vtype(), oxvba_runtime::VarType::Long);
+        assert_eq!(elements[1].as_i32(), Some(7));
+        assert_eq!(elements[2].vtype(), oxvba_runtime::VarType::Boolean);
+        assert_eq!(elements[2].as_bool(), Some(true));
+    }
+
+    #[test]
     fn intrinsic_array_resize_1d_materializes_zeroed_byte_payload() {
         let bytecode = Bytecode {
             instructions: vec![
@@ -6732,17 +6773,23 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.write_variant_slot(0, Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_values(vec![
-            RuntimeValue::I32(1),
-            RuntimeValue::I32(2),
-        ])))
+        vm.write_variant_slot(
+            0,
+            Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(2),
+            ])),
+        )
         .expect("array slot should be writable");
         vm.write_variant_slot(1, Variant::from_date_f64(42.0))
             .expect("date slot should be writable");
         vm.write_variant_slot(2, Variant::from_error_code(9))
             .expect("error slot should be writable");
-        vm.write_variant_slot(3, Variant::from_object_ref(ObjectRef::from_compat_identity(42)))
-            .expect("object slot should be writable");
+        vm.write_variant_slot(
+            3,
+            Variant::from_object_ref(ObjectRef::from_compat_identity(42)),
+        )
+        .expect("object slot should be writable");
         vm.write_variant_slot(4, Variant::null())
             .expect("null slot should be writable");
         vm.write_variant_slot(5, Variant::empty())
