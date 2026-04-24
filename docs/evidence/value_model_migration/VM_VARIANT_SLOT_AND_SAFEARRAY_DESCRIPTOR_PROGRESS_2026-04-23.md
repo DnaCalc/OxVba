@@ -1179,6 +1179,10 @@ Implementation progress:
     object handles. Binding handles remain explicit internal control-plane
     carriers, while bound WithEvents values continue to stay as retained
     Variants.
+83. VM and JIT COM event callback-argument index helpers now read the index
+    carrier from retained Variant slots and decode it directly as an integer
+    control-plane index. Callback tokens and returned callback argument payloads
+    already stay on retained Variant carriers.
 
 Remaining blocker:
 
@@ -1223,6 +1227,8 @@ Remaining blocker:
    in retained Variant slots at the VM/JIT boundary.
    VM/JIT WithEvents owner/source object helper carriers now also stay in
    retained Variant slots at the VM/JIT boundary.
+   VM/JIT COM event callback-argument index carriers now also stay in retained
+   Variant slots at the VM/JIT boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
