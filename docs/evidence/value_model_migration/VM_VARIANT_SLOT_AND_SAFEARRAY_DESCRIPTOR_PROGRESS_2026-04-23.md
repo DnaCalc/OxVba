@@ -1188,6 +1188,11 @@ Implementation progress:
     resulting Date Variant back to destination slots. The older
     `RuntimeValue` date/time combiner remains only as a semantic compatibility
     helper.
+85. VM and JIT file `Seek` helper paths now decode the host `Loc` return
+    carrier through a Variant-native numeric compatibility decoder before
+    writing the retained `Seek` result Variant. File-position arithmetic remains
+    an explicit numeric compatibility classification, but no longer requires a
+    `Variant -> RuntimeValue -> Variant` detour.
 
 Remaining blocker:
 
@@ -1236,6 +1241,8 @@ Remaining blocker:
    Variant slots at the VM/JIT boundary.
    VM/JIT `Now` host-helper date/time carrier combination now also stays in
    retained Variant form at the VM/JIT boundary.
+   VM/JIT file-position `Loc + 1` carrier handling now also stays in retained
+   Variant form at the VM/JIT boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
