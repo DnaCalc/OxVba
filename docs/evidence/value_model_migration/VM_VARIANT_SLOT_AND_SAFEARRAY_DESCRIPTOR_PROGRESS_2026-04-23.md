@@ -1046,6 +1046,11 @@ Implementation progress:
     ParamArray slots directly as retained SAFEARRAY-backed `Variant` carriers
     with `Variant::from_safearray(SafeArray::from_variants(...))`, instead of
     routing the packed argument array through `RuntimeValue::ArrayIntent`.
+60. Runtime typed SAFEARRAY construction from `Variant` carriers now encodes
+    non-Variant intrinsic element payloads directly from Variant accessors,
+    removing the `Variant -> RuntimeValue` detour from
+    `SafeArray::from_typed_variants*()` while keeping the legacy
+    `from_typed_values*()` API as the explicit compatibility entrypoint.
 
 Remaining blocker:
 
