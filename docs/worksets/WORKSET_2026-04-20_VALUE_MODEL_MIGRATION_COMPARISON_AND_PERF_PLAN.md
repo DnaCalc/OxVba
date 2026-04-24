@@ -2119,6 +2119,9 @@ Child beads:
        Variant-native BSTR string conversion helper, removing the prior
        `Variant -> RuntimeValue -> Variant` detour from the standard
        activation path
+     - progress landed: null/WASM/replay/recording COM adapters now override
+       `create_object_variant` explicitly, so non-standard activation surfaces
+       no longer inherit the `RuntimeValue` fallback projection
      - progress landed: VM and JIT COM event unsubscribe/release status paths
        now use `ComHal::unsubscribe_event_variant` and
        `ComHal::release_event_callback_variant`, writing retained `Variant`

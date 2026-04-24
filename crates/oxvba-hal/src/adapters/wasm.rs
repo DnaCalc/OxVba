@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
 
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
@@ -234,6 +234,10 @@ impl ProcessEnvHal for WasmHostServices {
 
 impl ComHal for WasmHostServices {
     fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
+    }
+
+    fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 

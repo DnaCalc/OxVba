@@ -331,6 +331,11 @@ impl ComHal for RecordingHostServices {
         self.inner.com().create_object(prog_id)
     }
 
+    fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
+        // Delegate to inner; COM objects are opaque handles, not trivially recorded.
+        self.inner.com().create_object_variant(prog_id)
+    }
+
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
         self.inner.com().release_object(object)
     }
