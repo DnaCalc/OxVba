@@ -2013,6 +2013,12 @@ Child beads:
        no longer detours through `Variant::to_runtime_value()` for those cases,
        and byte-buffer extraction now walks `variant_elements()` instead of the
        legacy `RuntimeValue` array projection API
+     - progress landed: Windows pointer-helper owned `VARIANT` cell
+       materialization now reads canonical Variant payloads directly for
+       integer and floating/date lanes; `set_windows_variant_from_variant()`
+       no longer detours through `Variant::to_runtime_value()` before writing
+       `VT_I4`, `VT_R4`, `VT_R8`, or `VT_DATE` payloads for
+       `VarPtr(variantVar)` cells
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

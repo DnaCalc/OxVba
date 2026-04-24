@@ -255,12 +255,15 @@ unsafe fn set_windows_variant_from_variant(
             (*variant).Anonymous.Anonymous.Anonymous.scode =
                 value.as_error_code().expect("error payload");
         }
-        crate::VarType::Integer | crate::VarType::Long => {
+        crate::VarType::Integer => {
             (*variant).Anonymous.Anonymous.vt = VT_I4;
-            (*variant).Anonymous.Anonymous.Anonymous.lVal = value
-                .to_runtime_value()?
-                .as_i32_lossy()
-                .expect("integer payload should project into i32");
+            (*variant).Anonymous.Anonymous.Anonymous.lVal =
+                i32::from(value.as_i16().expect("integer payload"));
+        }
+        crate::VarType::Long => {
+            (*variant).Anonymous.Anonymous.vt = VT_I4;
+            (*variant).Anonymous.Anonymous.Anonymous.lVal =
+                value.as_i32().expect("long payload");
         }
         crate::VarType::Byte => {
             (*variant).Anonymous.Anonymous.vt = VT_UI1;
@@ -279,29 +282,20 @@ unsafe fn set_windows_variant_from_variant(
                     0
                 };
         }
-        crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
-            let raw = match value.to_runtime_value()? {
-                RuntimeValue::F64(value) => value,
-                other => {
-                    return Err(format!(
-                        "floating canonical Variant should bridge back as RuntimeValue::F64, got {other:?}"
-                    ));
-                }
-            };
-            match raw.subtype() {
-                crate::F64Subtype::Single => {
-                    (*variant).Anonymous.Anonymous.vt = VT_R4;
-                    (*variant).Anonymous.Anonymous.Anonymous.fltVal = raw.as_f64() as f32;
-                }
-                crate::F64Subtype::Double => {
-                    (*variant).Anonymous.Anonymous.vt = VT_R8;
-                    (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                }
-                crate::F64Subtype::Date => {
-                    (*variant).Anonymous.Anonymous.vt = VT_DATE;
-                    (*variant).Anonymous.Anonymous.Anonymous.dblVal = raw.as_f64();
-                }
-            }
+        crate::VarType::Single => {
+            (*variant).Anonymous.Anonymous.vt = VT_R4;
+            (*variant).Anonymous.Anonymous.Anonymous.fltVal =
+                value.as_f32().expect("single payload");
+        }
+        crate::VarType::Double => {
+            (*variant).Anonymous.Anonymous.vt = VT_R8;
+            (*variant).Anonymous.Anonymous.Anonymous.dblVal =
+                value.as_f64().expect("double payload");
+        }
+        crate::VarType::Date => {
+            (*variant).Anonymous.Anonymous.vt = VT_DATE;
+            (*variant).Anonymous.Anonymous.Anonymous.dblVal =
+                value.as_date_f64().expect("date payload");
         }
         crate::VarType::Currency => {
             (*variant).Anonymous.Anonymous.vt = VT_CY;
@@ -926,7 +920,7 @@ mod tests {
         Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen},
         Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
         Win32::System::Variant::{
-            VARIANT, VT_ARRAY, VT_BSTR, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
+            VARIANT, VT_ARRAY, VT_BSTR, VT_DATE, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
         },
         core::BSTR,
     };
@@ -1131,6 +1125,18 @@ mod tests {
         assert_eq!(
             unsafe { int_variant.Anonymous.Anonymous.Anonymous.lVal },
             42
+        );
+
+        let date_ptr = register_variant_var_variant_pointer(&Variant::from_date_f64(42.25))
+            .expect("register date variant");
+        let date_raw = lookup_pointer(date_ptr)
+            .expect("lookup date variant")
+            .cast::<VARIANT>();
+        let date_variant = unsafe { &*date_raw };
+        assert_eq!(unsafe { date_variant.Anonymous.Anonymous.vt }, VT_DATE);
+        assert_eq!(
+            unsafe { date_variant.Anonymous.Anonymous.Anonymous.dblVal },
+            42.25
         );
 
         let decimal_ptr = register_variant_var_pointer(&RuntimeValue::Decimal(
