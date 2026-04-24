@@ -2170,6 +2170,10 @@ Child beads:
        route through `UiInteractionHal` Variant companions, including
        Variant-native omitted optional defaults for prompt style/default text
        values
+     - progress landed: standard UI HAL `msg_box_variant` and
+       `input_box_variant` now implement retained Variant handling directly,
+       including callback display text and BSTR returns, instead of inheriting
+       the trait-level `RuntimeValue` fallback projection
      - progress landed: VM and JIT diagnostics/event-pump host helpers now
        route slot-facing `Debug.Print` and `DoEvents` dispatch through Variant
        companions, and VM pending callback-token delivery now writes retained

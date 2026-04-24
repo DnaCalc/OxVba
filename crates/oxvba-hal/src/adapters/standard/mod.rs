@@ -886,6 +886,11 @@ impl StandardHostServices {
     #[cfg(target_os = "windows")]
     fn native_windows_msg_box_value(&self, prompt: &RuntimeValue, style: i32) -> HalResult<i32> {
         let text = self.runtime_value_to_display_text(prompt);
+        self.native_windows_msg_box_text(&text, style)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_windows_msg_box_text(&self, text: &str, style: i32) -> HalResult<i32> {
         let title = "OxVba";
         let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
@@ -911,6 +916,11 @@ impl StandardHostServices {
 
     #[cfg(not(target_os = "windows"))]
     fn native_windows_msg_box_value(&self, _prompt: &RuntimeValue, _style: i32) -> HalResult<i32> {
+        Ok(1)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_windows_msg_box_text(&self, _text: &str, _style: i32) -> HalResult<i32> {
         Ok(1)
     }
 
@@ -1373,6 +1383,7 @@ mod tests {
         callbacks::HostCallbacks,
         error::HalErrorKind,
         model::{ComInvocationStrategy, HalProfileId, HalRuntimeClass, HostPolicy},
+        model::UiVirtualizationMode,
         traits::{
             ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
             FileSystemHal, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibResolveRequest,
@@ -1684,6 +1695,36 @@ mod tests {
 
         let line = crate::traits::ConsoleHal::line_input_variant(&host).expect("line input");
         assert_eq!(line.as_bstr(), Some(BStr::from("line text")));
+    }
+
+    #[test]
+    fn ui_variant_companions_do_not_use_trait_fallback_projection() {
+        let callbacks = Arc::new(ConsoleProbe::default());
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_interaction: true,
+                ui_virtualization: UiVirtualizationMode::HostCallback,
+                ..HostPolicy::default()
+            },
+        )
+        .with_callbacks(callbacks);
+
+        let msg = crate::traits::UiInteractionHal::msg_box_variant(
+            &host,
+            Variant::null(),
+            Variant::from_i32(7),
+        )
+        .expect("variant msgbox");
+        assert_eq!(msg, Variant::from_i32(7));
+
+        let input = crate::traits::UiInteractionHal::input_box_variant(
+            &host,
+            Variant::null(),
+            Variant::from_string("fallback"),
+        )
+        .expect("variant inputbox");
+        assert_eq!(input.as_bstr(), Some(BStr::from("fallback")));
     }
 
     #[test]
