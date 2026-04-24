@@ -2788,9 +2788,9 @@ pub extern "C" fn oxrt_host_withevents_get(
     owner: u32,
     binding: u32,
 ) -> i32 {
-    let owner_val = read_slot!(ctx, owner);
+    let owner_val = read_variant_slot!(ctx, owner);
     let binding_val = read_slot!(ctx, binding);
-    let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
+    let owner = match semantics::variant_to_withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2822,10 +2822,10 @@ pub extern "C" fn oxrt_host_withevents_set(
     binding_slot: u32,
     value: u32,
 ) -> i32 {
-    let owner_val = read_slot!(ctx, owner_slot);
+    let owner_val = read_variant_slot!(ctx, owner_slot);
     let binding_val = read_slot!(ctx, binding_slot);
     let val = read_variant_slot!(ctx, value);
-    let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
+    let owner = match semantics::variant_to_withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2852,8 +2852,8 @@ pub extern "C" fn oxrt_host_withevents_clear_owner(
     dst: u32,
     owner: u32,
 ) -> i32 {
-    let owner_val = read_slot!(ctx, owner);
-    let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
+    let owner_val = read_variant_slot!(ctx, owner);
+    let owner = match semantics::variant_to_withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2872,18 +2872,20 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
     source: u32,
     binding_slot: u32,
 ) -> i32 {
-    let source_val = read_slot!(ctx, source);
+    let source_val = read_variant_slot!(ctx, source);
     let binding_val = read_slot!(ctx, binding_slot);
     let binding = match semantics::withevents_binding_handle(&binding_val, "binding") {
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
     // If source is 0, no matching owners.
-    if semantics::runtime_value_is_explicit_zero_carrier(&source_val) {
+    if source_val.as_i32() == Some(0)
+        || source_val.as_i64() == Some(0)
+        || source_val.as_bool() == Some(false)
+    {
         write_variant_slot!(ctx, dst, Variant::from_i32(0));
         return OK;
     }
-    let source_variant = read_variant_slot!(ctx, source);
     let state = unsafe { (*ctx).host_state_mut() };
     let mut owners: Vec<_> = state
         .withevents_bindings
@@ -2892,7 +2894,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
             let JitRuntimeSlot::Variant(value) = value else {
                 return None;
             };
-            if value != &source_variant || semantics::withevents_binding_from_key(*key) != binding {
+            if value != &source_val || semantics::withevents_binding_from_key(*key) != binding {
                 return None;
             }
             Some(semantics::withevents_owner_from_key(*key))

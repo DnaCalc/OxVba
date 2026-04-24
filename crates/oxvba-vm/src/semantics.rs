@@ -2474,3 +2474,27 @@ pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<Obje
         )),
     }
 }
+
+pub fn variant_to_withevents_owner_handle(
+    value: &Variant,
+    field: &str,
+) -> Result<ObjectRef, String> {
+    if matches!(value.vtype(), VarType::Empty) {
+        return Ok(ObjectRef::from_compat_identity(0));
+    }
+    if let Some(object) = value.as_object_ref() {
+        return Ok(object);
+    }
+    if let Some(raw) = value.as_i32() {
+        return Ok(ObjectRef::from_compat_identity(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ObjectRef::from_compat_identity)
+            .map_err(|_| format!("WithEvents {field} exceeds i32 handle range: {raw}"));
+    }
+    Err(format!(
+        "WithEvents {field} requires object-handle-compatible Variant, got {:?}",
+        value.vtype()
+    ))
+}

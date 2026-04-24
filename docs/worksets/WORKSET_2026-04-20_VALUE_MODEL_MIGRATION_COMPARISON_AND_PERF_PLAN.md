@@ -2193,6 +2193,10 @@ Child beads:
        COM object handles / dynamic member selectors without first projecting
        through `RuntimeValue`; selector interpretation remains an explicit COM
        control-plane classification boundary
+     - progress landed: VM and JIT WithEvents owner/source object helper paths
+       now read retained Variant carriers directly and convert them to object
+       handles, while binding handles remain explicit internal control-plane
+       carriers and bound WithEvents values stay retained as Variants
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

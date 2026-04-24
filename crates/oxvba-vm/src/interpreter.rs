@@ -2760,9 +2760,12 @@ impl Vm {
                     owner,
                     binding,
                 } => {
-                    let owner = self.read_value_slot(*owner)?;
+                    let owner = self.read_variant_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
-                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    let owner = crate::semantics::variant_to_withevents_owner_handle(
+                        &owner,
+                        "owner",
+                    )?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     let value = self
@@ -2779,10 +2782,13 @@ impl Vm {
                     binding,
                     value,
                 } => {
-                    let owner = self.read_value_slot(*owner)?;
+                    let owner = self.read_variant_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
                     let value = self.read_variant_slot(*value)?;
-                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    let owner = crate::semantics::variant_to_withevents_owner_handle(
+                        &owner,
+                        "owner",
+                    )?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
@@ -2797,8 +2803,11 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
-                    let owner = self.read_value_slot(*owner)?;
-                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    let owner = self.read_variant_slot(*owner)?;
+                    let owner = crate::semantics::variant_to_withevents_owner_handle(
+                        &owner,
+                        "owner",
+                    )?;
                     self.clear_com_withevents_owner_subscriptions(owner.clone())?;
                     self.withevents_bindings.retain(|key, _| {
                         Self::withevents_owner_from_key(*key).raw() != owner.raw()
@@ -2812,12 +2821,15 @@ impl Vm {
                     binding,
                 } => {
                     let source_slot = *source;
-                    let source = self.read_value_slot(source_slot)?;
+                    let source = self.read_variant_slot(source_slot)?;
                     let source_variant =
-                        if crate::semantics::runtime_value_is_explicit_zero_carrier(&source) {
+                        if source.as_i32() == Some(0)
+                            || source.as_i64() == Some(0)
+                            || source.as_bool() == Some(false)
+                        {
                             None
                         } else {
-                            Some(self.read_variant_slot(source_slot)?)
+                            Some(source)
                         };
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
@@ -3930,10 +3942,6 @@ impl Vm {
         field: &str,
     ) -> Result<BindingHandle, String> {
         crate::semantics::withevents_binding_handle(value, field)
-    }
-
-    fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectRef, String> {
-        crate::semantics::withevents_owner_handle(value, field)
     }
 
     fn withevents_matching_owners(
