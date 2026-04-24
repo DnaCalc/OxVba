@@ -503,6 +503,47 @@ mod tests {
     }
 
     #[test]
+    fn runtime_is_date_tag_reads_variant_carriers_with_existing_compat_heuristics() {
+        let mut ctx = JitContextOwned::new(18, 18, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("2024-01-31")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(20240131));
+            ctx.context.write_variant_slot(2, Variant::from_i64(20240131));
+            ctx.context.write_variant_slot(3, Variant::from_f64(42.0));
+            ctx.context
+                .write_variant_slot(4, Variant::from_currency_scaled_i64(420_000));
+            ctx.context.write_variant_slot(5, Variant::from_u8(7));
+            ctx.context
+                .write_variant_slot(6, Variant::from_date_f64(42.0));
+            ctx.context
+                .write_variant_slot(7, Variant::from_string(BStr::from("abc")));
+            ctx.context.write_variant_slot(8, Variant::from_bool(true));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 9, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 10, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 11, 2), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 12, 3), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 13, 4), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 14, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 15, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 16, 7), 0);
+        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 17, 8), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[9], RuntimeValue::I32(1));
+        assert_eq!(values[10], RuntimeValue::I32(1));
+        assert_eq!(values[11], RuntimeValue::I32(1));
+        assert_eq!(values[12], RuntimeValue::I32(1));
+        assert_eq!(values[13], RuntimeValue::I32(1));
+        assert_eq!(values[14], RuntimeValue::I32(1));
+        assert_eq!(values[15], RuntimeValue::I32(1));
+        assert_eq!(values[16], RuntimeValue::I32(0));
+        assert_eq!(values[17], RuntimeValue::I32(0));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {

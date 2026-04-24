@@ -2002,6 +2002,11 @@ Child beads:
        `DynamicValue` from `ComHal::dispatch_invoke_dynamic_variant()`
        directly, avoiding the older `RuntimeValue` detour for dynamic COM
        invocation payloads
+     - progress landed: JIT `IsDate` classification now reads the retained
+       slot `Variant` directly through a Variant-native VM helper that
+       preserves the current `CDate` compatibility heuristic for string
+       parsing, packed-date integer recognition, and truncating numeric
+       fallback instead of projecting the slot through `RuntimeValue` first
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

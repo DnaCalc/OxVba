@@ -866,6 +866,135 @@ pub fn runtime_value_is_date(value: &RuntimeValue) -> bool {
     }
 }
 
+fn runtime_variant_to_i32_compat(
+    value: &oxvba_runtime::Variant,
+    field: &str,
+) -> Result<i32, String> {
+    let numeric = match value.vtype() {
+        oxvba_runtime::VarType::Empty => 0.0,
+        oxvba_runtime::VarType::Integer => value
+            .as_i16()
+            .map(f64::from)
+            .ok_or_else(|| format!("{field} has invalid Integer payload"))?,
+        oxvba_runtime::VarType::Long => value
+            .as_i32()
+            .map(f64::from)
+            .ok_or_else(|| format!("{field} has invalid Long payload"))?,
+        oxvba_runtime::VarType::LongLong => value
+            .as_i64()
+            .map(|v| v as f64)
+            .ok_or_else(|| format!("{field} has invalid LongLong payload"))?,
+        oxvba_runtime::VarType::Single => value
+            .as_f32()
+            .map(f64::from)
+            .ok_or_else(|| format!("{field} has invalid Single payload"))?,
+        oxvba_runtime::VarType::Double => value
+            .as_f64()
+            .ok_or_else(|| format!("{field} has invalid Double payload"))?,
+        oxvba_runtime::VarType::Date => value
+            .as_date_f64()
+            .ok_or_else(|| format!("{field} has invalid Date payload"))?,
+        oxvba_runtime::VarType::Boolean => value
+            .as_bool()
+            .map(|v| if v { -1.0 } else { 0.0 })
+            .ok_or_else(|| format!("{field} has invalid Boolean payload"))?,
+        oxvba_runtime::VarType::Currency => value
+            .as_currency_scaled_i64()
+            .map(|v| v as f64 / CurrencyValue::SCALE as f64)
+            .ok_or_else(|| format!("{field} has invalid Currency payload"))?,
+        oxvba_runtime::VarType::Decimal => value
+            .as_decimal96()
+            .map(|d| {
+                let mag = d.magnitude_u128() as f64;
+                let scale = 10f64.powi(d.scale() as i32);
+                if d.is_negative() {
+                    -(mag / scale)
+                } else {
+                    mag / scale
+                }
+            })
+            .ok_or_else(|| format!("{field} has invalid Decimal payload"))?,
+        oxvba_runtime::VarType::Byte => value
+            .as_u8()
+            .map(f64::from)
+            .ok_or_else(|| format!("{field} has invalid Byte payload"))?,
+        oxvba_runtime::VarType::String => {
+            let Some(text) = value.as_bstr() else {
+                return Err(format!("{field} has invalid String payload"));
+            };
+            let text = text.as_str();
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                0.0
+            } else {
+                trimmed
+                    .parse::<f64>()
+                    .map_err(|_| format!("{field} requires numeric-compatible text, got {text:?}"))?
+            }
+        }
+        other => {
+            return Err(format!(
+                "{field} requires numeric-compatible Variant, got {:?}",
+                other
+            ));
+        }
+    };
+
+    if !numeric.is_finite() || numeric < i32::MIN as f64 || numeric > i32::MAX as f64 {
+        return Err(format!("{field} exceeds i32 range: {numeric}"));
+    }
+    Ok(numeric.trunc() as i32)
+}
+
+fn runtime_i32_compat_is_date(value: i32) -> bool {
+    maybe_packed_date_to_ole_serial(value).is_some() || validate_date_range(value as f64).is_ok()
+}
+
+pub fn runtime_variant_is_date(value: &oxvba_runtime::Variant) -> bool {
+    match value.vtype() {
+        oxvba_runtime::VarType::String => value
+            .as_bstr()
+            .map(|text| parse_string_date_to_packed(&text.as_str()).is_some())
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Integer => value
+            .as_i16()
+            .map(|v| runtime_i32_compat_is_date(i32::from(v)))
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Long => value
+            .as_i32()
+            .map(runtime_i32_compat_is_date)
+            .unwrap_or(false),
+        oxvba_runtime::VarType::LongLong => value
+            .as_i64()
+            .map(|v| {
+                if let Ok(raw) = i32::try_from(v) {
+                    runtime_i32_compat_is_date(raw)
+                } else {
+                    validate_date_range(v as f64).is_ok()
+                }
+            })
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Single => value
+            .as_f32()
+            .map(|v| validate_date_range(f64::from(v)).is_ok())
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Double => value
+            .as_f64()
+            .map(|v| validate_date_range(v).is_ok())
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Date => value
+            .as_date_f64()
+            .map(|v| validate_date_range(v).is_ok())
+            .unwrap_or(false),
+        oxvba_runtime::VarType::Currency
+        | oxvba_runtime::VarType::Decimal
+        | oxvba_runtime::VarType::Byte => runtime_variant_to_i32_compat(value, "CDate src")
+            .map(runtime_i32_compat_is_date)
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 pub fn runtime_value_to_usize(value: &RuntimeValue) -> Result<usize, String> {
     let index = runtime_value_to_i32_compat(value, "usize operand")?;
     if index < 0 {

@@ -1348,8 +1348,8 @@ pub extern "C" fn oxrt_is_error(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_date_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = if semantics::runtime_value_is_date(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = if semantics::runtime_variant_is_date(&val) {
         1
     } else {
         0
