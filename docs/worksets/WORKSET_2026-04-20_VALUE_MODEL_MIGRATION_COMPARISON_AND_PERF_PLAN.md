@@ -2197,6 +2197,10 @@ Child beads:
        now read retained Variant carriers directly and convert them to object
        handles, while binding handles remain explicit internal control-plane
        carriers and bound WithEvents values stay retained as Variants
+     - progress landed: VM and JIT COM event callback-argument index helpers
+       now read retained Variant carriers directly and decode them as integer
+       control-plane indexes, with callback tokens and returned callback
+       argument payloads staying on retained Variant carriers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

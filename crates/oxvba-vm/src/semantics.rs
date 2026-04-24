@@ -2166,6 +2166,23 @@ pub fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result
     usize::try_from(index).map_err(|_| format!("{field} exceeds usize range: {index}"))
 }
 
+pub fn variant_to_usize_index(value: &Variant, field: &str) -> Result<usize, String> {
+    let index = if let Some(raw) = value.as_i32() {
+        raw
+    } else if let Some(raw) = value.as_i64() {
+        i32::try_from(raw).map_err(|_| format!("{field} exceeds i32 index range: {raw}"))?
+    } else {
+        return Err(format!(
+            "{field} requires integer index Variant, got {:?}",
+            value.vtype()
+        ));
+    };
+    if index < 0 {
+        return Err(format!("{field} cannot be negative: {index}"));
+    }
+    usize::try_from(index).map_err(|_| format!("{field} exceeds usize range: {index}"))
+}
+
 fn runtime_array_bounds(
     array: &oxvba_runtime::safe_array::SafeArray,
 ) -> Vec<oxvba_runtime::safe_array::SafeArrayBound> {

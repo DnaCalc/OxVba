@@ -2733,7 +2733,7 @@ pub extern "C" fn oxrt_host_com_event_callback_arg(
     index: u32,
 ) -> i32 {
     let cb_val = read_variant_slot!(ctx, callback);
-    let idx_val = read_slot!(ctx, index);
+    let idx_val = read_variant_slot!(ctx, index);
     let cb = match semantics::variant_to_com_callback_token(
         &cb_val,
         "com_event_callback_arg.callback",
@@ -2741,11 +2741,10 @@ pub extern "C" fn oxrt_host_com_event_callback_arg(
         Ok(c) => c,
         Err(_) => return route_host_error_code(ctx, 53053),
     };
-    let idx =
-        match semantics::runtime_value_to_usize_index(&idx_val, "com_event_callback_arg.index") {
-            Ok(i) => i,
-            Err(_) => return route_host_error_code(ctx, 53053),
-        };
+    let idx = match semantics::variant_to_usize_index(&idx_val, "com_event_callback_arg.index") {
+        Ok(i) => i,
+        Err(_) => return route_host_error_code(ctx, 53053),
+    };
     let host = unsafe { (*ctx).host_services() };
     match host.com().event_callback_variant(cb, idx) {
         Ok(value) => {

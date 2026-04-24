@@ -2529,7 +2529,7 @@ impl Vm {
                     index,
                 } => {
                     let callback = self.read_variant_slot(*callback)?;
-                    let index = self.read_value_slot(*index)?;
+                    let index = self.read_variant_slot(*index)?;
                     let callback = match crate::semantics::variant_to_com_callback_token(
                         &callback,
                         "com_event_callback_arg.callback",
@@ -2546,7 +2546,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    let index = match Self::runtime_value_to_usize_index(
+                    let index = match crate::semantics::variant_to_usize_index(
                         &index,
                         "com_event_callback_arg.index",
                     ) {
@@ -3461,10 +3461,6 @@ impl Vm {
 
     fn legacy_neg_value(val: &RuntimeValue) -> Result<RuntimeValue, String> {
         crate::semantics::legacy_neg_value(val)
-    }
-
-    fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result<usize, String> {
-        crate::semantics::runtime_value_to_usize_index(value, field)
     }
 
     fn materialize_foreach_items(
