@@ -1843,6 +1843,40 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_open_kill_variant_companions_are_direct() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_filesystem_mutation: true,
+                ..HostPolicy::default()
+            },
+        );
+
+        let handle = crate::traits::FileSystemHal::open_variant(
+            &host,
+            Variant::from_i32(321),
+            Variant::from_i32(1),
+        )
+        .expect("variant open");
+        assert_eq!(handle, Variant::from_i32(1));
+
+        let loc = crate::traits::FileSystemHal::loc_variant(&host, handle.clone())
+            .expect("variant loc");
+        assert_eq!(loc, Variant::from_i32(0));
+
+        let closed =
+            crate::traits::FileSystemHal::close_variant(&host, handle).expect("variant close");
+        assert_eq!(closed, Variant::from_i32(1));
+
+        let killed = crate::traits::FileSystemHal::kill_variant(
+            &host,
+            Variant::from_string("deterministic.tmp"),
+        )
+        .expect("variant kill");
+        assert_eq!(killed, Variant::from_i32(0));
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn com_force_registered_testdispatch_is_cached_at_host_construction() {
         let _guard = env_lock().lock().expect("env lock should be available");
