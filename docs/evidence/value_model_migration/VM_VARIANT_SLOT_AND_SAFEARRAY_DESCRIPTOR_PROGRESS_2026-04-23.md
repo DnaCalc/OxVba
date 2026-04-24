@@ -1168,6 +1168,12 @@ Implementation progress:
     slots and write subscription/callback token results back as `Variant`
     values. The token interpretation remains an explicit COM control-plane
     classification boundary, not normal VBA value storage.
+81. VM and JIT dynamic COM dispatch object/member selector helpers now read
+    object and member selector carriers from retained Variant slots and convert
+    them directly to COM object handles and dynamic member selectors. Dynamic
+    dispatch argument payloads continue to enter `DynamicValue` from retained
+    Variants, so the remaining selector interpretation is a COM control-plane
+    classification boundary.
 
 Remaining blocker:
 
@@ -1207,6 +1213,8 @@ Remaining blocker:
    VM project COM WithEvents callback polling now also consumes retained
    Variant callback-token carriers from the event pump.
    VM/JIT COM event subscription/callback helper token carriers now also stay
+   in retained Variant slots at the VM/JIT boundary.
+   VM/JIT dynamic COM dispatch object/member selector carriers now also stay
    in retained Variant slots at the VM/JIT boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
