@@ -1163,6 +1163,11 @@ Implementation progress:
     returned callback token directly from the retained Variant carrier. The
     zero/no-callback token check remains a control-plane token classification,
     not normal VBA value storage.
+80. VM and JIT COM event subscription/callback token helpers now read object,
+    member, subscription, and callback token carriers from retained Variant
+    slots and write subscription/callback token results back as `Variant`
+    values. The token interpretation remains an explicit COM control-plane
+    classification boundary, not normal VBA value storage.
 
 Remaining blocker:
 
@@ -1201,6 +1206,8 @@ Remaining blocker:
    `DynamicValue` as retained Variants rather than through `RuntimeValue`.
    VM project COM WithEvents callback polling now also consumes retained
    Variant callback-token carriers from the event pump.
+   VM/JIT COM event subscription/callback helper token carriers now also stay
+   in retained Variant slots at the VM/JIT boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
