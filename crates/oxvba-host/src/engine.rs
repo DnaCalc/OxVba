@@ -512,6 +512,30 @@ impl Engine {
         source_instance: ObjectRef,
         args: &[RuntimeValue],
     ) -> Result<bool, PhaseDiagnostic> {
+        let args = args
+            .iter()
+            .map(RuntimeValue::to_variant)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PhaseDiagnostic::runtime)?;
+        self.dispatch_host_event_variants_into_runtime(
+            runtime,
+            project_name,
+            module_name,
+            event_name,
+            source_instance,
+            &args,
+        )
+    }
+
+    pub fn dispatch_host_event_variants_into_runtime(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+        project_name: &str,
+        module_name: &str,
+        event_name: &str,
+        source_instance: ObjectRef,
+        args: &[Variant],
+    ) -> Result<bool, PhaseDiagnostic> {
         let bindings = self
             .event_dispatcher
             .lock()
@@ -544,7 +568,7 @@ impl Engine {
             let actual_args = if binding.guard_symbol_zero_arg.is_some()
                 || binding.guard_symbol_one_arg.is_some()
             {
-                let mut actual_args = vec![RuntimeValue::Object(source_instance.clone())];
+                let mut actual_args = vec![Variant::from_object_ref(source_instance.clone())];
                 actual_args.extend_from_slice(args);
                 actual_args
             } else {
@@ -560,7 +584,7 @@ impl Engine {
             }
             runtime
                 .vm
-                .invoke_procedure_with_values(
+                .invoke_procedure_with_variants(
                     &runtime.compiled.bytecode,
                     metadata.entry_pc,
                     &metadata.param_slots,

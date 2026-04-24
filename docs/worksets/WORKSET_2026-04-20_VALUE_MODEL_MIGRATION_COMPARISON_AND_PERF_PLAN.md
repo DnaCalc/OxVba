@@ -2131,6 +2131,11 @@ Child beads:
        inline handler arguments as retained `Variant` carriers, including the
        owner object and callback payload values, and removed the now-unused
        project-symbol inline `RuntimeValue` helper
+     - progress landed: host event ingress now has a Variant-native guarded
+       dispatch path that prepends source objects as
+       `Variant::from_object_ref(...)` and invokes project handlers through
+       `Vm::invoke_procedure_with_variants(...)`; the previous RuntimeValue API
+       remains as a compatibility wrapper
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
