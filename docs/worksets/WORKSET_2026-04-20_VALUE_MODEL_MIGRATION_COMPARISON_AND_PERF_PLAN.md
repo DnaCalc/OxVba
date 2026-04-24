@@ -2019,6 +2019,10 @@ Child beads:
        no longer detours through `Variant::to_runtime_value()` before writing
        `VT_I4`, `VT_R4`, `VT_R8`, or `VT_DATE` payloads for
        `VarPtr(variantVar)` cells
+     - progress landed: `IsObject` classification is no longer a literal stub;
+       VM `IntrinsicIsObjectTag` now uses the existing object semantics, and
+       JIT `oxrt_is_object_tag` now classifies retained object `Variant`
+       carriers directly instead of always returning `0`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

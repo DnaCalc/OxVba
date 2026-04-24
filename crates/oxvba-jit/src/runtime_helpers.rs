@@ -1359,8 +1359,14 @@ pub extern "C" fn oxrt_is_date_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_is_object_tag(ctx: *mut JitContext, dst: u32, _src: u32) -> i32 {
-    write_slot!(ctx, dst, RuntimeValue::I32(0));
+pub extern "C" fn oxrt_is_object_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
+    let val = read_variant_slot!(ctx, src);
+    let out = if semantics::runtime_variant_is_object(&val) {
+        1
+    } else {
+        0
+    };
+    write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
 

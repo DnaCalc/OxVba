@@ -1017,6 +1017,10 @@ pub fn runtime_value_is_object(value: &RuntimeValue) -> bool {
     )
 }
 
+pub fn runtime_variant_is_object(value: &oxvba_runtime::Variant) -> bool {
+    matches!(value.vtype(), oxvba_runtime::VarType::Object)
+}
+
 pub fn runtime_value_is_array_compat(value: &RuntimeValue) -> bool {
     match value {
         RuntimeValue::ArrayIntent(_) => true,

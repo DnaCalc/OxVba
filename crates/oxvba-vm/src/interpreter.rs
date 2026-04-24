@@ -2213,8 +2213,14 @@ impl Vm {
                     self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
-                Instruction::IntrinsicIsObjectTag { dst, .. } => {
-                    self.write_legacy_scalar_slot(*dst, 0)?;
+                Instruction::IntrinsicIsObjectTag { dst, src } => {
+                    let value = self.read_value_slot(*src)?;
+                    let out = if crate::semantics::runtime_value_is_object(&value) {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::ValidateRuntimeAssignment {
@@ -6684,6 +6690,30 @@ mod tests {
         assert_eq!(values[6], RuntimeValue::Bool(true));
         assert_eq!(values[7], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_slots(8), vec![5, 3, 1, 0, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn intrinsic_is_object_tag_distinguishes_object_slots() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::IntrinsicIsObjectTag { dst: 2, src: 0 },
+                Instruction::IntrinsicIsObjectTag { dst: 3, src: 1 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 4,
+            user_slot_count: 4,
+        };
+
+        let mut vm = Vm::default();
+        vm.write_value_slot(0, RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
+            .expect("object slot should be writable");
+        vm.write_value_slot(1, RuntimeValue::I32(7))
+            .expect("scalar slot should be writable");
+
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(4)[2], 1);
+        assert_eq!(vm.snapshot_slots(4)[3], 0);
     }
 
     #[test]

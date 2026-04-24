@@ -2718,11 +2718,11 @@ End Sub";
     #[test]
     fn formal_v50_numeric_date_object_predicates_subset() {
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim d\nDim n\nDim o\nd = IsDate(DateSerial(2026, 2, 28))\nn = IsNumeric(17)\no = IsObject(17)\nEnd Sub";
+        let source = "Sub Main()\nDim d\nDim n\nDim o\nDim probe As Object\nDim oo\nd = IsDate(DateSerial(2026, 2, 28))\nn = IsNumeric(17)\no = IsObject(17)\noo = IsObject(probe)\nEnd Sub";
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![1, 1, 0]);
+        assert_eq!(snapshot, vec![1, 1, 0, 0, 0]);
     }
 
     #[test]

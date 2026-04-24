@@ -544,6 +544,28 @@ mod tests {
     }
 
     #[test]
+    fn runtime_is_object_tag_reads_variant_object_carriers() {
+        let mut ctx = JitContextOwned::new(6, 6, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_object_ref(oxvba_runtime::ObjectRef::from_compat_identity(42)),
+            );
+            ctx.context.write_variant_slot(1, Variant::empty());
+            ctx.context.write_variant_slot(2, Variant::from_i32(7));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 3, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 4, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 5, 2), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[3], RuntimeValue::I32(1));
+        assert_eq!(values[4], RuntimeValue::I32(0));
+        assert_eq!(values[5], RuntimeValue::I32(0));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {
