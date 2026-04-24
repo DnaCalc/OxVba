@@ -1057,6 +1057,13 @@ Implementation progress:
     adapter emits deterministic release status as `Variant::from_i32(...)`,
     while the legacy `release_object()` surface remains as the explicit
     `Variant -> RuntimeValue` compatibility projection.
+62. VM and JIT `CreateObject` host-return paths now use
+    `ComHal::create_object_variant` and write the returned object-valued
+    `Variant` directly into destination slots. The standard HAL adapter emits
+    `Variant::from_object_ref(...)` for deterministic projection handles, while
+    the legacy `create_object()` surface remains as an explicit compatibility
+    projection. ProgID string coercion still uses the existing compatibility
+    string path and remains open classification work.
 
 Remaining blocker:
 
@@ -1078,8 +1085,8 @@ Remaining blocker:
    procedure invocation companion APIs, immediate procedure invocation, host
    class member invocation, host COM callback ingress/dispatch, and VM/JIT
    no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
-   invocation/release no longer retain it as their backing value store for
-   normal VBA values.
+   invocation/release, and VM/JIT `CreateObject` host-return storage no longer
+   retain it as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
