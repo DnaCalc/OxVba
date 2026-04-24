@@ -1231,6 +1231,12 @@ Implementation progress:
     environment-key, and directory path/string carriers stay as Variants through
     deterministic and native process/environment dispatch instead of inheriting
     the trait-level `Variant -> RuntimeValue -> Variant` fallback.
+93. Standard file-system status/handle HAL companions `close_variant`,
+    `eof_variant`, `lof_variant`, `free_file_variant`, and `loc_variant` now
+    return retained Variant status and handle-position carriers directly. This
+    removes the trait-level fallback projection from the first standard
+    file-system subset; text/byte payload companions remain a separate
+    migration slice.
 
 Remaining blocker:
 
@@ -1296,6 +1302,9 @@ Remaining blocker:
    also stays in retained Variant form through the HAL adapter boundary.
    Standard process/environment companion dispatch now also stays in retained
    Variant form through the HAL adapter boundary.
+   Standard file-system close/status/free-handle/location companion dispatch
+   now also stays in retained Variant form through the HAL adapter boundary;
+   file text/byte payload companions remain pending.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
