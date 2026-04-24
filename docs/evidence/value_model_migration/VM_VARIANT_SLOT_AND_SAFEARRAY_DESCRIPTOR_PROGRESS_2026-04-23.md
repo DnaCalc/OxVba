@@ -271,6 +271,12 @@ Implemented:
      project the source slot through `RuntimeValue` just to answer those
      carrier-shape questions; they classify the canonical `Variant` payload
      directly.
+47m. JIT `oxrt_vartype` now also reads the retained slot `Variant` directly.
+     It uses a Variant-native compatibility helper that preserves the current
+     VM/JIT heuristic behavior, including the existing `vbInteger` result for
+     `Long` values inside the i16 range and the current `LongLong -> vbLong`
+     compatibility mapping, while removing the slot-level `RuntimeValue`
+     projection from the JIT helper path.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -893,6 +899,10 @@ Implementation progress:
 40. JIT simple retained-carrier predicates for numeric/error/null/empty/array
     shape now classify the slot `Variant` directly rather than reading a
     temporary `RuntimeValue` for those non-coercive checks.
+41. JIT `VarType` now uses a Variant-native compatibility classifier over the
+    retained slot carrier. The helper preserves the current oracle-tracked
+    compatibility heuristic rather than switching semantics to a raw VARTYPE
+    mirror during this migration bead.
 
 Remaining blocker:
 
