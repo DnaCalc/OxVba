@@ -1127,6 +1127,12 @@ Implementation progress:
     `EventPumpHal::do_events_variant(...)` for slot-facing host dispatch.
     Pending callback tokens returned through the VM `DoEvents` instruction are
     also written as retained `Variant::from_i32(...)` status/token carriers.
+74. VM and JIT process/environment helpers now use
+    `ProcessEnvHal::shell_variant(...)`, `environ_variant(...)`, and
+    `dir_variant(...)`, reading `Shell`, `Environ`, and `Dir` inputs as
+    retained Variants and writing returned values directly as retained
+    Variants. The default `Shell` window style and `Dir` attribute arguments
+    are now constructed as `Variant::from_i32(0)`.
 
 Remaining blocker:
 
@@ -1156,8 +1162,9 @@ Remaining blocker:
    and host event ingress guarded dispatch arguments, and host class
    initializer lifecycle dispatch, VM/JIT console `Print` host helper
    dispatch, VM/JIT UI `MsgBox` / `InputBox` host helper dispatch, and VM/JIT
-   diagnostics/event-pump host helper dispatch no longer retain it as their
-   backing value store for normal VBA values.
+   diagnostics/event-pump host helper dispatch, and VM/JIT process/environment
+   host helper dispatch no longer retain it as their backing value store for
+   normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
