@@ -313,6 +313,12 @@ Implemented:
      no longer detours that fallback path through
      `RuntimeValue::from_compat_slot_i32()` and
      `Variant::try_from_runtime_value()`.
+49r. Public VM/JIT snapshot/result compatibility APIs are now explicitly named
+     as compatibility projections over Variant-native execution paths.
+     `Vm::snapshot_compat_values()`, `oxvba_vm::execute_and_snapshot_compat_values*()`,
+     and `JitEngine::execute_and_snapshot_compat_values*()` now make the
+     `Variant -> RuntimeValue` boundary explicit while preserving the existing
+     legacy method names as delegating compatibility aliases.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -963,6 +969,10 @@ Implementation progress:
     directly as `Variant` carriers from compat slot tags, removing an internal
     `compat slot -> RuntimeValue -> Variant` detour from JIT result
     materialization while preserving the public compatibility result APIs.
+48. VM/JIT public snapshot/result APIs now expose explicit
+    `*_compat_values*` aliases for the `Variant -> RuntimeValue` projection
+    boundary, making the remaining compatibility surface named and auditable
+    instead of implied behind the legacy snapshot method names alone.
 
 Remaining blocker:
 
