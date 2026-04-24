@@ -1029,6 +1029,11 @@ Implementation progress:
     Variant-native semantic helpers. Retrieved elements are written back as
     retained Variants; index coercion remains on the existing compatibility
     numeric path.
+56. VM `For Each` array initialization now reads the iterable source as a
+    retained `Variant`, materializing SAFEARRAY items directly from
+    `as_safearray()` and retaining each item as a `RuntimeSlot::Variant`.
+    Object-source discovery now uses `Variant::as_object_ref()` rather than
+    projecting the source through `RuntimeValue` first.
 
 Remaining blocker:
 
