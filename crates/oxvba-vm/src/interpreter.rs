@@ -2117,11 +2117,11 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicIsArrayTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
                         RuntimeValue::I32(
-                            if crate::semantics::runtime_value_is_array_compat(&value) {
+                            if matches!(value.vtype(), oxvba_runtime::VarType::ArrayVariant) {
                                 1
                             } else {
                                 0
@@ -2131,81 +2131,70 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicVarTypeTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::I32(crate::semantics::runtime_vartype_tag_bounded(&value)),
+                        RuntimeValue::I32(crate::semantics::runtime_vartype_tag_bounded_variant(
+                            &value,
+                        )),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarType { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
-                    let code = match &val {
-                        RuntimeValue::Empty => 0, // vbEmpty
-                        RuntimeValue::Null => 1,  // vbNull
-                        // Heuristic: values in i16 range report as vbInteger(2);
-                        // a full fix would track declared type through emit.
-                        RuntimeValue::I32(v) if *v >= -32768 && *v <= 32767 => 2, // vbInteger
-                        RuntimeValue::I32(_) => 3,                                // vbLong
-                        RuntimeValue::I64(_) => 3, // vbLong (closest)
-                        RuntimeValue::F64(v) => match v.subtype() {
-                            oxvba_runtime::F64Subtype::Single => 4, // vbSingle
-                            oxvba_runtime::F64Subtype::Double => 5, // vbDouble
-                            oxvba_runtime::F64Subtype::Date => 7,   // vbDate
-                        },
-                        RuntimeValue::Currency(_) => 6, // vbCurrency
-                        RuntimeValue::Bool(_) => 11,    // vbBoolean
-                        RuntimeValue::String(_) => 8,   // vbString
-                        RuntimeValue::ErrorCode(_) => 10, // vbError
-                        RuntimeValue::Decimal(_) => 14, // vbDecimal
-                        RuntimeValue::Object(_) => 9,   // vbObject
-                        RuntimeValue::BindingHandle(_) => 9, // vbObject
-                        RuntimeValue::ArrayIntent(_) => 8192 + 12, // vbArray + vbVariant
-                    };
+                    let val = self.read_variant_slot(*src)?;
+                    let code = crate::semantics::runtime_vartype_compat_bounded_variant(&val);
                     self.write_value_slot(*dst, RuntimeValue::I32(code))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeNameTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::I32(crate::semantics::runtime_typename_tag_bounded(&value)),
+                        RuntimeValue::I32(crate::semantics::runtime_typename_tag_bounded_variant(
+                            &value,
+                        )),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNumericTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::I32(crate::semantics::runtime_is_numeric_tag_bounded(&value)),
+                        RuntimeValue::I32(
+                            crate::semantics::runtime_is_numeric_tag_bounded_variant(&value),
+                        ),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNumeric { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
+                    let val = self.read_variant_slot(*src)?;
                     let is_numeric = matches!(
-                        val,
-                        RuntimeValue::I32(_)
-                            | RuntimeValue::I64(_)
-                            | RuntimeValue::F64(_)
-                            | RuntimeValue::Currency(_)
-                            | RuntimeValue::Decimal(_)
-                            | RuntimeValue::Bool(_)
+                        val.vtype(),
+                        oxvba_runtime::VarType::Integer
+                            | oxvba_runtime::VarType::Long
+                            | oxvba_runtime::VarType::LongLong
+                            | oxvba_runtime::VarType::Single
+                            | oxvba_runtime::VarType::Double
+                            | oxvba_runtime::VarType::Date
+                            | oxvba_runtime::VarType::Currency
+                            | oxvba_runtime::VarType::Decimal
+                            | oxvba_runtime::VarType::Boolean
+                            | oxvba_runtime::VarType::Byte
                     );
                     self.write_value_slot(*dst, RuntimeValue::Bool(is_numeric))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsError { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
+                    let val = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val, RuntimeValue::ErrorCode(_))),
+                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Error)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsDateTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let out = if crate::semantics::runtime_value_is_date(&value) {
+                    let value = self.read_variant_slot(*src)?;
+                    let out = if crate::semantics::runtime_variant_is_date(&value) {
                         1
                     } else {
                         0
@@ -2214,8 +2203,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicIsObjectTag { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let out = if crate::semantics::runtime_value_is_object(&value) {
+                    let value = self.read_variant_slot(*src)?;
+                    let out = if crate::semantics::runtime_variant_is_object(&value) {
                         1
                     } else {
                         0
@@ -3003,18 +2992,18 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNull { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
+                    let val = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val, RuntimeValue::Null)),
+                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Null)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsEmpty { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
+                    let val = self.read_variant_slot(*src)?;
                     self.write_value_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val, RuntimeValue::Empty)),
+                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty)),
                     )?;
                     pc += 1;
                 }
@@ -6714,6 +6703,61 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(4)[2], 1);
         assert_eq!(vm.snapshot_slots(4)[3], 0);
+    }
+
+    #[test]
+    fn intrinsic_variant_classifiers_read_retained_carriers() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::IntrinsicIsArrayTag { dst: 7, src: 0 },
+                Instruction::IntrinsicVarTypeTag { dst: 8, src: 0 },
+                Instruction::IntrinsicVarType { dst: 9, src: 6 },
+                Instruction::IntrinsicTypeNameTag { dst: 10, src: 0 },
+                Instruction::IntrinsicIsNumericTag { dst: 11, src: 0 },
+                Instruction::IntrinsicIsNumeric { dst: 12, src: 6 },
+                Instruction::IntrinsicIsError { dst: 13, src: 2 },
+                Instruction::IntrinsicIsDateTag { dst: 14, src: 1 },
+                Instruction::IntrinsicIsObjectTag { dst: 15, src: 3 },
+                Instruction::IntrinsicIsNull { dst: 16, src: 4 },
+                Instruction::IntrinsicIsEmpty { dst: 17, src: 5 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 18,
+            user_slot_count: 18,
+        };
+
+        let mut vm = Vm::default();
+        vm.write_variant_slot(0, Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+            RuntimeValue::I32(1),
+            RuntimeValue::I32(2),
+        ])))
+        .expect("array slot should be writable");
+        vm.write_variant_slot(1, Variant::from_date_f64(42.0))
+            .expect("date slot should be writable");
+        vm.write_variant_slot(2, Variant::from_error_code(9))
+            .expect("error slot should be writable");
+        vm.write_variant_slot(3, Variant::from_object_ref(ObjectRef::from_compat_identity(42)))
+            .expect("object slot should be writable");
+        vm.write_variant_slot(4, Variant::null())
+            .expect("null slot should be writable");
+        vm.write_variant_slot(5, Variant::empty())
+            .expect("empty slot should be writable");
+        vm.write_variant_slot(6, Variant::from_u8(7))
+            .expect("byte slot should be writable");
+
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(18)[7], 1);
+        assert_eq!(vm.snapshot_slots(18)[8], 8204);
+        assert_eq!(vm.snapshot_slots(18)[9], 2);
+        assert_eq!(vm.snapshot_slots(18)[10], 1001);
+        assert_eq!(vm.snapshot_slots(18)[11], 0);
+        assert_eq!(vm.snapshot_slots(18)[12], 1);
+        assert_eq!(vm.snapshot_slots(18)[13], 1);
+        assert_eq!(vm.snapshot_slots(18)[14], 1);
+        assert_eq!(vm.snapshot_slots(18)[15], 1);
+        assert_eq!(vm.snapshot_slots(18)[16], 1);
+        assert_eq!(vm.snapshot_slots(18)[17], 1);
     }
 
     #[test]

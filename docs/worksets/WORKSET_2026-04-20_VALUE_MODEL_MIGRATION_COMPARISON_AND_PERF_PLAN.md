@@ -2023,6 +2023,12 @@ Child beads:
        VM `IntrinsicIsObjectTag` now uses the existing object semantics, and
        JIT `oxrt_is_object_tag` now classifies retained object `Variant`
        carriers directly instead of always returning `0`
+     - progress landed: interpreter intrinsic classifier paths now also read
+       retained slot `Variant` carriers directly across the predicate/tag
+       family (`IsArray`, `VarTypeTag`, `VarType`, `TypeNameTag`,
+       `IsNumericTag`, `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`,
+       `IsEmpty`), aligning VM classification with the already-migrated JIT
+       path instead of projecting each slot through `RuntimeValue` first
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
