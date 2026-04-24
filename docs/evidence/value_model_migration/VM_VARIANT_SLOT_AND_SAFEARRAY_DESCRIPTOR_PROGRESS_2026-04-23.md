@@ -296,6 +296,11 @@ Implemented:
      `Variant::to_runtime_value()` to recover `VT_I4`, `VT_R4`, `VT_R8`, or
      `VT_DATE` payloads before writing the owned VARIANT cell used by
      `VarPtr(variantVar)`.
+47q. `IsObject` classification is no longer a literal stub. VM
+     `IntrinsicIsObjectTag` now classifies object-valued slots through the
+     existing object semantics, and JIT `oxrt_is_object_tag` now reads the
+     retained slot `Variant` directly and returns `1` for canonical
+     `VT_UNKNOWN` object carriers instead of always returning `0`.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -934,6 +939,10 @@ Implementation progress:
     integer and floating/date payload decoding on the Variant side as well,
     removing another manual `Variant -> RuntimeValue` detour from the
     `VarPtr(variantVar)` compatibility surface.
+45. `IsObject` classification now has real object semantics again across the
+    interpreter and JIT. The interpreter no longer hardcodes `0` for
+    `IntrinsicIsObjectTag`, and the JIT now classifies retained object
+    `Variant` carriers directly instead of returning a stubbed false result.
 
 Remaining blocker:
 
