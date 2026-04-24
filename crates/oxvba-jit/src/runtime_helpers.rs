@@ -2537,14 +2537,11 @@ pub extern "C" fn oxrt_host_file_seek(ctx: *mut JitContext, dst: u32, handle: u3
             write_variant_slot!(ctx, dst, Variant::from_i32(value.as_i32().unwrap_or(0) + 1));
             OK
         }
-        Ok(value) => match value.to_runtime_value() {
-            Ok(value) => match semantics::runtime_value_to_i32_compat(&value, "Loc") {
-                Ok(value) => {
-                    write_variant_slot!(ctx, dst, Variant::from_i32(value + 1));
-                    OK
-                }
-                Err(_) => ERR_RUNTIME,
-            },
+        Ok(value) => match semantics::variant_to_i32_compat(&value, "Loc") {
+            Ok(value) => {
+                write_variant_slot!(ctx, dst, Variant::from_i32(value + 1));
+                OK
+            }
             Err(_) => ERR_RUNTIME,
         },
         Err(_) => ERR_RUNTIME,

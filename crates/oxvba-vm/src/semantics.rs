@@ -973,6 +973,10 @@ fn runtime_variant_to_i32_compat(
     Ok(numeric.trunc() as i32)
 }
 
+pub fn variant_to_i32_compat(value: &Variant, field: &str) -> Result<i32, String> {
+    runtime_variant_to_i32_compat(value, field)
+}
+
 fn runtime_i32_compat_is_date(value: i32) -> bool {
     maybe_packed_date_to_ole_serial(value).is_some() || validate_date_range(value as f64).is_ok()
 }

@@ -2170,6 +2170,11 @@ Child beads:
        Variant companions, leaving only the required numeric/Boolean
        compatibility coercions for mode/file-number, `EOF`, and `Seek`
        arithmetic
+     - progress landed: VM and JIT file `Seek` helper paths now decode the
+       host `Loc` return carrier through a Variant-native numeric compatibility
+       decoder before writing the retained `Seek` result Variant, removing the
+       prior `Variant -> RuntimeValue -> Variant` detour from `Loc + 1`
+       arithmetic
      - progress landed: VM and JIT console input/line-input helpers and `Beep`
        diagnostics status dispatch now route through `ConsoleHal` and
        `DiagnosticsHal` Variant companions, keeping slot-facing stdin and

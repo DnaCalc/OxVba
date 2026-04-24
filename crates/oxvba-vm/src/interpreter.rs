@@ -1441,9 +1441,7 @@ impl Vm {
                     let handle = self.read_variant_slot(*handle)?;
                     match self.host_services.fs().loc_variant(handle) {
                         Ok(value) => {
-                            let value = value.to_runtime_value()?;
-                            let value =
-                                crate::semantics::runtime_value_to_i32_compat(&value, "Loc")?;
+                            let value = crate::semantics::variant_to_i32_compat(&value, "Loc")?;
                             self.write_variant_slot(*dst, Variant::from_i32(value + 1))?;
                             pc += 1;
                         }
