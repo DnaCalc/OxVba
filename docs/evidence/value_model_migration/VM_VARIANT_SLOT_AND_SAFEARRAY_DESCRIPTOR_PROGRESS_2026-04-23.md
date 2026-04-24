@@ -284,6 +284,12 @@ Implemented:
      recognition, and truncating `Byte`/`Currency`/`Decimal` numeric fallback
      instead of projecting the slot through `RuntimeValue` before testing date
      compatibility.
+47o. Runtime pointer-helper `register_variant_pointer()` now reads canonical
+     Variant payloads directly for integer, floating/date, and SAFEARRAY byte
+     buffer lanes. It no longer detours through `Variant::to_runtime_value()`
+     for those cases, and byte-buffer extraction for `VarPtr` over
+     SAFEARRAY-backed Variant arrays now walks `variant_elements()` instead of
+     the legacy `RuntimeValue` projection API.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -914,6 +920,10 @@ Implementation progress:
     retained slot carrier, preserving the current string parse, packed-date
     integer, and truncating numeric `CDate` compatibility heuristics while
     removing another semantic slot-projection seam from the JIT helper path.
+43. Runtime pointer-helper registry entry materialization now keeps canonical
+    Variant payload inspection on the Variant side for integer, floating/date,
+    and SAFEARRAY byte-buffer lanes, removing another manual
+    `Variant -> RuntimeValue` compatibility detour from the migration surface.
 
 Remaining blocker:
 
