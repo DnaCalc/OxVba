@@ -319,6 +319,14 @@ Implemented:
      and `JitEngine::execute_and_snapshot_compat_values*()` now make the
      `Variant -> RuntimeValue` boundary explicit while preserving the existing
      legacy method names as delegating compatibility aliases.
+50r. Host project-runtime and immediate-session snapshot compatibility APIs are
+     now explicitly named as compatibility projections over Variant-native
+     runtime state. `ProjectRuntimeSession::snapshot_compat_values()`,
+     `ProjectRuntimeSession::read_compat_slot()`, and
+     `ImmediateSession::snapshot_compat_values()` now expose the
+     `Variant -> RuntimeValue` boundary directly while preserving the older
+     `snapshot()` / `snapshot_values()` / `read_slot()` entrypoints as
+     delegating compatibility aliases.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -973,6 +981,10 @@ Implementation progress:
     `*_compat_values*` aliases for the `Variant -> RuntimeValue` projection
     boundary, making the remaining compatibility surface named and auditable
     instead of implied behind the legacy snapshot method names alone.
+49. Host project-runtime and immediate-session snapshot surfaces now expose
+    explicit compatibility aliases for the `Variant -> RuntimeValue`
+    projection boundary, reducing another unnamed public compatibility seam in
+    the value-model migration surface.
 
 Remaining blocker:
 
