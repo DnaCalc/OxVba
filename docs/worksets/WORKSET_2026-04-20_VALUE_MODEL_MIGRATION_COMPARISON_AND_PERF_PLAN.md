@@ -2094,6 +2094,11 @@ Child beads:
        SAFEARRAY-backed `Variant` carriers via
        `Variant::from_safearray(SafeArray::from_variants(...))`, without a
        `RuntimeValue::ArrayIntent` construction hop
+     - progress landed: runtime typed SAFEARRAY construction from `Variant`
+       carriers now encodes non-Variant intrinsic payloads directly from
+       Variant accessors, leaving `from_typed_values*()` as the explicit
+       `RuntimeValue` compatibility entrypoint instead of detouring
+       `from_typed_variants*()` through semantic values
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
