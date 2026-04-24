@@ -1215,6 +1215,11 @@ Implementation progress:
     Console display formatting, input field parsing, BSTR returns, and status
     returns no longer require the trait-level `Variant -> RuntimeValue ->
     Variant` fallback for stdio hosts.
+90. Standard UI HAL `msg_box_variant` and `input_box_variant` now implement
+    retained Variant handling directly. Prompt/default display formatting,
+    callback dispatch, scripted responses, and BSTR/string returns no longer
+    require the trait-level `Variant -> RuntimeValue -> Variant` fallback for
+    UI interaction hosts.
 
 Remaining blocker:
 
@@ -1274,6 +1279,8 @@ Remaining blocker:
    on explicit retained-Variant paths or explicit unsupported Variant faults.
    Standard console `Print`, `Input`, and `Line Input` companion dispatch now
    also stays in retained Variant form through the HAL adapter boundary.
+   Standard UI `MsgBox` and `InputBox` companion dispatch now also stays in
+   retained Variant form through the HAL adapter boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
