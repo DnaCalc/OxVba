@@ -1728,6 +1728,36 @@ mod tests {
     }
 
     #[test]
+    fn status_time_and_diagnostics_variant_companions_are_direct() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+
+        let events = crate::traits::EventPumpHal::do_events_variant(&host)
+            .expect("variant doevents");
+        assert_eq!(events, Variant::from_i32(0));
+
+        let emitted = crate::traits::DiagnosticsHal::emit_variant(
+            &host,
+            Variant::from_i32(4),
+            Variant::from_i32(5),
+        )
+        .expect("variant emit");
+        assert_eq!(emitted, Variant::from_i32(9));
+        let debug = crate::traits::DiagnosticsHal::debug_print_variant(&host, Variant::null())
+            .expect("variant debug print");
+        assert_eq!(debug, Variant::from_i32(0));
+
+        let date = crate::traits::TimeLocaleHal::date_serial_now_variant(&host)
+            .expect("variant date");
+        assert_eq!(date.as_date_f64(), Some(46_082.0));
+        let time = crate::traits::TimeLocaleHal::time_serial_now_variant(&host)
+            .expect("variant time");
+        assert_eq!(time.as_date_f64(), Some(45_296.0 / 86_400.0));
+        let timer = crate::traits::TimeLocaleHal::timer_ticks_variant(&host)
+            .expect("variant timer");
+        assert_eq!(timer.as_f32(), Some(45_296.0_f32));
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn com_force_registered_testdispatch_is_cached_at_host_construction() {
         let _guard = env_lock().lock().expect("env lock should be available");

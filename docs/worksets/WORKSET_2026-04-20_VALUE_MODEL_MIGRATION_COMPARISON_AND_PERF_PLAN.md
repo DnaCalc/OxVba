@@ -2178,6 +2178,10 @@ Child beads:
        route slot-facing `Debug.Print` and `DoEvents` dispatch through Variant
        companions, and VM pending callback-token delivery now writes retained
        `Variant::from_i32(...)` token carriers
+     - progress landed: standard event-pump, diagnostics, and time/locale HAL
+       Variant companions now return retained Variant status/date/time
+       carriers directly instead of inheriting the trait-level `RuntimeValue`
+       fallback projection
      - progress landed: VM and JIT process/environment host helpers now route
        `Shell`, `Environ`, and `Dir` through `ProcessEnvHal` Variant
        companions, including Variant-native default style/attribute arguments
