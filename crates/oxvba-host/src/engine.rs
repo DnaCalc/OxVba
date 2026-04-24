@@ -861,7 +861,7 @@ impl Engine {
         {
             session
                 .vm
-                .invoke_procedure_with_values(
+                .invoke_procedure_with_variants(
                     &session.compiled.bytecode,
                     metadata.entry_pc,
                     &metadata.param_slots,

@@ -2140,6 +2140,10 @@ Child beads:
        callee argument slots as `RuntimeSlot::Variant(Variant::from_i32(...))`
        directly instead of creating a temporary `RuntimeValue` only to rewrap
        it as a Variant slot
+     - progress landed: host class-instance lifecycle dispatch now invokes
+       `Class_Initialize` through `Vm::invoke_procedure_with_variants(...)`,
+       removing the legacy `RuntimeValue` procedure wrapper from that
+       initializer path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
