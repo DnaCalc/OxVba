@@ -3701,9 +3701,9 @@ impl Vm {
         }
 
         if let Some(index) = param_array_index {
-            bound[index] = Some(RuntimeSlot::from_runtime_value(RuntimeValue::ArrayIntent(
+            bound[index] = Some(RuntimeSlot::Variant(Variant::from_safearray(
                 SafeArray::from_variants(param_array_items),
-            ))?);
+            )));
         }
 
         for (index, param) in member.params.iter().enumerate() {
@@ -3711,9 +3711,9 @@ impl Vm {
                 continue;
             }
             bound[index] = Some(if param.param_array {
-                RuntimeSlot::from_runtime_value(RuntimeValue::ArrayIntent(
-                    SafeArray::from_variants(Vec::new()),
-                ))?
+                RuntimeSlot::Variant(Variant::from_safearray(SafeArray::from_variants(
+                    Vec::new(),
+                )))
             } else if param.optional {
                 Self::default_project_dynamic_param_slot(param)?
             } else {
@@ -4758,6 +4758,8 @@ fn runtime_array_element_vartype(element_type: RuntimeArrayElementType) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use crate::register_file::RuntimeSlot;
+
     use super::{
         DebugBreakpoint, DebugRunResult, DebugStopReason, Vm, runtime_resized_array_preserve,
     };
@@ -6219,10 +6221,22 @@ mod tests {
         let mut vm = Vm::default();
         vm.reset_execution_state(bytecode.slot_count, false);
         vm.set_project_dynamic_objects(vec![route]);
-        let value = vm
+        let value_slot = vm
             .try_invoke_project_dynamic(&bytecode, false, &request)
             .expect("dispatch should bind paramarray")
-            .expect("project-dynamic route should match")
+            .expect("project-dynamic route should match");
+        let RuntimeSlot::Variant(variant) = &value_slot else {
+            panic!("expected retained Variant paramarray result, got {value_slot:?}");
+        };
+        let array = variant
+            .as_safearray()
+            .expect("ParamArray should remain a retained SAFEARRAY Variant");
+        assert_eq!(
+            array.variant_elements()
+                .expect("ParamArray should retain Variant element payload"),
+            vec![Variant::from_i32(11), Variant::from_i32(14)]
+        );
+        let value = value_slot
             .to_runtime_value()
             .expect("project-dynamic slot should project for assertion");
 

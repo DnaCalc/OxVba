@@ -2089,6 +2089,11 @@ Child beads:
        retained `Variant::as_safearray()` and registers the SAFEARRAY payload
        pointer directly; non-array sources still register the exact retained
        Variant cell
+     - progress landed: VM project-dynamic `ParamArray` binding now packs
+       populated and empty ParamArray slots directly as retained
+       SAFEARRAY-backed `Variant` carriers via
+       `Variant::from_safearray(SafeArray::from_variants(...))`, without a
+       `RuntimeValue::ArrayIntent` construction hop
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
