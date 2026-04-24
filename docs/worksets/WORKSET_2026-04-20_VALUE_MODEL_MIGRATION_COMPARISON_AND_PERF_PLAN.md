@@ -2123,6 +2123,10 @@ Child beads:
        retained object-valued `Variant` slot and uses
        `Variant::as_object_ref()` before project dynamic class/interface
        comparison; the boolean result remains on the scalar compatibility path
+     - progress landed: VM project dynamic dispatch now inserts the implicit
+       `Me` argument as an object-valued retained `Variant` slot before inline
+       procedure invocation, instead of routing it through
+       `RuntimeValue::Object`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

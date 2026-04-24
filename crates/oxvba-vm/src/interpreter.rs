@@ -3837,10 +3837,7 @@ impl Vm {
                 ));
             }
         };
-        values.insert(
-            0,
-            RuntimeSlot::from_runtime_value(RuntimeValue::Object(object.clone()))?,
-        );
+        values.insert(0, RuntimeSlot::Variant(Variant::from_object_ref(object.clone())));
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
