@@ -220,24 +220,304 @@ pub trait EventPumpHal: Send + Sync {
 
 pub trait FileSystemHal: Send + Sync {
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn open_variant(&self, path: Variant, mode: Variant) -> HalResult<Variant> {
+        let path = path.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "open_variant",
+                detail,
+            )
+        })?;
+        let mode = mode.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "open_variant",
+                detail,
+            )
+        })?;
+        self.open(path, mode).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "open_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn close_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "close_variant",
+                detail,
+            )
+        })?;
+        self.close(handle).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "close_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn kill_variant(&self, path: Variant) -> HalResult<Variant> {
+        let path = path.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "kill_variant",
+                detail,
+            )
+        })?;
+        self.kill(path).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "kill_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn eof_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "eof_variant",
+                detail,
+            )
+        })?;
+        self.eof(handle).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "eof_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn lof_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "lof_variant",
+                detail,
+            )
+        })?;
+        self.lof(handle).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "lof_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn free_file_variant(&self, range_selector: Variant) -> HalResult<Variant> {
+        let range_selector = range_selector.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "free_file_variant",
+                detail,
+            )
+        })?;
+        self.free_file(range_selector).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "free_file_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Binary read: reads `count` bytes from the current position (VBA `Get #`).
     fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn read_bytes_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "read_bytes_variant",
+                detail,
+            )
+        })?;
+        let count = count.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "read_bytes_variant",
+                detail,
+            )
+        })?;
+        self.read_bytes(handle, count).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "read_bytes_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Formatted write output with delimiter semantics (current VBA `Write #` lane).
     fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn write_bytes_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "write_bytes_variant",
+                detail,
+            )
+        })?;
+        let data = data.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "write_bytes_variant",
+                detail,
+            )
+        })?;
+        self.write_bytes(handle, data).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "write_bytes_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Formatted text output with delimiter semantics (VBA `Print #`).
     fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn print_line_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "print_line_variant",
+                detail,
+            )
+        })?;
+        let data = data.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "print_line_variant",
+                detail,
+            )
+        })?;
+        self.print_line(handle, data).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "print_line_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Delimited field parsing from stream (VBA `Input #`).
     fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "input_fields_variant",
+                detail,
+            )
+        })?;
+        let count = count.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "input_fields_variant",
+                detail,
+            )
+        })?;
+        self.input_fields(handle, count).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "input_fields_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Line-oriented read until newline or EOF (VBA `Line Input #`).
     fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn line_input_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "line_input_variant",
+                detail,
+            )
+        })?;
+        self.line_input(handle).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "line_input_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Returns current byte position in the file (VBA `Loc()`).
     fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn loc_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let handle = handle.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::FileSystemIo,
+                "loc_variant",
+                detail,
+            )
+        })?;
+        self.loc(handle).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::FileSystemIo,
+                    "loc_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait ProcessEnvHal: Send + Sync {

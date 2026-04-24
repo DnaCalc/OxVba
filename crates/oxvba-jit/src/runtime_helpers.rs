@@ -2274,13 +2274,13 @@ pub extern "C" fn oxrt_resume_label(ctx: *mut JitContext, target_pc: i32) -> i32
 pub extern "C" fn oxrt_host_free_file(ctx: *mut JitContext, dst: u32, range_slot: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let selector = if range_slot == u32::MAX {
-        RuntimeValue::I32(0)
+        Variant::from_i32(0)
     } else {
-        read_slot!(ctx, range_slot)
+        read_variant_slot!(ctx, range_slot)
     };
-    match host.fs().free_file(selector) {
+    match host.fs().free_file_variant(selector) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2296,9 +2296,17 @@ pub extern "C" fn oxrt_host_file_open(
     file_number: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let path_val = read_slot!(ctx, path);
-    let mode_val = read_slot!(ctx, mode);
-    let file_num = read_slot!(ctx, file_number);
+    let path_val = read_variant_slot!(ctx, path);
+    let mode_val = read_variant_slot!(ctx, mode);
+    let file_num = read_variant_slot!(ctx, file_number);
+    let mode_val = match mode_val.to_runtime_value() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let file_num = match file_num.to_runtime_value() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
     let mode_i32 = match semantics::runtime_value_to_i32_compat(&mode_val, "Open mode") {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
@@ -2307,10 +2315,10 @@ pub extern "C" fn oxrt_host_file_open(
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
-    match host.fs().open(path_val, combined_mode) {
+    let combined_mode = Variant::from_i32(mode_i32 | (fnum_i32 << 16));
+    match host.fs().open_variant(path_val, combined_mode) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2320,10 +2328,10 @@ pub extern "C" fn oxrt_host_file_open(
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_close(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().close(handle_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().close_variant(handle_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2333,10 +2341,10 @@ pub extern "C" fn oxrt_host_file_close(ctx: *mut JitContext, dst: u32, handle: u
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_kill(ctx: *mut JitContext, dst: u32, path: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let path_val = read_slot!(ctx, path);
-    match host.fs().kill(path_val) {
+    let path_val = read_variant_slot!(ctx, path);
+    match host.fs().kill_variant(path_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2351,11 +2359,11 @@ pub extern "C" fn oxrt_host_file_read(
     count: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    let count_val = read_slot!(ctx, count);
-    match host.fs().read_bytes(handle_val, count_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    let count_val = read_variant_slot!(ctx, count);
+    match host.fs().read_bytes_variant(handle_val, count_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2370,11 +2378,11 @@ pub extern "C" fn oxrt_host_file_write(
     data: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    let data_val = read_slot!(ctx, data);
-    match host.fs().write_bytes(handle_val, data_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    let data_val = read_variant_slot!(ctx, data);
+    match host.fs().write_bytes_variant(handle_val, data_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2389,11 +2397,11 @@ pub extern "C" fn oxrt_host_file_print(
     data: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    let data_val = read_slot!(ctx, data);
-    match host.fs().print_line(handle_val, data_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    let data_val = read_variant_slot!(ctx, data);
+    match host.fs().print_line_variant(handle_val, data_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2421,11 +2429,11 @@ pub extern "C" fn oxrt_host_file_input(
     count: u32,
 ) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    let count_val = read_slot!(ctx, count);
-    match host.fs().input_fields(handle_val, count_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    let count_val = read_variant_slot!(ctx, count);
+    match host.fs().input_fields_variant(handle_val, count_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2448,10 +2456,10 @@ pub extern "C" fn oxrt_host_console_input(ctx: *mut JitContext, dst: u32, count:
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().line_input(handle_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().line_input_variant(handle_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2485,14 +2493,18 @@ pub extern "C" fn oxrt_host_beep(ctx: *mut JitContext, dst: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_eof(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().eof(handle_val) {
-        Ok(RuntimeValue::I32(value)) => {
-            write_slot!(ctx, dst, RuntimeValue::Bool(value != 0));
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().eof_variant(handle_val) {
+        Ok(value) if value.as_i32().is_some() => {
+            write_variant_slot!(
+                ctx,
+                dst,
+                Variant::from_bool(value.as_i32().unwrap_or(0) != 0)
+            );
             OK
         }
-        Ok(RuntimeValue::Bool(value)) => {
-            write_slot!(ctx, dst, RuntimeValue::Bool(value));
+        Ok(value) if value.as_bool().is_some() => {
+            write_variant_slot!(ctx, dst, Variant::from_bool(value.as_bool().unwrap_or(false)));
             OK
         }
         Ok(_) => ERR_RUNTIME,
@@ -2503,10 +2515,10 @@ pub extern "C" fn oxrt_host_file_eof(ctx: *mut JitContext, dst: u32, handle: u32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_lof(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().lof(handle_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().lof_variant(handle_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2516,13 +2528,22 @@ pub extern "C" fn oxrt_host_file_lof(ctx: *mut JitContext, dst: u32, handle: u32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_seek(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().loc(handle_val) {
-        Ok(RuntimeValue::I32(value)) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(value + 1));
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().loc_variant(handle_val) {
+        Ok(value) if value.as_i32().is_some() => {
+            write_variant_slot!(ctx, dst, Variant::from_i32(value.as_i32().unwrap_or(0) + 1));
             OK
         }
-        Ok(_) => ERR_RUNTIME,
+        Ok(value) => match value.to_runtime_value() {
+            Ok(value) => match semantics::runtime_value_to_i32_compat(&value, "Loc") {
+                Ok(value) => {
+                    write_variant_slot!(ctx, dst, Variant::from_i32(value + 1));
+                    OK
+                }
+                Err(_) => ERR_RUNTIME,
+            },
+            Err(_) => ERR_RUNTIME,
+        },
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2530,10 +2551,10 @@ pub extern "C" fn oxrt_host_file_seek(ctx: *mut JitContext, dst: u32, handle: u3
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_loc(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let handle_val = read_slot!(ctx, handle);
-    match host.fs().loc(handle_val) {
+    let handle_val = read_variant_slot!(ctx, handle);
+    match host.fs().loc_variant(handle_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

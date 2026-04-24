@@ -1273,41 +1273,45 @@ impl Vm {
                     mode,
                     file_number,
                 } => {
-                    let path = self.read_value_slot(*path)?;
-                    let mode_val = self.read_value_slot(*mode)?;
-                    let file_num = self.read_value_slot(*file_number)?;
+                    let path = self.read_variant_slot(*path)?;
+                    let mode_val = self.read_variant_slot(*mode)?;
+                    let file_num = self.read_variant_slot(*file_number)?;
                     // Encode file_number into upper 16 bits of mode so the HAL
                     // can allocate the specific handle requested by the VBA source.
-                    let mode_i32 =
-                        crate::semantics::runtime_value_to_i32_compat(&mode_val, "Open mode")?;
+                    let mode_runtime = mode_val.to_runtime_value()?;
+                    let file_num_runtime = file_num.to_runtime_value()?;
+                    let mode_i32 = crate::semantics::runtime_value_to_i32_compat(
+                        &mode_runtime,
+                        "Open mode",
+                    )?;
                     let fnum_i32 = crate::semantics::runtime_value_to_i32_compat(
-                        &file_num,
+                        &file_num_runtime,
                         "Open file number",
                     )?;
-                    let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
-                    match self.host_services.fs().open(path, combined_mode) {
+                    let combined_mode = Variant::from_i32(mode_i32 | (fnum_i32 << 16));
+                    match self.host_services.fs().open_variant(path, combined_mode) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileCloseHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().close(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().close_variant(handle) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileKillHost { dst, path } => {
-                    let path = self.read_value_slot(*path)?;
-                    match self.host_services.fs().kill(path) {
+                    let path = self.read_variant_slot(*path)?;
+                    match self.host_services.fs().kill_variant(path) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1318,46 +1322,46 @@ impl Vm {
                     range_selector,
                 } => {
                     let selector = if let Some(slot) = range_selector {
-                        self.read_value_slot(*slot)?
+                        self.read_variant_slot(*slot)?
                     } else {
-                        RuntimeValue::I32(0)
+                        Variant::from_i32(0)
                     };
-                    match self.host_services.fs().free_file(selector) {
+                    match self.host_services.fs().free_file_variant(selector) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileReadHost { dst, handle, count } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    let count = self.read_value_slot(*count)?;
-                    match self.host_services.fs().read_bytes(handle, count) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    let count = self.read_variant_slot(*count)?;
+                    match self.host_services.fs().read_bytes_variant(handle, count) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileWriteHost { dst, handle, data } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    let data = self.read_value_slot(*data)?;
-                    match self.host_services.fs().write_bytes(handle, data) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    let data = self.read_variant_slot(*data)?;
+                    match self.host_services.fs().write_bytes_variant(handle, data) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFilePrintHost { dst, handle, data } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    let data = self.read_value_slot(*data)?;
-                    match self.host_services.fs().print_line(handle, data) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    let data = self.read_variant_slot(*data)?;
+                    match self.host_services.fs().print_line_variant(handle, data) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1374,11 +1378,11 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicFileInputHost { dst, handle, count } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    let count = self.read_value_slot(*count)?;
-                    match self.host_services.fs().input_fields(handle, count) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    let count = self.read_variant_slot(*count)?;
+                    match self.host_services.fs().input_fields_variant(handle, count) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1395,10 +1399,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicFileLineInputHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().line_input(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().line_input_variant(handle) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1414,43 +1418,45 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicFileEofHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().eof(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().eof_variant(handle) {
                         Ok(value) => {
+                            let value = value.to_runtime_value()?;
                             let value = crate::semantics::legacy_truthy_value(&value)?;
-                            self.write_value_slot(*dst, RuntimeValue::Bool(value))?;
+                            self.write_variant_slot(*dst, Variant::from_bool(value))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileLofHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().lof(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().lof_variant(handle) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileSeekHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().loc(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().loc_variant(handle) {
                         Ok(value) => {
+                            let value = value.to_runtime_value()?;
                             let value =
                                 crate::semantics::runtime_value_to_i32_compat(&value, "Loc")?;
-                            self.write_value_slot(*dst, RuntimeValue::I32(value + 1))?;
+                            self.write_variant_slot(*dst, Variant::from_i32(value + 1))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicFileLocHost { dst, handle } => {
-                    let handle = self.read_value_slot(*handle)?;
-                    match self.host_services.fs().loc(handle) {
+                    let handle = self.read_variant_slot(*handle)?;
+                    match self.host_services.fs().loc_variant(handle) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

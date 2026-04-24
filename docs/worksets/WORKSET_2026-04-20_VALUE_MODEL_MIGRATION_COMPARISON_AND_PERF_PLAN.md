@@ -2164,6 +2164,12 @@ Child beads:
        `Time`, `Now`, and `Timer` through `TimeLocaleHal` Variant companions,
        with `Now` converting only for the existing semantic combiner before
        writing a retained Variant result
+     - progress landed: VM and JIT file-system host helpers now route `Open`,
+       `Close`, `Kill`, `FreeFile`, `Input#`, `Line Input#`, `Print#`,
+       `Write#`, `EOF`, `LOF`, `Seek`, and `Loc` through `FileSystemHal`
+       Variant companions, leaving only the required numeric/Boolean
+       compatibility coercions for mode/file-number, `EOF`, and `Seek`
+       arithmetic
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
