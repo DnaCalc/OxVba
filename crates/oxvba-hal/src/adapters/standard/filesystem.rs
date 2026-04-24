@@ -3,7 +3,7 @@ use crate::{
     model::CapabilityId,
     traits::FileSystemHal,
 };
-use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, VarType, Variant, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};
@@ -66,6 +66,32 @@ fn format_write_field(data: &RuntimeValue) -> String {
     }
 }
 
+fn format_write_field_variant(data: &Variant) -> String {
+    match data.vtype() {
+        VarType::String => {
+            let text = data.as_bstr().unwrap_or_else(BStr::empty);
+            let escaped = text.as_str().replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        }
+        VarType::Boolean => {
+            if data.as_bool().unwrap_or(false) {
+                "#TRUE#".to_string()
+            } else {
+                "#FALSE#".to_string()
+            }
+        }
+        VarType::Empty | VarType::Null => "#NULL#".to_string(),
+        VarType::Integer => data.as_i16().unwrap_or(0).to_string(),
+        VarType::Long => data.as_i32().unwrap_or(0).to_string(),
+        VarType::LongLong => data.as_i64().unwrap_or(0).to_string(),
+        VarType::Byte => data.as_u8().unwrap_or(0).to_string(),
+        VarType::Single => data.as_f32().unwrap_or(0.0).to_string(),
+        VarType::Double => data.as_f64().unwrap_or(0.0).to_string(),
+        VarType::Date => data.as_date_f64().unwrap_or(0.0).to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
 fn parse_input_field(data: &[u8], mut cursor: usize) -> (String, usize) {
     let len = data.len();
     while cursor < len && matches!(data[cursor], b' ' | b'\t') {
@@ -124,6 +150,25 @@ fn runtime_value_from_input_field(field: &str) -> RuntimeValue {
         return RuntimeValue::F64(F64Value::from_f64(value));
     }
     RuntimeValue::String(BStr::from(field))
+}
+
+fn variant_from_input_field(field: &str) -> Variant {
+    if field.eq_ignore_ascii_case("#TRUE#") {
+        return Variant::from_bool(true);
+    }
+    if field.eq_ignore_ascii_case("#FALSE#") {
+        return Variant::from_bool(false);
+    }
+    if field.eq_ignore_ascii_case("#NULL#") {
+        return Variant::empty();
+    }
+    if let Ok(value) = field.parse::<i32>() {
+        return Variant::from_i32(value);
+    }
+    if let Ok(value) = field.parse::<f64>() {
+        return Variant::from_f64(value);
+    }
+    Variant::from_string(field)
 }
 
 fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {
@@ -1234,6 +1279,28 @@ impl FileSystemHal for StandardHostServices {
         )))
     }
 
+    fn read_bytes_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "read_bytes"));
+        }
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "read_bytes", "handle")?;
+        let count =
+            self.variant_project_compat_slot_i32(&count, capability, "read_bytes", "count")?;
+        let mut state = self.fs_lock(capability, "read_bytes")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "read_bytes")?;
+        let pos = entry.position as usize;
+        let count = count.max(0) as usize;
+        let available = entry.data.len().saturating_sub(pos);
+        let actual = count.min(available);
+        let bytes = entry.data[pos..pos + actual].to_vec();
+        entry.position += actual as i32;
+        Ok(Variant::from_string(
+            String::from_utf8_lossy(&bytes).into_owned(),
+        ))
+    }
+
     fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1260,6 +1327,30 @@ impl FileSystemHal for StandardHostServices {
         entry.position = end as i32;
         entry.len = entry.data.len() as i32;
         Ok(RuntimeValue::I32(bytes.len() as i32))
+    }
+
+    fn write_bytes_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "write_bytes"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "write_bytes"));
+        }
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "write_bytes", "handle")?;
+        let bytes = format!("{}\r\n", format_write_field_variant(&data)).into_bytes();
+        let mut state = self.fs_lock(capability, "write_bytes")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
+        let pos = entry.position as usize;
+        let end = pos + bytes.len();
+        if end > entry.data.len() {
+            entry.data.resize(end, 0);
+        }
+        entry.data[pos..end].copy_from_slice(&bytes);
+        entry.position = end as i32;
+        entry.len = entry.data.len() as i32;
+        Ok(Variant::from_i32(bytes.len() as i32))
     }
 
     fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -1302,6 +1393,38 @@ impl FileSystemHal for StandardHostServices {
         Ok(RuntimeValue::I32(0))
     }
 
+    fn print_line_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "print_line"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "print_line"));
+        }
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "print_line", "handle")?;
+        let text = match data.as_bstr() {
+            Some(text) => format!("{text}\r\n"),
+            None => {
+                let val =
+                    self.variant_project_compat_slot_i32(&data, capability, "print_line", "data")?;
+                format!("{val}\r\n")
+            }
+        };
+        let bytes = text.as_bytes();
+        let mut state = self.fs_lock(capability, "print_line")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "print_line")?;
+        let pos = entry.position as usize;
+        let end = pos + bytes.len();
+        if end > entry.data.len() {
+            entry.data.resize(end, 0);
+        }
+        entry.data[pos..end].copy_from_slice(bytes);
+        entry.position = end as i32;
+        entry.len = entry.data.len() as i32;
+        Ok(Variant::from_i32(0))
+    }
+
     fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1341,6 +1464,37 @@ impl FileSystemHal for StandardHostServices {
         Ok(RuntimeValue::String(BStr::from(result)))
     }
 
+    fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "input_fields"));
+        }
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "input_fields", "handle")?;
+        let count =
+            self.variant_project_compat_slot_i32(&count, capability, "input_fields", "count")?;
+        let count = count.max(1) as usize;
+        let mut state = self.fs_lock(capability, "input_fields")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "input_fields")?;
+        let pos = entry.position as usize;
+        let mut fields = Vec::new();
+        let mut cursor = pos;
+        while fields.len() < count && cursor < entry.data.len() {
+            let (field, next_cursor) = parse_input_field(&entry.data, cursor);
+            fields.push(field);
+            cursor = advance_input_separator(&entry.data, next_cursor);
+        }
+        entry.position = cursor as i32;
+        if count == 1 {
+            if let Some(field) = fields.first() {
+                return Ok(variant_from_input_field(field));
+            }
+            return Ok(Variant::from_string(BStr::empty()));
+        }
+        let result = fields.join(",");
+        Ok(Variant::from_string(result))
+    }
+
     fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1373,6 +1527,36 @@ impl FileSystemHal for StandardHostServices {
         let line = String::from_utf8_lossy(&remaining[..line_end.0]).into_owned();
         entry.position += line_end.1 as i32;
         Ok(RuntimeValue::String(BStr::from(line)))
+    }
+
+    fn line_input_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "line_input"));
+        }
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "line_input", "handle")?;
+        let mut state = self.fs_lock(capability, "line_input")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "line_input")?;
+        let pos = entry.position as usize;
+        if pos >= entry.data.len() {
+            return Ok(Variant::from_string(BStr::empty()));
+        }
+        let remaining = &entry.data[pos..];
+        let line_end = remaining
+            .iter()
+            .position(|&b| b == b'\n')
+            .map(|i| {
+                if i > 0 && remaining[i - 1] == b'\r' {
+                    (i - 1, i + 1)
+                } else {
+                    (i, i + 1)
+                }
+            })
+            .unwrap_or((remaining.len(), remaining.len()));
+        let line = String::from_utf8_lossy(&remaining[..line_end.0]).into_owned();
+        entry.position += line_end.1 as i32;
+        Ok(Variant::from_string(line))
     }
 
     fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {

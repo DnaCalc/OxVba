@@ -1877,6 +1877,80 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_text_payload_variant_companions_are_direct() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_filesystem_mutation: true,
+                ..HostPolicy::default()
+            },
+        );
+
+        let handle = crate::traits::FileSystemHal::open_variant(
+            &host,
+            Variant::from_i32(777),
+            Variant::from_i32(1),
+        )
+        .expect("variant open output");
+        let written = crate::traits::FileSystemHal::write_bytes_variant(
+            &host,
+            handle.clone(),
+            Variant::from_string("alpha"),
+        )
+        .expect("variant write");
+        assert!(written.as_i32().unwrap_or_default() > 0);
+        host.seek(RuntimeValue::I32(handle.as_i32().unwrap()), rv(0))
+            .expect("seek back");
+        let read =
+            crate::traits::FileSystemHal::read_bytes_variant(&host, handle.clone(), written)
+                .expect("variant read");
+        assert_eq!(read.as_bstr(), Some(BStr::from("\"alpha\"\r\n")));
+        crate::traits::FileSystemHal::close_variant(&host, handle).expect("variant close");
+
+        let line_handle = crate::traits::FileSystemHal::open_variant(
+            &host,
+            Variant::from_i32(778),
+            Variant::from_i32(1),
+        )
+        .expect("variant open line output");
+        crate::traits::FileSystemHal::print_line_variant(
+            &host,
+            line_handle.clone(),
+            Variant::from_string("world"),
+        )
+        .expect("variant print line");
+        host.seek(RuntimeValue::I32(line_handle.as_i32().unwrap()), rv(0))
+            .expect("seek line");
+        let line = crate::traits::FileSystemHal::line_input_variant(&host, line_handle.clone())
+            .expect("variant line input");
+        assert_eq!(line.as_bstr(), Some(BStr::from("world")));
+        crate::traits::FileSystemHal::close_variant(&host, line_handle).expect("close line");
+
+        let input_handle = crate::traits::FileSystemHal::open_variant(
+            &host,
+            Variant::from_i32(779),
+            Variant::from_i32(1),
+        )
+        .expect("variant open input output");
+        crate::traits::FileSystemHal::write_bytes_variant(
+            &host,
+            input_handle.clone(),
+            Variant::from_i32(42),
+        )
+        .expect("variant write input");
+        host.seek(RuntimeValue::I32(input_handle.as_i32().unwrap()), rv(0))
+            .expect("seek input");
+        let field = crate::traits::FileSystemHal::input_fields_variant(
+            &host,
+            input_handle.clone(),
+            Variant::from_i32(1),
+        )
+        .expect("variant input field");
+        assert_eq!(field, Variant::from_i32(42));
+        crate::traits::FileSystemHal::close_variant(&host, input_handle).expect("close input");
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn com_force_registered_testdispatch_is_cached_at_host_construction() {
         let _guard = env_lock().lock().expect("env lock should be available");
