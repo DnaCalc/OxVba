@@ -2974,9 +2974,9 @@ impl Vm {
                     object_slot,
                     type_name,
                 } => {
-                    let val = self.read_value_slot(*object_slot)?;
-                    let is_match = match &val {
-                        RuntimeValue::Object(handle) => {
+                    let val = self.read_variant_slot(*object_slot)?;
+                    let is_match = match val.as_object_ref() {
+                        Some(handle) => {
                             if let Some(state) = self.project_dynamic_objects.get(&handle.raw()) {
                                 state.route.module_name.eq_ignore_ascii_case(type_name)
                                     || state
@@ -2988,7 +2988,7 @@ impl Vm {
                                 false
                             }
                         }
-                        _ => false,
+                        None => false,
                     };
                     self.write_value_slot(*dst, RuntimeValue::Bool(is_match))?;
                     pc += 1;

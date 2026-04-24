@@ -2119,6 +2119,10 @@ Child beads:
        project COM WithEvents subscription sync inspects object-valued
        Variants with `Variant::as_object_ref()` before COM descriptor/event
        subscription work
+     - progress landed: VM `TypeOf...Is` object operand lookup now reads the
+       retained object-valued `Variant` slot and uses
+       `Variant::as_object_ref()` before project dynamic class/interface
+       comparison; the boolean result remains on the scalar compatibility path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
