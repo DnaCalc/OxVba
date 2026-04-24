@@ -2085,6 +2085,10 @@ Child beads:
        retained SAFEARRAY-backed `Variant` carriers through the Variant-native
        bound helpers instead of entering the `RuntimeValue::ArrayIntent`
        compatibility path
+     - progress landed: VM generic `VarPtr` now recognizes array carriers from
+       retained `Variant::as_safearray()` and registers the SAFEARRAY payload
+       pointer directly; non-array sources still register the exact retained
+       Variant cell
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

@@ -1528,15 +1528,11 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtr { dst, src } => {
-                    let runtime_value = self.read_value_slot(*src)?;
-                    let pointer = match runtime_value {
-                        RuntimeValue::ArrayIntent(ref array) => {
-                            oxvba_runtime::pointer_helpers::register_array_payload_pointer(array)?
-                        }
-                        _ => {
-                            let value = self.read_variant_slot(*src)?;
-                            oxvba_runtime::pointer_helpers::register_variant_pointer(&value)?
-                        }
+                    let value = self.read_variant_slot(*src)?;
+                    let pointer = if let Some(array) = value.as_safearray() {
+                        oxvba_runtime::pointer_helpers::register_array_payload_pointer(&array)?
+                    } else {
+                        oxvba_runtime::pointer_helpers::register_variant_pointer(&value)?
                     };
                     self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
                     pc += 1;
