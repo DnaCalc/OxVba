@@ -1210,6 +1210,11 @@ Implementation progress:
     fallback that projected through `RuntimeValue`. Unsupported adapters
     preserve the same `create_object` capability fault, and recording delegates
     to the wrapped host's retained-Variant activation path.
+89. Standard console HAL `print_line_variant`, `input_fields_variant`, and
+    `line_input_variant` now implement their Variant companion paths directly.
+    Console display formatting, input field parsing, BSTR returns, and status
+    returns no longer require the trait-level `Variant -> RuntimeValue ->
+    Variant` fallback for stdio hosts.
 
 Remaining blocker:
 
@@ -1267,6 +1272,8 @@ Remaining blocker:
    Variant/BSTR form before activation dispatch.
    Non-standard COM activation adapters now also keep `create_object_variant`
    on explicit retained-Variant paths or explicit unsupported Variant faults.
+   Standard console `Print`, `Input`, and `Line Input` companion dispatch now
+   also stays in retained Variant form through the HAL adapter boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
