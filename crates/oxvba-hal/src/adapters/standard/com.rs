@@ -492,6 +492,13 @@ impl ComHal for StandardHostServices {
     }
 
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
+        let value = self.unsubscribe_event_variant(subscription)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn unsubscribe_event_variant(&self, subscription: ComSubscriptionToken) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "unsubscribe_event"));
@@ -513,7 +520,7 @@ impl ComHal for StandardHostServices {
             unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
             })?;
-            Ok(RuntimeValue::from_compat_slot_i32(1))
+            Ok(Variant::from_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -679,6 +686,13 @@ impl ComHal for StandardHostServices {
     }
 
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
+        let value = self.release_event_callback_variant(callback)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_event_callback"));
@@ -706,7 +720,7 @@ impl ComHal for StandardHostServices {
                         message,
                     )
                 })?;
-            Ok(RuntimeValue::from_compat_slot_i32(1))
+            Ok(Variant::from_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")

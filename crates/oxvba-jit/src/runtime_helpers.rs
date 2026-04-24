@@ -2669,9 +2669,9 @@ pub extern "C" fn oxrt_host_com_unsubscribe(
         Err(_) => return route_host_error_code(ctx, 53053),
     };
     let host = unsafe { (*ctx).host_services() };
-    match host.com().unsubscribe_event(sub) {
+    match host.com().unsubscribe_event_variant(sub) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(err) => route_hal_error(ctx, err),
@@ -2748,9 +2748,9 @@ pub extern "C" fn oxrt_host_com_release_event_callback(
         Err(_) => return route_host_error_code(ctx, 53053),
     };
     let host = unsafe { (*ctx).host_services() };
-    match host.com().release_event_callback(cb) {
+    match host.com().release_event_callback_variant(cb) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(err) => route_hal_error(ctx, err),

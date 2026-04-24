@@ -2467,9 +2467,13 @@ impl Vm {
                             continue;
                         }
                     };
-                    match self.host_services.com().unsubscribe_event(subscription) {
+                    match self
+                        .host_services
+                        .com()
+                        .unsubscribe_event_variant(subscription)
+                    {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -2574,9 +2578,13 @@ impl Vm {
                             continue;
                         }
                     };
-                    match self.host_services.com().release_event_callback(callback) {
+                    match self
+                        .host_services
+                        .com()
+                        .release_event_callback_variant(callback)
+                    {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

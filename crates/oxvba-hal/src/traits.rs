@@ -230,6 +230,17 @@ pub trait ComHal: Send + Sync {
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken>;
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue>;
+    fn unsubscribe_event_variant(&self, subscription: ComSubscriptionToken) -> HalResult<Variant> {
+        let value = self.unsubscribe_event(subscription)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "unsubscribe_event_variant",
+                detail,
+            )
+        })
+    }
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
     fn event_callback_subscription(
         &self,
@@ -257,6 +268,17 @@ pub trait ComHal: Send + Sync {
         })
     }
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue>;
+    fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
+        let value = self.release_event_callback(callback)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "release_event_callback_variant",
+                detail,
+            )
+        })
+    }
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,

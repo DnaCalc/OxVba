@@ -2109,6 +2109,11 @@ Child beads:
        `Variant` carriers directly to destination slots; standard HAL emits
        deterministic projection handles as `Variant::from_object_ref(...)`,
        with ProgID string coercion still classified as open compatibility work
+     - progress landed: VM and JIT COM event unsubscribe/release status paths
+       now use `ComHal::unsubscribe_event_variant` and
+       `ComHal::release_event_callback_variant`, writing retained `Variant`
+       status carriers directly to destination slots while leaving internal
+       subscription/callback token inputs on the existing handle-token path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
