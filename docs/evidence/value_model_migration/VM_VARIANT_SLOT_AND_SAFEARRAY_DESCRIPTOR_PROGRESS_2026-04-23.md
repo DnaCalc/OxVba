@@ -1237,6 +1237,11 @@ Implementation progress:
     removes the trait-level fallback projection from the first standard
     file-system subset; text/byte payload companions remain a separate
     migration slice.
+94. Standard file-system `open_variant` and `kill_variant` now implement
+    retained Variant path/mode handling directly. Deterministic token-backed
+    opens, string path opens, requested-handle encoding, and string-only kill
+    paths no longer inherit the trait-level `Variant -> RuntimeValue ->
+    Variant` fallback; text/byte payload companions remain pending.
 
 Remaining blocker:
 
@@ -1304,7 +1309,9 @@ Remaining blocker:
    Variant form through the HAL adapter boundary.
    Standard file-system close/status/free-handle/location companion dispatch
    now also stays in retained Variant form through the HAL adapter boundary;
-   file text/byte payload companions remain pending.
+   standard file-system open/kill companion dispatch now also stays in
+   retained Variant form through the HAL adapter boundary; file text/byte
+   payload companions remain pending.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
