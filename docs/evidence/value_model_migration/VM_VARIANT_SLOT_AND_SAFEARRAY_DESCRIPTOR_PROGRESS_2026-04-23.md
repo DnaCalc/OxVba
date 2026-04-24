@@ -1072,6 +1072,13 @@ Implementation progress:
     legacy `RuntimeValue` methods remain compatibility projections. Internal
     subscription/callback token inputs remain on the existing handle-token
     coercion path.
+64. VM and JIT WithEvents owner-iteration and clear-owner status outputs now
+    write retained `Variant` carriers (`Variant::from_object_ref(...)` or
+    `Variant::from_i32(0)`) instead of constructing destination
+    `RuntimeValue` objects/status values first. VM project COM WithEvents
+    subscription sync now inspects bound object-valued Variants via
+    `Variant::as_object_ref()` rather than projecting the binding through
+    `RuntimeValue` before `describe_object()` / `subscribe_event()`.
 
 Remaining blocker:
 
@@ -1094,8 +1101,9 @@ Remaining blocker:
    class member invocation, host COM callback ingress/dispatch, and VM/JIT
    no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
    invocation/release, VM/JIT `CreateObject` host-return storage, and VM/JIT
-   COM event unsubscribe/release status writes no longer retain it as their
-   backing value store for normal VBA values.
+   COM event unsubscribe/release status writes, and VM/JIT WithEvents
+   owner-iteration/status outputs no longer retain it as their backing value
+   store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
