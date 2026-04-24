@@ -2965,10 +2965,10 @@ pub extern "C" fn oxrt_host_inputbox(
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_debug_print(ctx: *mut JitContext, dst: u32, data: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let data_val = read_slot!(ctx, data);
-    match host.diag().debug_print(data_val) {
+    let data_val = read_variant_slot!(ctx, data);
+    match host.diag().debug_print_variant(data_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2978,9 +2978,9 @@ pub extern "C" fn oxrt_host_debug_print(ctx: *mut JitContext, dst: u32, data: u3
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_do_events(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.events().do_events() {
+    match host.events().do_events_variant() {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

@@ -2153,6 +2153,10 @@ Child beads:
        route through `UiInteractionHal` Variant companions, including
        Variant-native omitted optional defaults for prompt style/default text
        values
+     - progress landed: VM and JIT diagnostics/event-pump host helpers now
+       route slot-facing `Debug.Print` and `DoEvents` dispatch through Variant
+       companions, and VM pending callback-token delivery now writes retained
+       `Variant::from_i32(...)` token carriers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

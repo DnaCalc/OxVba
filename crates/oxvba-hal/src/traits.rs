@@ -204,6 +204,18 @@ pub trait UiInteractionHal: Send + Sync {
 pub trait EventPumpHal: Send + Sync {
     /// Deterministically pumps host events, or reports unsupported behavior.
     fn do_events(&self) -> HalResult<RuntimeValue>;
+    fn do_events_variant(&self) -> HalResult<Variant> {
+        self.do_events().and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::EventPump,
+                    "do_events_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait FileSystemHal: Send + Sync {
@@ -532,6 +544,26 @@ fn runtime_result_to_variants(
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
     fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn debug_print_variant(&self, text: Variant) -> HalResult<Variant> {
+        let text = text.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                "debug_print_variant",
+                detail,
+            )
+        })?;
+        self.debug_print(text).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::DiagnosticsTelemetry,
+                    "debug_print_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait ProjectCatalogHal: Send + Sync {

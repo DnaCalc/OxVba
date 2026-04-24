@@ -1506,10 +1506,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicDebugPrintHost { dst, data } => {
-                    let data = self.read_value_slot(*data)?;
-                    match self.host_services.diag().debug_print(data) {
+                    let data = self.read_variant_slot(*data)?;
+                    match self.host_services.diag().debug_print_variant(data) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1562,13 +1562,13 @@ impl Vm {
                 }
                 Instruction::IntrinsicDoEventsHost { dst } => {
                     if let Some(callback) = self.pending_callback_tokens.pop_front() {
-                        self.write_value_slot(*dst, RuntimeValue::I32(callback.raw()))?;
+                        self.write_variant_slot(*dst, Variant::from_i32(callback.raw()))?;
                         pc += 1;
                         continue;
                     }
-                    match self.host_services.events().do_events() {
+                    match self.host_services.events().do_events_variant() {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
