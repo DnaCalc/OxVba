@@ -1116,6 +1116,12 @@ Implementation progress:
     `Variant`. The legacy `ConsoleHal::print_line(RuntimeValue)` method remains
     as the compatibility implementation for adapters that have not yet grown a
     native Variant override.
+72. VM and JIT UI `MsgBox` / `InputBox` helpers now call
+    `UiInteractionHal::msg_box_variant(...)` and
+    `UiInteractionHal::input_box_variant(...)`, including Variant-native
+    default prompt style/default text values for omitted optional arguments.
+    Legacy `RuntimeValue` UI HAL methods remain as adapter compatibility
+    implementations.
 
 Remaining blocker:
 
@@ -1143,9 +1149,9 @@ Remaining blocker:
    and VM project dynamic dispatch implicit `Me` binding/default optional
    argument binding, and VM project COM WithEvents callback inline arguments,
    and host event ingress guarded dispatch arguments, and host class
-   initializer lifecycle dispatch, and VM/JIT console `Print` host helper
-   dispatch no longer retain it as their backing value store for normal VBA
-   values.
+   initializer lifecycle dispatch, VM/JIT console `Print` host helper
+   dispatch, and VM/JIT UI `MsgBox` / `InputBox` host helper dispatch no
+   longer retain it as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
