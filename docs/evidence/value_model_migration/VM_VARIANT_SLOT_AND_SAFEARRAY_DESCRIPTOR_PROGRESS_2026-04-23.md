@@ -1205,6 +1205,11 @@ Implementation progress:
     returned object Variants directly; this removes the remaining
     `Variant -> RuntimeValue -> Variant` ProgID coercion detour from the
     standard activation path.
+88. Null, WASM, replay, and recording COM adapters now override
+    `create_object_variant` directly instead of inheriting the compatibility
+    fallback that projected through `RuntimeValue`. Unsupported adapters
+    preserve the same `create_object` capability fault, and recording delegates
+    to the wrapped host's retained-Variant activation path.
 
 Remaining blocker:
 
@@ -1260,6 +1265,8 @@ Remaining blocker:
    explicit numeric/Boolean compatibility classifications.
    Standard HAL `CreateObject` ProgID coercion now also stays in retained
    Variant/BSTR form before activation dispatch.
+   Non-standard COM activation adapters now also keep `create_object_variant`
+   on explicit retained-Variant paths or explicit unsupported Variant faults.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
