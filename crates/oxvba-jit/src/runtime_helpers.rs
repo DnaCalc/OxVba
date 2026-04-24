@@ -2991,10 +2991,10 @@ pub extern "C" fn oxrt_host_do_events(ctx: *mut JitContext, dst: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_shell(ctx: *mut JitContext, dst: u32, command: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let cmd_val = read_slot!(ctx, command);
-    match host.process().shell(cmd_val, RuntimeValue::I32(0)) {
+    let cmd_val = read_variant_slot!(ctx, command);
+    match host.process().shell_variant(cmd_val, Variant::from_i32(0)) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -3004,10 +3004,10 @@ pub extern "C" fn oxrt_host_shell(ctx: *mut JitContext, dst: u32, command: u32) 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_environ(ctx: *mut JitContext, dst: u32, key: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let key_val = read_slot!(ctx, key);
-    match host.process().environ(key_val) {
+    let key_val = read_variant_slot!(ctx, key);
+    match host.process().environ_variant(key_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -3017,10 +3017,10 @@ pub extern "C" fn oxrt_host_environ(ctx: *mut JitContext, dst: u32, key: u32) ->
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_dir(ctx: *mut JitContext, dst: u32, path: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let path_val = read_slot!(ctx, path);
-    match host.process().dir(path_val, RuntimeValue::I32(0)) {
+    let path_val = read_variant_slot!(ctx, path);
+    match host.process().dir_variant(path_val, Variant::from_i32(0)) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

@@ -242,8 +242,84 @@ pub trait FileSystemHal: Send + Sync {
 
 pub trait ProcessEnvHal: Send + Sync {
     fn shell(&self, command: RuntimeValue, window_style: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn shell_variant(&self, command: Variant, window_style: Variant) -> HalResult<Variant> {
+        let command = command.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ProcessEnv,
+                "shell_variant",
+                detail,
+            )
+        })?;
+        let window_style = window_style.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ProcessEnv,
+                "shell_variant",
+                detail,
+            )
+        })?;
+        self.shell(command, window_style).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ProcessEnv,
+                    "shell_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn environ_variant(&self, key: Variant) -> HalResult<Variant> {
+        let key = key.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ProcessEnv,
+                "environ_variant",
+                detail,
+            )
+        })?;
+        self.environ(key).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ProcessEnv,
+                    "environ_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn dir(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn dir_variant(&self, path: Variant, attrs: Variant) -> HalResult<Variant> {
+        let path = path.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ProcessEnv,
+                "dir_variant",
+                detail,
+            )
+        })?;
+        let attrs = attrs.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ProcessEnv,
+                "dir_variant",
+                detail,
+            )
+        })?;
+        self.dir(path, attrs).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ProcessEnv,
+                    "dir_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait ComHal: Send + Sync {

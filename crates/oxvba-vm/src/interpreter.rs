@@ -2229,34 +2229,38 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicShellHost { dst, command } => {
-                    let command = self.read_value_slot(*command)?;
+                    let command = self.read_variant_slot(*command)?;
                     match self
                         .host_services
                         .process()
-                        .shell(command, RuntimeValue::I32(0))
+                        .shell_variant(command, Variant::from_i32(0))
                     {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicEnvironHost { dst, key } => {
-                    let key = self.read_value_slot(*key)?;
-                    match self.host_services.process().environ(key) {
+                    let key = self.read_variant_slot(*key)?;
+                    match self.host_services.process().environ_variant(key) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicDirHost { dst, path } => {
-                    let path = self.read_value_slot(*path)?;
-                    match self.host_services.process().dir(path, RuntimeValue::I32(0)) {
+                    let path = self.read_variant_slot(*path)?;
+                    match self
+                        .host_services
+                        .process()
+                        .dir_variant(path, Variant::from_i32(0))
+                    {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
