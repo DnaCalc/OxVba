@@ -2144,10 +2144,16 @@ Child beads:
        `Class_Initialize` through `Vm::invoke_procedure_with_variants(...)`,
        removing the legacy `RuntimeValue` procedure wrapper from that
        initializer path
+     - progress landed: VM and JIT console `Print` host helpers now route
+       through `ConsoleHal::print_line_variant(...)`, preserving retained
+       Variant carriers for the printed argument and returned status while
+       leaving the older `RuntimeValue` HAL method as an adapter compatibility
+       implementation
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
-       surfaces that still use semantic values by contract, legacy dynamic-link
-       symbol APIs, legacy SafeArray element compatibility APIs, COM
+       surfaces that still use semantic values by contract, remaining host
+       service helper families, legacy dynamic-link symbol APIs, legacy
+       SafeArray element compatibility APIs, COM
        compatibility projection APIs that still expose `RuntimeValue`,
        embedded/immediate/debugger compatibility display APIs that still expose
        `RuntimeValue`, and remaining manual pointer-helper / registry

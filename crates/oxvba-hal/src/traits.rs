@@ -108,6 +108,26 @@ pub trait HostServices: Send + Sync {
 pub trait ConsoleHal: Send + Sync {
     /// Console text output with line semantics for stdio-style hosts.
     fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
+        let data = data.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ConsoleIo,
+                "print_line_variant",
+                detail,
+            )
+        })?;
+        self.print_line(data).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ConsoleIo,
+                    "print_line_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Delimited field parsing from stdin-like input (BASIC `Input`).
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue>;
     /// Line-oriented read from stdin-like input (BASIC `Line Input`).

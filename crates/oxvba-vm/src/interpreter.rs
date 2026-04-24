@@ -1362,10 +1362,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicConsolePrintHost { dst, data } => {
-                    let data = self.read_value_slot(*data)?;
-                    match self.host_services.console().print_line(data) {
+                    let data = self.read_variant_slot(*data)?;
+                    match self.host_services.console().print_line_variant(data) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

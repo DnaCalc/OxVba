@@ -2403,10 +2403,10 @@ pub extern "C" fn oxrt_host_file_print(
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_console_print(ctx: *mut JitContext, dst: u32, data: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let data_val = read_slot!(ctx, data);
-    match host.console().print_line(data_val) {
+    let data_val = read_variant_slot!(ctx, data);
+    match host.console().print_line_variant(data_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
