@@ -301,6 +301,12 @@ Implemented:
      existing object semantics, and JIT `oxrt_is_object_tag` now reads the
      retained slot `Variant` directly and returns `1` for canonical
      `VT_UNKNOWN` object carriers instead of always returning `0`.
+47r. Interpreter intrinsic classifier paths now also read retained slot
+     `Variant` carriers directly for `IsArray`, `VarTypeTag`, `VarType`,
+     `TypeNameTag`, `IsNumericTag`, `IsNumeric`, `IsError`, `IsDate`,
+     `IsObject`, `IsNull`, and `IsEmpty`. The VM now uses the same
+     Variant-native helpers and vtype checks as the JIT instead of projecting
+     each slot through `RuntimeValue` before classifying it.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -943,6 +949,10 @@ Implementation progress:
     interpreter and JIT. The interpreter no longer hardcodes `0` for
     `IntrinsicIsObjectTag`, and the JIT now classifies retained object
     `Variant` carriers directly instead of returning a stubbed false result.
+46. Interpreter intrinsic classifier/tag evaluation now reads retained slot
+    `Variant` carriers directly across the full predicate family, removing a
+    broader VM-side `Variant -> RuntimeValue` projection seam and aligning the
+    VM classifier path with the already-migrated JIT path.
 
 Remaining blocker:
 
