@@ -2380,10 +2380,9 @@ impl Vm {
                         request.args.push(DynamicCallArg {
                             value: arg
                                 .slot
-                                .map(|slot| self.read_value_slot(slot))
+                                .map(|slot| self.read_variant_slot(slot))
                                 .transpose()?
-                                .as_ref()
-                                .map(DynamicValue::from_runtime_value),
+                                .map(DynamicValue::from_variant),
                             name: arg.name.clone(),
                         });
                     }

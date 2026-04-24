@@ -2627,9 +2627,8 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     for arg in args_slice {
         let value = arg
             .slot
-            .map(|slot| read_slot!(ctx, slot as u32))
-            .as_ref()
-            .map(DynamicValue::from_runtime_value);
+            .map(|slot| read_variant_slot!(ctx, slot as u32))
+            .map(DynamicValue::from_variant);
         request.args.push(DynamicCallArg {
             value,
             name: arg.name.clone(),

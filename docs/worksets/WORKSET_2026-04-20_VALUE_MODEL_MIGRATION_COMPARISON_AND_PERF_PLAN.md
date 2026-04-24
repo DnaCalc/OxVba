@@ -2174,6 +2174,11 @@ Child beads:
        diagnostics status dispatch now route through `ConsoleHal` and
        `DiagnosticsHal` Variant companions, keeping slot-facing stdin and
        diagnostic-status values on retained Variant carriers
+     - progress landed: VM and JIT dynamic COM dispatch argument construction
+       now feeds retained slot `Variant` carriers directly into
+       `DynamicValue`, leaving object/member selector coercion as an explicit
+       control-plane compatibility seam rather than a normal argument payload
+       carrier
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
