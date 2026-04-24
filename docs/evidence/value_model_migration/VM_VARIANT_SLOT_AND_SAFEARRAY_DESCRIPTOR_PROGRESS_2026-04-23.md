@@ -1024,6 +1024,11 @@ Implementation progress:
     `Variant::from_safearray(...)`. The preserve helper now accepts the
     existing retained `Variant` directly and inspects it via `as_safearray()`;
     bound coercion still uses the existing compatibility numeric path.
+55. VM intrinsic array get/set instruction paths now read array operands and
+    assigned values from retained `Variant` slots and dispatch through the
+    Variant-native semantic helpers. Retrieved elements are written back as
+    retained Variants; index coercion remains on the existing compatibility
+    numeric path.
 
 Remaining blocker:
 
