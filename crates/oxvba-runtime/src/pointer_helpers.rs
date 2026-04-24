@@ -527,12 +527,11 @@ pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, Strin
 pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
     let entry = match value.vtype() {
         crate::VarType::Empty | crate::VarType::Null => return Ok(0),
-        crate::VarType::Integer | crate::VarType::Long => {
-            let value = value
-                .to_runtime_value()?
-                .as_i32_lossy()
-                .expect("integer payload should project into i32");
-            PointerEntry::I32(Box::new(value))
+        crate::VarType::Integer => PointerEntry::I32(Box::new(i32::from(
+            value.as_i16().expect("Integer Variant payload"),
+        ))),
+        crate::VarType::Long => {
+            PointerEntry::I32(Box::new(value.as_i32().expect("Long Variant payload")))
         }
         crate::VarType::LongLong => {
             PointerEntry::I64(Box::new(value.as_i64().expect("LongLong Variant payload")))
@@ -540,11 +539,14 @@ pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
         crate::VarType::Byte => PointerEntry::I32(Box::new(i32::from(
             value.as_u8().expect("Byte Variant payload"),
         ))),
-        crate::VarType::Single | crate::VarType::Double | crate::VarType::Date => {
-            let RuntimeValue::F64(floating) = value.to_runtime_value()? else {
-                return Err("floating Variant did not project to F64 runtime value".to_string());
-            };
-            PointerEntry::F64(Box::new(floating.as_f64()))
+        crate::VarType::Single => PointerEntry::F64(Box::new(f64::from(
+            value.as_f32().expect("Single Variant payload"),
+        ))),
+        crate::VarType::Double => {
+            PointerEntry::F64(Box::new(value.as_f64().expect("Double Variant payload")))
+        }
+        crate::VarType::Date => {
+            PointerEntry::F64(Box::new(value.as_date_f64().expect("Date Variant payload")))
         }
         crate::VarType::Currency => PointerEntry::I64(Box::new(
             value
@@ -577,7 +579,7 @@ pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
             let Some(array) = value.as_safearray() else {
                 return Err("VarPtr over null SAFEARRAY payload is not yet supported".to_string());
             };
-            byte_array_pointer_entry(&array)?
+            byte_array_variant_pointer_entry(&array)?
         }
         crate::VarType::Object => {
             let Some(handle) = value.as_object_ref() else {
@@ -597,6 +599,55 @@ pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
         .lock()
         .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
     Ok(guard.insert(entry))
+}
+
+fn byte_array_variant_pointer_entry(
+    array: &crate::safe_array::SafeArray,
+) -> Result<PointerEntry, String> {
+    let Some(elements) = array.variant_elements() else {
+        return Err(
+            "VarPtr over array shape without element payload is not yet supported".to_string(),
+        );
+    };
+    let mut bytes = Vec::with_capacity(elements.len());
+    for element in elements {
+        match element.vtype() {
+            crate::VarType::Empty | crate::VarType::Null => bytes.push(0),
+            crate::VarType::Byte => bytes.push(element.as_u8().expect("Byte Variant payload")),
+            crate::VarType::Boolean => bytes.push(if element
+                .as_bool()
+                .expect("Boolean Variant payload")
+            {
+                1
+            } else {
+                0
+            }),
+            crate::VarType::Integer => {
+                let value = i32::from(element.as_i16().expect("Integer Variant payload"));
+                if !(0..=255).contains(&value) {
+                    return Err(format!(
+                        "VarPtr over array payload currently requires byte-compatible elements, got Integer({value})"
+                    ));
+                }
+                bytes.push(value as u8);
+            }
+            crate::VarType::Long => {
+                let value = element.as_i32().expect("Long Variant payload");
+                if !(0..=255).contains(&value) {
+                    return Err(format!(
+                        "VarPtr over array payload currently requires byte-compatible elements, got Long({value})"
+                    ));
+                }
+                bytes.push(value as u8);
+            }
+            other => {
+                return Err(format!(
+                    "VarPtr over array payload currently requires byte-compatible Variant elements, got {other:?}"
+                ));
+            }
+        }
+    }
+    Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
 }
 
 fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<PointerEntry, String> {
@@ -919,6 +970,30 @@ mod tests {
         let scalar_ptr =
             register_variant_pointer(&Variant::from_i64(42)).expect("register i64 variant");
         assert_ne!(scalar_ptr, 0);
+    }
+
+    #[test]
+    fn variant_pointer_preserves_date_and_byte_array_payloads() {
+        let date_ptr =
+            register_variant_pointer(&Variant::from_date_f64(42.25)).expect("register date");
+        let date_raw = lookup_pointer(date_ptr).expect("lookup date pointer").cast::<f64>();
+        assert!(!date_raw.is_null());
+        assert_eq!(unsafe { *date_raw }, 42.25);
+
+        let array_ptr = register_variant_pointer(&Variant::from_safearray(
+            crate::safe_array::SafeArray::from_variants(vec![
+                Variant::from_u8(1),
+                Variant::from_bool(false),
+                Variant::from_i32(3),
+            ]),
+        ))
+        .expect("register variant array");
+        let array_raw = lookup_pointer(array_ptr)
+            .expect("lookup array pointer")
+            .cast::<u8>();
+        assert!(!array_raw.is_null());
+        let bytes = unsafe { std::slice::from_raw_parts(array_raw, 3) };
+        assert_eq!(bytes, &[1, 0, 3]);
     }
 
     #[cfg(target_os = "windows")]

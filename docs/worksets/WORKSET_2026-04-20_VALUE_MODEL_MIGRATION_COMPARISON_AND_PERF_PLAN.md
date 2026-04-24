@@ -2007,6 +2007,12 @@ Child beads:
        preserves the current `CDate` compatibility heuristic for string
        parsing, packed-date integer recognition, and truncating numeric
        fallback instead of projecting the slot through `RuntimeValue` first
+     - progress landed: runtime pointer-helper registry entry materialization
+       now reads canonical Variant payloads directly for integer,
+       floating/date, and SAFEARRAY byte-buffer lanes; `register_variant_pointer()`
+       no longer detours through `Variant::to_runtime_value()` for those cases,
+       and byte-buffer extraction now walks `variant_elements()` instead of the
+       legacy `RuntimeValue` array projection API
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
