@@ -194,6 +194,10 @@ fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
 
 impl ProjectRuntimeSession {
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
+        self.snapshot_compat_values()
+    }
+
+    pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
         self.snapshot_variants()
             .into_iter()
             .map(|value| {
@@ -205,7 +209,7 @@ impl ProjectRuntimeSession {
     }
 
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
-        self.snapshot()
+        self.snapshot_compat_values()
     }
 
     pub fn snapshot_variants(&self) -> Vec<Variant> {
@@ -226,6 +230,10 @@ impl ProjectRuntimeSession {
     }
 
     pub fn read_slot(&self, slot: usize) -> RuntimeValue {
+        self.read_compat_slot(slot)
+    }
+
+    pub fn read_compat_slot(&self, slot: usize) -> RuntimeValue {
         self.read_variant_slot(slot)
             .to_runtime_value()
             .unwrap_or(RuntimeValue::Empty)

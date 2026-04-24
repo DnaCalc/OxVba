@@ -146,7 +146,11 @@ impl<'engine> ImmediateSession<'engine> {
     }
 
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        self.runtime.snapshot()
+        self.snapshot_compat_values()
+    }
+
+    pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
+        self.runtime.snapshot_compat_values()
     }
 
     pub fn snapshot_variants(&self) -> Vec<Variant> {
@@ -631,6 +635,44 @@ End Function
         assert!(variants.iter().any(|value| {
             value.vtype() == VarType::String && value.as_bstr() == Some(BStr::from("hello"))
         }));
+    }
+
+    #[test]
+    fn immediate_session_snapshot_compat_values_projects_runtime_state() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Dim lastText As String
+
+Public Function EchoText(value As String) As String
+    lastText = value
+    EchoText = value
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        session
+            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .expect("evaluate");
+
+        let variants = session.snapshot_variants();
+        let compat = session.snapshot_compat_values();
+
+        assert_eq!(
+            compat,
+            variants
+                .into_iter()
+                .map(|value| value.to_runtime_value().expect("variant projection"))
+                .collect::<Vec<_>>()
+        );
+        assert!(compat.iter().any(
+            |value| matches!(value, RuntimeValue::String(text) if text == &BStr::from("hello"))
+        ));
     }
 
     #[test]
