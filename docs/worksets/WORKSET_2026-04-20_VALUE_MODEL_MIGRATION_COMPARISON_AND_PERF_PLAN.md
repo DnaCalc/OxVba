@@ -2175,6 +2175,11 @@ Child beads:
        decoder before writing the retained `Seek` result Variant, removing the
        prior `Variant -> RuntimeValue -> Variant` detour from `Loc + 1`
        arithmetic
+     - progress landed: VM and JIT file `Open` mode/file-number controls and
+       `EOF` truthiness now decode retained Variant carriers through
+       Variant-native compatibility helpers before packing the file handle
+       request or normalizing the `EOF` Boolean result, removing the prior
+       `Variant -> RuntimeValue` detours from these file-control seams
      - progress landed: VM and JIT console input/line-input helpers and `Beep`
        diagnostics status dispatch now route through `ConsoleHal` and
        `DiagnosticsHal` Variant companions, keeping slot-facing stdin and

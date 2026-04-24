@@ -2299,19 +2299,11 @@ pub extern "C" fn oxrt_host_file_open(
     let path_val = read_variant_slot!(ctx, path);
     let mode_val = read_variant_slot!(ctx, mode);
     let file_num = read_variant_slot!(ctx, file_number);
-    let mode_val = match mode_val.to_runtime_value() {
+    let mode_i32 = match semantics::variant_to_i32_compat(&mode_val, "Open mode") {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let file_num = match file_num.to_runtime_value() {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let mode_i32 = match semantics::runtime_value_to_i32_compat(&mode_val, "Open mode") {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let fnum_i32 = match semantics::runtime_value_to_i32_compat(&file_num, "Open file number") {
+    let fnum_i32 = match semantics::variant_to_i32_compat(&file_num, "Open file number") {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2498,19 +2490,13 @@ pub extern "C" fn oxrt_host_file_eof(ctx: *mut JitContext, dst: u32, handle: u32
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_variant_slot!(ctx, handle);
     match host.fs().eof_variant(handle_val) {
-        Ok(value) if value.as_i32().is_some() => {
-            write_variant_slot!(
-                ctx,
-                dst,
-                Variant::from_bool(value.as_i32().unwrap_or(0) != 0)
-            );
-            OK
-        }
-        Ok(value) if value.as_bool().is_some() => {
-            write_variant_slot!(ctx, dst, Variant::from_bool(value.as_bool().unwrap_or(false)));
-            OK
-        }
-        Ok(_) => ERR_RUNTIME,
+        Ok(value) => match semantics::variant_truthy_value(&value) {
+            Ok(value) => {
+                write_variant_slot!(ctx, dst, Variant::from_bool(value));
+                OK
+            }
+            Err(_) => ERR_RUNTIME,
+        },
         Err(_) => ERR_RUNTIME,
     }
 }

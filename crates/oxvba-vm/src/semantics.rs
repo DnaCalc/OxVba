@@ -897,7 +897,19 @@ fn runtime_variant_to_i32_compat(
     value: &oxvba_runtime::Variant,
     field: &str,
 ) -> Result<i32, String> {
-    let numeric = match value.vtype() {
+    let numeric = runtime_variant_to_numeric_compat(value, field)?;
+
+    if !numeric.is_finite() || numeric < i32::MIN as f64 || numeric > i32::MAX as f64 {
+        return Err(format!("{field} exceeds i32 range: {numeric}"));
+    }
+    Ok(numeric.trunc() as i32)
+}
+
+fn runtime_variant_to_numeric_compat(
+    value: &oxvba_runtime::Variant,
+    field: &str,
+) -> Result<f64, String> {
+    Ok(match value.vtype() {
         oxvba_runtime::VarType::Empty => 0.0,
         oxvba_runtime::VarType::Integer => value
             .as_i16()
@@ -965,12 +977,7 @@ fn runtime_variant_to_i32_compat(
                 other
             ));
         }
-    };
-
-    if !numeric.is_finite() || numeric < i32::MIN as f64 || numeric > i32::MAX as f64 {
-        return Err(format!("{field} exceeds i32 range: {numeric}"));
-    }
-    Ok(numeric.trunc() as i32)
+    })
 }
 
 pub fn variant_to_i32_compat(value: &Variant, field: &str) -> Result<i32, String> {
@@ -1039,6 +1046,13 @@ pub fn legacy_truthy_value(value: &RuntimeValue) -> Result<bool, String> {
         return Ok(false);
     }
     Ok(runtime_value_to_numeric_compat(value, "boolean operand")? != 0.0)
+}
+
+pub fn variant_truthy_value(value: &Variant) -> Result<bool, String> {
+    if matches!(value.vtype(), VarType::Null) {
+        return Ok(false);
+    }
+    Ok(runtime_variant_to_numeric_compat(value, "boolean operand")? != 0.0)
 }
 
 pub fn runtime_value_is_object(value: &RuntimeValue) -> bool {

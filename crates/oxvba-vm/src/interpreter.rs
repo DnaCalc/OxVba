@@ -1276,14 +1276,12 @@ impl Vm {
                     let file_num = self.read_variant_slot(*file_number)?;
                     // Encode file_number into upper 16 bits of mode so the HAL
                     // can allocate the specific handle requested by the VBA source.
-                    let mode_runtime = mode_val.to_runtime_value()?;
-                    let file_num_runtime = file_num.to_runtime_value()?;
-                    let mode_i32 = crate::semantics::runtime_value_to_i32_compat(
-                        &mode_runtime,
+                    let mode_i32 = crate::semantics::variant_to_i32_compat(
+                        &mode_val,
                         "Open mode",
                     )?;
-                    let fnum_i32 = crate::semantics::runtime_value_to_i32_compat(
-                        &file_num_runtime,
+                    let fnum_i32 = crate::semantics::variant_to_i32_compat(
+                        &file_num,
                         "Open file number",
                     )?;
                     let combined_mode = Variant::from_i32(mode_i32 | (fnum_i32 << 16));
@@ -1419,8 +1417,7 @@ impl Vm {
                     let handle = self.read_variant_slot(*handle)?;
                     match self.host_services.fs().eof_variant(handle) {
                         Ok(value) => {
-                            let value = value.to_runtime_value()?;
-                            let value = crate::semantics::legacy_truthy_value(&value)?;
+                            let value = crate::semantics::variant_truthy_value(&value)?;
                             self.write_variant_slot(*dst, Variant::from_bool(value))?;
                             pc += 1;
                         }
