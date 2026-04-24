@@ -1220,6 +1220,12 @@ Implementation progress:
     callback dispatch, scripted responses, and BSTR/string returns no longer
     require the trait-level `Variant -> RuntimeValue -> Variant` fallback for
     UI interaction hosts.
+91. Standard event-pump, diagnostics, and time/locale HAL Variant companions
+    now return retained Variant carriers directly. `do_events_variant`,
+    `emit_variant`, `debug_print_variant`, `date_serial_now_variant`,
+    `time_serial_now_variant`, and `timer_ticks_variant` no longer require the
+    trait-level `Variant -> RuntimeValue -> Variant` fallback for their status
+    and date/time payloads.
 
 Remaining blocker:
 
@@ -1281,6 +1287,8 @@ Remaining blocker:
    also stays in retained Variant form through the HAL adapter boundary.
    Standard UI `MsgBox` and `InputBox` companion dispatch now also stays in
    retained Variant form through the HAL adapter boundary.
+   Standard event-pump, diagnostics, and time/locale companion dispatch now
+   also stays in retained Variant form through the HAL adapter boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
