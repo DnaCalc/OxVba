@@ -332,6 +332,11 @@ Implemented:
      `RuntimeValue` and immediately converting back to `Variant`.
      `SafeArray::variant_elements()` therefore preserves typed payload carriers
      before the existing `SafeArray::elements()` compatibility projection.
+52r. The standard HAL legacy dynamic-link symbol-token Variant path now
+     projects the input token directly from `Variant` and returns a `Variant`
+     result directly for the deterministic m0 lane. `invoke_symbol_variant()`
+     no longer detours through `RuntimeValue` before computing the
+     no-descriptor legacy token result.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -994,6 +999,10 @@ Implementation progress:
     across intrinsic element kinds, removing an internal
     `SAFEARRAY typed payload -> RuntimeValue -> Variant` detour while leaving
     the legacy `elements()` compatibility projection in place.
+51. Standard HAL legacy dynamic-link symbol-token invocation now keeps the
+    no-descriptor `invoke_symbol_variant()` path Variant-native for the
+    deterministic token lane, reducing another `Variant -> RuntimeValue ->
+    Variant` bridge inside a remaining compatibility surface.
 
 Remaining blocker:
 
