@@ -2099,6 +2099,11 @@ Child beads:
        Variant accessors, leaving `from_typed_values*()` as the explicit
        `RuntimeValue` compatibility entrypoint instead of detouring
        `from_typed_variants*()` through semantic values
+     - progress landed: HAL dynamic COM release now uses the
+       `ComHal::release_object_variant` companion and maps the retained
+       `Variant` status directly into `DynamicValue`; the standard adapter
+       emits deterministic release status as `Variant::from_i32(...)`, with
+       legacy `release_object()` retained as the compatibility projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

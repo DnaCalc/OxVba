@@ -38,7 +38,7 @@ impl DynamicObjectBridge for HalComDynamicBridge<'_> {
         object: DynamicObjectToken,
     ) -> Result<DynamicValue, Self::Error> {
         self.com
-            .release_object(ObjectRef::from_compat_identity(object.raw()))
-            .map(|value| DynamicValue::from_runtime_value(&value))
+            .release_object_variant(ObjectRef::from_compat_identity(object.raw()))
+            .map(DynamicValue::from_variant)
     }
 }

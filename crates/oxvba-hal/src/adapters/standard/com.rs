@@ -149,6 +149,13 @@ impl ComHal for StandardHostServices {
     }
 
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
+        let value = self.release_object_variant(object)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_object"));
@@ -159,7 +166,7 @@ impl ComHal for StandardHostServices {
         let removed_projection = release_projection_object_ref(self, &object)?;
         let object_raw = object.raw();
         if !self.native_com_enabled() {
-            return Ok(RuntimeValue::I32(
+            return Ok(Variant::from_i32(
                 if removed_projection || object_raw != 0 {
                     1
                 } else {
@@ -181,7 +188,7 @@ impl ComHal for StandardHostServices {
                     released.stale_callbacks.len()
                 );
             }
-            Ok(RuntimeValue::I32(1))
+            Ok(Variant::from_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")

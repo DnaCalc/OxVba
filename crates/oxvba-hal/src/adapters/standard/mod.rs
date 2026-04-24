@@ -1304,8 +1304,9 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use oxvba_com::{
-        ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComObjectToken, ComValue, RawIDispatch,
-        VariantResultValue, add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
+        ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComObjectToken, ComValue,
+        DynamicObjectBridge, DynamicObjectToken, RawIDispatch, VariantResultValue,
+        add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
         release_dispatch as raw_release_dispatch,
         set_variant_from_com_value as com_set_variant_from_com_value,
         take_variant_result_value as com_take_variant_result_value,
@@ -1393,6 +1394,17 @@ mod tests {
         object: oxvba_runtime::ObjectRef,
     ) -> crate::error::HalResult<i32> {
         host.release_object(object).map(expect_i32)
+    }
+
+    fn release_object_variant_test(
+        host: &StandardHostServices,
+        object: oxvba_runtime::ObjectRef,
+    ) -> crate::error::HalResult<i32> {
+        host.release_object_variant(object)?
+            .as_i32()
+            .ok_or_else(|| {
+                host.com_dispatch_adapter_fault("release variant was not VT_I4".to_string())
+            })
     }
 
     fn invalidate_typelib_cache_test(
@@ -2215,6 +2227,24 @@ mod tests {
             "expected EXCEPINFO source/description in {}",
             err.message
         );
+    }
+
+    #[test]
+    fn release_object_projection_returns_variant_status_for_dynamic_bridge() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let object = host
+            .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
+            .expect("create_object should return deterministic projection handle");
+        assert_eq!(
+            release_object_variant_test(&host, object.clone()).expect("variant release"),
+            1
+        );
+
+        let bridge = crate::HalComDynamicBridge::new(HalProfileId::Windows, &host);
+        let dynamic = bridge
+            .release_dynamic_object(DynamicObjectToken::from(object))
+            .expect("dynamic release should use retained variant status");
+        assert_eq!(dynamic.variant().as_i32(), Some(1));
     }
 
     #[test]

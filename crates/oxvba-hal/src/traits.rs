@@ -161,6 +161,17 @@ pub trait ProcessEnvHal: Send + Sync {
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
+    fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
+        let value = self.release_object(object)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "release_object_variant",
+                detail,
+            )
+        })
+    }
     fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
     /// Compatibility COM invoke seam. Implementations may override the
     /// Variant-native methods below to avoid this semantic projection.
