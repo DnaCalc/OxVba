@@ -2179,6 +2179,10 @@ Child beads:
        `DynamicValue`, leaving object/member selector coercion as an explicit
        control-plane compatibility seam rather than a normal argument payload
        carrier
+     - progress landed: VM project COM WithEvents callback polling now consumes
+       `EventPumpHal::do_events_variant()` callback-token results directly as
+       retained Variant carriers, leaving zero/no-callback detection as an
+       explicit control-plane token classification
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

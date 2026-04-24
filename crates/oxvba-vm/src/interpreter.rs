@@ -4095,12 +4095,27 @@ impl Vm {
         let value = self
             .host_services
             .events()
-            .do_events()
+            .do_events_variant()
             .map_err(|err| err.to_string())?;
-        if crate::semantics::runtime_value_is_explicit_zero_carrier(&value) {
+        if value.as_i32() == Some(0)
+            || value.as_i64() == Some(0)
+            || value.as_bool() == Some(false)
+        {
             return Ok(None);
         }
-        Self::runtime_value_to_com_callback_token(&value, "do_events callback").map(Some)
+        if let Some(raw) = value.as_i32() {
+            return Ok(Some(ComCallbackToken::new(raw)));
+        }
+        if let Some(raw) = value.as_i64() {
+            let raw = i32::try_from(raw).map_err(|_| {
+                format!("do_events callback exceeds i32 callback-token range: {raw}")
+            })?;
+            return Ok(Some(ComCallbackToken::new(raw)));
+        }
+        Err(format!(
+            "do_events callback requires callback-token-compatible Variant, got {:?}",
+            value.vtype()
+        ))
     }
 
     fn invoke_project_symbol_inline_with_variants(
