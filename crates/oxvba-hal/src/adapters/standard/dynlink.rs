@@ -300,6 +300,41 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
+        if descriptor.marshal_lane != "m1-native-ffi" || !self.native_mode_enabled() {
+            let _binding = self.bind_descriptor(descriptor)?;
+            let arg = args.first().cloned().unwrap_or_else(|| Variant::from_i32(0));
+            let arg = self.variant_project_compat_slot_i32(
+                &arg,
+                CapabilityId::DynamicLinking,
+                "invoke_descriptor_variants",
+                "arg",
+            )?;
+            if self.native_mode_enabled()
+                && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
+            {
+                return match descriptor.symbol.raw() {
+                    s if s == external_symbol_token("host", "ping", "hostping") => {
+                        Ok((Variant::from_i32(arg.saturating_add(1)), Vec::new()))
+                    }
+                    s if s == external_symbol_token("host", "double", "hostdouble") => {
+                        Ok((Variant::from_i32(arg.saturating_mul(2)), Vec::new()))
+                    }
+                    _ => Err(HalError::adapter_fault(
+                        self.profile,
+                        CapabilityId::DynamicLinking,
+                        "invoke_descriptor_variants",
+                        format!(
+                            "descriptor {} resolved to unsupported symbol token {} in host-backed lane",
+                            descriptor.descriptor_id, descriptor.symbol
+                        ),
+                    )),
+                };
+            }
+            return Ok((
+                Variant::from_i32(descriptor.symbol.raw().saturating_add(arg)),
+                Vec::new(),
+            ));
+        }
         let args = variants_to_runtime_values(self.profile, args)?;
         let (ret, writebacks) = self.invoke_descriptor_multi(descriptor, &args)?;
         runtime_result_to_variants(self.profile, ret, writebacks)

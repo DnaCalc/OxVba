@@ -2090,6 +2090,39 @@ mod tests {
     }
 
     #[test]
+    fn dynlink_descriptor_variant_invoke_projects_m0_token_directly() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 7,
+            declared_name: "hostping",
+            library: "host",
+            alias: "ping",
+            ordinal_alias: false,
+            symbol: 7.into(),
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "case-insensitive-canonical",
+            param_count: 0,
+            param_types: &[],
+            param_by_ref: &[],
+            return_type: None,
+        };
+
+        let (result, writebacks) = host
+            .invoke_descriptor_variants(&descriptor, &[Variant::from_i32(5)])
+            .expect("variant descriptor invoke should succeed");
+
+        assert_eq!(result, Variant::from_i32(12));
+        assert!(writebacks.is_empty());
+    }
+
+    #[test]
     fn time_locale_contract_values_are_stable() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(

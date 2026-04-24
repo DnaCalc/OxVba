@@ -2055,6 +2055,11 @@ Child beads:
        returns a `Variant` result directly for the deterministic m0 lane,
        removing another no-descriptor `Variant -> RuntimeValue -> Variant`
        detour from `invoke_symbol_variant()`
+     - progress landed: standard HAL descriptor-driven Variant invocation now
+       also keeps deterministic m0 dynamic-link calls Variant-native by
+       projecting the token argument directly from `Variant` and returning a
+       `Variant` result without entering the semantic multi-invoke
+       compatibility path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
