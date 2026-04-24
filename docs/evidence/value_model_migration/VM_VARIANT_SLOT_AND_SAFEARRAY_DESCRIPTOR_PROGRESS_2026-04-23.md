@@ -290,6 +290,12 @@ Implemented:
      for those cases, and byte-buffer extraction for `VarPtr` over
      SAFEARRAY-backed Variant arrays now walks `variant_elements()` instead of
      the legacy `RuntimeValue` projection API.
+47p. Windows pointer-helper `VARIANT` cell materialization now also reads
+     canonical Variant payloads directly for integer and floating/date lanes.
+     `set_windows_variant_from_variant()` no longer detours through
+     `Variant::to_runtime_value()` to recover `VT_I4`, `VT_R4`, `VT_R8`, or
+     `VT_DATE` payloads before writing the owned VARIANT cell used by
+     `VarPtr(variantVar)`.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -924,6 +930,10 @@ Implementation progress:
     Variant payload inspection on the Variant side for integer, floating/date,
     and SAFEARRAY byte-buffer lanes, removing another manual
     `Variant -> RuntimeValue` compatibility detour from the migration surface.
+44. Windows pointer-helper owned `VARIANT` cell materialization now keeps
+    integer and floating/date payload decoding on the Variant side as well,
+    removing another manual `Variant -> RuntimeValue` detour from the
+    `VarPtr(variantVar)` compatibility surface.
 
 Remaining blocker:
 
