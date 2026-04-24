@@ -2045,6 +2045,11 @@ Child beads:
        (`snapshot_compat_values()` / `read_compat_slot()`), making another
        public `Variant -> RuntimeValue` boundary named and auditable while
        preserving the legacy snapshot/read entrypoints as delegating aliases
+     - progress landed: typed SAFEARRAY element decoding now constructs
+       `Variant` carriers directly for intrinsic typed payloads, so
+       `SafeArray::variant_elements()` no longer detours through
+       `RuntimeValue` before returning Variant carriers; `SafeArray::elements()`
+       remains the explicit semantic compatibility projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

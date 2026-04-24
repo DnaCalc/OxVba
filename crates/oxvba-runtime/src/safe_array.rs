@@ -1,5 +1,5 @@
 use crate::{
-    CurrencyValue, Decimal96, F64Value, RuntimeValue, VarType, Variant,
+    Decimal96, RuntimeValue, VarType, Variant,
     bstr::BStr,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
 };
@@ -291,74 +291,52 @@ fn runtime_f64(value: &RuntimeValue) -> Result<f64, String> {
     }
 }
 
-unsafe fn decode_element(
-    kind: SafeArrayElementKind,
-    payload: *const u8,
-    index: usize,
-) -> Result<RuntimeValue, String> {
-    let ptr = unsafe { payload.add(payload_offset(kind, index)) };
-    Ok(match kind {
-        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.to_runtime_value()?,
-        SafeArrayElementKind::I1 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<i8>() })),
-        SafeArrayElementKind::Ui1 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<u8>() })),
-        SafeArrayElementKind::I2 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<i16>() })),
-        SafeArrayElementKind::Ui2 => RuntimeValue::I32(i32::from(unsafe { *ptr.cast::<u16>() })),
-        SafeArrayElementKind::I4 | SafeArrayElementKind::Int => {
-            RuntimeValue::I32(unsafe { *ptr.cast::<i32>() })
-        }
-        SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => {
-            RuntimeValue::I64(i64::from(unsafe { *ptr.cast::<u32>() }))
-        }
-        SafeArrayElementKind::I8 => RuntimeValue::I64(unsafe { *ptr.cast::<i64>() }),
-        SafeArrayElementKind::Ui8 => {
-            let value = unsafe { *ptr.cast::<u64>() };
-            RuntimeValue::I64(i64::try_from(value).map_err(|_| {
-                format!("VT_UI8 SAFEARRAY element {value} exceeds i64 carrier range")
-            })?)
-        }
-        SafeArrayElementKind::R4 => {
-            RuntimeValue::F64(F64Value::from_single_f64(f64::from(unsafe {
-                *ptr.cast::<f32>()
-            })))
-        }
-        SafeArrayElementKind::R8 => {
-            RuntimeValue::F64(F64Value::from_f64(unsafe { *ptr.cast::<f64>() }))
-        }
-        SafeArrayElementKind::Currency => {
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(unsafe {
-                *ptr.cast::<i64>()
-            }))
-        }
-        SafeArrayElementKind::Date => {
-            RuntimeValue::F64(F64Value::from_date_f64(unsafe { *ptr.cast::<f64>() }))
-        }
-        SafeArrayElementKind::Bool => RuntimeValue::Bool(unsafe { *ptr.cast::<i16>() } != 0),
-        SafeArrayElementKind::BStr => {
-            RuntimeValue::String(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) })
-        }
-        SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => {
-            let raw = bytes_to_raw_iunknown(unsafe { *ptr.cast::<[u8; 8]>() });
-            let Some(object) = (unsafe { ObjectRef::from_raw_iunknown_addref(raw) }) else {
-                return Err("SAFEARRAY object element carried null IUnknown pointer".to_string());
-            };
-            RuntimeValue::Object(object)
-        }
-        SafeArrayElementKind::Decimal => {
-            RuntimeValue::Decimal(unsafe { *ptr.cast::<RawDecimalArrayElement>() }.to_decimal96())
-        }
-    })
-}
-
 unsafe fn decode_element_variant(
     kind: SafeArrayElementKind,
     payload: *const u8,
     index: usize,
 ) -> Result<Variant, String> {
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
-    if kind == SafeArrayElementKind::Variant {
-        return Ok(unsafe { &*ptr.cast::<Variant>() }.clone());
-    }
-    Variant::try_from_runtime_value(&unsafe { decode_element(kind, payload, index) }?)
+    Ok(match kind {
+        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.clone(),
+        SafeArrayElementKind::I1 => Variant::from_i16(i16::from(unsafe { *ptr.cast::<i8>() })),
+        SafeArrayElementKind::Ui1 => Variant::from_u8(unsafe { *ptr.cast::<u8>() }),
+        SafeArrayElementKind::I2 => Variant::from_i16(unsafe { *ptr.cast::<i16>() }),
+        SafeArrayElementKind::Ui2 => Variant::from_i32(i32::from(unsafe { *ptr.cast::<u16>() })),
+        SafeArrayElementKind::I4 | SafeArrayElementKind::Int => {
+            Variant::from_i32(unsafe { *ptr.cast::<i32>() })
+        }
+        SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => {
+            Variant::from_i64(i64::from(unsafe { *ptr.cast::<u32>() }))
+        }
+        SafeArrayElementKind::I8 => Variant::from_i64(unsafe { *ptr.cast::<i64>() }),
+        SafeArrayElementKind::Ui8 => {
+            let value = unsafe { *ptr.cast::<u64>() };
+            Variant::from_i64(i64::try_from(value).map_err(|_| {
+                format!("VT_UI8 SAFEARRAY element {value} exceeds i64 carrier range")
+            })?)
+        }
+        SafeArrayElementKind::R4 => Variant::from_f32(unsafe { *ptr.cast::<f32>() }),
+        SafeArrayElementKind::R8 => Variant::from_f64(unsafe { *ptr.cast::<f64>() }),
+        SafeArrayElementKind::Currency => {
+            Variant::from_currency_scaled_i64(unsafe { *ptr.cast::<i64>() })
+        }
+        SafeArrayElementKind::Date => Variant::from_date_f64(unsafe { *ptr.cast::<f64>() }),
+        SafeArrayElementKind::Bool => Variant::from_bool(unsafe { *ptr.cast::<i16>() } != 0),
+        SafeArrayElementKind::BStr => {
+            Variant::from_string(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) })
+        }
+        SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => {
+            let raw = bytes_to_raw_iunknown(unsafe { *ptr.cast::<[u8; 8]>() });
+            let Some(object) = (unsafe { ObjectRef::from_raw_iunknown_addref(raw) }) else {
+                return Err("SAFEARRAY object element carried null IUnknown pointer".to_string());
+            };
+            Variant::from_object_ref(object)
+        }
+        SafeArrayElementKind::Decimal => {
+            Variant::from_decimal96(unsafe { *ptr.cast::<RawDecimalArrayElement>() }.to_decimal96())
+        }
+    })
 }
 
 unsafe fn encode_element(
@@ -1076,6 +1054,24 @@ mod tests {
         )
         .expect("typed array");
         assert_eq!(array.element_vartype(), VT_I2_VALUE);
+        assert_eq!(
+            array.elements(),
+            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+        );
+    }
+
+    #[test]
+    fn typed_safearray_variant_elements_preserve_intrinsic_carriers_before_projection() {
+        let array = SafeArray::from_typed_values(
+            VT_I2_VALUE,
+            vec![RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        )
+        .expect("typed array");
+
+        assert_eq!(
+            array.variant_elements().expect("variant elements"),
+            vec![Variant::from_i16(4), Variant::from_i16(9)]
+        );
         assert_eq!(
             array.elements(),
             Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
