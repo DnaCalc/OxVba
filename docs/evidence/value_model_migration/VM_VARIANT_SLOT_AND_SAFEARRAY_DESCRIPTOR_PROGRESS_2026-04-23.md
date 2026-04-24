@@ -337,6 +337,12 @@ Implemented:
      result directly for the deterministic m0 lane. `invoke_symbol_variant()`
      no longer detours through `RuntimeValue` before computing the
      no-descriptor legacy token result.
+53r. The standard HAL descriptor-driven dynamic-link Variant path now keeps
+     deterministic m0 calls Variant-native as well. `invoke_descriptor_variants()`
+     validates/binds the descriptor, projects the single token argument
+     directly from `Variant`, and returns a `Variant` result without entering
+     the `RuntimeValue` multi-invoke compatibility path for non-native m0
+     descriptors.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -1003,6 +1009,10 @@ Implementation progress:
     no-descriptor `invoke_symbol_variant()` path Variant-native for the
     deterministic token lane, reducing another `Variant -> RuntimeValue ->
     Variant` bridge inside a remaining compatibility surface.
+52. Standard HAL descriptor-driven dynamic-link Variant invocation now also
+    keeps deterministic m0 descriptor calls Variant-native, leaving the
+    `RuntimeValue` projection path for legacy semantic multi-invoke and native
+    FFI marshalling surfaces.
 
 Remaining blocker:
 
