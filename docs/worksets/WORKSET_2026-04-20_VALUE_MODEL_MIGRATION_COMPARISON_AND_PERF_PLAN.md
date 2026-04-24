@@ -2066,6 +2066,11 @@ Child beads:
        `Variant::from_safearray(SafeArray::from_variants(...))`, leaving
        `RuntimeValue::ArrayIntent` at the explicit compatibility projection
        boundary rather than inside those interpreter instruction paths
+     - progress landed: VM `ReDim` / `ReDim Preserve` instruction writes now
+       also write resized SAFEARRAY carriers through retained `Variant` slots;
+       `runtime_resized_array_preserve()` accepts the existing retained
+       `Variant` and inspects it with `as_safearray()`, while upper-bound
+       coercion remains on the existing compatibility numeric path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

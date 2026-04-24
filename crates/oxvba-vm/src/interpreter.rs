@@ -1957,7 +1957,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    self.write_value_slot(*dst, RuntimeValue::ArrayIntent(array))?;
+                    self.write_variant_slot(*dst, Variant::from_safearray(array))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayResizePreserve {
@@ -1984,7 +1984,7 @@ impl Vm {
                         pc = self.route_runtime_error(pc, 13, Some(&detail))?;
                         continue;
                     }
-                    let current = self.read_value_slot(*dst)?;
+                    let current = self.read_variant_slot(*dst)?;
                     let array = match runtime_resized_array_preserve(
                         &current,
                         lower_bounds,
@@ -1997,7 +1997,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    self.write_value_slot(*dst, RuntimeValue::ArrayIntent(array))?;
+                    self.write_variant_slot(*dst, Variant::from_safearray(array))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayGet {
@@ -4654,14 +4654,14 @@ fn runtime_resized_array(
 }
 
 fn runtime_resized_array_preserve(
-    current: &RuntimeValue,
+    current: &Variant,
     lower_bounds: &[i32],
     upper_bounds: &[i32],
     element_type: RuntimeArrayElementType,
 ) -> Result<SafeArray, String> {
-    let RuntimeValue::ArrayIntent(previous) = current else {
-        return Err("runtime ReDim Preserve requires an existing runtime array value".to_string());
-    };
+    let previous = current.as_safearray().ok_or_else(|| {
+        "runtime ReDim Preserve requires an existing runtime array value".to_string()
+    })?;
     if previous.dimensions() as usize != lower_bounds.len()
         || lower_bounds.len() != upper_bounds.len()
     {
@@ -5804,6 +5804,24 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(2);
+        let variant_array = variants[1]
+            .as_safearray()
+            .expect("ReDim should retain a SAFEARRAY Variant");
+        assert_eq!(
+            variant_array,
+            SafeArray::from_typed_values_nd(
+                vec![SafeArrayBound { lower: 0, count: 4 }],
+                0x0011,
+                vec![
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                    RuntimeValue::I32(0),
+                ],
+            )
+            .expect("byte SAFEARRAY expected")
+        );
         let values = vm.snapshot_values(2);
         assert_eq!(
             values[1],
@@ -5825,7 +5843,7 @@ mod tests {
 
     #[test]
     fn runtime_redim_preserve_1d_retains_overlapping_byte_values() {
-        let current = RuntimeValue::ArrayIntent(
+        let current = Variant::from_safearray(
             SafeArray::from_typed_values_nd(
                 vec![SafeArrayBound { lower: 0, count: 2 }],
                 0x0011,
