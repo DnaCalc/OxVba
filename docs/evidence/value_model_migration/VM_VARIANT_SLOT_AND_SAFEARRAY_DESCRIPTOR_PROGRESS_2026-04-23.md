@@ -1034,6 +1034,10 @@ Implementation progress:
     `as_safearray()` and retaining each item as a `RuntimeSlot::Variant`.
     Object-source discovery now uses `Variant::as_object_ref()` rather than
     projecting the source through `RuntimeValue` first.
+57. VM `LBound` / `UBound` array instructions now read retained source
+    `Variant` carriers directly and call the Variant-native bound helpers,
+    keeping SAFEARRAY bound inspection out of the `RuntimeValue::ArrayIntent`
+    compatibility path for those interpreter instructions.
 
 Remaining blocker:
 
