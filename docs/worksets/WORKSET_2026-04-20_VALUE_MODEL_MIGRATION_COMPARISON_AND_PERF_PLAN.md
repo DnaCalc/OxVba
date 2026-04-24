@@ -2114,6 +2114,11 @@ Child beads:
        `ComHal::release_event_callback_variant`, writing retained `Variant`
        status carriers directly to destination slots while leaving internal
        subscription/callback token inputs on the existing handle-token path
+     - progress landed: VM and JIT WithEvents owner iteration and clear-owner
+       status outputs now write retained `Variant` carriers directly, and VM
+       project COM WithEvents subscription sync inspects object-valued
+       Variants with `Variant::as_object_ref()` before COM descriptor/event
+       subscription work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

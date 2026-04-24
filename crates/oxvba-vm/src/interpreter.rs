@@ -2789,7 +2789,7 @@ impl Vm {
                     self.withevents_bindings.retain(|key, _| {
                         Self::withevents_owner_from_key(*key).raw() != owner.raw()
                     });
-                    self.write_value_slot(*dst, RuntimeValue::I32(0))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsFirstOwner {
@@ -2808,17 +2808,17 @@ impl Vm {
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let mut owners =
-                        self.withevents_matching_owners(&source, source_variant.as_ref(), binding);
+                        self.withevents_matching_owners(source_variant.as_ref(), binding);
                     owners.sort_unstable_by_key(|owner| owner.raw());
                     if owners.is_empty() {
-                        self.write_value_slot(*dst, RuntimeValue::I32(0))?;
+                        self.write_variant_slot(*dst, Variant::from_i32(0))?;
                     } else {
                         let first = owners[0].clone();
                         self.withevents_owner_iters.push(WithEventsOwnerIterator {
                             owners,
                             next_index: 1,
                         });
-                        self.write_value_slot(*dst, RuntimeValue::Object(first.into()))?;
+                        self.write_variant_slot(*dst, Variant::from_object_ref(first))?;
                     }
                     pc += 1;
                 }
@@ -2837,11 +2837,10 @@ impl Vm {
                     if next.is_none() {
                         let _ = self.withevents_owner_iters.pop();
                     }
-                    self.write_value_slot(
-                        *dst,
-                        next.map(|owner| RuntimeValue::Object(owner.into()))
-                            .unwrap_or(RuntimeValue::I32(0)),
-                    )?;
+                    let result = next
+                        .map(Variant::from_object_ref)
+                        .unwrap_or_else(|| Variant::from_i32(0));
+                    self.write_variant_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::CmpEqSlots {
@@ -3991,13 +3990,9 @@ impl Vm {
 
     fn withevents_matching_owners(
         &self,
-        source: &RuntimeValue,
         source_variant: Option<&Variant>,
         binding: BindingHandle,
     ) -> Vec<ObjectRef> {
-        if crate::semantics::runtime_value_is_explicit_zero_carrier(source) {
-            return Vec::new();
-        }
         let Some(source_variant) = source_variant else {
             return Vec::new();
         };
@@ -4068,8 +4063,12 @@ impl Vm {
         else {
             return Ok(());
         };
-        let runtime_value = value.to_runtime_value()?;
-        let object = Self::runtime_value_to_com_object(&runtime_value, "withevents.value")?;
+        if value.as_i32() == Some(0) {
+            return Ok(());
+        }
+        let object = value
+            .as_object_ref()
+            .ok_or_else(|| "withevents.value is not an object Variant".to_string())?;
         if object.raw() == 0 {
             return Ok(());
         }

@@ -2838,7 +2838,7 @@ pub extern "C" fn oxrt_host_withevents_clear_owner(
     state
         .withevents_bindings
         .retain(|key, _| semantics::withevents_owner_from_key(*key) != owner);
-    write_slot!(ctx, dst, RuntimeValue::I32(0));
+    write_variant_slot!(ctx, dst, Variant::from_i32(0));
     OK
 }
 
@@ -2857,7 +2857,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
     };
     // If source is 0, no matching owners.
     if semantics::runtime_value_is_explicit_zero_carrier(&source_val) {
-        write_slot!(ctx, dst, RuntimeValue::I32(0));
+        write_variant_slot!(ctx, dst, Variant::from_i32(0));
         return OK;
     }
     let source_variant = read_variant_slot!(ctx, source);
@@ -2877,7 +2877,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
         .collect();
     owners.sort_unstable_by_key(|owner| owner.raw());
     if owners.is_empty() {
-        write_slot!(ctx, dst, RuntimeValue::I32(0));
+        write_variant_slot!(ctx, dst, Variant::from_i32(0));
     } else {
         let first = owners[0].clone();
         state
@@ -2886,7 +2886,7 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
                 owners,
                 next_index: 1,
             });
-        write_slot!(ctx, dst, RuntimeValue::Object(first.into()));
+        write_variant_slot!(ctx, dst, Variant::from_object_ref(first));
     }
     OK
 }
@@ -2909,9 +2909,9 @@ pub extern "C" fn oxrt_host_withevents_next_owner(ctx: *mut JitContext, dst: u32
         let _ = state.withevents_owner_iters.pop();
     }
     let result = next
-        .map(|owner| RuntimeValue::Object(owner.into()))
-        .unwrap_or(RuntimeValue::I32(0));
-    write_slot!(ctx, dst, result);
+        .map(Variant::from_object_ref)
+        .unwrap_or_else(|| Variant::from_i32(0));
+    write_variant_slot!(ctx, dst, result);
     OK
 }
 
