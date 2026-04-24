@@ -1013,6 +1013,12 @@ Implementation progress:
     keeps deterministic m0 descriptor calls Variant-native, leaving the
     `RuntimeValue` projection path for legacy semantic multi-invoke and native
     FFI marshalling surfaces.
+53. VM intrinsic array literal and append instructions now read source operands
+    from retained `Variant` slots and write their resulting SAFEARRAY payload
+    back as `Variant::from_safearray(SafeArray::from_variants(...))`. The
+    remaining legacy zero/Empty append compatibility case is still accepted,
+    but normal literal/append construction no longer detours through
+    `RuntimeValue::ArrayIntent` inside the interpreter instruction path.
 
 Remaining blocker:
 
