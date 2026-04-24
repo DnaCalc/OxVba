@@ -307,6 +307,12 @@ Implemented:
      `IsObject`, `IsNull`, and `IsEmpty`. The VM now uses the same
      Variant-native helpers and vtype checks as the JIT instead of projecting
      each slot through `RuntimeValue` before classifying it.
+48r. The legacy 4-byte Cranelift fallback lane now projects execution results
+     directly from compat slot tags into exact `Variant` carriers through
+     `execute_bytecode_variants()`. `JitEngine::execute_and_snapshot_variants()`
+     no longer detours that fallback path through
+     `RuntimeValue::from_compat_slot_i32()` and
+     `Variant::try_from_runtime_value()`.
 48. `ComValue::from_variant()` and `ComValue::to_variant()` now convert directly
     against `Variant` accessors and constructors. The `RuntimeValue` bridge
     methods remain as compatibility projection helpers, but the COM value bridge
@@ -953,6 +959,10 @@ Implementation progress:
     `Variant` carriers directly across the full predicate family, removing a
     broader VM-side `Variant -> RuntimeValue` projection seam and aligning the
     VM classifier path with the already-migrated JIT path.
+47. The legacy 4-byte Cranelift fallback path now extracts execution results
+    directly as `Variant` carriers from compat slot tags, removing an internal
+    `compat slot -> RuntimeValue -> Variant` detour from JIT result
+    materialization while preserving the public compatibility result APIs.
 
 Remaining blocker:
 
