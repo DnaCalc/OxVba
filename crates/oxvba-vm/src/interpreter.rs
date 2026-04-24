@@ -2100,16 +2100,18 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_array_lbound(&value, "LBound operand")
-                        .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    let value = self.read_variant_slot(*src)?;
+                    let out =
+                        crate::semantics::runtime_array_lbound_variant(&value, "LBound operand")
+                            .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
                     self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUBoundArray { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_array_ubound(&value, "UBound operand")
-                        .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    let value = self.read_variant_slot(*src)?;
+                    let out =
+                        crate::semantics::runtime_array_ubound_variant(&value, "UBound operand")
+                            .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
                     self.write_value_slot(*dst, RuntimeValue::I32(out))?;
                     pc += 1;
                 }

@@ -2081,6 +2081,10 @@ Child beads:
        from `as_safearray()`, and resolves object sources through
        `Variant::as_object_ref()` instead of first projecting the source to
        `RuntimeValue`
+     - progress landed: VM `LBound` / `UBound` array instructions now inspect
+       retained SAFEARRAY-backed `Variant` carriers through the Variant-native
+       bound helpers instead of entering the `RuntimeValue::ArrayIntent`
+       compatibility path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
