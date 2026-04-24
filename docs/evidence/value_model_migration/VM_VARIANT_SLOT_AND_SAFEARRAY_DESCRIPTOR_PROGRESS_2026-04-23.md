@@ -1064,6 +1064,14 @@ Implementation progress:
     the legacy `create_object()` surface remains as an explicit compatibility
     projection. ProgID string coercion still uses the existing compatibility
     string path and remains open classification work.
+63. VM and JIT COM event unsubscribe/release status paths now use
+    `ComHal::unsubscribe_event_variant` and
+    `ComHal::release_event_callback_variant`, writing retained `Variant`
+    status carriers into destination slots. The standard HAL adapter emits
+    `Variant::from_i32(1)` for successful native status returns, while the
+    legacy `RuntimeValue` methods remain compatibility projections. Internal
+    subscription/callback token inputs remain on the existing handle-token
+    coercion path.
 
 Remaining blocker:
 
@@ -1085,8 +1093,9 @@ Remaining blocker:
    procedure invocation companion APIs, immediate procedure invocation, host
    class member invocation, host COM callback ingress/dispatch, and VM/JIT
    no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
-   invocation/release, and VM/JIT `CreateObject` host-return storage no longer
-   retain it as their backing value store for normal VBA values.
+   invocation/release, VM/JIT `CreateObject` host-return storage, and VM/JIT
+   COM event unsubscribe/release status writes no longer retain it as their
+   backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
