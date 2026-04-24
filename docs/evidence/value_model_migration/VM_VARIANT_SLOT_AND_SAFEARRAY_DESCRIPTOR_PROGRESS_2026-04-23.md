@@ -1042,6 +1042,10 @@ Implementation progress:
     `Variant::as_safearray()` path and registers the SAFEARRAY payload pointer
     directly, while non-array sources still register the exact retained Variant
     cell.
+59. VM project-dynamic `ParamArray` binding now constructs populated and empty
+    ParamArray slots directly as retained SAFEARRAY-backed `Variant` carriers
+    with `Variant::from_safearray(SafeArray::from_variants(...))`, instead of
+    routing the packed argument array through `RuntimeValue::ArrayIntent`.
 
 Remaining blocker:
 
