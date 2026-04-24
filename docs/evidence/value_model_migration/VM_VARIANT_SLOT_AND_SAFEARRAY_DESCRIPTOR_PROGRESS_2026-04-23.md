@@ -1122,6 +1122,11 @@ Implementation progress:
     default prompt style/default text values for omitted optional arguments.
     Legacy `RuntimeValue` UI HAL methods remain as adapter compatibility
     implementations.
+73. VM and JIT diagnostics/event-pump helpers now use
+    `DiagnosticsHal::debug_print_variant(...)` and
+    `EventPumpHal::do_events_variant(...)` for slot-facing host dispatch.
+    Pending callback tokens returned through the VM `DoEvents` instruction are
+    also written as retained `Variant::from_i32(...)` status/token carriers.
 
 Remaining blocker:
 
@@ -1150,8 +1155,9 @@ Remaining blocker:
    argument binding, and VM project COM WithEvents callback inline arguments,
    and host event ingress guarded dispatch arguments, and host class
    initializer lifecycle dispatch, VM/JIT console `Print` host helper
-   dispatch, and VM/JIT UI `MsgBox` / `InputBox` host helper dispatch no
-   longer retain it as their backing value store for normal VBA values.
+   dispatch, VM/JIT UI `MsgBox` / `InputBox` host helper dispatch, and VM/JIT
+   diagnostics/event-pump host helper dispatch no longer retain it as their
+   backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
