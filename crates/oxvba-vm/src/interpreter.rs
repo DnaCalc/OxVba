@@ -2051,7 +2051,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicForEachInit { iter, src } => {
-                    let iterable = self.read_value_slot(*src)?;
+                    let iterable = self.read_variant_slot(*src)?;
                     match self.materialize_foreach_items(bytecode, typed_fastpaths, &iterable) {
                         Ok(items) => {
                             let id = self.next_foreach_iterator_id;
@@ -3475,9 +3475,9 @@ impl Vm {
         &mut self,
         bytecode: &Bytecode,
         typed_fastpaths: bool,
-        iterable: &RuntimeValue,
+        iterable: &Variant,
     ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
-        if let RuntimeValue::ArrayIntent(array) = iterable {
+        if let Some(array) = iterable.as_safearray() {
             let values = array.variant_elements().ok_or_else(|| ForEachInitError {
                 code: 13,
                 detail: "For Each array source is missing materialized element payload".to_string(),
@@ -3485,7 +3485,7 @@ impl Vm {
             return Ok(Self::variants_to_slots(values));
         }
 
-        if let Ok(object) = Self::runtime_value_to_com_object(iterable, "foreach.source") {
+        if let Some(object) = iterable.as_object_ref() {
             return self.materialize_foreach_items_from_object(bytecode, typed_fastpaths, object);
         }
 
@@ -5917,6 +5917,50 @@ mod tests {
         assert_eq!(elements[0].as_bstr(), Some(BStr::from("payload")));
         assert_eq!(variants[4].vtype(), oxvba_runtime::VarType::String);
         assert_eq!(variants[4].as_bstr(), Some(BStr::from("payload")));
+    }
+
+    #[test]
+    fn intrinsic_for_each_array_init_preserves_retained_variant_items() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "first".to_string(),
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 22 },
+                Instruction::IntrinsicArrayLiteral {
+                    dst: 2,
+                    values: vec![0, 1],
+                },
+                Instruction::IntrinsicForEachInit { iter: 3, src: 2 },
+                Instruction::IntrinsicForEachNext {
+                    iter: 3,
+                    item: 4,
+                    has_value: 5,
+                },
+                Instruction::IntrinsicForEachNext {
+                    iter: 3,
+                    item: 6,
+                    has_value: 7,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 8,
+            user_slot_count: 8,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(8);
+        let compat = vm.snapshot_values(8);
+
+        assert_eq!(compat[5], RuntimeValue::Bool(true));
+        assert_eq!(compat[7], RuntimeValue::Bool(true));
+        assert_eq!(variants[4].vtype(), oxvba_runtime::VarType::String);
+        assert_eq!(variants[4].as_bstr(), Some(BStr::from("first")));
+        assert_eq!(variants[6].vtype(), oxvba_runtime::VarType::Long);
+        assert_eq!(variants[6].as_i32(), Some(22));
     }
 
     #[test]

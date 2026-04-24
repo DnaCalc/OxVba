@@ -2076,6 +2076,11 @@ Child beads:
        helpers, writing retrieved elements and updated SAFEARRAY carriers back
        as retained Variants while leaving index coercion on the explicit
        compatibility numeric path
+     - progress landed: VM `For Each` initialization now reads iterable sources
+       as retained `Variant` carriers, materializes SAFEARRAY items directly
+       from `as_safearray()`, and resolves object sources through
+       `Variant::as_object_ref()` instead of first projecting the source to
+       `RuntimeValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
