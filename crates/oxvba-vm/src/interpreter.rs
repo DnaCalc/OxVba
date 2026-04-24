@@ -1252,10 +1252,8 @@ impl Vm {
                             continue;
                         }
                     };
-                    let date = date.to_runtime_value()?;
-                    let time = time.to_runtime_value()?;
-                    let value = crate::semantics::runtime_host_now_value(&date, &time)?;
-                    self.write_variant_slot(*dst, Variant::try_from_runtime_value(&value)?)?;
+                    let value = crate::semantics::variant_host_now_value(&date, &time)?;
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimerHost { dst } => {

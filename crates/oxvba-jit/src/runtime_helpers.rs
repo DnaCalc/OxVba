@@ -3087,19 +3087,7 @@ pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let date = match date.to_runtime_value() {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let time = match time.to_runtime_value() {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let value = match semantics::runtime_host_now_value(&date, &time) {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let value = match Variant::try_from_runtime_value(&value) {
+    let value = match semantics::variant_host_now_value(&date, &time) {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };

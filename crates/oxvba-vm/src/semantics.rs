@@ -814,6 +814,32 @@ pub fn runtime_host_now_value(
     Ok(RuntimeValue::F64(F64Value::from_date_f64(serial)))
 }
 
+pub fn variant_host_now_value(date: &Variant, time: &Variant) -> Result<Variant, String> {
+    fn serial_number(value: &Variant, field: &str) -> Result<f64, String> {
+        if let Some(value) = value.as_date_f64() {
+            return Ok(value);
+        }
+        if let Some(value) = value.as_f64() {
+            return Ok(value);
+        }
+        if let Some(value) = value.as_i32() {
+            return Ok(f64::from(value));
+        }
+        if let Some(value) = value.as_i64() {
+            return Ok(value as f64);
+        }
+        Err(format!(
+            "Now {field} requires date/numeric Variant, got {:?}",
+            value.vtype()
+        ))
+    }
+
+    let date_serial = serial_number(date, "date")?.floor();
+    let time_serial = serial_number(time, "time")?;
+    let serial = validate_date_range(date_serial + time_serial)?;
+    Ok(Variant::from_date_f64(serial))
+}
+
 pub fn runtime_date_add_value(
     _interval: i32,
     number: i32,

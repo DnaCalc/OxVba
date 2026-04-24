@@ -2161,9 +2161,9 @@ Child beads:
        `Shell`, `Environ`, and `Dir` through `ProcessEnvHal` Variant
        companions, including Variant-native default style/attribute arguments
      - progress landed: VM and JIT time/locale host helpers now route `Date`,
-       `Time`, `Now`, and `Timer` through `TimeLocaleHal` Variant companions,
-       with `Now` converting only for the existing semantic combiner before
-       writing a retained Variant result
+       `Time`, `Now`, and `Timer` through `TimeLocaleHal` Variant companions;
+       `Now` now combines retained Date/Time Variant carriers directly before
+       writing a retained Date Variant result
      - progress landed: VM and JIT file-system host helpers now route `Open`,
        `Close`, `Kill`, `FreeFile`, `Input#`, `Line Input#`, `Print#`,
        `Write#`, `EOF`, `LOF`, `Seek`, and `Loc` through `FileSystemHal`
@@ -2201,6 +2201,10 @@ Child beads:
        now read retained Variant carriers directly and decode them as integer
        control-plane indexes, with callback tokens and returned callback
        argument payloads staying on retained Variant carriers
+     - progress landed: VM and JIT `Now` host helpers now combine retained
+       Date/Time Variant carriers directly with a Variant-native serial
+       combiner, leaving the older `RuntimeValue` combiner as a semantic
+       compatibility helper
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
