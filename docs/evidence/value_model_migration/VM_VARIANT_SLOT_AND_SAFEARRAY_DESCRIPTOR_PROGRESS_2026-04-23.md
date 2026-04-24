@@ -1145,6 +1145,13 @@ Implementation progress:
     Variants. `Open` mode/file-number, `EOF` truthiness, and `Seek` position
     arithmetic still use the existing compatibility coercion/classification
     semantics where VBA behavior requires numeric or Boolean interpretation.
+77. VM and JIT console input/line-input helpers now use
+    `ConsoleHal::input_fields_variant(...)` and
+    `ConsoleHal::line_input_variant(...)`, and `Beep` uses
+    `DiagnosticsHal::emit_variant(...)`. Slot-facing console input, line-input,
+    and diagnostic status values are therefore read and written as retained
+    Variants, with the legacy HAL methods retained as adapter compatibility
+    implementations.
 
 Remaining blocker:
 
@@ -1175,9 +1182,10 @@ Remaining blocker:
    initializer lifecycle dispatch, VM/JIT console `Print` host helper
    dispatch, VM/JIT UI `MsgBox` / `InputBox` host helper dispatch, VM/JIT
    diagnostics/event-pump host helper dispatch, VM/JIT process/environment
-   host helper dispatch, VM/JIT time/locale host helper dispatch, and VM/JIT
-   file-system host helper dispatch no longer retain it as their backing value
-   store for normal VBA values.
+   host helper dispatch, VM/JIT time/locale host helper dispatch, VM/JIT
+   file-system host helper dispatch, VM/JIT console input/line-input host
+   helper dispatch, and VM/JIT `Beep` diagnostics host helper dispatch no
+   longer retain it as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
