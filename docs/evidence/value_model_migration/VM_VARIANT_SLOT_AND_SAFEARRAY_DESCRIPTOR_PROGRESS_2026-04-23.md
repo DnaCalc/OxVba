@@ -1101,6 +1101,10 @@ Implementation progress:
     project handlers with `Vm::invoke_procedure_with_variants(...)`; the
     legacy `dispatch_host_event_into_runtime` method remains as a
     `RuntimeValue -> Variant` compatibility wrapper for existing callers.
+69. VM project dynamic optional default binding now constructs the callee
+    argument slot as `RuntimeSlot::Variant(Variant::from_i32(...))` directly,
+    removing the `default ProjectDynamicParamRoute -> RuntimeValue -> Variant`
+    hop while preserving the existing compatibility projection assertions.
 
 Remaining blocker:
 
@@ -1125,10 +1129,10 @@ Remaining blocker:
    invocation/release, VM/JIT `CreateObject` host-return storage, and VM/JIT
    COM event unsubscribe/release status writes, and VM/JIT WithEvents
    owner-iteration/status outputs, and VM `TypeOf...Is` object operand lookup
-   and VM project dynamic dispatch implicit `Me` binding, and VM project COM
-   WithEvents callback inline arguments, and host event ingress guarded
-   dispatch arguments no longer retain it as their backing value store for
-   normal VBA values.
+   and VM project dynamic dispatch implicit `Me` binding/default optional
+   argument binding, and VM project COM WithEvents callback inline arguments,
+   and host event ingress guarded dispatch arguments no longer retain it as
+   their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
