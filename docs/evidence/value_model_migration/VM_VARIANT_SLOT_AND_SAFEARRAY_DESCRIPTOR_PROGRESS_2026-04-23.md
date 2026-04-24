@@ -1152,6 +1152,12 @@ Implementation progress:
     and diagnostic status values are therefore read and written as retained
     Variants, with the legacy HAL methods retained as adapter compatibility
     implementations.
+78. VM and JIT dynamic COM dispatch argument construction now reads retained
+    argument slots as `Variant` values and constructs `DynamicValue` with
+    `DynamicValue::from_variant(...)` instead of projecting through
+    `RuntimeValue` first. The object/member selector inputs still use the
+    existing compatibility coercions because they are dispatch control-plane
+    selectors/tokens rather than normal argument payload storage.
 
 Remaining blocker:
 
@@ -1186,6 +1192,8 @@ Remaining blocker:
    file-system host helper dispatch, VM/JIT console input/line-input host
    helper dispatch, and VM/JIT `Beep` diagnostics host helper dispatch no
    longer retain it as their backing value store for normal VBA values.
+   VM/JIT dynamic COM dispatch argument payloads now also enter
+   `DynamicValue` as retained Variants rather than through `RuntimeValue`.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
