@@ -1226,6 +1226,11 @@ Implementation progress:
     `time_serial_now_variant`, and `timer_ticks_variant` no longer require the
     trait-level `Variant -> RuntimeValue -> Variant` fallback for their status
     and date/time payloads.
+92. Standard process/environment HAL `shell_variant`, `environ_variant`, and
+    `dir_variant` now implement retained Variant handling directly. Command,
+    environment-key, and directory path/string carriers stay as Variants through
+    deterministic and native process/environment dispatch instead of inheriting
+    the trait-level `Variant -> RuntimeValue -> Variant` fallback.
 
 Remaining blocker:
 
@@ -1289,6 +1294,8 @@ Remaining blocker:
    retained Variant form through the HAL adapter boundary.
    Standard event-pump, diagnostics, and time/locale companion dispatch now
    also stays in retained Variant form through the HAL adapter boundary.
+   Standard process/environment companion dispatch now also stays in retained
+   Variant form through the HAL adapter boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
