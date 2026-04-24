@@ -1019,6 +1019,11 @@ Implementation progress:
     remaining legacy zero/Empty append compatibility case is still accepted,
     but normal literal/append construction no longer detours through
     `RuntimeValue::ArrayIntent` inside the interpreter instruction path.
+54. VM `ReDim` / `ReDim Preserve` instruction writes now also keep the resized
+    SAFEARRAY carrier on retained `Variant` slots through
+    `Variant::from_safearray(...)`. The preserve helper now accepts the
+    existing retained `Variant` directly and inspects it via `as_safearray()`;
+    bound coercion still uses the existing compatibility numeric path.
 
 Remaining blocker:
 
