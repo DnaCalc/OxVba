@@ -2162,6 +2162,10 @@ Child beads:
        Variant carriers for the printed argument and returned status while
        leaving the older `RuntimeValue` HAL method as an adapter compatibility
        implementation
+     - progress landed: standard console HAL `print_line_variant`,
+       `input_fields_variant`, and `line_input_variant` now implement retained
+       Variant handling directly for stdio hosts instead of inheriting the
+       trait-level `RuntimeValue` fallback projection
      - progress landed: VM and JIT UI `MsgBox` / `InputBox` host helpers now
        route through `UiInteractionHal` Variant companions, including
        Variant-native omitted optional defaults for prompt style/default text

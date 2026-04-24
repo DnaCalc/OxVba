@@ -62,7 +62,7 @@ use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{RuntimeValue, VarType, Variant};
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
 use std::{
@@ -789,6 +789,57 @@ impl StandardHostServices {
         }
     }
 
+    fn variant_to_display_text(&self, value: &Variant) -> String {
+        match value.vtype() {
+            VarType::String => value
+                .as_bstr()
+                .map(|text| text.as_str().to_string())
+                .unwrap_or_default(),
+            VarType::Boolean => {
+                if value.as_bool().unwrap_or(false) {
+                    "True".to_string()
+                } else {
+                    "False".to_string()
+                }
+            }
+            VarType::Empty => String::new(),
+            VarType::Null => "Null".to_string(),
+            VarType::Error => format!("Error {}", value.as_error_code().unwrap_or(0)),
+            VarType::Integer => value.as_i16().unwrap_or(0).to_string(),
+            VarType::Long => value.as_i32().unwrap_or(0).to_string(),
+            VarType::LongLong => value.as_i64().unwrap_or(0).to_string(),
+            VarType::Byte => value.as_u8().unwrap_or(0).to_string(),
+            VarType::Single => value.as_f32().unwrap_or(0.0).to_string(),
+            VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
+            VarType::Date => value.as_date_f64().unwrap_or(0.0).to_string(),
+            VarType::Decimal => value
+                .as_decimal96()
+                .map(|decimal| decimal.to_string())
+                .unwrap_or_default(),
+            VarType::Currency => value
+                .as_currency_scaled_i64()
+                .map(|scaled| {
+                    let whole = scaled / 10_000;
+                    let frac = (scaled % 10_000).unsigned_abs();
+                    if frac == 0 {
+                        format!("{whole}")
+                    } else {
+                        let frac_str = format!("{frac:04}").trim_end_matches('0').to_string();
+                        format!("{whole}.{frac_str}")
+                    }
+                })
+                .unwrap_or_default(),
+            VarType::ArrayVariant => value
+                .as_safearray()
+                .map(|array| format!("<array:{}>", array.len()))
+                .unwrap_or_else(|| "<array:invalid>".to_string()),
+            VarType::Object => value
+                .as_object_ref()
+                .map(|handle| format!("<object:{handle}>"))
+                .unwrap_or_else(|| "<object:invalid>".to_string()),
+        }
+    }
+
     fn runtime_value_to_path(
         &self,
         value: &RuntimeValue,
@@ -1301,7 +1352,10 @@ fn parse_arg_err(message: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, OnceLock};
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex, OnceLock},
+    };
 
     use oxvba_com::{
         ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComObjectToken, ComValue,
@@ -1316,8 +1370,9 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::{
+        callbacks::HostCallbacks,
         error::HalErrorKind,
-        model::{ComInvocationStrategy, HalProfileId, HostPolicy},
+        model::{ComInvocationStrategy, HalProfileId, HalRuntimeClass, HostPolicy},
         traits::{
             ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
             FileSystemHal, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibResolveRequest,
@@ -1558,6 +1613,77 @@ mod tests {
         } else {
             None
         }
+    }
+
+    #[derive(Default)]
+    struct ConsoleProbe {
+        printed: Mutex<Vec<String>>,
+        lines: Mutex<VecDeque<String>>,
+    }
+
+    impl ConsoleProbe {
+        fn with_lines(lines: impl IntoIterator<Item = &'static str>) -> Self {
+            Self {
+                printed: Mutex::new(Vec::new()),
+                lines: Mutex::new(lines.into_iter().map(str::to_string).collect()),
+            }
+        }
+    }
+
+    impl HostCallbacks for ConsoleProbe {
+        fn on_msg_box(&self, _prompt: &str, style: i32) -> i32 {
+            style.max(1)
+        }
+
+        fn on_input_box(&self, _prompt: &str, default: &str) -> String {
+            default.to_string()
+        }
+
+        fn on_status_bar(&self, _text: &str) {}
+
+        fn on_console_print(&self, text: &str) -> bool {
+            self.printed.lock().expect("printed lock").push(text.to_string());
+            true
+        }
+
+        fn on_console_input_line(&self) -> Option<String> {
+            self.lines.lock().expect("lines lock").pop_front()
+        }
+
+        fn on_debug_print(&self, _text: &str) {}
+    }
+
+    #[test]
+    fn console_variant_companions_do_not_require_runtime_value_projection() {
+        let callbacks = Arc::new(ConsoleProbe::with_lines(["42, alpha", "line text"]));
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                runtime_class: Some(HalRuntimeClass::WindowsStdio),
+                ..HostPolicy::default()
+            },
+        )
+        .with_callbacks(callbacks.clone());
+
+        let status = crate::traits::ConsoleHal::print_line_variant(&host, Variant::null())
+            .expect("variant print");
+        assert_eq!(status, Variant::from_i32(0));
+        assert_eq!(
+            callbacks.printed.lock().expect("printed lock").as_slice(),
+            ["Null"]
+        );
+
+        let first =
+            crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
+                .expect("first input");
+        assert_eq!(first, Variant::from_i32(42));
+        let second =
+            crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
+                .expect("second input");
+        assert_eq!(second.as_bstr(), Some(BStr::from("alpha")));
+
+        let line = crate::traits::ConsoleHal::line_input_variant(&host).expect("line input");
+        assert_eq!(line.as_bstr(), Some(BStr::from("line text")));
     }
 
     #[test]
