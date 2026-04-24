@@ -1242,6 +1242,12 @@ Implementation progress:
     opens, string path opens, requested-handle encoding, and string-only kill
     paths no longer inherit the trait-level `Variant -> RuntimeValue ->
     Variant` fallback; text/byte payload companions remain pending.
+95. Standard file-system text/byte payload companions `read_bytes_variant`,
+    `write_bytes_variant`, `print_line_variant`, `input_fields_variant`, and
+    `line_input_variant` now implement retained Variant handling directly.
+    File read/write text payloads, quoted `Write#` formatting, `Print#`
+    payloads, `Input#` field parsing, and `Line Input#` BSTR returns no longer
+    inherit the trait-level `Variant -> RuntimeValue -> Variant` fallback.
 
 Remaining blocker:
 
@@ -1310,8 +1316,9 @@ Remaining blocker:
    Standard file-system close/status/free-handle/location companion dispatch
    now also stays in retained Variant form through the HAL adapter boundary;
    standard file-system open/kill companion dispatch now also stays in
-   retained Variant form through the HAL adapter boundary; file text/byte
-   payload companions remain pending.
+   retained Variant form through the HAL adapter boundary; standard file
+   text/byte payload companion dispatch now also stays in retained Variant form
+   through the HAL adapter boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
