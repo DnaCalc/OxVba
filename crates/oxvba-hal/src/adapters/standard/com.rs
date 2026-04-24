@@ -16,7 +16,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant, runtime_value_to_vba_string};
+use oxvba_runtime::{ObjectRef, RuntimeValue, Variant, variant_to_vba_string};
 
 use super::StandardHostServices;
 
@@ -108,21 +108,10 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "create_object"));
         }
-        let prog_id = prog_id
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-        let prog_id_value = runtime_value_to_vba_string(&prog_id).map_err(|detail| {
+        let prog_id_value = variant_to_vba_string(&prog_id).map_err(|detail| {
             HalError::adapter_fault(self.profile, capability, "create_object", detail)
         })?;
-        let RuntimeValue::String(name) = prog_id_value else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "create_object",
-                "CreateObject ProgID coercion did not produce a string",
-            ));
-        };
-        let prog_id_text = name.as_str();
+        let prog_id_text = prog_id_value.as_str();
         let prog_id_name = prog_id_text.trim();
         if prog_id_name.is_empty() {
             return Err(HalError::adapter_fault(

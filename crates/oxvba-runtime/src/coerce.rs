@@ -140,6 +140,54 @@ pub fn runtime_value_to_vba_string(value: &RuntimeValue) -> Result<RuntimeValue,
     Ok(RuntimeValue::String(text))
 }
 
+pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
+    let text = match value.vtype() {
+        VarType::Empty => BStr::empty(),
+        VarType::Integer => BStr::from(format!("{}", value.as_i16().unwrap_or(0))),
+        VarType::Long => BStr::from(format!("{}", value.as_i32().unwrap_or(0))),
+        VarType::LongLong => BStr::from(format!("{}", value.as_i64().unwrap_or(0))),
+        VarType::Byte => BStr::from(format!("{}", value.as_u8().unwrap_or(0))),
+        VarType::Single => BStr::from(format_vba_f64(f64::from(value.as_f32().unwrap_or(0.0)))),
+        VarType::Double => BStr::from(format_vba_f64(value.as_f64().unwrap_or(0.0))),
+        VarType::Date => BStr::from(format_vba_f64(value.as_date_f64().unwrap_or(0.0))),
+        VarType::Boolean => BStr::from(if value.as_bool().unwrap_or(false) {
+            "True"
+        } else {
+            "False"
+        }),
+        VarType::Decimal => BStr::from(format!(
+            "{:?}",
+            value
+                .as_decimal96()
+                .ok_or_else(|| "invalid Decimal variant payload".to_string())?
+        )),
+        VarType::Currency => {
+            let scaled = value.as_currency_scaled_i64().unwrap_or(0);
+            let whole = scaled / 10_000;
+            let frac = (scaled % 10_000).unsigned_abs();
+            if frac == 0 {
+                BStr::from(format!("{whole}"))
+            } else {
+                let frac_str = format!("{frac:04}").trim_end_matches('0').to_string();
+                BStr::from(format!("{whole}.{frac_str}"))
+            }
+        }
+        VarType::Error => BStr::from(format!("Error {}", value.as_error_code().unwrap_or(0))),
+        VarType::String => {
+            return value
+                .as_bstr()
+                .ok_or_else(|| "invalid String variant payload".to_string());
+        }
+        VarType::Null => {
+            return Err("runtime error: 13 (Type mismatch)".to_string());
+        }
+        VarType::Object | VarType::ArrayVariant => {
+            return Err(format!("cannot convert {:?} to String", value.vtype()));
+        }
+    };
+    Ok(text)
+}
+
 /// Formats a `RuntimeValue` as a VBA string with leading space for positive
 /// numbers, matching `Str()` semantics.
 pub fn runtime_value_to_vba_str(value: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -193,7 +241,9 @@ fn format_vba_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{coerce_to, runtime_value_to_vba_str, runtime_value_to_vba_string};
+    use super::{
+        coerce_to, runtime_value_to_vba_str, runtime_value_to_vba_string, variant_to_vba_string,
+    };
     use crate::{CurrencyValue, RuntimeValue, VarType, Variant, bstr::BStr};
 
     #[test]
@@ -216,6 +266,33 @@ mod tests {
         assert_eq!(
             runtime_value_to_vba_string(&value).expect("string coercion"),
             value
+        );
+    }
+
+    #[test]
+    fn variant_to_vba_string_preserves_bstr_carrier() {
+        let value = Variant::from_string("alpha");
+        assert_eq!(
+            variant_to_vba_string(&value)
+                .expect("variant string coercion")
+                .as_str(),
+            "alpha"
+        );
+    }
+
+    #[test]
+    fn variant_to_vba_string_formats_numeric_and_boolean_carriers() {
+        assert_eq!(
+            variant_to_vba_string(&Variant::from_i32(42))
+                .expect("long coercion")
+                .as_str(),
+            "42"
+        );
+        assert_eq!(
+            variant_to_vba_string(&Variant::from_bool(true))
+                .expect("bool coercion")
+                .as_str(),
+            "True"
         );
     }
 

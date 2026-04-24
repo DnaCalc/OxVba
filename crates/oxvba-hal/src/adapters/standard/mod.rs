@@ -1389,6 +1389,17 @@ mod tests {
         host.create_object(prog_id).map(expect_object_handle)
     }
 
+    fn create_object_variant_test(
+        host: &StandardHostServices,
+        prog_id: Variant,
+    ) -> crate::error::HalResult<oxvba_runtime::ObjectRef> {
+        host.create_object_variant(prog_id)?
+            .as_object_ref()
+            .ok_or_else(|| {
+                host.com_dispatch_adapter_fault("create variant was not object".to_string())
+            })
+    }
+
     fn release_object_test(
         host: &StandardHostServices,
         object: oxvba_runtime::ObjectRef,
@@ -1764,6 +1775,19 @@ mod tests {
                 .kind,
             HalErrorKind::PolicyDenied
         );
+    }
+
+    #[test]
+    fn create_object_variant_accepts_prog_id_without_runtime_value_projection() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let object =
+            create_object_variant_test(&host, Variant::from_string(TEST_DISPATCH_PROG_ID_NAME))
+                .expect("variant ProgID should activate deterministic projection object");
+        assert!(object.raw() != 0);
+
+        let numeric_object = create_object_variant_test(&host, Variant::from_i32(123))
+            .expect("numeric ProgID should coerce through Variant-native string path");
+        assert!(numeric_object.raw() != 0);
     }
 
     #[test]

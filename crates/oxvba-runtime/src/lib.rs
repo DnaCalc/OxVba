@@ -13,7 +13,7 @@ pub mod safe_array;
 pub mod value_tags;
 pub mod variant;
 
-pub use coerce::{runtime_value_to_vba_str, runtime_value_to_vba_string};
+pub use coerce::{runtime_value_to_vba_str, runtime_value_to_vba_string, variant_to_vba_string};
 pub use decimal::Decimal96;
 pub use object_ref::{ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeInterfaceId};
 pub use runtime_value::{

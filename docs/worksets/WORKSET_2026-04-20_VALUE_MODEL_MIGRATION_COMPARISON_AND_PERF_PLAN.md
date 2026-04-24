@@ -2114,8 +2114,11 @@ Child beads:
      - progress landed: VM and JIT `CreateObject` host-return paths now use
        `ComHal::create_object_variant` and write returned object-valued
        `Variant` carriers directly to destination slots; standard HAL emits
-       deterministic projection handles as `Variant::from_object_ref(...)`,
-       with ProgID string coercion still classified as open compatibility work
+       deterministic projection handles as `Variant::from_object_ref(...)`
+     - progress landed: standard HAL `CreateObject` ProgID coercion now uses a
+       Variant-native BSTR string conversion helper, removing the prior
+       `Variant -> RuntimeValue -> Variant` detour from the standard
+       activation path
      - progress landed: VM and JIT COM event unsubscribe/release status paths
        now use `ComHal::unsubscribe_event_variant` and
        `ComHal::release_event_callback_variant`, writing retained `Variant`
