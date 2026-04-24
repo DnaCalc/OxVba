@@ -1625,6 +1625,13 @@ Child beads:
    - outcome:
      - the final string-family `implemented` / `projected` / `bounded`
        classification is recorded before epic closure
+   - current result:
+     - checklist published:
+       [BSTR_INTRINSIC_CLOSURE_CHECKLIST_2026-04-24.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/BSTR_INTRINSIC_CLOSURE_CHECKLIST_2026-04-24.md)
+     - classification: intrinsic string/BSTR carrier is `implemented`;
+       boundary BSTR cells/views remain `projected` where external ABI
+       ownership requires materialization; allocator-caching and byte-oriented
+       BSTR edge lanes remain `bounded` follow-up scope
    - completion evidence:
      - the workset and final report inputs explicitly state whether the string
        lane is intrinsically migrated or still bounded.

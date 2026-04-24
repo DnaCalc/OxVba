@@ -75,10 +75,11 @@ V1 design:
 - guarantee validity for the duration of the supported native-interop use
 - do not promise globally stable pointers across arbitrary later statements
 
-This is required because OxVba strings are Rust-owned semantic values, not
-native VBA `BSTR` pointers. The contract does not require OxVba's internal
-string representation to be a `BSTR`; it requires `StrPtr` to expose a real
-`BSTR` boundary shape when the helper is used.
+Current migration state: OxVba's canonical string carrier is now an owned BSTR
+payload. `StrPtr` therefore exposes the character-data pointer for a BSTR
+payload derived from the canonical carrier, while still avoiding any promise
+that helper-returned pointers remain globally stable across arbitrary later
+statements.
 
 ### `VarPtr`
 
@@ -134,8 +135,8 @@ V1 design:
 - arbitrary pointer arithmetic as a language guarantee
 - exposing raw internal Rust addresses as if they were VBA ABI guarantees
 - pretending that every OxVba object has a meaningful COM-compatible `ObjPtr`
-- claiming that OxVba's internal string or variant storage is itself the native
-  ABI representation just because the helper boundary materializes one
+- claiming that every helper-materialized boundary cell is globally stable or
+  aliasable beyond the explicitly supported native-interop window
 
 ## Validation Requirements
 
