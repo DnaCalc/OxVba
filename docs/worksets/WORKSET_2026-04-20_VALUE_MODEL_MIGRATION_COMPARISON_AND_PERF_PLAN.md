@@ -1964,6 +1964,10 @@ Child beads:
        `IsNumeric`, `IsError`, `IsNull`, `IsEmpty`, and `IsArray` now answer
        those non-coercive checks from the canonical slot `Variant` directly
        rather than projecting the source through `RuntimeValue` first
+     - progress landed: JIT `VarType` now uses a Variant-native compatibility
+       classifier over the retained slot carrier while preserving the current
+       VM/JIT heuristic behavior for the oracle-tracked `vbInteger` narrow-long
+       case and the existing `LongLong -> vbLong` compatibility mapping
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

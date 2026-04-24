@@ -464,6 +464,45 @@ mod tests {
     }
 
     #[test]
+    fn runtime_vartype_reads_variant_carriers_with_existing_compat_heuristics() {
+        let mut ctx = JitContextOwned::new(14, 14, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(0, Variant::from_i16(7));
+            ctx.context.write_variant_slot(1, Variant::from_i32(7));
+            ctx.context.write_variant_slot(2, Variant::from_i32(40000));
+            ctx.context.write_variant_slot(3, Variant::from_i64(9));
+            ctx.context
+                .write_variant_slot(4, Variant::from_date_f64(42.0));
+            ctx.context
+                .write_variant_slot(5, Variant::from_error_code(9));
+            ctx.context.write_variant_slot(
+                6,
+                Variant::from_safearray(SafeArray::from_values(vec![
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(2),
+                ])),
+            );
+        }
+
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 7, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 8, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 9, 2), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 10, 3), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 11, 4), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 12, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_vartype(ctx.context_ptr(), 13, 6), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[7], RuntimeValue::I32(2));
+        assert_eq!(values[8], RuntimeValue::I32(2));
+        assert_eq!(values[9], RuntimeValue::I32(3));
+        assert_eq!(values[10], RuntimeValue::I32(3));
+        assert_eq!(values[11], RuntimeValue::I32(7));
+        assert_eq!(values[12], RuntimeValue::I32(10));
+        assert_eq!(values[13], RuntimeValue::I32(8204));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {

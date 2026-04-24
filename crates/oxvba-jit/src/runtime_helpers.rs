@@ -22,7 +22,7 @@ use oxvba_hal::model::CapabilityId;
 use oxvba_runtime::safe_array::{
     SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
-    VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
+    VT_VARIANT_VALUE,
 };
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
 use oxvba_runtime::{F64Value, RuntimeValue, VarType, Variant, bstr::BStr};
@@ -1235,30 +1235,8 @@ pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_vartype(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let code = match &val {
-        RuntimeValue::Empty => 0,
-        RuntimeValue::Null => 1,
-        // Check for legacy error tags encoded as I32
-        RuntimeValue::I32(v) if runtime_is_error_tag(*v) => 10,
-        RuntimeValue::I32(v) if runtime_is_array_tag(*v) => 8192 + 12,
-        RuntimeValue::I32(v) if *v >= -32768 && *v <= 32767 => 2,
-        RuntimeValue::I32(_) => 3,
-        RuntimeValue::I64(_) => 3,
-        RuntimeValue::F64(v) => match v.subtype() {
-            oxvba_runtime::F64Subtype::Single => 4,
-            oxvba_runtime::F64Subtype::Double => 5,
-            oxvba_runtime::F64Subtype::Date => 7,
-        },
-        RuntimeValue::Currency(_) => 6,
-        RuntimeValue::Bool(_) => 11,
-        RuntimeValue::String(_) => 8,
-        RuntimeValue::ErrorCode(_) => 10,
-        RuntimeValue::Decimal(_) => 14,
-        RuntimeValue::Object(_) => 9,
-        RuntimeValue::BindingHandle(_) => 9,
-        RuntimeValue::ArrayIntent(_) => 8192 + 12,
-    };
+    let val = read_variant_slot!(ctx, src);
+    let code = semantics::runtime_vartype_compat_bounded_variant(&val);
     write_slot!(ctx, dst, RuntimeValue::I32(code));
     OK
 }

@@ -923,6 +923,33 @@ pub fn runtime_vartype_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i3
     }
 }
 
+pub fn runtime_vartype_compat_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
+    match value.vtype() {
+        oxvba_runtime::VarType::Empty => 0,
+        oxvba_runtime::VarType::Null => 1,
+        oxvba_runtime::VarType::Integer => 2,
+        // Preserve the current RuntimeValue-era heuristic until declared type
+        // tracking is available for exact VBA VarType parity.
+        oxvba_runtime::VarType::Long => value
+            .as_i32()
+            .filter(|v| (-32768..=32767).contains(v))
+            .map(|_| 2)
+            .unwrap_or(3),
+        oxvba_runtime::VarType::LongLong => 3,
+        oxvba_runtime::VarType::Single => 4,
+        oxvba_runtime::VarType::Double => 5,
+        oxvba_runtime::VarType::Currency => 6,
+        oxvba_runtime::VarType::Date => 7,
+        oxvba_runtime::VarType::String => 8,
+        oxvba_runtime::VarType::Object => 9,
+        oxvba_runtime::VarType::Error => 10,
+        oxvba_runtime::VarType::Boolean => 11,
+        oxvba_runtime::VarType::Decimal => 14,
+        oxvba_runtime::VarType::Byte => 2,
+        oxvba_runtime::VarType::ArrayVariant => 8192 + 12,
+    }
+}
+
 pub fn runtime_typename_tag_bounded(value: &RuntimeValue) -> i32 {
     if runtime_value_is_array_compat(value) {
         1001
