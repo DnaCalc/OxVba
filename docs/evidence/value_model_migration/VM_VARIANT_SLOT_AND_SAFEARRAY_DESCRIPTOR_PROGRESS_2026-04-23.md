@@ -1193,6 +1193,12 @@ Implementation progress:
     writing the retained `Seek` result Variant. File-position arithmetic remains
     an explicit numeric compatibility classification, but no longer requires a
     `Variant -> RuntimeValue -> Variant` detour.
+86. VM and JIT file `Open` mode/file-number control carriers and `EOF`
+    truthiness now use Variant-native numeric compatibility decoders before
+    packing the file handle request or normalizing the host `EOF` result to a
+    Boolean Variant. These remain explicit file-control compatibility
+    classifications, but no longer require `Variant -> RuntimeValue` detours at
+    the VM/JIT boundary.
 
 Remaining blocker:
 
@@ -1243,6 +1249,9 @@ Remaining blocker:
    retained Variant form at the VM/JIT boundary.
    VM/JIT file-position `Loc + 1` carrier handling now also stays in retained
    Variant form at the VM/JIT boundary.
+   VM/JIT file `Open` mode/file-number control carriers and `EOF` truthiness
+   now also stay in retained Variant form at the VM/JIT boundary before their
+   explicit numeric/Boolean compatibility classifications.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
