@@ -1220,46 +1220,48 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
-                    match self.host_services.time_locale().date_serial_now() {
+                    match self.host_services.time_locale().date_serial_now_variant() {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicTimeNowHost { dst } => {
-                    match self.host_services.time_locale().time_serial_now() {
+                    match self.host_services.time_locale().time_serial_now_variant() {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicNowHost { dst } => {
-                    let date = match self.host_services.time_locale().date_serial_now() {
+                    let date = match self.host_services.time_locale().date_serial_now_variant() {
                         Ok(value) => value,
                         Err(err) => {
                             pc = self.route_host_error(pc, err)?;
                             continue;
                         }
                     };
-                    let time = match self.host_services.time_locale().time_serial_now() {
+                    let time = match self.host_services.time_locale().time_serial_now_variant() {
                         Ok(value) => value,
                         Err(err) => {
                             pc = self.route_host_error(pc, err)?;
                             continue;
                         }
                     };
+                    let date = date.to_runtime_value()?;
+                    let time = time.to_runtime_value()?;
                     let value = crate::semantics::runtime_host_now_value(&date, &time)?;
-                    self.write_value_slot(*dst, value)?;
+                    self.write_variant_slot(*dst, Variant::try_from_runtime_value(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimerHost { dst } => {
-                    match self.host_services.time_locale().timer_ticks() {
+                    match self.host_services.time_locale().timer_ticks_variant() {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

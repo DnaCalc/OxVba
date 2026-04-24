@@ -3031,9 +3031,9 @@ pub extern "C" fn oxrt_host_dir(ctx: *mut JitContext, dst: u32, path: u32) -> i3
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_date_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.time_locale().date_serial_now() {
+    match host.time_locale().date_serial_now_variant() {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -3043,9 +3043,9 @@ pub extern "C" fn oxrt_host_date_now(ctx: *mut JitContext, dst: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_time_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.time_locale().time_serial_now() {
+    match host.time_locale().time_serial_now_variant() {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -3055,11 +3055,19 @@ pub extern "C" fn oxrt_host_time_now(ctx: *mut JitContext, dst: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let date = match host.time_locale().date_serial_now() {
+    let date = match host.time_locale().date_serial_now_variant() {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    let time = match host.time_locale().time_serial_now() {
+    let time = match host.time_locale().time_serial_now_variant() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let date = match date.to_runtime_value() {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    let time = match time.to_runtime_value() {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
@@ -3067,16 +3075,20 @@ pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, value);
+    let value = match Variant::try_from_runtime_value(&value) {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_variant_slot!(ctx, dst, value);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_timer(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.time_locale().timer_ticks() {
+    match host.time_locale().timer_ticks_variant() {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

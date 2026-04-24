@@ -2160,6 +2160,10 @@ Child beads:
      - progress landed: VM and JIT process/environment host helpers now route
        `Shell`, `Environ`, and `Dir` through `ProcessEnvHal` Variant
        companions, including Variant-native default style/attribute arguments
+     - progress landed: VM and JIT time/locale host helpers now route `Date`,
+       `Time`, `Now`, and `Timer` through `TimeLocaleHal` Variant companions,
+       with `Now` converting only for the existing semantic combiner before
+       writing a retained Variant result
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

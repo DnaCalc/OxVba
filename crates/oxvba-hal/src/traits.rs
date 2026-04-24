@@ -460,8 +460,44 @@ pub trait ComHal: Send + Sync {
 
 pub trait TimeLocaleHal: Send + Sync {
     fn date_serial_now(&self) -> HalResult<RuntimeValue>;
+    fn date_serial_now_variant(&self) -> HalResult<Variant> {
+        self.date_serial_now().and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::TimeLocale,
+                    "date_serial_now_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn time_serial_now(&self) -> HalResult<RuntimeValue>;
+    fn time_serial_now_variant(&self) -> HalResult<Variant> {
+        self.time_serial_now().and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::TimeLocale,
+                    "time_serial_now_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn timer_ticks(&self) -> HalResult<RuntimeValue>;
+    fn timer_ticks_variant(&self) -> HalResult<Variant> {
+        self.timer_ticks().and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::TimeLocale,
+                    "timer_ticks_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait DynamicLinkHal: Send + Sync {
