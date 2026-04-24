@@ -2005,12 +2005,12 @@ impl Vm {
                     array,
                     indices,
                 } => {
-                    let array_value = self.read_value_slot(*array)?;
+                    let array_value = self.read_variant_slot(*array)?;
                     let index_values = indices
                         .iter()
                         .map(|slot| self.read_value_slot(*slot))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let value = match crate::semantics::runtime_array_get(
+                    let value = match crate::semantics::runtime_array_get_variant(
                         &array_value,
                         &index_values,
                         "array index",
@@ -2021,7 +2021,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    self.write_value_slot(*dst, value)?;
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArraySet {
@@ -2029,13 +2029,13 @@ impl Vm {
                     indices,
                     src,
                 } => {
-                    let array_value = self.read_value_slot(*array)?;
+                    let array_value = self.read_variant_slot(*array)?;
                     let index_values = indices
                         .iter()
                         .map(|slot| self.read_value_slot(*slot))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let src_value = self.read_value_slot(*src)?;
-                    let value = match crate::semantics::runtime_array_set(
+                    let src_value = self.read_variant_slot(*src)?;
+                    let value = match crate::semantics::runtime_array_set_variant(
                         &array_value,
                         &index_values,
                         &src_value,
@@ -2047,7 +2047,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    self.write_value_slot(*array, value)?;
+                    self.write_variant_slot(*array, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicForEachInit { iter, src } => {
@@ -5868,6 +5868,55 @@ mod tests {
             )
             .expect("byte SAFEARRAY expected")
         );
+    }
+
+    #[test]
+    fn intrinsic_array_get_set_preserve_retained_variant_payloads() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::IntrinsicArrayResize {
+                    dst: 1,
+                    upper_bounds: vec![0],
+                    lower_bounds: vec![0],
+                    element_type: RuntimeArrayElementType::Variant,
+                },
+                Instruction::LoadConstI32 { slot: 2, value: 0 },
+                Instruction::LoadConstString {
+                    slot: 3,
+                    value: "payload".to_string(),
+                },
+                Instruction::IntrinsicArraySet {
+                    array: 1,
+                    indices: vec![2],
+                    src: 3,
+                },
+                Instruction::IntrinsicArrayGet {
+                    dst: 4,
+                    array: 1,
+                    indices: vec![2],
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 5,
+            user_slot_count: 5,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(5);
+        let array = variants[1]
+            .as_safearray()
+            .expect("array set should retain SAFEARRAY Variant");
+        let elements = array
+            .variant_elements()
+            .expect("array set should preserve Variant element payload");
+
+        assert_eq!(elements[0].vtype(), oxvba_runtime::VarType::String);
+        assert_eq!(elements[0].as_bstr(), Some(BStr::from("payload")));
+        assert_eq!(variants[4].vtype(), oxvba_runtime::VarType::String);
+        assert_eq!(variants[4].as_bstr(), Some(BStr::from("payload")));
     }
 
     #[test]

@@ -2071,6 +2071,11 @@ Child beads:
        `runtime_resized_array_preserve()` accepts the existing retained
        `Variant` and inspects it with `as_safearray()`, while upper-bound
        coercion remains on the existing compatibility numeric path
+     - progress landed: VM intrinsic array get/set instruction paths now use
+       retained `Variant` array/value operands and the Variant-native semantic
+       helpers, writing retrieved elements and updated SAFEARRAY carriers back
+       as retained Variants while leaving index coercion on the explicit
+       compatibility numeric path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link
