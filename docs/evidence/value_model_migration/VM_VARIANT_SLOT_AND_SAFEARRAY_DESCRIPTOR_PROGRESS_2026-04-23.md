@@ -1051,6 +1051,12 @@ Implementation progress:
     removing the `Variant -> RuntimeValue` detour from
     `SafeArray::from_typed_variants*()` while keeping the legacy
     `from_typed_values*()` API as the explicit compatibility entrypoint.
+61. HAL dynamic COM release now has a `ComHal::release_object_variant`
+    companion and `HalComDynamicBridge::release_dynamic_object()` maps that
+    retained `Variant` result directly into `DynamicValue`. The standard
+    adapter emits deterministic release status as `Variant::from_i32(...)`,
+    while the legacy `release_object()` surface remains as the explicit
+    `Variant -> RuntimeValue` compatibility projection.
 
 Remaining blocker:
 
@@ -1072,8 +1078,8 @@ Remaining blocker:
    procedure invocation companion APIs, immediate procedure invocation, host
    class member invocation, host COM callback ingress/dispatch, and VM/JIT
    no-descriptor dynamic-link symbol invocation, and HAL dynamic COM bridge
-   invocation no longer retain it as their backing value store for normal VBA
-   values.
+   invocation/release no longer retain it as their backing value store for
+   normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
