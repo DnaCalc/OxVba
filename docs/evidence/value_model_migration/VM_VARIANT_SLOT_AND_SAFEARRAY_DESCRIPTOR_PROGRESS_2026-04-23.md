@@ -1110,6 +1110,12 @@ Implementation progress:
     `RuntimeValue` procedure wrapper. The lifecycle path has no explicit user
     arguments, so this removes a host-side compatibility API detour without
     changing initializer semantics.
+71. VM and JIT console `Print` host helpers now call the
+    `ConsoleHal::print_line_variant(...)` companion, reading the printed value
+    as a retained `Variant` and writing the returned status as a retained
+    `Variant`. The legacy `ConsoleHal::print_line(RuntimeValue)` method remains
+    as the compatibility implementation for adapters that have not yet grown a
+    native Variant override.
 
 Remaining blocker:
 
@@ -1137,8 +1143,9 @@ Remaining blocker:
    and VM project dynamic dispatch implicit `Me` binding/default optional
    argument binding, and VM project COM WithEvents callback inline arguments,
    and host event ingress guarded dispatch arguments, and host class
-   initializer lifecycle dispatch no longer retain it as their backing value
-   store for normal VBA values.
+   initializer lifecycle dispatch, and VM/JIT console `Print` host helper
+   dispatch no longer retain it as their backing value store for normal VBA
+   values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
@@ -1149,7 +1156,8 @@ Remaining blocker:
    remaining projection seams that can expose or retain general values:
    interpreter/JIT helper internals outside slot storage, host and immediate
    surfaces that still use semantic values by contract, HAL surfaces that still
-   use semantic values by contract, legacy dynamic-link compatibility APIs, legacy
+   use semantic values by contract, remaining host service helper families,
+   legacy dynamic-link compatibility APIs, legacy
    `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
    projection APIs that still expose `RuntimeValue`, legacy COM dispatch
