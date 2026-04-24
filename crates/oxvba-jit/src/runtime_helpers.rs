@@ -2654,23 +2654,24 @@ pub extern "C" fn oxrt_host_com_subscribe(
     object: u32,
     event: u32,
 ) -> i32 {
-    let object_val = read_slot!(ctx, object);
-    let event_val = read_slot!(ctx, event);
+    let object_val = read_variant_slot!(ctx, object);
+    let event_val = read_variant_slot!(ctx, event);
     let object =
-        match semantics::runtime_value_to_com_object(&object_val, "com_subscribe_event.object") {
+        match semantics::variant_to_com_object(&object_val, "com_subscribe_event.object") {
             Ok(o) => o,
             Err(_) => return route_host_error(ctx),
         };
-    let event =
-        match semantics::runtime_value_to_com_member_token(&event_val, "com_subscribe_event.event")
-        {
-            Ok(e) => e,
-            Err(_) => return route_host_error(ctx),
-        };
+    let event = match semantics::variant_to_com_member_token(
+        &event_val,
+        "com_subscribe_event.event",
+    ) {
+        Ok(e) => e,
+        Err(_) => return route_host_error(ctx),
+    };
     let host = unsafe { (*ctx).host_services() };
     match host.com().subscribe_event(object, event) {
         Ok(value) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
+            write_variant_slot!(ctx, dst, Variant::from_i32(value.raw()));
             OK
         }
         Err(err) => route_hal_error(ctx, err),
@@ -2683,8 +2684,8 @@ pub extern "C" fn oxrt_host_com_unsubscribe(
     dst: u32,
     subscription: u32,
 ) -> i32 {
-    let sub_val = read_slot!(ctx, subscription);
-    let sub = match semantics::runtime_value_to_com_subscription_token(
+    let sub_val = read_variant_slot!(ctx, subscription);
+    let sub = match semantics::variant_to_com_subscription_token(
         &sub_val,
         "com_unsubscribe_event.subscription",
     ) {
@@ -2707,8 +2708,8 @@ pub extern "C" fn oxrt_host_com_event_callback_sub(
     dst: u32,
     callback: u32,
 ) -> i32 {
-    let cb_val = read_slot!(ctx, callback);
-    let cb = match semantics::runtime_value_to_com_callback_token(
+    let cb_val = read_variant_slot!(ctx, callback);
+    let cb = match semantics::variant_to_com_callback_token(
         &cb_val,
         "com_event_callback_subscription.callback",
     ) {
@@ -2718,7 +2719,7 @@ pub extern "C" fn oxrt_host_com_event_callback_sub(
     let host = unsafe { (*ctx).host_services() };
     match host.com().event_callback_subscription(cb) {
         Ok(value) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
+            write_variant_slot!(ctx, dst, Variant::from_i32(value.raw()));
             OK
         }
         Err(err) => route_hal_error(ctx, err),
@@ -2732,9 +2733,9 @@ pub extern "C" fn oxrt_host_com_event_callback_arg(
     callback: u32,
     index: u32,
 ) -> i32 {
-    let cb_val = read_slot!(ctx, callback);
+    let cb_val = read_variant_slot!(ctx, callback);
     let idx_val = read_slot!(ctx, index);
-    let cb = match semantics::runtime_value_to_com_callback_token(
+    let cb = match semantics::variant_to_com_callback_token(
         &cb_val,
         "com_event_callback_arg.callback",
     ) {
@@ -2762,8 +2763,8 @@ pub extern "C" fn oxrt_host_com_release_event_callback(
     dst: u32,
     callback: u32,
 ) -> i32 {
-    let cb_val = read_slot!(ctx, callback);
-    let cb = match semantics::runtime_value_to_com_callback_token(
+    let cb_val = read_variant_slot!(ctx, callback);
+    let cb = match semantics::variant_to_com_callback_token(
         &cb_val,
         "com_release_event_callback.callback",
     ) {

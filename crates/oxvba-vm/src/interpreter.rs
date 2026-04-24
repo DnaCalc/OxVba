@@ -5,8 +5,8 @@ use std::{
 };
 
 use oxvba_com::{
-    ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind,
-    DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
+    ComCallbackToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
+    DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
     Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
@@ -2421,9 +2421,9 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
-                    let object = self.read_value_slot(*object)?;
-                    let event = self.read_value_slot(*event)?;
-                    let object = match Self::runtime_value_to_com_object(
+                    let object = self.read_variant_slot(*object)?;
+                    let event = self.read_variant_slot(*event)?;
+                    let object = match crate::semantics::variant_to_com_object(
                         &object,
                         "com_subscribe_event.object",
                     ) {
@@ -2439,7 +2439,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    let event = match Self::runtime_value_to_com_member_token(
+                    let event = match crate::semantics::variant_to_com_member_token(
                         &event,
                         "com_subscribe_event.event",
                     ) {
@@ -2457,15 +2457,15 @@ impl Vm {
                     };
                     match self.host_services.com().subscribe_event(object, event) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
+                            self.write_variant_slot(*dst, Variant::from_i32(value.raw()))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
-                    let subscription = self.read_value_slot(*subscription)?;
-                    let subscription = match Self::runtime_value_to_com_subscription_token(
+                    let subscription = self.read_variant_slot(*subscription)?;
+                    let subscription = match crate::semantics::variant_to_com_subscription_token(
                         &subscription,
                         "com_unsubscribe_event.subscription",
                     ) {
@@ -2494,8 +2494,8 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComEventCallbackSubscriptionHost { dst, callback } => {
-                    let callback = self.read_value_slot(*callback)?;
-                    let callback = match Self::runtime_value_to_com_callback_token(
+                    let callback = self.read_variant_slot(*callback)?;
+                    let callback = match crate::semantics::variant_to_com_callback_token(
                         &callback,
                         "com_event_callback_subscription.callback",
                     ) {
@@ -2517,7 +2517,7 @@ impl Vm {
                         .event_callback_subscription(callback)
                     {
                         Ok(value) => {
-                            self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
+                            self.write_variant_slot(*dst, Variant::from_i32(value.raw()))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -2528,9 +2528,9 @@ impl Vm {
                     callback,
                     index,
                 } => {
-                    let callback = self.read_value_slot(*callback)?;
+                    let callback = self.read_variant_slot(*callback)?;
                     let index = self.read_value_slot(*index)?;
-                    let callback = match Self::runtime_value_to_com_callback_token(
+                    let callback = match crate::semantics::variant_to_com_callback_token(
                         &callback,
                         "com_event_callback_arg.callback",
                     ) {
@@ -2575,8 +2575,8 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
-                    let callback = self.read_value_slot(*callback)?;
-                    let callback = match Self::runtime_value_to_com_callback_token(
+                    let callback = self.read_variant_slot(*callback)?;
+                    let callback = match crate::semantics::variant_to_com_callback_token(
                         &callback,
                         "com_release_event_callback.callback",
                     ) {
@@ -3456,27 +3456,6 @@ impl Vm {
         field: &str,
     ) -> Result<oxvba_runtime::ObjectRef, String> {
         crate::semantics::runtime_value_to_com_object(value, field)
-    }
-
-    fn runtime_value_to_com_member_token(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<ComMemberToken, String> {
-        crate::semantics::runtime_value_to_com_member_token(value, field)
-    }
-
-    fn runtime_value_to_com_subscription_token(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<ComSubscriptionToken, String> {
-        crate::semantics::runtime_value_to_com_subscription_token(value, field)
-    }
-
-    fn runtime_value_to_com_callback_token(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<ComCallbackToken, String> {
-        crate::semantics::runtime_value_to_com_callback_token(value, field)
     }
 
     fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result<usize, String> {

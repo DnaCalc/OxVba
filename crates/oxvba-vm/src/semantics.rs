@@ -9,7 +9,8 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, bstr::BStr,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, Variant,
+    bstr::BStr,
 };
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -1979,6 +1980,24 @@ pub fn runtime_value_to_com_object(value: &RuntimeValue, field: &str) -> Result<
     }
 }
 
+pub fn variant_to_com_object(value: &Variant, field: &str) -> Result<ObjectRef, String> {
+    if let Some(object) = value.as_object_ref() {
+        return Ok(object);
+    }
+    if let Some(raw) = value.as_i32() {
+        return Ok(ObjectRef::from_compat_identity(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ObjectRef::from_compat_identity)
+            .map_err(|_| format!("{field} exceeds i32 handle range: {raw}"));
+    }
+    Err(format!(
+        "{field} requires object-compatible Variant, got {:?}",
+        value.vtype()
+    ))
+}
+
 pub fn runtime_value_to_com_member_token(
     value: &RuntimeValue,
     field: &str,
@@ -1992,6 +2011,24 @@ pub fn runtime_value_to_com_member_token(
             "{field} requires member-token-compatible carrier, got {other:?}"
         )),
     }
+}
+
+pub fn variant_to_com_member_token(
+    value: &Variant,
+    field: &str,
+) -> Result<ComMemberToken, String> {
+    if let Some(raw) = value.as_i32() {
+        return Ok(ComMemberToken::new(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ComMemberToken::new)
+            .map_err(|_| format!("{field} exceeds i32 member-token range: {raw}"));
+    }
+    Err(format!(
+        "{field} requires member-token-compatible Variant, got {:?}",
+        value.vtype()
+    ))
 }
 
 pub fn runtime_value_to_com_subscription_token(
@@ -2009,6 +2046,24 @@ pub fn runtime_value_to_com_subscription_token(
     }
 }
 
+pub fn variant_to_com_subscription_token(
+    value: &Variant,
+    field: &str,
+) -> Result<ComSubscriptionToken, String> {
+    if let Some(raw) = value.as_i32() {
+        return Ok(ComSubscriptionToken::new(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ComSubscriptionToken::new)
+            .map_err(|_| format!("{field} exceeds i32 subscription-token range: {raw}"));
+    }
+    Err(format!(
+        "{field} requires subscription-token-compatible Variant, got {:?}",
+        value.vtype()
+    ))
+}
+
 pub fn runtime_value_to_com_callback_token(
     value: &RuntimeValue,
     field: &str,
@@ -2022,6 +2077,24 @@ pub fn runtime_value_to_com_callback_token(
             "{field} requires callback-token-compatible carrier, got {other:?}"
         )),
     }
+}
+
+pub fn variant_to_com_callback_token(
+    value: &Variant,
+    field: &str,
+) -> Result<ComCallbackToken, String> {
+    if let Some(raw) = value.as_i32() {
+        return Ok(ComCallbackToken::new(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(ComCallbackToken::new)
+            .map_err(|_| format!("{field} exceeds i32 callback-token range: {raw}"));
+    }
+    Err(format!(
+        "{field} requires callback-token-compatible Variant, got {:?}",
+        value.vtype()
+    ))
 }
 
 pub fn runtime_value_to_dynamic_member_selector(

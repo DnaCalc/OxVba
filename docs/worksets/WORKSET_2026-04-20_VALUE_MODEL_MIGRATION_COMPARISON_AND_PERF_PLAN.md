@@ -2183,6 +2183,11 @@ Child beads:
        `EventPumpHal::do_events_variant()` callback-token results directly as
        retained Variant carriers, leaving zero/no-callback detection as an
        explicit control-plane token classification
+     - progress landed: VM and JIT COM event subscription/callback token
+       helpers now read object/member/subscription/callback token carriers from
+       retained Variant slots and write subscription/callback token results as
+       `Variant` carriers, leaving token interpretation as an explicit COM
+       control-plane classification boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
