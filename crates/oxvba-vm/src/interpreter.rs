@@ -1389,10 +1389,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicConsoleInputHost { dst, count } => {
-                    let count = self.read_value_slot(*count)?;
-                    match self.host_services.console().input_fields(count) {
+                    let count = self.read_variant_slot(*count)?;
+                    match self.host_services.console().input_fields_variant(count) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1409,9 +1409,9 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicConsoleLineInputHost { dst } => {
-                    match self.host_services.console().line_input() {
+                    match self.host_services.console().line_input_variant() {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1501,13 +1501,12 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicBeepHost { dst } => {
-                    match self
-                        .host_services
-                        .diag()
-                        .emit(RuntimeValue::I32(7), RuntimeValue::I32(0))
-                    {
+                    match self.host_services.diag().emit_variant(
+                        Variant::from_i32(7),
+                        Variant::from_i32(0),
+                    ) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

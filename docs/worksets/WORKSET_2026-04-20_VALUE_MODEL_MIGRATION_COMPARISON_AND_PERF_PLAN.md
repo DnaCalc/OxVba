@@ -2170,6 +2170,10 @@ Child beads:
        Variant companions, leaving only the required numeric/Boolean
        compatibility coercions for mode/file-number, `EOF`, and `Seek`
        arithmetic
+     - progress landed: VM and JIT console input/line-input helpers and `Beep`
+       diagnostics status dispatch now route through `ConsoleHal` and
+       `DiagnosticsHal` Variant companions, keeping slot-facing stdin and
+       diagnostic-status values on retained Variant carriers
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

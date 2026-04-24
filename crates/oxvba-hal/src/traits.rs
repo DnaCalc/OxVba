@@ -130,8 +130,40 @@ pub trait ConsoleHal: Send + Sync {
     }
     /// Delimited field parsing from stdin-like input (BASIC `Input`).
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
+        let count = count.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ConsoleIo,
+                "input_fields_variant",
+                detail,
+            )
+        })?;
+        self.input_fields(count).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ConsoleIo,
+                    "input_fields_variant",
+                    detail,
+                )
+            })
+        })
+    }
     /// Line-oriented read from stdin-like input (BASIC `Line Input`).
     fn line_input(&self) -> HalResult<RuntimeValue>;
+    fn line_input_variant(&self) -> HalResult<Variant> {
+        self.line_input().and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::ConsoleIo,
+                    "line_input_variant",
+                    detail,
+                )
+            })
+        })
+    }
 }
 
 pub trait UiInteractionHal: Send + Sync {
@@ -935,6 +967,34 @@ fn runtime_result_to_variants(
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
+        let code = code.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                "emit_variant",
+                detail,
+            )
+        })?;
+        let payload = payload.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                "emit_variant",
+                detail,
+            )
+        })?;
+        self.emit(code, payload).and_then(|value| {
+            Variant::try_from_runtime_value(&value).map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::DiagnosticsTelemetry,
+                    "emit_variant",
+                    detail,
+                )
+            })
+        })
+    }
     fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue>;
     fn debug_print_variant(&self, text: Variant) -> HalResult<Variant> {
         let text = text.to_runtime_value().map_err(|detail| {

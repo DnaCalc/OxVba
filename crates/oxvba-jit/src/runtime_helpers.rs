@@ -2443,10 +2443,10 @@ pub extern "C" fn oxrt_host_file_input(
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_console_input(ctx: *mut JitContext, dst: u32, count: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let count_val = read_slot!(ctx, count);
-    match host.console().input_fields(count_val) {
+    let count_val = read_variant_slot!(ctx, count);
+    match host.console().input_fields_variant(count_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2469,9 +2469,9 @@ pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, hand
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_console_line_input(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.console().line_input() {
+    match host.console().line_input_variant() {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -2481,9 +2481,12 @@ pub extern "C" fn oxrt_host_console_line_input(ctx: *mut JitContext, dst: u32) -
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_beep(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    match host.diag().emit(RuntimeValue::I32(7), RuntimeValue::I32(0)) {
+    match host
+        .diag()
+        .emit_variant(Variant::from_i32(7), Variant::from_i32(0))
+    {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,
