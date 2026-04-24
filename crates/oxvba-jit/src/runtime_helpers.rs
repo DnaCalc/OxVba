@@ -2544,10 +2544,10 @@ pub extern "C" fn oxrt_host_file_loc(ctx: *mut JitContext, dst: u32, handle: u32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_create_object(ctx: *mut JitContext, dst: u32, prog_id: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
-    let prog_id_val = read_slot!(ctx, prog_id);
-    match host.com().create_object(prog_id_val) {
+    let prog_id_val = read_variant_slot!(ctx, prog_id);
+    match host.com().create_object_variant(prog_id_val) {
         Ok(value) => {
-            write_slot!(ctx, dst, value);
+            write_variant_slot!(ctx, dst, value);
             OK
         }
         Err(_) => ERR_RUNTIME,

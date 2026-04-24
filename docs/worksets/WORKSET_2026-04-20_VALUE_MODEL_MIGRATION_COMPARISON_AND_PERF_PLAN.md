@@ -2104,6 +2104,11 @@ Child beads:
        `Variant` status directly into `DynamicValue`; the standard adapter
        emits deterministic release status as `Variant::from_i32(...)`, with
        legacy `release_object()` retained as the compatibility projection
+     - progress landed: VM and JIT `CreateObject` host-return paths now use
+       `ComHal::create_object_variant` and write returned object-valued
+       `Variant` carriers directly to destination slots; standard HAL emits
+       deterministic projection handles as `Variant::from_object_ref(...)`,
+       with ProgID string coercion still classified as open compatibility work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, legacy dynamic-link

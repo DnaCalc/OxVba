@@ -160,6 +160,25 @@ pub trait ProcessEnvHal: Send + Sync {
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
+        let prog_id = prog_id.to_runtime_value().map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "create_object_variant",
+                detail,
+            )
+        })?;
+        let value = self.create_object(prog_id)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::ComActivationDispatch,
+                "create_object_variant",
+                detail,
+            )
+        })
+    }
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
     fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
         let value = self.release_object(object)?;

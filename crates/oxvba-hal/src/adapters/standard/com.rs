@@ -92,6 +92,15 @@ fn try_bind_projection_object_metadata(
 
 impl ComHal for StandardHostServices {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
+        let prog_id = Variant::try_from_runtime_value(&prog_id)
+            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
+        let value = self.create_object_variant(prog_id)?;
+        value
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "create_object"));
@@ -99,6 +108,9 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "create_object"));
         }
+        let prog_id = prog_id
+            .to_runtime_value()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let prog_id_value = runtime_value_to_vba_string(&prog_id).map_err(|detail| {
             HalError::adapter_fault(self.profile, capability, "create_object", detail)
         })?;
@@ -128,16 +140,19 @@ impl ComHal for StandardHostServices {
             let object = allocate_projection_object_ref(self, prog_id_name)?;
             #[cfg(target_os = "windows")]
             try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
-            return Ok(RuntimeValue::Object(object));
+            return Ok(Variant::from_object_ref(object));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    return Variant::try_from_runtime_value(&value)
+                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                }
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     let object = allocate_projection_object_ref(self, prog_id_name)?;
                     try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
-                    return Ok(RuntimeValue::Object(object));
+                    return Ok(Variant::from_object_ref(object));
                 }
                 Err(err) => return Err(err),
             }
@@ -145,7 +160,7 @@ impl ComHal for StandardHostServices {
         let object = allocate_projection_object_ref(self, prog_id_name)?;
         #[cfg(target_os = "windows")]
         try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
-        Ok(RuntimeValue::Object(object))
+        Ok(Variant::from_object_ref(object))
     }
 
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {

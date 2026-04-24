@@ -2287,10 +2287,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
-                    let prog_id = self.read_value_slot(*prog_id)?;
-                    match self.host_services.com().create_object(prog_id) {
+                    let prog_id = self.read_variant_slot(*prog_id)?;
+                    match self.host_services.com().create_object_variant(prog_id) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_variant_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -5720,11 +5720,19 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(8);
         let values = vm.snapshot_values(8);
+        let variants = vm.snapshot_variants(8);
         let object_handle = match &values[1] {
             RuntimeValue::Object(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
         assert_eq!(out[1], object_handle);
+        assert_eq!(
+            variants[1]
+                .as_object_ref()
+                .expect("CreateObject should retain object Variant")
+                .raw(),
+            object_handle
+        );
         assert_eq!(out[7], object_handle + 6 + (ARRAY_TAG_BASE + 3));
         assert_eq!(
             values[6],
