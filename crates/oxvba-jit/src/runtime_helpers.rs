@@ -1342,16 +1342,18 @@ pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let is_numeric = match &val {
-        // Legacy error tags encoded as I32 are not numeric
-        RuntimeValue::I32(v) if runtime_is_error_tag(*v) => false,
-        RuntimeValue::I32(_)
-        | RuntimeValue::I64(_)
-        | RuntimeValue::F64(_)
-        | RuntimeValue::Currency(_)
-        | RuntimeValue::Decimal(_)
-        | RuntimeValue::Bool(_) => true,
+    let val = read_variant_slot!(ctx, src);
+    let is_numeric = match val.vtype() {
+        oxvba_runtime::VarType::Integer
+        | oxvba_runtime::VarType::Long
+        | oxvba_runtime::VarType::LongLong
+        | oxvba_runtime::VarType::Single
+        | oxvba_runtime::VarType::Double
+        | oxvba_runtime::VarType::Date
+        | oxvba_runtime::VarType::Currency
+        | oxvba_runtime::VarType::Decimal
+        | oxvba_runtime::VarType::Boolean
+        | oxvba_runtime::VarType::Byte => true,
         _ => false,
     };
     write_slot!(ctx, dst, RuntimeValue::Bool(is_numeric));
@@ -1360,13 +1362,8 @@ pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_error(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let is_error = match &val {
-        RuntimeValue::ErrorCode(_) => true,
-        // Also check legacy error tags encoded as I32
-        RuntimeValue::I32(v) => runtime_is_error_tag(*v),
-        _ => false,
-    };
+    let val = read_variant_slot!(ctx, src);
+    let is_error = matches!(val.vtype(), oxvba_runtime::VarType::Error);
     write_slot!(ctx, dst, RuntimeValue::Bool(is_error));
     OK
 }
@@ -1391,37 +1388,39 @@ pub extern "C" fn oxrt_is_object_tag(ctx: *mut JitContext, dst: u32, _src: u32) 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_null(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
+    let val = read_variant_slot!(ctx, src);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::Bool(matches!(val, RuntimeValue::Null))
+        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Null))
     );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_empty(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
+    let val = read_variant_slot!(ctx, src);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::Bool(matches!(val, RuntimeValue::Empty))
+        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty))
     );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_array_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
+    let val = read_variant_slot!(ctx, src);
     write_slot!(
         ctx,
         dst,
-        RuntimeValue::I32(if semantics::runtime_value_is_array_compat(&val) {
-            1
-        } else {
-            0
-        })
+        RuntimeValue::I32(
+            if matches!(val.vtype(), oxvba_runtime::VarType::ArrayVariant) {
+                1
+            } else {
+                0
+            }
+        )
     );
     OK
 }

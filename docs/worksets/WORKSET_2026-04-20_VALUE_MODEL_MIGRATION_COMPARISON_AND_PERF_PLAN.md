@@ -1960,6 +1960,10 @@ Child beads:
        matching JIT helpers now classify the retained slot `Variant` directly
        for those tag-only paths instead of reading a temporary `RuntimeValue`
        first
+     - progress landed: JIT simple retained-carrier predicates for
+       `IsNumeric`, `IsError`, `IsNull`, `IsEmpty`, and `IsArray` now answer
+       those non-coercive checks from the canonical slot `Variant` directly
+       rather than projecting the source through `RuntimeValue` first
      - progress landed: `ComValue` Variant bridges now convert directly against
        `Variant` accessors and constructors; the `RuntimeValue` bridge methods
        remain compatibility projections rather than the intermediate carrier for

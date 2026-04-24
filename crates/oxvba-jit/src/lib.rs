@@ -421,6 +421,49 @@ mod tests {
     }
 
     #[test]
+    fn runtime_simple_predicates_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(11, 11, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(
+                0,
+                Variant::from_safearray(SafeArray::from_values(vec![
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(2),
+                ])),
+            );
+            ctx.context
+                .write_variant_slot(1, Variant::from_error_code(9));
+            ctx.context.write_variant_slot(2, Variant::null());
+            ctx.context.write_variant_slot(3, Variant::empty());
+            ctx.context
+                .write_variant_slot(4, Variant::from_date_f64(42.0));
+            ctx.context
+                .write_variant_slot(5, Variant::from_string(BStr::from("abc")));
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_is_array_tag(ctx.context_ptr(), 6, 0),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_is_error(ctx.context_ptr(), 7, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_is_null(ctx.context_ptr(), 8, 2), 0);
+        assert_eq!(runtime_helpers::oxrt_is_empty(ctx.context_ptr(), 9, 3), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_is_numeric(ctx.context_ptr(), 10, 4),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_is_numeric(ctx.context_ptr(), 5, 5), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[6], RuntimeValue::I32(1));
+        assert_eq!(values[7], RuntimeValue::Bool(true));
+        assert_eq!(values[8], RuntimeValue::Bool(true));
+        assert_eq!(values[9], RuntimeValue::Bool(true));
+        assert_eq!(values[10], RuntimeValue::Bool(true));
+        assert_eq!(values[5], RuntimeValue::Bool(false));
+    }
+
+    #[test]
     fn runtime_array_literal_and_append_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(5, 5, super::default_host_services(), &[]);
         unsafe {
