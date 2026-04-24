@@ -9,7 +9,7 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, Variant,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, VarType, Variant,
     bstr::BStr,
 };
 
@@ -2124,6 +2124,38 @@ pub fn runtime_value_to_dynamic_member_selector(
             "{field} requires string-or-token selector carrier, got {other:?}"
         )),
     }
+}
+
+pub fn variant_to_dynamic_member_selector(
+    value: &Variant,
+    field: &str,
+) -> Result<DynamicMemberSelector, String> {
+    if let Some(text) = value.as_bstr() {
+        return Ok(DynamicMemberSelector::Name(text.as_str().to_string()));
+    }
+    if matches!(value.vtype(), VarType::Empty) {
+        return Ok(DynamicMemberSelector::DefaultMember);
+    }
+    if let Some(token) = value.as_i32() {
+        return Ok(if token == 0 {
+            DynamicMemberSelector::DefaultMember
+        } else {
+            DynamicMemberSelector::Token(token)
+        });
+    }
+    if let Some(token) = value.as_i64() {
+        let token = i32::try_from(token)
+            .map_err(|_| format!("{field} exceeds i32 selector-token range: {token}"))?;
+        return Ok(if token == 0 {
+            DynamicMemberSelector::DefaultMember
+        } else {
+            DynamicMemberSelector::Token(token)
+        });
+    }
+    Err(format!(
+        "{field} requires string-or-token selector Variant, got {:?}",
+        value.vtype()
+    ))
 }
 
 pub fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result<usize, String> {

@@ -2317,9 +2317,9 @@ impl Vm {
                     member,
                     args,
                 } => {
-                    let object_value = self.read_value_slot(*object)?;
+                    let object_value = self.read_variant_slot(*object)?;
                     // VBA error 91: Object variable or With block variable not set.
-                    if matches!(object_value, RuntimeValue::Empty) {
+                    if matches!(object_value.vtype(), oxvba_runtime::VarType::Empty) {
                         pc = self.route_runtime_error(
                             pc,
                             91,
@@ -2327,7 +2327,7 @@ impl Vm {
                         )?;
                         continue;
                     }
-                    let object = match Self::runtime_value_to_com_object(
+                    let object = match crate::semantics::variant_to_com_object(
                         &object_value,
                         "dispatch_invoke.object",
                     ) {
@@ -2354,10 +2354,10 @@ impl Vm {
                             continue;
                         }
                     };
-                    let member_value = self.read_value_slot(*member)?;
+                    let member_value = self.read_variant_slot(*member)?;
                     let mut request = DynamicCallRequest {
                         object,
-                        member: match Self::runtime_value_to_dynamic_member_selector(
+                        member: match crate::semantics::variant_to_dynamic_member_selector(
                             &member_value,
                             "dispatch_invoke.member",
                         ) {
@@ -3451,22 +3451,8 @@ impl Vm {
         crate::semantics::legacy_neg_value(val)
     }
 
-    fn runtime_value_to_com_object(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<oxvba_runtime::ObjectRef, String> {
-        crate::semantics::runtime_value_to_com_object(value, field)
-    }
-
     fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result<usize, String> {
         crate::semantics::runtime_value_to_usize_index(value, field)
-    }
-
-    fn runtime_value_to_dynamic_member_selector(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<DynamicMemberSelector, String> {
-        crate::semantics::runtime_value_to_dynamic_member_selector(value, field)
     }
 
     fn materialize_foreach_items(

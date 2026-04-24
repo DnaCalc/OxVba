@@ -2588,23 +2588,22 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     args_ptr: *const DispatchInvokeArg,
     args_len: u32,
 ) -> i32 {
-    let object_val = read_slot!(ctx, object);
+    let object_val = read_variant_slot!(ctx, object);
     // Error 91: Object variable or With block variable not set.
-    if matches!(object_val, RuntimeValue::Empty) {
+    if matches!(object_val.vtype(), VarType::Empty) {
         return route_host_error_code(ctx, 91);
     }
-    let object_ref =
-        match semantics::runtime_value_to_com_object(&object_val, "dispatch_invoke.object") {
-            Ok(h) => {
-                if h.raw() == 0 {
-                    return route_host_error_code(ctx, 91);
-                }
-                h
+    let object_ref = match semantics::variant_to_com_object(&object_val, "dispatch_invoke.object") {
+        Ok(h) => {
+            if h.raw() == 0 {
+                return route_host_error_code(ctx, 91);
             }
-            Err(_) => return route_host_error_code(ctx, 91),
-        };
-    let member_val = read_slot!(ctx, member);
-    let member_sel = match semantics::runtime_value_to_dynamic_member_selector(
+            h
+        }
+        Err(_) => return route_host_error_code(ctx, 91),
+    };
+    let member_val = read_variant_slot!(ctx, member);
+    let member_sel = match semantics::variant_to_dynamic_member_selector(
         &member_val,
         "dispatch_invoke.member",
     ) {

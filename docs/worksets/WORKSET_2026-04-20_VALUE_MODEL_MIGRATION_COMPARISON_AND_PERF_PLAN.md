@@ -2188,6 +2188,11 @@ Child beads:
        retained Variant slots and write subscription/callback token results as
        `Variant` carriers, leaving token interpretation as an explicit COM
        control-plane classification boundary
+     - progress landed: VM and JIT dynamic COM dispatch object/member selector
+       helpers now read retained Variant carriers directly and convert them to
+       COM object handles / dynamic member selectors without first projecting
+       through `RuntimeValue`; selector interpretation remains an explicit COM
+       control-plane classification boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
