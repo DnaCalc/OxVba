@@ -1062,8 +1062,8 @@ Implementation progress:
     `Variant` directly into destination slots. The standard HAL adapter emits
     `Variant::from_object_ref(...)` for deterministic projection handles, while
     the legacy `create_object()` surface remains as an explicit compatibility
-    projection. ProgID string coercion still uses the existing compatibility
-    string path and remains open classification work.
+    projection. ProgID string coercion now uses the Variant-native BSTR string
+    path instead of detouring through `RuntimeValue`.
 63. VM and JIT COM event unsubscribe/release status paths now use
     `ComHal::unsubscribe_event_variant` and
     `ComHal::release_event_callback_variant`, writing retained `Variant`
@@ -1199,6 +1199,12 @@ Implementation progress:
     Boolean Variant. These remain explicit file-control compatibility
     classifications, but no longer require `Variant -> RuntimeValue` detours at
     the VM/JIT boundary.
+87. Standard HAL `CreateObject` ProgID coercion now uses a Variant-native
+    VBA-string conversion helper and returns BSTR carriers directly from
+    retained `Variant` inputs. VM/JIT `CreateObject` dispatch already writes
+    returned object Variants directly; this removes the remaining
+    `Variant -> RuntimeValue -> Variant` ProgID coercion detour from the
+    standard activation path.
 
 Remaining blocker:
 
@@ -1252,6 +1258,8 @@ Remaining blocker:
    VM/JIT file `Open` mode/file-number control carriers and `EOF` truthiness
    now also stay in retained Variant form at the VM/JIT boundary before their
    explicit numeric/Boolean compatibility classifications.
+   Standard HAL `CreateObject` ProgID coercion now also stays in retained
+   Variant/BSTR form before activation dispatch.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
