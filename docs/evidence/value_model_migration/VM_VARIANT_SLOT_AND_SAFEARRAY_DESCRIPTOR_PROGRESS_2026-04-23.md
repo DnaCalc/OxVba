@@ -1183,6 +1183,11 @@ Implementation progress:
     carrier from retained Variant slots and decode it directly as an integer
     control-plane index. Callback tokens and returned callback argument payloads
     already stay on retained Variant carriers.
+84. VM and JIT `Now` host helpers now combine retained Date/Time Variant
+    carriers directly with a Variant-native serial combiner and write the
+    resulting Date Variant back to destination slots. The older
+    `RuntimeValue` date/time combiner remains only as a semantic compatibility
+    helper.
 
 Remaining blocker:
 
@@ -1229,6 +1234,8 @@ Remaining blocker:
    retained Variant slots at the VM/JIT boundary.
    VM/JIT COM event callback-argument index carriers now also stay in retained
    Variant slots at the VM/JIT boundary.
+   VM/JIT `Now` host-helper date/time carrier combination now also stays in
+   retained Variant form at the VM/JIT boundary.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
