@@ -1084,6 +1084,10 @@ Implementation progress:
     project dynamic object lookup, instead of projecting the operand to
     `RuntimeValue::Object` before class/interface comparison. The boolean
     result remains on the existing scalar compatibility output path.
+66. VM project dynamic dispatch now inserts the implicit `Me` argument as an
+    object-valued `RuntimeSlot::Variant(Variant::from_object_ref(...))` before
+    inline procedure invocation, instead of constructing a
+    `RuntimeValue::Object` and converting it back into a runtime slot.
 
 Remaining blocker:
 
@@ -1108,7 +1112,8 @@ Remaining blocker:
    invocation/release, VM/JIT `CreateObject` host-return storage, and VM/JIT
    COM event unsubscribe/release status writes, and VM/JIT WithEvents
    owner-iteration/status outputs, and VM `TypeOf...Is` object operand lookup
-   no longer retain it as their backing value store for normal VBA values.
+   and VM project dynamic dispatch implicit `Me` binding no longer retain it
+   as their backing value store for normal VBA values.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
