@@ -14,7 +14,7 @@ use oxvba_compiler::{
     ProjectDynamicParamRoute,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
-        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+        StringCompareMode,
     },
 };
 use oxvba_hal::{
@@ -27,7 +27,7 @@ use oxvba_hal::{
 use oxvba_runtime::safe_array::{
     SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
-    VT_VARIANT_VALUE, is_array_tag as runtime_is_array_tag,
+    VT_VARIANT_VALUE,
 };
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag,
@@ -3373,6 +3373,7 @@ impl Vm {
         self.write_variant_slot(slot, Variant::from_compat_slot_i32(value))
     }
 
+    #[cfg(test)]
     fn read_value_slot(&self, slot: usize) -> Result<RuntimeValue, String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
@@ -3400,21 +3401,13 @@ impl Vm {
         self.registers.registers[slot].variant_cell_pointer()
     }
 
+    #[cfg(test)]
     fn write_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
         self.registers.registers[slot] = RuntimeSlot::from_runtime_value(value)?;
         Ok(())
-    }
-
-    fn write_semantic_value_slot(
-        &mut self,
-        slot: usize,
-        value: RuntimeValue,
-    ) -> Result<(), String> {
-        let value = Variant::try_from_runtime_value(&value)?;
-        self.write_variant_slot(slot, value)
     }
 
     fn write_variant_slot(&mut self, slot: usize, value: Variant) -> Result<(), String> {
@@ -3497,77 +3490,6 @@ impl Vm {
 
     fn withevents_owner_from_key(key: i64) -> ObjectRef {
         crate::semantics::withevents_owner_from_key(key)
-    }
-
-    fn proper_case(s: &str) -> String {
-        crate::semantics::proper_case(s)
-    }
-
-    fn format_number(n: f64, fmt: Option<&str>) -> String {
-        crate::semantics::format_number(n, fmt)
-    }
-
-    /// Returns `true` if either operand is Null — the VBA rule is that any
-    /// comparison involving Null yields Null (which is falsy).
-    fn either_null(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
-        crate::semantics::either_null(lhs, rhs)
-    }
-
-    fn typed_compare_values(
-        lhs: &RuntimeValue,
-        rhs: &RuntimeValue,
-        mode: StringCompareMode,
-        pred: fn(std::cmp::Ordering) -> bool,
-    ) -> Result<bool, String> {
-        crate::semantics::typed_compare_values(lhs, rhs, mode, pred)
-    }
-
-    fn runtime_value_as_f64(value: &RuntimeValue) -> Result<f64, String> {
-        crate::semantics::runtime_value_as_f64(value)
-    }
-
-    fn runtime_value_to_usize(value: &RuntimeValue) -> Result<usize, String> {
-        crate::semantics::runtime_value_to_usize(value)
-    }
-
-    fn legacy_truthy_value(value: &RuntimeValue) -> Result<bool, String> {
-        crate::semantics::legacy_truthy_value(value)
-    }
-
-    fn legacy_increment_value(value: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_increment_value(value)
-    }
-
-    fn legacy_add_const_value(
-        value: &RuntimeValue,
-        delta: i32,
-        field: &str,
-    ) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_add_const_value(value, delta, field)
-    }
-
-    fn legacy_add_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_add_values(lhs, rhs)
-    }
-
-    fn legacy_sub_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_sub_values(lhs, rhs)
-    }
-
-    fn legacy_mul_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_mul_values(lhs, rhs)
-    }
-
-    fn legacy_pow_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_pow_values(lhs, rhs)
-    }
-
-    fn legacy_concat_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> RuntimeValue {
-        crate::semantics::legacy_concat_values(lhs, rhs)
-    }
-
-    fn legacy_neg_value(val: &RuntimeValue) -> Result<RuntimeValue, String> {
-        crate::semantics::legacy_neg_value(val)
     }
 
     fn materialize_foreach_items(
@@ -3668,22 +3590,6 @@ impl Vm {
             return Variant::from_error_code(code);
         }
         value.clone()
-    }
-
-    fn validate_runtime_assignment(
-        value: &RuntimeValue,
-        intent: RuntimeAssignmentIntent,
-        target_kind: RuntimeAssignmentTargetKind,
-        target_name: &str,
-        target_type_name: &str,
-    ) -> Result<(), String> {
-        crate::semantics::validate_runtime_assignment(
-            value,
-            intent,
-            target_kind,
-            target_name,
-            target_type_name,
-        )
     }
 
     fn project_dynamic_member_matches_hint(
@@ -4043,13 +3949,6 @@ impl Vm {
         }
     }
 
-    fn withevents_binding_handle(
-        value: &RuntimeValue,
-        field: &str,
-    ) -> Result<BindingHandle, String> {
-        crate::semantics::withevents_binding_handle(value, field)
-    }
-
     fn withevents_matching_owners(
         &self,
         source_variant: Option<&Variant>,
@@ -4378,21 +4277,6 @@ impl Vm {
         }
     }
 
-    fn next_pc_for_jump_if_zero_value(
-        cond: &RuntimeValue,
-        target_pc: usize,
-        instruction_len: usize,
-        current_pc: usize,
-    ) -> Result<usize, String> {
-        let cond = Self::legacy_truthy_value(cond)?;
-        Self::next_pc_for_jump_if_zero(
-            if cond { -1 } else { 0 },
-            target_pc,
-            instruction_len,
-            current_pc,
-        )
-    }
-
     fn next_pc_for_jump_if_zero_variant(
         cond: &Variant,
         target_pc: usize,
@@ -4408,131 +4292,8 @@ impl Vm {
         )
     }
 
-    fn len_digits(value: i32) -> i32 {
-        let mut n = i64::from(value);
-        let mut digits = 0i32;
-        if n <= 0 {
-            digits += 1;
-            n = -n;
-        }
-        while n > 0 {
-            digits += 1;
-            n /= 10;
-        }
-        digits
-    }
-
-    fn left_digits(value: i32, count: i32) -> i32 {
-        Self::slice_digits(value, 0, Some(count))
-    }
-
-    fn right_digits(value: i32, count: i32) -> i32 {
-        if count <= 0 {
-            return 0;
-        }
-        let text = value.to_string();
-        let take = (count as usize).min(text.len());
-        let start = text.len().saturating_sub(take);
-        text[start..].parse::<i32>().unwrap_or(0)
-    }
-
-    fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
-        let zero_based_start = if start <= 1 { 0 } else { (start - 1) as usize };
-        Self::slice_digits(value, zero_based_start, count)
-    }
-
-    fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
-        let text = value.to_string();
-        if start >= text.len() {
-            return 0;
-        }
-        let end = match count {
-            Some(c) if c <= 0 => start,
-            Some(c) => (start + c as usize).min(text.len()),
-            None => text.len(),
-        };
-        text[start..end].parse::<i32>().unwrap_or(0)
-    }
-
     fn normalize_for_compare(text: String, mode: StringCompareMode) -> String {
         crate::semantics::normalize_for_compare(text, mode)
-    }
-
-    fn instr_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
-        let hay = Self::normalize_for_compare(haystack.to_string(), mode);
-        let nee = Self::normalize_for_compare(needle.to_string(), mode);
-        hay.find(&nee).map_or(0, |idx| (idx + 1) as i32)
-    }
-
-    fn instrrev_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
-        let hay = Self::normalize_for_compare(haystack.to_string(), mode);
-        let nee = Self::normalize_for_compare(needle.to_string(), mode);
-        hay.rfind(&nee).map_or(0, |idx| (idx + 1) as i32)
-    }
-
-    fn to_lower_digits(value: i32) -> i32 {
-        value
-            .to_string()
-            .to_ascii_lowercase()
-            .parse::<i32>()
-            .unwrap_or(0)
-    }
-
-    fn to_upper_digits(value: i32) -> i32 {
-        value
-            .to_string()
-            .to_ascii_uppercase()
-            .parse::<i32>()
-            .unwrap_or(0)
-    }
-
-    fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
-        let text = value.to_string();
-        let find = find.to_string();
-        let replace = replace.to_string();
-        if find.is_empty() {
-            return value;
-        }
-        text.replace(&find, &replace).parse::<i32>().unwrap_or(0)
-    }
-
-    fn trim_digits(value: i32) -> i32 {
-        value.to_string().trim().parse::<i32>().unwrap_or(value)
-    }
-
-    fn ltrim_digits(value: i32) -> i32 {
-        value
-            .to_string()
-            .trim_start()
-            .parse::<i32>()
-            .unwrap_or(value)
-    }
-
-    fn rtrim_digits(value: i32) -> i32 {
-        value.to_string().trim_end().parse::<i32>().unwrap_or(value)
-    }
-
-    fn strcomp_digits(lhs: i32, rhs: i32, mode: StringCompareMode) -> i32 {
-        let lhs = Self::normalize_for_compare(lhs.to_string(), mode);
-        let rhs = Self::normalize_for_compare(rhs.to_string(), mode);
-        match lhs.cmp(&rhs) {
-            std::cmp::Ordering::Less => -1,
-            std::cmp::Ordering::Equal => 0,
-            std::cmp::Ordering::Greater => 1,
-        }
-    }
-
-    fn round_i32(value: i32, digits: i32) -> i32 {
-        if digits >= 0 {
-            return value;
-        }
-        let magnitude = (-digits) as u32;
-        let factor = 10_i32.saturating_pow(magnitude);
-        if factor <= 1 {
-            return value;
-        }
-        let f = factor as f64;
-        ((value as f64) / f).round() as i32 * factor
     }
 
     fn fv_i32(rate: i32, nper: i32, pmt: i32, pv: i32, due: i32) -> i32 {
@@ -4717,10 +4478,6 @@ impl Vm {
             return error_tag_from_code(FIN_NPER_ERROR_CODE);
         }
         n.round() as i32
-    }
-
-    fn is_array_tag(value: i32) -> bool {
-        runtime_is_array_tag(value)
     }
 }
 
