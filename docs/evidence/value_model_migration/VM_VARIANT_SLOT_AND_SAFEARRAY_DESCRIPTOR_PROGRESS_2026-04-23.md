@@ -1463,6 +1463,11 @@ Implementation progress:
      `Variant` results directly. `Val`, `CStr`, `Str$`, `Format`, date/math,
      and array/string aggregate helpers remain outside this slice where they
      still use broader legacy semantic contracts.
+134. VM/JIT `Format` now reads retained `Variant` value/format slots directly
+     through Variant-native numeric/text coercion helpers and writes retained
+     `Variant` string results directly. `Val`, `CStr`, `Str$`, date/math, and
+     array/string aggregate helpers remain outside this slice where they still
+     use broader legacy semantic contracts.
 
 Remaining blocker:
 
@@ -1666,6 +1671,9 @@ Remaining blocker:
    VM/JIT `Like` and `StrConv` now read retained `Variant` slots directly
    through Variant-native text/conversion coercion helpers and write retained
    `Variant` results directly.
+   VM/JIT `Format` now reads retained `Variant` value/format slots directly
+   through Variant-native numeric/text coercion helpers and writes retained
+   `Variant` string results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
