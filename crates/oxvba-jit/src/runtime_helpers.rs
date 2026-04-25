@@ -673,8 +673,7 @@ pub extern "C" fn oxrt_split(ctx: *mut JitContext, dst: u32, src: u32, delimiter
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -685,8 +684,7 @@ pub extern "C" fn oxrt_join(ctx: *mut JitContext, dst: u32, src: u32, delimiter:
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -813,8 +811,7 @@ pub extern "C" fn oxrt_like(
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -825,8 +822,7 @@ pub extern "C" fn oxrt_strconv(ctx: *mut JitContext, dst: u32, src: u32, convers
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, result);
-    OK
+    write_semantic_value_slot(ctx, dst, result)
 }
 
 // ── Char/format ops ──────────────────────────────────────────────────
@@ -838,8 +834,7 @@ pub extern "C" fn oxrt_chr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -849,8 +844,7 @@ pub extern "C" fn oxrt_asc(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -860,8 +854,7 @@ pub extern "C" fn oxrt_space(ctx: *mut JitContext, dst: u32, count: u32) -> i32 
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -872,8 +865,7 @@ pub extern "C" fn oxrt_string_repeat(ctx: *mut JitContext, dst: u32, count: u32,
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -883,8 +875,7 @@ pub extern "C" fn oxrt_hex(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -894,8 +885,7 @@ pub extern "C" fn oxrt_oct(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 /// Format: dst = Format$(value [, format_string])
@@ -950,8 +940,7 @@ pub extern "C" fn oxrt_date_serial(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -969,8 +958,7 @@ pub extern "C" fn oxrt_time_serial(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -980,8 +968,7 @@ pub extern "C" fn oxrt_date_value(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, v);
-    OK
+    write_semantic_value_slot(ctx, dst, v)
 }
 
 #[unsafe(no_mangle)]
@@ -991,8 +978,7 @@ pub extern "C" fn oxrt_cdate(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, v);
-    OK
+    write_semantic_value_slot(ctx, dst, v)
 }
 
 #[unsafe(no_mangle)]
@@ -1002,8 +988,7 @@ pub extern "C" fn oxrt_time_value(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, v);
-    OK
+    write_semantic_value_slot(ctx, dst, v)
 }
 
 #[unsafe(no_mangle)]
@@ -1021,8 +1006,7 @@ pub extern "C" fn oxrt_date_add(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1095,8 +1079,7 @@ pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 // ── Math ops ─────────────────────────────────────────────────────────
@@ -1113,8 +1096,7 @@ pub extern "C" fn oxrt_round(ctx: *mut JitContext, dst: u32, src: u32, digits_sl
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1124,8 +1106,7 @@ pub extern "C" fn oxrt_sqr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1135,8 +1116,7 @@ pub extern "C" fn oxrt_sin(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1146,8 +1126,7 @@ pub extern "C" fn oxrt_cos(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1157,8 +1136,7 @@ pub extern "C" fn oxrt_log(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1168,8 +1146,7 @@ pub extern "C" fn oxrt_exp(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1179,8 +1156,7 @@ pub extern "C" fn oxrt_atn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 #[unsafe(no_mangle)]
@@ -1190,8 +1166,7 @@ pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, out);
-    OK
+    write_semantic_value_slot(ctx, dst, out)
 }
 
 // ── Type checking ops ────────────────────────────────────────────────

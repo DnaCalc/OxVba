@@ -2317,6 +2317,12 @@ Child beads:
        destination writes now re-enter retained `Variant` carriers after
        existing semantic helper results; true Variant-native helper companions
        remain open
+     - progress landed: VM/JIT remaining migrated string/date/time/math helper
+       destination writes now re-enter retained `Variant` carriers after
+       existing semantic helper results for `Mid` statement, `Split`, `Join`,
+       `Like`, `StrConv`, date/time helper results, char/format helper
+       results, and JIT trigonometric/math helper results; true
+       Variant-native helper companions remain open
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

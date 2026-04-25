@@ -955,7 +955,7 @@ impl Vm {
                         None => None,
                     };
                     let value_value = self.read_value_slot(*value)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *target,
                         crate::semantics::runtime_mid_stmt_bounded(
                             &target_value,
@@ -1031,7 +1031,7 @@ impl Vm {
                 } => {
                     let value = self.read_value_slot(*src)?;
                     let delimiter = self.read_value_slot(*delimiter)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_split_count_bounded(&value, &delimiter)?,
                     )?;
@@ -1044,7 +1044,7 @@ impl Vm {
                 } => {
                     let value = self.read_value_slot(*src)?;
                     let delimiter = self.read_value_slot(*delimiter)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_join_bounded(&value, &delimiter)?,
                     )?;
@@ -1128,7 +1128,7 @@ impl Vm {
                 } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let pattern = self.read_value_slot(*pattern)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_like_bounded(&lhs, &pattern, *mode)?,
                     )?;
@@ -1144,7 +1144,7 @@ impl Vm {
                     let month = self.read_value_slot(*month)?;
                     let day = self.read_value_slot(*day)?;
                     let out = crate::semantics::runtime_date_serial_bounded(&year, &month, &day)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeSerialDigits {
@@ -1158,19 +1158,19 @@ impl Vm {
                     let second = self.read_value_slot(*second)?;
                     let out =
                         crate::semantics::runtime_time_serial_bounded(&hour, &minute, &second)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateValueDigits { dst, src } => {
                     let src = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_value_to_datevalue(&src)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeValueDigits { dst, src } => {
                     let src = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_value_to_timevalue(&src)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateAddDigits {
@@ -1184,7 +1184,7 @@ impl Vm {
                     let date = self.read_value_slot(*date)?;
                     let out =
                         crate::semantics::runtime_date_add_bounded(&interval, &number, &date)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateDiffDigits {
@@ -3208,7 +3208,7 @@ impl Vm {
                 } => {
                     let src_val = self.read_value_slot(*src)?;
                     let conv_val = self.read_value_slot(*conversion)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_strconv_bounded(&src_val, &conv_val)?,
                     )?;
@@ -3285,7 +3285,7 @@ impl Vm {
                     }
                     let value = self.read_value_slot(*slot)?;
                     let out = Self::legacy_increment_value(&value)?;
-                    self.write_value_slot(*slot, out)?;
+                    self.write_semantic_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::Halt => break,
