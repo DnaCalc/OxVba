@@ -82,7 +82,8 @@ Current value-model migration note (2026-04-25):
 17. HAL console legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` console companion methods.
 18. HAL COM activation/dispatch/event legacy `RuntimeValue` methods now classify themselves as compatibility result projections beside retained `Variant` COM companion methods.
 19. Host debugger `RuntimeValue` frame/evaluation APIs now classify themselves as compatibility projections from retained `Variant` frame reads.
-20. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+20. Non-standard HAL null/WASM/replay adapter `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` companion methods.
+21. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

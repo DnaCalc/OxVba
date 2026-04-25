@@ -17,6 +17,9 @@ use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeVa
 
 use super::standard::descriptor_for_profile;
 
+// Replay adapter decodes legacy journal entries into `RuntimeValue` for
+// compatibility lanes. The `_variant` methods are retained value-model
+// companions and should avoid trait fallback projection where implemented.
 pub struct ReplayHostServices {
     journal: HalJournal,
     cursor: Mutex<usize>,
@@ -84,11 +87,13 @@ impl ReplayHostServices {
         Ok(RuntimeValue::I32(value))
     }
 
+    // Compatibility journal parser for legacy RuntimeValue APIs.
     fn replay_runtime_value(&self, op: &'static str) -> HalResult<RuntimeValue> {
         let entry = self.next_entry(op)?;
         self.decode_runtime_value(op, entry)
     }
 
+    // Retained companion projection over the same journal data for Variant callers.
     fn replay_variant(&self, op: &'static str) -> HalResult<Variant> {
         let value = self.replay_runtime_value(op)?;
         Variant::try_from_runtime_value(&value).map_err(|detail| {

@@ -14,6 +14,9 @@ use crate::{
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
 
+// Null adapter keeps the complete legacy `RuntimeValue` trait surface for
+// compatibility callers. The `_variant` methods below are the retained
+// value-model entry points for slot-facing VM/JIT code.
 #[derive(Debug, Clone)]
 pub struct NullHostServices {
     descriptor: HalDescriptor,

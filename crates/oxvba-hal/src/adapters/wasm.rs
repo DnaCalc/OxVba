@@ -15,6 +15,8 @@ use crate::{
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
 
+// WASM adapter keeps legacy `RuntimeValue` methods for sandbox compatibility
+// callers. Slot-facing VM/JIT code should use the direct `_variant` companions.
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
     descriptor: HalDescriptor,
