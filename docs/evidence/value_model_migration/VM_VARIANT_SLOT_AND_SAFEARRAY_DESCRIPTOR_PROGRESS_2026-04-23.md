@@ -1583,6 +1583,9 @@ Implementation progress:
      projection. The obsolete deterministic `RuntimeValue` time helpers were
      removed after the retained Date/Single `Variant` helpers became the single
      implementation path.
+156. Standard diagnostics legacy `RuntimeValue` `emit`/`debug_print` methods
+     now delegate through retained `Variant` diagnostics companions, leaving
+     only boundary projection helpers for legacy callers.
 
 Remaining blocker:
 
@@ -1789,6 +1792,8 @@ Remaining blocker:
    UI virtualization branches.
    Standard time/locale and event-pump legacy `RuntimeValue` methods now also
    delegate through retained `Variant` companions.
+   Standard diagnostics legacy `RuntimeValue` methods now also delegate
+   through retained `Variant` companions.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before

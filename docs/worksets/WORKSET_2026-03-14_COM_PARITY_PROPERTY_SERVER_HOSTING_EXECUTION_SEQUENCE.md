@@ -109,7 +109,8 @@ Current value-model migration note (2026-04-25):
 44. Standard dynamic-link m0 legacy `RuntimeValue` calls now delegate through retained `Variant` dynlink companions; m1 native FFI remains explicit semantic marshalling work.
 45. Standard UI `MsgBox`/`InputBox` legacy `RuntimeValue` calls now delegate through retained `Variant` UI companions.
 46. Standard time/locale and event-pump legacy `RuntimeValue` calls now delegate through retained `Variant` companions.
-47. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+47. Standard diagnostics `emit`/`debug_print` legacy `RuntimeValue` calls now delegate through retained `Variant` companions.
+48. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
