@@ -1520,6 +1520,11 @@ Implementation progress:
      lanes. This removes the remaining VM/JIT opcode execution reads from
      `RuntimeValue` slot storage; remaining broad projection seams are
      compatibility APIs and broader COM/host surface classifications.
+144. VM/JIT compatibility-token writes for `For Each` iterator initialization
+     and JIT WithEvents retained-value get now write retained `Variant` token
+     carriers directly instead of routing through `RuntimeValue` slot writes.
+     The remaining VM `read_value_slot` / `write_value_slot` references are
+     compatibility helper definitions and tests, not opcode execution storage.
 
 Remaining blocker:
 

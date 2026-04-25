@@ -97,7 +97,8 @@ Current value-model migration note (2026-04-25):
 32. VM/JIT `Rnd` and `Randomize` seed operands now read retained `Variant` slots directly through Variant-native numeric seed coercion while preserving retained `Variant` result writes.
 33. VM/JIT dynamic array `ReDim`, `ReDim Preserve`, array get, and array set bound/index operands now read retained `Variant` slots directly through Variant-native numeric coercion while preserving retained SAFEARRAY-backed `Variant` array carriers.
 34. VM/JIT scalar/control/binding helper operands now read retained `Variant` slots directly for `Int`/`Fix`, conditional jumps, runtime assignment validation, finance/collection numeric lanes, and WithEvents binding-token lanes.
-35. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+35. VM/JIT `For Each` iterator initialization and JIT WithEvents retained-value get now write compatibility-token outputs as retained `Variant` carriers directly instead of entering legacy `RuntimeValue` slot-write helpers.
+36. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
