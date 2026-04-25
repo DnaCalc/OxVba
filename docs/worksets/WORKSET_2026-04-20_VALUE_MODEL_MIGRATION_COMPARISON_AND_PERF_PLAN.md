@@ -2280,6 +2280,12 @@ Child beads:
        collection scalar-result helpers now write retained `Variant`
        destination carriers directly instead of temporary `RuntimeValue`
        scalar/null results
+     - progress landed: VM/JIT locally computed string/scalar intrinsic
+       result writes now use retained `Variant` destination carriers for
+       constant string/double loads, `Len`, `Left`, `Right`, `Mid`, `InStr`,
+       `InStrRev`, `LCase`, `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`,
+       and `StrComp`; helper-returning paths such as `Split`/`Join`/`Like`
+       remain separate migration work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

@@ -885,7 +885,7 @@ impl Vm {
                 Instruction::IntrinsicLenDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "Len operand")?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(text.len() as i32))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(text.len() as i32))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLeftDigits { dst, src, count } => {
@@ -898,7 +898,7 @@ impl Vm {
                     } else {
                         text[..n].to_string()
                     };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRightDigits { dst, src, count } => {
@@ -912,7 +912,7 @@ impl Vm {
                     } else {
                         text[len - n..].to_string()
                     };
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidDigits {
@@ -939,7 +939,7 @@ impl Vm {
                         None => len,
                     };
                     let result = text[begin..end].to_string();
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidStmtDigits {
@@ -983,7 +983,7 @@ impl Vm {
                         *mode,
                     );
                     let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
-                    self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(pos))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicInStrRevDigits {
@@ -1003,24 +1003,24 @@ impl Vm {
                         *mode,
                     );
                     let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
-                    self.write_value_slot(*dst, RuntimeValue::I32(pos))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(pos))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "LCase operand")?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::String(BStr::from(text.to_ascii_lowercase())),
+                        Variant::from_string(BStr::from(text.to_ascii_lowercase())),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUpperDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "UCase operand")?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::String(BStr::from(text.to_ascii_uppercase())),
+                        Variant::from_string(BStr::from(text.to_ascii_uppercase())),
                     )?;
                     pc += 1;
                 }
@@ -1066,33 +1066,33 @@ impl Vm {
                     let replace_text =
                         crate::semantics::runtime_value_to_text(&replace_val, "Replace replace")?;
                     let result = src_text.replace(&find_text, &replace_text);
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "Trim operand")?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::String(BStr::from(text.trim().to_string())),
+                        Variant::from_string(BStr::from(text.trim().to_string())),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "LTrim operand")?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::String(BStr::from(text.trim_start().to_string())),
+                        Variant::from_string(BStr::from(text.trim_start().to_string())),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRTrimDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let text = crate::semantics::runtime_value_to_text(&value, "RTrim operand")?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::String(BStr::from(text.trim_end().to_string())),
+                        Variant::from_string(BStr::from(text.trim_end().to_string())),
                     )?;
                     pc += 1;
                 }
@@ -1117,7 +1117,7 @@ impl Vm {
                         std::cmp::Ordering::Equal => 0,
                         std::cmp::Ordering::Greater => 1,
                     };
-                    self.write_value_slot(*dst, RuntimeValue::I32(result))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(result))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLikeDigits {

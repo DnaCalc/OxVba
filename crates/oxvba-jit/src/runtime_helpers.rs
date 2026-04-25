@@ -470,7 +470,7 @@ pub extern "C" fn oxrt_load_string(
 ) -> i32 {
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
     let s = String::from_utf8_lossy(bytes).into_owned();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(s)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(s)));
     OK
 }
 
@@ -478,7 +478,7 @@ pub extern "C" fn oxrt_load_string(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_f64(ctx: *mut JitContext, dst: u32, bits: u64) -> i32 {
-    write_slot!(ctx, dst, RuntimeValue::F64(F64Value::from_bits(bits)));
+    write_variant_slot!(ctx, dst, Variant::from_f64(F64Value::from_bits(bits).as_f64()));
     OK
 }
 
@@ -493,7 +493,7 @@ pub extern "C" fn oxrt_len(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(text.len() as i32));
+    write_variant_slot!(ctx, dst, Variant::from_i32(text.len() as i32));
     OK
 }
 
@@ -514,7 +514,7 @@ pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32
     } else {
         text[..n].to_string()
     };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -536,7 +536,7 @@ pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u3
     } else {
         text[len - n..].to_string()
     };
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -576,7 +576,7 @@ pub extern "C" fn oxrt_mid(
         None => len,
     };
     let result = text[begin..end].to_string();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -630,7 +630,7 @@ pub extern "C" fn oxrt_instr(
         Err(_) => return ERR_RUNTIME,
     };
     let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
-    write_slot!(ctx, dst, RuntimeValue::I32(pos));
+    write_variant_slot!(ctx, dst, Variant::from_i32(pos));
     OK
 }
 
@@ -658,7 +658,7 @@ pub extern "C" fn oxrt_instrrev(
         Err(_) => return ERR_RUNTIME,
     };
     let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
-    write_slot!(ctx, dst, RuntimeValue::I32(pos));
+    write_variant_slot!(ctx, dst, Variant::from_i32(pos));
     OK
 }
 
@@ -669,10 +669,10 @@ pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr::from(text.to_ascii_lowercase()))
+        Variant::from_string(BStr::from(text.to_ascii_lowercase()))
     );
     OK
 }
@@ -684,10 +684,10 @@ pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr::from(text.to_ascii_uppercase()))
+        Variant::from_string(BStr::from(text.to_ascii_uppercase()))
     );
     OK
 }
@@ -740,7 +740,7 @@ pub extern "C" fn oxrt_replace(
         Err(_) => return ERR_RUNTIME,
     };
     let result = src_text.replace(&find_text, &replace_text);
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -751,10 +751,10 @@ pub extern "C" fn oxrt_trim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr::from(text.trim().to_string()))
+        Variant::from_string(BStr::from(text.trim().to_string()))
     );
     OK
 }
@@ -766,10 +766,10 @@ pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr::from(text.trim_start().to_string()))
+        Variant::from_string(BStr::from(text.trim_start().to_string()))
     );
     OK
 }
@@ -781,10 +781,10 @@ pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::String(BStr::from(text.trim_end().to_string()))
+        Variant::from_string(BStr::from(text.trim_end().to_string()))
     );
     OK
 }
@@ -817,7 +817,7 @@ pub extern "C" fn oxrt_strcomp(
         Ordering::Equal => 0,
         Ordering::Greater => 1,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(result));
+    write_variant_slot!(ctx, dst, Variant::from_i32(result));
     OK
 }
 
