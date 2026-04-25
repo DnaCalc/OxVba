@@ -80,6 +80,14 @@ impl DynLinkDescriptorView<'_> {
     }
 }
 
+/// Root HAL service registry.
+///
+/// HAL traits below expose a value-model boundary: methods that accept or
+/// return [`RuntimeValue`] are retained compatibility projection contracts for
+/// older adapters, while `_variant` companions are the retained value-model
+/// entry points used by VM/JIT callers. A default companion may still project
+/// through the compatibility method until an implementation overrides it
+/// directly.
 pub trait HostServices: Send + Sync {
     fn profile(&self) -> HalProfileId;
     fn descriptor(&self) -> HalDescriptor;

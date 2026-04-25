@@ -62,6 +62,10 @@ Current execution note (2026-03-18):
 1. step 2 is now complete for the scoped native/property/default-member `DG-03` target via [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md),
 2. the remaining program still runs in the same order for `IP-03`, `IP-05`, `IP-06`, `IP-07`, and `IP-08`.
 
+Current value-model migration note (2026-04-25):
+1. HAL trait surfaces now classify `RuntimeValue` methods as compatibility projection contracts and `_variant` companions as retained value-model entry points for VM/JIT callers.
+2. Trait-level default projection companions remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+
 ## 4. Why this order is correct
 
 ### 4.1 Why `IP-03` foundation comes first
