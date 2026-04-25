@@ -1424,6 +1424,10 @@ Implementation progress:
      compatibility wrappers beside retained `Variant` filesystem companion
      methods. This covers open/close/kill/seek, EOF/LOF/Loc/FreeFile, byte
      I/O, Print/Input, and Line Input APIs.
+126. HAL console legacy `RuntimeValue` methods now classify themselves as
+     compatibility wrappers beside retained `Variant` console companion
+     methods. This covers Print, Input, Line Input, and the legacy input-field
+     parser.
 
 Remaining blocker:
 
@@ -1599,6 +1603,9 @@ Remaining blocker:
    companion methods.
    HAL filesystem legacy `RuntimeValue` methods now also document their
    compatibility wrapper role beside retained `Variant` filesystem companion
+   methods.
+   HAL console legacy `RuntimeValue` methods now also document their
+   compatibility wrapper role beside retained `Variant` console companion
    methods.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
