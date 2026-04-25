@@ -2061,7 +2061,7 @@ pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i3
             ctx_ref.rnd_state = (seed as u32) & 0x00FF_FFFF;
         } else if seed == 0 {
             let result = ctx_ref.rnd_state as f64 / 16_777_216.0;
-            write_slot!(ctx, dst, RuntimeValue::F64(F64Value::from_f64(result)));
+            write_variant_slot!(ctx, dst, Variant::from_f64(result));
             return OK;
         }
     }
@@ -2071,7 +2071,7 @@ pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i3
         .wrapping_add(0x0026_9EC3)
         & 0x00FF_FFFF;
     let result = ctx_ref.rnd_state as f64 / 16_777_216.0;
-    write_slot!(ctx, dst, RuntimeValue::F64(F64Value::from_f64(result)));
+    write_variant_slot!(ctx, dst, Variant::from_f64(result));
     OK
 }
 
@@ -2088,7 +2088,7 @@ pub extern "C" fn oxrt_randomize(ctx: *mut JitContext, dst: u32, seed_slot: u32)
     } else {
         ctx_ref.rnd_state = 0x50000;
     }
-    write_slot!(ctx, dst, RuntimeValue::I32(0));
+    write_variant_slot!(ctx, dst, Variant::from_i32(0));
     OK
 }
 

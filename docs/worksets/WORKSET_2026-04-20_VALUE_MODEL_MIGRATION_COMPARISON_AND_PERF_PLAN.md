@@ -2291,6 +2291,11 @@ Child beads:
        `Month`, `Day`, `Weekday`, `Format`, and `StrReverse`; date/time
        helper-returning paths such as `DateSerial`, `DateAdd`, `DateValue`,
        `CDate`, `TimeValue`, and `MonthName` remain separate companion work
+     - progress landed: VM/JIT PRNG result writes now use retained `Variant`
+       destination carriers for `Rnd` and `Randomize`, and the VM `Int` F64
+       fast branch now writes its integer result as a retained `Variant`;
+       broader math/random helper-returning paths remain separate companion
+       work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
