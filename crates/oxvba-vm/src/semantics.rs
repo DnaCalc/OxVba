@@ -1771,6 +1771,10 @@ pub fn runtime_random_seed_bounded(value: &RuntimeValue, field: &str) -> Result<
     runtime_value_to_i32_compat(value, field)
 }
 
+pub fn runtime_random_seed_variant_bounded(value: &Variant, field: &str) -> Result<i32, String> {
+    runtime_variant_to_i32_compat(value, field)
+}
+
 // ── Arithmetic ────────────────────────────────────────────────────────
 
 pub fn legacy_add_const_value(
@@ -3033,6 +3037,14 @@ mod tests {
             )
             .expect("Randomize seed should coerce numeric text"),
             1
+        );
+        assert_eq!(
+            super::runtime_random_seed_variant_bounded(
+                &Variant::from_string(BStr::from("2")),
+                "Randomize seed"
+            )
+            .expect("Randomize seed should coerce retained Variant numeric text"),
+            2
         );
     }
 

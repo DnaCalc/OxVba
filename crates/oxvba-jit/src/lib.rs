@@ -309,6 +309,26 @@ mod tests {
         assert_eq!(values[8], RuntimeValue::Bool(false));
     }
 
+    #[test]
+    fn runtime_random_helpers_read_variant_seed_carriers() {
+        let mut ctx = JitContextOwned::new(3, 3, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("1")));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("0")));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_randomize(ctx.context_ptr(), 2, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_rnd(ctx.context_ptr(), 2, 1), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(
+            values[2],
+            RuntimeValue::F64(F64Value::from_f64(1.0 / 16_777_216.0))
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn execute_and_snapshot_values_fallback_preserves_non_legacy_runtime_values() {

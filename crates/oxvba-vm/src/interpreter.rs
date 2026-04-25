@@ -3281,9 +3281,10 @@ impl Vm {
                 }
                 Instruction::IntrinsicRndDigits { dst, seed } => {
                     if let Some(seed_slot) = seed {
-                        let seed_val = self.read_value_slot(*seed_slot)?;
-                        let seed_val =
-                            crate::semantics::runtime_random_seed_bounded(&seed_val, "Rnd seed")?;
+                        let seed_val = self.read_variant_slot(*seed_slot)?;
+                        let seed_val = crate::semantics::runtime_random_seed_variant_bounded(
+                            &seed_val, "Rnd seed",
+                        )?;
                         if seed_val < 0 {
                             self.rnd_state = (seed_val as u32) & 0x00FF_FFFF;
                         } else if seed_val == 0 {
@@ -3304,8 +3305,8 @@ impl Vm {
                 }
                 Instruction::IntrinsicRandomizeDigits { dst, seed } => {
                     if let Some(seed_slot) = seed {
-                        let seed_val = self.read_value_slot(*seed_slot)?;
-                        let seed_val = crate::semantics::runtime_random_seed_bounded(
+                        let seed_val = self.read_variant_slot(*seed_slot)?;
+                        let seed_val = crate::semantics::runtime_random_seed_variant_bounded(
                             &seed_val,
                             "Randomize seed",
                         )?;

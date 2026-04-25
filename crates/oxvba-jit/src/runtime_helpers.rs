@@ -2070,8 +2070,8 @@ pub extern "C" fn oxrt_collection_count(ctx: *mut JitContext, dst: u32, count: u
 pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i32 {
     let ctx_ref = unsafe { &mut *ctx };
     if seed_slot != u32::MAX {
-        let seed_val = read_slot!(ctx, seed_slot);
-        let seed = match semantics::runtime_random_seed_bounded(&seed_val, "Rnd seed") {
+        let seed_val = read_variant_slot!(ctx, seed_slot);
+        let seed = match semantics::runtime_random_seed_variant_bounded(&seed_val, "Rnd seed") {
             Ok(v) => v,
             Err(_) => return ERR_RUNTIME,
         };
@@ -2097,8 +2097,9 @@ pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i3
 pub extern "C" fn oxrt_randomize(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i32 {
     let ctx_ref = unsafe { &mut *ctx };
     if seed_slot != u32::MAX {
-        let seed_val = read_slot!(ctx, seed_slot);
-        let seed = match semantics::runtime_random_seed_bounded(&seed_val, "Randomize seed") {
+        let seed_val = read_variant_slot!(ctx, seed_slot);
+        let seed = match semantics::runtime_random_seed_variant_bounded(&seed_val, "Randomize seed")
+        {
             Ok(v) => v,
             Err(_) => return ERR_RUNTIME,
         };

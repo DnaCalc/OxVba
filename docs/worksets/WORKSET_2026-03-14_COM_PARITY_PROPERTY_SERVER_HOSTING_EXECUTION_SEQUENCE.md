@@ -94,7 +94,8 @@ Current value-model migration note (2026-04-25):
 29. VM/JIT aggregate string intrinsics `Mid` statement, `Split`, and `Join` now read retained `Variant` slots directly through Variant-native string/array helpers and write retained `Variant` results directly.
 30. VM/JIT core arithmetic operators `Add`, `Sub`, `Mul`, `Div`, `IntDiv`, `Mod`, `Pow`, `Concat`, `Neg`, `AddConst`, `SubConst`, and `Inc` now read retained `Variant` slots directly through Variant-native arithmetic helpers and write retained `Variant` results directly.
 31. VM/JIT comparison and Boolean operators now read retained `Variant` slots directly through Variant-native comparison/truthiness helpers and write retained `Variant` Boolean results directly.
-32. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+32. VM/JIT `Rnd` and `Randomize` seed operands now read retained `Variant` slots directly through Variant-native numeric seed coercion while preserving retained `Variant` result writes.
+33. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
