@@ -2300,6 +2300,11 @@ Child beads:
        now use retained Boolean `Variant` destination carriers for comparison
        operators and `BoolNot`/`BoolAnd`/`BoolOr`, replacing temporary
        `RuntimeValue` or integer stand-ins in normal destination slots
+     - progress landed: VM constant-load destination writes now use retained
+       `Variant` carriers for integer/tag, Boolean, string, and F64 constants,
+       and VM `For Each` next-item delivery now writes the continuation flag as
+       a retained Boolean `Variant` while keeping the iterator ID classified as
+       an internal control token
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

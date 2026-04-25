@@ -32,7 +32,7 @@ use oxvba_runtime::safe_array::{
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag,
 };
-use oxvba_runtime::{BindingHandle, F64Value, ObjectRef, RuntimeValue, Variant, bstr::BStr};
+use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
 
@@ -740,24 +740,24 @@ impl Vm {
                     // Use compat-slot decoding for the special tag values (0=Empty,
                     // error tags, array tags) but NOT for -1 which is now
                     // properly represented via LoadNull.
-                    let rv = if *value == NULL_TAG {
-                        RuntimeValue::I32(*value)
+                    let value = if *value == NULL_TAG {
+                        Variant::from_i32(*value)
                     } else {
-                        RuntimeValue::from_compat_slot_i32(*value)
+                        Variant::try_from_compat_slot_i32(*value)?
                     };
-                    self.write_value_slot(*slot, rv)?;
+                    self.write_variant_slot(*slot, value)?;
                     pc += 1;
                 }
                 Instruction::LoadConstBool { slot, value } => {
-                    self.write_value_slot(*slot, RuntimeValue::Bool(*value))?;
+                    self.write_variant_slot(*slot, Variant::from_bool(*value))?;
                     pc += 1;
                 }
                 Instruction::LoadConstString { slot, value } => {
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(value.clone())))?;
+                    self.write_variant_slot(*slot, Variant::from_string(BStr::from(value.clone())))?;
                     pc += 1;
                 }
                 Instruction::LoadConstF64 { slot, bits } => {
-                    self.write_value_slot(*slot, RuntimeValue::F64(F64Value::from_bits(*bits)))?;
+                    self.write_variant_slot(*slot, Variant::from_f64(f64::from_bits(*bits)))?;
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {
@@ -2095,7 +2095,7 @@ impl Vm {
                     if next.is_none() {
                         self.foreach_iterators.remove(&iter_id);
                     }
-                    self.write_value_slot(*has_value, RuntimeValue::Bool(next.is_some()))?;
+                    self.write_variant_slot(*has_value, Variant::from_bool(next.is_some()))?;
                     self.write_runtime_slot(*item, next.unwrap_or_default())?;
                     pc += 1;
                 }
