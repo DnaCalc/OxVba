@@ -514,6 +514,100 @@ pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     Ok(result)
 }
 
+pub fn runtime_val_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let result = match src.vtype() {
+        VarType::String => {
+            let text = src
+                .as_bstr()
+                .ok_or_else(|| "Val src has invalid String payload".to_string())?;
+            let text = text.as_str();
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                Variant::from_i32(0)
+            } else if let Ok(n) = trimmed.parse::<i64>() {
+                if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                    Variant::from_i32(n as i32)
+                } else {
+                    Variant::from_f64(n as f64)
+                }
+            } else if let Ok(f) = trimmed.parse::<f64>() {
+                if f == f.trunc() && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+                    Variant::from_i32(f as i32)
+                } else {
+                    Variant::from_f64(f)
+                }
+            } else {
+                let mut end = 0usize;
+                let bytes = trimmed.as_bytes();
+                if !bytes.is_empty()
+                    && (bytes[0] == b'-' || bytes[0] == b'+' || bytes[0].is_ascii_digit())
+                {
+                    end = 1;
+                    let mut has_dot = false;
+                    while end < bytes.len() {
+                        if bytes[end].is_ascii_digit() {
+                            end += 1;
+                        } else if bytes[end] == b'.' && !has_dot {
+                            has_dot = true;
+                            end += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if end > 0 {
+                    if let Ok(f) = trimmed[..end].parse::<f64>() {
+                        if f == f.trunc() && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+                            Variant::from_i32(f as i32)
+                        } else {
+                            Variant::from_f64(f)
+                        }
+                    } else {
+                        Variant::from_i32(0)
+                    }
+                } else {
+                    Variant::from_i32(0)
+                }
+            }
+        }
+        VarType::Long | VarType::LongLong | VarType::Double => src.clone(),
+        VarType::Empty => Variant::from_i32(0),
+        _ => {
+            let numeric = runtime_variant_to_numeric_compat(src, "Val src")?;
+            if numeric == numeric.trunc()
+                && numeric >= i32::MIN as f64
+                && numeric <= i32::MAX as f64
+            {
+                Variant::from_i32(numeric as i32)
+            } else {
+                Variant::from_f64(numeric)
+            }
+        }
+    };
+    Ok(result)
+}
+
+pub fn runtime_variant_to_vba_str(src: &Variant) -> Result<Variant, String> {
+    let text = oxvba_runtime::variant_to_vba_string(src)?;
+    let is_numeric = matches!(
+        src.vtype(),
+        VarType::Integer
+            | VarType::Long
+            | VarType::LongLong
+            | VarType::Byte
+            | VarType::Single
+            | VarType::Double
+            | VarType::Date
+            | VarType::Currency
+            | VarType::Decimal
+    );
+    if is_numeric && !text.is_empty() && !text.as_str().starts_with('-') {
+        Ok(Variant::from_string(BStr::from(format!(" {}", text.as_str()))))
+    } else {
+        Ok(Variant::from_string(text))
+    }
+}
+
 pub fn runtime_abs_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     match src {
         RuntimeValue::Null => Ok(RuntimeValue::Null),
@@ -2153,6 +2247,35 @@ mod tests {
             super::runtime_array_ubound(&RuntimeValue::I32(tag), "UBound operand")
                 .expect("array-tag ubound should succeed"),
             3
+        );
+    }
+
+    #[test]
+    fn conversion_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::runtime_val_variant_bounded(&Variant::from_string(BStr::from("123.4abc")))
+                .expect("Val should succeed")
+                .to_runtime_value()
+                .expect("numeric Variant should project for assertions"),
+            RuntimeValue::F64(F64Value::from_f64(123.4))
+        );
+        assert_eq!(
+            oxvba_runtime::variant_to_vba_string(&Variant::from_bool(true))
+                .expect("CStr should succeed"),
+            BStr::from("True")
+        );
+        assert_eq!(
+            super::runtime_variant_to_vba_str(&Variant::from_i32(42))
+                .expect("Str should succeed")
+                .to_runtime_value()
+                .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from(" 42"))
+        );
+        assert_eq!(
+            super::runtime_variant_to_cdate(&Variant::from_string(BStr::from("2026-02-28")))
+                .expect("CDate should succeed")
+                .as_date_f64(),
+            Some(46081.0)
         );
     }
 

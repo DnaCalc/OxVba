@@ -1748,10 +1748,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicCStrDigits { dst, src } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    match oxvba_runtime::runtime_value_to_vba_string(&src_val) {
+                    let src_val = self.read_variant_slot(*src)?;
+                    match oxvba_runtime::variant_to_vba_string(&src_val) {
                         Ok(result) => {
-                            self.write_semantic_value_slot(*dst, result)?;
+                            self.write_variant_slot(*dst, Variant::from_string(result))?;
                             pc += 1;
                         }
                         Err(msg) => {
@@ -1760,10 +1760,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicStrFuncDigits { dst, src } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    match oxvba_runtime::runtime_value_to_vba_str(&src_val) {
+                    let src_val = self.read_variant_slot(*src)?;
+                    match crate::semantics::runtime_variant_to_vba_str(&src_val) {
                         Ok(result) => {
-                            self.write_semantic_value_slot(*dst, result)?;
+                            self.write_variant_slot(*dst, result)?;
                             pc += 1;
                         }
                         Err(msg) => {
@@ -1772,15 +1772,15 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicValDigits { dst, src } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let result = crate::semantics::runtime_val_bounded(&src_val)?;
-                    self.write_semantic_value_slot(*dst, result)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let result = crate::semantics::runtime_val_variant_bounded(&src_val)?;
+                    self.write_variant_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCDateValue { dst, src } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let result = crate::semantics::runtime_value_to_cdate(&src_val)?;
-                    self.write_semantic_value_slot(*dst, result)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let result = crate::semantics::runtime_variant_to_cdate(&src_val)?;
+                    self.write_variant_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicHexDigits { dst, src } => {

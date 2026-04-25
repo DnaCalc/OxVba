@@ -90,7 +90,8 @@ Current value-model migration note (2026-04-25):
 25. VM/JIT `Format` now reads retained `Variant` value/format slots directly through Variant-native numeric/text coercion helpers and writes retained `Variant` string results directly.
 26. VM/JIT date/time intrinsics `DateSerial`, `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `DateDiff`, `Year`, `Month`, `Day`, `Weekday`, and the JIT `CDate` helper now read retained `Variant` slots directly through Variant-native date/time coercion helpers and write retained `Variant` results directly.
 27. VM/JIT math intrinsics `Abs`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `Atn`, and `Tan` now read retained `Variant` slots directly through Variant-native numeric coercion helpers and write retained `Variant` results directly.
-28. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+28. VM-only conversion intrinsics `CStr`, `Str$`, `Val`, and `CDateValue` now read retained `Variant` slots directly through Variant-native conversion helpers and write retained `Variant` results directly.
+29. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
