@@ -1433,6 +1433,10 @@ Implementation progress:
      `Variant` COM companion methods. This covers object activation/release,
      static/dynamic dispatch result projection, event unsubscribe, event
      callback argument projection, and callback release status.
+128. Host debugger `RuntimeValue` frame/evaluation APIs now classify
+     themselves as compatibility projections from retained `Variant` frame
+     reads. `DebugFrameVariantValue` remains the retained value read shape, and
+     `DebugFrameValue`/evaluation results preserve existing debugger clients.
 
 Remaining blocker:
 
@@ -1615,6 +1619,8 @@ Remaining blocker:
    HAL COM activation/dispatch/event legacy `RuntimeValue` methods now also
    document their compatibility projection role beside retained `Variant` COM
    companion methods.
+   Host debugger `RuntimeValue` frame/evaluation APIs now also document their
+   compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
