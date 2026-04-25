@@ -1387,6 +1387,11 @@ Implementation progress:
      from_runtime_value,to_runtime_value,try_from_compat_slot_i32,
      from_compat_slot_i32}` and `RuntimeValue::{to_variant,from_variant,
      from_compat_slot_i32,project_compat_slot_i32}`.
+118. JIT/Cranelift `RuntimeValue` execution and slot helper APIs now classify
+     themselves as compatibility projections over retained `Variant` execution
+     APIs. This covers `execute_bytecode`, `execute_bytecode_rtslot`,
+     `JitContextOwned::extract_user_values`, `JitContext::read_slot`, and
+     `JitContext::write_slot`.
 
 Remaining blocker:
 
@@ -1541,6 +1546,9 @@ Remaining blocker:
    Runtime `Variant`/`RuntimeValue` bridge helpers now also document retained
    `Variant` as the primary carrier and `RuntimeValue`/i32 slot-token routes
    as compatibility projections.
+   JIT/Cranelift `RuntimeValue` execution and slot helper APIs now also
+   document their compatibility projection role over retained `Variant`
+   execution APIs.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
