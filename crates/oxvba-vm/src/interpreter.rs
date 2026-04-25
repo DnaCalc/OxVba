@@ -2971,7 +2971,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::LoadErrNumber { slot } => {
-                    self.write_value_slot(*slot, RuntimeValue::I32(self.last_error))?;
+                    self.write_variant_slot(*slot, Variant::from_i32(self.last_error))?;
                     pc += 1;
                 }
                 Instruction::LoadErrDescription { slot } => {
@@ -2980,12 +2980,12 @@ impl Vm {
                         .as_deref()
                         .unwrap_or("")
                         .to_string();
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(text)))?;
+                    self.write_variant_slot(*slot, Variant::from_string(BStr::from(text)))?;
                     pc += 1;
                 }
                 Instruction::LoadErrSource { slot } => {
                     let text = self.last_error_source.as_deref().unwrap_or("").to_string();
-                    self.write_value_slot(*slot, RuntimeValue::String(BStr::from(text)))?;
+                    self.write_variant_slot(*slot, Variant::from_string(BStr::from(text)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeOfIs {
@@ -3009,27 +3009,27 @@ impl Vm {
                         }
                         None => false,
                     };
-                    self.write_value_slot(*dst, RuntimeValue::Bool(is_match))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(is_match))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNull { dst, src } => {
                     let val = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Null)),
+                        Variant::from_bool(matches!(val.vtype(), oxvba_runtime::VarType::Null)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsEmpty { dst, src } => {
                     let val = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty)),
+                        Variant::from_bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty)),
                     )?;
                     pc += 1;
                 }
                 Instruction::LoadNull { slot } => {
-                    self.write_value_slot(*slot, RuntimeValue::Null)?;
+                    self.write_variant_slot(*slot, Variant::null())?;
                     pc += 1;
                 }
                 Instruction::BoolNot { dst, src } => {

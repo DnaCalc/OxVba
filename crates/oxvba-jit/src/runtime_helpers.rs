@@ -2165,7 +2165,7 @@ pub extern "C" fn oxrt_set_on_error_goto_label(ctx: *mut JitContext, target_pc: 
 pub extern "C" fn oxrt_load_err_number(ctx: *mut JitContext, slot: u32) -> i32 {
     let ctx_ref = unsafe { &*ctx };
     let err_num = ctx_ref.last_error;
-    write_slot!(ctx, slot, RuntimeValue::I32(err_num));
+    write_variant_slot!(ctx, slot, Variant::from_i32(err_num));
     OK
 }
 
@@ -2173,13 +2173,13 @@ pub extern "C" fn oxrt_load_err_number(ctx: *mut JitContext, slot: u32) -> i32 {
 pub extern "C" fn oxrt_load_err_description(ctx: *mut JitContext, slot: u32) -> i32 {
     // JitContext doesn't store error description strings (simplified model).
     // Return empty string, matching the minimal JIT error model.
-    write_slot!(ctx, slot, RuntimeValue::String(BStr::empty()));
+    write_variant_slot!(ctx, slot, Variant::from_string(BStr::empty()));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_err_source(ctx: *mut JitContext, slot: u32) -> i32 {
-    write_slot!(ctx, slot, RuntimeValue::String(BStr::empty()));
+    write_variant_slot!(ctx, slot, Variant::from_string(BStr::empty()));
     OK
 }
 

@@ -2272,6 +2272,10 @@ Child beads:
        `TypeName`, `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`,
        `IsEmpty`, and `IsArray` instead of creating temporary `RuntimeValue`
        scalar results
+     - progress landed: VM/JIT `Err.Number`, `Err.Description`, and
+       `Err.Source` result writes now produce retained `Variant` carriers
+       directly, and VM `LoadNull`, `TypeOf...Is`, `IsNull`, and `IsEmpty`
+       result writes now avoid the `RuntimeValue` scalar/string detour
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
