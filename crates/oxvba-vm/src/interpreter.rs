@@ -3332,7 +3332,7 @@ impl Vm {
     }
 
     fn write_legacy_scalar_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
-        self.write_value_slot(slot, RuntimeValue::from_compat_slot_i32(value))
+        self.write_variant_slot(slot, Variant::from_compat_slot_i32(value))
     }
 
     fn read_value_slot(&self, slot: usize) -> Result<RuntimeValue, String> {
