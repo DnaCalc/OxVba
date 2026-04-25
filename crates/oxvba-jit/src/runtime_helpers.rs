@@ -257,7 +257,7 @@ fn compare_slots(
     };
     match semantics::typed_compare_values(&lhs_val, &rhs_val, scm, pred) {
         Ok(result) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(i32::from(result)));
+            write_variant_slot!(ctx, dst, Variant::from_bool(result));
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -341,7 +341,7 @@ pub extern "C" fn oxrt_bool_not(ctx: *mut JitContext, dst: u32, src: u32) -> i32
     let val = read_slot!(ctx, src);
     match semantics::legacy_truthy_value(&val) {
         Ok(truthy) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(i32::from(!truthy)));
+            write_variant_slot!(ctx, dst, Variant::from_bool(!truthy));
             OK
         }
         Err(_) => ERR_RUNTIME,
@@ -357,7 +357,7 @@ pub extern "C" fn oxrt_bool_and(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u
         semantics::legacy_truthy_value(&rhs_val),
     ) {
         (Ok(l), Ok(r)) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(i32::from(l && r)));
+            write_variant_slot!(ctx, dst, Variant::from_bool(l && r));
             OK
         }
         _ => ERR_RUNTIME,
@@ -373,7 +373,7 @@ pub extern "C" fn oxrt_bool_or(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u3
         semantics::legacy_truthy_value(&rhs_val),
     ) {
         (Ok(l), Ok(r)) => {
-            write_slot!(ctx, dst, RuntimeValue::I32(i32::from(l || r)));
+            write_variant_slot!(ctx, dst, Variant::from_bool(l || r));
             OK
         }
         _ => ERR_RUNTIME,

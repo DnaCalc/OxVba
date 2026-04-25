@@ -2296,6 +2296,10 @@ Child beads:
        fast branch now writes its integer result as a retained `Variant`;
        broader math/random helper-returning paths remain separate companion
        work
+     - progress landed: VM/JIT comparison and logical Boolean result writes
+       now use retained Boolean `Variant` destination carriers for comparison
+       operators and `BoolNot`/`BoolAnd`/`BoolOr`, replacing temporary
+       `RuntimeValue` or integer stand-ins in normal destination slots
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

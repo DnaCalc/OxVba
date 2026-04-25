@@ -2877,7 +2877,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Equal
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpNeSlots {
@@ -2895,7 +2895,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Equal
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpLtSlots {
@@ -2913,7 +2913,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Less
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpLeSlots {
@@ -2931,7 +2931,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Greater
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpGtSlots {
@@ -2949,7 +2949,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Greater
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpGeSlots {
@@ -2967,7 +2967,7 @@ impl Vm {
                     let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Less
                     })?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::LoadErrNumber { slot } => {
@@ -3035,21 +3035,21 @@ impl Vm {
                 Instruction::BoolNot { dst, src } => {
                     let src = self.read_value_slot(*src)?;
                     let out = !Self::legacy_truthy_value(&src)?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolAnd { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_truthy_value(&lhs)? && Self::legacy_truthy_value(&rhs)?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolOr { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_truthy_value(&lhs)? || Self::legacy_truthy_value(&rhs)?;
-                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::JumpIfZero {
@@ -4236,7 +4236,7 @@ impl Vm {
         let (Some(lhs), Some(rhs)) = (self.fast_read_slot(lhs), self.fast_read_slot(rhs)) else {
             return false;
         };
-        self.write_value_slot(dst, RuntimeValue::Bool(pred(lhs, rhs)))
+        self.write_variant_slot(dst, Variant::from_bool(pred(lhs, rhs)))
             .is_ok()
     }
 
