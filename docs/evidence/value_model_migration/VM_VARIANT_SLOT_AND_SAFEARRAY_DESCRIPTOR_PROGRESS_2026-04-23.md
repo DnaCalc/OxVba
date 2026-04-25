@@ -1362,6 +1362,14 @@ Implementation progress:
      `ComInvokeRequest::legacy`, and retained `ComInvokeValue` /
      `ComCallbackValue` payload accessors. The APIs remain available for
      legacy callers and do not close `vmm-e6`.
+114. Windows COM bridge/invoke `RuntimeValue` result and callback-argument
+     APIs now classify themselves as compatibility projections beside retained
+     `Variant`/`ComValue` transport. This covers
+     `event_callback_arg`, `event_callback_variant`,
+     `dispatch_invoke_runtime_value`, `dispatch_invoke_dynamic_runtime_value`,
+     `invoke_dispatch_runtime_value`, `invoke_member_spec_runtime_value`, and
+     `invoke_direct_dispid_runtime_value`. The compatibility APIs remain
+     available for legacy callers and do not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1504,6 +1512,9 @@ Remaining blocker:
    COM model `RuntimeValue` and legacy-token helpers now also document their
    compatibility projection role around retained `Variant` invoke/callback
    payloads.
+   Windows COM bridge/invoke `RuntimeValue` result and callback-argument APIs
+   now also document their compatibility projection role beside retained
+   `Variant`/`ComValue` transport.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
