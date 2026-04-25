@@ -1420,6 +1420,10 @@ Implementation progress:
      now classify themselves as compatibility wrappers beside retained
      `Variant` companion methods. This covers telemetry/debug print, message
      box/input box, DoEvents, and Date/Time/Timer APIs.
+125. HAL filesystem legacy `RuntimeValue` methods now classify themselves as
+     compatibility wrappers beside retained `Variant` filesystem companion
+     methods. This covers open/close/kill/seek, EOF/LOF/Loc/FreeFile, byte
+     I/O, Print/Input, and Line Input APIs.
 
 Remaining blocker:
 
@@ -1593,6 +1597,9 @@ Remaining blocker:
    HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now
    also document their compatibility wrapper role beside retained `Variant`
    companion methods.
+   HAL filesystem legacy `RuntimeValue` methods now also document their
+   compatibility wrapper role beside retained `Variant` filesystem companion
+   methods.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
