@@ -1267,6 +1267,12 @@ Implementation progress:
     `LTrim`, `RTrim`, and `StrComp`. Semantic helper-returning string paths
     such as `Split`/`Join`/`Like` remain separate migration work because those
     helpers still return `RuntimeValue` by contract.
+99. VM/JIT locally computed date/format scalar result writes now use retained
+    `Variant` carriers for `DateDiff`, `Year`, `Month`, `Day`, `Weekday`,
+    `Format`, and `StrReverse`. Date/time helpers that still receive a
+    `RuntimeValue` from a semantic helper, such as `DateSerial`, `DateAdd`,
+    `DateValue`, `CDate`, `TimeValue`, and `MonthName`, remain explicit
+    semantic-helper companion work.
 
 Remaining blocker:
 
@@ -1357,6 +1363,9 @@ Remaining blocker:
    writes now also stay on retained `Variant` carriers.
    VM/JIT locally computed string/scalar intrinsic destination writes now also
    stay on retained `Variant` carriers for the inline string helper subset.
+   VM/JIT locally computed date/format destination writes now also stay on
+   retained `Variant` carriers for `DateDiff`, `Year`, `Month`, `Day`,
+   `Weekday`, `Format`, and `StrReverse`.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
