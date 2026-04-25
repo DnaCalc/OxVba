@@ -2977,9 +2977,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Equal
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -2995,9 +2995,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Equal
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -3013,9 +3013,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Less
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -3031,9 +3031,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Greater
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -3049,9 +3049,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord == std::cmp::Ordering::Greater
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -3067,9 +3067,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::typed_compare_values(&lhs, &rhs, *mode, |ord| {
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::typed_compare_variants(&lhs, &rhs, *mode, |ord| {
                         ord != std::cmp::Ordering::Less
                     })?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
@@ -3138,22 +3138,24 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::BoolNot { dst, src } => {
-                    let src = self.read_value_slot(*src)?;
-                    let out = !Self::legacy_truthy_value(&src)?;
+                    let src = self.read_variant_slot(*src)?;
+                    let out = !crate::semantics::variant_truthy_value(&src)?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolAnd { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_truthy_value(&lhs)? && Self::legacy_truthy_value(&rhs)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_truthy_value(&lhs)?
+                        && crate::semantics::variant_truthy_value(&rhs)?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolOr { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_truthy_value(&lhs)? || Self::legacy_truthy_value(&rhs)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_truthy_value(&lhs)?
+                        || crate::semantics::variant_truthy_value(&rhs)?;
                     self.write_variant_slot(*dst, Variant::from_bool(out))?;
                     pc += 1;
                 }

@@ -264,14 +264,14 @@ fn compare_slots(
     mode: u32,
     pred: fn(Ordering) -> bool,
 ) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
     let scm = if mode == 1 {
         StringCompareMode::Text
     } else {
         StringCompareMode::Binary
     };
-    match semantics::typed_compare_values(&lhs_val, &rhs_val, scm, pred) {
+    match semantics::typed_compare_variants(&lhs_val, &rhs_val, scm, pred) {
         Ok(result) => {
             write_variant_slot!(ctx, dst, Variant::from_bool(result));
             OK
@@ -354,8 +354,8 @@ pub extern "C" fn oxrt_cmp_ge(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_bool_not(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    match semantics::legacy_truthy_value(&val) {
+    let val = read_variant_slot!(ctx, src);
+    match semantics::variant_truthy_value(&val) {
         Ok(truthy) => {
             write_variant_slot!(ctx, dst, Variant::from_bool(!truthy));
             OK
@@ -366,11 +366,11 @@ pub extern "C" fn oxrt_bool_not(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_bool_and(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
     match (
-        semantics::legacy_truthy_value(&lhs_val),
-        semantics::legacy_truthy_value(&rhs_val),
+        semantics::variant_truthy_value(&lhs_val),
+        semantics::variant_truthy_value(&rhs_val),
     ) {
         (Ok(l), Ok(r)) => {
             write_variant_slot!(ctx, dst, Variant::from_bool(l && r));
@@ -382,11 +382,11 @@ pub extern "C" fn oxrt_bool_and(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_bool_or(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
     match (
-        semantics::legacy_truthy_value(&lhs_val),
-        semantics::legacy_truthy_value(&rhs_val),
+        semantics::variant_truthy_value(&lhs_val),
+        semantics::variant_truthy_value(&rhs_val),
     ) {
         (Ok(l), Ok(r)) => {
             write_variant_slot!(ctx, dst, Variant::from_bool(l || r));

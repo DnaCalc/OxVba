@@ -274,6 +274,41 @@ mod tests {
         assert_eq!(values[5], RuntimeValue::I32(-7));
     }
 
+    #[test]
+    fn runtime_comparison_boolean_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(9, 9, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("abc")));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("ABC")));
+            ctx.context
+                .write_variant_slot(2, Variant::from_string(BStr::from("12")));
+            ctx.context.write_variant_slot(3, Variant::from_i32(3));
+            ctx.context
+                .write_variant_slot(4, Variant::from_string(BStr::from("1")));
+            ctx.context.write_variant_slot(5, Variant::null());
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_cmp_eq(ctx.context_ptr(), 6, 0, 1, 1),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_cmp_gt(ctx.context_ptr(), 7, 2, 3, 0),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_bool_and(ctx.context_ptr(), 8, 4, 5),
+            0
+        );
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[6], RuntimeValue::Bool(true));
+        assert_eq!(values[7], RuntimeValue::Bool(true));
+        assert_eq!(values[8], RuntimeValue::Bool(false));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn execute_and_snapshot_values_fallback_preserves_non_legacy_runtime_values() {

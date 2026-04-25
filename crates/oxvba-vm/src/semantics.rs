@@ -2214,6 +2214,55 @@ pub fn typed_compare_values(
     }
 }
 
+fn variant_exact_i64(value: &Variant) -> Option<i64> {
+    match value.vtype() {
+        VarType::Integer => value.as_i16().map(i64::from),
+        VarType::Long => value.as_i32().map(i64::from),
+        VarType::LongLong => value.as_i64(),
+        VarType::Byte => value.as_u8().map(i64::from),
+        _ => None,
+    }
+}
+
+pub fn typed_compare_variants(
+    lhs: &Variant,
+    rhs: &Variant,
+    mode: StringCompareMode,
+    pred: fn(std::cmp::Ordering) -> bool,
+) -> Result<bool, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(false);
+    }
+    match (lhs.vtype(), rhs.vtype()) {
+        (VarType::String, VarType::String) => {
+            let a = normalize_for_compare(runtime_variant_to_text(lhs, "comparison lhs")?, mode);
+            let b = normalize_for_compare(runtime_variant_to_text(rhs, "comparison rhs")?, mode);
+            Ok(pred(a.cmp(&b)))
+        }
+        (VarType::String, VarType::Empty) => {
+            let a = normalize_for_compare(runtime_variant_to_text(lhs, "comparison lhs")?, mode);
+            Ok(pred(a.cmp(&String::new())))
+        }
+        (VarType::Empty, VarType::String) => {
+            let b = normalize_for_compare(runtime_variant_to_text(rhs, "comparison rhs")?, mode);
+            Ok(pred(String::new().cmp(&b)))
+        }
+        _ => {
+            if let (Some(l), Some(r)) = (variant_exact_i64(lhs), variant_exact_i64(rhs)) {
+                return Ok(pred(l.cmp(&r)));
+            }
+            if let (Ok(l), Ok(r)) = (
+                runtime_variant_to_numeric_compat(lhs, "comparison lhs"),
+                runtime_variant_to_numeric_compat(rhs, "comparison rhs"),
+            ) {
+                let ord = l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal);
+                return Ok(pred(ord));
+            }
+            Err("comparison operands are not compatible for numeric comparison".to_string())
+        }
+    }
+}
+
 // ── Assignment Validation ─────────────────────────────────────────────
 
 pub fn runtime_assignment_value_label(value: &RuntimeValue) -> &'static str {
@@ -2714,6 +2763,32 @@ mod tests {
                 .to_runtime_value()
                 .expect("integer Variant should project for assertions"),
             RuntimeValue::I32(-4)
+        );
+    }
+
+    #[test]
+    fn comparison_variant_helpers_read_retained_carriers() {
+        assert!(
+            super::typed_compare_variants(
+                &Variant::from_string(BStr::from("abc")),
+                &Variant::from_string(BStr::from("ABC")),
+                StringCompareMode::Text,
+                |ord| ord == std::cmp::Ordering::Equal,
+            )
+            .expect("text comparison should succeed")
+        );
+        assert!(
+            super::typed_compare_variants(
+                &Variant::from_string(BStr::from("12")),
+                &Variant::from_i32(3),
+                StringCompareMode::Binary,
+                |ord| ord == std::cmp::Ordering::Greater,
+            )
+            .expect("numeric text comparison should succeed")
+        );
+        assert!(
+            super::variant_truthy_value(&Variant::from_string(BStr::from("1")))
+                .expect("truthy coercion should succeed")
         );
     }
 
