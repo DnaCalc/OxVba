@@ -357,6 +357,17 @@ impl TimeLocaleHal for WasmHostServices {
         Ok(RuntimeValue::F64(F64Value::from_date_f64(46_082.0))) // deterministic fallback
     }
 
+    fn date_serial_now_variant(&self) -> HalResult<Variant> {
+        if self.use_real_time()
+            && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        {
+            let days_since_epoch = (elapsed.as_secs() / 86400) as i32;
+            let serial = f64::from(days_since_epoch + 25569);
+            return Ok(Variant::from_date_f64(serial));
+        }
+        Ok(Variant::from_date_f64(46_082.0))
+    }
+
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time()
             && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
@@ -372,6 +383,17 @@ impl TimeLocaleHal for WasmHostServices {
         ))) // deterministic fallback
     }
 
+    fn time_serial_now_variant(&self) -> HalResult<Variant> {
+        if self.use_real_time()
+            && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        {
+            let secs_today = (elapsed.as_secs() % 86400) as f64
+                + f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(Variant::from_date_f64(secs_today / 86_400.0));
+        }
+        Ok(Variant::from_date_f64(45_296.0 / 86_400.0))
+    }
+
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time()
             && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
@@ -382,10 +404,29 @@ impl TimeLocaleHal for WasmHostServices {
         }
         Ok(RuntimeValue::F64(F64Value::from_single_f64(45_296.0))) // deterministic fallback
     }
+
+    fn timer_ticks_variant(&self) -> HalResult<Variant> {
+        if self.use_real_time()
+            && let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        {
+            let secs_today = (elapsed.as_secs() % 86400) as f64
+                + f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0;
+            return Ok(Variant::from_f32(secs_today as f32));
+        }
+        Ok(Variant::from_f32(45_296.0))
+    }
 }
 
 impl DynamicLinkHal for WasmHostServices {
     fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
+    fn invoke_bound_variants(
+        &self,
+        _binding: BindingHandle,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
@@ -397,7 +438,19 @@ impl DynamicLinkHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
+    fn invoke_descriptor_variants(
+        &self,
+        _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
     fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
+    fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
@@ -412,6 +465,16 @@ impl DiagnosticsHal for WasmHostServices {
     fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::I32(0))
     }
+
+    fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
+        let code = code.project_compat_slot_i32().unwrap_or(0);
+        let payload = payload.project_compat_slot_i32().unwrap_or(0);
+        Ok(Variant::from_i32(code.saturating_add(payload)))
+    }
+
+    fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {
+        Ok(Variant::from_i32(0))
+    }
 }
 
 #[cfg(test)]
@@ -419,9 +482,12 @@ mod tests {
     use crate::{
         error::HalErrorKind,
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
-        traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
+        traits::{
+            ComHal, DiagnosticsHal, DynamicLinkHal, HostServices, ProcessEnvHal, TimeLocaleHal,
+            UiInteractionHal,
+        },
     };
-    use oxvba_runtime::{ObjectRef, RuntimeValue};
+    use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
 
     use super::WasmHostServices;
 
@@ -507,6 +573,32 @@ mod tests {
         assert_eq!(
             host.msg_box(RuntimeValue::I32(1), RuntimeValue::I32(1))
                 .expect_err("msg_box")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+    }
+
+    #[test]
+    fn wasm_variant_companions_are_direct() {
+        let host = WasmHostServices::new(crate::HostPolicy::deterministic_runtime());
+
+        assert_eq!(
+            host.date_serial_now_variant().expect("date"),
+            Variant::from_date_f64(46_082.0)
+        );
+        assert_eq!(
+            host.emit_variant(Variant::null(), Variant::from_i32(3))
+                .expect("emit"),
+            Variant::from_i32(2)
+        );
+        assert_eq!(
+            host.debug_print_variant(Variant::null())
+                .expect("debug print"),
+            Variant::from_i32(0)
+        );
+        assert_eq!(
+            host.invoke_symbol_variant(1.into(), &Variant::null())
+                .expect_err("dynamic-link unsupported")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

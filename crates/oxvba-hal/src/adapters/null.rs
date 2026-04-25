@@ -295,19 +295,39 @@ impl TimeLocaleHal for NullHostServices {
         Ok(RuntimeValue::F64(F64Value::from_date_f64(46_082.0)))
     }
 
+    fn date_serial_now_variant(&self) -> HalResult<Variant> {
+        Ok(Variant::from_date_f64(46_082.0))
+    }
+
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::F64(F64Value::from_date_f64(
             45_296.0 / 86_400.0,
         )))
     }
 
+    fn time_serial_now_variant(&self) -> HalResult<Variant> {
+        Ok(Variant::from_date_f64(45_296.0 / 86_400.0))
+    }
+
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::F64(F64Value::from_single_f64(45_296.0)))
+    }
+
+    fn timer_ticks_variant(&self) -> HalResult<Variant> {
+        Ok(Variant::from_f32(45_296.0))
     }
 }
 
 impl DynamicLinkHal for NullHostServices {
     fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
+    fn invoke_bound_variants(
+        &self,
+        _binding: BindingHandle,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
@@ -319,7 +339,19 @@ impl DynamicLinkHal for NullHostServices {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
+    fn invoke_descriptor_variants(
+        &self,
+        _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
     fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
+    fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
@@ -334,15 +366,27 @@ impl DiagnosticsHal for NullHostServices {
     fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::I32(0))
     }
+
+    fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
+        let code = code.project_compat_slot_i32().unwrap_or(0);
+        let payload = payload.project_compat_slot_i32().unwrap_or(0);
+        Ok(Variant::from_i32(code.saturating_add(payload)))
+    }
+
+    fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {
+        Ok(Variant::from_i32(0))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         error::HalErrorKind,
-        traits::{ComHal, DiagnosticsHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal},
+        traits::{
+            ComHal, DiagnosticsHal, DynamicLinkHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        },
     };
-    use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue};
+    use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue, Variant};
 
     use super::NullHostServices;
 
@@ -416,6 +460,32 @@ mod tests {
         assert_eq!(
             host.release_event_callback(1.into())
                 .expect_err("release_event_callback")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+    }
+
+    #[test]
+    fn null_variant_companions_are_direct() {
+        let host = NullHostServices::new(crate::HostPolicy::default());
+
+        assert_eq!(
+            host.date_serial_now_variant().expect("date"),
+            Variant::from_date_f64(46_082.0)
+        );
+        assert_eq!(
+            host.emit_variant(Variant::null(), Variant::from_i32(3))
+                .expect("emit"),
+            Variant::from_i32(2)
+        );
+        assert_eq!(
+            host.debug_print_variant(Variant::null())
+                .expect("debug print"),
+            Variant::from_i32(0)
+        );
+        assert_eq!(
+            host.invoke_symbol_variant(1.into(), &Variant::null())
+                .expect_err("dynamic-link unsupported")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

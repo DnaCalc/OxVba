@@ -89,6 +89,24 @@ impl ReplayHostServices {
         self.decode_runtime_value(op, entry)
     }
 
+    fn replay_variant(&self, op: &'static str) -> HalResult<Variant> {
+        let value = self.replay_runtime_value(op)?;
+        Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                op,
+                detail,
+            )
+        })
+    }
+
+    fn replay_i32_variant(&self, op: &'static str) -> HalResult<Variant> {
+        let entry = self.next_entry(op)?;
+        let value = entry.result.as_i64().unwrap_or(0) as i32;
+        Ok(Variant::from_i32(value))
+    }
+
     fn decode_runtime_value(
         &self,
         op: &'static str,
@@ -359,16 +377,32 @@ impl TimeLocaleHal for ReplayHostServices {
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
         self.replay_runtime_value("date_serial_now")
     }
+    fn date_serial_now_variant(&self) -> HalResult<Variant> {
+        self.replay_variant("date_serial_now")
+    }
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         self.replay_runtime_value("time_serial_now")
     }
+    fn time_serial_now_variant(&self) -> HalResult<Variant> {
+        self.replay_variant("time_serial_now")
+    }
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         self.replay_runtime_value("timer_ticks")
+    }
+    fn timer_ticks_variant(&self) -> HalResult<Variant> {
+        self.replay_variant("timer_ticks")
     }
 }
 
 impl DynamicLinkHal for ReplayHostServices {
     fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+    fn invoke_bound_variants(
+        &self,
+        _binding: BindingHandle,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
     fn invoke_descriptor(
@@ -378,7 +412,17 @@ impl DynamicLinkHal for ReplayHostServices {
     ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
+    fn invoke_descriptor_variants(
+        &self,
+        _desc: &crate::traits::DynLinkDescriptorView<'_>,
+        _args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
     fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+    fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
@@ -388,7 +432,69 @@ impl DiagnosticsHal for ReplayHostServices {
         self.replay_i32("emit")
     }
 
+    fn emit_variant(&self, _code: Variant, _payload: Variant) -> HalResult<Variant> {
+        self.replay_i32_variant("emit")
+    }
+
     fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::I32(0))
+    }
+
+    fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {
+        Ok(Variant::from_i32(0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        error::HalErrorKind,
+        journal::{HalJournal, HalJournalEntry},
+        traits::{DiagnosticsHal, DynamicLinkHal, TimeLocaleHal},
+    };
+    use oxvba_runtime::Variant;
+
+    use super::ReplayHostServices;
+
+    #[test]
+    fn replay_variant_companions_consume_journal_without_trait_projection() {
+        let mut journal = HalJournal::new("replay");
+        journal.entries.push(HalJournalEntry::new(
+            1,
+            "time",
+            "date_serial_now",
+            "time.date",
+            serde_json::json!({"kind": "f64", "subtype": "date", "value": 46082.0}),
+        ));
+        journal.entries.push(HalJournalEntry::new(
+            2,
+            "diagnostics",
+            "emit",
+            "diagnostics.emit",
+            serde_json::json!(7),
+        ));
+
+        let host = ReplayHostServices::new(journal, crate::HostPolicy::default());
+
+        assert_eq!(
+            host.date_serial_now_variant().expect("date"),
+            Variant::from_date_f64(46_082.0)
+        );
+        assert_eq!(
+            host.emit_variant(Variant::null(), Variant::from_i32(3))
+                .expect("emit"),
+            Variant::from_i32(7)
+        );
+        assert_eq!(
+            host.debug_print_variant(Variant::null())
+                .expect("debug print"),
+            Variant::from_i32(0)
+        );
+        assert_eq!(
+            host.invoke_symbol_variant(1.into(), &Variant::null())
+                .expect_err("dynamic-link unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
     }
 }
