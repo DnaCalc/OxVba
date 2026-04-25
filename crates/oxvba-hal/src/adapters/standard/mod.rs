@@ -840,21 +840,6 @@ impl StandardHostServices {
         }
     }
 
-    fn runtime_value_to_path(
-        &self,
-        value: &RuntimeValue,
-        capability: CapabilityId,
-        op: &'static str,
-        field: &'static str,
-    ) -> HalResult<PathBuf> {
-        match value {
-            RuntimeValue::String(path) => Ok(PathBuf::from(path.as_str())),
-            other => self
-                .runtime_value_project_compat_slot_i32(other, capability, op, field)
-                .map(|token| self.host_path_from_token(token)),
-        }
-    }
-
     fn variant_to_path(
         &self,
         value: &Variant,
