@@ -836,7 +836,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "close"));
         }
-        let handle = self.variant_project_compat_slot_i32(&handle, capability, "close", "handle")?;
+        let handle =
+            self.variant_project_compat_slot_i32(&handle, capability, "close", "handle")?;
         let mut state = self.fs_lock(capability, "close")?;
         self.assert_fs_invariants(&state, "close-pre");
         if handle == 0 {
@@ -1602,7 +1603,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "loc"));
         }
-        let handle_id = self.variant_project_compat_slot_i32(&handle, capability, "loc", "handle")?;
+        let handle_id =
+            self.variant_project_compat_slot_i32(&handle, capability, "loc", "handle")?;
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
         Ok(Variant::from_i32(entry.position))

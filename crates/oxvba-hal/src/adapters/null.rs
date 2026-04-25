@@ -126,11 +126,7 @@ impl UiInteractionHal for NullHostServices {
         Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
 
-    fn input_box_variant(
-        &self,
-        _prompt: Variant,
-        _default_value: Variant,
-    ) -> HalResult<Variant> {
+    fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
 }

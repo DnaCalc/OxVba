@@ -59,8 +59,7 @@ impl UiInteractionHal for StandardHostServices {
 
     fn msg_box_variant(&self, prompt: Variant, style: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::UiInteraction;
-        let style =
-            self.variant_project_compat_slot_i32(&style, capability, "msg_box", "style")?;
+        let style = self.variant_project_compat_slot_i32(&style, capability, "msg_box", "style")?;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "msg_box"));
         }

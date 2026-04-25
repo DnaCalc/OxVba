@@ -1407,8 +1407,8 @@ mod tests {
     use crate::{
         callbacks::HostCallbacks,
         error::HalErrorKind,
-        model::{ComInvocationStrategy, HalProfileId, HalRuntimeClass, HostPolicy},
         model::UiVirtualizationMode,
+        model::{ComInvocationStrategy, HalProfileId, HalRuntimeClass, HostPolicy},
         traits::{
             ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
             FileSystemHal, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibResolveRequest,
@@ -1678,7 +1678,10 @@ mod tests {
         fn on_status_bar(&self, _text: &str) {}
 
         fn on_console_print(&self, text: &str) -> bool {
-            self.printed.lock().expect("printed lock").push(text.to_string());
+            self.printed
+                .lock()
+                .expect("printed lock")
+                .push(text.to_string());
             true
         }
 
@@ -1709,13 +1712,11 @@ mod tests {
             ["Null"]
         );
 
-        let first =
-            crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
-                .expect("first input");
+        let first = crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
+            .expect("first input");
         assert_eq!(first, Variant::from_i32(42));
-        let second =
-            crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
-                .expect("second input");
+        let second = crate::traits::ConsoleHal::input_fields_variant(&host, Variant::from_i32(1))
+            .expect("second input");
         assert_eq!(second.as_bstr(), Some(BStr::from("alpha")));
 
         let line = crate::traits::ConsoleHal::line_input_variant(&host).expect("line input");
@@ -1756,8 +1757,8 @@ mod tests {
     fn status_time_and_diagnostics_variant_companions_are_direct() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
 
-        let events = crate::traits::EventPumpHal::do_events_variant(&host)
-            .expect("variant doevents");
+        let events =
+            crate::traits::EventPumpHal::do_events_variant(&host).expect("variant doevents");
         assert_eq!(events, Variant::from_i32(0));
 
         let emitted = crate::traits::DiagnosticsHal::emit_variant(
@@ -1771,14 +1772,14 @@ mod tests {
             .expect("variant debug print");
         assert_eq!(debug, Variant::from_i32(0));
 
-        let date = crate::traits::TimeLocaleHal::date_serial_now_variant(&host)
-            .expect("variant date");
+        let date =
+            crate::traits::TimeLocaleHal::date_serial_now_variant(&host).expect("variant date");
         assert_eq!(date.as_date_f64(), Some(46_082.0));
-        let time = crate::traits::TimeLocaleHal::time_serial_now_variant(&host)
-            .expect("variant time");
+        let time =
+            crate::traits::TimeLocaleHal::time_serial_now_variant(&host).expect("variant time");
         assert_eq!(time.as_date_f64(), Some(45_296.0 / 86_400.0));
-        let timer = crate::traits::TimeLocaleHal::timer_ticks_variant(&host)
-            .expect("variant timer");
+        let timer =
+            crate::traits::TimeLocaleHal::timer_ticks_variant(&host).expect("variant timer");
         assert_eq!(timer.as_f32(), Some(45_296.0_f32));
     }
 
@@ -1831,7 +1832,10 @@ mod tests {
 
         let lof = crate::traits::FileSystemHal::lof_variant(&host, handle_variant.clone())
             .expect("variant lof");
-        assert_eq!(lof, Variant::from_i32(super::filesystem::pseudo_file_len_from_path_token(123)));
+        assert_eq!(
+            lof,
+            Variant::from_i32(super::filesystem::pseudo_file_len_from_path_token(123))
+        );
 
         let eof = crate::traits::FileSystemHal::eof_variant(&host, handle_variant.clone())
             .expect("variant eof");
@@ -1860,8 +1864,8 @@ mod tests {
         .expect("variant open");
         assert_eq!(handle, Variant::from_i32(1));
 
-        let loc = crate::traits::FileSystemHal::loc_variant(&host, handle.clone())
-            .expect("variant loc");
+        let loc =
+            crate::traits::FileSystemHal::loc_variant(&host, handle.clone()).expect("variant loc");
         assert_eq!(loc, Variant::from_i32(0));
 
         let closed =
@@ -1901,9 +1905,8 @@ mod tests {
         assert!(written.as_i32().unwrap_or_default() > 0);
         host.seek(RuntimeValue::I32(handle.as_i32().unwrap()), rv(0))
             .expect("seek back");
-        let read =
-            crate::traits::FileSystemHal::read_bytes_variant(&host, handle.clone(), written)
-                .expect("variant read");
+        let read = crate::traits::FileSystemHal::read_bytes_variant(&host, handle.clone(), written)
+            .expect("variant read");
         assert_eq!(read.as_bstr(), Some(BStr::from("\"alpha\"\r\n")));
         crate::traits::FileSystemHal::close_variant(&host, handle).expect("variant close");
 

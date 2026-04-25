@@ -326,7 +326,9 @@ impl ProcessEnvHal for StandardHostServices {
         }
         let out = match path.vtype() {
             VarType::Empty | VarType::Null => 0,
-            VarType::String => i32::from(path.as_bstr().map(|text| !text.is_empty()).unwrap_or(false)),
+            VarType::String => {
+                i32::from(path.as_bstr().map(|text| !text.is_empty()).unwrap_or(false))
+            }
             _ => i32::from(
                 self.variant_project_compat_slot_i32(&path, capability, "dir", "path")
                     .unwrap_or(0)

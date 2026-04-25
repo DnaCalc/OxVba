@@ -309,7 +309,10 @@ impl DynamicLinkHal for StandardHostServices {
     ) -> HalResult<(Variant, Vec<Variant>)> {
         if descriptor.marshal_lane != "m1-native-ffi" || !self.native_mode_enabled() {
             let _binding = self.bind_descriptor(descriptor)?;
-            let arg = args.first().cloned().unwrap_or_else(|| Variant::from_i32(0));
+            let arg = args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| Variant::from_i32(0));
             let arg = self.variant_project_compat_slot_i32(
                 &arg,
                 CapabilityId::DynamicLinking,
@@ -400,10 +403,7 @@ impl DynamicLinkHal for StandardHostServices {
                     self.profile,
                     capability,
                     "invoke_symbol_variant",
-                    format!(
-                        "unsupported symbol token {} in host-backed lane",
-                        symbol
-                    ),
+                    format!("unsupported symbol token {} in host-backed lane", symbol),
                 )),
             };
         }
