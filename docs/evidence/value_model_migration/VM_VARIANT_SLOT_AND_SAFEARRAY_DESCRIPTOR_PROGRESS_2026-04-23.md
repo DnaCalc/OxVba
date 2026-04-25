@@ -1569,6 +1569,10 @@ Implementation progress:
      `dir_variant` implementations and only project at the compatibility
      boundary. The obsolete `runtime_value_to_path` helper was removed after
      the retained `Variant` path became the single process path authority.
+153. Standard dynamic-link m0 legacy `RuntimeValue` calls now delegate through
+     retained `Variant` dynamic-link companions for bound, descriptor, and
+     legacy-symbol invocation. The native FFI m1 lane remains on the explicit
+     semantic marshalling bridge until that broader by-ref/ABI path is migrated.
 
 Remaining blocker:
 
@@ -1767,6 +1771,9 @@ Remaining blocker:
    Standard process-environment HAL legacy `RuntimeValue` methods now also
    delegate through retained `Variant` companions rather than carrying a
    separate implementation body.
+   Standard dynamic-link m0 legacy `RuntimeValue` methods now also delegate
+   through retained `Variant` companions; m1 native FFI remains an explicitly
+   tracked compatibility marshalling bridge.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
