@@ -1586,6 +1586,11 @@ Implementation progress:
 156. Standard diagnostics legacy `RuntimeValue` `emit`/`debug_print` methods
      now delegate through retained `Variant` diagnostics companions, leaving
      only boundary projection helpers for legacy callers.
+157. Standard console legacy `RuntimeValue` `print_line`, `input_fields`, and
+     `line_input` methods now delegate through retained `Variant` console
+     companions. The legacy-only console field parser and shared
+     `RuntimeValue` display formatter were removed after the retained `Variant`
+     display/parser path became the single console implementation path.
 
 Remaining blocker:
 
@@ -1794,6 +1799,9 @@ Remaining blocker:
    delegate through retained `Variant` companions.
    Standard diagnostics legacy `RuntimeValue` methods now also delegate
    through retained `Variant` companions.
+   Standard console legacy `RuntimeValue` methods now also delegate through
+   retained `Variant` companions rather than carrying separate console parser
+   and display branches.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
