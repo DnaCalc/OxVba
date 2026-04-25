@@ -18,6 +18,7 @@ pub(super) struct ConsoleState {
     pub(super) pending_fields: VecDeque<String>,
 }
 
+// Legacy console input parser retained for `RuntimeValue` console APIs.
 fn parse_console_field(raw: &str) -> RuntimeValue {
     let field = raw.trim();
     if field.eq_ignore_ascii_case("#TRUE#") {
@@ -105,6 +106,8 @@ impl StandardHostServices {
 }
 
 impl ConsoleHal for StandardHostServices {
+    // Legacy console path. Retained VM/JIT callers should use
+    // `print_line_variant`.
     fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
         if !self.supports(capability) {
@@ -173,6 +176,8 @@ impl ConsoleHal for StandardHostServices {
         Ok(Variant::from_i32(0))
     }
 
+    // Legacy console path. Retained VM/JIT callers should use
+    // `input_fields_variant`.
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
         if !self.supports(capability) {
@@ -227,6 +232,8 @@ impl ConsoleHal for StandardHostServices {
         Ok(Variant::from_string(fields.join(",")))
     }
 
+    // Legacy console path. Retained VM/JIT callers should use
+    // `line_input_variant`.
     fn line_input(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
         if !self.supports(capability) {
