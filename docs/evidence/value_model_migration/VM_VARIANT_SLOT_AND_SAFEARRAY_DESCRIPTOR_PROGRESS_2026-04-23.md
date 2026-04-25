@@ -1559,6 +1559,11 @@ Implementation progress:
      the legacy `SafeArray::elements()` projection. The legacy wrapper remains
      for compatibility callers, but production pointer payload extraction stays
      on retained `Variant` elements.
+151. Cranelift legacy `execute_bytecode` compatibility results now project from
+     the retained `execute_bytecode_variants` path instead of materializing
+     `RuntimeValue` directly from legacy i32 slots. Regression coverage pins
+     the compatibility result to the retained `Variant` result projection for
+     the legacy JIT subset.
 
 Remaining blocker:
 
@@ -1831,8 +1836,8 @@ Remaining blocker:
    semantic values by contract.
 5. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
    compatibility results. They now project from Variant-backed companion
-   surfaces, but they remain open classification work before the final `vmm-e6`
-   closure checklist.
+   surfaces, including the Cranelift legacy i32 subset, but they remain open
+   classification work before the final `vmm-e6` closure checklist.
 6. Post-run host evidence for `VarPtr(Variant)` must treat the returned pointer
    as an actual VM/JIT slot address rather than a long-lived registry-owned
    helper cell. Runtime unit coverage still verifies the Windows container-cell

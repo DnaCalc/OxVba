@@ -104,7 +104,8 @@ Current value-model migration note (2026-04-25):
 39. Standard HAL dynamic-link bound-token `_variant` invocation now uses a direct retained `Variant` implementation instead of inheriting the trait-level `RuntimeValue` fallback.
 40. HAL trait-level retained `_variant` companion defaults now fault explicitly when an adapter does not implement the retained companion, removing the silent `RuntimeValue` projection fallback seam.
 41. Runtime pointer-helper byte-array materialization now reads SAFEARRAY payloads through retained `Variant` elements even when entered through the legacy `RuntimeValue::ArrayIntent` wrapper.
-42. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+42. Cranelift legacy `execute_bytecode` compatibility results now project from `execute_bytecode_variants` instead of materializing `RuntimeValue` directly from legacy i32 slots.
+43. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
