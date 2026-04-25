@@ -1543,6 +1543,11 @@ Implementation progress:
      companions before journaling from `Variant` results. This removes another
      concrete wrapper path that could otherwise inherit trait-level
      `RuntimeValue` projection fallbacks for retained VM/JIT HAL calls.
+148. The standard HAL dynamic-link bound-token retained path now overrides
+     `invoke_bound_variants` directly and projects its m0 deterministic token
+     result as a retained `Variant` without inheriting the trait-level
+     `RuntimeValue` fallback. Focused coverage binds a descriptor and invokes
+     the resulting binding through retained `Variant` arguments.
 
 Remaining blocker:
 
@@ -1717,6 +1722,9 @@ Remaining blocker:
    retained inner `Variant` companion methods and record from `Variant`
    results instead of inheriting trait-level `RuntimeValue` projection
    fallbacks.
+   Standard HAL dynamic-link bound-token `_variant` invocation now also stays
+   on a retained `Variant` implementation instead of inheriting the trait-level
+   `RuntimeValue` projection fallback.
    HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now
    also document their compatibility wrapper role beside retained `Variant`
    companion methods.
