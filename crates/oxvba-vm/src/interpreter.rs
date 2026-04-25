@@ -1576,7 +1576,10 @@ impl Vm {
                 }
                 Instruction::IntrinsicAbsI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_abs_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_abs_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIntI32 { dst, src } => {
@@ -1600,7 +1603,10 @@ impl Vm {
                 }
                 Instruction::IntrinsicSgnI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_sgn_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_sgn_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRoundI32 { dst, src, digits } => {
@@ -1609,7 +1615,7 @@ impl Vm {
                         Some(slot) => Some(self.read_value_slot(*slot)?),
                         None => None,
                     };
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_round_bounded(&value, digits.as_ref())?,
                     )?;
@@ -1617,58 +1623,88 @@ impl Vm {
                 }
                 Instruction::IntrinsicSqrI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_sqr_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_sqr_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSinI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_sin_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_sin_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCosI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_cos_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_cos_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLogI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_log_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_log_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicExpI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_exp_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_exp_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAtnI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_atn_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_atn_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTanI32 { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_tan_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_tan_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicChrDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_chr_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_chr_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAscDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_asc_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_asc_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSpaceDigits { dst, count } => {
                     let count = self.read_value_slot(*count)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_space_bounded(&count)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_space_bounded(&count)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStringRepeatDigits { dst, count, ch } => {
                     let count_val = self.read_value_slot(*count)?;
                     let ch_val = self.read_value_slot(*ch)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_string_repeat_bounded(&count_val, &ch_val)?,
                     )?;
@@ -1678,7 +1714,7 @@ impl Vm {
                     let src_val = self.read_value_slot(*src)?;
                     match oxvba_runtime::runtime_value_to_vba_string(&src_val) {
                         Ok(result) => {
-                            self.write_value_slot(*dst, result)?;
+                            self.write_semantic_value_slot(*dst, result)?;
                             pc += 1;
                         }
                         Err(msg) => {
@@ -1690,7 +1726,7 @@ impl Vm {
                     let src_val = self.read_value_slot(*src)?;
                     match oxvba_runtime::runtime_value_to_vba_str(&src_val) {
                         Ok(result) => {
-                            self.write_value_slot(*dst, result)?;
+                            self.write_semantic_value_slot(*dst, result)?;
                             pc += 1;
                         }
                         Err(msg) => {
@@ -1701,23 +1737,29 @@ impl Vm {
                 Instruction::IntrinsicValDigits { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
                     let result = crate::semantics::runtime_val_bounded(&src_val)?;
-                    self.write_value_slot(*dst, result)?;
+                    self.write_semantic_value_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCDateValue { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
                     let result = crate::semantics::runtime_value_to_cdate(&src_val)?;
-                    self.write_value_slot(*dst, result)?;
+                    self.write_semantic_value_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicHexDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_hex_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_hex_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicOctDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, crate::semantics::runtime_oct_bounded(&value)?)?;
+                    self.write_semantic_value_slot(
+                        *dst,
+                        crate::semantics::runtime_oct_bounded(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWeekdayDigits { dst, src } => {
@@ -1728,7 +1770,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicMonthNameDigits { dst, src } => {
                     let month = self.read_value_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_semantic_value_slot(
                         *dst,
                         crate::semantics::runtime_month_name_bounded(&month)?,
                     )?;

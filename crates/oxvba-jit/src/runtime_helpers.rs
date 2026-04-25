@@ -365,8 +365,7 @@ pub extern "C" fn oxrt_abs(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, result);
-    OK
+    write_semantic_value_slot(ctx, dst, result)
 }
 
 #[unsafe(no_mangle)]
@@ -376,8 +375,7 @@ pub extern "C" fn oxrt_sgn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, result);
-    OK
+    write_semantic_value_slot(ctx, dst, result)
 }
 
 /// Int/Fix for i32 values (pass-through).
@@ -389,8 +387,7 @@ pub extern "C" fn oxrt_int_fix(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
         RuntimeValue::F64(v) => RuntimeValue::I32(v.as_f64().floor() as i32),
         _ => val,
     };
-    write_slot!(ctx, dst, result);
-    OK
+    write_semantic_value_slot(ctx, dst, result)
 }
 
 // ── Slot copy helper ──────────────────────────────────────────────────

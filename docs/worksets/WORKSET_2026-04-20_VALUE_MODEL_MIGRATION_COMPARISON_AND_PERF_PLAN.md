@@ -2313,6 +2313,10 @@ Child beads:
        add/subtract/multiply/divide/integer-divide/modulo/power, negation,
        concatenation, and JIT add/subtract/increment helper writes; true
        Variant-native arithmetic semantic helper companions remain open
+     - progress landed: VM/JIT bounded math and VM string-conversion helper
+       destination writes now re-enter retained `Variant` carriers after
+       existing semantic helper results; true Variant-native helper companions
+       remain open
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
