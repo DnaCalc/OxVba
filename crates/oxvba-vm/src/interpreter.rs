@@ -1712,35 +1712,37 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicChrDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_chr_bounded(&value)?,
+                        crate::semantics::runtime_chr_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAscDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_asc_bounded(&value)?,
+                        crate::semantics::runtime_asc_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSpaceDigits { dst, count } => {
-                    let count = self.read_value_slot(*count)?;
-                    self.write_semantic_value_slot(
+                    let count = self.read_variant_slot(*count)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_space_bounded(&count)?,
+                        crate::semantics::runtime_space_variant_bounded(&count)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStringRepeatDigits { dst, count, ch } => {
-                    let count_val = self.read_value_slot(*count)?;
-                    let ch_val = self.read_value_slot(*ch)?;
-                    self.write_semantic_value_slot(
+                    let count_val = self.read_variant_slot(*count)?;
+                    let ch_val = self.read_variant_slot(*ch)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_string_repeat_bounded(&count_val, &ch_val)?,
+                        crate::semantics::runtime_string_repeat_variant_bounded(
+                            &count_val, &ch_val,
+                        )?,
                     )?;
                     pc += 1;
                 }
@@ -1781,18 +1783,18 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicHexDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_hex_bounded(&value)?,
+                        crate::semantics::runtime_hex_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicOctDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_oct_bounded(&value)?,
+                        crate::semantics::runtime_oct_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
@@ -1803,10 +1805,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthNameDigits { dst, src } => {
-                    let month = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let month = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_month_name_bounded(&month)?,
+                        crate::semantics::runtime_month_name_variant_bounded(&month)?,
                     )?;
                     pc += 1;
                 }

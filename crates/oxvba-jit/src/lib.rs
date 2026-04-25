@@ -522,6 +522,43 @@ mod tests {
     }
 
     #[test]
+    fn runtime_char_format_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(14, 14, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(0, Variant::from_i32(65));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("123")));
+            ctx.context.write_variant_slot(2, Variant::from_i32(3));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("Z")));
+            ctx.context.write_variant_slot(4, Variant::from_i32(255));
+            ctx.context.write_variant_slot(5, Variant::from_i32(8));
+            ctx.context
+                .write_variant_slot(6, Variant::from_string(BStr::from("3")));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_chr(ctx.context_ptr(), 7, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_asc(ctx.context_ptr(), 8, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_space(ctx.context_ptr(), 9, 2), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_string_repeat(ctx.context_ptr(), 10, 2, 3),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_hex(ctx.context_ptr(), 11, 4), 0);
+        assert_eq!(runtime_helpers::oxrt_oct(ctx.context_ptr(), 12, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_month_name(ctx.context_ptr(), 13, 6), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[7], RuntimeValue::String(BStr::from("A")));
+        assert_eq!(values[8], RuntimeValue::I32('1' as i32));
+        assert_eq!(values[9], RuntimeValue::String(BStr::from("   ")));
+        assert_eq!(values[10], RuntimeValue::String(BStr::from("ZZZ")));
+        assert_eq!(values[11], RuntimeValue::String(BStr::from("FF")));
+        assert_eq!(values[12], RuntimeValue::String(BStr::from("10")));
+        assert_eq!(values[13], RuntimeValue::String(BStr::from("March")));
+    }
+
+    #[test]
     fn runtime_tag_classifiers_read_variant_array_carriers() {
         let mut ctx = JitContextOwned::new(4, 4, super::default_host_services(), &[]);
         unsafe {

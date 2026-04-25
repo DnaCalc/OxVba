@@ -843,63 +843,69 @@ pub extern "C" fn oxrt_strconv(ctx: *mut JitContext, dst: u32, src: u32, convers
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_chr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_chr_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_chr_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_asc(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_asc_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_asc_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_space(ctx: *mut JitContext, dst: u32, count: u32) -> i32 {
-    let val = read_slot!(ctx, count);
-    let out = match semantics::runtime_space_bounded(&val) {
+    let val = read_variant_slot!(ctx, count);
+    let out = match semantics::runtime_space_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_string_repeat(ctx: *mut JitContext, dst: u32, count: u32, ch: u32) -> i32 {
-    let n_val = read_slot!(ctx, count);
-    let ch_val = read_slot!(ctx, ch);
-    let out = match semantics::runtime_string_repeat_bounded(&n_val, &ch_val) {
+    let n_val = read_variant_slot!(ctx, count);
+    let ch_val = read_variant_slot!(ctx, ch);
+    let out = match semantics::runtime_string_repeat_variant_bounded(&n_val, &ch_val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_hex(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_hex_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_hex_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_oct(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_oct_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_oct_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 /// Format: dst = Format$(value [, format_string])
@@ -1088,12 +1094,13 @@ pub extern "C" fn oxrt_weekday(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_month_name_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_month_name_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 // ── Math ops ─────────────────────────────────────────────────────────

@@ -85,7 +85,8 @@ Current value-model migration note (2026-04-25):
 20. Non-standard HAL null/WASM/replay adapter `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` companion methods.
 21. VM/JIT string slice intrinsics `Len`, `Left`, `Right`, and `Mid` now read retained `Variant` slots directly through Variant-native text/count coercion helpers instead of projecting through `RuntimeValue` first.
 22. VM/JIT text transform/search intrinsics `InStr`, `InStrRev`, `LCase`, `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`, and `StrReverse` now read retained `Variant` slots directly through Variant-native text coercion helpers.
-23. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+23. VM/JIT char/format-adjacent intrinsics `Chr`, `Asc`, `Space`, `String$`, `Hex`, `Oct`, and `MonthName` now read retained `Variant` slots directly through Variant-native coercion helpers and write retained `Variant` results directly.
+24. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

@@ -298,6 +298,12 @@ pub fn runtime_chr_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     Ok(RuntimeValue::String(BStr::from(ch.to_string())))
 }
 
+pub fn runtime_chr_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Chr operand")?;
+    let ch = char::from_u32(value as u32).unwrap_or('\0');
+    Ok(Variant::from_string(BStr::from(ch.to_string())))
+}
+
 pub fn runtime_asc_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let text = runtime_value_to_text(src, "Asc operand")?;
     let code = if text.is_empty() {
@@ -308,9 +314,26 @@ pub fn runtime_asc_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     Ok(RuntimeValue::I32(code))
 }
 
+pub fn runtime_asc_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let text = runtime_variant_to_text(src, "Asc operand")?;
+    let code = if text.is_empty() {
+        0
+    } else {
+        text.as_bytes()[0] as i32
+    };
+    Ok(Variant::from_i32(code))
+}
+
 pub fn runtime_space_bounded(count: &RuntimeValue) -> Result<RuntimeValue, String> {
     let count = runtime_value_to_i32_compat(count, "Space count")?;
     Ok(RuntimeValue::String(BStr::from(
+        " ".repeat(count.max(0) as usize),
+    )))
+}
+
+pub fn runtime_space_variant_bounded(count: &Variant) -> Result<Variant, String> {
+    let count = runtime_variant_to_i32_compat(count, "Space count")?;
+    Ok(Variant::from_string(BStr::from(
         " ".repeat(count.max(0) as usize),
     )))
 }
@@ -336,6 +359,25 @@ pub fn runtime_string_repeat_bounded(
     )))
 }
 
+pub fn runtime_string_repeat_variant_bounded(
+    count: &Variant,
+    ch: &Variant,
+) -> Result<Variant, String> {
+    let count = runtime_variant_to_i32_compat(count, "String$ count")?;
+    let ch = if let Some(text) = ch.as_bstr() {
+        if text.is_empty() {
+            '\0'
+        } else {
+            text.as_str().chars().next().unwrap_or('\0')
+        }
+    } else {
+        char::from_u32(runtime_variant_to_i32_compat(ch, "String$ char")? as u32).unwrap_or('\0')
+    };
+    Ok(Variant::from_string(BStr::from(
+        ch.to_string().repeat(count.max(0) as usize),
+    )))
+}
+
 pub fn runtime_hex_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Hex operand")?;
     Ok(RuntimeValue::String(BStr::from(format!(
@@ -344,12 +386,22 @@ pub fn runtime_hex_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     ))))
 }
 
+pub fn runtime_hex_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Hex operand")?;
+    Ok(Variant::from_string(BStr::from(format!("{:X}", value as u32))))
+}
+
 pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Oct operand")?;
     Ok(RuntimeValue::String(BStr::from(format!(
         "{:o}",
         value as u32
     ))))
+}
+
+pub fn runtime_oct_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Oct operand")?;
+    Ok(Variant::from_string(BStr::from(format!("{:o}", value as u32))))
 }
 
 pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -524,6 +576,15 @@ pub fn runtime_tan_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 
 pub fn runtime_month_name_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let month = runtime_value_to_i32_compat(src, "MonthName operand")?;
+    Ok(RuntimeValue::String(BStr::from(month_name(month).to_string())))
+}
+
+pub fn runtime_month_name_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let month = runtime_variant_to_i32_compat(src, "MonthName operand")?;
+    Ok(Variant::from_string(BStr::from(month_name(month).to_string())))
+}
+
+fn month_name(month: i32) -> &'static str {
     let name = match month {
         1 => "January",
         2 => "February",
@@ -539,7 +600,7 @@ pub fn runtime_month_name_bounded(src: &RuntimeValue) -> Result<RuntimeValue, St
         12 => "December",
         _ => "",
     };
-    Ok(RuntimeValue::String(BStr::from(name.to_string())))
+    name
 }
 
 pub fn runtime_date_serial_bounded(
@@ -1718,6 +1779,34 @@ mod tests {
             runtime_variant_to_text(&Variant::from_date_f64(40348.0), "text operand")
                 .expect("date variant string coercion should succeed"),
             "20100619"
+        );
+    }
+
+    #[test]
+    fn char_format_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::runtime_chr_variant_bounded(&Variant::from_i32(65))
+                .expect("Chr should succeed")
+                .to_runtime_value()
+                .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("A"))
+        );
+        assert_eq!(
+            super::runtime_string_repeat_variant_bounded(
+                &Variant::from_string(BStr::from("3")),
+                &Variant::from_string(BStr::from("Z")),
+            )
+            .expect("String$ should succeed")
+            .to_runtime_value()
+            .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("ZZZ"))
+        );
+        assert_eq!(
+            super::runtime_month_name_variant_bounded(&Variant::from_i32(3))
+                .expect("MonthName should succeed")
+                .to_runtime_value()
+                .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("March"))
         );
     }
 
