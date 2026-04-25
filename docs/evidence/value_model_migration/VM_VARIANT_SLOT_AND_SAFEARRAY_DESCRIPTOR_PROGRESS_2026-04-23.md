@@ -1437,6 +1437,11 @@ Implementation progress:
      themselves as compatibility projections from retained `Variant` frame
      reads. `DebugFrameVariantValue` remains the retained value read shape, and
      `DebugFrameValue`/evaluation results preserve existing debugger clients.
+129. Non-standard HAL null/WASM/replay adapter `RuntimeValue` methods now
+     classify themselves as compatibility wrappers beside retained `Variant`
+     companion methods. Replay journal `RuntimeValue` decoding remains a legacy
+     journal parser, while replay `_variant` entry points retain direct
+     value-model companions for adapter callers.
 
 Remaining blocker:
 
@@ -1623,6 +1628,9 @@ Remaining blocker:
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
+   Non-standard HAL null/WASM/replay adapter `RuntimeValue` methods now also
+   document their compatibility wrapper role beside retained `Variant`
+   companion methods and legacy replay journal parsing.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
