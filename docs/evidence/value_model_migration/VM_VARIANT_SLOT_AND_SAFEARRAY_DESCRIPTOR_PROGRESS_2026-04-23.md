@@ -1260,6 +1260,13 @@ Implementation progress:
     `oxrt_ubound`, and the JIT collection add/item/remove/count helpers no
     longer create temporary `RuntimeValue` destination payloads before the
     slot write.
+98. VM/JIT locally computed string/scalar intrinsic result writes now use
+    retained `Variant` carriers for the string helper subset that computes
+    results inline: constant string/double loads, `Len`, `Left`, `Right`,
+    `Mid`, `InStr`, `InStrRev`, `LCase`, `UCase`, `Replace`, `Trim`,
+    `LTrim`, `RTrim`, and `StrComp`. Semantic helper-returning string paths
+    such as `Split`/`Join`/`Like` remain separate migration work because those
+    helpers still return `RuntimeValue` by contract.
 
 Remaining blocker:
 
@@ -1348,6 +1355,8 @@ Remaining blocker:
    `IsEmpty` result writes now also stay on retained `Variant` carriers.
    JIT constant/null loads, `LBound`/`UBound`, and collection scalar-result
    writes now also stay on retained `Variant` carriers.
+   VM/JIT locally computed string/scalar intrinsic destination writes now also
+   stay on retained `Variant` carriers for the inline string helper subset.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
