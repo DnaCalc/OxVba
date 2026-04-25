@@ -2266,6 +2266,12 @@ Child beads:
        Date/Time Variant carriers directly with a Variant-native serial
        combiner, leaving the older `RuntimeValue` combiner as a semantic
        compatibility helper
+     - progress landed: VM/JIT pointer-helper result writes and retained
+       Variant classifier/tag result writes now produce direct `Variant` slot
+       carriers for `StrPtr`/`VarPtr`/`ObjPtr`, `LBound`/`UBound`, `VarType`,
+       `TypeName`, `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`,
+       `IsEmpty`, and `IsArray` instead of creating temporary `RuntimeValue`
+       scalar results
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

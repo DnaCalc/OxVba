@@ -1528,7 +1528,7 @@ impl Vm {
                         }
                         _ => return Err("runtime error: 13 (Type mismatch)".to_string()),
                     };
-                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    self.write_variant_slot(*dst, Variant::from_i64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtr { dst, src } => {
@@ -1538,26 +1538,26 @@ impl Vm {
                     } else {
                         oxvba_runtime::pointer_helpers::register_variant_pointer(&value)?
                     };
-                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    self.write_variant_slot(*dst, Variant::from_i64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtrStringVar { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
                     let pointer =
                         oxvba_runtime::pointer_helpers::register_string_variant_pointer(&value)?;
-                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    self.write_variant_slot(*dst, Variant::from_i64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarPtrVariantVar { dst, src } => {
                     let pointer = self.variant_cell_pointer(*src)?;
-                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    self.write_variant_slot(*dst, Variant::from_i64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicObjPtr { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
                     let pointer =
                         oxvba_runtime::pointer_helpers::register_object_variant_pointer(&value)?;
-                    self.write_value_slot(*dst, RuntimeValue::I64(pointer))?;
+                    self.write_variant_slot(*dst, Variant::from_i64(pointer))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDoEventsHost { dst } => {
@@ -2104,7 +2104,7 @@ impl Vm {
                     let out =
                         crate::semantics::runtime_array_lbound_variant(&value, "LBound operand")
                             .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUBoundArray { dst, src } => {
@@ -2112,14 +2112,14 @@ impl Vm {
                     let out =
                         crate::semantics::runtime_array_ubound_variant(&value, "UBound operand")
                             .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsArrayTag { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::I32(
+                        Variant::from_i32(
                             if matches!(value.vtype(), oxvba_runtime::VarType::ArrayVariant) {
                                 1
                             } else {
@@ -2131,9 +2131,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicVarTypeTag { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::I32(crate::semantics::runtime_vartype_tag_bounded_variant(
+                        Variant::from_i32(crate::semantics::runtime_vartype_tag_bounded_variant(
                             &value,
                         )),
                     )?;
@@ -2142,14 +2142,14 @@ impl Vm {
                 Instruction::IntrinsicVarType { dst, src } => {
                     let val = self.read_variant_slot(*src)?;
                     let code = crate::semantics::runtime_vartype_compat_bounded_variant(&val);
-                    self.write_value_slot(*dst, RuntimeValue::I32(code))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(code))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeNameTag { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::I32(crate::semantics::runtime_typename_tag_bounded_variant(
+                        Variant::from_i32(crate::semantics::runtime_typename_tag_bounded_variant(
                             &value,
                         )),
                     )?;
@@ -2157,9 +2157,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicIsNumericTag { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::I32(
+                        Variant::from_i32(
                             crate::semantics::runtime_is_numeric_tag_bounded_variant(&value),
                         ),
                     )?;
@@ -2180,14 +2180,14 @@ impl Vm {
                             | oxvba_runtime::VarType::Boolean
                             | oxvba_runtime::VarType::Byte
                     );
-                    self.write_value_slot(*dst, RuntimeValue::Bool(is_numeric))?;
+                    self.write_variant_slot(*dst, Variant::from_bool(is_numeric))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsError { dst, src } => {
                     let val = self.read_variant_slot(*src)?;
-                    self.write_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Error)),
+                        Variant::from_bool(matches!(val.vtype(), oxvba_runtime::VarType::Error)),
                     )?;
                     pc += 1;
                 }
@@ -2198,7 +2198,7 @@ impl Vm {
                     } else {
                         0
                     };
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsObjectTag { dst, src } => {
@@ -2208,7 +2208,7 @@ impl Vm {
                     } else {
                         0
                     };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::ValidateRuntimeAssignment {
@@ -5646,17 +5646,17 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(15);
-        assert_eq!(out[5], 0);
-        assert_eq!(out[6], 1);
-        assert_eq!(out[7], 10);
-        assert_eq!(out[8], 3);
-        assert_eq!(out[9], 8192 + 12);
-        assert_eq!(out[10], 0);
-        assert_eq!(out[11], 0);
-        assert_eq!(out[12], 0);
-        assert_eq!(out[13], 1);
-        assert_eq!(out[14], 0);
+        let out = vm.snapshot_variants(15);
+        assert_eq!(out[5].as_i32(), Some(0));
+        assert_eq!(out[6].as_i32(), Some(3));
+        assert_eq!(out[7].as_i32(), Some(10));
+        assert_eq!(out[8].as_i32(), Some(3));
+        assert_eq!(out[9].as_i32(), Some(8192 + 12));
+        assert_eq!(out[10].as_i32(), Some(0));
+        assert_eq!(out[11].as_i32(), Some(1));
+        assert_eq!(out[12].as_i32(), Some(0));
+        assert_eq!(out[13].as_i32(), Some(1));
+        assert_eq!(out[14].as_i32(), Some(0));
     }
 
     #[test]

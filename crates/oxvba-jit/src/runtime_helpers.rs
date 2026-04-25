@@ -1229,7 +1229,7 @@ pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
     let code = semantics::runtime_vartype_tag_bounded_variant(&val);
-    write_slot!(ctx, dst, RuntimeValue::I32(code));
+    write_variant_slot!(ctx, dst, Variant::from_i32(code));
     OK
 }
 
@@ -1237,7 +1237,7 @@ pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
 pub extern "C" fn oxrt_vartype(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
     let code = semantics::runtime_vartype_compat_bounded_variant(&val);
-    write_slot!(ctx, dst, RuntimeValue::I32(code));
+    write_variant_slot!(ctx, dst, Variant::from_i32(code));
     OK
 }
 
@@ -1258,7 +1258,7 @@ pub extern "C" fn oxrt_strptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         }
         _ => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    write_variant_slot!(ctx, dst, Variant::from_i64(pointer));
     OK
 }
 
@@ -1269,7 +1269,7 @@ pub extern "C" fn oxrt_varptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    write_variant_slot!(ctx, dst, Variant::from_i64(pointer));
     OK
 }
 
@@ -1280,14 +1280,14 @@ pub extern "C" fn oxrt_varptr_string_var(ctx: *mut JitContext, dst: u32, src: u3
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    write_variant_slot!(ctx, dst, Variant::from_i64(pointer));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_varptr_variant_var(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let pointer = unsafe { (*ctx).variant_cell_pointer(src) };
-    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    write_variant_slot!(ctx, dst, Variant::from_i64(pointer));
     OK
 }
 
@@ -1298,7 +1298,7 @@ pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(pointer) => pointer,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I64(pointer));
+    write_variant_slot!(ctx, dst, Variant::from_i64(pointer));
     OK
 }
 
@@ -1306,7 +1306,7 @@ pub extern "C" fn oxrt_objptr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
     let out = semantics::runtime_typename_tag_bounded_variant(&val);
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
@@ -1314,7 +1314,7 @@ pub extern "C" fn oxrt_typename_tag(ctx: *mut JitContext, dst: u32, src: u32) ->
 pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
     let out = semantics::runtime_is_numeric_tag_bounded_variant(&val);
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
@@ -1334,7 +1334,7 @@ pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i
         | oxvba_runtime::VarType::Byte => true,
         _ => false,
     };
-    write_slot!(ctx, dst, RuntimeValue::Bool(is_numeric));
+    write_variant_slot!(ctx, dst, Variant::from_bool(is_numeric));
     OK
 }
 
@@ -1342,7 +1342,7 @@ pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i
 pub extern "C" fn oxrt_is_error(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
     let is_error = matches!(val.vtype(), oxvba_runtime::VarType::Error);
-    write_slot!(ctx, dst, RuntimeValue::Bool(is_error));
+    write_variant_slot!(ctx, dst, Variant::from_bool(is_error));
     OK
 }
 
@@ -1354,7 +1354,7 @@ pub extern "C" fn oxrt_is_date_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
     } else {
         0
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
@@ -1366,17 +1366,17 @@ pub extern "C" fn oxrt_is_object_tag(ctx: *mut JitContext, dst: u32, src: u32) -
     } else {
         0
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_null(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Null))
+        Variant::from_bool(matches!(val.vtype(), oxvba_runtime::VarType::Null))
     );
     OK
 }
@@ -1384,10 +1384,10 @@ pub extern "C" fn oxrt_is_null(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_empty(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::Bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty))
+        Variant::from_bool(matches!(val.vtype(), oxvba_runtime::VarType::Empty))
     );
     OK
 }
@@ -1395,10 +1395,10 @@ pub extern "C" fn oxrt_is_empty(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_array_tag(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::I32(
+        Variant::from_i32(
             if matches!(val.vtype(), oxvba_runtime::VarType::ArrayVariant) {
                 1
             } else {
