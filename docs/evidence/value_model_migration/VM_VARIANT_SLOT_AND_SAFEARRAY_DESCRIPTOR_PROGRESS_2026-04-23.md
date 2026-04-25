@@ -1323,6 +1323,10 @@ Remaining blocker:
    companions now also return retained Variant carriers or explicit unsupported
    Variant faults instead of inheriting trait-level `RuntimeValue` fallback
    projections.
+   Null/WASM/replay console, UI, event-pump, file-system, and
+   process/environment Variant companions now also return retained Variant
+   carriers, replay journal carriers, or explicit unsupported Variant faults
+   without inheriting trait-level `RuntimeValue` fallback projections.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
