@@ -235,9 +235,17 @@ mod tests {
 
         let out = cranelift::execute_bytecode_variants(&bytecode)
             .expect("legacy variant execution should succeed");
+        let compat =
+            cranelift::execute_bytecode(&bytecode).expect("legacy compat execution should succeed");
 
         assert_eq!(out, vec![Variant::from_compat_slot_i32(3)]);
         assert_eq!(out[0].as_i32(), Some(3));
+        assert_eq!(
+            compat,
+            out.into_iter()
+                .map(|value| value.to_runtime_value().expect("variant projection"))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

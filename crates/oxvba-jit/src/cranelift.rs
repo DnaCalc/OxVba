@@ -498,12 +498,10 @@ pub fn supports_bytecode_rtslot(bytecode: &Bytecode) -> bool {
 ///
 /// New value-model call sites should prefer [`execute_bytecode_variants`].
 pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-    execute_bytecode_legacy(bytecode).map(|values| {
-        values
-            .into_iter()
-            .map(RuntimeValue::from_compat_slot_i32)
-            .collect()
-    })
+    execute_bytecode_variants(bytecode)?
+        .into_iter()
+        .map(|value| value.to_runtime_value())
+        .collect()
 }
 
 /// Execute bytecode through the legacy 4-byte slot path and project results
