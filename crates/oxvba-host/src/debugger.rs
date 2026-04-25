@@ -21,6 +21,8 @@ pub struct DebugFrameValue {
     pub name: String,
     pub slot: usize,
     pub kind: DebugFrameValueKind,
+    /// Compatibility projection for debugger clients that still consume
+    /// semantic values. Retained frame reads start from `DebugFrameVariantValue`.
     pub runtime_value: RuntimeValue,
     pub display_text: String,
 }
@@ -35,6 +37,7 @@ pub struct DebugFrameVariantValue {
 }
 
 impl DebugFrameVariantValue {
+    /// Project a retained frame value into the legacy debugger value shape.
     pub fn to_runtime_value(&self) -> Result<DebugFrameValue, String> {
         let runtime_value = self.variant_value.to_runtime_value()?;
         Ok(DebugFrameValue {
@@ -54,6 +57,7 @@ pub struct DebugFrame {
     pub entry_pc: usize,
     pub source_line_start: usize,
     pub source_line_end: usize,
+    /// Compatibility frame values projected from retained `Variant` slot reads.
     pub values: Vec<DebugFrameValue>,
 }
 
@@ -291,6 +295,8 @@ impl<'engine> DebugSession<'engine> {
     }
 
     fn project_frame_value(&self, slot: &ProcedureRuntimeSlotMetadata) -> DebugFrameValue {
+        // Compatibility debugger projection; retained values are read through
+        // `project_frame_variant_value` first.
         self.project_frame_variant_value(slot)
             .to_runtime_value()
             .unwrap_or_else(|_| DebugFrameValue {
@@ -306,6 +312,7 @@ impl<'engine> DebugSession<'engine> {
         &self,
         slot: &ProcedureRuntimeSlotMetadata,
     ) -> DebugFrameVariantValue {
+        // Retained debugger frame value read.
         let variant_value = self.runtime.read_variant_slot(slot.slot);
         let display_text = variant_value
             .to_runtime_value()
