@@ -1381,6 +1381,12 @@ Implementation progress:
      `Variant` slots directly. `write_legacy_scalar_slot` still represents a
      compatibility-token lane, but it no longer routes the destination write
      through a temporary `RuntimeValue::from_compat_slot_i32` carrier.
+117. Runtime `Variant`/`RuntimeValue` bridge helpers now classify the retained
+     `Variant` carrier as primary and the `RuntimeValue`/i32 slot-token routes
+     as compatibility projections. This covers `Variant::{try_from_runtime_value,
+     from_runtime_value,to_runtime_value,try_from_compat_slot_i32,
+     from_compat_slot_i32}` and `RuntimeValue::{to_variant,from_variant,
+     from_compat_slot_i32,project_compat_slot_i32}`.
 
 Remaining blocker:
 
@@ -1532,6 +1538,9 @@ Remaining blocker:
    VM legacy scalar helper writes now also materialize compatibility-tagged
    `Variant` slots directly instead of routing through a temporary
    `RuntimeValue` carrier.
+   Runtime `Variant`/`RuntimeValue` bridge helpers now also document retained
+   `Variant` as the primary carrier and `RuntimeValue`/i32 slot-token routes
+   as compatibility projections.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
