@@ -1345,6 +1345,14 @@ Implementation progress:
      `from_typed_values_nd`, `from_shape_and_values`, `elements`, and
      `replace_elements`; the APIs remain available for legacy callers and do
      not close `vmm-e6`.
+112. Host-facing project-runtime, immediate-session, and embedded invocation
+     `RuntimeValue` surfaces now classify themselves as compatibility
+     projections and point retained-value callers at `Variant` snapshot,
+     request, and result APIs. This covers `ProjectRuntimeSession` snapshots
+     and slot reads, source/project/bundle execution snapshot aliases,
+     immediate session snapshots and evaluation projection fields, and embedded
+     procedure request/result projection helpers. The compatibility APIs remain
+     available for legacy callers and do not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1480,6 +1488,10 @@ Remaining blocker:
    Public `SafeArray` `RuntimeValue` constructors/accessors now also document
    their compatibility projection role and point retained-value callers at the
    matching `Variant` APIs.
+   Host project-runtime, immediate-session, and embedded invocation
+   `RuntimeValue` snapshots/requests/results now also document their
+   compatibility projection role and point retained-value callers at `Variant`
+   APIs.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
