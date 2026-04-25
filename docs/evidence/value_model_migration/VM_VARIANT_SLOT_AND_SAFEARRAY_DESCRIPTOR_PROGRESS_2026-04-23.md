@@ -1498,6 +1498,11 @@ Implementation progress:
      helpers and write retained `Variant` results directly. Remaining broad
      projection seams include comparison/logical operator reads, binding/COM,
      random seed, dynamic array bounds/constructor, and compatibility APIs.
+140. VM/JIT comparison and Boolean operators now read retained `Variant` slots
+     directly through Variant-native comparison/truthiness helpers and write
+     retained `Variant` Boolean results directly. Remaining broad projection
+     seams include binding/COM, random seed, dynamic array bounds/constructor,
+     and compatibility APIs.
 
 Remaining blocker:
 
@@ -1723,6 +1728,9 @@ Remaining blocker:
    `Mod`, `Pow`, `Concat`, `Neg`, `AddConst`, `SubConst`, and `Inc` now read
    retained `Variant` slots directly through Variant-native arithmetic helpers
    and write retained `Variant` results directly.
+   VM/JIT comparison and Boolean operators now read retained `Variant` slots
+   directly through Variant-native comparison/truthiness helpers and write
+   retained `Variant` Boolean results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
