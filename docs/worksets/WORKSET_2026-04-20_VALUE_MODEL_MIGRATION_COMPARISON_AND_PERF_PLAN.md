@@ -2323,6 +2323,10 @@ Child beads:
        `Like`, `StrConv`, date/time helper results, char/format helper
        results, and JIT trigonometric/math helper results; true
        Variant-native helper companions remain open
+     - progress landed: VM/JIT financial helper destination writes now use
+       retained `Variant` carriers directly from compatibility-slot results
+       for `FV`, `PV`, `PMT`, `NPV`, `IRR`, `MIRR`, `Rate`, and `NPer`, while
+       preserving existing compatibility-tag result meanings
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

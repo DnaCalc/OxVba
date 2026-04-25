@@ -1795,7 +1795,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::fv_i32(rate, nper, pmt, pv, due))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::fv_i32(rate, nper, pmt, pv, due)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicPvI32 {
@@ -1817,7 +1820,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::pv_i32(rate, nper, pmt, fv, due))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::pv_i32(rate, nper, pmt, fv, due)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicPmtI32 {
@@ -1839,7 +1845,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::pmt_i32(rate, nper, pv, fv, due))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::pmt_i32(rate, nper, pv, fv, due)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNpvI32 { dst, rate, values } => {
@@ -1848,7 +1857,10 @@ impl Vm {
                     for slot in values {
                         cash_flows.push(self.read_legacy_scalar_slot(*slot)?);
                     }
-                    self.write_legacy_scalar_slot(*dst, Self::npv_i32(rate, &cash_flows))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::npv_i32(rate, &cash_flows)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIrrI32 { dst, value, guess } => {
@@ -1857,7 +1869,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::irr_i32(value, guess))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::irr_i32(value, guess)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMirrI32 {
@@ -1869,9 +1884,13 @@ impl Vm {
                     let value = self.read_legacy_scalar_slot(*value)?;
                     let finance_rate = self.read_legacy_scalar_slot(*finance_rate)?;
                     let reinvest_rate = self.read_legacy_scalar_slot(*reinvest_rate)?;
-                    self.write_legacy_scalar_slot(
+                    self.write_variant_slot(
                         *dst,
-                        Self::mirr_i32(value, finance_rate, reinvest_rate),
+                        Variant::from_compat_slot_i32(Self::mirr_i32(
+                            value,
+                            finance_rate,
+                            reinvest_rate,
+                        )),
                     )?;
                     pc += 1;
                 }
@@ -1899,9 +1918,9 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_legacy_scalar_slot(
+                    self.write_variant_slot(
                         *dst,
-                        Self::rate_i32(nper, pmt, pv, fv, due, guess),
+                        Variant::from_compat_slot_i32(Self::rate_i32(nper, pmt, pv, fv, due, guess)),
                     )?;
                     pc += 1;
                 }
@@ -1924,7 +1943,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::nper_i32(rate, pmt, pv, fv, due))?;
+                    self.write_variant_slot(
+                        *dst,
+                        Variant::from_compat_slot_i32(Self::nper_i32(rate, pmt, pv, fv, due)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayLiteral { dst, values } => {

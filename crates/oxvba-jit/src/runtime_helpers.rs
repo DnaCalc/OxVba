@@ -1384,11 +1384,7 @@ pub extern "C" fn oxrt_fv(
     };
     let pv = opt_compat_i32_slot(ctx, pv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(fv_i32(r, n, p, pv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(fv_i32(r, n, p, pv, due)));
     OK
 }
 
@@ -1411,11 +1407,7 @@ pub extern "C" fn oxrt_pv(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(pv_i32(r, n, p, fv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(pv_i32(r, n, p, fv, due)));
     OK
 }
 
@@ -1438,11 +1430,7 @@ pub extern "C" fn oxrt_pmt(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(pmt_i32(r, n, p, fv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(pmt_i32(r, n, p, fv, due)));
     OK
 }
 
@@ -1467,11 +1455,7 @@ pub extern "C" fn oxrt_npv(
             Err(_) => return ERR_RUNTIME,
         }
     }
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(npv_i32(r, &cash_flows))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(npv_i32(r, &cash_flows)));
     OK
 }
 
@@ -1482,11 +1466,7 @@ pub extern "C" fn oxrt_irr(ctx: *mut JitContext, dst: u32, value: u32, guess_slo
         Err(_) => return ERR_RUNTIME,
     };
     let guess = opt_compat_i32_slot(ctx, guess_slot, 10);
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(irr_i32(v, guess))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(irr_i32(v, guess)));
     OK
 }
 
@@ -1510,11 +1490,7 @@ pub extern "C" fn oxrt_mirr(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(mirr_i32(v, fr, rr))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(mirr_i32(v, fr, rr)));
     OK
 }
 
@@ -1544,10 +1520,10 @@ pub extern "C" fn oxrt_rate(
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
     let guess = opt_compat_i32_slot(ctx, guess_slot, 10);
-    write_slot!(
+    write_variant_slot!(
         ctx,
         dst,
-        RuntimeValue::from_compat_slot_i32(rate_i32(n, p, pv, fv, due, guess))
+        Variant::from_compat_slot_i32(rate_i32(n, p, pv, fv, due, guess))
     );
     OK
 }
@@ -1576,11 +1552,7 @@ pub extern "C" fn oxrt_nper(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_slot!(
-        ctx,
-        dst,
-        RuntimeValue::from_compat_slot_i32(nper_i32(r, p, pv, fv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(nper_i32(r, p, pv, fv, due)));
     OK
 }
 
