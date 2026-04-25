@@ -1553,6 +1553,12 @@ Implementation progress:
      through legacy `RuntimeValue` methods. Repo adapters provide their direct
      retained companion implementations, so focused HAL companion, recording,
      and dynamic-link tests continue to pass without fallback projection.
+150. Runtime pointer-helper byte-array materialization for legacy
+     `RuntimeValue::ArrayIntent` now delegates to the retained
+     `variant_elements()` SAFEARRAY payload reader instead of reading through
+     the legacy `SafeArray::elements()` projection. The legacy wrapper remains
+     for compatibility callers, but production pointer payload extraction stays
+     on retained `Variant` elements.
 
 Remaining blocker:
 
@@ -1637,6 +1643,9 @@ Remaining blocker:
    `StrPtr`/`VarPtr`/`ObjPtr`, `LBound`/`UBound`, `VarType`, `TypeName`,
    `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`, `IsEmpty`, and
    `IsArray` instead of creating temporary `RuntimeValue` scalar results.
+   Runtime pointer-helper byte-array materialization now also reads SAFEARRAY
+   payloads through retained `Variant` elements even when entered through the
+   legacy `RuntimeValue::ArrayIntent` wrapper.
    VM/JIT `Err.*` reads and VM `LoadNull`, `TypeOf...Is`, `IsNull`, and
    `IsEmpty` result writes now also stay on retained `Variant` carriers.
    JIT constant/null loads, `LBound`/`UBound`, and collection scalar-result
