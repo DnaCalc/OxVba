@@ -1564,6 +1564,11 @@ Implementation progress:
      `RuntimeValue` directly from legacy i32 slots. Regression coverage pins
      the compatibility result to the retained `Variant` result projection for
      the legacy JIT subset.
+152. Standard process-environment HAL legacy `RuntimeValue` methods now
+     delegate through the retained `shell_variant`, `environ_variant`, and
+     `dir_variant` implementations and only project at the compatibility
+     boundary. The obsolete `runtime_value_to_path` helper was removed after
+     the retained `Variant` path became the single process path authority.
 
 Remaining blocker:
 
@@ -1759,6 +1764,9 @@ Remaining blocker:
    HAL COM activation/dispatch/event legacy `RuntimeValue` methods now also
    document their compatibility projection role beside retained `Variant` COM
    companion methods.
+   Standard process-environment HAL legacy `RuntimeValue` methods now also
+   delegate through retained `Variant` companions rather than carrying a
+   separate implementation body.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
