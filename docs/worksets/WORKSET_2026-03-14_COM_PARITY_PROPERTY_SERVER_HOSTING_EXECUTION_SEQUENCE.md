@@ -65,7 +65,8 @@ Current execution note (2026-03-18):
 Current value-model migration note (2026-04-25):
 1. HAL trait surfaces now classify `RuntimeValue` methods as compatibility projection contracts and `_variant` companions as retained value-model entry points for VM/JIT callers.
 2. Legacy `SafeArray` `RuntimeValue` constructors/accessors now classify themselves as compatibility projections and point new value-model call sites at retained `Variant` APIs.
-3. Trait-level HAL default projection companions and legacy `SafeArray` compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+3. Host project-runtime, immediate-session, and embedded invocation `RuntimeValue` snapshots/requests/results now classify themselves as compatibility projections and point retained-value callers at `Variant` APIs.
+4. Trait-level HAL default projection companions and legacy `SafeArray`/host compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

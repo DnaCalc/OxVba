@@ -213,6 +213,10 @@ impl EmbeddedInvokeEntryPointRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedInvokeProcedureRequest {
     pub target: EmbeddedProcedureTarget,
+    /// Compatibility argument projection for legacy embedded callers.
+    ///
+    /// New value-model call sites should prefer
+    /// [`EmbeddedInvokeProcedureVariantRequest`].
     pub args: Vec<RuntimeValue>,
 }
 
@@ -221,6 +225,8 @@ impl EmbeddedInvokeProcedureRequest {
         Self { target, args }
     }
 
+    /// Projects this compatibility request into the retained `Variant` request
+    /// shape used by the execution path.
     pub fn to_variant_request(&self) -> Result<EmbeddedInvokeProcedureVariantRequest, String> {
         let args = self
             .args
@@ -237,6 +243,7 @@ impl EmbeddedInvokeProcedureRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedInvokeProcedureVariantRequest {
     pub target: EmbeddedProcedureTarget,
+    /// Retained value-model procedure arguments.
     pub args: Vec<Variant>,
 }
 
@@ -245,6 +252,8 @@ impl EmbeddedInvokeProcedureVariantRequest {
         Self { target, args }
     }
 
+    /// Compatibility projection for legacy callers that still need
+    /// [`EmbeddedInvokeProcedureRequest`].
     pub fn to_runtime_request(&self) -> Result<EmbeddedInvokeProcedureRequest, String> {
         let args = self
             .args
@@ -275,6 +284,9 @@ pub struct EmbeddedInvokeResult {
     pub target: EmbeddedInvocationTarget,
     pub status: EmbeddedInvokeStatus,
     pub diagnostics: Vec<PhaseDiagnostic>,
+    /// Compatibility return-value projection for legacy embedded callers.
+    ///
+    /// New value-model call sites should prefer [`EmbeddedInvokeVariantResult`].
     pub return_value: Option<RuntimeValue>,
 }
 
@@ -303,6 +315,7 @@ pub struct EmbeddedInvokeVariantResult {
     pub target: EmbeddedInvocationTarget,
     pub status: EmbeddedInvokeStatus,
     pub diagnostics: Vec<PhaseDiagnostic>,
+    /// Retained value-model return value.
     pub return_value: Option<Variant>,
 }
 
@@ -325,6 +338,8 @@ impl EmbeddedInvokeVariantResult {
         }
     }
 
+    /// Compatibility projection for legacy callers that still need
+    /// [`EmbeddedInvokeResult`].
     pub fn to_runtime_result(&self) -> Result<EmbeddedInvokeResult, String> {
         let return_value = self
             .return_value

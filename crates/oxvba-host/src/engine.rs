@@ -193,10 +193,15 @@ fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
 }
 
 impl ProjectRuntimeSession {
+    /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
         self.snapshot_compat_values()
     }
 
+    /// Compatibility snapshot that projects retained VM slots into
+    /// [`RuntimeValue`] values for legacy host callers.
+    ///
+    /// New value-model call sites should prefer [`Self::snapshot_variants`].
     pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
         self.snapshot_variants()
             .into_iter()
@@ -208,10 +213,12 @@ impl ProjectRuntimeSession {
             .collect()
     }
 
+    /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
         self.snapshot_compat_values()
     }
 
+    /// Retained value-model snapshot for project-visible slots.
     pub fn snapshot_variants(&self) -> Vec<Variant> {
         let all_slots = self.vm.snapshot_variants(self.compiled.bytecode.slot_count);
         project_visible_snapshot(
@@ -229,16 +236,22 @@ impl ProjectRuntimeSession {
         &self.compiled
     }
 
+    /// Legacy alias for [`Self::read_compat_slot`].
     pub fn read_slot(&self, slot: usize) -> RuntimeValue {
         self.read_compat_slot(slot)
     }
 
+    /// Compatibility slot read that projects the retained slot value into a
+    /// [`RuntimeValue`].
+    ///
+    /// New value-model call sites should prefer [`Self::read_variant_slot`].
     pub fn read_compat_slot(&self, slot: usize) -> RuntimeValue {
         self.read_variant_slot(slot)
             .to_runtime_value()
             .unwrap_or(RuntimeValue::Empty)
     }
 
+    /// Retained value-model slot read.
     pub fn read_variant_slot(&self, slot: usize) -> Variant {
         let values = self.vm.snapshot_variants(slot + 1);
         values.into_iter().nth(slot).unwrap_or_else(Variant::empty)
@@ -1044,6 +1057,11 @@ impl Engine {
         Ok(())
     }
 
+    /// Compatibility source execution snapshot projected into [`RuntimeValue`]
+    /// values.
+    ///
+    /// New value-model call sites should prefer
+    /// [`Self::execute_source_with_variant_snapshot`].
     pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<RuntimeValue>, String> {
         self.execute_source_with_snapshot_phased(source)
             .map_err(|diagnostic| diagnostic.message().to_string())
@@ -1057,6 +1075,7 @@ impl Engine {
             .map_err(|diagnostic| diagnostic.message().to_string())
     }
 
+    /// Legacy alias for [`Self::execute_source_with_snapshot`].
     pub fn execute_source_with_value_snapshot(
         &self,
         source: &str,
@@ -1064,6 +1083,11 @@ impl Engine {
         self.execute_source_with_snapshot(source)
     }
 
+    /// Compatibility phased source execution snapshot projected into
+    /// [`RuntimeValue`] values.
+    ///
+    /// New value-model call sites should prefer
+    /// [`Self::execute_source_with_variant_snapshot_phased`].
     pub fn execute_source_with_snapshot_phased(
         &self,
         source: &str,
@@ -1110,6 +1134,7 @@ impl Engine {
         ))
     }
 
+    /// Legacy alias for [`Self::execute_source_with_snapshot_phased`].
     pub fn execute_source_with_value_snapshot_phased(
         &self,
         source: &str,
@@ -1117,6 +1142,11 @@ impl Engine {
         self.execute_source_with_snapshot_phased(source)
     }
 
+    /// Compatibility project execution snapshot projected into [`RuntimeValue`]
+    /// values.
+    ///
+    /// New value-model call sites should prefer
+    /// [`Self::execute_project_with_variant_snapshot_phased`].
     pub fn execute_project_with_snapshot_phased(
         &self,
         manifest: &ProjectManifest,
@@ -1183,6 +1213,7 @@ impl Engine {
         ))
     }
 
+    /// Legacy alias for [`Self::execute_project_with_snapshot_phased`].
     pub fn execute_project_with_value_snapshot_phased(
         &self,
         manifest: &ProjectManifest,
@@ -1225,10 +1256,12 @@ impl Engine {
         Ok(ProjectRuntimeSession { compiled, vm })
     }
 
-    /// Execute a pre-compiled OxBundle, returning the final slot values.
+    /// Execute a pre-compiled OxBundle, returning the final slot values through
+    /// the legacy [`RuntimeValue`] compatibility projection.
     ///
     /// This is the entry point used by generated EXE/DLL shims that embed a
-    /// serialized bundle via `include_bytes!`.
+    /// serialized bundle via `include_bytes!`. New value-model call sites
+    /// should prefer [`Self::execute_bundle_with_variant_snapshot`].
     pub fn execute_bundle_with_snapshot(
         &self,
         bundle: &oxvba_compiler::OxBundle,

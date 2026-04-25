@@ -59,6 +59,11 @@ impl ImmediateEvaluationRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImmediateValueProjection {
+    /// Compatibility projection of the evaluated retained `Variant` result.
+    ///
+    /// Immediate evaluation keeps this legacy field for callers that format or
+    /// assert through `RuntimeValue`; retained value-model execution uses the
+    /// `Variant` result before this projection.
     pub runtime_value: RuntimeValue,
     pub display_text: String,
 }
@@ -145,14 +150,20 @@ impl<'engine> ImmediateSession<'engine> {
         self.default_target_module = module.map(|value| value.into());
     }
 
+    /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
         self.snapshot_compat_values()
     }
 
+    /// Compatibility snapshot that projects retained session slots into
+    /// [`RuntimeValue`] values.
+    ///
+    /// New value-model call sites should prefer [`Self::snapshot_variants`].
     pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
         self.runtime.snapshot_compat_values()
     }
 
+    /// Retained value-model snapshot for the immediate session runtime.
     pub fn snapshot_variants(&self) -> Vec<Variant> {
         self.runtime.snapshot_variants()
     }
