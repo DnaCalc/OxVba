@@ -85,9 +85,9 @@ impl DynLinkDescriptorView<'_> {
 /// HAL traits below expose a value-model boundary: methods that accept or
 /// return [`RuntimeValue`] are retained compatibility projection contracts for
 /// older adapters, while `_variant` companions are the retained value-model
-/// entry points used by VM/JIT callers. A default companion may still project
-/// through the compatibility method until an implementation overrides it
-/// directly.
+/// entry points used by VM/JIT callers. Implementations must override retained
+/// companions directly; trait defaults fault rather than silently projecting
+/// through compatibility `RuntimeValue` methods.
 pub trait HostServices: Send + Sync {
     fn profile(&self) -> HalProfileId;
     fn descriptor(&self) -> HalDescriptor;
@@ -113,97 +113,41 @@ pub trait HostServices: Send + Sync {
     }
 }
 
+fn variant_companion_not_overridden<T>(
+    capability: CapabilityId,
+    operation: &'static str,
+) -> HalResult<T> {
+    Err(HalError::adapter_fault(
+        HalProfileId::Null,
+        capability,
+        operation,
+        "retained Variant companion is not implemented by this HAL adapter",
+    ))
+}
+
 pub trait ConsoleHal: Send + Sync {
     /// Console text output with line semantics for stdio-style hosts.
     fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
-        let data = data.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ConsoleIo,
-                "print_line_variant",
-                detail,
-            )
-        })?;
-        self.print_line(data).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ConsoleIo,
-                    "print_line_variant",
-                    detail,
-                )
-            })
-        })
+    fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ConsoleIo, "print_line_variant")
     }
     /// Delimited field parsing from stdin-like input (BASIC `Input`).
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
-        let count = count.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ConsoleIo,
-                "input_fields_variant",
-                detail,
-            )
-        })?;
-        self.input_fields(count).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ConsoleIo,
-                    "input_fields_variant",
-                    detail,
-                )
-            })
-        })
+    fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ConsoleIo, "input_fields_variant")
     }
     /// Line-oriented read from stdin-like input (BASIC `Line Input`).
     fn line_input(&self) -> HalResult<RuntimeValue>;
     fn line_input_variant(&self) -> HalResult<Variant> {
-        self.line_input().and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ConsoleIo,
-                    "line_input_variant",
-                    detail,
-                )
-            })
-        })
+        variant_companion_not_overridden(CapabilityId::ConsoleIo, "line_input_variant")
     }
 }
 
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
     fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn msg_box_variant(&self, prompt: Variant, style: Variant) -> HalResult<Variant> {
-        let prompt = prompt.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::UiInteraction,
-                "msg_box_variant",
-                detail,
-            )
-        })?;
-        let style = style.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::UiInteraction,
-                "msg_box_variant",
-                detail,
-            )
-        })?;
-        self.msg_box(prompt, style).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::UiInteraction,
-                    "msg_box_variant",
-                    detail,
-                )
-            })
-        })
+    fn msg_box_variant(&self, _prompt: Variant, _style: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::UiInteraction, "msg_box_variant")
     }
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
     fn input_box(
@@ -211,33 +155,8 @@ pub trait UiInteractionHal: Send + Sync {
         prompt: RuntimeValue,
         default_value: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
-    fn input_box_variant(&self, prompt: Variant, default_value: Variant) -> HalResult<Variant> {
-        let prompt = prompt.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::UiInteraction,
-                "input_box_variant",
-                detail,
-            )
-        })?;
-        let default_value = default_value.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::UiInteraction,
-                "input_box_variant",
-                detail,
-            )
-        })?;
-        self.input_box(prompt, default_value).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::UiInteraction,
-                    "input_box_variant",
-                    detail,
-                )
-            })
-        })
+    fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::UiInteraction, "input_box_variant")
     }
 }
 
@@ -245,435 +164,97 @@ pub trait EventPumpHal: Send + Sync {
     /// Deterministically pumps host events, or reports unsupported behavior.
     fn do_events(&self) -> HalResult<RuntimeValue>;
     fn do_events_variant(&self) -> HalResult<Variant> {
-        self.do_events().and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::EventPump,
-                    "do_events_variant",
-                    detail,
-                )
-            })
-        })
+        variant_companion_not_overridden(CapabilityId::EventPump, "do_events_variant")
     }
 }
 
 pub trait FileSystemHal: Send + Sync {
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn open_variant(&self, path: Variant, mode: Variant) -> HalResult<Variant> {
-        let path = path.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "open_variant",
-                detail,
-            )
-        })?;
-        let mode = mode.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "open_variant",
-                detail,
-            )
-        })?;
-        self.open(path, mode).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "open_variant",
-                    detail,
-                )
-            })
-        })
+    fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "open_variant")
     }
     fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn close_variant(&self, handle: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "close_variant",
-                detail,
-            )
-        })?;
-        self.close(handle).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "close_variant",
-                    detail,
-                )
-            })
-        })
+    fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "close_variant")
     }
     fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn kill_variant(&self, path: Variant) -> HalResult<Variant> {
-        let path = path.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "kill_variant",
-                detail,
-            )
-        })?;
-        self.kill(path).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "kill_variant",
-                    detail,
-                )
-            })
-        })
+    fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "kill_variant")
     }
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn eof_variant(&self, handle: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "eof_variant",
-                detail,
-            )
-        })?;
-        self.eof(handle).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "eof_variant",
-                    detail,
-                )
-            })
-        })
+    fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "eof_variant")
     }
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn lof_variant(&self, handle: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "lof_variant",
-                detail,
-            )
-        })?;
-        self.lof(handle).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "lof_variant",
-                    detail,
-                )
-            })
-        })
+    fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "lof_variant")
     }
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn free_file_variant(&self, range_selector: Variant) -> HalResult<Variant> {
-        let range_selector = range_selector.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "free_file_variant",
-                detail,
-            )
-        })?;
-        self.free_file(range_selector).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "free_file_variant",
-                    detail,
-                )
-            })
-        })
+    fn free_file_variant(&self, _range_selector: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "free_file_variant")
     }
     /// Binary read: reads `count` bytes from the current position (VBA `Get #`).
     fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn read_bytes_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "read_bytes_variant",
-                detail,
-            )
-        })?;
-        let count = count.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "read_bytes_variant",
-                detail,
-            )
-        })?;
-        self.read_bytes(handle, count).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "read_bytes_variant",
-                    detail,
-                )
-            })
-        })
+    fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "read_bytes_variant")
     }
     /// Formatted write output with delimiter semantics (current VBA `Write #` lane).
     fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn write_bytes_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "write_bytes_variant",
-                detail,
-            )
-        })?;
-        let data = data.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "write_bytes_variant",
-                detail,
-            )
-        })?;
-        self.write_bytes(handle, data).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "write_bytes_variant",
-                    detail,
-                )
-            })
-        })
+    fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "write_bytes_variant")
     }
     /// Formatted text output with delimiter semantics (VBA `Print #`).
     fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn print_line_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "print_line_variant",
-                detail,
-            )
-        })?;
-        let data = data.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "print_line_variant",
-                detail,
-            )
-        })?;
-        self.print_line(handle, data).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "print_line_variant",
-                    detail,
-                )
-            })
-        })
+    fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "print_line_variant")
     }
     /// Delimited field parsing from stream (VBA `Input #`).
     fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "input_fields_variant",
-                detail,
-            )
-        })?;
-        let count = count.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "input_fields_variant",
-                detail,
-            )
-        })?;
-        self.input_fields(handle, count).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "input_fields_variant",
-                    detail,
-                )
-            })
-        })
+    fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "input_fields_variant")
     }
     /// Line-oriented read until newline or EOF (VBA `Line Input #`).
     fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn line_input_variant(&self, handle: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "line_input_variant",
-                detail,
-            )
-        })?;
-        self.line_input(handle).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "line_input_variant",
-                    detail,
-                )
-            })
-        })
+    fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "line_input_variant")
     }
     /// Returns current byte position in the file (VBA `Loc()`).
     fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn loc_variant(&self, handle: Variant) -> HalResult<Variant> {
-        let handle = handle.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::FileSystemIo,
-                "loc_variant",
-                detail,
-            )
-        })?;
-        self.loc(handle).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::FileSystemIo,
-                    "loc_variant",
-                    detail,
-                )
-            })
-        })
+    fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "loc_variant")
     }
 }
 
 pub trait ProcessEnvHal: Send + Sync {
     fn shell(&self, command: RuntimeValue, window_style: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn shell_variant(&self, command: Variant, window_style: Variant) -> HalResult<Variant> {
-        let command = command.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ProcessEnv,
-                "shell_variant",
-                detail,
-            )
-        })?;
-        let window_style = window_style.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ProcessEnv,
-                "shell_variant",
-                detail,
-            )
-        })?;
-        self.shell(command, window_style).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ProcessEnv,
-                    "shell_variant",
-                    detail,
-                )
-            })
-        })
+    fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "shell_variant")
     }
     fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn environ_variant(&self, key: Variant) -> HalResult<Variant> {
-        let key = key.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ProcessEnv,
-                "environ_variant",
-                detail,
-            )
-        })?;
-        self.environ(key).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ProcessEnv,
-                    "environ_variant",
-                    detail,
-                )
-            })
-        })
+    fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "environ_variant")
     }
     fn dir(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn dir_variant(&self, path: Variant, attrs: Variant) -> HalResult<Variant> {
-        let path = path.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ProcessEnv,
-                "dir_variant",
-                detail,
-            )
-        })?;
-        let attrs = attrs.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ProcessEnv,
-                "dir_variant",
-                detail,
-            )
-        })?;
-        self.dir(path, attrs).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::ProcessEnv,
-                    "dir_variant",
-                    detail,
-                )
-            })
-        })
+    fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "dir_variant")
     }
 }
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
-        let prog_id = prog_id.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "create_object_variant",
-                detail,
-            )
-        })?;
-        let value = self.create_object(prog_id)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "create_object_variant",
-                detail,
-            )
-        })
+    fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "create_object_variant",
+        )
     }
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
-    fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
-        let value = self.release_object(object)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "release_object_variant",
-                detail,
-            )
-        })
+    fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "release_object_variant",
+        )
     }
     fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
     /// Compatibility COM invoke seam. Implementations may override the
@@ -686,27 +267,17 @@ pub trait ComHal: Send + Sync {
         &self,
         request: &DynamicCallRequest,
     ) -> HalResult<RuntimeValue>;
-    fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
-        let value = self.dispatch_invoke_runtime_value_v2(request)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke_variant",
-                detail,
-            )
-        })
+    fn dispatch_invoke_variant(&self, _request: &ComInvokeRequest) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke_variant",
+        )
     }
-    fn dispatch_invoke_dynamic_variant(&self, request: &DynamicCallRequest) -> HalResult<Variant> {
-        let value = self.dispatch_invoke_dynamic_runtime_value_v2(request)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke_dynamic_variant",
-                detail,
-            )
-        })
+    fn dispatch_invoke_dynamic_variant(&self, _request: &DynamicCallRequest) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke_dynamic_variant",
+        )
     }
     fn subscribe_event(
         &self,
@@ -714,16 +285,11 @@ pub trait ComHal: Send + Sync {
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken>;
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue>;
-    fn unsubscribe_event_variant(&self, subscription: ComSubscriptionToken) -> HalResult<Variant> {
-        let value = self.unsubscribe_event(subscription)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "unsubscribe_event_variant",
-                detail,
-            )
-        })
+    fn unsubscribe_event_variant(&self, _subscription: ComSubscriptionToken) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "unsubscribe_event_variant",
+        )
     }
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
     fn event_callback_subscription(
@@ -738,30 +304,20 @@ pub trait ComHal: Send + Sync {
     ) -> HalResult<RuntimeValue>;
     fn event_callback_variant(
         &self,
-        callback: ComCallbackToken,
-        index: usize,
+        _callback: ComCallbackToken,
+        _index: usize,
     ) -> HalResult<Variant> {
-        let value = self.event_callback_arg(callback, index)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "event_callback_variant",
-                detail,
-            )
-        })
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "event_callback_variant",
+        )
     }
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue>;
-    fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
-        let value = self.release_event_callback(callback)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::ComActivationDispatch,
-                "release_event_callback_variant",
-                detail,
-            )
-        })
+    fn release_event_callback_variant(&self, _callback: ComCallbackToken) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "release_event_callback_variant",
+        )
     }
     fn resolve_typelib_reference(
         &self,
@@ -781,42 +337,15 @@ pub trait ComHal: Send + Sync {
 pub trait TimeLocaleHal: Send + Sync {
     fn date_serial_now(&self) -> HalResult<RuntimeValue>;
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
-        self.date_serial_now().and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::TimeLocale,
-                    "date_serial_now_variant",
-                    detail,
-                )
-            })
-        })
+        variant_companion_not_overridden(CapabilityId::TimeLocale, "date_serial_now_variant")
     }
     fn time_serial_now(&self) -> HalResult<RuntimeValue>;
     fn time_serial_now_variant(&self) -> HalResult<Variant> {
-        self.time_serial_now().and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::TimeLocale,
-                    "time_serial_now_variant",
-                    detail,
-                )
-            })
-        })
+        variant_companion_not_overridden(CapabilityId::TimeLocale, "time_serial_now_variant")
     }
     fn timer_ticks(&self) -> HalResult<RuntimeValue>;
     fn timer_ticks_variant(&self) -> HalResult<Variant> {
-        self.timer_ticks().and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::TimeLocale,
-                    "timer_ticks_variant",
-                    detail,
-                )
-            })
-        })
+        variant_companion_not_overridden(CapabilityId::TimeLocale, "timer_ticks_variant")
     }
 }
 
@@ -872,12 +401,10 @@ pub trait DynamicLinkHal: Send + Sync {
     /// multi-call remains as a compatibility projection for older HAL adapters.
     fn invoke_bound_variants(
         &self,
-        binding: BindingHandle,
-        args: &[Variant],
+        _binding: BindingHandle,
+        _args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
-        let args = variants_to_runtime_values(args, "invoke_bound_variants")?;
-        let (ret, writebacks) = self.invoke_bound_multi(binding, &args)?;
-        runtime_result_to_variants(ret, writebacks, "invoke_bound_variants")
+        variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_bound_variants")
     }
 
     /// Legacy descriptor-driven invoke path used by compatibility integrations.
@@ -903,12 +430,10 @@ pub trait DynamicLinkHal: Send + Sync {
     /// Descriptor-driven Variant-native multi-arg invoke path.
     fn invoke_descriptor_variants(
         &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        args: &[Variant],
+        _descriptor: &DynLinkDescriptorView<'_>,
+        _args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
-        let args = variants_to_runtime_values(args, "invoke_descriptor_variants")?;
-        let (ret, writebacks) = self.invoke_descriptor_multi(descriptor, &args)?;
-        runtime_result_to_variants(ret, writebacks, "invoke_descriptor_variants")
+        variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_descriptor_variants")
     }
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
@@ -916,128 +441,19 @@ pub trait DynamicLinkHal: Send + Sync {
 
     /// Variant-native symbol-token invoke path retained for no-descriptor
     /// VM/JIT external call sites.
-    fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
-        let arg = arg.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DynamicLinking,
-                "invoke_symbol_variant",
-                detail,
-            )
-        })?;
-        let ret = self.invoke_symbol(symbol, arg)?;
-        Variant::try_from_runtime_value(&ret).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DynamicLinking,
-                "invoke_symbol_variant",
-                detail,
-            )
-        })
+    fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_symbol_variant")
     }
-}
-
-fn variants_to_runtime_values(
-    args: &[Variant],
-    operation: &'static str,
-) -> HalResult<Vec<RuntimeValue>> {
-    // Compatibility adapter for legacy HAL implementations that have not
-    // overridden the Variant-native dynamic-link methods.
-    args.iter()
-        .map(|value| {
-            value.to_runtime_value().map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::DynamicLinking,
-                    operation,
-                    detail,
-                )
-            })
-        })
-        .collect()
-}
-
-fn runtime_result_to_variants(
-    ret: RuntimeValue,
-    writebacks: Vec<RuntimeValue>,
-    operation: &'static str,
-) -> HalResult<(Variant, Vec<Variant>)> {
-    // Compatibility adapter for legacy HAL implementations that have not
-    // overridden the Variant-native dynamic-link methods.
-    let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
-        HalError::adapter_fault(
-            HalProfileId::Null,
-            CapabilityId::DynamicLinking,
-            operation,
-            detail,
-        )
-    })?;
-    let writebacks = writebacks
-        .iter()
-        .map(|value| {
-            Variant::try_from_runtime_value(value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::DynamicLinking,
-                    operation,
-                    detail,
-                )
-            })
-        })
-        .collect::<HalResult<Vec<_>>>()?;
-    Ok((ret, writebacks))
 }
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
-        let code = code.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DiagnosticsTelemetry,
-                "emit_variant",
-                detail,
-            )
-        })?;
-        let payload = payload.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DiagnosticsTelemetry,
-                "emit_variant",
-                detail,
-            )
-        })?;
-        self.emit(code, payload).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::DiagnosticsTelemetry,
-                    "emit_variant",
-                    detail,
-                )
-            })
-        })
+    fn emit_variant(&self, _code: Variant, _payload: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::DiagnosticsTelemetry, "emit_variant")
     }
     fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn debug_print_variant(&self, text: Variant) -> HalResult<Variant> {
-        let text = text.to_runtime_value().map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DiagnosticsTelemetry,
-                "debug_print_variant",
-                detail,
-            )
-        })?;
-        self.debug_print(text).and_then(|value| {
-            Variant::try_from_runtime_value(&value).map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::DiagnosticsTelemetry,
-                    "debug_print_variant",
-                    detail,
-                )
-            })
-        })
+    fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::DiagnosticsTelemetry, "debug_print_variant")
     }
 }
 
