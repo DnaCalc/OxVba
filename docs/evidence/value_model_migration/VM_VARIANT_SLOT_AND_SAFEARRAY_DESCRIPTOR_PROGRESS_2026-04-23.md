@@ -1248,6 +1248,12 @@ Implementation progress:
     File read/write text payloads, quoted `Write#` formatting, `Print#`
     payloads, `Input#` field parsing, and `Line Input#` BSTR returns no longer
     inherit the trait-level `Variant -> RuntimeValue -> Variant` fallback.
+96. VM and JIT error-state reads now write retained `Variant` carriers for
+    `Err.Number`, `Err.Description`, and `Err.Source` instead of constructing
+    temporary `RuntimeValue` scalar/string results. VM `LoadNull`,
+    `TypeOf...Is`, `IsNull`, and `IsEmpty` result writes now also use direct
+    `Variant` slot carriers, leaving broader comparison/Boolean operators on
+    their existing compatibility helper path for a separate migration slice.
 
 Remaining blocker:
 
@@ -1332,6 +1338,8 @@ Remaining blocker:
    `StrPtr`/`VarPtr`/`ObjPtr`, `LBound`/`UBound`, `VarType`, `TypeName`,
    `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`, `IsEmpty`, and
    `IsArray` instead of creating temporary `RuntimeValue` scalar results.
+   VM/JIT `Err.*` reads and VM `LoadNull`, `TypeOf...Is`, `IsNull`, and
+   `IsEmpty` result writes now also stay on retained `Variant` carriers.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
