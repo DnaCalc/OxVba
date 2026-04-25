@@ -430,7 +430,8 @@ mod tests {
     fn runtime_array_resize_paths_preserve_variant_slot_carriers() {
         let mut ctx = JitContextOwned::new(2, 2, super::default_host_services(), &[]);
         unsafe {
-            ctx.context.write_slot(1, RuntimeValue::I32(2));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("2")));
         }
 
         let resized_upper_bounds = [1u32];
@@ -473,7 +474,8 @@ mod tests {
                     .expect("byte SAFEARRAY setup should succeed"),
                 ),
             );
-            ctx.context.write_slot(1, RuntimeValue::I32(3));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("3")));
         }
 
         let upper_bounds = [1u32];
@@ -1089,7 +1091,8 @@ mod tests {
                     Variant::from_i32(7),
                 ])),
             );
-            ctx.context.write_slot(1, RuntimeValue::I32(1));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("1")));
             ctx.context
                 .write_variant_slot(3, Variant::from_string(BStr::from("B")));
         }
@@ -1104,7 +1107,8 @@ mod tests {
             Variant::from_i32(7)
         );
         unsafe {
-            ctx.context.write_slot(4, RuntimeValue::I32(0));
+            ctx.context
+                .write_variant_slot(4, Variant::from_string(BStr::from("0")));
         }
 
         let first_index = [4u32];

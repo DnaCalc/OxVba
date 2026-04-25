@@ -1871,8 +1871,8 @@ pub extern "C" fn oxrt_array_resize(
     let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds_ptr, bounds_len as usize) };
     let mut upper_bounds = Vec::with_capacity(upper_bound_slots.len());
     for &upper_bound_slot in upper_bound_slots {
-        match semantics::runtime_value_to_i32_compat(
-            &read_slot!(ctx, upper_bound_slot),
+        match semantics::runtime_variant_to_i32_compat(
+            &read_variant_slot!(ctx, upper_bound_slot),
             "ReDim upper bound",
         ) {
             Ok(value) => upper_bounds.push(value),
@@ -1904,8 +1904,8 @@ pub extern "C" fn oxrt_array_resize_preserve(
     let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds_ptr, bounds_len as usize) };
     let mut upper_bounds = Vec::with_capacity(upper_bound_slots.len());
     for &upper_bound_slot in upper_bound_slots {
-        match semantics::runtime_value_to_i32_compat(
-            &read_slot!(ctx, upper_bound_slot),
+        match semantics::runtime_variant_to_i32_compat(
+            &read_variant_slot!(ctx, upper_bound_slot),
             "ReDim Preserve upper bound",
         ) {
             Ok(value) => upper_bounds.push(value),
@@ -1938,7 +1938,7 @@ pub extern "C" fn oxrt_array_get(
         unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
     let index_values = index_slots
         .iter()
-        .map(|slot| read_slot!(ctx, *slot))
+        .map(|slot| read_variant_slot!(ctx, *slot))
         .collect::<Vec<_>>();
     let value =
         match semantics::runtime_array_get_variant(&array_value, &index_values, "array index") {
@@ -1962,7 +1962,7 @@ pub extern "C" fn oxrt_array_set(
         unsafe { std::slice::from_raw_parts(index_slots_ptr, index_slots_len as usize) };
     let index_values = index_slots
         .iter()
-        .map(|slot| read_slot!(ctx, *slot))
+        .map(|slot| read_variant_slot!(ctx, *slot))
         .collect::<Vec<_>>();
     let src_value = read_variant_slot!(ctx, src_slot);
     let value = match semantics::runtime_array_set_variant(

@@ -3467,6 +3467,16 @@ fn runtime_array_indices(index_values: &[RuntimeValue], field: &str) -> Result<V
         .collect()
 }
 
+fn runtime_array_variant_indices(
+    index_values: &[oxvba_runtime::Variant],
+    field: &str,
+) -> Result<Vec<i32>, String> {
+    index_values
+        .iter()
+        .map(|value| runtime_variant_to_i32_compat(value, field))
+        .collect()
+}
+
 pub fn runtime_array_get(
     array_value: &RuntimeValue,
     index_values: &[RuntimeValue],
@@ -3492,7 +3502,7 @@ pub fn runtime_array_get(
 
 pub fn runtime_array_get_variant(
     array_value: &oxvba_runtime::Variant,
-    index_values: &[RuntimeValue],
+    index_values: &[oxvba_runtime::Variant],
     field: &str,
 ) -> Result<oxvba_runtime::Variant, String> {
     let Some(array) = array_value.as_safearray() else {
@@ -3504,7 +3514,7 @@ pub fn runtime_array_get_variant(
     let elements = elements_binding
         .as_ref()
         .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
-    let indices = runtime_array_indices(index_values, field)?;
+    let indices = runtime_array_variant_indices(index_values, field)?;
     let bounds = runtime_array_bounds(&array);
     let offset = runtime_array_offset(&bounds, &indices, field)?;
     elements
@@ -3542,7 +3552,7 @@ pub fn runtime_array_set(
 
 pub fn runtime_array_set_variant(
     array_value: &oxvba_runtime::Variant,
-    index_values: &[RuntimeValue],
+    index_values: &[oxvba_runtime::Variant],
     new_value: &oxvba_runtime::Variant,
     field: &str,
 ) -> Result<oxvba_runtime::Variant, String> {
@@ -3553,7 +3563,7 @@ pub fn runtime_array_set_variant(
     };
     let updated = array.clone();
     let bounds = runtime_array_bounds(&updated);
-    let indices = runtime_array_indices(index_values, field)?;
+    let indices = runtime_array_variant_indices(index_values, field)?;
     let offset = runtime_array_offset(&bounds, &indices, field)?;
     let mut elements = updated
         .variant_elements()

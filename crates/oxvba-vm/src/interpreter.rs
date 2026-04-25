@@ -2043,8 +2043,8 @@ impl Vm {
                     let mut resolved_upper_bounds = Vec::with_capacity(upper_bounds.len());
                     let mut upper_error = None;
                     for upper_bound in upper_bounds {
-                        match crate::semantics::runtime_value_to_i32_compat(
-                            &self.read_value_slot(*upper_bound)?,
+                        match crate::semantics::runtime_variant_to_i32_compat(
+                            &self.read_variant_slot(*upper_bound)?,
                             "ReDim upper bound",
                         ) {
                             Ok(value) => resolved_upper_bounds.push(value),
@@ -2081,8 +2081,8 @@ impl Vm {
                     let mut resolved_upper_bounds = Vec::with_capacity(upper_bounds.len());
                     let mut upper_error = None;
                     for upper_bound in upper_bounds {
-                        match crate::semantics::runtime_value_to_i32_compat(
-                            &self.read_value_slot(*upper_bound)?,
+                        match crate::semantics::runtime_variant_to_i32_compat(
+                            &self.read_variant_slot(*upper_bound)?,
                             "ReDim Preserve upper bound",
                         ) {
                             Ok(value) => resolved_upper_bounds.push(value),
@@ -2120,7 +2120,7 @@ impl Vm {
                     let array_value = self.read_variant_slot(*array)?;
                     let index_values = indices
                         .iter()
-                        .map(|slot| self.read_value_slot(*slot))
+                        .map(|slot| self.read_variant_slot(*slot))
                         .collect::<Result<Vec<_>, _>>()?;
                     let value = match crate::semantics::runtime_array_get_variant(
                         &array_value,
@@ -2144,7 +2144,7 @@ impl Vm {
                     let array_value = self.read_variant_slot(*array)?;
                     let index_values = indices
                         .iter()
-                        .map(|slot| self.read_value_slot(*slot))
+                        .map(|slot| self.read_variant_slot(*slot))
                         .collect::<Result<Vec<_>, _>>()?;
                     let src_value = self.read_variant_slot(*src)?;
                     let value = match crate::semantics::runtime_array_set_variant(
@@ -5974,14 +5974,20 @@ mod tests {
     fn intrinsic_array_get_set_preserve_retained_variant_payloads() {
         let bytecode = Bytecode {
             instructions: vec![
-                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "1".to_string(),
+                },
                 Instruction::IntrinsicArrayResize {
                     dst: 1,
                     upper_bounds: vec![0],
                     lower_bounds: vec![0],
                     element_type: RuntimeArrayElementType::Variant,
                 },
-                Instruction::LoadConstI32 { slot: 2, value: 0 },
+                Instruction::LoadConstString {
+                    slot: 2,
+                    value: "0".to_string(),
+                },
                 Instruction::LoadConstString {
                     slot: 3,
                     value: "payload".to_string(),
