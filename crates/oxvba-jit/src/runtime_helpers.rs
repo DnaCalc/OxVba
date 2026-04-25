@@ -5,6 +5,8 @@
 //! Each helper is an `extern "C"` function registered with Cranelift's
 //! `JITBuilder::symbol()`. They implement instruction semantics by calling
 //! the same shared logic as the VM interpreter (via `oxvba_vm::semantics`).
+//! Helpers that still call `RuntimeValue` semantic functions are compatibility
+//! bridges over retained `Variant` JIT slots, not retained value storage.
 //!
 //! Return convention: 0 = success, nonzero = error code.
 
@@ -72,6 +74,10 @@ macro_rules! write_variant_slot {
     }};
 }
 
+/// Write a legacy semantic helper result into retained JIT slot storage.
+///
+/// This is a compatibility bridge for helper families that still return
+/// `RuntimeValue`; new helper implementations should write `Variant` directly.
 fn write_semantic_value_slot(ctx: *mut JitContext, slot: u32, value: RuntimeValue) -> i32 {
     match Variant::try_from_runtime_value(&value) {
         Ok(value) => {

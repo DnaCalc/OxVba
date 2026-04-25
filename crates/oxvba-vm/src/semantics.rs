@@ -2,6 +2,11 @@
 //!
 //! These functions are extracted from the interpreter so they can be reused
 //! by the JIT runtime helpers without duplication.
+//!
+//! The functions that accept or return `RuntimeValue` are legacy semantic
+//! helper contracts. VM and JIT storage has moved to retained `Variant` slots;
+//! these helpers remain a compatibility/projection layer until each semantic
+//! family grows a Variant-native companion or is otherwise migrated.
 
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicMemberSelector};
 use oxvba_compiler::bytecode::{
