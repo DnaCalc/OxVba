@@ -85,17 +85,33 @@ impl ConsoleHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
     }
 
+    fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
+    }
+
     fn input_fields(&self, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
+    }
+
+    fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
     }
 
     fn line_input(&self) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
     }
+
+    fn line_input_variant(&self) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
+    }
 }
 
 impl UiInteractionHal for NullHostServices {
     fn msg_box(&self, _prompt: RuntimeValue, _style: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
+    }
+
+    fn msg_box_variant(&self, _prompt: Variant, _style: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
     }
 
@@ -106,10 +122,22 @@ impl UiInteractionHal for NullHostServices {
     ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
+
+    fn input_box_variant(
+        &self,
+        _prompt: Variant,
+        _default_value: Variant,
+    ) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
+    }
 }
 
 impl EventPumpHal for NullHostServices {
     fn do_events(&self) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::EventPump, "do_events"))
+    }
+
+    fn do_events_variant(&self) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::EventPump, "do_events"))
     }
 }
@@ -119,11 +147,23 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
     }
 
+    fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
+    }
+
     fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
     }
 
+    fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
+    }
+
     fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
+    }
+
+    fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
     }
 
@@ -135,7 +175,15 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
     }
 
+    fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
+    }
+
     fn lof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
+    }
+
+    fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
     }
 
@@ -143,7 +191,15 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
 
+    fn free_file_variant(&self, _range_selector: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
+    }
+
     fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
+    }
+
+    fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
     }
 
@@ -151,7 +207,15 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
 
+    fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
+    }
+
     fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
+    }
+
+    fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
     }
 
@@ -159,11 +223,23 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 
+    fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
+    }
+
     fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
     }
 
+    fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
+    }
+
     fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
+    }
+
+    fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
     }
 }
@@ -177,11 +253,23 @@ impl ProcessEnvHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
+    fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
+    }
+
     fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
     }
 
+    fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
+    }
+
     fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
+    }
+
+    fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
 }
@@ -383,7 +471,8 @@ mod tests {
     use crate::{
         error::HalErrorKind,
         traits::{
-            ComHal, DiagnosticsHal, DynamicLinkHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+            ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, FileSystemHal, ProcessEnvHal,
+            TimeLocaleHal, UiInteractionHal,
         },
     };
     use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue, Variant};
@@ -486,6 +575,24 @@ mod tests {
         assert_eq!(
             host.invoke_symbol_variant(1.into(), &Variant::null())
                 .expect_err("dynamic-link unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            ConsoleHal::print_line_variant(&host, Variant::null())
+                .expect_err("console unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.open_variant(Variant::null(), Variant::null())
+                .expect_err("filesystem unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.shell_variant(Variant::null(), Variant::null())
+                .expect_err("process unsupported")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

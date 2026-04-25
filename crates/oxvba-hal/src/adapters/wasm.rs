@@ -97,11 +97,23 @@ impl ConsoleHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
     }
 
+    fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
+    }
+
     fn input_fields(&self, _count: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
     }
 
+    fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
+    }
+
     fn line_input(&self) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
+    }
+
+    fn line_input_variant(&self) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
     }
 }
@@ -132,11 +144,53 @@ impl UiInteractionHal for WasmHostServices {
         }
     }
 
+    fn msg_box_variant(&self, _prompt: Variant, style: Variant) -> HalResult<Variant> {
+        if !self.supports(CapabilityId::UiInteraction) {
+            return Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"));
+        }
+        if !self.policy.allow_interaction {
+            return Err(self.denied(CapabilityId::UiInteraction, "msg_box"));
+        }
+        let style = style.project_compat_slot_i32().map_err(|detail| {
+            crate::HalError::adapter_fault(
+                HalProfileId::Wasm,
+                CapabilityId::UiInteraction,
+                "msg_box_variant",
+                format!("style cannot enter legacy wasm UI lane: {detail}"),
+            )
+        })?;
+        match self.policy.ui_virtualization {
+            UiVirtualizationMode::ScriptedResponses | UiVirtualizationMode::HostCallback => {
+                Ok(Variant::from_i32(style.max(1)))
+            }
+            UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
+                Err(self.denied(CapabilityId::UiInteraction, "msg_box"))
+            }
+        }
+    }
+
     fn input_box(
         &self,
         _prompt: RuntimeValue,
         default_value: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
+        if !self.supports(CapabilityId::UiInteraction) {
+            return Err(self.unsupported(CapabilityId::UiInteraction, "input_box"));
+        }
+        if !self.policy.allow_interaction {
+            return Err(self.denied(CapabilityId::UiInteraction, "input_box"));
+        }
+        match self.policy.ui_virtualization {
+            UiVirtualizationMode::ScriptedResponses | UiVirtualizationMode::HostCallback => {
+                Ok(default_value)
+            }
+            UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
+                Err(self.denied(CapabilityId::UiInteraction, "input_box"))
+            }
+        }
+    }
+
+    fn input_box_variant(&self, _prompt: Variant, default_value: Variant) -> HalResult<Variant> {
         if !self.supports(CapabilityId::UiInteraction) {
             return Err(self.unsupported(CapabilityId::UiInteraction, "input_box"));
         }
@@ -158,6 +212,10 @@ impl EventPumpHal for WasmHostServices {
     fn do_events(&self) -> HalResult<RuntimeValue> {
         Ok(RuntimeValue::I32(0))
     }
+
+    fn do_events_variant(&self) -> HalResult<Variant> {
+        Ok(Variant::from_i32(0))
+    }
 }
 
 impl FileSystemHal for WasmHostServices {
@@ -165,11 +223,23 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
     }
 
+    fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
+    }
+
     fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
     }
 
+    fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
+    }
+
     fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
+    }
+
+    fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
     }
 
@@ -181,7 +251,15 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
     }
 
+    fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
+    }
+
     fn lof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
+    }
+
+    fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
     }
 
@@ -189,7 +267,15 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
 
+    fn free_file_variant(&self, _range_selector: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
+    }
+
     fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
+    }
+
+    fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
     }
 
@@ -197,7 +283,15 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
 
+    fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
+    }
+
     fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
+    }
+
+    fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
     }
 
@@ -205,11 +299,23 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 
+    fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
+    }
+
     fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
     }
 
+    fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
+    }
+
     fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
+    }
+
+    fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
     }
 }
@@ -223,11 +329,23 @@ impl ProcessEnvHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
+    fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
+    }
+
     fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
     }
 
+    fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
+    }
+
     fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
+    }
+
+    fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
 }
@@ -483,8 +601,8 @@ mod tests {
         error::HalErrorKind,
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
         traits::{
-            ComHal, DiagnosticsHal, DynamicLinkHal, HostServices, ProcessEnvHal, TimeLocaleHal,
-            UiInteractionHal,
+            ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+            HostServices, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
         },
     };
     use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
@@ -599,6 +717,28 @@ mod tests {
         assert_eq!(
             host.invoke_symbol_variant(1.into(), &Variant::null())
                 .expect_err("dynamic-link unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.do_events_variant().expect("do events"),
+            Variant::from_i32(0)
+        );
+        assert_eq!(
+            ConsoleHal::print_line_variant(&host, Variant::null())
+                .expect_err("console unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.open_variant(Variant::null(), Variant::null())
+                .expect_err("filesystem unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.shell_variant(Variant::null(), Variant::null())
+                .expect_err("process unsupported")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

@@ -2216,6 +2216,11 @@ Child beads:
        dynamic-link Variant companions now return retained Variant carriers or
        explicit unsupported Variant faults directly instead of inheriting the
        trait-level `RuntimeValue` fallback projection
+     - progress landed: null/WASM/replay console, UI, event-pump,
+       file-system, and process/environment Variant companions now return
+       retained Variant carriers, replay journal carriers, or explicit
+       unsupported Variant faults directly instead of inheriting the
+       trait-level `RuntimeValue` fallback projection
      - progress landed: VM and JIT file `Seek` helper paths now decode the
        host `Loc` return carrier through a Variant-native numeric compatibility
        decoder before writing the retained `Seek` result Variant, removing the
