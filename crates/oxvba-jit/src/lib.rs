@@ -240,6 +240,40 @@ mod tests {
         assert_eq!(out[0].as_i32(), Some(3));
     }
 
+    #[test]
+    fn runtime_arithmetic_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(8, 8, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("12")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(3));
+            ctx.context.write_variant_slot(2, Variant::from_i32(12));
+            ctx.context.write_variant_slot(3, Variant::from_i32(3));
+            ctx.context.write_variant_slot(4, Variant::null());
+            ctx.context.write_variant_slot(5, Variant::from_i32(7));
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_add_slots(ctx.context_ptr(), 6, 0, 1),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_div_slots(ctx.context_ptr(), 7, 2, 3),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_concat_slots(ctx.context_ptr(), 4, 4, 5),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_neg_slot(ctx.context_ptr(), 5, 5), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[6], RuntimeValue::I32(15));
+        assert_eq!(values[7], RuntimeValue::F64(F64Value::from_f64(4.0)));
+        assert_eq!(values[4], RuntimeValue::String(BStr::from("7")));
+        assert_eq!(values[5], RuntimeValue::I32(-7));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn execute_and_snapshot_values_fallback_preserves_non_legacy_runtime_values() {
@@ -487,7 +521,10 @@ mod tests {
                 .write_variant_slot(5, Variant::from_string(BStr::from("ABC")));
         }
 
-        assert_eq!(runtime_helpers::oxrt_instr(ctx.context_ptr(), 6, 0, 1, 0), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_instr(ctx.context_ptr(), 6, 0, 1, 0),
+            0
+        );
         assert_eq!(
             runtime_helpers::oxrt_instrrev(ctx.context_ptr(), 7, 0, 1, 0),
             0
@@ -511,10 +548,7 @@ mod tests {
         assert_eq!(values[7], RuntimeValue::I32(4));
         assert_eq!(values[8], RuntimeValue::String(BStr::from("abc")));
         assert_eq!(values[9], RuntimeValue::String(BStr::from("ABC")));
-        assert_eq!(
-            values[10],
-            RuntimeValue::String(BStr::from("HelLO World"))
-        );
+        assert_eq!(values[10], RuntimeValue::String(BStr::from("HelLO World")));
         assert_eq!(values[11], RuntimeValue::String(BStr::from("spaced")));
         assert_eq!(values[12], RuntimeValue::I32(0));
         assert_eq!(values[13], RuntimeValue::String(BStr::from("spaced  ")));
@@ -546,7 +580,10 @@ mod tests {
         );
         assert_eq!(runtime_helpers::oxrt_hex(ctx.context_ptr(), 11, 4), 0);
         assert_eq!(runtime_helpers::oxrt_oct(ctx.context_ptr(), 12, 5), 0);
-        assert_eq!(runtime_helpers::oxrt_month_name(ctx.context_ptr(), 13, 6), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_month_name(ctx.context_ptr(), 13, 6),
+            0
+        );
 
         let values = ctx.extract_user_values();
         assert_eq!(values[7], RuntimeValue::String(BStr::from("A")));
@@ -707,7 +744,10 @@ mod tests {
             ctx.context.write_variant_slot(7, Variant::from_i32(0));
         }
 
-        assert_eq!(runtime_helpers::oxrt_mid_stmt(ctx.context_ptr(), 0, 1, 2, 3), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_mid_stmt(ctx.context_ptr(), 0, 1, 2, 3),
+            0
+        );
         assert_eq!(runtime_helpers::oxrt_split(ctx.context_ptr(), 8, 4, 5), 0);
         assert_eq!(runtime_helpers::oxrt_join(ctx.context_ptr(), 7, 6, 7), 0);
 
@@ -837,8 +877,10 @@ mod tests {
         unsafe {
             ctx.context
                 .write_variant_slot(0, Variant::from_string(BStr::from("2024-01-31")));
-            ctx.context.write_variant_slot(1, Variant::from_i32(20240131));
-            ctx.context.write_variant_slot(2, Variant::from_i64(20240131));
+            ctx.context
+                .write_variant_slot(1, Variant::from_i32(20240131));
+            ctx.context
+                .write_variant_slot(2, Variant::from_i64(20240131));
             ctx.context.write_variant_slot(3, Variant::from_f64(42.0));
             ctx.context
                 .write_variant_slot(4, Variant::from_currency_scaled_i64(420_000));
@@ -850,15 +892,42 @@ mod tests {
             ctx.context.write_variant_slot(8, Variant::from_bool(true));
         }
 
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 9, 0), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 10, 1), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 11, 2), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 12, 3), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 13, 4), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 14, 5), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 15, 6), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 16, 7), 0);
-        assert_eq!(runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 17, 8), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 9, 0),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 10, 1),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 11, 2),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 12, 3),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 13, 4),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 14, 5),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 15, 6),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 16, 7),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_date_tag(ctx.context_ptr(), 17, 8),
+            0
+        );
 
         let values = ctx.extract_user_values();
         assert_eq!(values[9], RuntimeValue::I32(1));
@@ -884,9 +953,18 @@ mod tests {
             ctx.context.write_variant_slot(2, Variant::from_i32(7));
         }
 
-        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 3, 0), 0);
-        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 4, 1), 0);
-        assert_eq!(runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 5, 2), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 3, 0),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 4, 1),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_is_object_tag(ctx.context_ptr(), 5, 2),
+            0
+        );
 
         let values = ctx.extract_user_values();
         assert_eq!(values[3], RuntimeValue::I32(1));

@@ -759,7 +759,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::LoadConstString { slot, value } => {
-                    self.write_variant_slot(*slot, Variant::from_string(BStr::from(value.clone())))?;
+                    self.write_variant_slot(
+                        *slot,
+                        Variant::from_string(BStr::from(value.clone())),
+                    )?;
                     pc += 1;
                 }
                 Instruction::LoadConstF64 { slot, bits } => {
@@ -771,16 +774,20 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*slot)?;
-                    let out = Self::legacy_add_const_value(&lhs, *value, "add-const operand")?;
-                    self.write_semantic_value_slot(*slot, out)?;
+                    let lhs = self.read_variant_slot(*slot)?;
+                    let out = crate::semantics::variant_add_const_value(
+                        &lhs,
+                        *value,
+                        "add-const operand",
+                    )?;
+                    self.write_variant_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::AddSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_add_values(&lhs, &rhs)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_add_values(&lhs, &rhs)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
@@ -788,31 +795,35 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_value_slot(*slot)?;
-                    let out = Self::legacy_add_const_value(&lhs, -*value, "sub-const operand")?;
-                    self.write_semantic_value_slot(*slot, out)?;
+                    let lhs = self.read_variant_slot(*slot)?;
+                    let out = crate::semantics::variant_add_const_value(
+                        &lhs,
+                        -*value,
+                        "sub-const operand",
+                    )?;
+                    self.write_variant_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::SubSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_sub_values(&lhs, &rhs)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_sub_values(&lhs, &rhs)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::MulSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_mul_values(&lhs, &rhs)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_mul_values(&lhs, &rhs)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::DivSlots { dst, lhs, rhs } => {
-                    let lhs_val = self.read_value_slot(*lhs)?;
-                    let rhs_val = self.read_value_slot(*rhs)?;
-                    match crate::semantics::legacy_div_values(&lhs_val, &rhs_val)? {
+                    let lhs_val = self.read_variant_slot(*lhs)?;
+                    let rhs_val = self.read_variant_slot(*rhs)?;
+                    match crate::semantics::variant_div_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_semantic_value_slot(*dst, out)?;
+                            self.write_variant_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -824,11 +835,11 @@ impl Vm {
                     }
                 }
                 Instruction::IntDivSlots { dst, lhs, rhs } => {
-                    let lhs_val = self.read_value_slot(*lhs)?;
-                    let rhs_val = self.read_value_slot(*rhs)?;
-                    match crate::semantics::legacy_intdiv_values(&lhs_val, &rhs_val)? {
+                    let lhs_val = self.read_variant_slot(*lhs)?;
+                    let rhs_val = self.read_variant_slot(*rhs)?;
+                    match crate::semantics::variant_intdiv_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_semantic_value_slot(*dst, out)?;
+                            self.write_variant_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -844,11 +855,11 @@ impl Vm {
                     }
                 }
                 Instruction::ModSlots { dst, lhs, rhs } => {
-                    let lhs_val = self.read_value_slot(*lhs)?;
-                    let rhs_val = self.read_value_slot(*rhs)?;
-                    match crate::semantics::legacy_mod_values(&lhs_val, &rhs_val)? {
+                    let lhs_val = self.read_variant_slot(*lhs)?;
+                    let rhs_val = self.read_variant_slot(*rhs)?;
+                    match crate::semantics::variant_mod_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_semantic_value_slot(*dst, out)?;
+                            self.write_variant_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -860,23 +871,23 @@ impl Vm {
                     }
                 }
                 Instruction::PowSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_pow_values(&lhs, &rhs)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_pow_values(&lhs, &rhs)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::ConcatSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let rhs = self.read_value_slot(*rhs)?;
-                    let out = Self::legacy_concat_values(&lhs, &rhs);
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let rhs = self.read_variant_slot(*rhs)?;
+                    let out = crate::semantics::variant_concat_values(&lhs, &rhs);
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::NegSlot { dst, src } => {
-                    let val = self.read_value_slot(*src)?;
-                    let out = Self::legacy_neg_value(&val)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let val = self.read_variant_slot(*src)?;
+                    let out = crate::semantics::variant_neg_value(&val)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::CopySlot { dst, src } => {
@@ -898,14 +909,12 @@ impl Vm {
                     let src_val = self.read_variant_slot(*src)?;
                     let text = crate::semantics::runtime_variant_to_text(&src_val, "Left src")?;
                     let count_val = self.read_variant_slot(*count)?;
-                    let n = crate::semantics::runtime_variant_to_i32_compat(
-                        &count_val,
-                        "Left count",
-                    )
-                    .and_then(|value| {
-                        usize::try_from(value)
-                            .map_err(|_| format!("Left count cannot be negative: {value}"))
-                    })?;
+                    let n =
+                        crate::semantics::runtime_variant_to_i32_compat(&count_val, "Left count")
+                            .and_then(|value| {
+                            usize::try_from(value)
+                                .map_err(|_| format!("Left count cannot be negative: {value}"))
+                        })?;
                     let result = if n >= text.len() {
                         text
                     } else {
@@ -918,14 +927,12 @@ impl Vm {
                     let src_val = self.read_variant_slot(*src)?;
                     let text = crate::semantics::runtime_variant_to_text(&src_val, "Right src")?;
                     let count_val = self.read_variant_slot(*count)?;
-                    let n = crate::semantics::runtime_variant_to_i32_compat(
-                        &count_val,
-                        "Right count",
-                    )
-                    .and_then(|value| {
-                        usize::try_from(value)
-                            .map_err(|_| format!("Right count cannot be negative: {value}"))
-                    })?;
+                    let n =
+                        crate::semantics::runtime_variant_to_i32_compat(&count_val, "Right count")
+                            .and_then(|value| {
+                                usize::try_from(value)
+                                    .map_err(|_| format!("Right count cannot be negative: {value}"))
+                            })?;
                     let len = text.len();
                     let result = if n >= len {
                         text
@@ -944,24 +951,22 @@ impl Vm {
                     let src_val = self.read_variant_slot(*src)?;
                     let text = crate::semantics::runtime_variant_to_text(&src_val, "Mid src")?;
                     let start_val = self.read_variant_slot(*start)?;
-                    let st = crate::semantics::runtime_variant_to_i32_compat(
-                        &start_val,
-                        "Mid start",
-                    )
-                    .and_then(|value| {
-                        usize::try_from(value)
-                            .map_err(|_| format!("Mid start cannot be negative: {value}"))
-                    })?;
+                    let st =
+                        crate::semantics::runtime_variant_to_i32_compat(&start_val, "Mid start")
+                            .and_then(|value| {
+                                usize::try_from(value)
+                                    .map_err(|_| format!("Mid start cannot be negative: {value}"))
+                            })?;
                     let cnt = match count {
                         Some(slot) => {
                             let cv = self.read_variant_slot(*slot)?;
                             Some(
                                 crate::semantics::runtime_variant_to_i32_compat(&cv, "Mid count")
                                     .and_then(|value| {
-                                        usize::try_from(value).map_err(|_| {
-                                            format!("Mid count cannot be negative: {value}")
-                                        })
-                                    })?,
+                                    usize::try_from(value).map_err(|_| {
+                                        format!("Mid count cannot be negative: {value}")
+                                    })
+                                })?,
                             )
                         }
                         None => None,
@@ -1241,12 +1246,18 @@ impl Vm {
                 }
                 Instruction::IntrinsicYearDigits { dst, src } => {
                     let v = self.read_variant_slot(*src)?;
-                    self.write_variant_slot(*dst, crate::semantics::runtime_variant_date_year(&v)?)?;
+                    self.write_variant_slot(
+                        *dst,
+                        crate::semantics::runtime_variant_date_year(&v)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthDigits { dst, src } => {
                     let v = self.read_variant_slot(*src)?;
-                    self.write_variant_slot(*dst, crate::semantics::runtime_variant_date_month(&v)?)?;
+                    self.write_variant_slot(
+                        *dst,
+                        crate::semantics::runtime_variant_date_month(&v)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDayDigits { dst, src } => {
@@ -1311,14 +1322,9 @@ impl Vm {
                     let file_num = self.read_variant_slot(*file_number)?;
                     // Encode file_number into upper 16 bits of mode so the HAL
                     // can allocate the specific handle requested by the VBA source.
-                    let mode_i32 = crate::semantics::variant_to_i32_compat(
-                        &mode_val,
-                        "Open mode",
-                    )?;
-                    let fnum_i32 = crate::semantics::variant_to_i32_compat(
-                        &file_num,
-                        "Open file number",
-                    )?;
+                    let mode_i32 = crate::semantics::variant_to_i32_compat(&mode_val, "Open mode")?;
+                    let fnum_i32 =
+                        crate::semantics::variant_to_i32_compat(&file_num, "Open file number")?;
                     let combined_mode = Variant::from_i32(mode_i32 | (fnum_i32 << 16));
                     match self.host_services.fs().open_variant(path, combined_mode) {
                         Ok(value) => {
@@ -1529,10 +1535,11 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicBeepHost { dst } => {
-                    match self.host_services.diag().emit_variant(
-                        Variant::from_i32(7),
-                        Variant::from_i32(0),
-                    ) {
+                    match self
+                        .host_services
+                        .diag()
+                        .emit_variant(Variant::from_i32(7), Variant::from_i32(0))
+                    {
                         Ok(value) => {
                             self.write_variant_slot(*dst, value)?;
                             pc += 1;
@@ -1959,7 +1966,9 @@ impl Vm {
                     };
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::rate_i32(nper, pmt, pv, fv, due, guess)),
+                        Variant::from_compat_slot_i32(Self::rate_i32(
+                            nper, pmt, pv, fv, due, guess,
+                        )),
                     )?;
                     pc += 1;
                 }
@@ -2858,10 +2867,8 @@ impl Vm {
                 } => {
                     let owner = self.read_variant_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
-                    let owner = crate::semantics::variant_to_withevents_owner_handle(
-                        &owner,
-                        "owner",
-                    )?;
+                    let owner =
+                        crate::semantics::variant_to_withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     let value = self
@@ -2881,10 +2888,8 @@ impl Vm {
                     let owner = self.read_variant_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
                     let value = self.read_variant_slot(*value)?;
-                    let owner = crate::semantics::variant_to_withevents_owner_handle(
-                        &owner,
-                        "owner",
-                    )?;
+                    let owner =
+                        crate::semantics::variant_to_withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
@@ -2900,10 +2905,8 @@ impl Vm {
                 }
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
                     let owner = self.read_variant_slot(*owner)?;
-                    let owner = crate::semantics::variant_to_withevents_owner_handle(
-                        &owner,
-                        "owner",
-                    )?;
+                    let owner =
+                        crate::semantics::variant_to_withevents_owner_handle(&owner, "owner")?;
                     self.clear_com_withevents_owner_subscriptions(owner.clone())?;
                     self.withevents_bindings.retain(|key, _| {
                         Self::withevents_owner_from_key(*key).raw() != owner.raw()
@@ -2918,15 +2921,14 @@ impl Vm {
                 } => {
                     let source_slot = *source;
                     let source = self.read_variant_slot(source_slot)?;
-                    let source_variant =
-                        if source.as_i32() == Some(0)
-                            || source.as_i64() == Some(0)
-                            || source.as_bool() == Some(false)
-                        {
-                            None
-                        } else {
-                            Some(source)
-                        };
+                    let source_variant = if source.as_i32() == Some(0)
+                        || source.as_i64() == Some(0)
+                        || source.as_bool() == Some(false)
+                    {
+                        None
+                    } else {
+                        Some(source)
+                    };
                     let binding = self.read_value_slot(*binding)?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let mut owners =
@@ -3345,9 +3347,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let value = self.read_value_slot(*slot)?;
-                    let out = Self::legacy_increment_value(&value)?;
-                    self.write_semantic_value_slot(*slot, out)?;
+                    let value = self.read_variant_slot(*slot)?;
+                    let out = crate::semantics::variant_increment_value(&value)?;
+                    self.write_variant_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::Halt => break,
@@ -3404,7 +3406,11 @@ impl Vm {
         Ok(())
     }
 
-    fn write_semantic_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
+    fn write_semantic_value_slot(
+        &mut self,
+        slot: usize,
+        value: RuntimeValue,
+    ) -> Result<(), String> {
         let value = Variant::try_from_runtime_value(&value)?;
         self.write_variant_slot(slot, value)
     }
@@ -3798,9 +3804,9 @@ impl Vm {
                 continue;
             }
             bound[index] = Some(if param.param_array {
-                RuntimeSlot::Variant(Variant::from_safearray(SafeArray::from_variants(
-                    Vec::new(),
-                )))
+                RuntimeSlot::Variant(Variant::from_safearray(
+                    SafeArray::from_variants(Vec::new()),
+                ))
             } else if param.optional {
                 Self::default_project_dynamic_param_slot(param)
             } else {
@@ -3917,7 +3923,10 @@ impl Vm {
                 ));
             }
         };
-        values.insert(0, RuntimeSlot::Variant(Variant::from_object_ref(object.clone())));
+        values.insert(
+            0,
+            RuntimeSlot::Variant(Variant::from_object_ref(object.clone())),
+        );
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
@@ -4165,9 +4174,7 @@ impl Vm {
             .events()
             .do_events_variant()
             .map_err(|err| err.to_string())?;
-        if value.as_i32() == Some(0)
-            || value.as_i64() == Some(0)
-            || value.as_bool() == Some(false)
+        if value.as_i32() == Some(0) || value.as_i64() == Some(0) || value.as_bool() == Some(false)
         {
             return Ok(None);
         }
@@ -6332,7 +6339,8 @@ mod tests {
             .as_safearray()
             .expect("ParamArray should remain a retained SAFEARRAY Variant");
         assert_eq!(
-            array.variant_elements()
+            array
+                .variant_elements()
                 .expect("ParamArray should retain Variant element payload"),
             vec![Variant::from_i32(11), Variant::from_i32(14)]
         );

@@ -76,8 +76,9 @@ pub fn runtime_variant_as_f64(value: &Variant) -> Result<f64, String> {
         } else {
             0.0
         }),
-        VarType::Currency => Ok(value.as_currency_scaled_i64().unwrap_or(0) as f64
-            / CurrencyValue::SCALE as f64),
+        VarType::Currency => {
+            Ok(value.as_currency_scaled_i64().unwrap_or(0) as f64 / CurrencyValue::SCALE as f64)
+        }
         VarType::Decimal => {
             let decimal = value
                 .as_decimal96()
@@ -191,10 +192,9 @@ pub fn runtime_variant_to_text(value: &Variant, field: &str) -> Result<String, S
         VarType::Double => Ok(value.as_f64().unwrap_or(0.0).to_string()),
         VarType::Date => format_date_serial_digits(value.as_date_f64().unwrap_or(0.0))
             .or_else(|_| Ok(value.as_date_f64().unwrap_or(0.0).to_string())),
-        VarType::Currency => {
-            Ok((value.as_currency_scaled_i64().unwrap_or(0) as f64 / CurrencyValue::SCALE as f64)
-                .to_string())
-        }
+        VarType::Currency => Ok((value.as_currency_scaled_i64().unwrap_or(0) as f64
+            / CurrencyValue::SCALE as f64)
+            .to_string()),
         VarType::Decimal => value
             .as_decimal96()
             .map(|decimal| decimal.to_string())
@@ -451,7 +451,10 @@ pub fn runtime_hex_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 
 pub fn runtime_hex_variant_bounded(src: &Variant) -> Result<Variant, String> {
     let value = runtime_variant_to_i32_compat(src, "Hex operand")?;
-    Ok(Variant::from_string(BStr::from(format!("{:X}", value as u32))))
+    Ok(Variant::from_string(BStr::from(format!(
+        "{:X}",
+        value as u32
+    ))))
 }
 
 pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -464,7 +467,10 @@ pub fn runtime_oct_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 
 pub fn runtime_oct_variant_bounded(src: &Variant) -> Result<Variant, String> {
     let value = runtime_variant_to_i32_compat(src, "Oct operand")?;
-    Ok(Variant::from_string(BStr::from(format!("{:o}", value as u32))))
+    Ok(Variant::from_string(BStr::from(format!(
+        "{:o}",
+        value as u32
+    ))))
 }
 
 pub fn runtime_format_variant_bounded(
@@ -640,7 +646,10 @@ pub fn runtime_variant_to_vba_str(src: &Variant) -> Result<Variant, String> {
             | VarType::Decimal
     );
     if is_numeric && !text.is_empty() && !text.as_str().starts_with('-') {
-        Ok(Variant::from_string(BStr::from(format!(" {}", text.as_str()))))
+        Ok(Variant::from_string(BStr::from(format!(
+            " {}",
+            text.as_str()
+        ))))
     } else {
         Ok(Variant::from_string(text))
     }
@@ -763,7 +772,7 @@ pub fn runtime_sqr_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
 pub fn runtime_sqr_variant_bounded(src: &Variant) -> Result<Variant, String> {
     let value = runtime_variant_to_i32_compat(src, "Sqr operand")?;
     Ok(Variant::from_i32(
-        (value.saturating_abs() as f64).sqrt() as i32,
+        (value.saturating_abs() as f64).sqrt() as i32
     ))
 }
 
@@ -837,12 +846,16 @@ pub fn runtime_tan_variant_bounded(src: &Variant) -> Result<Variant, String> {
 
 pub fn runtime_month_name_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let month = runtime_value_to_i32_compat(src, "MonthName operand")?;
-    Ok(RuntimeValue::String(BStr::from(month_name(month).to_string())))
+    Ok(RuntimeValue::String(BStr::from(
+        month_name(month).to_string(),
+    )))
 }
 
 pub fn runtime_month_name_variant_bounded(src: &Variant) -> Result<Variant, String> {
     let month = runtime_variant_to_i32_compat(src, "MonthName operand")?;
-    Ok(Variant::from_string(BStr::from(month_name(month).to_string())))
+    Ok(Variant::from_string(BStr::from(
+        month_name(month).to_string(),
+    )))
 }
 
 fn month_name(month: i32) -> &'static str {
@@ -906,10 +919,9 @@ pub fn runtime_time_serial_variant_bounded(
     minute: &Variant,
     second: &Variant,
 ) -> Result<Variant, String> {
-    let total_seconds =
-        i64::from(runtime_variant_to_i32_compat(hour, "TimeSerial hour")?) * 3600
-            + i64::from(runtime_variant_to_i32_compat(minute, "TimeSerial minute")?) * 60
-            + i64::from(runtime_variant_to_i32_compat(second, "TimeSerial second")?);
+    let total_seconds = i64::from(runtime_variant_to_i32_compat(hour, "TimeSerial hour")?) * 3600
+        + i64::from(runtime_variant_to_i32_compat(minute, "TimeSerial minute")?) * 60
+        + i64::from(runtime_variant_to_i32_compat(second, "TimeSerial second")?);
     Ok(Variant::from_date_f64(
         total_seconds as f64 / SECONDS_PER_DAY,
     ))
@@ -1268,7 +1280,9 @@ pub fn runtime_variant_to_cdate(value: &Variant) -> Result<Variant, String> {
 }
 
 pub fn runtime_variant_to_datevalue(value: &Variant) -> Result<Variant, String> {
-    Ok(Variant::from_date_f64(date_serial_from_variant(value)?.floor()))
+    Ok(Variant::from_date_f64(
+        date_serial_from_variant(value)?.floor(),
+    ))
 }
 
 pub fn runtime_variant_to_timevalue(value: &Variant) -> Result<Variant, String> {
@@ -1547,9 +1561,9 @@ pub fn runtime_variant_to_numeric_compat(
             if trimmed.is_empty() {
                 0.0
             } else {
-                trimmed
-                    .parse::<f64>()
-                    .map_err(|_| format!("{field} requires numeric-compatible text, got {text:?}"))?
+                trimmed.parse::<f64>().map_err(|_| {
+                    format!("{field} requires numeric-compatible text, got {text:?}")
+                })?
             }
         }
         other => {
@@ -1881,6 +1895,156 @@ pub fn legacy_increment_value(value: &RuntimeValue) -> Result<RuntimeValue, Stri
     Ok(RuntimeValue::I32(value + 1))
 }
 
+fn variant_is_null(value: &Variant) -> bool {
+    matches!(value.vtype(), VarType::Null)
+}
+
+fn variant_is_error(value: &Variant) -> bool {
+    matches!(value.vtype(), VarType::Error)
+}
+
+fn either_variant_null(lhs: &Variant, rhs: &Variant) -> bool {
+    variant_is_null(lhs) || variant_is_null(rhs)
+}
+
+fn either_variant_error(lhs: &Variant, rhs: &Variant) -> bool {
+    variant_is_error(lhs) || variant_is_error(rhs)
+}
+
+fn variant_is_f64_arithmetic(value: &Variant) -> bool {
+    matches!(
+        value.vtype(),
+        VarType::Single | VarType::Double | VarType::Date | VarType::Currency | VarType::Decimal
+    )
+}
+
+fn variant_is_f64_scalar(value: &Variant) -> bool {
+    matches!(
+        value.vtype(),
+        VarType::Single | VarType::Double | VarType::Date
+    )
+}
+
+pub fn variant_add_const_value(
+    value: &Variant,
+    delta: i32,
+    field: &str,
+) -> Result<Variant, String> {
+    if variant_is_null(value) {
+        return Ok(Variant::null());
+    }
+    if variant_is_error(value) {
+        return Err("type mismatch: CVErr value in arithmetic".to_string());
+    }
+    if variant_is_f64_scalar(value) {
+        return Ok(Variant::from_f64(
+            runtime_variant_as_f64(value)? + delta as f64,
+        ));
+    }
+    let value = runtime_variant_to_i32_compat(value, field)?;
+    Ok(Variant::from_i32(value + delta))
+}
+
+pub fn variant_add_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Variant::null());
+    }
+    if either_variant_error(lhs, rhs) {
+        return Err("type mismatch: CVErr value in arithmetic".to_string());
+    }
+    if matches!(lhs.vtype(), VarType::String) && matches!(rhs.vtype(), VarType::String) {
+        return Ok(variant_concat_values(lhs, rhs));
+    }
+    if variant_is_f64_arithmetic(lhs) || variant_is_f64_arithmetic(rhs) {
+        let l = runtime_variant_as_f64(lhs)?;
+        let r = runtime_variant_as_f64(rhs)?;
+        return Ok(Variant::from_f64(l + r));
+    }
+    let lhs = runtime_variant_to_i32_compat(lhs, "add lhs")?;
+    let rhs = runtime_variant_to_i32_compat(rhs, "add rhs")?;
+    Ok(Variant::from_i32(lhs + rhs))
+}
+
+pub fn variant_sub_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Variant::null());
+    }
+    if either_variant_error(lhs, rhs) {
+        return Err("type mismatch: CVErr value in arithmetic".to_string());
+    }
+    if variant_is_f64_arithmetic(lhs) || variant_is_f64_arithmetic(rhs) {
+        let l = runtime_variant_as_f64(lhs)?;
+        let r = runtime_variant_as_f64(rhs)?;
+        return Ok(Variant::from_f64(l - r));
+    }
+    let lhs = runtime_variant_to_i32_compat(lhs, "sub lhs")?;
+    let rhs = runtime_variant_to_i32_compat(rhs, "sub rhs")?;
+    Ok(Variant::from_i32(lhs - rhs))
+}
+
+pub fn variant_mul_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Variant::null());
+    }
+    if either_variant_error(lhs, rhs) {
+        return Err("type mismatch: CVErr value in arithmetic".to_string());
+    }
+    if variant_is_f64_arithmetic(lhs) || variant_is_f64_arithmetic(rhs) {
+        let l = runtime_variant_as_f64(lhs)?;
+        let r = runtime_variant_as_f64(rhs)?;
+        return Ok(Variant::from_f64(l * r));
+    }
+    let lhs = runtime_variant_to_i32_compat(lhs, "mul lhs")?;
+    let rhs = runtime_variant_to_i32_compat(rhs, "mul rhs")?;
+    let result = (lhs as i64) * (rhs as i64);
+    Ok(Variant::from_i32(result as i32))
+}
+
+pub fn variant_pow_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Variant::null());
+    }
+    if either_variant_error(lhs, rhs) {
+        return Err("type mismatch: CVErr value in arithmetic".to_string());
+    }
+    let base = runtime_variant_to_numeric_compat(lhs, "pow base")?;
+    let exp = runtime_variant_to_numeric_compat(rhs, "pow exponent")?;
+    Ok(Variant::from_f64(base.powf(exp)))
+}
+
+pub fn variant_concat_values(lhs: &Variant, rhs: &Variant) -> Variant {
+    let lhs_str = if variant_is_null(lhs) {
+        String::new()
+    } else {
+        runtime_variant_to_text(lhs, "concat lhs").unwrap_or_default()
+    };
+    let rhs_str = if variant_is_null(rhs) {
+        String::new()
+    } else {
+        runtime_variant_to_text(rhs, "concat rhs").unwrap_or_default()
+    };
+    Variant::from_string(BStr::from(format!("{lhs_str}{rhs_str}")))
+}
+
+pub fn variant_neg_value(value: &Variant) -> Result<Variant, String> {
+    if variant_is_null(value) {
+        return Ok(Variant::null());
+    }
+    if variant_is_f64_scalar(value) {
+        return Ok(Variant::from_f64(-runtime_variant_as_f64(value)?));
+    }
+    let value = runtime_variant_to_i32_compat(value, "neg operand")?;
+    Ok(Variant::from_i32(-value))
+}
+
+pub fn variant_increment_value(value: &Variant) -> Result<Variant, String> {
+    if variant_is_f64_scalar(value) {
+        return Ok(Variant::from_f64(runtime_variant_as_f64(value)? + 1.0));
+    }
+    let value = runtime_variant_to_i32_compat(value, "increment operand")?;
+    Ok(Variant::from_i32(value + 1))
+}
+
 // ── Division (with error codes) ───────────────────────────────────────
 
 /// Returns Ok(value) or Err(error_code) for division by zero (code 11).
@@ -1929,6 +2093,44 @@ pub fn legacy_mod_values(
     }
     let l = runtime_value_to_numeric_compat(lhs, "mod lhs")?;
     Ok(Ok(RuntimeValue::I32((l as i32) % r_int)))
+}
+
+pub fn variant_div_values(lhs: &Variant, rhs: &Variant) -> Result<Result<Variant, i32>, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Ok(Variant::null()));
+    }
+    let r = runtime_variant_to_numeric_compat(rhs, "div rhs")?;
+    if r == 0.0 {
+        return Ok(Err(11));
+    }
+    let l = runtime_variant_to_numeric_compat(lhs, "div lhs")?;
+    Ok(Ok(Variant::from_f64(l / r)))
+}
+
+pub fn variant_intdiv_values(lhs: &Variant, rhs: &Variant) -> Result<Result<Variant, i32>, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Ok(Variant::null()));
+    }
+    let r = runtime_variant_to_numeric_compat(rhs, "intdiv rhs")?;
+    let r_trunc = r as i32;
+    if r_trunc == 0 {
+        return Ok(Err(11));
+    }
+    let l = runtime_variant_to_numeric_compat(lhs, "intdiv lhs")?;
+    Ok(Ok(Variant::from_i32((l / r).trunc() as i32)))
+}
+
+pub fn variant_mod_values(lhs: &Variant, rhs: &Variant) -> Result<Result<Variant, i32>, String> {
+    if either_variant_null(lhs, rhs) {
+        return Ok(Ok(Variant::null()));
+    }
+    let r = runtime_variant_to_numeric_compat(rhs, "mod rhs")?;
+    let r_int = r as i32;
+    if r_int == 0 {
+        return Ok(Err(11));
+    }
+    let l = runtime_variant_to_numeric_compat(lhs, "mod lhs")?;
+    Ok(Ok(Variant::from_i32((l as i32) % r_int)))
 }
 
 // ── Comparison ────────────────────────────────────────────────────────
@@ -2481,6 +2683,41 @@ mod tests {
     }
 
     #[test]
+    fn arithmetic_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::variant_add_values(
+                &Variant::from_string(BStr::from("12")),
+                &Variant::from_i32(3),
+            )
+            .expect("Add should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(15)
+        );
+        assert_eq!(
+            super::variant_div_values(&Variant::from_i32(12), &Variant::from_i32(3))
+                .expect("Div should succeed")
+                .expect("division should not route an error")
+                .to_runtime_value()
+                .expect("double Variant should project for assertions"),
+            RuntimeValue::F64(F64Value::from_f64(4.0))
+        );
+        assert_eq!(
+            super::variant_concat_values(&Variant::null(), &Variant::from_i32(7))
+                .to_runtime_value()
+                .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("7"))
+        );
+        assert_eq!(
+            super::variant_neg_value(&Variant::from_i32(4))
+                .expect("Neg should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(-4)
+        );
+    }
+
+    #[test]
     fn numeric_compat_accepts_numeric_text_for_truthy_and_division_lanes() {
         assert!(
             super::legacy_truthy_value(&RuntimeValue::String(BStr::from("12")))
@@ -2910,10 +3147,7 @@ pub fn runtime_value_to_com_member_token(
     }
 }
 
-pub fn variant_to_com_member_token(
-    value: &Variant,
-    field: &str,
-) -> Result<ComMemberToken, String> {
+pub fn variant_to_com_member_token(value: &Variant, field: &str) -> Result<ComMemberToken, String> {
     if let Some(raw) = value.as_i32() {
         return Ok(ComMemberToken::new(raw));
     }

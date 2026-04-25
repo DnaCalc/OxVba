@@ -93,10 +93,13 @@ fn write_semantic_value_slot(ctx: *mut JitContext, slot: u32, value: RuntimeValu
 /// AddSlots: dst = lhs + rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_add_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_add_values(&lhs_val, &rhs_val) {
-        Ok(result) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_add_values(&lhs_val, &rhs_val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -104,10 +107,13 @@ pub extern "C" fn oxrt_add_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// SubSlots: dst = lhs - rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sub_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_sub_values(&lhs_val, &rhs_val) {
-        Ok(result) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_sub_values(&lhs_val, &rhs_val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -115,10 +121,13 @@ pub extern "C" fn oxrt_sub_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// MulSlots: dst = lhs * rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_mul_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_mul_values(&lhs_val, &rhs_val) {
-        Ok(result) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_mul_values(&lhs_val, &rhs_val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -127,10 +136,13 @@ pub extern "C" fn oxrt_mul_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// Returns error code 11 for division by zero.
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_div_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_div_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_div_values(&lhs_val, &rhs_val) {
+        Ok(Ok(result)) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -139,10 +151,13 @@ pub extern "C" fn oxrt_div_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// IntDivSlots: dst = lhs \ rhs (integer division)
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_intdiv_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_intdiv_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_intdiv_values(&lhs_val, &rhs_val) {
+        Ok(Ok(result)) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -151,10 +166,13 @@ pub extern "C" fn oxrt_intdiv_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rh
 /// ModSlots: dst = lhs Mod rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_mod_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_mod_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_mod_values(&lhs_val, &rhs_val) {
+        Ok(Ok(result)) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -163,10 +181,13 @@ pub extern "C" fn oxrt_mod_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// PowSlots: dst = lhs ^ rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_pow_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    match semantics::legacy_pow_values(&lhs_val, &rhs_val) {
-        Ok(result) => write_semantic_value_slot(ctx, dst, result),
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    match semantics::variant_pow_values(&lhs_val, &rhs_val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -174,9 +195,12 @@ pub extern "C" fn oxrt_pow_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 /// NegSlot: dst = -src
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_neg_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    match semantics::legacy_neg_value(&val) {
-        Ok(result) => write_semantic_value_slot(ctx, dst, result),
+    let val = read_variant_slot!(ctx, src);
+    match semantics::variant_neg_value(&val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, dst, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -184,18 +208,22 @@ pub extern "C" fn oxrt_neg_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i32
 /// ConcatSlots: dst = lhs & rhs
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_concat_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
-    let result = semantics::legacy_concat_values(&lhs_val, &rhs_val);
-    write_semantic_value_slot(ctx, dst, result)
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
+    let result = semantics::variant_concat_values(&lhs_val, &rhs_val);
+    write_variant_slot!(ctx, dst, result);
+    OK
 }
 
 /// AddConstI32: slot += value
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_add_const(ctx: *mut JitContext, slot: u32, value: i32) -> i32 {
-    let val = read_slot!(ctx, slot);
-    match semantics::legacy_add_const_value(&val, value, "add-const operand") {
-        Ok(result) => write_semantic_value_slot(ctx, slot, result),
+    let val = read_variant_slot!(ctx, slot);
+    match semantics::variant_add_const_value(&val, value, "add-const operand") {
+        Ok(result) => {
+            write_variant_slot!(ctx, slot, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -203,9 +231,12 @@ pub extern "C" fn oxrt_add_const(ctx: *mut JitContext, slot: u32, value: i32) ->
 /// SubConstI32: slot -= value (implemented as add_const with negated value)
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sub_const(ctx: *mut JitContext, slot: u32, value: i32) -> i32 {
-    let val = read_slot!(ctx, slot);
-    match semantics::legacy_add_const_value(&val, -value, "sub-const operand") {
-        Ok(result) => write_semantic_value_slot(ctx, slot, result),
+    let val = read_variant_slot!(ctx, slot);
+    match semantics::variant_add_const_value(&val, -value, "sub-const operand") {
+        Ok(result) => {
+            write_variant_slot!(ctx, slot, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -213,9 +244,12 @@ pub extern "C" fn oxrt_sub_const(ctx: *mut JitContext, slot: u32, value: i32) ->
 /// IncSlot: slot += 1
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_inc_slot(ctx: *mut JitContext, slot: u32) -> i32 {
-    let val = read_slot!(ctx, slot);
-    match semantics::legacy_increment_value(&val) {
-        Ok(result) => write_semantic_value_slot(ctx, slot, result),
+    let val = read_variant_slot!(ctx, slot);
+    match semantics::variant_increment_value(&val) {
+        Ok(result) => {
+            write_variant_slot!(ctx, slot, result);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -459,7 +493,11 @@ pub extern "C" fn oxrt_load_string(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_f64(ctx: *mut JitContext, dst: u32, bits: u64) -> i32 {
-    write_variant_slot!(ctx, dst, Variant::from_f64(F64Value::from_bits(bits).as_f64()));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_f64(F64Value::from_bits(bits).as_f64())
+    );
     OK
 }
 
@@ -1424,7 +1462,11 @@ pub extern "C" fn oxrt_fv(
     };
     let pv = opt_compat_i32_slot(ctx, pv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(fv_i32(r, n, p, pv, due)));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_compat_slot_i32(fv_i32(r, n, p, pv, due))
+    );
     OK
 }
 
@@ -1447,7 +1489,11 @@ pub extern "C" fn oxrt_pv(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(pv_i32(r, n, p, fv, due)));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_compat_slot_i32(pv_i32(r, n, p, fv, due))
+    );
     OK
 }
 
@@ -1470,7 +1516,11 @@ pub extern "C" fn oxrt_pmt(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(pmt_i32(r, n, p, fv, due)));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_compat_slot_i32(pmt_i32(r, n, p, fv, due))
+    );
     OK
 }
 
@@ -1495,7 +1545,11 @@ pub extern "C" fn oxrt_npv(
             Err(_) => return ERR_RUNTIME,
         }
     }
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(npv_i32(r, &cash_flows)));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_compat_slot_i32(npv_i32(r, &cash_flows))
+    );
     OK
 }
 
@@ -1592,7 +1646,11 @@ pub extern "C" fn oxrt_nper(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(nper_i32(r, p, pv, fv, due)));
+    write_variant_slot!(
+        ctx,
+        dst,
+        Variant::from_compat_slot_i32(nper_i32(r, p, pv, fv, due))
+    );
     OK
 }
 
@@ -2596,18 +2654,15 @@ pub extern "C" fn oxrt_host_com_subscribe(
 ) -> i32 {
     let object_val = read_variant_slot!(ctx, object);
     let event_val = read_variant_slot!(ctx, event);
-    let object =
-        match semantics::variant_to_com_object(&object_val, "com_subscribe_event.object") {
-            Ok(o) => o,
-            Err(_) => return route_host_error(ctx),
-        };
-    let event = match semantics::variant_to_com_member_token(
-        &event_val,
-        "com_subscribe_event.event",
-    ) {
-        Ok(e) => e,
+    let object = match semantics::variant_to_com_object(&object_val, "com_subscribe_event.object") {
+        Ok(o) => o,
         Err(_) => return route_host_error(ctx),
     };
+    let event =
+        match semantics::variant_to_com_member_token(&event_val, "com_subscribe_event.event") {
+            Ok(e) => e,
+            Err(_) => return route_host_error(ctx),
+        };
     let host = unsafe { (*ctx).host_services() };
     match host.com().subscribe_event(object, event) {
         Ok(value) => {
