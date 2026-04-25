@@ -1298,6 +1298,14 @@ Implementation progress:
      negation, concatenation, and JIT add/subtract/increment helper writes.
      The arithmetic semantic helpers themselves still return `RuntimeValue`,
      so true Variant-native arithmetic companion helpers remain open work.
+105. VM/JIT bounded math and VM string-conversion helper result writes now also
+     re-enter retained `Variant` carriers after the existing semantic helper
+     result. This covers VM `Abs`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`,
+     `Exp`, `Atn`, `Tan`, `Chr`, `Asc`, `Space`, `String$`, `CStr`, `Str`,
+     `Val`, `CDate`, `Hex`, `Oct`, and `MonthName` destination writes, plus
+     JIT `Abs`, `Sgn`, and `Int`/`Fix` destination writes. The helper bodies
+     still return `RuntimeValue`, so exact Variant-native helper companions
+     remain open.
 
 Remaining blocker:
 
@@ -1408,6 +1416,10 @@ Remaining blocker:
    VM/JIT core arithmetic destination writes now also re-enter retained
    `Variant` carriers after existing semantic helper results, while the
    arithmetic helper-returning contracts remain separate Variant-native
+   companion work.
+   VM/JIT bounded math and VM string-conversion helper destination writes now
+   also re-enter retained `Variant` carriers after existing semantic helper
+   results, while their helper-returning contracts remain Variant-native
    companion work.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
