@@ -1452,6 +1452,12 @@ Implementation progress:
      `StrReverse` now read retained `Variant` slots directly through
      Variant-native text coercion helpers. Broader string semantic helpers that
      still return `RuntimeValue` remain explicitly outside this slice.
+132. VM/JIT char/format-adjacent intrinsics `Chr`, `Asc`, `Space`, `String$`,
+     `Hex`, `Oct`, and `MonthName` now read retained `Variant` slots directly
+     through Variant-native coercion helpers and write retained `Variant`
+     results directly. `Val`, `CStr`, `Str$`, `Format`, `StrConv`, `Like`,
+     date/math, and array/string aggregate helpers remain outside this slice
+     where they still use broader legacy semantic contracts.
 
 Remaining blocker:
 
@@ -1648,6 +1654,10 @@ Remaining blocker:
    `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`, and `StrReverse`
    now read retained `Variant` slots directly through Variant-native text
    coercion helpers.
+   VM/JIT char/format-adjacent intrinsics `Chr`, `Asc`, `Space`, `String$`,
+   `Hex`, `Oct`, and `MonthName` now read retained `Variant` slots directly
+   through Variant-native coercion helpers and write retained `Variant`
+   results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
