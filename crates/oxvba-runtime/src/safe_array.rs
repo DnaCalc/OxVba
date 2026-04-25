@@ -616,6 +616,10 @@ impl SafeArray {
         .expect("shape-only SAFEARRAY allocation should succeed")
     }
 
+    /// Compatibility constructor that projects [`RuntimeValue`] inputs into
+    /// retained `Variant` payload elements.
+    ///
+    /// New value-model call sites should prefer [`Self::from_variants`].
     pub fn from_values(values: Vec<RuntimeValue>) -> Self {
         let len = values.len();
         Self::from_bounds_and_runtime_values(
@@ -626,16 +630,28 @@ impl SafeArray {
         .expect("SAFEARRAY payload allocation should succeed for supported canonical values")
     }
 
+    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
+    /// retained multi-dimensional `Variant` payload.
+    ///
+    /// New value-model call sites should prefer [`Self::from_variants_nd`].
     pub fn from_values_nd(bounds: Vec<SafeArrayBound>, values: Vec<RuntimeValue>) -> Self {
         Self::from_bounds_and_runtime_values(bounds, VT_VARIANT_VALUE, Some(values))
             .expect("SAFEARRAY nd payload allocation should succeed for supported canonical values")
     }
 
+    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
+    /// retained typed SAFEARRAY payload.
+    ///
+    /// New value-model call sites should prefer [`Self::from_typed_variants`].
     pub fn from_typed_values(element_vt: u16, values: Vec<RuntimeValue>) -> Result<Self, String> {
         let len = values.len();
         Self::from_bounds_and_runtime_values(default_bounds_for_len(len)?, element_vt, Some(values))
     }
 
+    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
+    /// retained multi-dimensional typed SAFEARRAY payload.
+    ///
+    /// New value-model call sites should prefer [`Self::from_typed_variants_nd`].
     pub fn from_typed_values_nd(
         bounds: Vec<SafeArrayBound>,
         element_vt: u16,
@@ -652,6 +668,10 @@ impl SafeArray {
         Self::from_bounds_and_variants(bounds, element_vt, None)
     }
 
+    /// Compatibility constructor that projects [`RuntimeValue`] inputs into an
+    /// explicitly shaped retained `Variant` payload.
+    ///
+    /// New value-model call sites should prefer [`Self::from_shape_and_variants`].
     pub fn from_shape_and_values(
         bounds: Vec<SafeArrayBound>,
         values: Vec<RuntimeValue>,
@@ -739,6 +759,10 @@ impl SafeArray {
             .unwrap_or_else(|| default_bounds_for_len(self.len()).unwrap_or_default())
     }
 
+    /// Compatibility accessor that projects retained `Variant` elements into
+    /// [`RuntimeValue`] values for legacy callers.
+    ///
+    /// New value-model call sites should prefer [`Self::variant_elements`].
     pub fn elements(&self) -> Option<Vec<RuntimeValue>> {
         self.variant_elements().map(|values| {
             values
@@ -770,6 +794,11 @@ impl SafeArray {
         Some(values)
     }
 
+    /// Compatibility replacement API that projects [`RuntimeValue`] inputs into
+    /// retained payload elements while preserving the current shape and element
+    /// vartype.
+    ///
+    /// New value-model call sites should prefer [`Self::replace_variant_elements`].
     pub fn replace_elements(&self, values: Vec<RuntimeValue>) -> Result<Self, String> {
         Self::from_bounds_and_runtime_values(
             self.bounds_for_shape(),
