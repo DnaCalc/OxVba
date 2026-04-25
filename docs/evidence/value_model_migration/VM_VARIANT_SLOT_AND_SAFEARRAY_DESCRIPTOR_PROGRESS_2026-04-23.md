@@ -1538,6 +1538,11 @@ Implementation progress:
      local owner for the element `VARTYPE` metadata adjacent to the public
      descriptor pointer; this narrows the metadata audit but does not close the
      allocator/ownership provenance question.
+147. `RecordingHostServices` now overrides the retained `_variant` HAL wrapper
+     methods and delegates them directly to the inner retained-`Variant`
+     companions before journaling from `Variant` results. This removes another
+     concrete wrapper path that could otherwise inherit trait-level
+     `RuntimeValue` projection fallbacks for retained VM/JIT HAL calls.
 
 Remaining blocker:
 
@@ -1708,6 +1713,10 @@ Remaining blocker:
    HAL dynamic-link legacy `RuntimeValue` methods/default adapters now also
    document their compatibility layer role beside retained `Variant` invoke
    paths.
+   HAL recording wrapper `_variant` methods now also delegate directly to
+   retained inner `Variant` companion methods and record from `Variant`
+   results instead of inheriting trait-level `RuntimeValue` projection
+   fallbacks.
    HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now
    also document their compatibility wrapper role beside retained `Variant`
    companion methods.
