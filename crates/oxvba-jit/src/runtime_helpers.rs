@@ -421,8 +421,8 @@ pub extern "C" fn oxrt_int_fix(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_copy_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    write_slot!(ctx, dst, val);
+    let val = read_variant_slot!(ctx, src);
+    write_variant_slot!(ctx, dst, val);
     OK
 }
 

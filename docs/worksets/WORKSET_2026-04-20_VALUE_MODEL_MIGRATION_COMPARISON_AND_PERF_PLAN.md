@@ -2305,6 +2305,9 @@ Child beads:
        and VM `For Each` next-item delivery now writes the continuation flag as
        a retained Boolean `Variant` while keeping the iterator ID classified as
        an internal control token
+     - progress landed: VM/JIT slot-copy helpers now preserve retained
+       `Variant` carriers directly instead of projecting the source slot
+       through `RuntimeValue` before writing the destination
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

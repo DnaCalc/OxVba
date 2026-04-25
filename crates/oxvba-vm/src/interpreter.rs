@@ -878,8 +878,8 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let value = self.read_value_slot(*src)?;
-                    self.write_value_slot(*dst, value)?;
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLenDigits { dst, src } => {
