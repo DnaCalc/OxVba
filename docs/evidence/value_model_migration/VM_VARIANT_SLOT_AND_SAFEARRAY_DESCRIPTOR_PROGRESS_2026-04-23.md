@@ -1327,6 +1327,11 @@ Remaining blocker:
    process/environment Variant companions now also return retained Variant
    carriers, replay journal carriers, or explicit unsupported Variant faults
    without inheriting trait-level `RuntimeValue` fallback projections.
+   VM/JIT pointer-helper result writes and retained-Variant classifier/tag
+   result writes now also use direct `Variant` slot carriers for
+   `StrPtr`/`VarPtr`/`ObjPtr`, `LBound`/`UBound`, `VarType`, `TypeName`,
+   `IsNumeric`, `IsError`, `IsDate`, `IsObject`, `IsNull`, `IsEmpty`, and
+   `IsArray` instead of creating temporary `RuntimeValue` scalar results.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
