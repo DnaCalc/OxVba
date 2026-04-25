@@ -1396,6 +1396,12 @@ Implementation progress:
      `RuntimeValue` and i32 slot-token entry/exit points as compatibility
      projections around retained `Variant` slot carriers. `BindingHandle`
      remains an internal side-lane because it is not a VBA/COM value.
+120. Runtime pointer-helper `RuntimeValue` registration/readback APIs now
+     classify themselves as compatibility projections beside retained
+     `Variant` pointer-helper APIs. This covers runtime-value pointer
+     registration, string/Variant/object variable pointer wrappers, legacy
+     direct-projection pointer wrappers, and string/byte-array readback
+     wrappers.
 
 Remaining blocker:
 
@@ -1556,6 +1562,9 @@ Remaining blocker:
    VM `RuntimeSlot` and JIT `RtSlot` `RuntimeValue`/i32 conversion helpers now
    also document their compatibility ingress/egress role around retained
    `Variant` slot carriers.
+   Runtime pointer-helper `RuntimeValue` registration/readback APIs now also
+   document their compatibility projection role beside retained `Variant`
+   pointer-helper APIs.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
@@ -1573,8 +1582,8 @@ Remaining blocker:
    projection APIs that still expose `RuntimeValue`, legacy COM dispatch
    `RuntimeValue` compatibility methods, embedded/immediate compatibility APIs
    that still expose `RuntimeValue`, and any remaining non-Variant
-   pointer-helper/manual registry utilities that still accept semantic values
-   by contract.
+   pointer-helper/manual registry compatibility utilities that still accept
+   semantic values by contract.
 5. Public VM/JIT compatibility snapshot APIs still expose `RuntimeValue`
    compatibility results. They now project from Variant-backed companion
    surfaces, but they remain open classification work before the final `vmm-e6`
