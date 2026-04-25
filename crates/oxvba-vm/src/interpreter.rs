@@ -767,14 +767,14 @@ impl Vm {
                     }
                     let lhs = self.read_value_slot(*slot)?;
                     let out = Self::legacy_add_const_value(&lhs, *value, "add-const operand")?;
-                    self.write_value_slot(*slot, out)?;
+                    self.write_semantic_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::AddSlots { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_add_values(&lhs, &rhs)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
@@ -784,21 +784,21 @@ impl Vm {
                     }
                     let lhs = self.read_value_slot(*slot)?;
                     let out = Self::legacy_add_const_value(&lhs, -*value, "sub-const operand")?;
-                    self.write_value_slot(*slot, out)?;
+                    self.write_semantic_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::SubSlots { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_sub_values(&lhs, &rhs)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::MulSlots { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_mul_values(&lhs, &rhs)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::DivSlots { dst, lhs, rhs } => {
@@ -806,7 +806,7 @@ impl Vm {
                     let rhs_val = self.read_value_slot(*rhs)?;
                     match crate::semantics::legacy_div_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_value_slot(*dst, out)?;
+                            self.write_semantic_value_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -822,7 +822,7 @@ impl Vm {
                     let rhs_val = self.read_value_slot(*rhs)?;
                     match crate::semantics::legacy_intdiv_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_value_slot(*dst, out)?;
+                            self.write_semantic_value_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -842,7 +842,7 @@ impl Vm {
                     let rhs_val = self.read_value_slot(*rhs)?;
                     match crate::semantics::legacy_mod_values(&lhs_val, &rhs_val)? {
                         Ok(out) => {
-                            self.write_value_slot(*dst, out)?;
+                            self.write_semantic_value_slot(*dst, out)?;
                             pc += 1;
                         }
                         Err(11) => {
@@ -857,20 +857,20 @@ impl Vm {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_pow_values(&lhs, &rhs)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::ConcatSlots { dst, lhs, rhs } => {
                     let lhs = self.read_value_slot(*lhs)?;
                     let rhs = self.read_value_slot(*rhs)?;
                     let out = Self::legacy_concat_values(&lhs, &rhs);
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::NegSlot { dst, src } => {
                     let val = self.read_value_slot(*src)?;
                     let out = Self::legacy_neg_value(&val)?;
-                    self.write_value_slot(*dst, out)?;
+                    self.write_semantic_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::CopySlot { dst, src } => {
@@ -3298,6 +3298,11 @@ impl Vm {
         }
         self.registers.registers[slot] = RuntimeSlot::from_runtime_value(value)?;
         Ok(())
+    }
+
+    fn write_semantic_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
+        let value = Variant::try_from_runtime_value(&value)?;
+        self.write_variant_slot(slot, value)
     }
 
     fn write_variant_slot(&mut self, slot: usize, value: Variant) -> Result<(), String> {

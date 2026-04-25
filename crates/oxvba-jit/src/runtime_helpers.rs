@@ -72,6 +72,16 @@ macro_rules! write_variant_slot {
     }};
 }
 
+fn write_semantic_value_slot(ctx: *mut JitContext, slot: u32, value: RuntimeValue) -> i32 {
+    match Variant::try_from_runtime_value(&value) {
+        Ok(value) => {
+            write_variant_slot!(ctx, slot, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
 // ── Arithmetic helpers ────────────────────────────────────────────────
 
 /// AddSlots: dst = lhs + rhs
@@ -80,10 +90,7 @@ pub extern "C" fn oxrt_add_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_add_values(&lhs_val, &rhs_val) {
-        Ok(result) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, dst, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -94,10 +101,7 @@ pub extern "C" fn oxrt_sub_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_sub_values(&lhs_val, &rhs_val) {
-        Ok(result) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, dst, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -108,10 +112,7 @@ pub extern "C" fn oxrt_mul_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_mul_values(&lhs_val, &rhs_val) {
-        Ok(result) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, dst, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -123,10 +124,7 @@ pub extern "C" fn oxrt_div_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_div_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -138,10 +136,7 @@ pub extern "C" fn oxrt_intdiv_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rh
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_intdiv_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -153,10 +148,7 @@ pub extern "C" fn oxrt_mod_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_mod_values(&lhs_val, &rhs_val) {
-        Ok(Ok(result)) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(Ok(result)) => write_semantic_value_slot(ctx, dst, result),
         Ok(Err(error_code)) => error_code,
         Err(_) => ERR_RUNTIME,
     }
@@ -168,10 +160,7 @@ pub extern "C" fn oxrt_pow_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     match semantics::legacy_pow_values(&lhs_val, &rhs_val) {
-        Ok(result) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, dst, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -181,10 +170,7 @@ pub extern "C" fn oxrt_pow_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: 
 pub extern "C" fn oxrt_neg_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     match semantics::legacy_neg_value(&val) {
-        Ok(result) => {
-            write_slot!(ctx, dst, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, dst, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -195,8 +181,7 @@ pub extern "C" fn oxrt_concat_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rh
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
     let result = semantics::legacy_concat_values(&lhs_val, &rhs_val);
-    write_slot!(ctx, dst, result);
-    OK
+    write_semantic_value_slot(ctx, dst, result)
 }
 
 /// AddConstI32: slot += value
@@ -204,10 +189,7 @@ pub extern "C" fn oxrt_concat_slots(ctx: *mut JitContext, dst: u32, lhs: u32, rh
 pub extern "C" fn oxrt_add_const(ctx: *mut JitContext, slot: u32, value: i32) -> i32 {
     let val = read_slot!(ctx, slot);
     match semantics::legacy_add_const_value(&val, value, "add-const operand") {
-        Ok(result) => {
-            write_slot!(ctx, slot, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, slot, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -217,10 +199,7 @@ pub extern "C" fn oxrt_add_const(ctx: *mut JitContext, slot: u32, value: i32) ->
 pub extern "C" fn oxrt_sub_const(ctx: *mut JitContext, slot: u32, value: i32) -> i32 {
     let val = read_slot!(ctx, slot);
     match semantics::legacy_add_const_value(&val, -value, "sub-const operand") {
-        Ok(result) => {
-            write_slot!(ctx, slot, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, slot, result),
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -230,10 +209,7 @@ pub extern "C" fn oxrt_sub_const(ctx: *mut JitContext, slot: u32, value: i32) ->
 pub extern "C" fn oxrt_inc_slot(ctx: *mut JitContext, slot: u32) -> i32 {
     let val = read_slot!(ctx, slot);
     match semantics::legacy_increment_value(&val) {
-        Ok(result) => {
-            write_slot!(ctx, slot, result);
-            OK
-        }
+        Ok(result) => write_semantic_value_slot(ctx, slot, result),
         Err(_) => ERR_RUNTIME,
     }
 }

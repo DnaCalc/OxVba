@@ -2308,6 +2308,11 @@ Child beads:
      - progress landed: VM/JIT slot-copy helpers now preserve retained
        `Variant` carriers directly instead of projecting the source slot
        through `RuntimeValue` before writing the destination
+     - progress landed: VM/JIT core arithmetic destination writes now re-enter
+       retained `Variant` carriers after existing semantic helper results for
+       add/subtract/multiply/divide/integer-divide/modulo/power, negation,
+       concatenation, and JIT add/subtract/increment helper writes; true
+       Variant-native arithmetic semantic helper companions remain open
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
