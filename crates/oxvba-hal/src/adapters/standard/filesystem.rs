@@ -212,6 +212,8 @@ fn remove_file_with_retry(host_path: &PathBuf) -> std::io::Result<()> {
 }
 
 impl FileSystemHal for StandardHostServices {
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `open_variant`, which keeps path/mode/result values as Variant carriers.
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -772,6 +774,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(handle))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `close_variant`.
     fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -880,6 +884,8 @@ impl FileSystemHal for StandardHostServices {
         }
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `kill_variant`.
     fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1040,6 +1046,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(0))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use the
+    // Variant-native filesystem API once the companion is added.
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1127,6 +1135,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(RuntimeValue::I32(final_position))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `eof_variant`.
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1158,6 +1168,8 @@ impl FileSystemHal for StandardHostServices {
         }))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `lof_variant`.
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1181,6 +1193,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(entry.len))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `free_file_variant`.
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1253,6 +1267,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(candidate))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `read_bytes_variant`.
     fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1301,6 +1317,8 @@ impl FileSystemHal for StandardHostServices {
         ))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `write_bytes_variant`.
     fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1353,6 +1371,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(bytes.len() as i32))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `print_line_variant`.
     fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1425,6 +1445,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(0))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `input_fields_variant`.
     fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1495,6 +1517,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_string(result))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `line_input_variant`.
     fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1559,6 +1583,8 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_string(line))
     }
 
+    // Legacy filesystem path. Retained VM/JIT callers should use
+    // `loc_variant`.
     fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
