@@ -1278,6 +1278,11 @@ Implementation progress:
      integer result as a retained `Variant` instead of creating a temporary
      `RuntimeValue`. Math/random paths that still return through semantic
      helpers remain explicit companion work.
+101. VM/JIT comparison and logical Boolean result writes now use retained
+     Boolean `Variant` carriers. VM slow and typed-fast comparison paths,
+     VM `BoolNot`/`BoolAnd`/`BoolOr`, and JIT comparison/logical runtime
+     helpers no longer materialize temporary `RuntimeValue` or integer
+     stand-ins for normal Boolean destination slots.
 
 Remaining blocker:
 
@@ -1375,6 +1380,9 @@ Remaining blocker:
    carriers for `Rnd` and `Randomize`, and the VM `Int` F64 fast branch now
    writes its result as a retained `Variant`; broader math/random
    semantic-helper-returning paths remain companion work.
+   VM/JIT comparison and logical Boolean result writes now also stay on
+   retained Boolean `Variant` carriers for comparison operators and
+   `BoolNot`/`BoolAnd`/`BoolOr`.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
