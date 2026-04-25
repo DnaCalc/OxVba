@@ -102,7 +102,8 @@ Current value-model migration note (2026-04-25):
 37. Runtime `SafeArray` descriptors now advertise COM Automation element metadata through `fFeatures` (`FADF_HAVEVARTYPE` plus the relevant `VARIANT`/`BSTR`/`DISPATCH`/`UNKNOWN` bits) while leaving allocator/ownership provenance as remaining audit work.
 38. HAL recording wrapper `_variant` methods now delegate directly to retained inner `Variant` companion methods and record from `Variant` results instead of inheriting trait-level `RuntimeValue` projection fallbacks.
 39. Standard HAL dynamic-link bound-token `_variant` invocation now uses a direct retained `Variant` implementation instead of inheriting the trait-level `RuntimeValue` fallback.
-40. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+40. HAL trait-level retained `_variant` companion defaults now fault explicitly when an adapter does not implement the retained companion, removing the silent `RuntimeValue` projection fallback seam.
+41. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

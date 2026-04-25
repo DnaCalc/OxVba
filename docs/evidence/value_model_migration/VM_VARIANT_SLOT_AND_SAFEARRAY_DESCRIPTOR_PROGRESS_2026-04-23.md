@@ -1548,6 +1548,11 @@ Implementation progress:
      result as a retained `Variant` without inheriting the trait-level
      `RuntimeValue` fallback. Focused coverage binds a descriptor and invokes
      the resulting binding through retained `Variant` arguments.
+149. HAL trait-level retained `_variant` companion defaults now fault with an
+     explicit adapter-not-overridden error instead of silently projecting
+     through legacy `RuntimeValue` methods. Repo adapters provide their direct
+     retained companion implementations, so focused HAL companion, recording,
+     and dynamic-link tests continue to pass without fallback projection.
 
 Remaining blocker:
 
@@ -1725,6 +1730,9 @@ Remaining blocker:
    Standard HAL dynamic-link bound-token `_variant` invocation now also stays
    on a retained `Variant` implementation instead of inheriting the trait-level
    `RuntimeValue` projection fallback.
+   HAL trait-level retained `_variant` companion defaults now also fault
+   explicitly when an adapter has not implemented the retained companion,
+   removing the default `RuntimeValue` projection fallback seam.
    HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now
    also document their compatibility wrapper role beside retained `Variant`
    companion methods.
@@ -1802,8 +1810,8 @@ Remaining blocker:
 4. Completion still requires an audit and migration/classification of all
    remaining projection seams that can expose or retain general values:
    interpreter/JIT helper internals outside slot storage, host and immediate
-   surfaces that still use semantic values by contract, HAL surfaces that still
-   use semantic values by contract, remaining host service helper families,
+   surfaces that still use semantic values by contract, HAL legacy
+   `RuntimeValue` surfaces that remain compatibility contracts, remaining host service helper families,
    legacy dynamic-link compatibility APIs, legacy
    `SafeArray` element compatibility APIs documented in
    `SAFEARRAY_RUNTIMEVALUE_PROJECTION_AUDIT_2026-04-23.md`, COM compatibility
