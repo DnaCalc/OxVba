@@ -559,6 +559,22 @@ mod tests {
     }
 
     #[test]
+    fn runtime_format_helper_reads_variant_carriers() {
+        let mut ctx = JitContextOwned::new(3, 3, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_f64(std::f64::consts::PI));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("0.00")));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_format(ctx.context_ptr(), 2, 0, 1), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[2], RuntimeValue::String(BStr::from("3.14")));
+    }
+
+    #[test]
     fn runtime_like_and_strconv_helpers_read_variant_carriers() {
         let mut ctx = JitContextOwned::new(6, 6, super::default_host_services(), &[]);
         unsafe {

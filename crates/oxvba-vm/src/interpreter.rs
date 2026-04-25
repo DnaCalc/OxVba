@@ -3314,19 +3314,19 @@ impl Vm {
                     value,
                     format_string,
                 } => {
-                    let val = self.read_value_slot(*value)?;
-                    let n = Self::runtime_value_as_f64(&val)?;
-                    let fmt_str = if let Some(fmt_slot) = format_string {
-                        let fmt_val = self.read_value_slot(*fmt_slot)?;
-                        match &fmt_val {
-                            RuntimeValue::String(s) => Some(s.as_str().to_string()),
-                            _ => None,
-                        }
+                    let val = self.read_variant_slot(*value)?;
+                    let fmt_variant = if let Some(fmt_slot) = format_string {
+                        Some(self.read_variant_slot(*fmt_slot)?)
                     } else {
                         None
                     };
-                    let result = Self::format_number(n, fmt_str.as_deref());
-                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
+                    self.write_variant_slot(
+                        *dst,
+                        crate::semantics::runtime_format_variant_bounded(
+                            &val,
+                            fmt_variant.as_ref(),
+                        )?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStrReverseDigits { dst, src } => {

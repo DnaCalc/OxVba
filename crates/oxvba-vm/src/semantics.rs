@@ -429,6 +429,21 @@ pub fn runtime_oct_variant_bounded(src: &Variant) -> Result<Variant, String> {
     Ok(Variant::from_string(BStr::from(format!("{:o}", value as u32))))
 }
 
+pub fn runtime_format_variant_bounded(
+    value: &Variant,
+    format_string: Option<&Variant>,
+) -> Result<Variant, String> {
+    let number = runtime_variant_as_f64(value)?;
+    let format_string = match format_string {
+        Some(format) => Some(runtime_variant_to_text(format, "Format string")?),
+        None => None,
+    };
+    Ok(Variant::from_string(BStr::from(format_number(
+        number,
+        format_string.as_deref(),
+    ))))
+}
+
 pub fn runtime_val_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let result = match src {
         RuntimeValue::String(s) => {
@@ -1832,6 +1847,16 @@ mod tests {
                 .to_runtime_value()
                 .expect("string Variant should project for assertions"),
             RuntimeValue::String(BStr::from("March"))
+        );
+        assert_eq!(
+            super::runtime_format_variant_bounded(
+                &Variant::from_f64(std::f64::consts::PI),
+                Some(&Variant::from_string(BStr::from("0.00"))),
+            )
+            .expect("Format should succeed")
+            .to_runtime_value()
+            .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("3.14"))
         );
     }
 

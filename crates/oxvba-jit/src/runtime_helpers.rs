@@ -914,22 +914,17 @@ pub extern "C" fn oxrt_oct(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 /// format_slot == u32::MAX means no format string.
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_format(ctx: *mut JitContext, dst: u32, value: u32, format_slot: u32) -> i32 {
-    let val = read_slot!(ctx, value);
-    let n = match semantics::runtime_value_as_f64(&val) {
+    let val = read_variant_slot!(ctx, value);
+    let fmt_variant = if format_slot == u32::MAX {
+        None
+    } else {
+        Some(read_variant_slot!(ctx, format_slot))
+    };
+    let result = match semantics::runtime_format_variant_bounded(&val, fmt_variant.as_ref()) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let fmt_str = if format_slot == u32::MAX {
-        None
-    } else {
-        let fmt_val = read_slot!(ctx, format_slot);
-        match &fmt_val {
-            RuntimeValue::String(s) => Some(s.as_str().to_string()),
-            _ => None,
-        }
-    };
-    let result = semantics::format_number(n, fmt_str.as_deref());
-    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
+    write_variant_slot!(ctx, dst, result);
     OK
 }
 

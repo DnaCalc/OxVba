@@ -87,7 +87,8 @@ Current value-model migration note (2026-04-25):
 22. VM/JIT text transform/search intrinsics `InStr`, `InStrRev`, `LCase`, `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`, and `StrReverse` now read retained `Variant` slots directly through Variant-native text coercion helpers.
 23. VM/JIT char/format-adjacent intrinsics `Chr`, `Asc`, `Space`, `String$`, `Hex`, `Oct`, and `MonthName` now read retained `Variant` slots directly through Variant-native coercion helpers and write retained `Variant` results directly.
 24. VM/JIT `Like` and `StrConv` now read retained `Variant` slots directly through Variant-native text/conversion coercion helpers and write retained `Variant` results directly.
-25. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+25. VM/JIT `Format` now reads retained `Variant` value/format slots directly through Variant-native numeric/text coercion helpers and writes retained `Variant` string results directly.
+26. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
