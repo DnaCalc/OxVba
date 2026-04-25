@@ -765,30 +765,6 @@ impl StandardHostServices {
         })
     }
 
-    fn runtime_value_to_display_text(&self, value: &RuntimeValue) -> String {
-        match value {
-            RuntimeValue::String(text) => text.as_str().to_string(),
-            RuntimeValue::Bool(value) => {
-                if *value {
-                    "True".to_string()
-                } else {
-                    "False".to_string()
-                }
-            }
-            RuntimeValue::Empty => String::new(),
-            RuntimeValue::Null => "Null".to_string(),
-            RuntimeValue::ErrorCode(code) => format!("Error {code}"),
-            RuntimeValue::I32(value) => value.to_string(),
-            RuntimeValue::I64(value) => value.to_string(),
-            RuntimeValue::F64(value) => value.as_f64().to_string(),
-            RuntimeValue::Decimal(value) => value.to_string(),
-            RuntimeValue::Currency(value) => value.to_string(),
-            RuntimeValue::ArrayIntent(array) => format!("<array:{}>", array.len()),
-            RuntimeValue::Object(handle) => format!("<object:{handle}>"),
-            RuntimeValue::BindingHandle(handle) => format!("<binding:{handle}>"),
-        }
-    }
-
     fn variant_to_display_text(&self, value: &Variant) -> String {
         match value.vtype() {
             VarType::String => value

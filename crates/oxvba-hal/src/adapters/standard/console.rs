@@ -9,34 +9,13 @@ use crate::{
     model::CapabilityId,
     traits::ConsoleHal,
 };
-use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
+use oxvba_runtime::{RuntimeValue, Variant};
 
 use super::StandardHostServices;
 
 #[derive(Debug, Default)]
 pub(super) struct ConsoleState {
     pub(super) pending_fields: VecDeque<String>,
-}
-
-// Legacy console input parser retained for `RuntimeValue` console APIs.
-fn parse_console_field(raw: &str) -> RuntimeValue {
-    let field = raw.trim();
-    if field.eq_ignore_ascii_case("#TRUE#") {
-        return RuntimeValue::Bool(true);
-    }
-    if field.eq_ignore_ascii_case("#FALSE#") {
-        return RuntimeValue::Bool(false);
-    }
-    if field.eq_ignore_ascii_case("#NULL#") {
-        return RuntimeValue::Empty;
-    }
-    if let Ok(value) = field.parse::<i32>() {
-        return RuntimeValue::I32(value);
-    }
-    if let Ok(value) = field.parse::<f64>() {
-        return RuntimeValue::F64(F64Value::from_f64(value));
-    }
-    RuntimeValue::String(BStr::from(field))
 }
 
 fn parse_console_field_variant(raw: &str) -> Variant {
@@ -110,36 +89,9 @@ impl ConsoleHal for StandardHostServices {
     // `print_line_variant`.
     fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "print_line"));
-        }
-        let text = self.runtime_value_to_display_text(&data);
-        if let Some(callbacks) = self.callbacks.as_ref()
-            && callbacks.on_console_print(&text)
-        {
-            return Ok(RuntimeValue::I32(0));
-        }
-        if !self.native_console_enabled() {
-            return Err(self.denied(capability, "print_line"));
-        }
-        let mut stdout = io::stdout().lock();
-        writeln!(stdout, "{text}").map_err(|err| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                "print_line",
-                format!("failed to write stdout: {err}"),
-            )
-        })?;
-        stdout.flush().map_err(|err| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                "print_line",
-                format!("failed to flush stdout: {err}"),
-            )
-        })?;
-        Ok(RuntimeValue::I32(0))
+        let data = runtime_value_to_console_variant(self.profile, capability, "print_line", data)?;
+        let result = self.print_line_variant(data)?;
+        console_variant_to_runtime_value(self.profile, capability, "print_line", result)
     }
 
     fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
@@ -180,31 +132,10 @@ impl ConsoleHal for StandardHostServices {
     // `input_fields_variant`.
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "input_fields"));
-        }
-        let count = self.runtime_value_project_compat_slot_i32(
-            &count,
-            capability,
-            "input_fields",
-            "count",
-        )?;
-        let count = count.max(1) as usize;
-        let mut state = self.console_lock("input_fields")?;
-        while state.pending_fields.len() < count {
-            let line = self.console_read_line("input_fields")?;
-            state.pending_fields.extend(split_console_fields(&line));
-        }
-        let mut fields = Vec::new();
-        while fields.len() < count {
-            fields.push(state.pending_fields.pop_front().unwrap_or_default());
-        }
-        if count == 1 {
-            return Ok(parse_console_field(
-                fields.first().map(String::as_str).unwrap_or(""),
-            ));
-        }
-        Ok(RuntimeValue::String(BStr::from(fields.join(","))))
+        let count =
+            runtime_value_to_console_variant(self.profile, capability, "input_fields", count)?;
+        let result = self.input_fields_variant(count)?;
+        console_variant_to_runtime_value(self.profile, capability, "input_fields", result)
     }
 
     fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
@@ -236,11 +167,8 @@ impl ConsoleHal for StandardHostServices {
     // `line_input_variant`.
     fn line_input(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "line_input"));
-        }
-        let line = self.console_read_line("line_input")?;
-        Ok(RuntimeValue::String(BStr::from(line)))
+        let result = self.line_input_variant()?;
+        console_variant_to_runtime_value(self.profile, capability, "line_input", result)
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
@@ -251,4 +179,39 @@ impl ConsoleHal for StandardHostServices {
         let line = self.console_read_line("line_input")?;
         Ok(Variant::from_string(line))
     }
+}
+
+fn runtime_value_to_console_variant(
+    profile: crate::model::HalProfileId,
+    capability: CapabilityId,
+    operation: &'static str,
+    value: RuntimeValue,
+) -> HalResult<Variant> {
+    match value {
+        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
+        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                profile,
+                capability,
+                operation,
+                format!("failed to project RuntimeValue argument into Variant: {detail}"),
+            )
+        }),
+    }
+}
+
+fn console_variant_to_runtime_value(
+    profile: crate::model::HalProfileId,
+    capability: CapabilityId,
+    operation: &'static str,
+    value: Variant,
+) -> HalResult<RuntimeValue> {
+    value.to_runtime_value().map_err(|detail| {
+        HalError::adapter_fault(
+            profile,
+            capability,
+            operation,
+            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
+        )
+    })
 }
