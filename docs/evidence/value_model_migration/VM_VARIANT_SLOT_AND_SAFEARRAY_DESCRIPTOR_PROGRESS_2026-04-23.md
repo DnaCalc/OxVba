@@ -1573,6 +1573,11 @@ Implementation progress:
      retained `Variant` dynamic-link companions for bound, descriptor, and
      legacy-symbol invocation. The native FFI m1 lane remains on the explicit
      semantic marshalling bridge until that broader by-ref/ABI path is migrated.
+154. Standard UI legacy `RuntimeValue` `MsgBox`/`InputBox` calls now delegate
+     through retained `Variant` UI companions, with only boundary projection
+     helpers left for legacy callers. The obsolete native Windows
+     `RuntimeValue` MessageBox helper was removed after the retained text path
+     became the single native UI path.
 
 Remaining blocker:
 
@@ -1774,6 +1779,9 @@ Remaining blocker:
    Standard dynamic-link m0 legacy `RuntimeValue` methods now also delegate
    through retained `Variant` companions; m1 native FFI remains an explicitly
    tracked compatibility marshalling bridge.
+   Standard UI `MsgBox`/`InputBox` legacy `RuntimeValue` methods now also
+   delegate through retained `Variant` companions rather than carrying separate
+   UI virtualization branches.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
