@@ -1486,6 +1486,12 @@ Implementation progress:
      conversion helpers and write retained `Variant` results directly.
      Array/string aggregate helpers remain outside this slice where they still
      use broader legacy semantic contracts.
+138. VM/JIT aggregate string intrinsics `Mid` statement, `Split`, and `Join`
+     now read retained `Variant` slots directly through Variant-native
+     string/array helpers and write retained `Variant` results directly.
+     Remaining broad projection seams are arithmetic/operator reads,
+     binding/COM, random seed, dynamic array bounds/constructor, and
+     compatibility APIs.
 
 Remaining blocker:
 
@@ -1704,6 +1710,9 @@ Remaining blocker:
    VM-only conversion intrinsics `CStr`, `Str$`, `Val`, and `CDateValue` now
    read retained `Variant` slots directly through Variant-native conversion
    helpers and write retained `Variant` results directly.
+   VM/JIT aggregate string intrinsics `Mid` statement, `Split`, and `Join`
+   now read retained `Variant` slots directly through Variant-native
+   string/array helpers and write retained `Variant` results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
