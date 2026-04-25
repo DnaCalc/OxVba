@@ -74,7 +74,8 @@ Current value-model migration note (2026-04-25):
 9. JIT/Cranelift `RuntimeValue` execution and slot helper APIs now classify themselves as compatibility projections over retained `Variant` execution APIs.
 10. VM `RuntimeSlot` and JIT `RtSlot` `RuntimeValue`/i32 conversion helpers now classify themselves as compatibility ingress/egress projections around retained `Variant` slot carriers.
 11. Runtime pointer-helper `RuntimeValue` registration/readback APIs now classify themselves as compatibility projections beside retained `Variant` pointer-helper APIs.
-12. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+12. HAL standard process legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` process APIs.
+13. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

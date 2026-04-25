@@ -15,6 +15,9 @@ pub(super) struct DirSearchState {
 }
 
 impl ProcessEnvHal for StandardHostServices {
+    // Legacy compatibility wrapper. The retained value-model entry point for
+    // VM/JIT callers is `shell_variant`; this method preserves the historical
+    // `RuntimeValue` contract, including compatibility slot-token projection.
     fn shell(&self, command: RuntimeValue, _window_style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
@@ -73,6 +76,9 @@ impl ProcessEnvHal for StandardHostServices {
         }))
     }
 
+    // Legacy compatibility wrapper. The retained value-model entry point for
+    // VM/JIT callers is `environ_variant`; this method preserves the historical
+    // `RuntimeValue` contract, including compatibility slot-token projection.
     fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
@@ -113,6 +119,9 @@ impl ProcessEnvHal for StandardHostServices {
         Ok(RuntimeValue::from_compat_slot_i32(key))
     }
 
+    // Legacy compatibility wrapper. The retained value-model entry point for
+    // VM/JIT callers is `dir_variant`; this method preserves the historical
+    // `RuntimeValue` contract, including compatibility slot-token projection.
     fn dir(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
