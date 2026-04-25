@@ -1377,6 +1377,10 @@ Implementation progress:
      retained `DynamicValue` `Variant` access, and the portable
      `PortableDispatch` trait boundary. The compatibility APIs remain
      available for legacy callers and do not close `vmm-e6`.
+116. VM legacy scalar helper writes now materialize compatibility-tagged
+     `Variant` slots directly. `write_legacy_scalar_slot` still represents a
+     compatibility-token lane, but it no longer routes the destination write
+     through a temporary `RuntimeValue::from_compat_slot_i32` carrier.
 
 Remaining blocker:
 
@@ -1525,6 +1529,9 @@ Remaining blocker:
    Dynamic COM value and portable dispatch surfaces now also document their
    compatibility projection role around retained `Variant`/`ComValue`
    carriers.
+   VM legacy scalar helper writes now also materialize compatibility-tagged
+   `Variant` slots directly instead of routing through a temporary
+   `RuntimeValue` carrier.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
