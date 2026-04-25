@@ -1273,6 +1273,11 @@ Implementation progress:
     `RuntimeValue` from a semantic helper, such as `DateSerial`, `DateAdd`,
     `DateValue`, `CDate`, `TimeValue`, and `MonthName`, remain explicit
     semantic-helper companion work.
+100. VM/JIT PRNG scalar result writes now use retained `Variant` carriers for
+     `Rnd` and `Randomize`, and the VM `Int` F64 fast branch now writes its
+     integer result as a retained `Variant` instead of creating a temporary
+     `RuntimeValue`. Math/random paths that still return through semantic
+     helpers remain explicit companion work.
 
 Remaining blocker:
 
@@ -1366,6 +1371,10 @@ Remaining blocker:
    VM/JIT locally computed date/format destination writes now also stay on
    retained `Variant` carriers for `DateDiff`, `Year`, `Month`, `Day`,
    `Weekday`, `Format`, and `StrReverse`.
+   VM/JIT PRNG destination writes now also stay on retained `Variant`
+   carriers for `Rnd` and `Randomize`, and the VM `Int` F64 fast branch now
+   writes its result as a retained `Variant`; broader math/random
+   semantic-helper-returning paths remain companion work.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
