@@ -1514,6 +1514,12 @@ Implementation progress:
      `Variant` array carriers. Array literal/append were already carrier-native;
      remaining broad projection seams include binding/COM and compatibility
      APIs.
+143. VM/JIT scalar/control/binding helper operands now read retained `Variant`
+     slots directly for `Int`/`Fix`, conditional jumps, runtime assignment
+     validation, finance/collection numeric lanes, and WithEvents binding-token
+     lanes. This removes the remaining VM/JIT opcode execution reads from
+     `RuntimeValue` slot storage; remaining broad projection seams are
+     compatibility APIs and broader COM/host surface classifications.
 
 Remaining blocker:
 
@@ -1749,6 +1755,10 @@ Remaining blocker:
    bound/index operands now read retained `Variant` slots directly through
    Variant-native numeric coercion while preserving retained SAFEARRAY-backed
    `Variant` array carriers.
+   VM/JIT scalar/control/binding helper operands now read retained `Variant`
+   slots directly for `Int`/`Fix`, conditional jumps, runtime assignment
+   validation, finance/collection numeric lanes, and WithEvents binding-token
+   lanes.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
