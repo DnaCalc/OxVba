@@ -650,36 +650,11 @@ fn byte_array_variant_pointer_entry(
     Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
 }
 
-/// Build byte-array helper storage from legacy `RuntimeValue` array elements.
+/// Compatibility wrapper for legacy `RuntimeValue` array intents.
 ///
-/// New value-model callers should use `byte_array_variant_pointer_entry`.
+/// The payload reader stays on retained `Variant` SAFEARRAY elements.
 fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<PointerEntry, String> {
-    let Some(elements) = array.elements() else {
-        return Err(
-            "VarPtr over array shape without element payload is not yet supported".to_string(),
-        );
-    };
-    let mut bytes = Vec::with_capacity(elements.len());
-    for element in elements {
-        match element {
-            RuntimeValue::Empty | RuntimeValue::Null => bytes.push(0),
-            RuntimeValue::I32(value) => {
-                if !(0..=255).contains(&value) {
-                    return Err(format!(
-                        "VarPtr over array payload currently requires byte-compatible elements, got {element:?}"
-                    ));
-                }
-                bytes.push(value as u8)
-            }
-            RuntimeValue::Bool(value) => bytes.push(if value { 1 } else { 0 }),
-            other => {
-                return Err(format!(
-                    "VarPtr over array payload currently requires byte-compatible elements, got {other:?}"
-                ));
-            }
-        }
-    }
-    Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
+    byte_array_variant_pointer_entry(array)
 }
 
 /// Historical pointer materialization that operates directly on `RuntimeValue`.
