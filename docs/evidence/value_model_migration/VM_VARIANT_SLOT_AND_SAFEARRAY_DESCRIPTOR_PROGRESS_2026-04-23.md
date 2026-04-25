@@ -1370,6 +1370,13 @@ Implementation progress:
      `invoke_dispatch_runtime_value`, `invoke_member_spec_runtime_value`, and
      `invoke_direct_dispid_runtime_value`. The compatibility APIs remain
      available for legacy callers and do not close `vmm-e6`.
+115. Dynamic COM value and portable dispatch surfaces now classify
+     `RuntimeValue` entry points as compatibility projections around retained
+     `Variant`/`ComValue` carriers. This covers
+     `DynamicValue::from_runtime_value`, `DynamicValue::to_runtime_value`,
+     retained `DynamicValue` `Variant` access, and the portable
+     `PortableDispatch` trait boundary. The compatibility APIs remain
+     available for legacy callers and do not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1515,6 +1522,9 @@ Remaining blocker:
    Windows COM bridge/invoke `RuntimeValue` result and callback-argument APIs
    now also document their compatibility projection role beside retained
    `Variant`/`ComValue` transport.
+   Dynamic COM value and portable dispatch surfaces now also document their
+   compatibility projection role around retained `Variant`/`ComValue`
+   carriers.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
