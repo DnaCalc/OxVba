@@ -894,12 +894,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn native_windows_msg_box_value(&self, prompt: &RuntimeValue, style: i32) -> HalResult<i32> {
-        let text = self.runtime_value_to_display_text(prompt);
-        self.native_windows_msg_box_text(&text, style)
-    }
-
-    #[cfg(target_os = "windows")]
     fn native_windows_msg_box_text(&self, text: &str, style: i32) -> HalResult<i32> {
         let title = "OxVba";
         let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
@@ -922,11 +916,6 @@ impl StandardHostServices {
             ));
         }
         Ok(result)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn native_windows_msg_box_value(&self, _prompt: &RuntimeValue, _style: i32) -> HalResult<i32> {
-        Ok(1)
     }
 
     #[cfg(not(target_os = "windows"))]
