@@ -1406,6 +1406,10 @@ Implementation progress:
      themselves as compatibility wrappers beside retained `Variant` process
      APIs. This covers `shell`, `environ`, and `dir`; behavior is preserved so
      existing compatibility slot-token projection remains unchanged.
+122. VM shared semantic helpers and JIT runtime helper bridges now classify
+     `RuntimeValue` helper contracts as compatibility layers over retained
+     `Variant` slot storage. This documents the remaining helper families as
+     migration work without confusing them with retained VM/JIT storage.
 
 Remaining blocker:
 
@@ -1571,6 +1575,8 @@ Remaining blocker:
    pointer-helper APIs.
    HAL standard process legacy `RuntimeValue` methods now also document their
    compatibility wrapper role beside retained `Variant` process APIs.
+   VM shared semantic helpers and JIT runtime helper bridges now also document
+   their compatibility layer role over retained `Variant` slot storage.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
