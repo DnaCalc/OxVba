@@ -40,13 +40,6 @@ const ERR_RUNTIME: i32 = -1; // Generic runtime error (fatal)
 
 // ── Macro for common helper pattern ───────────────────────────────────
 
-macro_rules! read_slot {
-    ($ctx:expr, $slot:expr) => {{
-        debug_assert!(!$ctx.is_null(), "read_slot: null JitContext pointer");
-        unsafe { (*$ctx).read_slot($slot) }
-    }};
-}
-
 macro_rules! write_slot {
     ($ctx:expr, $slot:expr, $value:expr) => {{
         debug_assert!(!$ctx.is_null(), "write_slot: null JitContext pointer");
@@ -72,20 +65,6 @@ macro_rules! write_variant_slot {
         );
         unsafe { (*$ctx).write_variant_slot($slot, $value) }
     }};
-}
-
-/// Write a legacy semantic helper result into retained JIT slot storage.
-///
-/// This is a compatibility bridge for helper families that still return
-/// `RuntimeValue`; new helper implementations should write `Variant` directly.
-fn write_semantic_value_slot(ctx: *mut JitContext, slot: u32, value: RuntimeValue) -> i32 {
-    match Variant::try_from_runtime_value(&value) {
-        Ok(value) => {
-            write_variant_slot!(ctx, slot, value);
-            OK
-        }
-        Err(_) => ERR_RUNTIME,
-    }
 }
 
 // ── Arithmetic helpers ────────────────────────────────────────────────
@@ -423,13 +402,13 @@ pub extern "C" fn oxrt_sgn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 /// Int/Fix for i32 values (pass-through).
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_int_fix(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let result = match &val {
-        RuntimeValue::Null => RuntimeValue::Null,
-        RuntimeValue::F64(v) => RuntimeValue::I32(v.as_f64().floor() as i32),
-        _ => val,
+    let val = read_variant_slot!(ctx, src);
+    let result = match semantics::variant_int_value(&val) {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, result)
+    write_variant_slot!(ctx, dst, result);
+    OK
 }
 
 // ── Slot copy helper ──────────────────────────────────────────────────
@@ -465,8 +444,8 @@ pub extern "C" fn oxrt_load_null(ctx: *mut JitContext, dst: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_jump_if_zero(ctx: *mut JitContext, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    match semantics::legacy_truthy_value(&val) {
+    let val = read_variant_slot!(ctx, src);
+    match semantics::variant_truthy_value(&val) {
         Ok(truthy) => i32::from(!truthy),
         Err(_) => ERR_RUNTIME,
     }
@@ -2129,7 +2108,7 @@ pub extern "C" fn oxrt_validate_assignment(
     type_ptr: *const u8,
     type_len: u32,
 ) -> i32 {
-    let val = read_slot!(ctx, src);
+    let val = read_variant_slot!(ctx, src);
     let intent = match intent {
         0 => RuntimeAssignmentIntent::Implicit,
         1 => RuntimeAssignmentIntent::Let,
@@ -2146,7 +2125,13 @@ pub extern "C" fn oxrt_validate_assignment(
     let name = String::from_utf8_lossy(name_bytes);
     let type_bytes = unsafe { std::slice::from_raw_parts(type_ptr, type_len as usize) };
     let type_name = String::from_utf8_lossy(type_bytes);
-    match semantics::validate_runtime_assignment(&val, intent, target_kind, &name, &type_name) {
+    match semantics::validate_runtime_assignment_variant(
+        &val,
+        intent,
+        target_kind,
+        &name,
+        &type_name,
+    ) {
         Ok(()) => OK,
         Err(_) => ERR_RUNTIME,
     }
@@ -2785,12 +2770,12 @@ pub extern "C" fn oxrt_host_withevents_get(
     binding: u32,
 ) -> i32 {
     let owner_val = read_variant_slot!(ctx, owner);
-    let binding_val = read_slot!(ctx, binding);
+    let binding_val = read_variant_slot!(ctx, binding);
     let owner = match semantics::variant_to_withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
-    let binding = match semantics::withevents_binding_handle(&binding_val, "binding") {
+    let binding = match semantics::variant_to_withevents_binding_handle(&binding_val, "binding") {
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2819,13 +2804,13 @@ pub extern "C" fn oxrt_host_withevents_set(
     value: u32,
 ) -> i32 {
     let owner_val = read_variant_slot!(ctx, owner_slot);
-    let binding_val = read_slot!(ctx, binding_slot);
+    let binding_val = read_variant_slot!(ctx, binding_slot);
     let val = read_variant_slot!(ctx, value);
     let owner = match semantics::variant_to_withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
-    let binding = match semantics::withevents_binding_handle(&binding_val, "binding") {
+    let binding = match semantics::variant_to_withevents_binding_handle(&binding_val, "binding") {
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
@@ -2869,8 +2854,8 @@ pub extern "C" fn oxrt_host_withevents_first_owner(
     binding_slot: u32,
 ) -> i32 {
     let source_val = read_variant_slot!(ctx, source);
-    let binding_val = read_slot!(ctx, binding_slot);
-    let binding = match semantics::withevents_binding_handle(&binding_val, "binding") {
+    let binding_val = read_variant_slot!(ctx, binding_slot);
+    let binding = match semantics::variant_to_withevents_binding_handle(&binding_val, "binding") {
         Ok(b) => b,
         Err(_) => return ERR_RUNTIME,
     };
@@ -3344,8 +3329,8 @@ fn normalize_com_result_variant(value: &Variant) -> Variant {
 }
 
 fn compat_i32_slot(ctx: *mut JitContext, slot: u32, field: &str) -> Result<i32, ()> {
-    let val = read_slot!(ctx, slot);
-    semantics::runtime_value_to_i32_compat(&val, field).map_err(|_| ())
+    let val = read_variant_slot!(ctx, slot);
+    semantics::runtime_variant_to_i32_compat(&val, field).map_err(|_| ())
 }
 
 fn opt_compat_i32_slot(ctx: *mut JitContext, slot: u32, default: i32) -> i32 {

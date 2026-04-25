@@ -1650,6 +1650,30 @@ pub fn variant_truthy_value(value: &Variant) -> Result<bool, String> {
     Ok(runtime_variant_to_numeric_compat(value, "boolean operand")? != 0.0)
 }
 
+pub fn variant_int_value(value: &Variant) -> Result<Variant, String> {
+    if matches!(value.vtype(), VarType::Null) {
+        return Ok(Variant::null());
+    }
+    if let Some(value) = value.as_f64() {
+        return Ok(Variant::from_i32(value.floor() as i32));
+    }
+    if let Some(value) = value.as_date_f64() {
+        return Ok(Variant::from_i32(value.floor() as i32));
+    }
+    Ok(Variant::from_i32(runtime_variant_to_i32_compat(
+        value, "Int",
+    )?))
+}
+
+pub fn variant_fix_value(value: &Variant) -> Result<Variant, String> {
+    if matches!(value.vtype(), VarType::Null) {
+        return Ok(Variant::null());
+    }
+    Ok(Variant::from_i32(runtime_variant_to_i32_compat(
+        value, "Fix",
+    )?))
+}
+
 pub fn runtime_value_is_object(value: &RuntimeValue) -> bool {
     matches!(
         value,
@@ -2291,6 +2315,27 @@ pub fn runtime_assignment_value_label(value: &RuntimeValue) -> &'static str {
     }
 }
 
+pub fn variant_assignment_value_label(value: &Variant) -> &'static str {
+    match value.vtype() {
+        VarType::Empty => "Empty",
+        VarType::Null => "Null",
+        VarType::Error => "Error",
+        VarType::Integer => "Integer",
+        VarType::Long => "Long",
+        VarType::LongLong => "LongLong",
+        VarType::Single => "Single",
+        VarType::Double => "Double",
+        VarType::Date => "Date",
+        VarType::Decimal => "Decimal",
+        VarType::Currency => "Currency",
+        VarType::Boolean => "Boolean",
+        VarType::String => "String",
+        VarType::ArrayVariant => "Array",
+        VarType::Object => "Object",
+        VarType::Byte => "Byte",
+    }
+}
+
 pub fn validate_runtime_assignment(
     value: &RuntimeValue,
     intent: RuntimeAssignmentIntent,
@@ -2327,6 +2372,53 @@ pub fn validate_runtime_assignment(
             RuntimeAssignmentTargetKind::Scalar,
         ) => {
             if runtime_value_is_object(value) {
+                Err(format!(
+                    "cannot assign Object to {target_type_name} variable {target_name}"
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+pub fn validate_runtime_assignment_variant(
+    value: &Variant,
+    intent: RuntimeAssignmentIntent,
+    target_kind: RuntimeAssignmentTargetKind,
+    target_name: &str,
+    target_type_name: &str,
+) -> Result<(), String> {
+    match (intent, target_kind) {
+        (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Variant)
+        | (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Object) => {
+            if runtime_variant_is_object(value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Set requires object value for variable {target_name}"
+                ))
+            }
+        }
+        (RuntimeAssignmentIntent::Implicit, RuntimeAssignmentTargetKind::Object) => {
+            if runtime_variant_is_object(value) {
+                Err(format!("Set required for Object variable {target_name}"))
+            } else {
+                Err(format!(
+                    "cannot assign {} to Object variable {target_name}",
+                    variant_assignment_value_label(value)
+                ))
+            }
+        }
+        (RuntimeAssignmentIntent::Let, RuntimeAssignmentTargetKind::Object) => Err(format!(
+            "Let cannot assign to Object variable {target_name}"
+        )),
+        (
+            RuntimeAssignmentIntent::Implicit | RuntimeAssignmentIntent::Let,
+            RuntimeAssignmentTargetKind::Scalar,
+        ) => {
+            if runtime_variant_is_object(value) {
                 Err(format!(
                     "cannot assign Object to {target_type_name} variable {target_name}"
                 ))
@@ -3701,6 +3793,24 @@ pub fn withevents_binding_handle(
             "WithEvents {field} requires binding-handle-compatible carrier, got {other:?}"
         )),
     }
+}
+
+pub fn variant_to_withevents_binding_handle(
+    value: &Variant,
+    field: &str,
+) -> Result<BindingHandle, String> {
+    if let Some(raw) = value.as_i32() {
+        return Ok(BindingHandle::new(raw));
+    }
+    if let Some(raw) = value.as_i64() {
+        return i32::try_from(raw)
+            .map(BindingHandle::new)
+            .map_err(|_| format!("WithEvents {field} exceeds i32 handle range: {raw}"));
+    }
+    Err(format!(
+        "WithEvents {field} requires binding-handle-compatible Variant, got {:?}",
+        value.vtype()
+    ))
 }
 
 pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectRef, String> {

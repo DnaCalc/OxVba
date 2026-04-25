@@ -1625,22 +1625,13 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicIntI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    match &value {
-                        RuntimeValue::F64(f) => {
-                            let floored = f.as_f64().floor() as i32;
-                            self.write_variant_slot(*dst, Variant::from_i32(floored))?;
-                        }
-                        _ => {
-                            let v = crate::semantics::runtime_value_to_i32_compat(&value, "Int")?;
-                            self.write_legacy_scalar_slot(*dst, v)?;
-                        }
-                    }
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, crate::semantics::variant_int_value(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicFixI32 { dst, src } => {
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, value)?;
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, crate::semantics::variant_fix_value(&value)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSgnI32 { dst, src } => {
@@ -2189,8 +2180,8 @@ impl Vm {
                     item,
                     has_value,
                 } => {
-                    let iter_id = crate::semantics::runtime_value_to_i32_compat(
-                        &self.read_value_slot(*iter)?,
+                    let iter_id = crate::semantics::runtime_variant_to_i32_compat(
+                        &self.read_variant_slot(*iter)?,
                         "For Each iterator slot",
                     )?;
                     let next = if let Some(state) = self.foreach_iterators.get_mut(&iter_id) {
@@ -2330,8 +2321,8 @@ impl Vm {
                     target_name,
                     target_type_name,
                 } => {
-                    let value = self.read_value_slot(*src)?;
-                    Self::validate_runtime_assignment(
+                    let value = self.read_variant_slot(*src)?;
+                    crate::semantics::validate_runtime_assignment_variant(
                         &value,
                         *intent,
                         *target_kind,
@@ -2866,10 +2857,12 @@ impl Vm {
                     binding,
                 } => {
                     let owner = self.read_variant_slot(*owner)?;
-                    let binding = self.read_value_slot(*binding)?;
+                    let binding = self.read_variant_slot(*binding)?;
                     let owner =
                         crate::semantics::variant_to_withevents_owner_handle(&owner, "owner")?;
-                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
+                    let binding = crate::semantics::variant_to_withevents_binding_handle(
+                        &binding, "binding",
+                    )?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     let value = self
                         .withevents_bindings
@@ -2886,11 +2879,13 @@ impl Vm {
                     value,
                 } => {
                     let owner = self.read_variant_slot(*owner)?;
-                    let binding = self.read_value_slot(*binding)?;
+                    let binding = self.read_variant_slot(*binding)?;
                     let value = self.read_variant_slot(*value)?;
                     let owner =
                         crate::semantics::variant_to_withevents_owner_handle(&owner, "owner")?;
-                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
+                    let binding = crate::semantics::variant_to_withevents_binding_handle(
+                        &binding, "binding",
+                    )?;
                     let key = Self::withevents_binding_key(&owner, binding);
                     self.clear_com_withevents_binding_subscriptions(key)?;
                     if value.as_i32() == Some(0) {
@@ -2929,8 +2924,10 @@ impl Vm {
                     } else {
                         Some(source)
                     };
-                    let binding = self.read_value_slot(*binding)?;
-                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
+                    let binding = self.read_variant_slot(*binding)?;
+                    let binding = crate::semantics::variant_to_withevents_binding_handle(
+                        &binding, "binding",
+                    )?;
                     let mut owners =
                         self.withevents_matching_owners(source_variant.as_ref(), binding);
                     owners.sort_unstable_by_key(|owner| owner.raw());
@@ -3163,8 +3160,8 @@ impl Vm {
                     cond_slot,
                     target_pc,
                 } => {
-                    let cond = self.read_value_slot(*cond_slot)?;
-                    pc = Self::next_pc_for_jump_if_zero_value(&cond, *target_pc, len, pc)?;
+                    let cond = self.read_variant_slot(*cond_slot)?;
+                    pc = Self::next_pc_for_jump_if_zero_variant(&cond, *target_pc, len, pc)?;
                 }
                 Instruction::Jump { target_pc } => {
                     pc = Self::next_pc_for_jump(*target_pc, len)?;
@@ -3363,11 +3360,13 @@ impl Vm {
     }
 
     fn read_legacy_scalar_slot(&self, slot: usize) -> Result<i32, String> {
-        self.read_value_slot(slot)?
-            .project_compat_slot_i32()
-            .map_err(|detail| {
-                format!("runtime value in slot {slot} cannot enter legacy i32 lane: {detail}")
-            })
+        crate::semantics::runtime_variant_to_i32_compat(
+            &self.read_variant_slot(slot)?,
+            "legacy i32 lane",
+        )
+        .map_err(|detail| {
+            format!("runtime value in slot {slot} cannot enter legacy i32 lane: {detail}")
+        })
     }
 
     fn write_legacy_scalar_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
@@ -4386,6 +4385,21 @@ impl Vm {
         current_pc: usize,
     ) -> Result<usize, String> {
         let cond = Self::legacy_truthy_value(cond)?;
+        Self::next_pc_for_jump_if_zero(
+            if cond { -1 } else { 0 },
+            target_pc,
+            instruction_len,
+            current_pc,
+        )
+    }
+
+    fn next_pc_for_jump_if_zero_variant(
+        cond: &Variant,
+        target_pc: usize,
+        instruction_len: usize,
+        current_pc: usize,
+    ) -> Result<usize, String> {
+        let cond = crate::semantics::variant_truthy_value(cond)?;
         Self::next_pc_for_jump_if_zero(
             if cond { -1 } else { 0 },
             target_pc,
