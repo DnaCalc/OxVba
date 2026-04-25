@@ -950,14 +950,15 @@ pub extern "C" fn oxrt_date_serial(
     month: u32,
     day: u32,
 ) -> i32 {
-    let y = read_slot!(ctx, year);
-    let m = read_slot!(ctx, month);
-    let d = read_slot!(ctx, day);
-    let out = match semantics::runtime_date_serial_bounded(&y, &m, &d) {
+    let y = read_variant_slot!(ctx, year);
+    let m = read_variant_slot!(ctx, month);
+    let d = read_variant_slot!(ctx, day);
+    let out = match semantics::runtime_date_serial_variant_bounded(&y, &m, &d) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
@@ -968,44 +969,48 @@ pub extern "C" fn oxrt_time_serial(
     minute: u32,
     second: u32,
 ) -> i32 {
-    let h = read_slot!(ctx, hour);
-    let m = read_slot!(ctx, minute);
-    let s = read_slot!(ctx, second);
-    let out = match semantics::runtime_time_serial_bounded(&h, &m, &s) {
+    let h = read_variant_slot!(ctx, hour);
+    let m = read_variant_slot!(ctx, minute);
+    let s = read_variant_slot!(ctx, second);
+    let out = match semantics::runtime_time_serial_variant_bounded(&h, &m, &s) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_date_value(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_to_datevalue(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_to_datevalue(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, v)
+    write_variant_slot!(ctx, dst, v);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_cdate(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_to_cdate(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_to_cdate(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, v)
+    write_variant_slot!(ctx, dst, v);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_time_value(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_value_to_timevalue(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_to_timevalue(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, v)
+    write_variant_slot!(ctx, dst, v);
+    OK
 }
 
 #[unsafe(no_mangle)]
@@ -1016,14 +1021,15 @@ pub extern "C" fn oxrt_date_add(
     number: u32,
     date: u32,
 ) -> i32 {
-    let i = read_slot!(ctx, interval);
-    let n = read_slot!(ctx, number);
-    let date_value = read_slot!(ctx, date);
-    let out = match semantics::runtime_date_add_bounded(&i, &n, &date_value) {
+    let i = read_variant_slot!(ctx, interval);
+    let n = read_variant_slot!(ctx, number);
+    let date_value = read_variant_slot!(ctx, date);
+    let out = match semantics::runtime_date_add_variant_bounded(&i, &n, &date_value) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
@@ -1034,58 +1040,58 @@ pub extern "C" fn oxrt_date_diff(
     date1: u32,
     date2: u32,
 ) -> i32 {
-    let i = read_slot!(ctx, interval);
-    let date1_value = read_slot!(ctx, date1);
-    let date2_value = read_slot!(ctx, date2);
-    let out = match semantics::runtime_date_diff_bounded(&i, &date1_value, &date2_value) {
+    let i = read_variant_slot!(ctx, interval);
+    let date1_value = read_variant_slot!(ctx, date1);
+    let date2_value = read_variant_slot!(ctx, date2);
+    let out = match semantics::runtime_date_diff_variant_bounded(&i, &date1_value, &date2_value) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_i32(out));
+    write_variant_slot!(ctx, dst, out);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_year(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_date_year(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_date_year(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_i32(v));
+    write_variant_slot!(ctx, dst, v);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_month(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_date_month(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_date_month(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_i32(v));
+    write_variant_slot!(ctx, dst, v);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_day(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let v = match semantics::runtime_date_day(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let v = match semantics::runtime_variant_date_day(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_i32(v));
+    write_variant_slot!(ctx, dst, v);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_weekday(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let weekday = match semantics::runtime_date_weekday(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let weekday = match semantics::runtime_variant_date_weekday(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_i32(weekday));
+    write_variant_slot!(ctx, dst, weekday);
     OK
 }
 

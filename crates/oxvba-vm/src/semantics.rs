@@ -655,6 +655,19 @@ pub fn runtime_date_serial_bounded(
     )
 }
 
+pub fn runtime_date_serial_variant_bounded(
+    year: &Variant,
+    month: &Variant,
+    day: &Variant,
+) -> Result<Variant, String> {
+    let packed = checked_packed_date(
+        runtime_variant_to_i32_compat(year, "DateSerial year")?,
+        runtime_variant_to_i32_compat(month, "DateSerial month")?,
+        runtime_variant_to_i32_compat(day, "DateSerial day")?,
+    )?;
+    Ok(Variant::from_date_f64(packed_date_to_ole_serial(packed)?))
+}
+
 pub fn runtime_time_serial_bounded(
     hour: &RuntimeValue,
     minute: &RuntimeValue,
@@ -665,6 +678,20 @@ pub fn runtime_time_serial_bounded(
         runtime_value_to_i32_compat(minute, "TimeSerial minute")?,
         runtime_value_to_i32_compat(second, "TimeSerial second")?,
     )
+}
+
+pub fn runtime_time_serial_variant_bounded(
+    hour: &Variant,
+    minute: &Variant,
+    second: &Variant,
+) -> Result<Variant, String> {
+    let total_seconds =
+        i64::from(runtime_variant_to_i32_compat(hour, "TimeSerial hour")?) * 3600
+            + i64::from(runtime_variant_to_i32_compat(minute, "TimeSerial minute")?) * 60
+            + i64::from(runtime_variant_to_i32_compat(second, "TimeSerial second")?);
+    Ok(Variant::from_date_f64(
+        total_seconds as f64 / SECONDS_PER_DAY,
+    ))
 }
 
 pub fn runtime_date_add_bounded(
@@ -679,6 +706,19 @@ pub fn runtime_date_add_bounded(
     )
 }
 
+pub fn runtime_date_add_variant_bounded(
+    interval: &Variant,
+    number: &Variant,
+    date: &Variant,
+) -> Result<Variant, String> {
+    let _interval = runtime_variant_to_i32_compat(interval, "DateAdd interval")?;
+    let number = runtime_variant_to_i32_compat(number, "DateAdd number")?;
+    let serial = date_serial_from_variant(date)?;
+    Ok(Variant::from_date_f64(validate_date_range(
+        serial + f64::from(number),
+    )?))
+}
+
 pub fn runtime_date_diff_bounded(
     interval: &RuntimeValue,
     date1: &RuntimeValue,
@@ -689,6 +729,19 @@ pub fn runtime_date_diff_bounded(
         date1,
         date2,
     )
+}
+
+pub fn runtime_date_diff_variant_bounded(
+    interval: &Variant,
+    date1: &Variant,
+    date2: &Variant,
+) -> Result<Variant, String> {
+    let _interval = runtime_variant_to_i32_compat(interval, "DateDiff interval")?;
+    let serial1 = date_serial_from_variant(date1)?.floor() as i64;
+    let serial2 = date_serial_from_variant(date2)?.floor() as i64;
+    let delta = i32::try_from(serial2 - serial1)
+        .map_err(|_| format!("DateDiff result overflowed i32 span: {serial1}..{serial2}"))?;
+    Ok(Variant::from_i32(delta))
 }
 
 pub fn runtime_mid_stmt_bounded(
@@ -918,6 +971,70 @@ fn date_serial_from_value(value: &RuntimeValue) -> Result<f64, String> {
     validate_date_range(date_value.as_f64())
 }
 
+pub fn runtime_variant_to_cdate(value: &Variant) -> Result<Variant, String> {
+    let serial = match value.vtype() {
+        VarType::String => {
+            let text = value
+                .as_bstr()
+                .ok_or_else(|| "CDate src has invalid String payload".to_string())?;
+            let packed = parse_string_date_to_packed(&text.as_str())
+                .ok_or_else(|| format!("CDate string format is not yet supported: `{text}`"))?;
+            packed_date_to_ole_serial(packed)?
+        }
+        VarType::Long => {
+            let raw = value
+                .as_i32()
+                .ok_or_else(|| "CDate src has invalid Long payload".to_string())?;
+            maybe_packed_date_to_ole_serial(raw).unwrap_or(validate_date_range(raw as f64)?)
+        }
+        VarType::LongLong => {
+            let raw = value
+                .as_i64()
+                .ok_or_else(|| "CDate src has invalid LongLong payload".to_string())?;
+            if let Ok(narrow) = i32::try_from(raw) {
+                maybe_packed_date_to_ole_serial(narrow).unwrap_or(validate_date_range(raw as f64)?)
+            } else {
+                validate_date_range(raw as f64)?
+            }
+        }
+        _ => validate_date_range(runtime_variant_to_numeric_compat(value, "CDate src")?)?,
+    };
+    Ok(Variant::from_date_f64(serial))
+}
+
+pub fn runtime_variant_to_datevalue(value: &Variant) -> Result<Variant, String> {
+    Ok(Variant::from_date_f64(date_serial_from_variant(value)?.floor()))
+}
+
+pub fn runtime_variant_to_timevalue(value: &Variant) -> Result<Variant, String> {
+    if let VarType::Long = value.vtype()
+        && let Some(raw) = value.as_i32()
+        && maybe_packed_date_to_ole_serial(raw).is_none()
+    {
+        let seconds = f64::from(raw).rem_euclid(SECONDS_PER_DAY);
+        return Ok(Variant::from_date_f64(seconds / SECONDS_PER_DAY));
+    }
+    if let VarType::LongLong = value.vtype()
+        && let Some(raw) = value.as_i64()
+        && let Ok(narrow) = i32::try_from(raw)
+        && maybe_packed_date_to_ole_serial(narrow).is_none()
+    {
+        let seconds = (raw as f64).rem_euclid(SECONDS_PER_DAY);
+        return Ok(Variant::from_date_f64(seconds / SECONDS_PER_DAY));
+    }
+    Ok(Variant::from_date_f64(
+        date_serial_from_variant(value)?.rem_euclid(1.0),
+    ))
+}
+
+fn date_serial_from_variant(value: &Variant) -> Result<f64, String> {
+    let date = runtime_variant_to_cdate(value)?;
+    validate_date_range(
+        date.as_date_f64()
+            .ok_or_else(|| "CDate conversion returned non-Date Variant".to_string())?,
+    )
+}
+
 fn date_components_from_serial(serial: f64) -> Result<(i32, u32, u32), String> {
     let serial = validate_date_range(serial)?;
     Ok(civil_from_days(serial.floor() as i64 - 25_569))
@@ -1058,6 +1175,26 @@ pub fn runtime_date_day(value: &RuntimeValue) -> Result<i32, String> {
 pub fn runtime_date_weekday(value: &RuntimeValue) -> Result<i32, String> {
     let (year, month, day) = date_components_from_serial(date_serial_from_value(value)?)?;
     Ok(day_of_week(year, month, day) + 1)
+}
+
+pub fn runtime_variant_date_year(value: &Variant) -> Result<Variant, String> {
+    let (year, _, _) = date_components_from_serial(date_serial_from_variant(value)?)?;
+    Ok(Variant::from_i32(year))
+}
+
+pub fn runtime_variant_date_month(value: &Variant) -> Result<Variant, String> {
+    let (_, month, _) = date_components_from_serial(date_serial_from_variant(value)?)?;
+    Ok(Variant::from_i32(month as i32))
+}
+
+pub fn runtime_variant_date_day(value: &Variant) -> Result<Variant, String> {
+    let (_, _, day) = date_components_from_serial(date_serial_from_variant(value)?)?;
+    Ok(Variant::from_i32(day as i32))
+}
+
+pub fn runtime_variant_date_weekday(value: &Variant) -> Result<Variant, String> {
+    let (year, month, day) = date_components_from_serial(date_serial_from_variant(value)?)?;
+    Ok(Variant::from_i32(day_of_week(year, month, day) + 1))
 }
 
 pub fn runtime_value_is_date(value: &RuntimeValue) -> bool {
@@ -2106,6 +2243,81 @@ mod tests {
             )
             .expect("DateAdd should coerce numeric text"),
             RuntimeValue::F64(F64Value::from_date_f64(46084.0))
+        );
+    }
+
+    #[test]
+    fn date_time_variant_helpers_return_retained_carriers() {
+        let date = super::runtime_date_serial_variant_bounded(
+            &Variant::from_string(BStr::from("2026")),
+            &Variant::from_i32(2),
+            &Variant::from_i32(28),
+        )
+        .expect("DateSerial should succeed");
+        assert_eq!(date.as_date_f64(), Some(46081.0));
+
+        let time = super::runtime_time_serial_variant_bounded(
+            &Variant::from_i32(1),
+            &Variant::from_i32(2),
+            &Variant::from_i32(3),
+        )
+        .expect("TimeSerial should succeed");
+        assert_eq!(time.as_date_f64(), Some(3723.0 / 86400.0));
+
+        assert_eq!(
+            super::runtime_variant_to_datevalue(&Variant::from_date_f64(46081.75))
+                .expect("DateValue should succeed")
+                .as_date_f64(),
+            Some(46081.0)
+        );
+        assert_eq!(
+            super::runtime_date_add_variant_bounded(
+                &Variant::from_i32(1),
+                &Variant::from_string(BStr::from("3")),
+                &date,
+            )
+            .expect("DateAdd should succeed")
+            .as_date_f64(),
+            Some(46084.0)
+        );
+        assert_eq!(
+            super::runtime_date_diff_variant_bounded(
+                &Variant::from_i32(1),
+                &date,
+                &Variant::from_date_f64(46084.0),
+            )
+            .expect("DateDiff should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(3)
+        );
+        assert_eq!(
+            super::runtime_variant_date_year(&date)
+                .expect("Year should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(2026)
+        );
+        assert_eq!(
+            super::runtime_variant_date_month(&date)
+                .expect("Month should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(2)
+        );
+        assert_eq!(
+            super::runtime_variant_date_day(&date)
+                .expect("Day should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(28)
+        );
+        assert_eq!(
+            super::runtime_variant_date_weekday(&date)
+                .expect("Weekday should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(7)
         );
     }
 

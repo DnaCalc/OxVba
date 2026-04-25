@@ -575,6 +575,55 @@ mod tests {
     }
 
     #[test]
+    fn runtime_date_time_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(13, 13, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context.write_variant_slot(0, Variant::from_i32(2026));
+            ctx.context.write_variant_slot(1, Variant::from_i32(2));
+            ctx.context.write_variant_slot(2, Variant::from_i32(28));
+            ctx.context.write_variant_slot(3, Variant::from_i32(1));
+            ctx.context.write_variant_slot(4, Variant::from_i32(2));
+            ctx.context.write_variant_slot(5, Variant::from_i32(3));
+            ctx.context.write_variant_slot(6, Variant::from_i32(1));
+            ctx.context.write_variant_slot(7, Variant::from_i32(3));
+        }
+
+        assert_eq!(
+            runtime_helpers::oxrt_date_serial(ctx.context_ptr(), 8, 0, 1, 2),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_time_serial(ctx.context_ptr(), 9, 3, 4, 5),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_date_add(ctx.context_ptr(), 10, 6, 7, 8),
+            0
+        );
+        assert_eq!(
+            runtime_helpers::oxrt_date_diff(ctx.context_ptr(), 11, 6, 8, 10),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_year(ctx.context_ptr(), 12, 8), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(
+            values[8],
+            RuntimeValue::F64(oxvba_runtime::F64Value::from_date_f64(46081.0))
+        );
+        assert_eq!(
+            values[9],
+            RuntimeValue::F64(oxvba_runtime::F64Value::from_date_f64(3723.0 / 86400.0))
+        );
+        assert_eq!(
+            values[10],
+            RuntimeValue::F64(oxvba_runtime::F64Value::from_date_f64(46084.0))
+        );
+        assert_eq!(values[11], RuntimeValue::I32(3));
+        assert_eq!(values[12], RuntimeValue::I32(2026));
+    }
+
+    #[test]
     fn runtime_like_and_strconv_helpers_read_variant_carriers() {
         let mut ctx = JitContextOwned::new(6, 6, super::default_host_services(), &[]);
         unsafe {

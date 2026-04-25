@@ -1174,11 +1174,12 @@ impl Vm {
                     month,
                     day,
                 } => {
-                    let year = self.read_value_slot(*year)?;
-                    let month = self.read_value_slot(*month)?;
-                    let day = self.read_value_slot(*day)?;
-                    let out = crate::semantics::runtime_date_serial_bounded(&year, &month, &day)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let year = self.read_variant_slot(*year)?;
+                    let month = self.read_variant_slot(*month)?;
+                    let day = self.read_variant_slot(*day)?;
+                    let out =
+                        crate::semantics::runtime_date_serial_variant_bounded(&year, &month, &day)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeSerialDigits {
@@ -1187,24 +1188,25 @@ impl Vm {
                     minute,
                     second,
                 } => {
-                    let hour = self.read_value_slot(*hour)?;
-                    let minute = self.read_value_slot(*minute)?;
-                    let second = self.read_value_slot(*second)?;
-                    let out =
-                        crate::semantics::runtime_time_serial_bounded(&hour, &minute, &second)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let hour = self.read_variant_slot(*hour)?;
+                    let minute = self.read_variant_slot(*minute)?;
+                    let second = self.read_variant_slot(*second)?;
+                    let out = crate::semantics::runtime_time_serial_variant_bounded(
+                        &hour, &minute, &second,
+                    )?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateValueDigits { dst, src } => {
-                    let src = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_value_to_datevalue(&src)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let src = self.read_variant_slot(*src)?;
+                    let out = crate::semantics::runtime_variant_to_datevalue(&src)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeValueDigits { dst, src } => {
-                    let src = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_value_to_timevalue(&src)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let src = self.read_variant_slot(*src)?;
+                    let out = crate::semantics::runtime_variant_to_timevalue(&src)?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateAddDigits {
@@ -1213,12 +1215,13 @@ impl Vm {
                     number,
                     date,
                 } => {
-                    let interval = self.read_value_slot(*interval)?;
-                    let number = self.read_value_slot(*number)?;
-                    let date = self.read_value_slot(*date)?;
-                    let out =
-                        crate::semantics::runtime_date_add_bounded(&interval, &number, &date)?;
-                    self.write_semantic_value_slot(*dst, out)?;
+                    let interval = self.read_variant_slot(*interval)?;
+                    let number = self.read_variant_slot(*number)?;
+                    let date = self.read_variant_slot(*date)?;
+                    let out = crate::semantics::runtime_date_add_variant_bounded(
+                        &interval, &number, &date,
+                    )?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateDiffDigits {
@@ -1227,30 +1230,28 @@ impl Vm {
                     date1,
                     date2,
                 } => {
-                    let interval = self.read_value_slot(*interval)?;
-                    let date1 = self.read_value_slot(*date1)?;
-                    let date2 = self.read_value_slot(*date2)?;
-                    let out =
-                        crate::semantics::runtime_date_diff_bounded(&interval, &date1, &date2)?;
-                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
+                    let interval = self.read_variant_slot(*interval)?;
+                    let date1 = self.read_variant_slot(*date1)?;
+                    let date2 = self.read_variant_slot(*date2)?;
+                    let out = crate::semantics::runtime_date_diff_variant_bounded(
+                        &interval, &date1, &date2,
+                    )?;
+                    self.write_variant_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicYearDigits { dst, src } => {
-                    let v = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_date_year(&v)?;
-                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
+                    let v = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, crate::semantics::runtime_variant_date_year(&v)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthDigits { dst, src } => {
-                    let v = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_date_month(&v)?;
-                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
+                    let v = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, crate::semantics::runtime_variant_date_month(&v)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDayDigits { dst, src } => {
-                    let v = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_date_day(&v)?;
-                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
+                    let v = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(*dst, crate::semantics::runtime_variant_date_day(&v)?)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
@@ -1799,9 +1800,11 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicWeekdayDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let out = crate::semantics::runtime_date_weekday(&value)?;
-                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
+                        *dst,
+                        crate::semantics::runtime_variant_date_weekday(&value)?,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthNameDigits { dst, src } => {
