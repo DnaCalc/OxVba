@@ -48,6 +48,11 @@ impl RtSlot {
         }
     }
 
+    /// Build an ABI slot from the legacy semantic value API.
+    ///
+    /// The retained JIT carrier is still `Variant`; this accepts
+    /// `RuntimeValue` only for compatibility callers that have not migrated to
+    /// `from_variant`.
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::BindingHandle(handle) => Self::from_i32(handle.raw()),
@@ -57,6 +62,9 @@ impl RtSlot {
         }
     }
 
+    /// Project the retained ABI slot back to the legacy semantic value API.
+    ///
+    /// New value-model call sites should use `variant` instead.
     pub fn to_runtime_value(&self) -> RuntimeValue {
         self.variant
             .to_runtime_value()
@@ -84,11 +92,12 @@ impl RtSlot {
     }
 }
 
-/// Convert a RuntimeValue to a VARIANT-backed JIT slot.
+/// Convert a legacy semantic value to a VARIANT-backed JIT slot.
 ///
 /// `BindingHandle` is an internal non-VBA token, so it is projected to the same
 /// Long carrier accepted by the WithEvents semantics bridge instead of becoming
-/// a custom JIT storage tag.
+/// a custom JIT storage tag. This is a compatibility wrapper around the retained
+/// `RtSlot`/`Variant` carrier.
 pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
     RtSlot::from_runtime_value(value)
 }

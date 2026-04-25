@@ -72,7 +72,8 @@ Current value-model migration note (2026-04-25):
 7. VM legacy scalar helper writes now materialize compatibility-tagged `Variant` slots directly instead of routing through a temporary `RuntimeValue`.
 8. Runtime `Variant`/`RuntimeValue` bridge helpers now classify the retained `Variant` carrier as primary and the `RuntimeValue`/i32 slot-token routes as compatibility projections.
 9. JIT/Cranelift `RuntimeValue` execution and slot helper APIs now classify themselves as compatibility projections over retained `Variant` execution APIs.
-10. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+10. VM `RuntimeSlot` and JIT `RtSlot` `RuntimeValue`/i32 conversion helpers now classify themselves as compatibility ingress/egress projections around retained `Variant` slot carriers.
+11. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

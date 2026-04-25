@@ -13,6 +13,11 @@ impl Default for RuntimeSlot {
 }
 
 impl RuntimeSlot {
+    /// Build a retained VM slot from a legacy semantic value.
+    ///
+    /// `RuntimeValue` is accepted only as a compatibility ingress surface. The
+    /// slot stores VBA/COM values as `Variant`; `BindingHandle` remains a
+    /// separate internal side-lane because it is not a VBA value.
     pub fn from_runtime_value(value: RuntimeValue) -> Result<Self, String> {
         match value {
             RuntimeValue::BindingHandle(handle) => Ok(Self::BindingHandle(handle)),
@@ -20,10 +25,17 @@ impl RuntimeSlot {
         }
     }
 
+    /// Build a retained VM slot from the legacy 4-byte compatibility token.
+    ///
+    /// This preserves historical slot-token meanings while materializing the
+    /// value as a `Variant` carrier.
     pub fn from_compat_slot_i32(value: i32) -> Result<Self, String> {
         Variant::try_from_compat_slot_i32(value).map(Self::Variant)
     }
 
+    /// Project a retained slot back to the legacy semantic value API.
+    ///
+    /// New value-model call sites should read the `Variant` slot directly.
     pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
         match self {
             Self::Variant(value) => value.to_runtime_value(),
@@ -45,6 +57,7 @@ impl RuntimeSlot {
         matches!(self, Self::Variant(value) if value.as_variant_cell_ptr() as usize as i64 == pointer)
     }
 
+    /// Project a retained slot to the legacy 4-byte JIT/interpreter slot token.
     pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
         match self {
             Self::Variant(value) => value.project_compat_slot_i32(),
