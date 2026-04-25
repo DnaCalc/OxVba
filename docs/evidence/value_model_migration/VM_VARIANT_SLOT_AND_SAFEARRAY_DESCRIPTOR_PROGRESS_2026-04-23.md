@@ -1442,6 +1442,11 @@ Implementation progress:
      companion methods. Replay journal `RuntimeValue` decoding remains a legacy
      journal parser, while replay `_variant` entry points retain direct
      value-model companions for adapter callers.
+130. VM/JIT string slice intrinsics `Len`, `Left`, `Right`, and `Mid` now read
+     retained `Variant` slots directly through Variant-native text/count
+     coercion helpers. This removes the first string-intrinsic helper group from
+     the `RuntimeValue` projection path while preserving legacy snapshot
+     projections for public compatibility APIs.
 
 Remaining blocker:
 
@@ -1631,6 +1636,9 @@ Remaining blocker:
    Non-standard HAL null/WASM/replay adapter `RuntimeValue` methods now also
    document their compatibility wrapper role beside retained `Variant`
    companion methods and legacy replay journal parsing.
+   VM/JIT string slice intrinsics `Len`, `Left`, `Right`, and `Mid` now read
+   retained `Variant` slots directly through Variant-native text/count
+   coercion helpers instead of projecting through `RuntimeValue` first.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
