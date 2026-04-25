@@ -1468,6 +1468,13 @@ Implementation progress:
      `Variant` string results directly. `Val`, `CStr`, `Str$`, date/math, and
      array/string aggregate helpers remain outside this slice where they still
      use broader legacy semantic contracts.
+135. VM/JIT date/time intrinsics `DateSerial`, `TimeSerial`, `DateValue`,
+     `TimeValue`, `DateAdd`, `DateDiff`, `Year`, `Month`, `Day`, `Weekday`,
+     and the JIT `CDate` helper now read retained `Variant` slots directly
+     through Variant-native date/time coercion helpers and write retained
+     `Variant` results directly. `Val`, `CStr`, `Str$`, math, and
+     array/string aggregate helpers remain outside this slice where they still
+     use broader legacy semantic contracts.
 
 Remaining blocker:
 
@@ -1674,6 +1681,11 @@ Remaining blocker:
    VM/JIT `Format` now reads retained `Variant` value/format slots directly
    through Variant-native numeric/text coercion helpers and writes retained
    `Variant` string results directly.
+   VM/JIT date/time intrinsics `DateSerial`, `TimeSerial`, `DateValue`,
+   `TimeValue`, `DateAdd`, `DateDiff`, `Year`, `Month`, `Day`, `Weekday`, and
+   the JIT `CDate` helper now read retained `Variant` slots directly through
+   Variant-native date/time coercion helpers and write retained `Variant`
+   results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
