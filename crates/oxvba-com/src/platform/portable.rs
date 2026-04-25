@@ -15,6 +15,11 @@ pub trait PortableObjectFactory: Send + Sync {
 }
 
 /// Late-bound dispatch interface for host-registered objects.
+///
+/// This portable host API remains a compatibility projection contract over
+/// [`RuntimeValue`]. Windows/native COM and dynamic-object value-model paths
+/// should prefer retained `Variant`/`ComValue` carriers before entering this
+/// portable projection boundary.
 pub trait PortableDispatch: Send + Sync {
     fn invoke(&self, member: &str, args: &[RuntimeValue]) -> Result<RuntimeValue, String>;
     fn get(&self, member: &str) -> Result<RuntimeValue, String>;

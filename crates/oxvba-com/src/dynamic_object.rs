@@ -73,6 +73,8 @@ pub struct DynamicValue {
 }
 
 impl DynamicValue {
+    /// Builds a dynamic value from the shared COM carrier, retaining the exact
+    /// runtime [`Variant`] payload.
     pub fn from_com_value(value: ComValue) -> Self {
         Self {
             value: value
@@ -81,23 +83,34 @@ impl DynamicValue {
         }
     }
 
+    /// Compatibility projection from legacy [`RuntimeValue`] callers.
+    ///
+    /// New value-model call sites should prefer [`Self::from_variant`] or
+    /// [`Self::from_com_value`].
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         Self::from_com_value(ComValue::from_runtime_value(value))
     }
 
+    /// Builds a dynamic value from a retained runtime [`Variant`].
     pub fn from_variant(value: Variant) -> Self {
         Self { value }
     }
 
+    /// Projects the retained dynamic `Variant` back into the shared COM
+    /// carrier.
     pub fn to_com_value(&self) -> ComValue {
         ComValue::from_variant(&self.value)
             .expect("dynamic COM VARIANT payload must project to ComValue")
     }
 
+    /// Compatibility projection into [`RuntimeValue`] for legacy callers.
+    ///
+    /// New value-model call sites should prefer [`Self::variant`].
     pub fn to_runtime_value(&self) -> RuntimeValue {
         self.to_com_value().to_runtime_value()
     }
 
+    /// Retained value-model payload for dynamic COM dispatch.
     pub fn variant(&self) -> &Variant {
         &self.value
     }
