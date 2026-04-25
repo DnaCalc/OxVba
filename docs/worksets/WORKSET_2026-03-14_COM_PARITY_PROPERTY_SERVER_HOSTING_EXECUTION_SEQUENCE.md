@@ -80,7 +80,8 @@ Current value-model migration note (2026-04-25):
 15. HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` companion methods.
 16. HAL filesystem legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` filesystem companion methods.
 17. HAL console legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` console companion methods.
-18. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+18. HAL COM activation/dispatch/event legacy `RuntimeValue` methods now classify themselves as compatibility result projections beside retained `Variant` COM companion methods.
+19. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

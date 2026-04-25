@@ -91,6 +91,8 @@ fn try_bind_projection_object_metadata(
 }
 
 impl ComHal for StandardHostServices {
+    // Legacy COM activation path. Retained VM/JIT callers should use
+    // `create_object_variant`, which preserves the object as a Variant carrier.
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         let prog_id = Variant::try_from_runtime_value(&prog_id)
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
@@ -152,6 +154,8 @@ impl ComHal for StandardHostServices {
         Ok(Variant::from_object_ref(object))
     }
 
+    // Legacy COM release path. Retained VM/JIT callers should use
+    // `release_object_variant`.
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
         let value = self.release_object_variant(object)?;
         value
@@ -260,6 +264,8 @@ impl ComHal for StandardHostServices {
         &self,
         request: &ComInvokeRequest,
     ) -> HalResult<RuntimeValue> {
+        // Legacy dispatch result projection. Retained callers should use
+        // `dispatch_invoke_variant`.
         let value = self.dispatch_invoke_variant(request)?;
         value
             .to_runtime_value()
@@ -270,6 +276,8 @@ impl ComHal for StandardHostServices {
         &self,
         request: &DynamicCallRequest,
     ) -> HalResult<RuntimeValue> {
+        // Legacy dynamic dispatch result projection. Retained callers should
+        // use `dispatch_invoke_dynamic_variant`.
         let value = self.dispatch_invoke_dynamic_variant(request)?;
         value
             .to_runtime_value()
@@ -480,6 +488,8 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
+    // Legacy event unsubscribe status projection. Retained callers should use
+    // `unsubscribe_event_variant`.
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         let value = self.unsubscribe_event_variant(subscription)?;
         value
@@ -610,6 +620,8 @@ impl ComHal for StandardHostServices {
         callback: ComCallbackToken,
         index: usize,
     ) -> HalResult<RuntimeValue> {
+        // Legacy event callback argument projection. Retained callers should
+        // use `event_callback_variant`.
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "event_callback_arg"));
@@ -674,6 +686,8 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
+    // Legacy event callback release status projection. Retained callers should
+    // use `release_event_callback_variant`.
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let value = self.release_event_callback_variant(callback)?;
         value
