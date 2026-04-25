@@ -1283,6 +1283,12 @@ Implementation progress:
      VM `BoolNot`/`BoolAnd`/`BoolOr`, and JIT comparison/logical runtime
      helpers no longer materialize temporary `RuntimeValue` or integer
      stand-ins for normal Boolean destination slots.
+102. VM constant-load destination writes now use retained `Variant` carriers
+     for integer/tag, Boolean, string, and F64 constants while preserving the
+     existing `NULL_TAG` integer-constant compatibility behavior. VM `For Each`
+     next-item delivery still keeps the iterator ID as an internal control
+     token, but the loop-continuation Boolean flag now writes a retained
+     Boolean `Variant`.
 
 Remaining blocker:
 
@@ -1383,6 +1389,11 @@ Remaining blocker:
    VM/JIT comparison and logical Boolean result writes now also stay on
    retained Boolean `Variant` carriers for comparison operators and
    `BoolNot`/`BoolAnd`/`BoolOr`.
+   VM constant-load destination writes now also stay on retained `Variant`
+   carriers for integer/tag, Boolean, string, and F64 constants, and VM
+   `For Each` next-item delivery now writes the continuation flag as a
+   retained Boolean `Variant` while leaving the iterator ID classified as an
+   internal control token.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
