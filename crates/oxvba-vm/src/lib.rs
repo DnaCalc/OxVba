@@ -21,6 +21,8 @@ pub use interpreter::{
     DebugStopReason, Vm,
 };
 
+/// Compatibility projection for legacy callers that still consume semantic
+/// `RuntimeValue` snapshots. The retained execution carrier is `Variant`.
 fn project_snapshot_variants_to_compat_values(
     values: Vec<Variant>,
 ) -> Result<Vec<RuntimeValue>, String> {
@@ -35,26 +37,34 @@ pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
     vm.execute(bytecode)
 }
 
+/// Legacy snapshot alias. Prefer `execute_and_snapshot_variants` for retained
+/// value-model work.
 pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
     execute_and_snapshot_compat_values(bytecode)
 }
 
+/// Compatibility snapshot boundary that projects retained `Variant` slots to
+/// `RuntimeValue` for older tests and host surfaces.
 pub fn execute_and_snapshot_compat_values(
     bytecode: &Bytecode,
 ) -> Result<Vec<RuntimeValue>, String> {
     project_snapshot_variants_to_compat_values(execute_and_snapshot_variants(bytecode)?)
 }
 
+/// Retained value-model snapshot API.
 pub fn execute_and_snapshot_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute(bytecode)?;
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
+/// Legacy snapshot alias. Prefer `execute_and_snapshot_variants`.
 pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
     execute_and_snapshot_compat_values(bytecode)
 }
 
+/// Legacy snapshot alias with typed-fastpath selection. Prefer
+/// `execute_and_snapshot_variants_with_typed_fastpaths`.
 pub fn execute_and_snapshot_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
@@ -62,6 +72,7 @@ pub fn execute_and_snapshot_with_typed_fastpaths(
     execute_and_snapshot_compat_values_with_typed_fastpaths(bytecode, typed_fastpaths)
 }
 
+/// Compatibility snapshot boundary with typed-fastpath selection.
 pub fn execute_and_snapshot_compat_values_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
@@ -72,6 +83,7 @@ pub fn execute_and_snapshot_compat_values_with_typed_fastpaths(
     )?)
 }
 
+/// Retained value-model snapshot API with typed-fastpath selection.
 pub fn execute_and_snapshot_variants_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
@@ -81,6 +93,8 @@ pub fn execute_and_snapshot_variants_with_typed_fastpaths(
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
+/// Legacy snapshot alias with typed-fastpath selection. Prefer
+/// `execute_and_snapshot_variants_with_typed_fastpaths`.
 pub fn execute_and_snapshot_values_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
@@ -96,6 +110,8 @@ pub fn execute_with_host(
     vm.execute(bytecode)
 }
 
+/// Legacy host-backed snapshot alias. Prefer
+/// `execute_and_snapshot_variants_with_host`.
 pub fn execute_and_snapshot_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -103,6 +119,7 @@ pub fn execute_and_snapshot_with_host(
     execute_and_snapshot_compat_values_with_host(bytecode, host_services)
 }
 
+/// Compatibility host-backed snapshot boundary.
 pub fn execute_and_snapshot_compat_values_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -113,6 +130,7 @@ pub fn execute_and_snapshot_compat_values_with_host(
     )?)
 }
 
+/// Retained value-model host-backed snapshot API.
 pub fn execute_and_snapshot_variants_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -122,6 +140,8 @@ pub fn execute_and_snapshot_variants_with_host(
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
+/// Legacy host-backed snapshot alias. Prefer
+/// `execute_and_snapshot_variants_with_host`.
 pub fn execute_and_snapshot_values_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -129,6 +149,8 @@ pub fn execute_and_snapshot_values_with_host(
     execute_and_snapshot_compat_values_with_host(bytecode, host_services)
 }
 
+/// Legacy host-backed snapshot alias with typed-fastpath selection. Prefer
+/// `execute_and_snapshot_variants_with_host_and_typed_fastpaths`.
 pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -141,6 +163,7 @@ pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     )
 }
 
+/// Compatibility host-backed snapshot boundary with typed-fastpath selection.
 pub fn execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -153,6 +176,7 @@ pub fn execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
     )?)
 }
 
+/// Retained value-model host-backed snapshot API with typed-fastpath selection.
 pub fn execute_and_snapshot_variants_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -163,6 +187,8 @@ pub fn execute_and_snapshot_variants_with_host_and_typed_fastpaths(
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
+/// Legacy host-backed snapshot alias with typed-fastpath selection. Prefer
+/// `execute_and_snapshot_variants_with_host_and_typed_fastpaths`.
 pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,

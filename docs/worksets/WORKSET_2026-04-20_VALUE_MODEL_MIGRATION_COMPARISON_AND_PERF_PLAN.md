@@ -2331,6 +2331,10 @@ Child beads:
        through the Variant-native path directly instead of entering the legacy
        `RuntimeValue`-named helper for empty payloads; public `RuntimeValue`
        compatibility constructors/accessors remain open classification work
+     - progress landed: VM/JIT public snapshot APIs now document retained
+       `Variant` snapshot APIs as the value-model surface and
+       `RuntimeValue`-returning snapshots as compatibility projections, without
+       removing the legacy aliases yet
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

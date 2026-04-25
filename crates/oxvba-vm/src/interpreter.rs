@@ -288,10 +288,14 @@ impl Vm {
             .collect()
     }
 
+    /// Legacy snapshot alias. Prefer `snapshot_variants` for retained
+    /// value-model work.
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_compat_values(slot_count)
     }
 
+    /// Compatibility snapshot boundary that projects retained `Variant` slots
+    /// to `RuntimeValue` for older tests and host surfaces.
     pub fn snapshot_compat_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_variants(slot_count)
             .into_iter()
@@ -303,10 +307,12 @@ impl Vm {
             .collect()
     }
 
+    /// Legacy snapshot alias. Prefer `snapshot_variants`.
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_compat_values(slot_count)
     }
 
+    /// Retained value-model snapshot API.
     pub fn snapshot_variants(&self, slot_count: usize) -> Vec<Variant> {
         let end = slot_count.min(self.registers.registers.len());
         self.registers.registers[..end]

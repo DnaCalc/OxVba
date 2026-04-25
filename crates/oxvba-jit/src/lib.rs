@@ -36,6 +36,8 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
         .collect()
 }
 
+/// Compatibility projection for legacy callers that still consume semantic
+/// `RuntimeValue` snapshots. The retained execution carrier is `Variant`.
 fn project_variants_to_compat_values(values: Vec<Variant>) -> Result<Vec<RuntimeValue>, JitError> {
     values
         .into_iter()
@@ -48,10 +50,14 @@ impl JitEngine {
         Ok(())
     }
 
+    /// Legacy snapshot alias. Prefer `execute_and_snapshot_variants` for
+    /// retained value-model work.
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, JitError> {
         self.execute_and_snapshot_compat_values(bytecode)
     }
 
+    /// Compatibility snapshot boundary that projects retained `Variant` slots
+    /// to `RuntimeValue` for older tests and host surfaces.
     pub fn execute_and_snapshot_compat_values(
         &self,
         bytecode: &Bytecode,
@@ -59,6 +65,7 @@ impl JitEngine {
         project_variants_to_compat_values(self.execute_and_snapshot_variants(bytecode)?)
     }
 
+    /// Retained value-model snapshot API.
     pub fn execute_and_snapshot_variants(
         &self,
         bytecode: &Bytecode,
@@ -66,6 +73,7 @@ impl JitEngine {
         self.execute_and_snapshot_variants_with_host(bytecode, default_host_services())
     }
 
+    /// Legacy snapshot alias. Prefer `execute_and_snapshot_variants`.
     pub fn execute_and_snapshot_values(
         &self,
         bytecode: &Bytecode,
@@ -73,6 +81,8 @@ impl JitEngine {
         self.execute_and_snapshot_compat_values(bytecode)
     }
 
+    /// Legacy host-backed snapshot alias. Prefer
+    /// `execute_and_snapshot_variants_with_host`.
     pub fn execute_and_snapshot_with_host(
         &self,
         bytecode: &Bytecode,
@@ -81,6 +91,7 @@ impl JitEngine {
         self.execute_and_snapshot_compat_values_with_host(bytecode, host_services)
     }
 
+    /// Compatibility host-backed snapshot boundary.
     pub fn execute_and_snapshot_compat_values_with_host(
         &self,
         bytecode: &Bytecode,
@@ -91,6 +102,7 @@ impl JitEngine {
         )
     }
 
+    /// Retained value-model host-backed snapshot API.
     pub fn execute_and_snapshot_variants_with_host(
         &self,
         bytecode: &Bytecode,
@@ -116,6 +128,8 @@ impl JitEngine {
             .map_err(JitError::Execution)
     }
 
+    /// Legacy host-backed snapshot alias. Prefer
+    /// `execute_and_snapshot_variants_with_host`.
     pub fn execute_and_snapshot_values_with_host(
         &self,
         bytecode: &Bytecode,
