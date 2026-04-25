@@ -1428,6 +1428,11 @@ Implementation progress:
      compatibility wrappers beside retained `Variant` console companion
      methods. This covers Print, Input, Line Input, and the legacy input-field
      parser.
+127. HAL COM activation/dispatch/event legacy `RuntimeValue` methods now
+     classify themselves as compatibility result projections beside retained
+     `Variant` COM companion methods. This covers object activation/release,
+     static/dynamic dispatch result projection, event unsubscribe, event
+     callback argument projection, and callback release status.
 
 Remaining blocker:
 
@@ -1607,6 +1612,9 @@ Remaining blocker:
    HAL console legacy `RuntimeValue` methods now also document their
    compatibility wrapper role beside retained `Variant` console companion
    methods.
+   HAL COM activation/dispatch/event legacy `RuntimeValue` methods now also
+   document their compatibility projection role beside retained `Variant` COM
+   companion methods.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
