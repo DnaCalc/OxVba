@@ -1353,6 +1353,15 @@ Implementation progress:
      immediate session snapshots and evaluation projection fields, and embedded
      procedure request/result projection helpers. The compatibility APIs remain
      available for legacy callers and do not close `vmm-e6`.
+113. COM model `RuntimeValue` and legacy-token helpers now classify themselves
+     as compatibility projections around retained `Variant` invoke/callback
+     payloads. This covers `ComValue::from_runtime_value`,
+     `ComValue::from_runtime_token`, `ComValue::to_runtime_value`,
+     `ComValue::to_runtime_token`, `ComValue::to_legacy_dispatch_token`,
+     `ComInvokeValue` token projections, legacy `ComInvokeArg` constructors,
+     `ComInvokeRequest::legacy`, and retained `ComInvokeValue` /
+     `ComCallbackValue` payload accessors. The APIs remain available for
+     legacy callers and do not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1492,6 +1501,9 @@ Remaining blocker:
    `RuntimeValue` snapshots/requests/results now also document their
    compatibility projection role and point retained-value callers at `Variant`
    APIs.
+   COM model `RuntimeValue` and legacy-token helpers now also document their
+   compatibility projection role around retained `Variant` invoke/callback
+   payloads.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
