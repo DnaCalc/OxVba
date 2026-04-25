@@ -814,29 +814,31 @@ pub extern "C" fn oxrt_like(
     pattern: u32,
     mode: u32,
 ) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let pat_val = read_slot!(ctx, pattern);
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let pat_val = read_variant_slot!(ctx, pattern);
     let scm = if mode == 1 {
         StringCompareMode::Text
     } else {
         StringCompareMode::Binary
     };
-    let out = match semantics::runtime_like_bounded(&lhs_val, &pat_val, scm) {
+    let out = match semantics::runtime_like_variant_bounded(&lhs_val, &pat_val, scm) {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_strconv(ctx: *mut JitContext, dst: u32, src: u32, conversion: u32) -> i32 {
-    let src_val = read_slot!(ctx, src);
-    let conv_val = read_slot!(ctx, conversion);
-    let result = match semantics::runtime_strconv_bounded(&src_val, &conv_val) {
+    let src_val = read_variant_slot!(ctx, src);
+    let conv_val = read_variant_slot!(ctx, conversion);
+    let result = match semantics::runtime_strconv_variant_bounded(&src_val, &conv_val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, result)
+    write_variant_slot!(ctx, dst, result);
+    OK
 }
 
 // ── Char/format ops ──────────────────────────────────────────────────

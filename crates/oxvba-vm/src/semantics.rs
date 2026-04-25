@@ -277,6 +277,16 @@ pub fn runtime_like_bounded(
     Ok(RuntimeValue::I32(if lhs == pattern { -1 } else { 0 }))
 }
 
+pub fn runtime_like_variant_bounded(
+    lhs: &Variant,
+    pattern: &Variant,
+    mode: StringCompareMode,
+) -> Result<Variant, String> {
+    let lhs = normalize_for_compare(runtime_variant_to_text(lhs, "Like lhs")?, mode);
+    let pattern = normalize_for_compare(runtime_variant_to_text(pattern, "Like pattern")?, mode);
+    Ok(Variant::from_i32(if lhs == pattern { -1 } else { 0 }))
+}
+
 pub fn runtime_strconv_bounded(
     src: &RuntimeValue,
     conversion: &RuntimeValue,
@@ -290,6 +300,21 @@ pub fn runtime_strconv_bounded(
         _ => text,
     };
     Ok(RuntimeValue::String(BStr::from(result)))
+}
+
+pub fn runtime_strconv_variant_bounded(
+    src: &Variant,
+    conversion: &Variant,
+) -> Result<Variant, String> {
+    let text = runtime_variant_to_text(src, "StrConv source")?;
+    let conv = runtime_variant_to_i32_compat(conversion, "StrConv conversion")?;
+    let result = match conv {
+        1 => text.to_uppercase(),
+        2 => text.to_lowercase(),
+        3 => proper_case(&text),
+        _ => text,
+    };
+    Ok(Variant::from_string(BStr::from(result)))
 }
 
 pub fn runtime_chr_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -1899,6 +1924,31 @@ mod tests {
             )
             .expect("Like should succeed"),
             RuntimeValue::I32(0)
+        );
+    }
+
+    #[test]
+    fn like_and_strconv_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::runtime_like_variant_bounded(
+                &Variant::from_string(BStr::from("ABC")),
+                &Variant::from_string(BStr::from("abc")),
+                StringCompareMode::Text,
+            )
+            .expect("Like should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(-1)
+        );
+        assert_eq!(
+            super::runtime_strconv_variant_bounded(
+                &Variant::from_string(BStr::from("mixed words")),
+                &Variant::from_i32(3),
+            )
+            .expect("StrConv should succeed")
+            .to_runtime_value()
+            .expect("string Variant should project for assertions"),
+            RuntimeValue::String(BStr::from("Mixed Words"))
         );
     }
 

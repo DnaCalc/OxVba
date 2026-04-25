@@ -1160,11 +1160,11 @@ impl Vm {
                     pattern,
                     mode,
                 } => {
-                    let lhs = self.read_value_slot(*lhs)?;
-                    let pattern = self.read_value_slot(*pattern)?;
-                    self.write_semantic_value_slot(
+                    let lhs = self.read_variant_slot(*lhs)?;
+                    let pattern = self.read_variant_slot(*pattern)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_like_bounded(&lhs, &pattern, *mode)?,
+                        crate::semantics::runtime_like_variant_bounded(&lhs, &pattern, *mode)?,
                     )?;
                     pc += 1;
                 }
@@ -3264,11 +3264,11 @@ impl Vm {
                     src,
                     conversion,
                 } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let conv_val = self.read_value_slot(*conversion)?;
-                    self.write_semantic_value_slot(
+                    let src_val = self.read_variant_slot(*src)?;
+                    let conv_val = self.read_variant_slot(*conversion)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_strconv_bounded(&src_val, &conv_val)?,
+                        crate::semantics::runtime_strconv_variant_bounded(&src_val, &conv_val)?,
                     )?;
                     pc += 1;
                 }
