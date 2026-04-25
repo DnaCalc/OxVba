@@ -1525,6 +1525,11 @@ Implementation progress:
      carriers directly instead of routing through `RuntimeValue` slot writes.
      The remaining VM `read_value_slot` / `write_value_slot` references are
      compatibility helper definitions and tests, not opcode execution storage.
+145. Dead private VM/JIT compatibility helper definitions were removed or
+     gated to tests after the retained-`Variant` execution migration. Production
+     `cargo check -p oxvba-vm` and `cargo check -p oxvba-jit` now complete
+     without the previous private `RuntimeValue`/digit-helper dead-code warning
+     set for the touched crates.
 
 Remaining blocker:
 
