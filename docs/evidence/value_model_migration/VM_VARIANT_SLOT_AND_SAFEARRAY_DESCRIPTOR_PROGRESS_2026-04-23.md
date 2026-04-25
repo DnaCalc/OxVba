@@ -1306,6 +1306,16 @@ Implementation progress:
      JIT `Abs`, `Sgn`, and `Int`/`Fix` destination writes. The helper bodies
      still return `RuntimeValue`, so exact Variant-native helper companions
      remain open.
+106. VM/JIT helper-result destinations now also re-enter retained `Variant`
+     carriers for the remaining migrated string/date/time/math helper subset.
+     This covers VM `Mid` statement, `Split`, `Join`, `Like`, `DateSerial`,
+     `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `StrConv`, and
+     increment writes, plus JIT `Split`, `Join`, `Like`, `StrConv`, `Chr`,
+     `Asc`, `Space`, `String$`, `Hex`, `Oct`, `DateSerial`, `TimeSerial`,
+     `DateValue`, `CDate`, `TimeValue`, `DateAdd`, `MonthName`, `Round`,
+     `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `Atn`, and `Tan`. The semantic helper
+     bodies still return `RuntimeValue`, so exact Variant-native helper
+     companions remain open.
 
 Remaining blocker:
 
@@ -1421,6 +1431,10 @@ Remaining blocker:
    also re-enter retained `Variant` carriers after existing semantic helper
    results, while their helper-returning contracts remain Variant-native
    companion work.
+   VM/JIT remaining migrated string/date/time/math helper destination writes
+   now also re-enter retained `Variant` carriers after existing semantic
+   helper results, while their helper-returning contracts remain
+   Variant-native companion work.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
