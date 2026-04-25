@@ -169,7 +169,10 @@ impl JitContextOwned {
         }
     }
 
-    /// Extract the user-visible slot values as RuntimeValues.
+    /// Compatibility extraction of user-visible slots as `RuntimeValue`
+    /// projections.
+    ///
+    /// New value-model call sites should prefer [`Self::extract_user_variants`].
     pub fn extract_user_values(&self) -> Vec<RuntimeValue> {
         self.extract_user_variants()
             .into_iter()
@@ -207,7 +210,10 @@ impl Drop for JitContextOwned {
 // ── Helper access functions (called from runtime helpers) ─────────────
 
 impl JitContext {
-    /// Read a RuntimeValue from a slot.
+    /// Compatibility read that projects a retained slot `Variant` into
+    /// `RuntimeValue`.
+    ///
+    /// New value-model call sites should prefer [`Self::read_variant_slot`].
     ///
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
@@ -257,7 +263,10 @@ impl JitContext {
         rt_slot.variant_cell_pointer()
     }
 
-    /// Write a RuntimeValue to a slot.
+    /// Compatibility write that projects `RuntimeValue` into a retained slot
+    /// `Variant`.
+    ///
+    /// New value-model call sites should prefer [`Self::write_variant_slot`].
     ///
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.

@@ -494,6 +494,9 @@ pub fn supports_bytecode_rtslot(bytecode: &Bytecode) -> bool {
     supports_rtslot(&inlined)
 }
 
+/// Compatibility execution API for the legacy 4-byte slot path.
+///
+/// New value-model call sites should prefer [`execute_bytecode_variants`].
 pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
     execute_bytecode_legacy(bytecode).map(|values| {
         values
@@ -514,7 +517,11 @@ pub fn execute_bytecode_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, St
     })
 }
 
-/// Execute bytecode through the RtSlot path. Returns typed RuntimeValues.
+/// Compatibility execution API for the RtSlot path that projects retained
+/// `Variant` slots into `RuntimeValue` results.
+///
+/// New value-model call sites should prefer
+/// [`execute_bytecode_rtslot_variants`].
 pub fn execute_bytecode_rtslot(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
