@@ -467,8 +467,8 @@ pub extern "C" fn oxrt_load_f64(ctx: *mut JitContext, dst: u32, bits: u64) -> i3
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_len(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "Len operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "Len operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -478,14 +478,16 @@ pub extern "C" fn oxrt_len(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32) -> i32 {
-    let src_val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&src_val, "Left src") {
+    let src_val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&src_val, "Left src") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    let count_val = read_slot!(ctx, count);
-    let n = match semantics::runtime_value_to_usize(&count_val) {
-        Ok(n) => n,
+    let count_val = read_variant_slot!(ctx, count);
+    let n = match semantics::runtime_variant_to_i32_compat(&count_val, "Left count")
+        .and_then(|value| usize::try_from(value).map_err(|_| "negative count".to_string()))
+    {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
     let result = if n >= text.len() {
@@ -499,14 +501,16 @@ pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u32) -> i32 {
-    let src_val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&src_val, "Right src") {
+    let src_val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&src_val, "Right src") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    let count_val = read_slot!(ctx, count);
-    let n = match semantics::runtime_value_to_usize(&count_val) {
-        Ok(n) => n,
+    let count_val = read_variant_slot!(ctx, count);
+    let n = match semantics::runtime_variant_to_i32_compat(&count_val, "Right count")
+        .and_then(|value| usize::try_from(value).map_err(|_| "negative count".to_string()))
+    {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
     let len = text.len();
@@ -529,22 +533,26 @@ pub extern "C" fn oxrt_mid(
     start: u32,
     count_slot: u32,
 ) -> i32 {
-    let src_val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&src_val, "Mid src") {
+    let src_val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&src_val, "Mid src") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    let start_val = read_slot!(ctx, start);
-    let st = match semantics::runtime_value_to_usize(&start_val) {
-        Ok(v) => v,
+    let start_val = read_variant_slot!(ctx, start);
+    let st = match semantics::runtime_variant_to_i32_compat(&start_val, "Mid start")
+        .and_then(|value| usize::try_from(value).map_err(|_| "negative start".to_string()))
+    {
+        Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
     let cnt = if count_slot == u32::MAX {
         None
     } else {
-        let cv = read_slot!(ctx, count_slot);
-        match semantics::runtime_value_to_usize(&cv) {
-            Ok(v) => Some(v),
+        let cv = read_variant_slot!(ctx, count_slot);
+        match semantics::runtime_variant_to_i32_compat(&cv, "Mid count")
+            .and_then(|value| usize::try_from(value).map_err(|_| "negative count".to_string()))
+        {
+            Ok(value) => Some(value),
             Err(_) => return ERR_RUNTIME,
         }
     };

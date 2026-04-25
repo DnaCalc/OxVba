@@ -61,6 +61,39 @@ pub fn runtime_value_as_f64(value: &RuntimeValue) -> Result<f64, String> {
     }
 }
 
+pub fn runtime_variant_as_f64(value: &Variant) -> Result<f64, String> {
+    match value.vtype() {
+        VarType::Empty => Ok(0.0),
+        VarType::Integer => Ok(value.as_i16().unwrap_or(0) as f64),
+        VarType::Long => Ok(value.as_i32().unwrap_or(0) as f64),
+        VarType::LongLong => Ok(value.as_i64().unwrap_or(0) as f64),
+        VarType::Byte => Ok(value.as_u8().unwrap_or(0) as f64),
+        VarType::Single => Ok(f64::from(value.as_f32().unwrap_or(0.0))),
+        VarType::Double => Ok(value.as_f64().unwrap_or(0.0)),
+        VarType::Date => Ok(value.as_date_f64().unwrap_or(0.0)),
+        VarType::Boolean => Ok(if value.as_bool().unwrap_or(false) {
+            -1.0
+        } else {
+            0.0
+        }),
+        VarType::Currency => Ok(value.as_currency_scaled_i64().unwrap_or(0) as f64
+            / CurrencyValue::SCALE as f64),
+        VarType::Decimal => {
+            let decimal = value
+                .as_decimal96()
+                .ok_or_else(|| "invalid Decimal variant payload".to_string())?;
+            let mag = decimal.magnitude_u128() as f64;
+            let scale = 10f64.powi(decimal.scale() as i32);
+            Ok(if decimal.is_negative() {
+                -(mag / scale)
+            } else {
+                mag / scale
+            })
+        }
+        other => Err(format!("cannot coerce {:?} Variant to f64", other)),
+    }
+}
+
 pub fn runtime_value_to_numeric_compat(value: &RuntimeValue, field: &str) -> Result<f64, String> {
     match value {
         RuntimeValue::String(text) => {
@@ -135,6 +168,46 @@ pub fn runtime_value_to_text(value: &RuntimeValue, field: &str) -> Result<String
         )),
         RuntimeValue::Object(handle) => Ok(handle.raw().to_string()),
         RuntimeValue::BindingHandle(handle) => Ok(handle.raw().to_string()),
+    }
+}
+
+pub fn runtime_variant_to_text(value: &Variant, field: &str) -> Result<String, String> {
+    match value.vtype() {
+        VarType::Empty => Ok(String::new()),
+        VarType::Integer => Ok(value.as_i16().unwrap_or(0).to_string()),
+        VarType::Long => Ok(value.as_i32().unwrap_or(0).to_string()),
+        VarType::LongLong => Ok(value.as_i64().unwrap_or(0).to_string()),
+        VarType::Byte => Ok(value.as_u8().unwrap_or(0).to_string()),
+        VarType::String => value
+            .as_bstr()
+            .map(|text| text.as_str().to_string())
+            .ok_or_else(|| "invalid String variant payload".to_string()),
+        VarType::Boolean => Ok(if value.as_bool().unwrap_or(false) {
+            "-1".to_string()
+        } else {
+            "0".to_string()
+        }),
+        VarType::Single => Ok(f64::from(value.as_f32().unwrap_or(0.0)).to_string()),
+        VarType::Double => Ok(value.as_f64().unwrap_or(0.0).to_string()),
+        VarType::Date => format_date_serial_digits(value.as_date_f64().unwrap_or(0.0))
+            .or_else(|_| Ok(value.as_date_f64().unwrap_or(0.0).to_string())),
+        VarType::Currency => {
+            Ok((value.as_currency_scaled_i64().unwrap_or(0) as f64 / CurrencyValue::SCALE as f64)
+                .to_string())
+        }
+        VarType::Decimal => value
+            .as_decimal96()
+            .map(|decimal| decimal.to_string())
+            .ok_or_else(|| "invalid Decimal variant payload".to_string()),
+        VarType::Null => Err(format!("{field} requires text-compatible value, got Null")),
+        VarType::Error => Ok(value.as_error_code().unwrap_or(0).to_string()),
+        VarType::ArrayVariant => Err(format!(
+            "{field} requires scalar text-compatible value, got array"
+        )),
+        VarType::Object => Ok(value
+            .as_object_ref()
+            .map(|handle| handle.raw().to_string())
+            .unwrap_or_else(|| "0".to_string())),
     }
 }
 
@@ -898,7 +971,7 @@ pub fn runtime_value_is_date(value: &RuntimeValue) -> bool {
     }
 }
 
-fn runtime_variant_to_i32_compat(
+pub fn runtime_variant_to_i32_compat(
     value: &oxvba_runtime::Variant,
     field: &str,
 ) -> Result<i32, String> {
@@ -910,7 +983,7 @@ fn runtime_variant_to_i32_compat(
     Ok(numeric.trunc() as i32)
 }
 
-fn runtime_variant_to_numeric_compat(
+pub fn runtime_variant_to_numeric_compat(
     value: &oxvba_runtime::Variant,
     field: &str,
 ) -> Result<f64, String> {
@@ -1512,10 +1585,10 @@ mod tests {
     use super::{
         SECONDS_PER_DAY, format_date_serial_digits, runtime_value_is_date, runtime_value_to_cdate,
         runtime_value_to_date_value_digits, runtime_value_to_datevalue, runtime_value_to_text,
-        runtime_value_to_timevalue, typed_compare_values,
+        runtime_value_to_timevalue, runtime_variant_to_text, typed_compare_values,
     };
     use oxvba_compiler::bytecode::StringCompareMode;
-    use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
 
     #[test]
     fn string_equals_empty_coerces_without_legacy_token_failure() {
@@ -1625,6 +1698,25 @@ mod tests {
                 "text operand"
             )
             .expect("date subtype string coercion should succeed"),
+            "20100619"
+        );
+    }
+
+    #[test]
+    fn runtime_variant_to_text_coerces_retained_carriers_without_legacy_projection() {
+        assert_eq!(
+            runtime_variant_to_text(&Variant::from_i32(42), "text operand")
+                .expect("long variant string coercion should succeed"),
+            "42"
+        );
+        assert_eq!(
+            runtime_variant_to_text(&Variant::from_bool(true), "text operand")
+                .expect("bool variant string coercion should succeed"),
+            "-1"
+        );
+        assert_eq!(
+            runtime_variant_to_text(&Variant::from_date_f64(40348.0), "text operand")
+                .expect("date variant string coercion should succeed"),
             "20100619"
         );
     }

@@ -448,6 +448,28 @@ mod tests {
     }
 
     #[test]
+    fn runtime_string_slice_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(7, 7, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("hello")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(2));
+            ctx.context.write_variant_slot(2, Variant::from_i32(3));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_len(ctx.context_ptr(), 3, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_left(ctx.context_ptr(), 4, 0, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_right(ctx.context_ptr(), 5, 0, 2), 0);
+        assert_eq!(runtime_helpers::oxrt_mid(ctx.context_ptr(), 6, 0, 1, 2), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[3], RuntimeValue::I32(5));
+        assert_eq!(values[4], RuntimeValue::String(BStr::from("he")));
+        assert_eq!(values[5], RuntimeValue::String(BStr::from("llo")));
+        assert_eq!(values[6], RuntimeValue::String(BStr::from("ell")));
+    }
+
+    #[test]
     fn runtime_tag_classifiers_read_variant_array_carriers() {
         let mut ctx = JitContextOwned::new(4, 4, super::default_host_services(), &[]);
         unsafe {

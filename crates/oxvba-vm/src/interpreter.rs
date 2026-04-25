@@ -889,16 +889,23 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicLenDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "Len operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "Len operand")?;
                     self.write_variant_slot(*dst, Variant::from_i32(text.len() as i32))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLeftDigits { dst, src, count } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&src_val, "Left src")?;
-                    let count_val = self.read_value_slot(*count)?;
-                    let n = Self::runtime_value_to_usize(&count_val)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&src_val, "Left src")?;
+                    let count_val = self.read_variant_slot(*count)?;
+                    let n = crate::semantics::runtime_variant_to_i32_compat(
+                        &count_val,
+                        "Left count",
+                    )
+                    .and_then(|value| {
+                        usize::try_from(value)
+                            .map_err(|_| format!("Left count cannot be negative: {value}"))
+                    })?;
                     let result = if n >= text.len() {
                         text
                     } else {
@@ -908,10 +915,17 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicRightDigits { dst, src, count } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&src_val, "Right src")?;
-                    let count_val = self.read_value_slot(*count)?;
-                    let n = Self::runtime_value_to_usize(&count_val)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&src_val, "Right src")?;
+                    let count_val = self.read_variant_slot(*count)?;
+                    let n = crate::semantics::runtime_variant_to_i32_compat(
+                        &count_val,
+                        "Right count",
+                    )
+                    .and_then(|value| {
+                        usize::try_from(value)
+                            .map_err(|_| format!("Right count cannot be negative: {value}"))
+                    })?;
                     let len = text.len();
                     let result = if n >= len {
                         text
@@ -927,14 +941,28 @@ impl Vm {
                     start,
                     count,
                 } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&src_val, "Mid src")?;
-                    let start_val = self.read_value_slot(*start)?;
-                    let st = Self::runtime_value_to_usize(&start_val)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&src_val, "Mid src")?;
+                    let start_val = self.read_variant_slot(*start)?;
+                    let st = crate::semantics::runtime_variant_to_i32_compat(
+                        &start_val,
+                        "Mid start",
+                    )
+                    .and_then(|value| {
+                        usize::try_from(value)
+                            .map_err(|_| format!("Mid start cannot be negative: {value}"))
+                    })?;
                     let cnt = match count {
                         Some(slot) => {
-                            let cv = self.read_value_slot(*slot)?;
-                            Some(Self::runtime_value_to_usize(&cv)?)
+                            let cv = self.read_variant_slot(*slot)?;
+                            Some(
+                                crate::semantics::runtime_variant_to_i32_compat(&cv, "Mid count")
+                                    .and_then(|value| {
+                                        usize::try_from(value).map_err(|_| {
+                                            format!("Mid count cannot be negative: {value}")
+                                        })
+                                    })?,
+                            )
                         }
                         None => None,
                     };
