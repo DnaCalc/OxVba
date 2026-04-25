@@ -2327,6 +2327,10 @@ Child beads:
        retained `Variant` carriers directly from compatibility-slot results
        for `FV`, `PV`, `PMT`, `NPV`, `IRR`, `MIRR`, `Rate`, and `NPer`, while
        preserving existing compatibility-tag result meanings
+     - progress landed: shape-only `SafeArray` constructors now allocate
+       through the Variant-native path directly instead of entering the legacy
+       `RuntimeValue`-named helper for empty payloads; public `RuntimeValue`
+       compatibility constructors/accessors remain open classification work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

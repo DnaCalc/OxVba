@@ -608,7 +608,7 @@ impl SafeArray {
     }
 
     pub fn vector(len: usize) -> Self {
-        Self::from_bounds_and_runtime_values(
+        Self::from_bounds_and_variants(
             default_bounds_for_len(len).expect("vector bounds should fit SAFEARRAY capacity"),
             VT_VARIANT_VALUE,
             None,
@@ -645,11 +645,11 @@ impl SafeArray {
     }
 
     pub fn from_shape(bounds: Vec<SafeArrayBound>) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(bounds, VT_VARIANT_VALUE, None)
+        Self::from_bounds_and_variants(bounds, VT_VARIANT_VALUE, None)
     }
 
     pub fn from_shape_typed(bounds: Vec<SafeArrayBound>, element_vt: u16) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(bounds, element_vt, None)
+        Self::from_bounds_and_variants(bounds, element_vt, None)
     }
 
     pub fn from_shape_and_values(
