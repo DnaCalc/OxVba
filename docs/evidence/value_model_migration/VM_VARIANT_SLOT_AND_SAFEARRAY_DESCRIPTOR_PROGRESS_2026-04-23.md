@@ -1508,6 +1508,12 @@ Implementation progress:
      preserving retained `Variant` result writes. Remaining broad projection
      seams include binding/COM, dynamic array bounds/constructor, and
      compatibility APIs.
+142. VM/JIT dynamic array `ReDim`, `ReDim Preserve`, array get, and array set
+     bound/index operands now read retained `Variant` slots directly through
+     Variant-native numeric coercion while preserving retained SAFEARRAY-backed
+     `Variant` array carriers. Array literal/append were already carrier-native;
+     remaining broad projection seams include binding/COM and compatibility
+     APIs.
 
 Remaining blocker:
 
@@ -1739,6 +1745,10 @@ Remaining blocker:
    VM/JIT `Rnd` and `Randomize` seed operands now read retained `Variant`
    slots directly through Variant-native numeric seed coercion while preserving
    retained `Variant` result writes.
+   VM/JIT dynamic array `ReDim`, `ReDim Preserve`, array get, and array set
+   bound/index operands now read retained `Variant` slots directly through
+   Variant-native numeric coercion while preserving retained SAFEARRAY-backed
+   `Variant` array carriers.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
