@@ -1338,6 +1338,13 @@ Implementation progress:
      value-model entry points for VM/JIT callers. Default companion methods
      that still project through the compatibility contract remain open
      migration/classification work and do not close `vmm-e6`.
+111. Public `SafeArray` `RuntimeValue` constructors/accessors now classify
+     themselves as compatibility projection APIs and point new value-model call
+     sites at the retained `Variant` constructors/accessors. This covers
+     `from_values`, `from_values_nd`, `from_typed_values`,
+     `from_typed_values_nd`, `from_shape_and_values`, `elements`, and
+     `replace_elements`; the APIs remain available for legacy callers and do
+     not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1470,6 +1477,9 @@ Remaining blocker:
    compatibility projection contracts and `_variant` companions as retained
    value-model entry points; default projection companions remain open
    migration/classification work.
+   Public `SafeArray` `RuntimeValue` constructors/accessors now also document
+   their compatibility projection role and point retained-value callers at the
+   matching `Variant` APIs.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
