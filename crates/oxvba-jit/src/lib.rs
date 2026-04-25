@@ -685,6 +685,39 @@ mod tests {
     }
 
     #[test]
+    fn runtime_aggregate_string_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(9, 9, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("ABCDE")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(2));
+            ctx.context.write_variant_slot(2, Variant::from_i32(2));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("99")));
+            ctx.context.write_variant_slot(4, Variant::from_i32(123231));
+            ctx.context.write_variant_slot(5, Variant::from_i32(23));
+            ctx.context.write_variant_slot(
+                6,
+                Variant::from_safearray(SafeArray::from_values(vec![
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(2),
+                    RuntimeValue::I32(3),
+                ])),
+            );
+            ctx.context.write_variant_slot(7, Variant::from_i32(0));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_mid_stmt(ctx.context_ptr(), 0, 1, 2, 3), 0);
+        assert_eq!(runtime_helpers::oxrt_split(ctx.context_ptr(), 8, 4, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_join(ctx.context_ptr(), 7, 6, 7), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[0], RuntimeValue::String(BStr::from("A99DE")));
+        assert_eq!(values[8], RuntimeValue::I32(3));
+        assert_eq!(values[7], RuntimeValue::I32(3));
+    }
+
+    #[test]
     fn runtime_tag_classifiers_read_variant_array_carriers() {
         let mut ctx = JitContextOwned::new(4, 4, super::default_host_services(), &[]);
         unsafe {

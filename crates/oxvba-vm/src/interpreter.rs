@@ -982,16 +982,16 @@ impl Vm {
                     count,
                     value,
                 } => {
-                    let target_value = self.read_value_slot(*target)?;
-                    let start_value = self.read_value_slot(*start)?;
+                    let target_value = self.read_variant_slot(*target)?;
+                    let start_value = self.read_variant_slot(*start)?;
                     let count_value = match count {
-                        Some(slot) => Some(self.read_value_slot(*slot)?),
+                        Some(slot) => Some(self.read_variant_slot(*slot)?),
                         None => None,
                     };
-                    let value_value = self.read_value_slot(*value)?;
-                    self.write_semantic_value_slot(
+                    let value_value = self.read_variant_slot(*value)?;
+                    self.write_variant_slot(
                         *target,
-                        crate::semantics::runtime_mid_stmt_bounded(
+                        crate::semantics::runtime_mid_stmt_variant_bounded(
                             &target_value,
                             &start_value,
                             count_value.as_ref(),
@@ -1063,11 +1063,11 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_value_slot(*src)?;
-                    let delimiter = self.read_value_slot(*delimiter)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    let delimiter = self.read_variant_slot(*delimiter)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_split_count_bounded(&value, &delimiter)?,
+                        crate::semantics::runtime_split_count_variant_bounded(&value, &delimiter)?,
                     )?;
                     pc += 1;
                 }
@@ -1076,11 +1076,11 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_value_slot(*src)?;
-                    let delimiter = self.read_value_slot(*delimiter)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    let delimiter = self.read_variant_slot(*delimiter)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_join_bounded(&value, &delimiter)?,
+                        crate::semantics::runtime_join_variant_bounded(&value, &delimiter)?,
                     )?;
                     pc += 1;
                 }

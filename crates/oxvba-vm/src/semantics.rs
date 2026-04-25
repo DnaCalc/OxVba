@@ -226,6 +226,21 @@ pub fn runtime_split_count_bounded(
     Ok(RuntimeValue::I32(count))
 }
 
+pub fn runtime_split_count_variant_bounded(
+    value: &Variant,
+    delimiter: &Variant,
+) -> Result<Variant, String> {
+    let text = runtime_variant_to_text(value, "Split src")?;
+    let delimiter = runtime_variant_to_text(delimiter, "Split delimiter")?;
+    let count = if delimiter.is_empty() {
+        1
+    } else {
+        i32::try_from(text.split(&delimiter).count())
+            .map_err(|_| "Split piece count exceeded i32 range".to_string())?
+    };
+    Ok(Variant::from_i32(count))
+}
+
 pub fn runtime_join_bounded(
     value: &RuntimeValue,
     delimiter: &RuntimeValue,
@@ -265,6 +280,29 @@ pub fn runtime_join_bounded(
         other => runtime_value_to_i32_compat(other, "Join src")?,
     };
     Ok(RuntimeValue::I32(out))
+}
+
+pub fn runtime_join_variant_bounded(
+    value: &Variant,
+    delimiter: &Variant,
+) -> Result<Variant, String> {
+    let _ = runtime_variant_to_text(delimiter, "Join delimiter")?;
+    let out = match value.vtype() {
+        VarType::ArrayVariant => {
+            let array = value
+                .as_safearray()
+                .ok_or_else(|| "Join src has invalid array payload".to_string())?;
+            i32::try_from(array.len())
+                .map_err(|_| "Join array length exceeded i32 range".to_string())?
+        }
+        VarType::Empty => 0,
+        VarType::String => value
+            .as_bstr()
+            .and_then(|text| text.as_str().parse::<i32>().ok())
+            .unwrap_or(0),
+        _ => runtime_variant_to_i32_compat(value, "Join src")?,
+    };
+    Ok(Variant::from_i32(out))
 }
 
 pub fn runtime_like_bounded(
@@ -969,6 +1007,50 @@ pub fn runtime_mid_stmt_bounded(
         return Ok(RuntimeValue::I32(parsed));
     }
     Ok(RuntimeValue::String(BStr::from(out)))
+}
+
+pub fn runtime_mid_stmt_variant_bounded(
+    target: &Variant,
+    start: &Variant,
+    count: Option<&Variant>,
+    value: &Variant,
+) -> Result<Variant, String> {
+    let base = runtime_variant_to_text(target, "MidStmt target")?;
+    let repl = runtime_variant_to_text(value, "MidStmt value")?;
+    let start = runtime_variant_to_i32_compat(start, "MidStmt start")?.max(0) as usize;
+    let start_idx = if start == 0 {
+        0
+    } else {
+        (start - 1).min(base.len())
+    };
+    if start_idx >= base.len() {
+        return Ok(target.clone());
+    }
+    let end_idx = match count {
+        Some(count) => {
+            let count = runtime_variant_to_i32_compat(count, "MidStmt count")?.max(0) as usize;
+            (start_idx + count).min(base.len())
+        }
+        None => base.len(),
+    };
+    let replace_len = end_idx.saturating_sub(start_idx);
+    let replace_text = if replace_len >= repl.len() {
+        repl.as_str()
+    } else {
+        &repl[..replace_len]
+    };
+    let mut out = String::with_capacity(base.len() - replace_len + replace_text.len());
+    out.push_str(&base[..start_idx]);
+    out.push_str(replace_text);
+    out.push_str(&base[end_idx..]);
+
+    if matches!(target.vtype(), VarType::String) || matches!(value.vtype(), VarType::String) {
+        return Ok(Variant::from_string(BStr::from(out)));
+    }
+    if let Ok(parsed) = out.parse::<i32>() {
+        return Ok(Variant::from_i32(parsed));
+    }
+    Ok(Variant::from_string(BStr::from(out)))
 }
 
 fn parse_month_token(token: &str) -> Option<i32> {
@@ -2211,6 +2293,34 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_string_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::runtime_split_count_variant_bounded(
+                &Variant::from_i32(123231),
+                &Variant::from_i32(23),
+            )
+            .expect("Split should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(3)
+        );
+        assert_eq!(
+            super::runtime_join_variant_bounded(
+                &Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(2),
+                    RuntimeValue::I32(3),
+                ])),
+                &Variant::from_i32(0),
+            )
+            .expect("Join should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(3)
+        );
+    }
+
+    #[test]
     fn runtime_value_to_usize_and_array_indices_use_numeric_compatibility() {
         assert_eq!(
             super::runtime_value_to_usize(&RuntimeValue::String(BStr::from("12")))
@@ -2350,6 +2460,22 @@ mod tests {
                 &RuntimeValue::String(BStr::from("99")),
             )
             .expect("MidStmt string mutation should succeed"),
+            RuntimeValue::String(BStr::from("A99DE"))
+        );
+    }
+
+    #[test]
+    fn mid_stmt_variant_helper_returns_retained_carrier() {
+        assert_eq!(
+            super::runtime_mid_stmt_variant_bounded(
+                &Variant::from_string(BStr::from("ABCDE")),
+                &Variant::from_i32(2),
+                Some(&Variant::from_i32(2)),
+                &Variant::from_string(BStr::from("99")),
+            )
+            .expect("MidStmt should succeed")
+            .to_runtime_value()
+            .expect("string Variant should project for assertions"),
             RuntimeValue::String(BStr::from("A99DE"))
         );
     }

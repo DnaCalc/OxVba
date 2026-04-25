@@ -578,20 +578,24 @@ pub extern "C" fn oxrt_mid_stmt(
     count_slot: u32,
     value: u32,
 ) -> i32 {
-    let target_val = read_slot!(ctx, target);
-    let st_val = read_slot!(ctx, start);
+    let target_val = read_variant_slot!(ctx, target);
+    let st_val = read_variant_slot!(ctx, start);
     let cnt_val = if count_slot == u32::MAX {
         None
     } else {
-        Some(read_slot!(ctx, count_slot))
+        Some(read_variant_slot!(ctx, count_slot))
     };
-    let val = read_slot!(ctx, value);
-    let out =
-        match semantics::runtime_mid_stmt_bounded(&target_val, &st_val, cnt_val.as_ref(), &val) {
-            Ok(v) => v,
-            Err(_) => return ERR_RUNTIME,
-        };
-    write_slot!(ctx, target, out);
+    let val = read_variant_slot!(ctx, value);
+    let out = match semantics::runtime_mid_stmt_variant_bounded(
+        &target_val,
+        &st_val,
+        cnt_val.as_ref(),
+        &val,
+    ) {
+        Ok(v) => v,
+        Err(_) => return ERR_RUNTIME,
+    };
+    write_variant_slot!(ctx, target, out);
     OK
 }
 
@@ -683,24 +687,26 @@ pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_split(ctx: *mut JitContext, dst: u32, src: u32, delimiter: u32) -> i32 {
-    let v_val = read_slot!(ctx, src);
-    let d_val = read_slot!(ctx, delimiter);
-    let out = match semantics::runtime_split_count_bounded(&v_val, &d_val) {
+    let v_val = read_variant_slot!(ctx, src);
+    let d_val = read_variant_slot!(ctx, delimiter);
+    let out = match semantics::runtime_split_count_variant_bounded(&v_val, &d_val) {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_join(ctx: *mut JitContext, dst: u32, src: u32, delimiter: u32) -> i32 {
-    let v_val = read_slot!(ctx, src);
-    let d_val = read_slot!(ctx, delimiter);
-    let out = match semantics::runtime_join_bounded(&v_val, &d_val) {
+    let v_val = read_variant_slot!(ctx, src);
+    let d_val = read_variant_slot!(ctx, delimiter);
+    let out = match semantics::runtime_join_variant_bounded(&v_val, &d_val) {
         Ok(value) => value,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
