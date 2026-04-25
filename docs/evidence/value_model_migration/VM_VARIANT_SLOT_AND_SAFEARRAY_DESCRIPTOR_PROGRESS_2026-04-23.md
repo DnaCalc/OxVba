@@ -1328,6 +1328,11 @@ Implementation progress:
      `RuntimeValue`-named construction helper for empty payload allocation.
      The public `RuntimeValue` compatibility constructors and accessors remain
      open classification work.
+109. VM/JIT public snapshot APIs now classify `RuntimeValue`-returning entry
+     points as compatibility projection boundaries in code comments, with
+     retained `Variant` snapshot APIs documented as the preferred value-model
+     surface. This does not remove the legacy aliases; it makes their boundary
+     role explicit before any later API narrowing.
 
 Remaining blocker:
 
@@ -1453,6 +1458,9 @@ Remaining blocker:
    Shape-only `SafeArray` constructors now also allocate through the
    Variant-native path directly instead of entering the legacy
    `RuntimeValue`-named helper for empty payloads.
+   VM/JIT public snapshot APIs now also document retained `Variant` snapshot
+   APIs as the value-model surface and `RuntimeValue` snapshots as
+   compatibility projections.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
