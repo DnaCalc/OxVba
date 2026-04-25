@@ -1289,6 +1289,9 @@ Implementation progress:
      next-item delivery still keeps the iterator ID as an internal control
      token, but the loop-continuation Boolean flag now writes a retained
      Boolean `Variant`.
+103. VM/JIT slot-copy helpers now copy retained `Variant` carriers directly.
+     VM `CopySlot` and JIT `oxrt_copy_slot` no longer project the source slot
+     through `RuntimeValue` before writing the destination slot.
 
 Remaining blocker:
 
@@ -1394,6 +1397,8 @@ Remaining blocker:
    `For Each` next-item delivery now writes the continuation flag as a
    retained Boolean `Variant` while leaving the iterator ID classified as an
    internal control token.
+   VM/JIT slot-copy helpers now also preserve retained `Variant` carriers
+   directly instead of copying through `RuntimeValue` projection.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
