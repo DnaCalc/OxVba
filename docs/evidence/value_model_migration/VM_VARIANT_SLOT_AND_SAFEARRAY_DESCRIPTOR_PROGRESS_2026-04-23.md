@@ -1402,6 +1402,10 @@ Implementation progress:
      registration, string/Variant/object variable pointer wrappers, legacy
      direct-projection pointer wrappers, and string/byte-array readback
      wrappers.
+121. HAL standard process legacy `RuntimeValue` methods now classify
+     themselves as compatibility wrappers beside retained `Variant` process
+     APIs. This covers `shell`, `environ`, and `dir`; behavior is preserved so
+     existing compatibility slot-token projection remains unchanged.
 
 Remaining blocker:
 
@@ -1565,6 +1569,8 @@ Remaining blocker:
    Runtime pointer-helper `RuntimeValue` registration/readback APIs now also
    document their compatibility projection role beside retained `Variant`
    pointer-helper APIs.
+   HAL standard process legacy `RuntimeValue` methods now also document their
+   compatibility wrapper role beside retained `Variant` process APIs.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
