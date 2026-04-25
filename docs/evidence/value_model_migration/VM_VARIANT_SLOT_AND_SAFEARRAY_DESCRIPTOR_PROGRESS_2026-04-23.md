@@ -1316,6 +1316,12 @@ Implementation progress:
      `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `Atn`, and `Tan`. The semantic helper
      bodies still return `RuntimeValue`, so exact Variant-native helper
      companions remain open.
+107. VM/JIT financial helper destination writes now use retained `Variant`
+     carriers directly from compatibility-slot results. This covers VM/JIT
+     `FV`, `PV`, `PMT`, `NPV`, `IRR`, `MIRR`, `Rate`, and `NPer`, preserving
+     existing compatibility-tag meanings through `Variant::from_compat_slot_i32`
+     instead of routing successful destination writes through
+     `RuntimeValue::from_compat_slot_i32`.
 
 Remaining blocker:
 
@@ -1435,6 +1441,9 @@ Remaining blocker:
    now also re-enter retained `Variant` carriers after existing semantic
    helper results, while their helper-returning contracts remain
    Variant-native companion work.
+   VM/JIT financial helper destination writes now also use retained `Variant`
+   carriers directly from compatibility-slot results while preserving the
+   existing compatibility-tag result meanings.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
