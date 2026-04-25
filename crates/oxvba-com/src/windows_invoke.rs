@@ -404,9 +404,12 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Execute a Windows `IDispatch::Invoke` call over the shared semantic COM request carrier and
-/// return the final OxVba runtime-facing value shape, delegating any dispatch-backed result
-/// rebinding to the caller.
+/// Compatibility Windows `IDispatch::Invoke` call that projects the result
+/// into the legacy runtime-facing value shape, delegating any dispatch-backed
+/// result rebinding to the caller.
+///
+/// New value-model call sites that do not need dispatch-backed rebinding
+/// should prefer [`invoke_dispatch_variant_result`].
 ///
 /// # Safety
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
@@ -895,7 +898,10 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Execute a member-metadata-backed Windows `IDispatch::Invoke` call over the shared semantic carrier.
+/// Compatibility member-metadata-backed Windows `IDispatch::Invoke` call.
+///
+/// Arguments are marshalled from retained `ComInvokeValue`/`Variant` payloads,
+/// then the result is projected into [`RuntimeValue`] for legacy callers.
 ///
 /// # Safety
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
@@ -1060,7 +1066,10 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Execute a direct-DISPID Windows `IDispatch::Invoke` call over the shared semantic carrier.
+/// Compatibility direct-DISPID Windows `IDispatch::Invoke` call.
+///
+/// Arguments are marshalled from retained `ComInvokeValue`/`Variant` payloads,
+/// then the result is projected into [`RuntimeValue`] for legacy callers.
 ///
 /// # Safety
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.

@@ -269,6 +269,10 @@ impl WindowsComBridge {
         callback_arity(&state, callback)
     }
 
+    /// Compatibility callback argument accessor that projects the retained
+    /// callback `Variant` into [`RuntimeValue`].
+    ///
+    /// New value-model call sites should prefer [`Self::event_callback_variant`].
     pub fn event_callback_arg(
         &self,
         callback: ComCallbackToken,
@@ -283,6 +287,7 @@ impl WindowsComBridge {
         })
     }
 
+    /// Retained value-model callback argument accessor.
     pub fn event_callback_variant(
         &self,
         callback: ComCallbackToken,
@@ -312,6 +317,12 @@ impl WindowsComBridge {
         Ok(state.mark_next_callback_pumped())
     }
 
+    /// Compatibility dispatch path that projects successful invoke results into
+    /// [`RuntimeValue`] for legacy bridge callers.
+    ///
+    /// The retained invocation payloads flow through `ComInvokeValue` /
+    /// `Variant`; callers that need exact value-model results should use the
+    /// Variant/ComValue surfaces before this projection.
     pub fn dispatch_invoke_runtime_value(
         &self,
         request: &ComInvokeRequest,
@@ -422,6 +433,8 @@ impl WindowsComBridge {
         Ok(Some(RuntimeValue::I32(value)))
     }
 
+    /// Compatibility dynamic-dispatch path that projects successful invoke
+    /// results into [`RuntimeValue`] for legacy bridge callers.
     pub fn dispatch_invoke_dynamic_runtime_value(
         &self,
         request: &DynamicCallRequest,
