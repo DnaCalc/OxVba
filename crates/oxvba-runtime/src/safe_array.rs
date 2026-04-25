@@ -30,6 +30,12 @@ pub const VT_UI8_VALUE: u16 = 0x0015;
 pub const VT_INT_VALUE: u16 = 0x0016;
 pub const VT_UINT_VALUE: u16 = 0x0017;
 
+pub const FADF_HAVEVARTYPE_VALUE: u16 = 0x0080;
+pub const FADF_BSTR_VALUE: u16 = 0x0100;
+pub const FADF_UNKNOWN_VALUE: u16 = 0x0200;
+pub const FADF_DISPATCH_VALUE: u16 = 0x0400;
+pub const FADF_VARIANT_VALUE: u16 = 0x0800;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SafeArrayBound {
@@ -39,6 +45,8 @@ pub struct SafeArrayBound {
 
 #[repr(C, align(8))]
 struct RawSafeArrayOwnerPrefix {
+    // COM Automation stores HAVEVARTYPE metadata adjacent to the descriptor.
+    // The public descriptor pointer still starts at RawSafeArray.
     element_vt: u16,
     _reserved: u16,
     _padding: u32,
@@ -174,6 +182,17 @@ impl SafeArrayElementKind {
             | Self::Unknown => core::mem::align_of::<u64>(),
             Self::Decimal => core::mem::align_of::<RawDecimalArrayElement>(),
         }
+    }
+
+    fn feature_flags(self) -> u16 {
+        FADF_HAVEVARTYPE_VALUE
+            | match self {
+                Self::Variant => FADF_VARIANT_VALUE,
+                Self::BStr => FADF_BSTR_VALUE,
+                Self::Dispatch => FADF_DISPATCH_VALUE,
+                Self::Unknown => FADF_UNKNOWN_VALUE,
+                _ => 0,
+            }
     }
 }
 
@@ -360,10 +379,11 @@ unsafe fn encode_element_variant(
                 })?);
         },
         SafeArrayElementKind::Ui1 => unsafe {
-            ptr.cast::<u8>()
-                .write(u8::try_from(variant_i64(value)?).map_err(|_| {
+            ptr.cast::<u8>().write(
+                u8::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_UI1 SAFEARRAY element")
-                })?);
+                })?,
+            );
         },
         SafeArrayElementKind::I2 => unsafe {
             ptr.cast::<i16>()
@@ -372,10 +392,11 @@ unsafe fn encode_element_variant(
                 })?);
         },
         SafeArrayElementKind::Ui2 => unsafe {
-            ptr.cast::<u16>()
-                .write(u16::try_from(variant_i64(value)?).map_err(|_| {
+            ptr.cast::<u16>().write(
+                u16::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_UI2 SAFEARRAY element")
-                })?);
+                })?,
+            );
         },
         SafeArrayElementKind::I4 | SafeArrayElementKind::Int => unsafe {
             ptr.cast::<i32>()
@@ -384,19 +405,21 @@ unsafe fn encode_element_variant(
                 })?);
         },
         SafeArrayElementKind::Ui4 | SafeArrayElementKind::UInt => unsafe {
-            ptr.cast::<u32>()
-                .write(u32::try_from(variant_i64(value)?).map_err(|_| {
+            ptr.cast::<u32>().write(
+                u32::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_UI4 SAFEARRAY element")
-                })?);
+                })?,
+            );
         },
         SafeArrayElementKind::I8 => unsafe {
             ptr.cast::<i64>().write(variant_i64(value)?);
         },
         SafeArrayElementKind::Ui8 => unsafe {
-            ptr.cast::<u64>()
-                .write(u64::try_from(variant_i64(value)?).map_err(|_| {
+            ptr.cast::<u64>().write(
+                u64::try_from(variant_i64(value)?).map_err(|_| {
                     format!("value {value:?} does not fit VT_UI8 SAFEARRAY element")
-                })?);
+                })?,
+            );
         },
         SafeArrayElementKind::R4 => unsafe {
             ptr.cast::<f32>().write(variant_f64(value)? as f32);
@@ -420,14 +443,16 @@ unsafe fn encode_element_variant(
             );
         },
         SafeArrayElementKind::Bool => unsafe {
-            ptr.cast::<i16>().write(if value
-                .as_bool()
-                .ok_or_else(|| format!("expected Bool SAFEARRAY element, got {value:?}"))?
-            {
-                -1
-            } else {
-                0
-            });
+            ptr.cast::<i16>().write(
+                if value
+                    .as_bool()
+                    .ok_or_else(|| format!("expected Bool SAFEARRAY element, got {value:?}"))?
+                {
+                    -1
+                } else {
+                    0
+                },
+            );
         },
         SafeArrayElementKind::BStr => unsafe {
             ptr.cast::<*mut u16>().write(alloc_raw_bstr_from_bstr(
@@ -445,13 +470,12 @@ unsafe fn encode_element_variant(
             ptr.cast::<[u8; 8]>().write(raw_iunknown_ptr_to_bytes(raw));
         },
         SafeArrayElementKind::Decimal => unsafe {
-            ptr.cast::<RawDecimalArrayElement>().write(
-                RawDecimalArrayElement::from_decimal96(
+            ptr.cast::<RawDecimalArrayElement>()
+                .write(RawDecimalArrayElement::from_decimal96(
                     value.as_decimal96().ok_or_else(|| {
                         format!("expected Decimal SAFEARRAY element, got {value:?}")
                     })?,
-                ),
-            );
+                ));
         },
     }
     Ok(())
@@ -543,7 +567,9 @@ fn alloc_header(
             .cast::<RawSafeArray>();
         (*header).c_dims = u16::try_from(bounds.len())
             .map_err(|_| "SAFEARRAY dimension count exceeds u16 capacity".to_string())?;
-        (*header).f_features = 0;
+        (*header).f_features = SafeArrayElementKind::from_vartype(element_vt)
+            .map(SafeArrayElementKind::feature_flags)
+            .unwrap_or(FADF_HAVEVARTYPE_VALUE);
         (*header).cb_elements = u32::try_from(cb_elements)
             .map_err(|_| "SAFEARRAY cbElements exceeds u32 capacity".to_string())?;
         (*header).c_locks = 0;
@@ -721,6 +747,10 @@ impl SafeArray {
 
     pub fn element_vartype(&self) -> u16 {
         unsafe { (*header_prefix_ptr(self.0.as_ptr())).element_vt }
+    }
+
+    pub fn feature_flags(&self) -> u16 {
+        unsafe { (*self.0.as_ptr()).f_features }
     }
 
     fn element_kind(&self) -> SafeArrayElementKind {
@@ -936,9 +966,10 @@ pub fn marshal_dispatch_argument(value: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        ARRAY_TAG_BASE, SafeArray, SafeArrayBound, VT_BSTR_VALUE, VT_DISPATCH_VALUE, VT_I2_VALUE,
-        VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag, array_tag_from_safe_array,
-        marshal_dispatch_argument, safe_array_from_tag,
+        ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
+        FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, SafeArray, SafeArrayBound, VT_BSTR_VALUE,
+        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
+        array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
     };
     use crate::{ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
@@ -1008,6 +1039,16 @@ mod tests {
     }
 
     #[test]
+    fn safearray_descriptor_advertises_variant_vartype_metadata() {
+        let array = SafeArray::from_variants(vec![Variant::from_i32(4)]);
+        assert_eq!(array.element_vartype(), VT_VARIANT_VALUE);
+        assert_eq!(
+            array.feature_flags(),
+            FADF_HAVEVARTYPE_VALUE | FADF_VARIANT_VALUE
+        );
+    }
+
+    #[test]
     fn safe_array_from_values_nd_preserves_multi_dimensional_shape() {
         let bounds = vec![
             SafeArrayBound { lower: 1, count: 3 },
@@ -1067,9 +1108,43 @@ mod tests {
         )
         .expect("typed array");
         assert_eq!(array.element_vartype(), VT_I2_VALUE);
+        assert_eq!(array.feature_flags(), FADF_HAVEVARTYPE_VALUE);
         assert_eq!(
             array.elements(),
             Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+        );
+    }
+
+    #[test]
+    fn safearray_descriptor_advertises_special_typed_element_metadata() {
+        let bstr = SafeArray::from_typed_values(
+            VT_BSTR_VALUE,
+            vec![RuntimeValue::String(BStr::from("Alpha"))],
+        )
+        .expect("typed bstr array");
+        assert_eq!(
+            bstr.feature_flags(),
+            FADF_HAVEVARTYPE_VALUE | FADF_BSTR_VALUE
+        );
+
+        let dispatch = SafeArray::from_typed_values(
+            VT_DISPATCH_VALUE,
+            vec![RuntimeValue::Object(ObjectRef::from_compat_identity(41))],
+        )
+        .expect("typed dispatch array");
+        assert_eq!(
+            dispatch.feature_flags(),
+            FADF_HAVEVARTYPE_VALUE | FADF_DISPATCH_VALUE
+        );
+
+        let unknown = SafeArray::from_typed_values(
+            VT_UNKNOWN_VALUE,
+            vec![RuntimeValue::Object(ObjectRef::from_compat_identity(77))],
+        )
+        .expect("typed unknown array");
+        assert_eq!(
+            unknown.feature_flags(),
+            FADF_HAVEVARTYPE_VALUE | FADF_UNKNOWN_VALUE
         );
     }
 
