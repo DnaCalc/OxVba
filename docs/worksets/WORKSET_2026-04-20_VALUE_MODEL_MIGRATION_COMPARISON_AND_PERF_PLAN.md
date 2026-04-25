@@ -2276,6 +2276,10 @@ Child beads:
        `Err.Source` result writes now produce retained `Variant` carriers
        directly, and VM `LoadNull`, `TypeOf...Is`, `IsNull`, and `IsEmpty`
        result writes now avoid the `RuntimeValue` scalar/string detour
+     - progress landed: JIT constant-load, null-load, `LBound`/`UBound`, and
+       collection scalar-result helpers now write retained `Variant`
+       destination carriers directly instead of temporary `RuntimeValue`
+       scalar/null results
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host

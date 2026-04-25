@@ -428,25 +428,23 @@ pub extern "C" fn oxrt_copy_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i3
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_i32(ctx: *mut JitContext, dst: u32, value: i32) -> i32 {
-    let value = if value == oxvba_runtime::value_tags::NULL_TAG {
-        // LoadNull is the only bytecode instruction that materializes VT_NULL.
-        RuntimeValue::I32(value)
-    } else {
-        RuntimeValue::from_compat_slot_i32(value)
+    let value = match Variant::try_from_compat_slot_i32(value) {
+        Ok(value) => value,
+        Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, value);
+    write_variant_slot!(ctx, dst, value);
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_bool(ctx: *mut JitContext, dst: u32, value: i32) -> i32 {
-    write_slot!(ctx, dst, RuntimeValue::Bool(value != 0));
+    write_variant_slot!(ctx, dst, Variant::from_bool(value != 0));
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_null(ctx: *mut JitContext, dst: u32) -> i32 {
-    write_slot!(ctx, dst, RuntimeValue::Null);
+    write_variant_slot!(ctx, dst, Variant::null());
     OK
 }
 
@@ -1969,7 +1967,7 @@ pub extern "C" fn oxrt_lbound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_variant_slot!(ctx, dst, Variant::from_i32(v));
     OK
 }
 
@@ -1980,7 +1978,7 @@ pub extern "C" fn oxrt_ubound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_variant_slot!(ctx, dst, Variant::from_i32(v));
     OK
 }
 
@@ -1998,7 +1996,7 @@ pub extern "C" fn oxrt_collection_add(
         Err(_) => return ERR_RUNTIME,
     };
     let _item = compat_i32_slot(ctx, item, "Collection.Add item");
-    write_slot!(ctx, dst, RuntimeValue::I32((c + 1).max(0)));
+    write_variant_slot!(ctx, dst, Variant::from_i32((c + 1).max(0)));
     OK
 }
 
@@ -2018,7 +2016,7 @@ pub extern "C" fn oxrt_collection_item(
         Err(_) => return ERR_RUNTIME,
     };
     let out = if i >= 1 && i <= c { i } else { 0 };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
@@ -2034,7 +2032,7 @@ pub extern "C" fn oxrt_collection_remove(
         Err(_) => return ERR_RUNTIME,
     };
     let _i = compat_i32_slot(ctx, index, "Collection.Remove index");
-    write_slot!(ctx, dst, RuntimeValue::I32((c - 1).max(0)));
+    write_variant_slot!(ctx, dst, Variant::from_i32((c - 1).max(0)));
     OK
 }
 
@@ -2044,7 +2042,7 @@ pub extern "C" fn oxrt_collection_count(ctx: *mut JitContext, dst: u32, count: u
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(c.max(0)));
+    write_variant_slot!(ctx, dst, Variant::from_i32(c.max(0)));
     OK
 }
 
