@@ -1416,6 +1416,10 @@ Implementation progress:
      projection, legacy prepare/invoke paths, and Variant-to-runtime default
      adapters used only when an implementation has not overridden the retained
      Variant methods.
+124. HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods
+     now classify themselves as compatibility wrappers beside retained
+     `Variant` companion methods. This covers telemetry/debug print, message
+     box/input box, DoEvents, and Date/Time/Timer APIs.
 
 Remaining blocker:
 
@@ -1586,6 +1590,9 @@ Remaining blocker:
    HAL dynamic-link legacy `RuntimeValue` methods/default adapters now also
    document their compatibility layer role beside retained `Variant` invoke
    paths.
+   HAL diagnostics, UI, event-pump, and time legacy `RuntimeValue` methods now
+   also document their compatibility wrapper role beside retained `Variant`
+   companion methods.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
