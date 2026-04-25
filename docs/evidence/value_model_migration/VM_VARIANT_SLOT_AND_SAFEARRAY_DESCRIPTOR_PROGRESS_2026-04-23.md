@@ -1254,6 +1254,12 @@ Implementation progress:
     `TypeOf...Is`, `IsNull`, and `IsEmpty` result writes now also use direct
     `Variant` slot carriers, leaving broader comparison/Boolean operators on
     their existing compatibility helper path for a separate migration slice.
+97. JIT constant-load, null-load, array-bound, and collection scalar-result
+    helpers now write retained `Variant` destination carriers directly.
+    `oxrt_load_i32`, `oxrt_load_bool`, `oxrt_load_null`, `oxrt_lbound`,
+    `oxrt_ubound`, and the JIT collection add/item/remove/count helpers no
+    longer create temporary `RuntimeValue` destination payloads before the
+    slot write.
 
 Remaining blocker:
 
@@ -1340,6 +1346,8 @@ Remaining blocker:
    `IsArray` instead of creating temporary `RuntimeValue` scalar results.
    VM/JIT `Err.*` reads and VM `LoadNull`, `TypeOf...Is`, `IsNull`, and
    `IsEmpty` result writes now also stay on retained `Variant` carriers.
+   JIT constant/null loads, `LBound`/`UBound`, and collection scalar-result
+   writes now also stay on retained `Variant` carriers.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
