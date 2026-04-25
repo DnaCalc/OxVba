@@ -169,11 +169,13 @@ pub fn execute_and_snapshot_compat_values_with_host_and_typed_fastpaths(
     host_services: Arc<dyn HostServices>,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
-    project_snapshot_variants_to_compat_values(execute_and_snapshot_variants_with_host_and_typed_fastpaths(
-        bytecode,
-        host_services,
-        typed_fastpaths,
-    )?)
+    project_snapshot_variants_to_compat_values(
+        execute_and_snapshot_variants_with_host_and_typed_fastpaths(
+            bytecode,
+            host_services,
+            typed_fastpaths,
+        )?,
+    )
 }
 
 /// Retained value-model host-backed snapshot API with typed-fastpath selection.
@@ -215,7 +217,9 @@ mod tests {
 
     use oxvba_hal::model::native_host_profile;
 
-    use super::{default_host_services, execute_and_snapshot_compat_values, execute_and_snapshot_variants};
+    use super::{
+        default_host_services, execute_and_snapshot_compat_values, execute_and_snapshot_variants,
+    };
 
     #[test]
     fn default_host_services_follow_native_host_profile() {
@@ -225,8 +229,8 @@ mod tests {
 
     #[test]
     fn compat_snapshot_api_projects_variant_snapshot_results() {
-        let bytecode = compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub")
-            .expect("compile should succeed");
+        let bytecode =
+            compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub").expect("compile should succeed");
 
         let variants = execute_and_snapshot_variants(&bytecode).expect("variant snapshot");
         let compat = execute_and_snapshot_compat_values(&bytecode).expect("compat snapshot");

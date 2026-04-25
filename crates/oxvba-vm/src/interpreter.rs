@@ -2167,7 +2167,7 @@ impl Vm {
                                     next_index: 0,
                                 },
                             );
-                            self.write_value_slot(*iter, RuntimeValue::I32(id))?;
+                            self.write_variant_slot(*iter, Variant::from_i32(id))?;
                             pc += 1;
                         }
                         Err(err) => {

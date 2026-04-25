@@ -5,8 +5,8 @@
 //! Each helper is an `extern "C"` function registered with Cranelift's
 //! `JITBuilder::symbol()`. They implement instruction semantics by calling
 //! the same shared logic as the VM interpreter (via `oxvba_vm::semantics`).
-//! Helpers that still call `RuntimeValue` semantic functions are compatibility
-//! bridges over retained `Variant` JIT slots, not retained value storage.
+//! Helpers that still call legacy semantic functions are compatibility bridges
+//! over retained `Variant` JIT slots, not retained value storage.
 //!
 //! Return convention: 0 = success, nonzero = error code.
 
@@ -27,7 +27,7 @@ use oxvba_runtime::safe_array::{
     VT_VARIANT_VALUE,
 };
 use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
-use oxvba_runtime::{F64Value, RuntimeValue, VarType, Variant, bstr::BStr};
+use oxvba_runtime::{F64Value, VarType, Variant, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::{JitContext, JitRuntimeSlot};
@@ -39,13 +39,6 @@ const OK: i32 = 0;
 const ERR_RUNTIME: i32 = -1; // Generic runtime error (fatal)
 
 // ── Macro for common helper pattern ───────────────────────────────────
-
-macro_rules! write_slot {
-    ($ctx:expr, $slot:expr, $value:expr) => {{
-        debug_assert!(!$ctx.is_null(), "write_slot: null JitContext pointer");
-        unsafe { (*$ctx).write_slot($slot, $value) }
-    }};
-}
 
 macro_rules! read_variant_slot {
     ($ctx:expr, $slot:expr) => {{
@@ -2789,7 +2782,7 @@ pub extern "C" fn oxrt_host_withevents_get(
     match value {
         JitRuntimeSlot::Variant(value) => write_variant_slot!(ctx, dst, value),
         JitRuntimeSlot::BindingHandle(handle) => {
-            write_slot!(ctx, dst, RuntimeValue::BindingHandle(handle))
+            write_variant_slot!(ctx, dst, Variant::from_i32(handle.raw()))
         }
     };
     OK
