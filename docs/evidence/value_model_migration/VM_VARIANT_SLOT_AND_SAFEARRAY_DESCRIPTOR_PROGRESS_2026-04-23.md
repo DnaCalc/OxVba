@@ -1319,6 +1319,10 @@ Remaining blocker:
    retained Variant form through the HAL adapter boundary; standard file
    text/byte payload companion dispatch now also stays in retained Variant form
    through the HAL adapter boundary.
+   Null/WASM/replay time/locale, diagnostics, and dynamic-link Variant
+   companions now also return retained Variant carriers or explicit unsupported
+   Variant faults instead of inheriting trait-level `RuntimeValue` fallback
+   projections.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
