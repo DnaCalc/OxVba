@@ -1447,6 +1447,11 @@ Implementation progress:
      coercion helpers. This removes the first string-intrinsic helper group from
      the `RuntimeValue` projection path while preserving legacy snapshot
      projections for public compatibility APIs.
+131. VM/JIT text transform/search intrinsics `InStr`, `InStrRev`, `LCase`,
+     `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`, and
+     `StrReverse` now read retained `Variant` slots directly through
+     Variant-native text coercion helpers. Broader string semantic helpers that
+     still return `RuntimeValue` remain explicitly outside this slice.
 
 Remaining blocker:
 
@@ -1639,6 +1644,10 @@ Remaining blocker:
    VM/JIT string slice intrinsics `Len`, `Left`, `Right`, and `Mid` now read
    retained `Variant` slots directly through Variant-native text/count
    coercion helpers instead of projecting through `RuntimeValue` first.
+   VM/JIT text transform/search intrinsics `InStr`, `InStrRev`, `LCase`,
+   `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`, and `StrReverse`
+   now read retained `Variant` slots directly through Variant-native text
+   coercion helpers.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
    cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
