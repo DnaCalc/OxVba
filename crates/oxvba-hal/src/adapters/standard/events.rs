@@ -10,29 +10,16 @@ impl EventPumpHal for StandardHostServices {
     // Legacy event-pump path. Retained VM/JIT callers should use
     // `do_events_variant`, which returns a Variant status carrier directly.
     fn do_events(&self) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::EventPump;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "do_events"));
-        }
-        if self.native_mode_enabled() {
-            if self.profile == crate::model::HalProfileId::Windows {
-                self.pump_windows_messages_once();
-            }
-            thread::yield_now();
-        }
-        #[cfg(target_os = "windows")]
-        if self.native_com_enabled() {
-            let callback = self
-                .com_bridge
-                .mark_next_callback_pumped()
-                .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "do_events", message)
-                })?;
-            if let Some(callback) = callback {
-                return Ok(RuntimeValue::I32(callback.into()));
-            }
-        }
-        Ok(RuntimeValue::I32(0))
+        self.do_events_variant()?
+            .to_runtime_value()
+            .map_err(|detail| {
+                crate::error::HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::EventPump,
+                    "do_events",
+                    detail,
+                )
+            })
     }
 
     fn do_events_variant(&self) -> HalResult<Variant> {
