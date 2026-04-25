@@ -1530,6 +1530,14 @@ Implementation progress:
      `cargo check -p oxvba-vm` and `cargo check -p oxvba-jit` now complete
      without the previous private `RuntimeValue`/digit-helper dead-code warning
      set for the touched crates.
+146. Runtime `SafeArray` descriptors now advertise COM Automation element
+     metadata through `fFeatures`: all supported descriptors set
+     `FADF_HAVEVARTYPE`, and `Variant`, `BSTR`, `IDispatch`, and `IUnknown`
+     arrays additionally set the matching `FADF_VARIANT`, `FADF_BSTR`,
+     `FADF_DISPATCH`, or `FADF_UNKNOWN` bit. The hidden prefix remains the
+     local owner for the element `VARTYPE` metadata adjacent to the public
+     descriptor pointer; this narrows the metadata audit but does not close the
+     allocator/ownership provenance question.
 
 Remaining blocker:
 
@@ -1769,10 +1777,11 @@ Remaining blocker:
    slots directly for `Int`/`Fix`, conditional jumps, runtime assignment
    validation, finance/collection numeric lanes, and WithEvents binding-token
    lanes.
-3. `SafeArray` still stores local ownership metadata adjacent to the
-   descriptor; the descriptor and payload are native-shaped, but exact
-   cross-platform `SAFEARRAY` identity still needs a final ownership/metadata
-   audit before closure can be claimed.
+3. `SafeArray` now advertises COM Automation element metadata through
+   `fFeatures` while retaining the adjacent local owner prefix for element
+   `VARTYPE` metadata; the descriptor and payload are native-shaped, but exact
+   cross-platform `SAFEARRAY` allocator/ownership identity still needs a final
+   provenance audit before closure can be claimed.
 4. Completion still requires an audit and migration/classification of all
    remaining projection seams that can expose or retain general values:
    interpreter/JIT helper internals outside slot storage, host and immediate
@@ -1794,6 +1803,6 @@ Remaining blocker:
    as an actual VM/JIT slot address rather than a long-lived registry-owned
    helper cell. Runtime unit coverage still verifies the Windows container-cell
    materialization path separately via pointer-helper boundary helpers.
-6. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
+7. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.

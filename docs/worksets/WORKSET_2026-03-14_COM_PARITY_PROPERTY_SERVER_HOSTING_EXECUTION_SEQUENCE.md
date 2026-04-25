@@ -99,7 +99,8 @@ Current value-model migration note (2026-04-25):
 34. VM/JIT scalar/control/binding helper operands now read retained `Variant` slots directly for `Int`/`Fix`, conditional jumps, runtime assignment validation, finance/collection numeric lanes, and WithEvents binding-token lanes.
 35. VM/JIT `For Each` iterator initialization and JIT WithEvents retained-value get now write compatibility-token outputs as retained `Variant` carriers directly instead of entering legacy `RuntimeValue` slot-write helpers.
 36. Dead private VM/JIT compatibility helper definitions were removed or gated to tests after the retained-`Variant` execution migration, leaving production VM/JIT checks free of the previous private helper dead-code warning set.
-37. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+37. Runtime `SafeArray` descriptors now advertise COM Automation element metadata through `fFeatures` (`FADF_HAVEVARTYPE` plus the relevant `VARIANT`/`BSTR`/`DISPATCH`/`UNKNOWN` bits) while leaving allocator/ownership provenance as remaining audit work.
+38. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
