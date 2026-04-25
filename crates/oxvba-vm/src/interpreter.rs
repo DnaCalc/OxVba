@@ -1006,14 +1006,14 @@ impl Vm {
                     needle,
                     mode,
                 } => {
-                    let hay_val = self.read_value_slot(*haystack)?;
-                    let nee_val = self.read_value_slot(*needle)?;
+                    let hay_val = self.read_variant_slot(*haystack)?;
+                    let nee_val = self.read_variant_slot(*needle)?;
                     let h = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&hay_val, "InStr haystack")?,
+                        crate::semantics::runtime_variant_to_text(&hay_val, "InStr haystack")?,
                         *mode,
                     );
                     let n = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&nee_val, "InStr needle")?,
+                        crate::semantics::runtime_variant_to_text(&nee_val, "InStr needle")?,
                         *mode,
                     );
                     let pos = h.find(&n).map_or(0, |idx| (idx + 1) as i32);
@@ -1026,14 +1026,14 @@ impl Vm {
                     needle,
                     mode,
                 } => {
-                    let hay_val = self.read_value_slot(*haystack)?;
-                    let nee_val = self.read_value_slot(*needle)?;
+                    let hay_val = self.read_variant_slot(*haystack)?;
+                    let nee_val = self.read_variant_slot(*needle)?;
                     let h = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&hay_val, "InStrRev haystack")?,
+                        crate::semantics::runtime_variant_to_text(&hay_val, "InStrRev haystack")?,
                         *mode,
                     );
                     let n = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&nee_val, "InStrRev needle")?,
+                        crate::semantics::runtime_variant_to_text(&nee_val, "InStrRev needle")?,
                         *mode,
                     );
                     let pos = h.rfind(&n).map_or(0, |idx| (idx + 1) as i32);
@@ -1041,8 +1041,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "LCase operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "LCase operand")?;
                     self.write_variant_slot(
                         *dst,
                         Variant::from_string(BStr::from(text.to_ascii_lowercase())),
@@ -1050,8 +1050,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicUpperDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "UCase operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "UCase operand")?;
                     self.write_variant_slot(
                         *dst,
                         Variant::from_string(BStr::from(text.to_ascii_uppercase())),
@@ -1090,22 +1090,22 @@ impl Vm {
                     find,
                     replace,
                 } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let find_val = self.read_value_slot(*find)?;
-                    let replace_val = self.read_value_slot(*replace)?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let find_val = self.read_variant_slot(*find)?;
+                    let replace_val = self.read_variant_slot(*replace)?;
                     let src_text =
-                        crate::semantics::runtime_value_to_text(&src_val, "Replace src")?;
+                        crate::semantics::runtime_variant_to_text(&src_val, "Replace src")?;
                     let find_text =
-                        crate::semantics::runtime_value_to_text(&find_val, "Replace find")?;
+                        crate::semantics::runtime_variant_to_text(&find_val, "Replace find")?;
                     let replace_text =
-                        crate::semantics::runtime_value_to_text(&replace_val, "Replace replace")?;
+                        crate::semantics::runtime_variant_to_text(&replace_val, "Replace replace")?;
                     let result = src_text.replace(&find_text, &replace_text);
                     self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "Trim operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "Trim operand")?;
                     self.write_variant_slot(
                         *dst,
                         Variant::from_string(BStr::from(text.trim().to_string())),
@@ -1113,8 +1113,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicLTrimDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "LTrim operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "LTrim operand")?;
                     self.write_variant_slot(
                         *dst,
                         Variant::from_string(BStr::from(text.trim_start().to_string())),
@@ -1122,8 +1122,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicRTrimDigits { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    let text = crate::semantics::runtime_value_to_text(&value, "RTrim operand")?;
+                    let value = self.read_variant_slot(*src)?;
+                    let text = crate::semantics::runtime_variant_to_text(&value, "RTrim operand")?;
                     self.write_variant_slot(
                         *dst,
                         Variant::from_string(BStr::from(text.trim_end().to_string())),
@@ -1136,14 +1136,14 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    let lhs_val = self.read_value_slot(*lhs)?;
-                    let rhs_val = self.read_value_slot(*rhs)?;
+                    let lhs_val = self.read_variant_slot(*lhs)?;
+                    let rhs_val = self.read_variant_slot(*rhs)?;
                     let l = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&lhs_val, "StrComp lhs")?,
+                        crate::semantics::runtime_variant_to_text(&lhs_val, "StrComp lhs")?,
                         *mode,
                     );
                     let r = Self::normalize_for_compare(
-                        crate::semantics::runtime_value_to_text(&rhs_val, "StrComp rhs")?,
+                        crate::semantics::runtime_variant_to_text(&rhs_val, "StrComp rhs")?,
                         *mode,
                     );
                     let result = match l.cmp(&r) {
@@ -3328,8 +3328,9 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicStrReverseDigits { dst, src } => {
-                    let src_val = self.read_value_slot(*src)?;
-                    let s = crate::semantics::runtime_value_to_text(&src_val, "StrReverse source")?;
+                    let src_val = self.read_variant_slot(*src)?;
+                    let s =
+                        crate::semantics::runtime_variant_to_text(&src_val, "StrReverse source")?;
                     let result: String = s.chars().rev().collect();
                     self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;

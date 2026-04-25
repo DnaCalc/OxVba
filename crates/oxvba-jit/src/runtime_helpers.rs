@@ -601,18 +601,18 @@ pub extern "C" fn oxrt_instr(
     needle: u32,
     mode: u32,
 ) -> i32 {
-    let hay_val = read_slot!(ctx, haystack);
-    let nee_val = read_slot!(ctx, needle);
+    let hay_val = read_variant_slot!(ctx, haystack);
+    let nee_val = read_variant_slot!(ctx, needle);
     let scm = if mode == 1 {
         StringCompareMode::Text
     } else {
         StringCompareMode::Binary
     };
-    let h = match semantics::runtime_value_to_text(&hay_val, "InStr haystack") {
+    let h = match semantics::runtime_variant_to_text(&hay_val, "InStr haystack") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
-    let n = match semantics::runtime_value_to_text(&nee_val, "InStr needle") {
+    let n = match semantics::runtime_variant_to_text(&nee_val, "InStr needle") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
@@ -629,18 +629,18 @@ pub extern "C" fn oxrt_instrrev(
     needle: u32,
     mode: u32,
 ) -> i32 {
-    let hay_val = read_slot!(ctx, haystack);
-    let nee_val = read_slot!(ctx, needle);
+    let hay_val = read_variant_slot!(ctx, haystack);
+    let nee_val = read_variant_slot!(ctx, needle);
     let scm = if mode == 1 {
         StringCompareMode::Text
     } else {
         StringCompareMode::Binary
     };
-    let h = match semantics::runtime_value_to_text(&hay_val, "InStrRev haystack") {
+    let h = match semantics::runtime_variant_to_text(&hay_val, "InStrRev haystack") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
-    let n = match semantics::runtime_value_to_text(&nee_val, "InStrRev needle") {
+    let n = match semantics::runtime_variant_to_text(&nee_val, "InStrRev needle") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
@@ -651,8 +651,8 @@ pub extern "C" fn oxrt_instrrev(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "LCase operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "LCase operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -666,8 +666,8 @@ pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "UCase operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "UCase operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -709,18 +709,18 @@ pub extern "C" fn oxrt_replace(
     find: u32,
     replace: u32,
 ) -> i32 {
-    let src_val = read_slot!(ctx, src);
-    let find_val = read_slot!(ctx, find);
-    let replace_val = read_slot!(ctx, replace);
-    let src_text = match semantics::runtime_value_to_text(&src_val, "Replace src") {
+    let src_val = read_variant_slot!(ctx, src);
+    let find_val = read_variant_slot!(ctx, find);
+    let replace_val = read_variant_slot!(ctx, replace);
+    let src_text = match semantics::runtime_variant_to_text(&src_val, "Replace src") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    let find_text = match semantics::runtime_value_to_text(&find_val, "Replace find") {
+    let find_text = match semantics::runtime_variant_to_text(&find_val, "Replace find") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
-    let replace_text = match semantics::runtime_value_to_text(&replace_val, "Replace replace") {
+    let replace_text = match semantics::runtime_variant_to_text(&replace_val, "Replace replace") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -731,8 +731,8 @@ pub extern "C" fn oxrt_replace(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_trim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "Trim operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "Trim operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -746,8 +746,8 @@ pub extern "C" fn oxrt_trim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "LTrim operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "LTrim operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -761,8 +761,8 @@ pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let text = match semantics::runtime_value_to_text(&val, "RTrim operand") {
+    let val = read_variant_slot!(ctx, src);
+    let text = match semantics::runtime_variant_to_text(&val, "RTrim operand") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };
@@ -782,18 +782,18 @@ pub extern "C" fn oxrt_strcomp(
     rhs: u32,
     mode: u32,
 ) -> i32 {
-    let lhs_val = read_slot!(ctx, lhs);
-    let rhs_val = read_slot!(ctx, rhs);
+    let lhs_val = read_variant_slot!(ctx, lhs);
+    let rhs_val = read_variant_slot!(ctx, rhs);
     let scm = if mode == 1 {
         StringCompareMode::Text
     } else {
         StringCompareMode::Binary
     };
-    let l = match semantics::runtime_value_to_text(&lhs_val, "StrComp lhs") {
+    let l = match semantics::runtime_variant_to_text(&lhs_val, "StrComp lhs") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
-    let r = match semantics::runtime_value_to_text(&rhs_val, "StrComp rhs") {
+    let r = match semantics::runtime_variant_to_text(&rhs_val, "StrComp rhs") {
         Ok(text) => semantics::normalize_for_compare(text, scm),
         Err(_) => return ERR_RUNTIME,
     };
@@ -927,8 +927,8 @@ pub extern "C" fn oxrt_format(ctx: *mut JitContext, dst: u32, value: u32, format
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_strreverse(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let s = match semantics::runtime_value_to_text(&val, "StrReverse source") {
+    let val = read_variant_slot!(ctx, src);
+    let s = match semantics::runtime_variant_to_text(&val, "StrReverse source") {
         Ok(text) => text,
         Err(_) => return ERR_RUNTIME,
     };

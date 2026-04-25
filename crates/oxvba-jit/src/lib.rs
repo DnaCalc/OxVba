@@ -470,6 +470,58 @@ mod tests {
     }
 
     #[test]
+    fn runtime_text_transform_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(15, 15, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("Hello World")));
+            ctx.context
+                .write_variant_slot(1, Variant::from_string(BStr::from("lo")));
+            ctx.context
+                .write_variant_slot(2, Variant::from_string(BStr::from("LO")));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("  spaced  ")));
+            ctx.context
+                .write_variant_slot(4, Variant::from_string(BStr::from("abc")));
+            ctx.context
+                .write_variant_slot(5, Variant::from_string(BStr::from("ABC")));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_instr(ctx.context_ptr(), 6, 0, 1, 0), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_instrrev(ctx.context_ptr(), 7, 0, 1, 0),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_lower(ctx.context_ptr(), 8, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_upper(ctx.context_ptr(), 9, 4), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_replace(ctx.context_ptr(), 10, 0, 1, 2),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_trim(ctx.context_ptr(), 11, 3), 0);
+        assert_eq!(
+            runtime_helpers::oxrt_strcomp(ctx.context_ptr(), 12, 4, 5, 1),
+            0
+        );
+        assert_eq!(runtime_helpers::oxrt_ltrim(ctx.context_ptr(), 13, 3), 0);
+        assert_eq!(runtime_helpers::oxrt_rtrim(ctx.context_ptr(), 14, 3), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[6], RuntimeValue::I32(4));
+        assert_eq!(values[7], RuntimeValue::I32(4));
+        assert_eq!(values[8], RuntimeValue::String(BStr::from("abc")));
+        assert_eq!(values[9], RuntimeValue::String(BStr::from("ABC")));
+        assert_eq!(
+            values[10],
+            RuntimeValue::String(BStr::from("HelLO World"))
+        );
+        assert_eq!(values[11], RuntimeValue::String(BStr::from("spaced")));
+        assert_eq!(values[12], RuntimeValue::I32(0));
+        assert_eq!(values[13], RuntimeValue::String(BStr::from("spaced  ")));
+        assert_eq!(values[14], RuntimeValue::String(BStr::from("  spaced")));
+    }
+
+    #[test]
     fn runtime_tag_classifiers_read_variant_array_carriers() {
         let mut ctx = JitContextOwned::new(4, 4, super::default_host_services(), &[]);
         unsafe {
