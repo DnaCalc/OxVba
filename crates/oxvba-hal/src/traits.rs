@@ -825,6 +825,9 @@ pub trait DynamicLinkHal: Send + Sync {
     fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<BindingHandle> {
         Ok(descriptor.symbol.raw().into())
     }
+
+    /// Compatibility projection for callers that still model binding tokens as
+    /// `RuntimeValue`.
     fn bind_descriptor_value(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
@@ -833,7 +836,10 @@ pub trait DynamicLinkHal: Send + Sync {
             .map(RuntimeValue::BindingHandle)
     }
 
-    /// Optional argument normalization/writeback preparation hook.
+    /// Optional legacy argument normalization/writeback preparation hook.
+    ///
+    /// Variant-native invoke paths should avoid this unless they are adapting
+    /// an older HAL implementation.
     fn prepare_invoke(
         &self,
         _binding: BindingHandle,
@@ -848,6 +854,9 @@ pub trait DynamicLinkHal: Send + Sync {
     /// Invokes a previously bound symbol with multiple arguments.
     /// Returns `(return_value, writeback_values)` where writeback_values contains
     /// modified ByRef argument values to write back to caller slots.
+    ///
+    /// This remains the legacy semantic-value transport. Prefer
+    /// `invoke_bound_variants` for retained VM/JIT slot values.
     fn invoke_bound_multi(
         &self,
         binding: BindingHandle,
@@ -871,14 +880,16 @@ pub trait DynamicLinkHal: Send + Sync {
         runtime_result_to_variants(ret, writebacks, "invoke_bound_variants")
     }
 
-    /// Descriptor-driven invoke path used by VM/host integrations.
+    /// Legacy descriptor-driven invoke path used by compatibility integrations.
     fn invoke_descriptor(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
 
-    /// Descriptor-driven multi-arg invoke path.
+    /// Legacy descriptor-driven multi-arg invoke path.
+    ///
+    /// Prefer `invoke_descriptor_variants` for retained VM/JIT slot values.
     fn invoke_descriptor_multi(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
@@ -930,6 +941,8 @@ fn variants_to_runtime_values(
     args: &[Variant],
     operation: &'static str,
 ) -> HalResult<Vec<RuntimeValue>> {
+    // Compatibility adapter for legacy HAL implementations that have not
+    // overridden the Variant-native dynamic-link methods.
     args.iter()
         .map(|value| {
             value.to_runtime_value().map_err(|detail| {
@@ -949,6 +962,8 @@ fn runtime_result_to_variants(
     writebacks: Vec<RuntimeValue>,
     operation: &'static str,
 ) -> HalResult<(Variant, Vec<Variant>)> {
+    // Compatibility adapter for legacy HAL implementations that have not
+    // overridden the Variant-native dynamic-link methods.
     let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
         HalError::adapter_fault(
             HalProfileId::Null,

@@ -76,7 +76,8 @@ Current value-model migration note (2026-04-25):
 11. Runtime pointer-helper `RuntimeValue` registration/readback APIs now classify themselves as compatibility projections beside retained `Variant` pointer-helper APIs.
 12. HAL standard process legacy `RuntimeValue` methods now classify themselves as compatibility wrappers beside retained `Variant` process APIs.
 13. VM shared semantic helpers and JIT runtime helper bridges now classify `RuntimeValue` helper contracts as compatibility layers over retained `Variant` slot storage.
-14. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+14. HAL dynamic-link legacy `RuntimeValue` trait methods/default adapters and standard adapter hooks now classify themselves as compatibility layers beside retained `Variant` invoke paths.
+15. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

@@ -208,10 +208,14 @@ impl DynamicLinkHal for StandardHostServices {
         _binding: BindingHandle,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
+        // Legacy semantic-value hook retained for compatibility callers. The
+        // standard adapter's retained VM/JIT path is `invoke_*_variants`.
         Ok(arg)
     }
 
     fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        // Legacy single-argument dynamic-link path. Retained callers should use
+        // `invoke_bound_variants`/`invoke_descriptor_variants`.
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "invoke_symbol"));
@@ -271,6 +275,7 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
+        // Legacy descriptor path retained for compatibility callers.
         if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
             return self
                 .invoke_descriptor_multi(descriptor, &[arg])
@@ -286,6 +291,8 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         args: &[RuntimeValue],
     ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
+        // Legacy multi-argument descriptor path retained for compatibility
+        // callers. Variant-native descriptor calls bypass this for m0 lanes.
         if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
             return invoke_m1_native(self, descriptor, args);
         }
@@ -408,6 +415,8 @@ fn variants_to_runtime_values(
     profile: HalProfileId,
     args: &[Variant],
 ) -> HalResult<Vec<RuntimeValue>> {
+    // Compatibility adapter for native FFI lanes that still share the legacy
+    // semantic-value marshalling implementation.
     args.iter()
         .map(|value| {
             value.to_runtime_value().map_err(|detail| {
@@ -427,6 +436,8 @@ fn runtime_result_to_variants(
     ret: RuntimeValue,
     writebacks: Vec<RuntimeValue>,
 ) -> HalResult<(Variant, Vec<Variant>)> {
+    // Compatibility adapter for native FFI lanes that still share the legacy
+    // semantic-value marshalling implementation.
     let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
         HalError::adapter_fault(
             profile,
