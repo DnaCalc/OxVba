@@ -480,6 +480,10 @@ impl Variant {
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
 
+    /// Compatibility bridge from the legacy semantic [`RuntimeValue`] carrier
+    /// into the retained runtime `Variant`.
+    ///
+    /// New value-model code should construct `Variant` values directly.
     pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
         Ok(match value {
             RuntimeValue::Empty => Self::empty(),
@@ -507,11 +511,16 @@ impl Variant {
         })
     }
 
+    /// Panicking compatibility bridge from [`RuntimeValue`] into `Variant`.
+    ///
+    /// New value-model code should construct `Variant` values directly.
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         Self::try_from_runtime_value(value)
             .expect("runtime Variant bridge should only be used for supported exact carriers")
     }
 
+    /// Compatibility bridge from the legacy i32 slot-token lane into a retained
+    /// `Variant`.
     pub fn try_from_compat_slot_i32(value: i32) -> Result<Self, String> {
         if value == EMPTY_TAG {
             return Ok(Self::empty());
@@ -528,11 +537,15 @@ impl Variant {
         Ok(Self::from_i32(value))
     }
 
+    /// Panicking compatibility bridge from the legacy i32 slot-token lane into
+    /// a retained `Variant`.
     pub fn from_compat_slot_i32(value: i32) -> Self {
         Self::try_from_compat_slot_i32(value)
             .expect("compat slot -> Variant bridge should stay on the supported exact subset")
     }
 
+    /// Compatibility projection from the retained runtime `Variant` into the
+    /// legacy semantic [`RuntimeValue`] carrier.
     pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
         match self.vtype() {
             VarType::Empty => Ok(RuntimeValue::Empty),

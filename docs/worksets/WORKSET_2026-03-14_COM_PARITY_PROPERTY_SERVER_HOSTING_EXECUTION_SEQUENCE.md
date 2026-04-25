@@ -70,7 +70,8 @@ Current value-model migration note (2026-04-25):
 5. Windows COM bridge/invoke `RuntimeValue` result and callback-argument APIs now classify themselves as compatibility projections beside retained `Variant`/`ComValue` transport.
 6. Dynamic COM value and portable dispatch surfaces now classify `RuntimeValue` entry points as compatibility projections around retained `Variant`/`ComValue` carriers.
 7. VM legacy scalar helper writes now materialize compatibility-tagged `Variant` slots directly instead of routing through a temporary `RuntimeValue`.
-8. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+8. Runtime `Variant`/`RuntimeValue` bridge helpers now classify the retained `Variant` carrier as primary and the `RuntimeValue`/i32 slot-token routes as compatibility projections.
+9. Trait-level HAL default projection companions and legacy `SafeArray`/host/COM compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

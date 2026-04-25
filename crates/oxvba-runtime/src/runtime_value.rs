@@ -245,14 +245,21 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
+    /// Compatibility bridge from the legacy semantic carrier into the retained
+    /// runtime [`Variant`].
+    ///
+    /// New value-model code should construct `Variant` values directly.
     pub fn to_variant(&self) -> Result<Variant, String> {
         Variant::try_from_runtime_value(self)
     }
 
+    /// Compatibility projection from the retained runtime [`Variant`] into the
+    /// legacy semantic carrier.
     pub fn from_variant(value: &Variant) -> Result<Self, String> {
         value.to_runtime_value()
     }
 
+    /// Compatibility bridge from the legacy i32 slot-token lane.
     pub fn from_compat_slot_i32(value: i32) -> Self {
         if value == EMPTY_TAG {
             return Self::Empty;
@@ -269,6 +276,7 @@ impl RuntimeValue {
         Self::I32(value)
     }
 
+    /// Compatibility projection into the legacy i32 slot-token lane.
     pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
         match self {
             Self::Empty => Ok(EMPTY_TAG),
@@ -306,6 +314,8 @@ impl RuntimeValue {
 
 impl From<i32> for RuntimeValue {
     fn from(value: i32) -> Self {
+        // Preserve the historical `i32` conversion as the compatibility
+        // slot-token bridge.
         Self::from_compat_slot_i32(value)
     }
 }
