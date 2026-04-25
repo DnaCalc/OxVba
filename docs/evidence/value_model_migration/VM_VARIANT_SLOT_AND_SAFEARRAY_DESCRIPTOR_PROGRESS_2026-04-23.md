@@ -1322,6 +1322,12 @@ Implementation progress:
      existing compatibility-tag meanings through `Variant::from_compat_slot_i32`
      instead of routing successful destination writes through
      `RuntimeValue::from_compat_slot_i32`.
+108. Shape-only `SafeArray` constructors now use the Variant-native allocation
+     path directly. `SafeArray::vector`, `SafeArray::from_shape`, and
+     `SafeArray::from_shape_typed` no longer enter the legacy
+     `RuntimeValue`-named construction helper for empty payload allocation.
+     The public `RuntimeValue` compatibility constructors and accessors remain
+     open classification work.
 
 Remaining blocker:
 
@@ -1444,6 +1450,9 @@ Remaining blocker:
    VM/JIT financial helper destination writes now also use retained `Variant`
    carriers directly from compatibility-slot results while preserving the
    existing compatibility-tag result meanings.
+   Shape-only `SafeArray` constructors now also allocate through the
+   Variant-native path directly instead of entering the legacy
+   `RuntimeValue`-named helper for empty payloads.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
