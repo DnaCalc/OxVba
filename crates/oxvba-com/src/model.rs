@@ -91,6 +91,8 @@ pub enum ComValue {
 }
 
 impl ComValue {
+    /// Converts a retained runtime [`Variant`] into the shared COM semantic
+    /// carrier.
     pub fn from_variant(value: &Variant) -> Result<Self, String> {
         Ok(match value.vtype() {
             oxvba_runtime::VarType::Empty => Self::Empty,
@@ -170,6 +172,10 @@ impl ComValue {
         })
     }
 
+    /// Compatibility projection from legacy [`RuntimeValue`] callers into the
+    /// shared COM semantic carrier.
+    ///
+    /// New value-model call sites should prefer [`Self::from_variant`].
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::Empty => Self::Empty,
@@ -188,10 +194,14 @@ impl ComValue {
         }
     }
 
+    /// Compatibility projection from legacy slot-token transport into the
+    /// shared COM semantic carrier.
     pub fn from_runtime_token(value: i32) -> Self {
         Self::from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
     }
 
+    /// Converts the shared COM semantic carrier into a retained runtime
+    /// [`Variant`].
     pub fn to_variant(&self) -> Result<Variant, String> {
         Ok(match self {
             Self::Empty => Variant::empty(),
@@ -213,6 +223,10 @@ impl ComValue {
         })
     }
 
+    /// Compatibility projection from the shared COM semantic carrier into
+    /// [`RuntimeValue`] for legacy callers.
+    ///
+    /// New value-model call sites should prefer [`Self::to_variant`].
     pub fn to_runtime_value(&self) -> RuntimeValue {
         match self {
             Self::Empty => RuntimeValue::Empty,
@@ -230,10 +244,12 @@ impl ComValue {
         }
     }
 
+    /// Compatibility projection into legacy slot-token transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
         self.to_runtime_value().project_compat_slot_i32()
     }
 
+    /// Compatibility projection into legacy dispatch-token transport.
     pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {
         match self {
             Self::ArrayIntent(array) => {
@@ -253,6 +269,8 @@ pub struct ComInvokeValue {
 }
 
 impl ComInvokeValue {
+    /// Builds an invoke value from the shared COM carrier, retaining the exact
+    /// runtime [`Variant`] payload.
     pub fn from_com_value(value: ComValue) -> Self {
         Self {
             value: value
@@ -261,18 +279,22 @@ impl ComInvokeValue {
         }
     }
 
+    /// Projects the retained invoke `Variant` back into the shared COM carrier.
     pub fn to_com_value(&self) -> ComValue {
         ComValue::from_variant(&self.value).expect("COM invoke VARIANT must project to ComValue")
     }
 
+    /// Compatibility projection into legacy slot-token transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
         self.to_com_value().to_runtime_token()
     }
 
+    /// Compatibility projection into legacy dispatch-token transport.
     pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {
         self.to_com_value().to_legacy_dispatch_token()
     }
 
+    /// Retained value-model payload for COM invocation.
     pub fn variant(&self) -> &Variant {
         &self.value
     }
@@ -297,6 +319,9 @@ pub struct ComInvokeArg {
 }
 
 impl ComInvokeArg {
+    /// Compatibility positional argument from legacy slot-token transport.
+    ///
+    /// New value-model call sites should prefer [`Self::positional_value`].
     pub fn positional(value: i32) -> Self {
         Self {
             value: Some(ComValue::from_runtime_token(value).into()),
@@ -304,6 +329,9 @@ impl ComInvokeArg {
         }
     }
 
+    /// Compatibility named argument from legacy slot-token transport.
+    ///
+    /// New value-model call sites should prefer [`Self::named_value`].
     pub fn named(value: i32, name: impl Into<String>) -> Self {
         Self {
             value: Some(ComValue::from_runtime_token(value).into()),
@@ -311,6 +339,7 @@ impl ComInvokeArg {
         }
     }
 
+    /// Retained value-model positional argument.
     pub fn positional_value(value: ComValue) -> Self {
         Self {
             value: Some(value.into()),
@@ -318,6 +347,7 @@ impl ComInvokeArg {
         }
     }
 
+    /// Retained value-model named argument.
     pub fn named_value(value: ComValue, name: impl Into<String>) -> Self {
         Self {
             value: Some(value.into()),
@@ -358,6 +388,8 @@ impl ComInvokeRequest {
         }
     }
 
+    /// Compatibility request constructor from legacy object/member/argument
+    /// tokens.
     pub fn legacy(object: i32, member: i32, arg: i32) -> Self {
         let args = if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
             Vec::new()
@@ -378,6 +410,8 @@ pub struct ComCallbackValue {
 }
 
 impl ComCallbackValue {
+    /// Builds a callback value from the shared COM carrier, retaining the exact
+    /// runtime [`Variant`] payload.
     pub fn from_com_value(value: ComValue) -> Self {
         Self {
             value: value
@@ -386,10 +420,13 @@ impl ComCallbackValue {
         }
     }
 
+    /// Projects the retained callback `Variant` back into the shared COM
+    /// carrier.
     pub fn to_com_value(&self) -> ComValue {
         ComValue::from_variant(&self.value).expect("COM callback VARIANT must project to ComValue")
     }
 
+    /// Retained value-model payload for COM callbacks.
     pub fn variant(&self) -> &Variant {
         &self.value
     }
