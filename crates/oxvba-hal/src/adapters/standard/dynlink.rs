@@ -270,6 +270,72 @@ impl DynamicLinkHal for StandardHostServices {
         Ok(RuntimeValue::I32(symbol.raw().saturating_add(arg)))
     }
 
+    fn invoke_bound_variants(
+        &self,
+        binding: BindingHandle,
+        args: &[Variant],
+    ) -> HalResult<(Variant, Vec<Variant>)> {
+        let capability = CapabilityId::DynamicLinking;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "invoke_bound_variants"));
+        }
+        if !self.policy.allow_dynamic_link {
+            return Err(self.denied(capability, "invoke_bound_variants"));
+        }
+        let symbol = {
+            let state = self.dynlink_state.lock().map_err(|_| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_bound_variants",
+                    "dynlink binding table lock poisoned",
+                )
+            })?;
+            state.bindings.get(&binding).copied().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_bound_variants",
+                    format!(
+                        "binding handle {} is not resolved in dynlink registry",
+                        binding
+                    ),
+                )
+            })?
+        };
+        let arg = args
+            .first()
+            .cloned()
+            .unwrap_or_else(|| Variant::from_i32(0));
+        let arg =
+            self.variant_project_compat_slot_i32(&arg, capability, "invoke_bound_variants", "arg")?;
+        if self.native_mode_enabled()
+            && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
+        {
+            return match symbol.raw() {
+                s if s == external_symbol_token("host", "ping", "hostping") => {
+                    Ok((Variant::from_i32(arg.saturating_add(1)), Vec::new()))
+                }
+                s if s == external_symbol_token("host", "double", "hostdouble") => {
+                    Ok((Variant::from_i32(arg.saturating_mul(2)), Vec::new()))
+                }
+                _ => Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_bound_variants",
+                    format!(
+                        "binding handle {} resolved to unsupported symbol token {} in host-backed lane",
+                        binding, symbol
+                    ),
+                )),
+            };
+        }
+        Ok((
+            Variant::from_i32(symbol.raw().saturating_add(arg)),
+            Vec::new(),
+        ))
+    }
+
     fn invoke_descriptor(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
