@@ -624,6 +624,46 @@ mod tests {
     }
 
     #[test]
+    fn runtime_math_helpers_read_variant_carriers() {
+        let mut ctx = JitContextOwned::new(17, 17, super::default_host_services(), &[]);
+        unsafe {
+            ctx.context
+                .write_variant_slot(0, Variant::from_string(BStr::from("-7")));
+            ctx.context.write_variant_slot(1, Variant::from_i32(-9));
+            ctx.context
+                .write_variant_slot(2, Variant::from_string(BStr::from("19")));
+            ctx.context
+                .write_variant_slot(3, Variant::from_string(BStr::from("-1")));
+            ctx.context.write_variant_slot(4, Variant::from_i32(81));
+            ctx.context.write_variant_slot(5, Variant::from_i32(0));
+            ctx.context.write_variant_slot(6, Variant::from_i32(1));
+        }
+
+        assert_eq!(runtime_helpers::oxrt_abs(ctx.context_ptr(), 7, 0), 0);
+        assert_eq!(runtime_helpers::oxrt_sgn(ctx.context_ptr(), 8, 1), 0);
+        assert_eq!(runtime_helpers::oxrt_round(ctx.context_ptr(), 9, 2, 3), 0);
+        assert_eq!(runtime_helpers::oxrt_sqr(ctx.context_ptr(), 10, 4), 0);
+        assert_eq!(runtime_helpers::oxrt_sin(ctx.context_ptr(), 11, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_cos(ctx.context_ptr(), 12, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_log(ctx.context_ptr(), 13, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_exp(ctx.context_ptr(), 14, 5), 0);
+        assert_eq!(runtime_helpers::oxrt_atn(ctx.context_ptr(), 15, 6), 0);
+        assert_eq!(runtime_helpers::oxrt_tan(ctx.context_ptr(), 16, 6), 0);
+
+        let values = ctx.extract_user_values();
+        assert_eq!(values[7], RuntimeValue::I32(7));
+        assert_eq!(values[8], RuntimeValue::I32(-1));
+        assert_eq!(values[9], RuntimeValue::I32(20));
+        assert_eq!(values[10], RuntimeValue::I32(9));
+        assert_eq!(values[11], RuntimeValue::I32(0));
+        assert_eq!(values[12], RuntimeValue::I32(1));
+        assert_eq!(values[13], RuntimeValue::I32(0));
+        assert_eq!(values[14], RuntimeValue::I32(1));
+        assert_eq!(values[15], RuntimeValue::I32(1));
+        assert_eq!(values[16], RuntimeValue::I32(2));
+    }
+
+    #[test]
     fn runtime_like_and_strconv_helpers_read_variant_carriers() {
         let mut ctx = JitContextOwned::new(6, 6, super::default_host_services(), &[]);
         unsafe {

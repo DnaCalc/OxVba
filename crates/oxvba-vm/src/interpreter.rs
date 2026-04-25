@@ -1610,10 +1610,10 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicAbsI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_abs_bounded(&value)?,
+                        crate::semantics::runtime_abs_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
@@ -1637,78 +1637,78 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicSgnI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_sgn_bounded(&value)?,
+                        crate::semantics::runtime_sgn_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRoundI32 { dst, src, digits } => {
-                    let value = self.read_value_slot(*src)?;
+                    let value = self.read_variant_slot(*src)?;
                     let digits = match digits {
-                        Some(slot) => Some(self.read_value_slot(*slot)?),
+                        Some(slot) => Some(self.read_variant_slot(*slot)?),
                         None => None,
                     };
-                    self.write_semantic_value_slot(
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_round_bounded(&value, digits.as_ref())?,
+                        crate::semantics::runtime_round_variant_bounded(&value, digits.as_ref())?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSqrI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_sqr_bounded(&value)?,
+                        crate::semantics::runtime_sqr_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSinI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_sin_bounded(&value)?,
+                        crate::semantics::runtime_sin_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCosI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_cos_bounded(&value)?,
+                        crate::semantics::runtime_cos_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLogI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_log_bounded(&value)?,
+                        crate::semantics::runtime_log_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicExpI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_exp_bounded(&value)?,
+                        crate::semantics::runtime_exp_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicAtnI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_atn_bounded(&value)?,
+                        crate::semantics::runtime_atn_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTanI32 { dst, src } => {
-                    let value = self.read_value_slot(*src)?;
-                    self.write_semantic_value_slot(
+                    let value = self.read_variant_slot(*src)?;
+                    self.write_variant_slot(
                         *dst,
-                        crate::semantics::runtime_tan_bounded(&value)?,
+                        crate::semantics::runtime_tan_variant_bounded(&value)?,
                     )?;
                     pc += 1;
                 }

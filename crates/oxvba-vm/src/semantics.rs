@@ -529,6 +529,23 @@ pub fn runtime_abs_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     }
 }
 
+pub fn runtime_abs_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    match src.vtype() {
+        VarType::Null => Ok(Variant::null()),
+        VarType::Single | VarType::Double | VarType::Date => {
+            Ok(Variant::from_f64(runtime_variant_as_f64(src)?.abs()))
+        }
+        _ => {
+            let value = runtime_variant_to_i32_compat(src, "Abs operand")?;
+            Ok(Variant::from_i32(if value == i32::MIN {
+                i32::MAX
+            } else {
+                value.abs()
+            }))
+        }
+    }
+}
+
 pub fn runtime_sgn_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     match src {
         RuntimeValue::Null => Ok(RuntimeValue::Null),
@@ -544,6 +561,25 @@ pub fn runtime_sgn_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
         }
         other => Ok(RuntimeValue::I32(
             runtime_value_to_i32_compat(other, "Sgn operand")?.signum(),
+        )),
+    }
+}
+
+pub fn runtime_sgn_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    match src.vtype() {
+        VarType::Null => Ok(Variant::null()),
+        VarType::Single | VarType::Double | VarType::Date => {
+            let value = runtime_variant_as_f64(src)?;
+            Ok(Variant::from_i32(if value > 0.0 {
+                1
+            } else if value < 0.0 {
+                -1
+            } else {
+                0
+            }))
+        }
+        _ => Ok(Variant::from_i32(
+            runtime_variant_to_i32_compat(src, "Sgn operand")?.signum(),
         )),
     }
 }
@@ -573,10 +609,29 @@ pub fn runtime_round_bounded(
     Ok(RuntimeValue::I32(runtime_round_i32_bounded(value, digits)))
 }
 
+pub fn runtime_round_variant_bounded(
+    src: &Variant,
+    digits: Option<&Variant>,
+) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Round operand")?;
+    let digits = match digits {
+        Some(value) => runtime_variant_to_i32_compat(value, "Round digits")?,
+        None => 0,
+    };
+    Ok(Variant::from_i32(runtime_round_i32_bounded(value, digits)))
+}
+
 pub fn runtime_sqr_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Sqr operand")?;
     Ok(RuntimeValue::I32(
         (value.saturating_abs() as f64).sqrt() as i32
+    ))
+}
+
+pub fn runtime_sqr_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Sqr operand")?;
+    Ok(Variant::from_i32(
+        (value.saturating_abs() as f64).sqrt() as i32,
     ))
 }
 
@@ -585,9 +640,19 @@ pub fn runtime_sin_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     Ok(RuntimeValue::I32((value as f64).sin().round() as i32))
 }
 
+pub fn runtime_sin_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Sin operand")?;
+    Ok(Variant::from_i32((value as f64).sin().round() as i32))
+}
+
 pub fn runtime_cos_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Cos operand")?;
     Ok(RuntimeValue::I32((value as f64).cos().round() as i32))
+}
+
+pub fn runtime_cos_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Cos operand")?;
+    Ok(Variant::from_i32((value as f64).cos().round() as i32))
 }
 
 pub fn runtime_log_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -599,9 +664,23 @@ pub fn runtime_log_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     }))
 }
 
+pub fn runtime_log_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Log operand")?;
+    Ok(Variant::from_i32(if value > 0 {
+        (value as f64).ln().round() as i32
+    } else {
+        0
+    }))
+}
+
 pub fn runtime_exp_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Exp operand")?;
     Ok(RuntimeValue::I32((value as f64).exp().round() as i32))
+}
+
+pub fn runtime_exp_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Exp operand")?;
+    Ok(Variant::from_i32((value as f64).exp().round() as i32))
 }
 
 pub fn runtime_atn_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -609,9 +688,19 @@ pub fn runtime_atn_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     Ok(RuntimeValue::I32((value as f64).atan().round() as i32))
 }
 
+pub fn runtime_atn_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Atn operand")?;
+    Ok(Variant::from_i32((value as f64).atan().round() as i32))
+}
+
 pub fn runtime_tan_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
     let value = runtime_value_to_i32_compat(src, "Tan operand")?;
     Ok(RuntimeValue::I32((value as f64).tan().round() as i32))
+}
+
+pub fn runtime_tan_variant_bounded(src: &Variant) -> Result<Variant, String> {
+    let value = runtime_variant_to_i32_compat(src, "Tan operand")?;
+    Ok(Variant::from_i32((value as f64).tan().round() as i32))
 }
 
 pub fn runtime_month_name_bounded(src: &RuntimeValue) -> Result<RuntimeValue, String> {
@@ -2243,6 +2332,48 @@ mod tests {
             )
             .expect("DateAdd should coerce numeric text"),
             RuntimeValue::F64(F64Value::from_date_f64(46084.0))
+        );
+    }
+
+    #[test]
+    fn math_variant_helpers_return_retained_carriers() {
+        assert_eq!(
+            super::runtime_abs_variant_bounded(&Variant::from_string(BStr::from("-7")))
+                .expect("Abs should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(7)
+        );
+        assert_eq!(
+            super::runtime_sgn_variant_bounded(&Variant::from_i32(-9))
+                .expect("Sgn should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(-1)
+        );
+        assert_eq!(
+            super::runtime_round_variant_bounded(
+                &Variant::from_string(BStr::from("19")),
+                Some(&Variant::from_string(BStr::from("-1"))),
+            )
+            .expect("Round should succeed")
+            .to_runtime_value()
+            .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(20)
+        );
+        assert_eq!(
+            super::runtime_sqr_variant_bounded(&Variant::from_i32(81))
+                .expect("Sqr should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(9)
+        );
+        assert_eq!(
+            super::runtime_cos_variant_bounded(&Variant::from_i32(0))
+                .expect("Cos should succeed")
+                .to_runtime_value()
+                .expect("integer Variant should project for assertions"),
+            RuntimeValue::I32(1)
         );
     }
 

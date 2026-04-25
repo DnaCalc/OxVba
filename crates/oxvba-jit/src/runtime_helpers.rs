@@ -366,22 +366,24 @@ pub extern "C" fn oxrt_bool_or(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u3
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_abs(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let result = match semantics::runtime_abs_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let result = match semantics::runtime_abs_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, result)
+    write_variant_slot!(ctx, dst, result);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sgn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let result = match semantics::runtime_sgn_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let result = match semantics::runtime_sgn_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, result)
+    write_variant_slot!(ctx, dst, result);
+    OK
 }
 
 /// Int/Fix for i32 values (pass-through).
@@ -1110,87 +1112,95 @@ pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_round(ctx: *mut JitContext, dst: u32, src: u32, digits_slot: u32) -> i32 {
-    let val = read_slot!(ctx, src);
+    let val = read_variant_slot!(ctx, src);
     let digits = if digits_slot == u32::MAX {
         None
     } else {
-        Some(read_slot!(ctx, digits_slot))
+        Some(read_variant_slot!(ctx, digits_slot))
     };
-    let out = match semantics::runtime_round_bounded(&val, digits.as_ref()) {
+    let out = match semantics::runtime_round_variant_bounded(&val, digits.as_ref()) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sqr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_sqr_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_sqr_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_sin(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_sin_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_sin_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_cos(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_cos_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_cos_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_log(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_log_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_log_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_exp(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_exp_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_exp_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_atn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_atn_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_atn_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_tan(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
-    let val = read_slot!(ctx, src);
-    let out = match semantics::runtime_tan_bounded(&val) {
+    let val = read_variant_slot!(ctx, src);
+    let out = match semantics::runtime_tan_variant_bounded(&val) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_semantic_value_slot(ctx, dst, out)
+    write_variant_slot!(ctx, dst, out);
+    OK
 }
 
 // ── Type checking ops ────────────────────────────────────────────────
