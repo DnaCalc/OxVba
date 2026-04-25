@@ -1578,6 +1578,11 @@ Implementation progress:
      helpers left for legacy callers. The obsolete native Windows
      `RuntimeValue` MessageBox helper was removed after the retained text path
      became the single native UI path.
+155. Standard time/locale and event-pump legacy `RuntimeValue` methods now
+     delegate through retained `Variant` companions before compatibility
+     projection. The obsolete deterministic `RuntimeValue` time helpers were
+     removed after the retained Date/Single `Variant` helpers became the single
+     implementation path.
 
 Remaining blocker:
 
@@ -1782,6 +1787,8 @@ Remaining blocker:
    Standard UI `MsgBox`/`InputBox` legacy `RuntimeValue` methods now also
    delegate through retained `Variant` companions rather than carrying separate
    UI virtualization branches.
+   Standard time/locale and event-pump legacy `RuntimeValue` methods now also
+   delegate through retained `Variant` companions.
    Host debugger `RuntimeValue` frame/evaluation APIs now also document their
    compatibility projection role from retained `Variant` frame reads.
    Debugger frame value projection now starts from Variant slot reads before
