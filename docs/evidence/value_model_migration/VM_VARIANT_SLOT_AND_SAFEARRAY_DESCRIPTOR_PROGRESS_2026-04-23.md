@@ -1333,6 +1333,11 @@ Implementation progress:
      retained `Variant` snapshot APIs documented as the preferred value-model
      surface. This does not remove the legacy aliases; it makes their boundary
      role explicit before any later API narrowing.
+110. HAL trait surfaces now classify `RuntimeValue` methods as compatibility
+     projection contracts and `_variant` companion methods as retained
+     value-model entry points for VM/JIT callers. Default companion methods
+     that still project through the compatibility contract remain open
+     migration/classification work and do not close `vmm-e6`.
 
 Remaining blocker:
 
@@ -1461,6 +1466,10 @@ Remaining blocker:
    VM/JIT public snapshot APIs now also document retained `Variant` snapshot
    APIs as the value-model surface and `RuntimeValue` snapshots as
    compatibility projections.
+   HAL trait surfaces now also document `RuntimeValue` methods as
+   compatibility projection contracts and `_variant` companions as retained
+   value-model entry points; default projection companions remain open
+   migration/classification work.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
