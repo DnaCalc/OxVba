@@ -944,7 +944,7 @@ pub extern "C" fn oxrt_format(ctx: *mut JitContext, dst: u32, value: u32, format
         }
     };
     let result = semantics::format_number(n, fmt_str.as_deref());
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -956,7 +956,7 @@ pub extern "C" fn oxrt_strreverse(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Err(_) => return ERR_RUNTIME,
     };
     let result: String = s.chars().rev().collect();
-    write_slot!(ctx, dst, RuntimeValue::String(BStr::from(result)));
+    write_variant_slot!(ctx, dst, Variant::from_string(BStr::from(result)));
     OK
 }
 
@@ -1067,7 +1067,7 @@ pub extern "C" fn oxrt_date_diff(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(out));
+    write_variant_slot!(ctx, dst, Variant::from_i32(out));
     OK
 }
 
@@ -1078,7 +1078,7 @@ pub extern "C" fn oxrt_year(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_variant_slot!(ctx, dst, Variant::from_i32(v));
     OK
 }
 
@@ -1089,7 +1089,7 @@ pub extern "C" fn oxrt_month(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_variant_slot!(ctx, dst, Variant::from_i32(v));
     OK
 }
 
@@ -1100,7 +1100,7 @@ pub extern "C" fn oxrt_day(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(v));
+    write_variant_slot!(ctx, dst, Variant::from_i32(v));
     OK
 }
 
@@ -1111,7 +1111,7 @@ pub extern "C" fn oxrt_weekday(ctx: *mut JitContext, dst: u32, src: u32) -> i32 
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(weekday));
+    write_variant_slot!(ctx, dst, Variant::from_i32(weekday));
     OK
 }
 

@@ -1198,25 +1198,25 @@ impl Vm {
                     let date2 = self.read_value_slot(*date2)?;
                     let out =
                         crate::semantics::runtime_date_diff_bounded(&interval, &date1, &date2)?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicYearDigits { dst, src } => {
                     let v = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_date_year(&v)?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthDigits { dst, src } => {
                     let v = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_date_month(&v)?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDayDigits { dst, src } => {
                     let v = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_date_day(&v)?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
@@ -1723,7 +1723,7 @@ impl Vm {
                 Instruction::IntrinsicWeekdayDigits { dst, src } => {
                     let value = self.read_value_slot(*src)?;
                     let out = crate::semantics::runtime_date_weekday(&value)?;
-                    self.write_value_slot(*dst, RuntimeValue::I32(out))?;
+                    self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMonthNameDigits { dst, src } => {
@@ -3229,14 +3229,14 @@ impl Vm {
                         None
                     };
                     let result = Self::format_number(n, fmt_str.as_deref());
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStrReverseDigits { dst, src } => {
                     let src_val = self.read_value_slot(*src)?;
                     let s = crate::semantics::runtime_value_to_text(&src_val, "StrReverse source")?;
                     let result: String = s.chars().rev().collect();
-                    self.write_value_slot(*dst, RuntimeValue::String(BStr::from(result)))?;
+                    self.write_variant_slot(*dst, Variant::from_string(BStr::from(result)))?;
                     pc += 1;
                 }
                 Instruction::IncSlot { slot } => {

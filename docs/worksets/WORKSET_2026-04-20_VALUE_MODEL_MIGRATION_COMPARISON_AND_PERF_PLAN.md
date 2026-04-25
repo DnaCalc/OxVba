@@ -2286,6 +2286,11 @@ Child beads:
        `InStrRev`, `LCase`, `UCase`, `Replace`, `Trim`, `LTrim`, `RTrim`,
        and `StrComp`; helper-returning paths such as `Split`/`Join`/`Like`
        remain separate migration work
+     - progress landed: VM/JIT locally computed date/format result writes now
+       use retained `Variant` destination carriers for `DateDiff`, `Year`,
+       `Month`, `Day`, `Weekday`, `Format`, and `StrReverse`; date/time
+       helper-returning paths such as `DateSerial`, `DateAdd`, `DateValue`,
+       `CDate`, `TimeValue`, and `MonthName` remain separate companion work
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
        surfaces that still use semantic values by contract, remaining host
