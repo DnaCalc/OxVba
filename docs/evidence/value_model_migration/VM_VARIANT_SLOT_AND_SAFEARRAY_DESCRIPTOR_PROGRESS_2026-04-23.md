@@ -1392,6 +1392,10 @@ Implementation progress:
      APIs. This covers `execute_bytecode`, `execute_bytecode_rtslot`,
      `JitContextOwned::extract_user_values`, `JitContext::read_slot`, and
      `JitContext::write_slot`.
+119. VM `RuntimeSlot` and JIT `RtSlot` conversion helpers now classify
+     `RuntimeValue` and i32 slot-token entry/exit points as compatibility
+     projections around retained `Variant` slot carriers. `BindingHandle`
+     remains an internal side-lane because it is not a VBA/COM value.
 
 Remaining blocker:
 
@@ -1549,6 +1553,9 @@ Remaining blocker:
    JIT/Cranelift `RuntimeValue` execution and slot helper APIs now also
    document their compatibility projection role over retained `Variant`
    execution APIs.
+   VM `RuntimeSlot` and JIT `RtSlot` `RuntimeValue`/i32 conversion helpers now
+   also document their compatibility ingress/egress role around retained
+   `Variant` slot carriers.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
