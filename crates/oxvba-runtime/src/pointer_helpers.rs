@@ -455,6 +455,7 @@ impl PointerRegistry {
         }
     }
 
+    /// Project a retained string payload readback to the legacy semantic API.
     fn read_back_string_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
         self.read_back_string_payload_variant(pointer)?
             .to_runtime_value()
@@ -486,6 +487,7 @@ impl PointerRegistry {
         }
     }
 
+    /// Project a retained byte-array payload readback to the legacy semantic API.
     fn read_back_byte_array_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
         self.read_back_byte_array_payload_variant(pointer)?
             .to_runtime_value()
@@ -513,6 +515,10 @@ pub fn register_utf16_string(text: &str) -> Result<i64, String> {
     Ok(guard.insert(entry))
 }
 
+/// Register a pointer for callers that still provide the legacy semantic value.
+///
+/// The retained path is `register_variant_pointer`; this wrapper projects the
+/// input into a `Variant` before materializing helper storage.
 pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
     let variant = Variant::try_from_runtime_value(value)?;
     register_variant_pointer(&variant)
@@ -644,6 +650,9 @@ fn byte_array_variant_pointer_entry(
     Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
 }
 
+/// Build byte-array helper storage from legacy `RuntimeValue` array elements.
+///
+/// New value-model callers should use `byte_array_variant_pointer_entry`.
 fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<PointerEntry, String> {
     let Some(elements) = array.elements() else {
         return Err(
@@ -673,6 +682,10 @@ fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<Poin
     Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
 }
 
+/// Historical pointer materialization that operates directly on `RuntimeValue`.
+///
+/// This remains only for legacy compatibility APIs whose behavior included
+/// semantic-value-specific projections such as `BindingHandle` object identity.
 fn legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
     let entry = match value {
         RuntimeValue::Empty | RuntimeValue::Null => return Ok(0),
@@ -712,6 +725,9 @@ fn legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
     Ok(guard.insert(entry))
 }
 
+/// Register a string variable pointer from the legacy semantic value API.
+///
+/// Prefer `register_string_variant_pointer` for retained `Variant` callers.
 pub fn register_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     let variant = Variant::try_from_runtime_value(value)?;
     register_string_variant_pointer(&variant)
@@ -743,6 +759,9 @@ pub fn register_string_variant_pointer(value: &Variant) -> Result<i64, String> {
     }
 }
 
+/// Register a Variant variable pointer from the legacy semantic value API.
+///
+/// Prefer `register_variant_var_variant_pointer` for retained `Variant` callers.
 pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     let variant = Variant::try_from_runtime_value(value)?;
     register_variant_var_variant_pointer(&variant)
@@ -764,6 +783,11 @@ pub fn register_variant_var_variant_pointer(value: &Variant) -> Result<i64, Stri
     }
 }
 
+/// Register an object pointer from the legacy semantic value API.
+///
+/// Prefer `register_object_variant_pointer` for retained `Variant` callers.
+/// `BindingHandle` remains a compatibility-only side lane because it is not a
+/// VBA/COM value.
 pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
     match Variant::try_from_runtime_value(value) {
         Ok(variant) => register_object_variant_pointer(&variant),
@@ -794,6 +818,9 @@ pub fn register_object_variant_pointer(value: &Variant) -> Result<i64, String> {
     }
 }
 
+/// Register a pointer using the historical direct `RuntimeValue` projection.
+///
+/// This is intentionally separate from the retained `Variant` path.
 pub fn register_legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
     legacy_runtime_value_pointer(value)
 }
@@ -806,6 +833,9 @@ pub fn register_array_payload_pointer(array: &crate::safe_array::SafeArray) -> R
     Ok(guard.insert(entry))
 }
 
+/// Register a legacy string variable pointer from the semantic value API.
+///
+/// This preserves the old direct-projection behavior for compatibility callers.
 pub fn register_legacy_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     #[cfg(target_os = "windows")]
     {
@@ -827,6 +857,9 @@ pub fn register_legacy_string_var_pointer(value: &RuntimeValue) -> Result<i64, S
     }
 }
 
+/// Register a legacy Variant variable pointer from the semantic value API.
+///
+/// This preserves the old direct-projection behavior for compatibility callers.
 pub fn register_legacy_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
     #[cfg(target_os = "windows")]
     {
@@ -844,6 +877,9 @@ pub fn register_legacy_variant_var_pointer(value: &RuntimeValue) -> Result<i64, 
     }
 }
 
+/// Register a legacy object pointer from the semantic value API.
+///
+/// This preserves the old direct-projection behavior for compatibility callers.
 pub fn register_legacy_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
     match value {
         RuntimeValue::Empty | RuntimeValue::Null => Ok(0),
@@ -871,6 +907,9 @@ pub fn lookup_pointer(pointer: i64) -> Option<*mut c_void> {
     Some(entry.as_ptr())
 }
 
+/// Read back a string payload through the legacy semantic value API.
+///
+/// Prefer `read_back_string_payload_variant` for retained `Variant` callers.
 pub fn read_back_string_payload(pointer: i64) -> Result<RuntimeValue, String> {
     let guard = registry()
         .lock()
@@ -885,6 +924,9 @@ pub fn read_back_string_payload_variant(pointer: i64) -> Result<Variant, String>
     guard.read_back_string_payload_variant(pointer)
 }
 
+/// Read back a byte-array payload through the legacy semantic value API.
+///
+/// Prefer `read_back_byte_array_payload_variant` for retained `Variant` callers.
 pub fn read_back_byte_array_payload(pointer: i64) -> Result<RuntimeValue, String> {
     let guard = registry()
         .lock()
