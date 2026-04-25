@@ -217,57 +217,9 @@ impl DynamicLinkHal for StandardHostServices {
         // Legacy single-argument dynamic-link path. Retained callers should use
         // `invoke_bound_variants`/`invoke_descriptor_variants`.
         let capability = CapabilityId::DynamicLinking;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "invoke_symbol"));
-        }
-        if !self.policy.allow_dynamic_link {
-            return Err(self.denied(capability, "invoke_symbol"));
-        }
-        let symbol = {
-            let state = self.dynlink_state.lock().map_err(|_| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "invoke_symbol",
-                    "dynlink binding table lock poisoned",
-                )
-            })?;
-            state.bindings.get(&binding).copied().ok_or_else(|| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "invoke_symbol",
-                    format!(
-                        "binding handle {} is not resolved in dynlink registry",
-                        binding
-                    ),
-                )
-            })?
-        };
-        let arg =
-            self.runtime_value_project_compat_slot_i32(&arg, capability, "invoke_symbol", "arg")?;
-        if self.native_mode_enabled()
-            && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
-        {
-            return match symbol.raw() {
-                s if s == external_symbol_token("host", "ping", "hostping") => {
-                    Ok(RuntimeValue::I32(arg.saturating_add(1)))
-                }
-                s if s == external_symbol_token("host", "double", "hostdouble") => {
-                    Ok(RuntimeValue::I32(arg.saturating_mul(2)))
-                }
-                _ => Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "invoke_symbol",
-                    format!(
-                        "binding handle {} resolved to unsupported symbol token {} in host-backed lane",
-                        binding, symbol
-                    ),
-                )),
-            };
-        }
-        Ok(RuntimeValue::I32(symbol.raw().saturating_add(arg)))
+        let arg = runtime_value_to_dynlink_variant(self.profile, capability, "invoke_bound", arg)?;
+        let (ret, _) = self.invoke_bound_variants(binding, &[arg])?;
+        variant_to_dynlink_runtime_value(self.profile, capability, "invoke_bound", ret)
     }
 
     fn invoke_bound_variants(
@@ -347,9 +299,19 @@ impl DynamicLinkHal for StandardHostServices {
                 .invoke_descriptor_multi(descriptor, &[arg])
                 .map(|(rv, _)| rv);
         }
-        let binding = self.bind_descriptor(descriptor)?;
-        let prepared = self.prepare_invoke(binding, arg)?;
-        self.invoke_bound(binding, prepared)
+        let arg = runtime_value_to_dynlink_variant(
+            self.profile,
+            CapabilityId::DynamicLinking,
+            "invoke_descriptor",
+            arg,
+        )?;
+        let (ret, _) = self.invoke_descriptor_variants(descriptor, &[arg])?;
+        variant_to_dynlink_runtime_value(
+            self.profile,
+            CapabilityId::DynamicLinking,
+            "invoke_descriptor",
+            ret,
+        )
     }
 
     fn invoke_descriptor_multi(
@@ -417,28 +379,19 @@ impl DynamicLinkHal for StandardHostServices {
     }
 
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        let arg = self.runtime_value_project_compat_slot_i32(
-            &arg,
+        let arg = runtime_value_to_dynlink_variant(
+            self.profile,
             CapabilityId::DynamicLinking,
             "invoke_symbol",
-            "arg",
+            arg,
         )?;
-        let descriptor = DynLinkDescriptorView {
-            descriptor_id: symbol.raw() as u32,
-            declared_name: "<legacy>",
-            library: "<legacy>",
-            alias: "<legacy>",
-            ordinal_alias: false,
-            symbol,
-            marshal_lane: "m0-deterministic",
-            calling_convention: "platform-default",
-            selection_policy: "legacy-symbol",
-            param_count: 0,
-            param_types: &[],
-            param_by_ref: &[],
-            return_type: None,
-        };
-        self.invoke_descriptor(&descriptor, RuntimeValue::I32(arg))
+        let ret = self.invoke_symbol_variant(symbol, &arg)?;
+        variant_to_dynlink_runtime_value(
+            self.profile,
+            CapabilityId::DynamicLinking,
+            "invoke_symbol",
+            ret,
+        )
     }
 
     fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
@@ -475,6 +428,41 @@ impl DynamicLinkHal for StandardHostServices {
         }
         Ok(Variant::from_i32(symbol.raw().saturating_add(arg)))
     }
+}
+
+fn runtime_value_to_dynlink_variant(
+    profile: HalProfileId,
+    capability: CapabilityId,
+    operation: &'static str,
+    value: RuntimeValue,
+) -> HalResult<Variant> {
+    match value {
+        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
+        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
+            HalError::adapter_fault(
+                profile,
+                capability,
+                operation,
+                format!("failed to project RuntimeValue argument into Variant: {detail}"),
+            )
+        }),
+    }
+}
+
+fn variant_to_dynlink_runtime_value(
+    profile: HalProfileId,
+    capability: CapabilityId,
+    operation: &'static str,
+    value: Variant,
+) -> HalResult<RuntimeValue> {
+    value.to_runtime_value().map_err(|detail| {
+        HalError::adapter_fault(
+            profile,
+            capability,
+            operation,
+            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
+        )
+    })
 }
 
 fn variants_to_runtime_values(
