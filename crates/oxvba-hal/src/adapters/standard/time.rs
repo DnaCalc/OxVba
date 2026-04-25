@@ -8,14 +8,17 @@ const DETERMINISTIC_DATE_SERIAL: f64 = 46_082.0;
 const DETERMINISTIC_SECONDS: f64 = 45_296.0;
 
 fn deterministic_date_value() -> RuntimeValue {
+    // Legacy deterministic helper retained for `RuntimeValue` time APIs.
     RuntimeValue::F64(F64Value::from_date_f64(DETERMINISTIC_DATE_SERIAL))
 }
 
 fn deterministic_time_value() -> RuntimeValue {
+    // Legacy deterministic helper retained for `RuntimeValue` time APIs.
     RuntimeValue::F64(F64Value::from_date_f64(DETERMINISTIC_SECONDS / 86_400.0))
 }
 
 fn deterministic_timer_value() -> RuntimeValue {
+    // Legacy deterministic helper retained for `RuntimeValue` time APIs.
     RuntimeValue::F64(F64Value::from_single_f64(DETERMINISTIC_SECONDS))
 }
 
@@ -38,6 +41,8 @@ fn system_time_components() -> std::time::Duration {
 }
 
 impl TimeLocaleHal for StandardHostServices {
+    // Legacy time path. Retained VM/JIT callers should use
+    // `date_serial_now_variant`, which returns a Variant Date carrier directly.
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
@@ -51,6 +56,8 @@ impl TimeLocaleHal for StandardHostServices {
         Ok(deterministic_date_value())
     }
 
+    // Legacy time path. Retained VM/JIT callers should use
+    // `time_serial_now_variant`, which returns a Variant Date carrier directly.
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
@@ -67,6 +74,8 @@ impl TimeLocaleHal for StandardHostServices {
         Ok(deterministic_time_value())
     }
 
+    // Legacy time path. Retained VM/JIT callers should use
+    // `timer_ticks_variant`, which returns a Variant Single carrier directly.
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {

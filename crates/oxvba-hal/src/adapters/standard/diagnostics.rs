@@ -4,6 +4,8 @@ use oxvba_runtime::{RuntimeValue, Variant};
 use super::StandardHostServices;
 
 impl DiagnosticsHal for StandardHostServices {
+    // Legacy diagnostics telemetry path. Retained VM/JIT callers should use
+    // `emit_variant`, which avoids `RuntimeValue` projection.
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DiagnosticsTelemetry;
         if !self.supports(capability) {
@@ -21,6 +23,8 @@ impl DiagnosticsHal for StandardHostServices {
         Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 
+    // Legacy debug-print path. Retained VM/JIT callers should use
+    // `debug_print_variant`, which avoids `RuntimeValue` projection.
     fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DiagnosticsTelemetry;
         if !self.supports(capability) {

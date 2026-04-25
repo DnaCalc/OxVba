@@ -7,6 +7,8 @@ use std::thread;
 use super::StandardHostServices;
 
 impl EventPumpHal for StandardHostServices {
+    // Legacy event-pump path. Retained VM/JIT callers should use
+    // `do_events_variant`, which returns a Variant status carrier directly.
     fn do_events(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::EventPump;
         if !self.supports(capability) {

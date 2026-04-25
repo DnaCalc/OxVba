@@ -8,6 +8,8 @@ use oxvba_runtime::{RuntimeValue, Variant};
 use super::StandardHostServices;
 
 impl UiInteractionHal for StandardHostServices {
+    // Legacy UI path. Retained VM/JIT callers should use `msg_box_variant`,
+    // which preserves the prompt/style as Variant carriers.
     fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::UiInteraction;
         let style =
@@ -108,6 +110,9 @@ impl UiInteractionHal for StandardHostServices {
         prompt: RuntimeValue,
         default_value: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
+        // Legacy UI path. Retained VM/JIT callers should use
+        // `input_box_variant`, which preserves prompt/default values as
+        // Variant carriers.
         let capability = CapabilityId::UiInteraction;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_box"));
