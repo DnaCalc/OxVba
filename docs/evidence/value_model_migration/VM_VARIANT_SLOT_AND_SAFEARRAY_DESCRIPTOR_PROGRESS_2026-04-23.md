@@ -1410,6 +1410,12 @@ Implementation progress:
      `RuntimeValue` helper contracts as compatibility layers over retained
      `Variant` slot storage. This documents the remaining helper families as
      migration work without confusing them with retained VM/JIT storage.
+123. HAL dynamic-link legacy `RuntimeValue` trait methods/default adapters and
+     standard adapter hooks now classify themselves as compatibility layers
+     beside retained `Variant` invoke paths. This covers binding-token
+     projection, legacy prepare/invoke paths, and Variant-to-runtime default
+     adapters used only when an implementation has not overridden the retained
+     Variant methods.
 
 Remaining blocker:
 
@@ -1577,6 +1583,9 @@ Remaining blocker:
    compatibility wrapper role beside retained `Variant` process APIs.
    VM shared semantic helpers and JIT runtime helper bridges now also document
    their compatibility layer role over retained `Variant` slot storage.
+   HAL dynamic-link legacy `RuntimeValue` methods/default adapters now also
+   document their compatibility layer role beside retained `Variant` invoke
+   paths.
    Debugger frame value projection now starts from Variant slot reads before
    compatibility projection.
 3. `SafeArray` still stores local ownership metadata adjacent to the
