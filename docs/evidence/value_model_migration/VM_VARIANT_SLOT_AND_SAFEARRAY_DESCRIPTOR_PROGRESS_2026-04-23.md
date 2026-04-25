@@ -1475,6 +1475,12 @@ Implementation progress:
      `Variant` results directly. `Val`, `CStr`, `Str$`, math, and
      array/string aggregate helpers remain outside this slice where they still
      use broader legacy semantic contracts.
+136. VM/JIT math intrinsics `Abs`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`,
+     `Log`, `Exp`, `Atn`, and `Tan` now read retained `Variant` slots directly
+     through Variant-native numeric coercion helpers and write retained
+     `Variant` results directly. `Val`, `CStr`, `Str$`, and array/string
+     aggregate helpers remain outside this slice where they still use broader
+     legacy semantic contracts.
 
 Remaining blocker:
 
@@ -1685,6 +1691,10 @@ Remaining blocker:
    `TimeValue`, `DateAdd`, `DateDiff`, `Year`, `Month`, `Day`, `Weekday`, and
    the JIT `CDate` helper now read retained `Variant` slots directly through
    Variant-native date/time coercion helpers and write retained `Variant`
+   results directly.
+   VM/JIT math intrinsics `Abs`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`,
+   `Exp`, `Atn`, and `Tan` now read retained `Variant` slots directly through
+   Variant-native numeric coercion helpers and write retained `Variant`
    results directly.
 3. `SafeArray` still stores local ownership metadata adjacent to the
    descriptor; the descriptor and payload are native-shaped, but exact
