@@ -18,7 +18,7 @@ policy, and the claim boundary.
 | ID | Area | Workload | Engines | VBA Comparison | Boundary |
 | --- | --- | --- | --- | --- | --- |
 | V02-PERF-001 | Conformance | Full conformance suite | VM, JIT | No | Descriptive whole-suite timing only. |
-| V02-PERF-002 | Conformance | Err, string, financial, coercion focused subset | VM, JIT | No | Portable runtime subset timing. |
+| V02-PERF-002 | Conformance | Stable string runtime subset | VM, JIT | No | Portable string runtime subset timing; known divergent `string_slice_ops_dollar.bas` is excluded. |
 | V02-PERF-003 | Project hosting | Project hosting examples | VM, JIT | No | Startup/hosting scaffold timing only. |
 | V02-PERF-004 | COM early binding | Compile and runtime early-bind fixture | Compiler, VM, JIT | No | Controlled Windows COM fixture timing. |
 | V02-PERF-005 | VBA compare | Scalar loop arithmetic | VM, JIT, optional Excel/VBA | Optional | Comparative oracle observation when VBA capture is available. |

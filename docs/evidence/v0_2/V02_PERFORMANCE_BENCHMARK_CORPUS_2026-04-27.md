@@ -22,8 +22,8 @@ runner beads must implement.
 
 ## Coverage
 
-- Portable OxVba backend rows cover full conformance timing, focused
-  Err/string/financial/coercion timing, and project-hosting example timing.
+- Portable OxVba backend rows cover full conformance timing, a focused stable
+  string-runtime subset, and project-hosting example timing.
 - Existing COM early-binding perf substrate is included as a controlled
   Windows fixture lane.
 - VBA comparison is bounded to three simple workload families: scalar loop
@@ -35,6 +35,10 @@ This bead does not add the executable runner or publish performance thresholds.
 It deliberately leaves parent `bd-bqm8.11` in-progress. The next ready delivery
 bead is `bd-bqm8.11.3`, which must make the OxVba backend runner consume or
 match this corpus and emit stable artifacts.
+
+During runner implementation, `V02-PERF-002` was narrowed from a broad
+Err/string/financial pattern to explicit stable string workloads because
+existing conformance divergences made the broader row non-repeatable.
 
 ## Validation
 
