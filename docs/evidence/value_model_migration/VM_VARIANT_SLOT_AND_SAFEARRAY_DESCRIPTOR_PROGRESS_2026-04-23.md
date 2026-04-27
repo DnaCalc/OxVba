@@ -857,6 +857,14 @@ Validation:
      - result: `28` passed
 207. `./scripts/check-governance.ps1`
      - result: passed
+208. `cargo fmt -p oxvba-com --check`
+     - result: passed
+209. `cargo check -p oxvba-com`
+     - result: passed
+210. `cargo test -p oxvba-com windows_variant --lib`
+     - result: `28` passed
+211. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1752,9 +1760,12 @@ Implementation progress:
      through `ComValue -> RuntimeValue` projections.
 181. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now
      returns retained `Variant` array carriers internally; the legacy
-     `RuntimeValue::ArrayIntent` projection is isolated to
-     `safe_array_to_runtime_value()` and related public runtime-result
-     compatibility APIs.
+     `RuntimeValue::ArrayIntent` projection is isolated to public
+     runtime-result compatibility APIs.
+182. Windows COM legacy `variant_to_runtime_value()` now delegates to the
+     retained `variant_to_variant_value()` path and performs a single final
+     compatibility projection, removing duplicate runtime-specific
+     SAFEARRAY/dispatch/unknown helper logic from the public result bridge.
 
 Remaining blocker:
 
@@ -2107,11 +2118,14 @@ Remaining blocker:
     old array-tag tokens on the compatibility branch.
 24. Immediate-session and debugger retained display text now formats directly
     from `Variant` carriers instead of projecting through `RuntimeValue`.
-25. Windows COM scalar runtime-result compatibility projection now decodes
-    scalar payloads as retained `Variant` carriers before the final
-    `RuntimeValue` projection.
+25. Windows COM scalar/runtime-result compatibility projection now decodes
+    payloads as retained `Variant` carriers through `variant_to_variant_value`
+    before the final `RuntimeValue` projection.
 26. HAL marshaling conformance now validates scalar/subtype carrier fidelity
     with retained `Variant` roundtrips rather than `RuntimeValue` projections.
 27. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds
     retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent`
     projection isolated to the explicit legacy runtime-result API boundary.
+28. Windows COM legacy `variant_to_runtime_value()` now shares the retained
+    `Variant` result bridge for scalars, arrays, dispatch, and unknowns, so
+    runtime projection occurs once at the explicit compatibility API boundary.

@@ -2406,6 +2406,10 @@ Child beads:
        materialization now builds retained `Variant` array carriers first,
        with `RuntimeValue::ArrayIntent` projection isolated to the explicit
        legacy runtime-result API boundary
+     - progress landed: Windows COM legacy `variant_to_runtime_value()` now
+       shares the retained `Variant` result bridge for scalars, arrays,
+       dispatch, and unknowns, so runtime projection occurs once at the
+       explicit compatibility API boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
