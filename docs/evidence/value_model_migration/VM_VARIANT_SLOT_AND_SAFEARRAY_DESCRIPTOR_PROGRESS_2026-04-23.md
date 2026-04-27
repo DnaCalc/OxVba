@@ -1623,6 +1623,12 @@ Implementation progress:
      `ImmediateEvaluationResult` now project from that retained result path;
      the formatted Immediate Window display text remains a bounded textual
      projection rather than the internal carrier.
+163. Debugger run/pause/evaluation APIs now expose retained `Variant` frame
+     carriers through `start_variants()`, step/continue Variant companions,
+     `current_variant_pause_state()`, `evaluate_variant()`, and
+     `DebugFrameVariant`/`DebugVariantEvaluationResult`. Legacy debugger
+     pause/evaluation APIs now project from those retained frame values for
+     compatibility display callers.
 
 Remaining blocker:
 
@@ -1925,3 +1931,6 @@ Remaining blocker:
    Legacy `evaluate()` and `ImmediateEvaluationResult` are compatibility
    projections from that retained result path; display formatting still uses a
    bounded projection because the Immediate Window surface is textual.
+9. Debugger run/pause/evaluation APIs now expose retained `Variant` frame
+   carriers through Variant companion methods and result types. Legacy debugger
+   pause/evaluation APIs remain compatibility projections for display callers.

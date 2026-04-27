@@ -1995,6 +1995,12 @@ Child beads:
        slots first and exposes a `DebugFrameVariantValue` companion; existing
        debugger frame/evaluation values remain compatibility projections for
        UI/display callers
+     - progress landed: debugger run/pause/evaluation APIs now expose retained
+       `Variant` frame carriers through `start_variants()`, step/continue
+       Variant companions, `current_variant_pause_state()`,
+       `evaluate_variant()`, and retained `DebugFrameVariant` /
+       `DebugVariantEvaluationResult` result types; legacy debugger APIs now
+       project from those retained frame values
      - progress landed: host class member invocation now has a Variant-native
        companion and uses a `Variant` carrier for the implicit `Me` argument;
        existing `RuntimeValue` member invocation remains a compatibility
@@ -2344,8 +2350,8 @@ Child beads:
        remaining host service helper families, legacy dynamic-link m1 native
        ABI marshalling internals, legacy SafeArray element compatibility APIs,
        COM compatibility projection APIs that still expose `RuntimeValue`,
-       embedded/immediate/debugger display/result compatibility APIs that still
-       expose `RuntimeValue`, and remaining manual pointer-helper / registry
+       remaining embedded/immediate/debugger display/result compatibility APIs
+       that still expose `RuntimeValue`, and remaining manual pointer-helper / registry
        compatibility seams are audited and either migrated to exact BSTR,
        Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified
        as projection boundaries outside the internal value model
