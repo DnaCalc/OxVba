@@ -2077,6 +2077,10 @@ Child beads:
        projecting the token argument directly from `Variant` and returning a
        `Variant` result without entering the semantic multi-invoke
        compatibility path
+     - progress landed: standard dynamic-link m1 native descriptor invocation
+       now marshals native FFI arguments, returns, and Windows ByRef writebacks
+       directly from retained `Variant` carriers instead of converting through
+       temporary `RuntimeValue` values inside the native ABI bridge
      - progress landed: VM intrinsic array literal and append instructions now
        read retained source `Variant` slots and write the resulting
        `VT_ARRAY | VT_VARIANT` SAFEARRAY carrier directly with
@@ -2350,8 +2354,7 @@ Child beads:
        `--dump-values` terminal display boundaries
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
-       remaining host service helper families, legacy dynamic-link m1 native
-       ABI marshalling internals, legacy SafeArray element compatibility APIs,
+       remaining host service helper families, legacy SafeArray element compatibility APIs,
        COM compatibility projection APIs that still expose `RuntimeValue`,
        remaining embedded/immediate/debugger display/result compatibility APIs
        that still expose `RuntimeValue`, and remaining manual pointer-helper / registry

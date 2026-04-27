@@ -1633,6 +1633,10 @@ Implementation progress:
      for run-project and run execution paths. `--dump-slots` projects through
      the existing compatibility slot classifier and `--dump-values` projects
      only at the terminal display formatter boundary.
+165. Standard dynamic-link m1 native descriptor invocation now marshals native
+     FFI arguments, returns, and Windows ByRef writebacks directly from retained
+     `Variant` carriers. The legacy `RuntimeValue` dynamic-link trait methods
+     remain boundary projections into the retained descriptor path.
 
 Remaining blocker:
 
@@ -1941,3 +1945,6 @@ Remaining blocker:
 10. CLI run-project/run execution paths now retain `Variant` snapshots until
     the terminal display boundary. Slot and value dumps remain explicit CLI
     compatibility projections.
+11. Standard dynamic-link m1 native descriptor invocation now marshals native
+    FFI arguments/returns and Windows ByRef writebacks directly from retained
+    `Variant` carriers rather than through a temporary semantic-value bridge.
