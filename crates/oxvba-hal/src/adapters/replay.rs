@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue, Variant};
 
 use super::standard::descriptor_for_profile;
 
@@ -90,20 +90,22 @@ impl ReplayHostServices {
     // Compatibility journal parser for legacy RuntimeValue APIs.
     fn replay_runtime_value(&self, op: &'static str) -> HalResult<RuntimeValue> {
         let entry = self.next_entry(op)?;
-        self.decode_runtime_value(op, entry)
+        self.decode_variant(op, entry)?
+            .to_runtime_value()
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    HalProfileId::Null,
+                    CapabilityId::DiagnosticsTelemetry,
+                    op,
+                    detail,
+                )
+            })
     }
 
     // Retained companion projection over the same journal data for Variant callers.
     fn replay_variant(&self, op: &'static str) -> HalResult<Variant> {
-        let value = self.replay_runtime_value(op)?;
-        Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                HalProfileId::Null,
-                CapabilityId::DiagnosticsTelemetry,
-                op,
-                detail,
-            )
-        })
+        let entry = self.next_entry(op)?;
+        self.decode_variant(op, entry)
     }
 
     fn replay_i32_variant(&self, op: &'static str) -> HalResult<Variant> {
@@ -112,21 +114,17 @@ impl ReplayHostServices {
         Ok(Variant::from_i32(value))
     }
 
-    fn decode_runtime_value(
-        &self,
-        op: &'static str,
-        entry: HalJournalEntry,
-    ) -> HalResult<RuntimeValue> {
+    fn decode_variant(&self, op: &'static str, entry: HalJournalEntry) -> HalResult<Variant> {
         let Some(kind) = entry.result.get("kind").and_then(|value| value.as_str()) else {
             return Err(HalError::adapter_fault(
                 HalProfileId::Null,
                 CapabilityId::DiagnosticsTelemetry,
                 op,
-                "replay runtime value missing `kind`".to_string(),
+                "replay variant value missing `kind`".to_string(),
             ));
         };
         match kind {
-            "i32" => Ok(RuntimeValue::I32(
+            "i32" => Ok(Variant::from_i32(
                 entry
                     .result
                     .get("value")
@@ -145,9 +143,9 @@ impl ReplayHostServices {
                     .and_then(|value| value.as_str())
                     .unwrap_or("double");
                 let out = match subtype {
-                    "single" => RuntimeValue::F64(F64Value::from_single_f64(value)),
-                    "date" => RuntimeValue::F64(F64Value::from_date_f64(value)),
-                    _ => RuntimeValue::F64(F64Value::from_f64(value)),
+                    "single" => Variant::from_f32(value as f32),
+                    "date" => Variant::from_date_f64(value),
+                    _ => Variant::from_f64(value),
                 };
                 Ok(out)
             }
@@ -155,7 +153,7 @@ impl ReplayHostServices {
                 HalProfileId::Null,
                 CapabilityId::DiagnosticsTelemetry,
                 op,
-                format!("replay runtime value kind `{other}` is not supported"),
+                format!("replay variant value kind `{other}` is not supported"),
             )),
         }
     }
