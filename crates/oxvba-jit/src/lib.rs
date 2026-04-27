@@ -13,7 +13,9 @@ use oxvba_hal::{
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
-use oxvba_runtime::{RuntimeValue, Variant};
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::Variant;
 use oxvba_vm::execute_and_snapshot_variants_with_host;
 use thiserror::Error;
 
@@ -36,15 +38,6 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
         .collect()
 }
 
-/// Compatibility projection for legacy callers that still consume semantic
-/// `RuntimeValue` snapshots. The retained execution carrier is `Variant`.
-fn project_variants_to_compat_values(values: Vec<Variant>) -> Result<Vec<RuntimeValue>, JitError> {
-    values
-        .into_iter()
-        .map(|value| value.to_runtime_value().map_err(JitError::Execution))
-        .collect()
-}
-
 impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
         Ok(())
@@ -52,17 +45,19 @@ impl JitEngine {
 
     /// Legacy snapshot alias. Prefer `execute_and_snapshot_variants` for
     /// retained value-model work.
+    #[cfg(test)]
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_compat_values(bytecode)
+        compat::execute_and_snapshot(self, bytecode)
     }
 
     /// Compatibility snapshot boundary that projects retained `Variant` slots
     /// to `RuntimeValue` for older tests and host surfaces.
+    #[cfg(test)]
     pub fn execute_and_snapshot_compat_values(
         &self,
         bytecode: &Bytecode,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        project_variants_to_compat_values(self.execute_and_snapshot_variants(bytecode)?)
+        compat::execute_and_snapshot_values(self, bytecode)
     }
 
     /// Retained value-model snapshot API.
@@ -74,32 +69,33 @@ impl JitEngine {
     }
 
     /// Legacy snapshot alias. Prefer `execute_and_snapshot_variants`.
+    #[cfg(test)]
     pub fn execute_and_snapshot_values(
         &self,
         bytecode: &Bytecode,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_compat_values(bytecode)
+        compat::execute_and_snapshot_values(self, bytecode)
     }
 
     /// Legacy host-backed snapshot alias. Prefer
     /// `execute_and_snapshot_variants_with_host`.
+    #[cfg(test)]
     pub fn execute_and_snapshot_with_host(
         &self,
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_compat_values_with_host(bytecode, host_services)
+        compat::execute_and_snapshot_with_host(self, bytecode, host_services)
     }
 
     /// Compatibility host-backed snapshot boundary.
+    #[cfg(test)]
     pub fn execute_and_snapshot_compat_values_with_host(
         &self,
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        project_variants_to_compat_values(
-            self.execute_and_snapshot_variants_with_host(bytecode, host_services)?,
-        )
+        compat::execute_and_snapshot_values_with_host(self, bytecode, host_services)
     }
 
     /// Retained value-model host-backed snapshot API.
@@ -130,12 +126,68 @@ impl JitEngine {
 
     /// Legacy host-backed snapshot alias. Prefer
     /// `execute_and_snapshot_variants_with_host`.
+    #[cfg(test)]
     pub fn execute_and_snapshot_values_with_host(
         &self,
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_compat_values_with_host(bytecode, host_services)
+        compat::execute_and_snapshot_values_with_host(self, bytecode, host_services)
+    }
+}
+
+pub mod compat {
+    //! Explicit compatibility adapters for legacy `RuntimeValue` JIT snapshots.
+    //!
+    //! `JitEngine` normal-build execution APIs expose retained `Variant`
+    //! snapshots. Callers that still need semantic `RuntimeValue` projections
+    //! must opt into this module.
+
+    use std::sync::Arc;
+
+    use oxvba_compiler::Bytecode;
+    use oxvba_hal::traits::HostServices;
+    use oxvba_runtime::{RuntimeValue, Variant};
+
+    use super::{JitEngine, JitError};
+
+    fn project_variants_to_values(values: Vec<Variant>) -> Result<Vec<RuntimeValue>, JitError> {
+        values
+            .into_iter()
+            .map(|value| value.to_runtime_value().map_err(JitError::Execution))
+            .collect()
+    }
+
+    pub fn execute_and_snapshot(
+        engine: &JitEngine,
+        bytecode: &Bytecode,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        execute_and_snapshot_values(engine, bytecode)
+    }
+
+    pub fn execute_and_snapshot_values(
+        engine: &JitEngine,
+        bytecode: &Bytecode,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        project_variants_to_values(engine.execute_and_snapshot_variants(bytecode)?)
+    }
+
+    pub fn execute_and_snapshot_with_host(
+        engine: &JitEngine,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        execute_and_snapshot_values_with_host(engine, bytecode, host_services)
+    }
+
+    pub fn execute_and_snapshot_values_with_host(
+        engine: &JitEngine,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        project_variants_to_values(
+            engine.execute_and_snapshot_variants_with_host(bytecode, host_services)?,
+        )
     }
 }
 

@@ -59,7 +59,7 @@ fn main() {
 
     let result: Result<Vec<RuntimeValue>, String> = if args.use_jit {
         let jit = JitEngine;
-        jit.execute_and_snapshot_with_host(&bundle.bytecode, host_services)
+        oxvba_jit::compat::execute_and_snapshot_with_host(&jit, &bundle.bytecode, host_services)
             .map_err(|e| e.to_string())
     } else {
         oxvba_vm::compat::execute_and_snapshot_with_host(&bundle.bytecode, host_services)
