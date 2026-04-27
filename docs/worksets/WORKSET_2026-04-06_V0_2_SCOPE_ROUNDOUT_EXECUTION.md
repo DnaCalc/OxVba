@@ -368,13 +368,14 @@ Rollout sync, 2026-04-27:
   and standard HAL wrapper projection now delegate through explicit
   `oxvba_com::compat` and `oxvba_hal::compat` adapters, with evidence in
   [V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md)
-- the next ready delivery bead is `bd-bqm8.2.5`, covering tests, conformance
-  notes, and product docs that still normalize slot-shaped execution truth
-- `bd-bqm8.2.5` is in-progress; the first slice renamed project integration
-  expectations to `expect_compat_slots` and reclassified conformance/docs
-  language around CLI `SLOTS:` output as compatibility observation, with
-  evidence in
+- `bd-bqm8.2.5` is complete for test, conformance, and product-doc migration
+  away from slot-shaped execution truth; project integration expectations are
+  now `expect_compat_slots`, CLI `SLOTS:` output is documented as
+  compatibility observation, and remaining slot references are explicit
+  adapter/evidence references, with evidence in
   [V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md)
+- the next ready validation bead is `bd-bqm8.2.6`, covering the final
+  compat-slot excision checklist
 
 ## Delivery Rules for This Workset
 

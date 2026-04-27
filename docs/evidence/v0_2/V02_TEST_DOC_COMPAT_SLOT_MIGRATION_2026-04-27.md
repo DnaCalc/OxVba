@@ -3,7 +3,7 @@
 Date: 2026-04-27
 Owner: Codex
 Bead: `bd-bqm8.2.5`
-Status: in-progress
+Status: complete
 
 ## Change
 
@@ -34,8 +34,10 @@ Implemented:
   remaining slot lanes as legacy adapter seams rather than current carrier
   truth.
 
-This does not close `bd-bqm8.2.5`; remaining scans still need to classify or
-update additional architecture, historical evidence, and helper-test wording.
+The final active-surface scan leaves only the workset rule itself, this
+evidence file, downstream evidence wording, and an explicit project integration
+compatibility mismatch diagnostic. `bd-bqm8.2.5` is complete; the remaining
+work for `bd-bqm8.2` is the final excision checklist in `bd-bqm8.2.6`.
 
 ## Verification
 
