@@ -491,8 +491,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.7.4` is complete for adding the Access/JET COM corpus fixtures and
   active compiler-acceptance test, with evidence in
   [V02_ACCESS_JET_COM_CORPUS_FIXTURES_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_ACCESS_JET_COM_CORPUS_FIXTURES_2026-04-27.md)
+- `bd-bqm8.7.5` is complete for refreshing controlled COM, Office fixture, VM,
+  JIT, and host evidence, with evidence in
+  [V02_OFFICE_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_OFFICE_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md)
 - `bd-bqm8.7` remains in-progress; the next ready corpus bead is
-  `bd-bqm8.7.5`, covering refreshed Office COM VM/JIT/host evidence
+  `bd-bqm8.7.6`, covering the final Office COM corpus checklist
 
 ## Delivery Rules for This Workset
 
