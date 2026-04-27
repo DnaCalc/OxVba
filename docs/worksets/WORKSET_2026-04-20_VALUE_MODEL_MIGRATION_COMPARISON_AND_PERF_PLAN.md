@@ -2393,6 +2393,9 @@ Child beads:
      - progress landed: VM legacy dynamic-array bound compatibility helpers
        now route real SAFEARRAY carriers through retained `Variant` bound
        helpers, leaving only old array-tag tokens on the compatibility branch
+     - progress landed: immediate-session and debugger retained display text
+       now formats directly from `Variant` carriers instead of projecting
+       through `RuntimeValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

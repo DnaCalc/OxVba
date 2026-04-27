@@ -823,6 +823,16 @@ Validation:
      - result: `1` passed
 190. `./scripts/check-governance.ps1`
      - result: passed
+191. `cargo fmt -p oxvba-host --check`
+     - result: passed
+192. `cargo check -p oxvba-host`
+     - result: passed
+193. `cargo test -p oxvba-host immediate --lib`
+     - result: `13` passed
+194. `cargo test -p oxvba-host debugger --lib`
+     - result: `5` passed
+195. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1705,6 +1715,11 @@ Implementation progress:
      delegate real `ArrayIntent` SAFEARRAY carriers through the retained
      `runtime_array_*bound_variant` implementations. Only old array-tag token
      carriers stay on the explicit compatibility-token branch.
+178. Immediate-session and debugger retained value display now render directly
+     from `Variant` carriers through `variant_to_vba_string`. Legacy
+     `RuntimeValue` result/frame structs remain compatibility projections, but
+     retained display text no longer requires a `Variant -> RuntimeValue`
+     detour.
 
 Remaining blocker:
 
@@ -2055,3 +2070,5 @@ Remaining blocker:
 23. VM legacy dynamic-array bound compatibility helpers now route real
     SAFEARRAY carriers through retained `Variant` bound helpers, leaving only
     old array-tag tokens on the compatibility branch.
+24. Immediate-session and debugger retained display text now formats directly
+    from `Variant` carriers instead of projecting through `RuntimeValue`.
