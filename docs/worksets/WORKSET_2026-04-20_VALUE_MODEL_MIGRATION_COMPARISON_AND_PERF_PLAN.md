@@ -2390,6 +2390,9 @@ Child beads:
        route through retained `Variant` conversion before producing or
        consuming `ComValue`; `BindingHandle` remains the explicit non-VBA
        token side lane
+     - progress landed: VM legacy dynamic-array bound compatibility helpers
+       now route real SAFEARRAY carriers through retained `Variant` bound
+       helpers, leaving only old array-tag tokens on the compatibility branch
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

@@ -813,6 +813,16 @@ Validation:
      - result: `9` passed
 185. `./scripts/check-governance.ps1`
      - result: passed
+186. `cargo fmt -p oxvba-vm --check`
+     - result: passed
+187. `cargo check -p oxvba-vm`
+     - result: passed
+188. `cargo test -p oxvba-vm array_bounds --lib`
+     - result: `1` passed
+189. `cargo test -p oxvba-vm runtime_value_to_usize_and_variant_array_indices_use_numeric_compatibility --lib`
+     - result: `1` passed
+190. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1691,6 +1701,10 @@ Implementation progress:
      `BindingHandle` case remains the explicit non-VBA compatibility side
      lane, but ordinary COM scalar/string/object/SAFEARRAY projection no
      longer duplicates a separate semantic-value mapping.
+177. VM legacy `RuntimeValue` `LBound` / `UBound` compatibility helpers now
+     delegate real `ArrayIntent` SAFEARRAY carriers through the retained
+     `runtime_array_*bound_variant` implementations. Only old array-tag token
+     carriers stay on the explicit compatibility-token branch.
 
 Remaining blocker:
 
@@ -2038,3 +2052,6 @@ Remaining blocker:
 22. COM model legacy `RuntimeValue` projection now routes through retained
     `Variant` conversion, leaving only the explicit `BindingHandle` token
     side lane outside the VBA/COM value carrier.
+23. VM legacy dynamic-array bound compatibility helpers now route real
+    SAFEARRAY carriers through retained `Variant` bound helpers, leaving only
+    old array-tag tokens on the compatibility branch.

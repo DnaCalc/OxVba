@@ -130,7 +130,8 @@ Current value-model migration note (2026-04-25):
 65. Dynamic COM value legacy projection now reads retained `Variant` payloads directly instead of detouring through `ComValue`.
 66. HAL replay journal decoding now materializes retained `Variant` values first, with legacy `RuntimeValue` replay APIs projecting from that retained decoder.
 67. COM model legacy `RuntimeValue` bridge methods now route through retained `Variant` conversion before producing or consuming `ComValue`, with `BindingHandle` left as the explicit non-VBA token side lane.
-68. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+68. VM legacy dynamic-array bound compatibility helpers now route real SAFEARRAY carriers through retained `Variant` bound helpers, leaving only old array-tag tokens on the compatibility branch.
+69. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
