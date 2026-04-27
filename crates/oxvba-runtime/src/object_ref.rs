@@ -122,14 +122,25 @@ impl ObjectRef {
         self.0.as_ptr()
     }
 
+    /// Construct an object reference from an owned raw `IUnknown` pointer.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must either be null or point to a valid runtime `IUnknown` pointer
+    /// whose ownership is transferred to the returned `ObjectRef`.
     pub unsafe fn from_raw_iunknown_owned(raw: *mut RawRuntimeIUnknown) -> Option<Self> {
         NonNull::new(raw).map(Self)
     }
 
+    /// Construct an object reference from a borrowed raw `IUnknown` pointer.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must either be null or point to a valid runtime `IUnknown` pointer.
+    /// When non-null, the pointed object must support `AddRef`, and this
+    /// function will retain it for the returned `ObjectRef`.
     pub unsafe fn from_raw_iunknown_addref(raw: *mut RawRuntimeIUnknown) -> Option<Self> {
-        let Some(raw) = NonNull::new(raw) else {
-            return None;
-        };
+        let raw = NonNull::new(raw)?;
         unsafe {
             let vtbl = (*raw.as_ptr()).vtbl;
             ((*vtbl).add_ref)(raw.as_ptr().cast());

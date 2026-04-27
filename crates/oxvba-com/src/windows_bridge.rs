@@ -195,7 +195,7 @@ impl WindowsComBridge {
             .get(&ComObjectToken::new(object.raw()))
             .map(|binding| {
                 binding.descriptor(
-                    object.into(),
+                    object,
                     resolve_typelib_identity_for_prog_id_name(&binding.prog_id_name)
                         .map(|identity| identity.cache_key),
                 )
@@ -349,11 +349,11 @@ impl WindowsComBridge {
                         return Ok(None);
                     }
                     unsafe {
-                        return crate::raw_oxvba_test_dispatch_vtable_invoke(
+                        crate::raw_oxvba_test_dispatch_vtable_invoke(
                             dispatch,
                             member,
                             positional_values,
-                        );
+                        )
                     }
                 }
                 #[cfg(not(any(test, feature = "fixture-typelibs")))]

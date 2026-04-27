@@ -64,7 +64,7 @@ fn with_current_proc_name<T>(name: &str, f: impl FnOnce() -> T) -> T {
     })
 }
 
-fn current_proc_meta<'a>(proc_meta: &'a HashMap<String, EmitProcMeta>) -> Option<&'a EmitProcMeta> {
+fn current_proc_meta(proc_meta: &HashMap<String, EmitProcMeta>) -> Option<&EmitProcMeta> {
     CURRENT_PROC_NAME.with(|current| {
         let name = current.borrow();
         lookup_casefold_key(proc_meta, name.as_deref()?)

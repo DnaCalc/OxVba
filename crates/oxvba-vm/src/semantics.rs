@@ -8,6 +8,8 @@
 //! these helpers remain a compatibility/projection layer until each semantic
 //! family grows a Variant-native companion or is otherwise migrated.
 
+#![allow(clippy::items_after_test_module)]
+
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicMemberSelector};
 use oxvba_compiler::bytecode::{
     RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -163,7 +165,7 @@ pub fn runtime_value_to_text(value: &RuntimeValue, field: &str) -> Result<String
             Ok(value.to_string())
         }
         RuntimeValue::Null => Err(format!("{field} requires text-compatible value, got Null")),
-        RuntimeValue::ErrorCode(code) => Ok((*code as i32).to_string()),
+        RuntimeValue::ErrorCode(code) => Ok((*code).to_string()),
         RuntimeValue::ArrayIntent(_) => Err(format!(
             "{field} requires scalar text-compatible value, got array"
         )),
@@ -859,7 +861,7 @@ pub fn runtime_month_name_variant_bounded(src: &Variant) -> Result<Variant, Stri
 }
 
 fn month_name(month: i32) -> &'static str {
-    let name = match month {
+    match month {
         1 => "January",
         2 => "February",
         3 => "March",
@@ -873,8 +875,7 @@ fn month_name(month: i32) -> &'static str {
         11 => "November",
         12 => "December",
         _ => "",
-    };
-    name
+    }
 }
 
 pub fn runtime_date_serial_bounded(
@@ -1089,12 +1090,7 @@ fn parse_month_token(token: &str) -> Option<i32> {
 }
 
 fn parse_string_date_to_packed(text: &str) -> Option<i32> {
-    let normalized = text
-        .trim()
-        .replace(',', " ")
-        .replace('.', " ")
-        .replace('-', " ")
-        .replace('/', " ");
+    let normalized = text.trim().replace([',', '.', '-', '/'], " ");
     let parts: Vec<&str> = normalized.split_whitespace().collect();
     let packed = match parts.as_slice() {
         [year, month, day] if year.len() == 4 => {

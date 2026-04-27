@@ -371,7 +371,7 @@ impl DynamicLinkHal for StandardHostServices {
             let arg = self.variant_project_compat_slot_i32(
                 &arg,
                 CapabilityId::DynamicLinking,
-                "invoke_descriptor_variants",
+                "invoke_symbol",
                 "arg",
             )?;
             if self.native_mode_enabled()
@@ -387,7 +387,7 @@ impl DynamicLinkHal for StandardHostServices {
                     _ => Err(HalError::adapter_fault(
                         self.profile,
                         CapabilityId::DynamicLinking,
-                        "invoke_descriptor_variants",
+                        "invoke_symbol",
                         format!(
                             "descriptor {} resolved to unsupported symbol token {} in host-backed lane",
                             descriptor.descriptor_id, descriptor.symbol
@@ -422,15 +422,15 @@ impl DynamicLinkHal for StandardHostServices {
     fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
-            return Err(self.unsupported(capability, "invoke_symbol_variant"));
+            return Err(self.unsupported(capability, "invoke_symbol"));
         }
         if !self.policy.allow_dynamic_link {
-            return Err(self.denied(capability, "invoke_symbol_variant"));
+            return Err(self.denied(capability, "invoke_symbol"));
         }
         let arg = self.variant_project_compat_slot_i32(
             arg,
             CapabilityId::DynamicLinking,
-            "invoke_symbol_variant",
+            "invoke_symbol",
             "arg",
         )?;
         if self.native_mode_enabled()
@@ -446,7 +446,7 @@ impl DynamicLinkHal for StandardHostServices {
                 _ => Err(HalError::adapter_fault(
                     self.profile,
                     capability,
-                    "invoke_symbol_variant",
+                    "invoke_symbol",
                     format!("unsupported symbol token {} in host-backed lane", symbol),
                 )),
             };
@@ -800,6 +800,7 @@ fn marshal_variant_to_ffi_unix(
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn marshal_variant_to_ffi(
     profile: HalProfileId,
     value: &Variant,

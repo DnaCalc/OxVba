@@ -535,8 +535,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.9.3` is complete for the non-primary host product-truth matrix, with
   evidence in
   [V02_NON_PRIMARY_HOST_PRODUCT_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NON_PRIMARY_HOST_PRODUCT_MATRIX_2026-04-27.md)
-- `bd-bqm8.9` remains in-progress; the next ready non-primary host validation
-  bead is `bd-bqm8.9.4`, covering the final checklist
+- `bd-bqm8.9.4` is complete for the final non-primary host checklist, with
+  evidence in
+  [V02_NON_PRIMARY_HOST_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NON_PRIMARY_HOST_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.9` is complete for V0.2 non-primary host validation breadth; the
+  next ready V0.2 roundout bead is `bd-bqm8.11`
 
 ## Delivery Rules for This Workset
 

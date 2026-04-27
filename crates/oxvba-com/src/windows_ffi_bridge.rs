@@ -329,7 +329,7 @@ pub fn invoke_stdcall(
     #[cfg(target_arch = "x86_64")]
     {
         let result = unsafe { invoke_stdcall_x64(proc_addr, args, return_type) };
-        return Ok(result);
+        Ok(result)
     }
 
     #[cfg(not(target_arch = "x86_64"))]

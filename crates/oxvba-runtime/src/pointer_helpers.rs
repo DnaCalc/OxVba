@@ -723,7 +723,7 @@ pub fn register_string_variant_pointer(value: &Variant) -> Result<i64, String> {
         let mut guard = registry()
             .lock()
             .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        return Ok(guard.insert(entry));
+        Ok(guard.insert(entry))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -747,7 +747,7 @@ pub fn register_variant_var_variant_pointer(value: &Variant) -> Result<i64, Stri
         let mut guard = registry()
             .lock()
             .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        return Ok(guard.insert(entry));
+        Ok(guard.insert(entry))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -821,7 +821,7 @@ pub fn register_legacy_string_var_pointer(value: &RuntimeValue) -> Result<i64, S
         let mut guard = registry()
             .lock()
             .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        return Ok(guard.insert(entry));
+        Ok(guard.insert(entry))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -841,7 +841,7 @@ pub fn register_legacy_variant_var_pointer(value: &RuntimeValue) -> Result<i64, 
         let mut guard = registry()
             .lock()
             .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        return Ok(guard.insert(entry));
+        Ok(guard.insert(entry))
     }
 
     #[cfg(not(target_os = "windows"))]

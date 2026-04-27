@@ -69,6 +69,13 @@ impl BStr {
         })
     }
 
+    /// Construct a BSTR wrapper from an owned raw BSTR pointer.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must either be null or point to a valid BSTR allocation owned by
+    /// the caller. After this call, the returned `BStr` owns the pointer and
+    /// will free it on drop.
     pub unsafe fn from_raw_bstr(raw: *mut u16) -> Self {
         Self {
             raw: NonNull::new(raw),
@@ -208,15 +215,15 @@ fn raw_bstr_layout(len_units: usize) -> Result<std::alloc::Layout, String> {
 }
 
 fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
-    let len = u32::try_from(units.len())
-        .map_err(|_| "BSTR payload length should fit in u32 code-unit count".to_string())?;
     #[cfg(target_os = "windows")]
     {
+        let len = u32::try_from(units.len())
+            .map_err(|_| "BSTR payload length should fit in u32 code-unit count".to_string())?;
         let raw = unsafe { SysAllocStringLen(units.as_ptr(), len) };
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
-        return Ok(raw.cast_mut());
+        Ok(raw.cast_mut())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -246,7 +253,7 @@ unsafe fn raw_bstr_len_bytes(ptr: *mut u16) -> u32 {
     }
     #[cfg(target_os = "windows")]
     {
-        return unsafe { SysStringLen(ptr) }.saturating_mul(BSTR_UNIT_BYTES as u32);
+        unsafe { SysStringLen(ptr) }.saturating_mul(BSTR_UNIT_BYTES as u32)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -275,7 +282,6 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
     #[cfg(target_os = "windows")]
     {
         unsafe { SysFreeString(ptr) };
-        return;
     }
     #[cfg(not(target_os = "windows"))]
     {

@@ -790,6 +790,10 @@ impl SafeArray {
         bounds_total_len(&self.raw_bounds()).unwrap_or(0)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn effective_len(&self) -> usize {
         self.len()
     }

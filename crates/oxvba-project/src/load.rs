@@ -268,7 +268,7 @@ pub(crate) fn build_loaded_project(
 fn resolve_effective_entry_point(
     output_type: OutputType,
     configured_entry_point: Option<&str>,
-    modules: &mut Vec<ModuleUnit>,
+    modules: &mut [ModuleUnit],
 ) -> Result<Option<String>, BasProjError> {
     if let Some(entry_point) = configured_entry_point {
         return Ok(Some(entry_point.to_string()));
@@ -309,7 +309,7 @@ fn validate_top_level_mainline_policy(
 }
 
 fn prepare_unique_top_level_mainline_entry(
-    modules: &mut Vec<ModuleUnit>,
+    modules: &mut [ModuleUnit],
 ) -> Result<Option<String>, BasProjError> {
     let candidates = modules
         .iter()
@@ -660,9 +660,7 @@ fn line_is_public_parameterless_main_sub_signature(line: &str) -> bool {
     let lower = trimmed.to_ascii_lowercase();
     let lower = if let Some(rest) = lower.strip_prefix("public ") {
         rest
-    } else if lower.strip_prefix("private ").is_some() {
-        return false;
-    } else if lower.strip_prefix("friend ").is_some() {
+    } else if lower.strip_prefix("private ").is_some() || lower.strip_prefix("friend ").is_some() {
         return false;
     } else {
         lower.as_str()

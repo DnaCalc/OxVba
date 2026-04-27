@@ -491,6 +491,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_whole_file_main_procedure(
     lines: &[String],
     option_explicit: &mut bool,
@@ -531,6 +532,7 @@ fn build_whole_file_main_procedure(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_top_level_mainline_procedure(
     lines: &[String],
     option_explicit: &mut bool,
@@ -567,6 +569,7 @@ fn build_top_level_mainline_procedure(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_mainline_procedure_from_lines(
     module_lines: &[String],
     lines: &[String],
@@ -794,6 +797,7 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || is_def_type_directive(&lower)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn seed_module_scope_declarations(
     lines: &[String],
     declarations: &mut Vec<String>,
@@ -3927,19 +3931,19 @@ fn parse_for_each_header(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Fo
     let var = normalize_ident(var_raw)?;
     let iterable = iterable_raw.trim();
 
-    if let Some(base) = normalize_ident(iterable) {
-        if let Some(bounds) = array_bounds.get(&base) {
-            let element_count = array_element_count(bounds)?;
-            let mut items = Vec::with_capacity(element_count);
-            for idx in 0..element_count {
-                items.push(BoundExpr::Var(format!("{base}_{idx}")));
-            }
-            return Some(ForEachHeader {
-                var,
-                items,
-                iterable: None,
-            });
+    if let Some(base) = normalize_ident(iterable)
+        && let Some(bounds) = array_bounds.get(&base)
+    {
+        let element_count = array_element_count(bounds)?;
+        let mut items = Vec::with_capacity(element_count);
+        for idx in 0..element_count {
+            items.push(BoundExpr::Var(format!("{base}_{idx}")));
         }
+        return Some(ForEachHeader {
+            var,
+            items,
+            iterable: None,
+        });
     }
 
     Some(ForEachHeader {
@@ -5370,6 +5374,7 @@ fn parse_declaration(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_variable_declaration_line(
     line: &str,
     declarations: &mut Vec<String>,
@@ -5396,6 +5401,7 @@ fn parse_variable_declaration_line(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_declaration_remainder(
     remainder: &str,
     declarations: &mut Vec<String>,
@@ -5523,7 +5529,7 @@ fn parse_declaration_remainder(
     }
 }
 
-fn strip_variable_declaration_prefix_ci<'a>(line: &'a str) -> Option<&'a str> {
+fn strip_variable_declaration_prefix_ci(line: &str) -> Option<&str> {
     let trimmed = line.trim();
     strip_keyword_prefix_ci(trimmed, "dim")
         .or_else(|| strip_keyword_prefix_ci(trimmed, "public"))

@@ -21,7 +21,7 @@ try {
         }
     }
 
-    $allowedStatus = @("implemented", "partial", "planned")
+    $allowedStatus = @("implemented", "partial", "planned", "derived-summary")
     $seen = @{}
     foreach ($row in $rows) {
         if ([string]::IsNullOrWhiteSpace($row.feature_area) -or [string]::IsNullOrWhiteSpace($row.construct)) {

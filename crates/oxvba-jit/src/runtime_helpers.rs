@@ -1317,19 +1317,19 @@ pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_variant_slot!(ctx, src);
-    let is_numeric = match val.vtype() {
+    let is_numeric = matches!(
+        val.vtype(),
         oxvba_runtime::VarType::Integer
-        | oxvba_runtime::VarType::Long
-        | oxvba_runtime::VarType::LongLong
-        | oxvba_runtime::VarType::Single
-        | oxvba_runtime::VarType::Double
-        | oxvba_runtime::VarType::Date
-        | oxvba_runtime::VarType::Currency
-        | oxvba_runtime::VarType::Decimal
-        | oxvba_runtime::VarType::Boolean
-        | oxvba_runtime::VarType::Byte => true,
-        _ => false,
-    };
+            | oxvba_runtime::VarType::Long
+            | oxvba_runtime::VarType::LongLong
+            | oxvba_runtime::VarType::Single
+            | oxvba_runtime::VarType::Double
+            | oxvba_runtime::VarType::Date
+            | oxvba_runtime::VarType::Currency
+            | oxvba_runtime::VarType::Decimal
+            | oxvba_runtime::VarType::Boolean
+            | oxvba_runtime::VarType::Byte
+    );
     write_variant_slot!(ctx, dst, Variant::from_bool(is_numeric));
     OK
 }
@@ -1724,10 +1724,8 @@ fn runtime_resized_array_preserve(
         let resized_start = block
             .checked_mul(resized_last)
             .ok_or_else(|| "runtime ReDim Preserve resized block offset overflowed".to_string())?;
-        for offset in 0..overlap {
-            resized_values[resized_start + offset] =
-                previous_values[previous_start + offset].clone();
-        }
+        resized_values[resized_start..(resized_start + overlap)]
+            .clone_from_slice(&previous_values[previous_start..(previous_start + overlap)]);
     }
     resized.replace_variant_elements(resized_values)
 }
@@ -3172,38 +3170,20 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         return route_host_error_code(ctx, 53073);
     }
 
-    if arg_variants.len() > 1 || !writeback_slots.is_empty() {
-        match host
-            .dynlink()
-            .invoke_descriptor_variants(&view, &arg_variants)
-        {
-            Ok((ret_value, wb_values)) => {
-                write_variant_slot!(ctx, dst, ret_value);
-                if let Err(_detail) =
-                    apply_external_writebacks(ctx, writeback_slots, &arg_variants, &wb_values)
-                {
-                    return route_host_error_code(ctx, 53073);
-                }
-                OK
+    match host
+        .dynlink()
+        .invoke_descriptor_variants(&view, &arg_variants)
+    {
+        Ok((ret_value, wb_values)) => {
+            write_variant_slot!(ctx, dst, ret_value);
+            if let Err(_detail) =
+                apply_external_writebacks(ctx, writeback_slots, &arg_variants, &wb_values)
+            {
+                return route_host_error_code(ctx, 53073);
             }
-            Err(err) => route_hal_error(ctx, err),
+            OK
         }
-    } else {
-        match host
-            .dynlink()
-            .invoke_descriptor_variants(&view, &arg_variants)
-        {
-            Ok((ret_value, wb_values)) => {
-                write_variant_slot!(ctx, dst, ret_value);
-                if let Err(_detail) =
-                    apply_external_writebacks(ctx, writeback_slots, &arg_variants, &wb_values)
-                {
-                    return route_host_error_code(ctx, 53073);
-                }
-                OK
-            }
-            Err(err) => route_hal_error(ctx, err),
-        }
+        Err(err) => route_hal_error(ctx, err),
     }
 }
 

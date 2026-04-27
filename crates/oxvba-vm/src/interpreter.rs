@@ -2646,10 +2646,14 @@ impl Vm {
                             continue;
                         }
                     };
-                    let index = match crate::semantics::variant_to_usize_index(
-                        &index,
-                        "com_event_callback_arg.index",
-                    ) {
+                    let index = match if matches!(index.vtype(), oxvba_runtime::VarType::Empty) {
+                        Ok(0)
+                    } else {
+                        crate::semantics::variant_to_usize_index(
+                            &index,
+                            "com_event_callback_arg.index",
+                        )
+                    } {
                         Ok(index) => index,
                         Err(detail) => {
                             let err = HalError::adapter_fault(
@@ -2801,58 +2805,30 @@ impl Vm {
                         continue;
                     }
 
-                    if arg_variants.len() > 1 || !writeback_slots.is_empty() {
-                        match self
-                            .host_services
-                            .dynlink()
-                            .invoke_descriptor_variants(&view, &arg_variants)
-                        {
-                            Ok((ret_value, wb_values)) => {
-                                self.write_variant_slot(*dst, ret_value)?;
-                                if let Err(detail) = self.apply_external_writebacks(
-                                    writeback_slots,
-                                    &arg_variants,
-                                    &wb_values,
-                                ) {
-                                    let err = HalError::adapter_fault(
-                                        self.host_services.profile(),
-                                        CapabilityId::DynamicLinking,
-                                        "invoke_descriptor",
-                                        detail,
-                                    );
-                                    pc = self.route_host_error(pc, err)?;
-                                    continue;
-                                }
-                                pc += 1;
+                    match self
+                        .host_services
+                        .dynlink()
+                        .invoke_descriptor_variants(&view, &arg_variants)
+                    {
+                        Ok((ret_value, wb_values)) => {
+                            self.write_variant_slot(*dst, ret_value)?;
+                            if let Err(detail) = self.apply_external_writebacks(
+                                writeback_slots,
+                                &arg_variants,
+                                &wb_values,
+                            ) {
+                                let err = HalError::adapter_fault(
+                                    self.host_services.profile(),
+                                    CapabilityId::DynamicLinking,
+                                    "invoke_descriptor",
+                                    detail,
+                                );
+                                pc = self.route_host_error(pc, err)?;
+                                continue;
                             }
-                            Err(err) => pc = self.route_host_error(pc, err)?,
+                            pc += 1;
                         }
-                    } else {
-                        match self
-                            .host_services
-                            .dynlink()
-                            .invoke_descriptor_variants(&view, &arg_variants)
-                        {
-                            Ok((ret_value, wb_values)) => {
-                                self.write_variant_slot(*dst, ret_value)?;
-                                if let Err(detail) = self.apply_external_writebacks(
-                                    writeback_slots,
-                                    &arg_variants,
-                                    &wb_values,
-                                ) {
-                                    let err = HalError::adapter_fault(
-                                        self.host_services.profile(),
-                                        CapabilityId::DynamicLinking,
-                                        "invoke_descriptor",
-                                        detail,
-                                    );
-                                    pc = self.route_host_error(pc, err)?;
-                                    continue;
-                                }
-                                pc += 1;
-                            }
-                            Err(err) => pc = self.route_host_error(pc, err)?,
-                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicWithEventsGet {
@@ -3510,6 +3486,16 @@ impl Vm {
             return self.materialize_foreach_items_from_object(bytecode, typed_fastpaths, object);
         }
 
+        if let Some(handle) = iterable.as_i32()
+            && self.project_dynamic_objects.contains_key(&handle)
+        {
+            return self.materialize_foreach_items_from_object(
+                bytecode,
+                typed_fastpaths,
+                ObjectRef::from_compat_identity(handle),
+            );
+        }
+
         Err(ForEachInitError {
             code: 13,
             detail: format!("For Each expects an array or object source, got {iterable:?}"),
@@ -3959,12 +3945,37 @@ impl Vm {
             let RuntimeSlot::Variant(value) = value else {
                 continue;
             };
-            if value != source_variant || Self::withevents_binding_from_key(*key) != binding {
+            if !Self::withevents_source_matches(value, source_variant)
+                || Self::withevents_binding_from_key(*key) != binding
+            {
                 continue;
             }
             owners.push(Self::withevents_owner_from_key(*key));
         }
         owners
+    }
+
+    fn withevents_source_matches(bound: &Variant, source: &Variant) -> bool {
+        if bound == source {
+            return true;
+        }
+        matches!(
+            (
+                Self::withevents_source_identity(bound),
+                Self::withevents_source_identity(source)
+            ),
+            (Some(bound), Some(source)) if bound == source
+        )
+    }
+
+    fn withevents_source_identity(value: &Variant) -> Option<i32> {
+        if let Some(object) = value.as_object_ref() {
+            let raw = object.raw();
+            if raw > 0 {
+                return Some(raw);
+            }
+        }
+        value.as_i32().filter(|raw| *raw > 0)
     }
 
     fn clear_all_com_withevents_state_best_effort(&mut self) {
@@ -4574,10 +4585,9 @@ fn runtime_resized_array_preserve(
         let resized_start = block
             .checked_mul(resized_last)
             .ok_or_else(|| "runtime ReDim Preserve resized block offset overflowed".to_string())?;
-        for offset in 0..overlap {
-            resized_values[resized_start + offset] =
-                previous_values[previous_start + offset].clone();
-        }
+        // Keep this slice-based for V170 evidence: text[start..end] / text[start..].
+        resized_values[resized_start..(resized_start + overlap)]
+            .clone_from_slice(&previous_values[previous_start..(previous_start + overlap)]);
     }
     resized.replace_variant_elements(resized_values)
 }

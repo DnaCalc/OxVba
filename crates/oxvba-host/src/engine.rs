@@ -572,7 +572,7 @@ impl Engine {
             let actual_args = if binding.guard_symbol_zero_arg.is_some()
                 || binding.guard_symbol_one_arg.is_some()
             {
-                let mut actual_args = vec![Variant::from_object_ref(source_instance.clone())];
+                let mut actual_args = vec![Variant::from_i32(source_instance.raw())];
                 actual_args.extend_from_slice(args);
                 actual_args
             } else {
@@ -1155,13 +1155,13 @@ impl Engine {
             self.jit
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            if cranelift::supports_bytecode_rtslot(&compiled.bytecode) {
-                if let Ok(values) = cranelift::execute_bytecode_rtslot_variants(
+            if cranelift::supports_bytecode_rtslot(&compiled.bytecode)
+                && let Ok(values) = cranelift::execute_bytecode_rtslot_variants(
                     &compiled.bytecode,
                     self.host_services.clone(),
-                ) {
-                    return Ok(values);
-                }
+                )
+            {
+                return Ok(values);
             }
             if cranelift::supports_bytecode(&compiled.bytecode)
                 && let Ok(values) = cranelift::execute_bytecode_variants(&compiled.bytecode)
@@ -1713,7 +1713,7 @@ End Sub";
         arg: i32,
     ) -> RuntimeValue {
         let request = ComInvokeRequest::new(
-            object.into(),
+            object,
             member.into(),
             if arg == oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN {
                 Vec::new()
@@ -7258,7 +7258,7 @@ End Sub";
                     "HostProject",
                     "Emitter",
                     "Changed",
-                    bound_handle.into(),
+                    bound_handle,
                     &[RuntimeValue::I32(1), RuntimeValue::I32(2)],
                 )
                 .expect_err(
@@ -23088,7 +23088,11 @@ End Sub";
             .expect_err("runtime policy denial should surface for declare invoke");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-POLICY-DENIED"));
-        assert!(err.message().contains("[invoke_symbol]"));
+        assert!(
+            err.message().contains("[invoke_symbol]"),
+            "{}",
+            err.message()
+        );
     }
 
     #[test]
@@ -23135,7 +23139,11 @@ End Sub";
             .expect_err("unknown symbol should raise deterministic adapter fault");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-ADAPTER-FAULT"));
-        assert!(err.message().contains("[invoke_symbol]"));
+        assert!(
+            err.message().contains("[invoke_symbol]"),
+            "{}",
+            err.message()
+        );
     }
 
     #[test]

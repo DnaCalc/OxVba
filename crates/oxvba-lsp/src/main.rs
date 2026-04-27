@@ -68,7 +68,6 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: server_capabilities(),
             server_info: Some(server_info()),
-            ..InitializeResult::default()
         })
     }
 
@@ -490,6 +489,7 @@ fn location_to_lsp(
     Some(Location::new(uri, span_to_range(&source, location.span)))
 }
 
+#[allow(deprecated)]
 fn document_symbol_to_lsp(source: &str, symbol: OxDocumentSymbol) -> DocumentSymbol {
     DocumentSymbol {
         name: symbol.name,
@@ -509,6 +509,7 @@ fn workspace_symbol_to_lsp(
 ) -> Option<SymbolInformation> {
     let source = core.document_source(&symbol.document)?;
     let uri = core.document_uri(&symbol.document)?;
+    #[allow(deprecated)]
     Some(SymbolInformation {
         name: symbol.symbol.name,
         kind: symbol_kind_to_lsp(symbol.symbol.kind),

@@ -428,6 +428,7 @@ impl<'engine> EmbeddedBuildRunHost<'engine> {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn run_project(
         &self,
         request: &EmbeddedRunRequest,

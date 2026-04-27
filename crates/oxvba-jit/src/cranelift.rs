@@ -15,6 +15,7 @@ use oxvba_hal::traits::HostServices;
 #[cfg(test)]
 use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::Variant;
+use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
 use crate::jit_context::JitContextOwned;
 use crate::runtime_helpers;
@@ -314,6 +315,12 @@ fn supports_rtslot(bytecode: &Bytecode) -> bool {
     }
 
     for instruction in &bytecode.instructions {
+        if matches!(
+            instruction,
+            Instruction::AddConstI32 { value, .. } if *value == ERROR_TAG_BASE
+        ) {
+            return false;
+        }
         if !supports_rtslot_instruction(instruction) {
             return false;
         }

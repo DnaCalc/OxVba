@@ -1,3 +1,5 @@
+#![cfg_attr(not(target_os = "windows"), allow(dead_code, unused_variables))]
+
 #[cfg(target_os = "windows")]
 use crate::model::ComInvocationStrategy;
 use crate::{

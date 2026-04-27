@@ -6,7 +6,7 @@ use crate::{
     traits::ProcessEnvHal,
 };
 use oxvba_runtime::{RuntimeValue, VarType, Variant, bstr::BStr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::StandardHostServices;
 
@@ -211,12 +211,12 @@ impl ProcessEnvHal for StandardHostServices {
     }
 }
 
-fn enumerate_dir_matches(target: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
+fn enumerate_dir_matches(target: &Path) -> std::io::Result<Vec<PathBuf>> {
     if path_contains_wildcards(target) {
         return expand_host_wildcard_paths(target);
     }
     if target.exists() {
-        return Ok(vec![target.clone()]);
+        return Ok(vec![target.to_path_buf()]);
     }
     Ok(Vec::new())
 }

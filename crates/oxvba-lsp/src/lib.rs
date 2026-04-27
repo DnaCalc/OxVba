@@ -441,7 +441,7 @@ fn resolve_document_id(state: &TransportState, uri: &Url) -> Result<DocumentId, 
 fn uri_module_candidate(uri: &Url) -> Option<String> {
     let segment = uri
         .path_segments()
-        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
         .or_else(|| {
             let path = uri.path().trim_matches('/');
             (!path.is_empty()).then_some(path)

@@ -196,7 +196,7 @@ impl WebShellSession {
         workspace_session
             .set_document_text(&document_id, source)
             .map_err(|err| WebShellError::Host(err.to_string()))?;
-        Ok(self.document_diagnostics_events(&document_id.0)?)
+        self.document_diagnostics_events(&document_id.0)
     }
 
     fn close_document(&mut self, document_id: &str) -> Result<Vec<WebHostEvent>, WebShellError> {
@@ -208,7 +208,7 @@ impl WebShellSession {
         workspace_session
             .close_document(&document_id)
             .map_err(|err| WebShellError::Host(err.to_string()))?;
-        Ok(self.document_diagnostics_events(&document_id.0)?)
+        self.document_diagnostics_events(&document_id.0)
     }
 
     fn run_project(&mut self) -> Result<Vec<WebHostEvent>, WebShellError> {

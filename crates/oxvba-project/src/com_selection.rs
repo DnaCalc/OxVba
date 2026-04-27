@@ -290,7 +290,7 @@ pub fn discover_registered_com_candidates(
                 )
             })
             .collect::<Vec<_>>();
-        return Ok(candidates);
+        Ok(candidates)
     }
 
     #[cfg(not(target_os = "windows"))]
