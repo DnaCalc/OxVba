@@ -1824,6 +1824,10 @@ Implementation progress:
      and `SafeArray::from_typed_variants`. Legacy runtime-result assertions
      remain on `RuntimeValue` constructors only where the test explicitly
      exercises a compatibility API.
+190. COM model and standard HAL adapter retained bridge tests now construct
+     SAFEARRAY setup carriers through `SafeArray::from_variants`, leaving
+     `SafeArray::from_values` only on explicit legacy `RuntimeValue`
+     compatibility expectations in those focused tests.
 
 Remaining blocker:
 
@@ -2209,3 +2213,6 @@ Remaining blocker:
 35. Windows COM bridge SAFEARRAY roundtrip tests now build retained expected
     carriers from `Variant` elements, further reducing legacy constructor scan
     noise outside explicit runtime-result compatibility tests.
+36. COM model and standard HAL retained bridge tests now use retained
+    `from_variants` setup carriers, leaving legacy constructors only on
+    compatibility result assertions in that scan slice.

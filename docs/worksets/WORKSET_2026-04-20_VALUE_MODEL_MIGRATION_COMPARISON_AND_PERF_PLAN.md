@@ -2439,6 +2439,9 @@ Child beads:
        now build expected carriers through `SafeArray::from_variants` and
        `SafeArray::from_typed_variants`, leaving legacy constructors to
        explicit runtime-result compatibility assertions
+     - progress landed: COM model and standard HAL retained bridge tests now
+       construct SAFEARRAY setup carriers through `SafeArray::from_variants`,
+       leaving legacy constructors to explicit compatibility expectations
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
