@@ -1506,8 +1506,11 @@ where
             }
             return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
         }
-        // Other scalar BYREF types: delegate to variant_to_com_value which handles them.
-        return Ok(variant_to_com_value(variant)?.to_runtime_value());
+        // Other scalar BYREF types: retain the decoded payload as a Variant,
+        // then project only at the legacy runtime-result boundary.
+        return variant_to_com_value(variant)?
+            .to_variant()?
+            .to_runtime_value();
     }
     if vt & VT_ARRAY != 0 {
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
@@ -1538,7 +1541,9 @@ where
             op,
         );
     }
-    Ok(variant_to_com_value(variant)?.to_runtime_value())
+    variant_to_com_value(variant)?
+        .to_variant()?
+        .to_runtime_value()
 }
 
 #[cfg(target_os = "windows")]
