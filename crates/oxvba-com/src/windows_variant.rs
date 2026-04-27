@@ -40,7 +40,7 @@ pub enum VariantResultValue {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
-unsafe fn variant_to_variant_or_bound_runtime<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+unsafe fn variant_to_variant_or_bound_variant<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     variant: &VARIANT,
     query_dispatch_from_unknown: &mut FQueryDispatch,
     add_ref_dispatch: &mut FAddRefDispatch,
@@ -51,40 +51,35 @@ unsafe fn variant_to_variant_or_bound_runtime<FQueryDispatch, FAddRefDispatch, F
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
 {
     match variant_to_com_value(variant).and_then(|value| value.to_variant()) {
         Ok(value) => Ok(value),
-        Err(_) => {
-            let value = variant_to_runtime_value(
-                variant,
-                query_dispatch_from_unknown,
-                add_ref_dispatch,
-                bind_dispatch_result,
-                prog_id_hint,
-                op,
-            )?;
-            Variant::try_from_runtime_value(&value)
-        }
+        Err(_) => variant_to_variant_value(
+            variant,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        ),
     }
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
-unsafe fn enumvariant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+unsafe fn enumvariant_to_variant_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     enum_variant: *mut crate::windows_client::RawIEnumVARIANT,
     query_dispatch_from_unknown: &mut FQueryDispatch,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
     prog_id_hint: &str,
     op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
+) -> Result<Variant, String>
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
 {
     let mut values = Vec::new();
     loop {
@@ -100,7 +95,7 @@ where
         if fetched == 0 {
             break;
         }
-        let value = match variant_to_variant_or_bound_runtime(
+        let value = match variant_to_variant_or_bound_variant(
             &element,
             query_dispatch_from_unknown,
             add_ref_dispatch,
@@ -117,9 +112,45 @@ where
         let _ = VariantClear(&mut element);
         values.push(value);
     }
-    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
-        SafeArray::from_variants(values),
-    ))
+    Ok(Variant::from_safearray(SafeArray::from_variants(values)))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe fn unknown_to_variant_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    unknown: *mut c_void,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<Variant, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
+{
+    match query_dispatch_from_unknown(unknown) {
+        Ok(dispatch) => bind_dispatch_result(dispatch, prog_id_hint, op),
+        Err(dispatch_err) => {
+            let enum_variant = match crate::windows_client::query_enumvariant_from_unknown(
+                unknown.cast::<crate::windows_client::RawIUnknown>(),
+            ) {
+                Ok(enum_variant) => enum_variant,
+                Err(_) => return Err(dispatch_err),
+            };
+            let result = enumvariant_to_variant_value(
+                enum_variant,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+            crate::windows_client::release_enumvariant(enum_variant);
+            result
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -138,27 +169,20 @@ where
     FBindDispatch:
         FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
 {
-    match query_dispatch_from_unknown(unknown) {
-        Ok(dispatch) => bind_dispatch_result(dispatch, prog_id_hint, op),
-        Err(dispatch_err) => {
-            let enum_variant = match crate::windows_client::query_enumvariant_from_unknown(
-                unknown.cast::<crate::windows_client::RawIUnknown>(),
-            ) {
-                Ok(enum_variant) => enum_variant,
-                Err(_) => return Err(dispatch_err),
-            };
-            let result = enumvariant_to_runtime_value(
-                enum_variant,
-                query_dispatch_from_unknown,
-                add_ref_dispatch,
-                bind_dispatch_result,
-                prog_id_hint,
-                op,
-            );
-            crate::windows_client::release_enumvariant(enum_variant);
-            result
-        }
-    }
+    let mut bind_variant =
+        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
+            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
+            Variant::try_from_runtime_value(&value)
+        };
+    unknown_to_variant_value(
+        unknown,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+        &mut bind_variant,
+        prog_id_hint,
+        op,
+    )?
+    .to_runtime_value()
 }
 
 #[cfg(target_os = "windows")]
@@ -687,19 +711,18 @@ unsafe fn safe_array_element_to_variant(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn safe_array_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+unsafe fn safe_array_to_variant_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     psa: *mut SAFEARRAY,
     query_dispatch_from_unknown: &mut FQueryDispatch,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
     prog_id_hint: &str,
     op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
+) -> Result<Variant, String>
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
 {
     if psa.is_null() {
         return Err("VT_ARRAY result carried null SAFEARRAY".to_string());
@@ -764,7 +787,7 @@ where
                     hr as u32
                 ));
             }
-            let value = match variant_to_variant_or_bound_runtime(
+            let value = match variant_to_variant_or_bound_variant(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -797,7 +820,7 @@ where
             let mut element: VARIANT = std::mem::zeroed();
             element.Anonymous.Anonymous.vt = VT_UNKNOWN;
             element.Anonymous.Anonymous.Anonymous.punkVal = unknown.cast();
-            let value = match variant_to_variant_or_bound_runtime(
+            let value = match variant_to_variant_or_bound_variant(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -830,7 +853,7 @@ where
             let mut element: VARIANT = std::mem::zeroed();
             element.Anonymous.Anonymous.vt = VT_DISPATCH;
             element.Anonymous.Anonymous.Anonymous.pdispVal = dispatch.cast();
-            let value = match variant_to_variant_or_bound_runtime(
+            let value = match variant_to_variant_or_bound_variant(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -886,7 +909,39 @@ where
         SafeArray::from_variants_nd(bounds, values)
     };
 
-    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(array))
+    Ok(Variant::from_safearray(array))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safe_array_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    psa: *mut SAFEARRAY,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    let mut bind_variant =
+        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
+            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
+            Variant::try_from_runtime_value(&value)
+        };
+    safe_array_to_variant_value(
+        psa,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+        &mut bind_variant,
+        prog_id_hint,
+        op,
+    )?
+    .to_runtime_value()
 }
 
 #[cfg(target_os = "windows")]
@@ -1442,6 +1497,95 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         }
     };
     Ok(value)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn variant_to_variant_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    variant: &VARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<Variant, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
+{
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt & VT_BYREF != 0 {
+        let base_vt = vt & !VT_BYREF;
+        if base_vt & VT_ARRAY != 0 {
+            let pparray = variant.Anonymous.Anonymous.Anonymous.pparray;
+            if pparray.is_null() {
+                return Err("VT_BYREF|VT_ARRAY carried null pparray pointer".to_string());
+            }
+            return safe_array_to_variant_value(
+                *pparray,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+        }
+        if base_vt == VT_VARIANT {
+            let pvar = variant.Anonymous.Anonymous.Anonymous.pvarVal;
+            if pvar.is_null() {
+                return Err("VT_BYREF|VT_VARIANT carried null pvarVal pointer".to_string());
+            }
+            return variant_to_variant_value(
+                &*pvar,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+        }
+        if base_vt == VT_DISPATCH {
+            let ppdispatch = variant.Anonymous.Anonymous.Anonymous.ppdispVal;
+            if ppdispatch.is_null() {
+                return Err("VT_BYREF|VT_DISPATCH carried null ppdispVal pointer".to_string());
+            }
+            let dispatch = *ppdispatch;
+            if !dispatch.is_null() {
+                add_ref_dispatch(dispatch.cast());
+            }
+            return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
+        }
+        return variant_to_com_value(variant)?.to_variant();
+    }
+    if vt & VT_ARRAY != 0 {
+        return safe_array_to_variant_value(
+            variant.Anonymous.Anonymous.Anonymous.parray,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        );
+    }
+    if vt == VT_DISPATCH {
+        let dispatch = variant.Anonymous.Anonymous.Anonymous.pdispVal;
+        if !dispatch.is_null() {
+            add_ref_dispatch(dispatch.cast());
+        }
+        return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
+    }
+    if vt == VT_UNKNOWN {
+        return unknown_to_variant_value(
+            variant.Anonymous.Anonymous.Anonymous.punkVal.cast(),
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        );
+    }
+    variant_to_com_value(variant)?.to_variant()
 }
 
 #[cfg(target_os = "windows")]
