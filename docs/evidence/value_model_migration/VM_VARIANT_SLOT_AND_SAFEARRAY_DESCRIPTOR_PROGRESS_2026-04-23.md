@@ -1778,6 +1778,11 @@ Implementation progress:
      `Variant` carriers directly from `activate_variant_object_for_prog_id_name`;
      the previous private `RuntimeValue::Object` activation detour was removed
      from the `create_object_variant` path.
+184. Remaining `RuntimeValue` projection surfaces were classified in
+     `REMAINING_RUNTIMEVALUE_PROJECTION_CLASSIFICATION_2026-04-27.md`,
+     separating explicit compatibility APIs from retained production paths and
+     leaving concrete `vmm-e6` delivery paths for test-surface cleanup, missing
+     retained companions, and final public API disposition.
 
 Remaining blocker:
 
@@ -2144,3 +2149,6 @@ Remaining blocker:
 29. Standard HAL native COM activation now materializes the retained object
     `Variant` directly for `create_object_variant()` instead of returning a
     private `RuntimeValue::Object` and converting it back.
+30. Remaining `RuntimeValue` projection surfaces now have a dedicated
+    classification note and executable delivery path; this supports continued
+    `vmm-e6` work but does not close the bead.

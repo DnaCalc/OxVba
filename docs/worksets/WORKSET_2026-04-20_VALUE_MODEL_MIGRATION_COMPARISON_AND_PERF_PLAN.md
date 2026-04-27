@@ -2414,6 +2414,11 @@ Child beads:
        retained object `Variant` carriers directly for `create_object_variant`
        instead of returning a private `RuntimeValue::Object` and converting it
        back
+     - progress landed: remaining `RuntimeValue` projection surfaces are
+       classified in
+       `docs/evidence/value_model_migration/REMAINING_RUNTIMEVALUE_PROJECTION_CLASSIFICATION_2026-04-27.md`,
+       with explicit compatibility APIs separated from retained production
+       paths and concrete follow-up delivery paths listed
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
