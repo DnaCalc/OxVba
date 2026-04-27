@@ -541,6 +541,14 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.9` is complete for V0.2 non-primary host validation breadth; the
   next ready V0.2 roundout bead is `bd-bqm8.11`
 
+`v02.11` rollout, 2026-04-27:
+
+- `bd-bqm8.11.1` is complete for rolling out performance and VBA comparison
+  child beads, with evidence in
+  [V02_PERFORMANCE_VBA_COMPARISON_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_VBA_COMPARISON_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.11` remains in-progress; the next ready performance scaffold bead
+  is `bd-bqm8.11.2`, covering the benchmark corpus and methodology matrix
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
