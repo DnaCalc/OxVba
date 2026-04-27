@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: planned
+Status: in-progress
 
 ## Near-Term Priority Position
 
@@ -40,6 +40,17 @@ The project needs a current execution owner that reflects the actual dependency 
 3. implement XLOPER12 marshaling
 4. wire metadata and registration surfaces
 5. capture validation and evidence
+
+Current execution state:
+- wrapper/native-hosting substrate is now closed as a generated-source handoff
+  boundary, so this XLL workset is active
+- `bd-xll1.2` is complete: generated XLL source now carries a registration
+  table derived from `NativeExportDescriptor` metadata and an explicit
+  `Excel12v` / `xlfRegister` source path
+- evidence:
+  [XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md)
+- next delivery slice: bridge XLOPER12 invocation arguments/results to
+  `RuntimeValue` procedure invocation without claiming Excel-loaded parity
 
 ## Relationship To Prior Work
 
