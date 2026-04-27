@@ -69,11 +69,51 @@ pub struct ImmediateValueProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImmediateVariantValueProjection {
+    /// Retained value-model evaluation result.
+    pub variant_value: Variant,
+    pub display_text: String,
+}
+
+impl ImmediateVariantValueProjection {
+    /// Project a retained immediate value into the legacy result shape.
+    pub fn to_runtime_value(&self) -> Result<ImmediateValueProjection, String> {
+        let runtime_value = self.variant_value.to_runtime_value()?;
+        Ok(ImmediateValueProjection {
+            runtime_value,
+            display_text: self.display_text.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImmediateEvaluationOutput {
     Empty,
     Value(ImmediateValueProjection),
     PrintedLine(String),
     Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImmediateVariantEvaluationOutput {
+    Empty,
+    Value(ImmediateVariantValueProjection),
+    PrintedLine(String),
+    Reset,
+}
+
+impl ImmediateVariantEvaluationOutput {
+    /// Project retained immediate output into the legacy compatibility shape.
+    pub fn to_runtime_output(&self) -> Result<ImmediateEvaluationOutput, String> {
+        match self {
+            Self::Empty => Ok(ImmediateEvaluationOutput::Empty),
+            Self::Value(value) => value
+                .to_runtime_value()
+                .map(ImmediateEvaluationOutput::Value),
+            Self::PrintedLine(line) => Ok(ImmediateEvaluationOutput::PrintedLine(line.clone())),
+            Self::Reset => Ok(ImmediateEvaluationOutput::Reset),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +128,30 @@ impl ImmediateEvaluationResult {
             output: ImmediateEvaluationOutput::Empty,
             diagnostics: Vec::new(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImmediateVariantEvaluationResult {
+    pub output: ImmediateVariantEvaluationOutput,
+    pub diagnostics: Vec<PhaseDiagnostic>,
+}
+
+impl ImmediateVariantEvaluationResult {
+    pub fn empty() -> Self {
+        Self {
+            output: ImmediateVariantEvaluationOutput::Empty,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Project a retained Variant evaluation result into the legacy result
+    /// surface.
+    pub fn to_runtime_result(&self) -> Result<ImmediateEvaluationResult, String> {
+        Ok(ImmediateEvaluationResult {
+            output: self.output.to_runtime_output()?,
+            diagnostics: self.diagnostics.clone(),
+        })
     }
 }
 
@@ -191,22 +255,36 @@ impl<'engine> ImmediateSession<'engine> {
         &mut self,
         request: &ImmediateEvaluationRequest,
     ) -> Result<ImmediateEvaluationResult, ImmediateSessionError> {
+        self.evaluate_variant(request)?
+            .to_runtime_result()
+            .map_err(|message| ImmediateSessionError::Phase(PhaseDiagnostic::runtime(message)))
+    }
+
+    /// Evaluate immediate input and retain the result as a `Variant`.
+    pub fn evaluate_variant(
+        &mut self,
+        request: &ImmediateEvaluationRequest,
+    ) -> Result<ImmediateVariantEvaluationResult, ImmediateSessionError> {
         let trimmed = request.source_text.trim();
         if trimmed.is_empty() {
-            return Ok(ImmediateEvaluationResult::empty());
+            return Ok(ImmediateVariantEvaluationResult::empty());
         }
 
         if trimmed.eq_ignore_ascii_case("reset") {
             return self
                 .reset(ImmediateResetKind::ClearSessionState)
+                .map(|_| ImmediateVariantEvaluationResult {
+                    output: ImmediateVariantEvaluationOutput::Reset,
+                    diagnostics: Vec::new(),
+                })
                 .map_err(ImmediateSessionError::Phase);
         }
 
         let parsed = match parse_immediate_invocation(trimmed, request.kind) {
             Ok(parsed) => parsed,
             Err(message) => {
-                return Ok(ImmediateEvaluationResult {
-                    output: ImmediateEvaluationOutput::Empty,
+                return Ok(ImmediateVariantEvaluationResult {
+                    output: ImmediateVariantEvaluationOutput::Empty,
                     diagnostics: vec![PhaseDiagnostic::compile(message)],
                 });
             }
@@ -233,22 +311,22 @@ impl<'engine> ImmediateSession<'engine> {
             .map_err(|message| ImmediateSessionError::Phase(PhaseDiagnostic::runtime(message)))?;
 
         let output = if parsed.is_statement {
-            ImmediateEvaluationOutput::PrintedLine(format_invoked_statement_line(
+            ImmediateVariantEvaluationOutput::PrintedLine(format_invoked_statement_line(
                 &module_name,
                 &parsed.procedure_name,
                 &runtime_value,
                 request.display_style,
             ))
         } else if matches!(runtime_value, RuntimeValue::Empty) {
-            ImmediateEvaluationOutput::Empty
+            ImmediateVariantEvaluationOutput::Empty
         } else {
-            ImmediateEvaluationOutput::Value(ImmediateValueProjection {
+            ImmediateVariantEvaluationOutput::Value(ImmediateVariantValueProjection {
                 display_text: format_runtime_value_for_immediate(&runtime_value),
-                runtime_value,
+                variant_value,
             })
         };
 
-        Ok(ImmediateEvaluationResult {
+        Ok(ImmediateVariantEvaluationResult {
             output,
             diagnostics: Vec::new(),
         })
@@ -436,7 +514,7 @@ mod tests {
 
     use super::{
         ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
-        ImmediateInputKind, ImmediateSession,
+        ImmediateInputKind, ImmediateSession, ImmediateVariantEvaluationOutput,
     };
     use crate::{Engine, HostConfig};
 
@@ -537,6 +615,33 @@ End Function
             panic!("expected value result");
         };
         assert_eq!(value.runtime_value, RuntimeValue::I32(42));
+        assert_eq!(value.display_text, "42");
+    }
+
+    #[test]
+    fn immediate_session_invokes_live_session_procedures_as_variants_before_projection() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function DoubleValue(value As Integer) As Integer
+    DoubleValue = value * 2
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate_variant(&ImmediateEvaluationRequest::query("DoubleValue(21)"))
+            .expect("evaluate");
+
+        let ImmediateVariantEvaluationOutput::Value(value) = result.output else {
+            panic!("expected variant value result");
+        };
+        assert_eq!(value.variant_value.as_i32(), Some(42));
         assert_eq!(value.display_text, "42");
     }
 
