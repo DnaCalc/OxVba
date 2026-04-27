@@ -3,7 +3,7 @@
 Date: 2026-04-27
 Owner: Codex
 Bead: `bd-bqm8.2.2`
-Status: in-progress
+Status: complete
 
 ## Change
 
@@ -65,6 +65,23 @@ Normal JIT/host builds continue through retained `Variant` APIs. Remaining
 `RuntimeValue`/compat-slot hits in JIT normal code are now concentrated in the
 explicit `oxvba_jit::compat` adapter and in retained Variant construction from
 the legacy 4-byte subset.
+
+Final slice narrowed the VM register-file compatibility bridge methods to
+crate visibility and test-only visibility where applicable. The remaining
+normal-build VM compat-slot methods are internal interpreter bridges rather than
+public VM API:
+
+- `RuntimeSlot::from_compat_slot_i32`
+- `RuntimeSlot::project_compat_slot_i32`
+- `RuntimeSlot::as_i32_lossy`
+
+These are used by the bounded legacy scalar fast paths and are explicitly
+internal. `RuntimeSlot` `RuntimeValue` ingress/egress helpers are test-only.
+
+`bd-bqm8.2.2` is complete for VM/JIT core public snapshot/slot-token surfaces.
+The parent `bd-bqm8.2` remains in-progress because host/CLI/debugger,
+COM/HAL, and conformance/doc surfaces are still open under downstream child
+beads.
 
 ## Verification
 
