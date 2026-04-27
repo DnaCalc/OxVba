@@ -1591,6 +1591,13 @@ Implementation progress:
      companions. The legacy-only console field parser and shared
      `RuntimeValue` display formatter were removed after the retained `Variant`
      display/parser path became the single console implementation path.
+158. Standard filesystem legacy `RuntimeValue` methods now delegate through
+     retained `Variant` filesystem companions for open/close/kill/seek,
+     status, byte IO, formatted text IO, delimited input, and line input. A
+     retained `seek_variant` companion was added so seek semantics also live on
+     the retained filesystem path, and the obsolete shared legacy i32 token
+     projection helper was removed after filesystem moved to boundary-only
+     projection.
 
 Remaining blocker:
 

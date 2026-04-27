@@ -111,7 +111,8 @@ Current value-model migration note (2026-04-25):
 46. Standard time/locale and event-pump legacy `RuntimeValue` calls now delegate through retained `Variant` companions.
 47. Standard diagnostics `emit`/`debug_print` legacy `RuntimeValue` calls now delegate through retained `Variant` companions.
 48. Standard console legacy `RuntimeValue` calls now delegate through retained `Variant` console companions.
-49. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+49. Standard filesystem legacy `RuntimeValue` calls now delegate through retained `Variant` filesystem companions, including the new retained `seek_variant` companion.
+50. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
