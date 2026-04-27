@@ -2206,12 +2206,13 @@ mod tests {
     #[test]
     fn com_safe_array_variant_roundtrips_through_adapter_helpers() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        let value = ComValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
-            RuntimeValue::I32(4),
-            RuntimeValue::Bool(true),
-            RuntimeValue::String(BStr::from("Hello")),
-            RuntimeValue::Null,
-        ]));
+        let value =
+            ComValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_variants(vec![
+                Variant::from_i32(4),
+                Variant::from_bool(true),
+                Variant::from_string(BStr::from("Hello")),
+                Variant::null(),
+            ]));
         let resolve_object = |_handle: ObjectRef| -> Result<*mut RawIDispatch, String> {
             Err("object dispatch resolution not expected".to_string())
         };

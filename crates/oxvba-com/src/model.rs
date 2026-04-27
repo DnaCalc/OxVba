@@ -440,7 +440,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComCallbackValue, ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType, Variant,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -544,9 +544,9 @@ mod tests {
 
     #[test]
     fn com_value_preserves_safe_array_payload_shape() {
-        let value = ComValue::ArrayIntent(SafeArray::from_values(vec![
-            RuntimeValue::I32(4),
-            RuntimeValue::String(BStr::from("A")),
+        let value = ComValue::ArrayIntent(SafeArray::from_variants(vec![
+            Variant::from_i32(4),
+            Variant::from_string(BStr::from("A")),
         ]));
         assert_eq!(
             value.to_runtime_value(),
