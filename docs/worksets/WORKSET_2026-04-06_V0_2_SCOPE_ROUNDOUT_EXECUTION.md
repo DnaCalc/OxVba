@@ -360,8 +360,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.2.2` is complete for VM/JIT core public snapshot and slot-token
   surfaces; evidence is recorded in
   [V02_VM_JIT_COMPAT_SLOT_CORE_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_VM_JIT_COMPAT_SLOT_CORE_PROGRESS_2026-04-27.md)
-- the next ready delivery bead is `bd-bqm8.2.3`, covering host, CLI, debugger,
-  immediate, and project-test observation surfaces
+- `bd-bqm8.2.3` is complete for host, CLI, debugger export, immediate, and
+  project integration observation boundaries; evidence is recorded in
+  [V02_HOST_OBSERVATION_COMPAT_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HOST_OBSERVATION_COMPAT_PROGRESS_2026-04-27.md)
+- the next ready delivery bead is `bd-bqm8.2.4`, covering COM/HAL compatibility
+  bridges
 
 ## Delivery Rules for This Workset
 
