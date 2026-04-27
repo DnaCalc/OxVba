@@ -432,6 +432,14 @@ Rollout sync, 2026-04-27:
   lane; accepted rows have VM/JIT/host/conformance evidence and unsupported
   ambiguity remains explicit in the grammar policy
 
+`v02.5` rollout, 2026-04-27:
+
+- `bd-bqm8.5.1` is complete for rolling out representation/layout doctrine
+  child beads, with evidence in
+  [V02_REPRESENTATION_LAYOUT_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.5` remains in-progress; the next ready decision bead is
+  `bd-bqm8.5.2`, covering the V0.2 representation/layout doctrine decision
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
