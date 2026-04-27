@@ -587,6 +587,15 @@ Rollout sync, 2026-04-27:
   scaffold; all V0.2 roundout child epics are now complete, leaving only the
   umbrella workset final checklist/closure gate
 
+`v02` umbrella final checklist, 2026-04-27:
+
+- `bd-bqm8` is complete for the bounded V0.2 scope roundout workset, with
+  final evidence in
+  [V02_SCOPE_ROUNDOUT_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_SCOPE_ROUNDOUT_FINAL_CHECKLIST_2026-04-27.md)
+- completion is bounded to the workset scope; forms/designer support, direct
+  standalone native-image parity, full Office COM/XLL deployment parity, and
+  absolute VBA performance claims remain outside the closed scope
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
