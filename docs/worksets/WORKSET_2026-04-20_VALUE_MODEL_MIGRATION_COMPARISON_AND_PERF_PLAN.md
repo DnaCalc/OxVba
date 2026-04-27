@@ -2402,6 +2402,10 @@ Child beads:
      - progress landed: HAL marshaling conformance now validates
        scalar/subtype carrier fidelity with retained `Variant` roundtrips
        rather than `RuntimeValue` projections
+     - progress landed: Windows COM SAFEARRAY and `IEnumVARIANT` result
+       materialization now builds retained `Variant` array carriers first,
+       with `RuntimeValue::ArrayIntent` projection isolated to the explicit
+       legacy runtime-result API boundary
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

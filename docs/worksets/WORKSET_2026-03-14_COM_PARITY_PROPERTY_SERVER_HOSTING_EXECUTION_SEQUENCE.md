@@ -134,7 +134,8 @@ Current value-model migration note (2026-04-25):
 69. Immediate-session and debugger retained display text now formats directly from `Variant` carriers instead of projecting through `RuntimeValue`.
 70. Windows COM scalar runtime-result compatibility projection now decodes scalar payloads as retained `Variant` carriers before the final `RuntimeValue` projection.
 71. HAL marshaling conformance now validates scalar/subtype carrier fidelity with retained `Variant` roundtrips rather than `RuntimeValue` projections.
-72. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+72. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent` projection isolated to the explicit legacy runtime-result API boundary.
+73. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

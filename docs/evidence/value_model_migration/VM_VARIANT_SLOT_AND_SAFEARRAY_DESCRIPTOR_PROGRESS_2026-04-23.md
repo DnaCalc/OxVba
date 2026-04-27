@@ -849,6 +849,14 @@ Validation:
      - result: `11` passed
 203. `./scripts/check-governance.ps1`
      - result: passed
+204. `cargo fmt -p oxvba-com --check`
+     - result: passed
+205. `cargo check -p oxvba-com`
+     - result: passed
+206. `cargo test -p oxvba-com windows_variant --lib`
+     - result: `28` passed
+207. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1742,6 +1750,11 @@ Implementation progress:
 180. HAL marshaling conformance probes now validate COM carrier fidelity by
      comparing retained `Variant` roundtrips instead of routing the probe
      through `ComValue -> RuntimeValue` projections.
+181. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now
+     returns retained `Variant` array carriers internally; the legacy
+     `RuntimeValue::ArrayIntent` projection is isolated to
+     `safe_array_to_runtime_value()` and related public runtime-result
+     compatibility APIs.
 
 Remaining blocker:
 
@@ -2099,3 +2112,6 @@ Remaining blocker:
     `RuntimeValue` projection.
 26. HAL marshaling conformance now validates scalar/subtype carrier fidelity
     with retained `Variant` roundtrips rather than `RuntimeValue` projections.
+27. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds
+    retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent`
+    projection isolated to the explicit legacy runtime-result API boundary.
