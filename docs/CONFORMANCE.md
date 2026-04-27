@@ -90,6 +90,12 @@ Project integration lane:
   from retained `Variant` results, not as the primary execution result model.
 - Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
+Late-bound `IDispatch` V0.2 matrix:
+- Supported and unsupported rows are recorded in
+  [V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md).
+- Unsupported rows must remain explicit; architecture prose does not count as
+  implementation evidence.
+
 ## Declared Profile Scope (Current Gate)
 - Profile id: `mvp-profile-v620` (VBA 7.1 + Windows Office COM compliance ladder terminal gate)
 - Platform: Windows x64

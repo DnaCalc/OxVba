@@ -394,8 +394,11 @@ Rollout sync, 2026-04-27:
   [V02_IDISPATCH_PARITY_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_PARITY_ROLLOUT_2026-04-27.md)
 - `bd-bqm8.3` remains in-progress; the rollout does not close the capability
   lane
-- the next ready delivery bead is `bd-bqm8.3.2`, covering the published
-  supported/unsupported late-bound matrix
+- `bd-bqm8.3.2` is complete for publishing the supported/unsupported
+  late-bound `IDispatch` matrix, with evidence in
+  [V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md)
+- the next ready delivery bead is `bd-bqm8.3.3`, covering in-scope
+  metadata-backed member/default/named-argument behavior
 
 ## Delivery Rules for This Workset
 
