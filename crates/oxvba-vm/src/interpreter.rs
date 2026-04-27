@@ -6671,6 +6671,69 @@ mod tests {
     }
 
     #[test]
+    fn hardening_rejects_out_of_range_bytecode_write_slot() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 300,
+                    value: 42,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+        let mut vm = Vm::default();
+
+        assert_eq!(
+            vm.execute(&bytecode)
+                .expect_err("out-of-range bytecode write slot should fail"),
+            "slot out of range: 300"
+        );
+    }
+
+    #[test]
+    fn hardening_rejects_out_of_range_bytecode_operand_slot() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::AddSlots {
+                    dst: 0,
+                    lhs: 0,
+                    rhs: 300,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+        let mut vm = Vm::default();
+
+        assert_eq!(
+            vm.execute(&bytecode)
+                .expect_err("out-of-range bytecode operand slot should fail"),
+            "slot out of range: 300"
+        );
+    }
+
+    #[test]
+    fn hardening_rejects_malformed_runtime_payload_in_semantic_op() {
+        let err = crate::semantics::variant_add_const_value(
+            &Variant::zeroed(VarType::Object),
+            1,
+            "hardening runtime input",
+        )
+        .expect_err("malformed object payload should not enter arithmetic");
+
+        assert_eq!(
+            err,
+            "hardening runtime input requires numeric-compatible Variant, got Object"
+        );
+    }
+
+    #[test]
     fn jump_if_zero_pc_progression_helper() {
         assert_eq!(Vm::next_pc_for_jump_if_zero(0, 3, 4, 1).expect("jump"), 3);
         assert_eq!(

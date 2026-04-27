@@ -464,9 +464,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.6.3` is complete for malformed retained-Variant and JIT-slot
   boundary handling, with evidence in
   [V02_HARDENED_VARIANT_JIT_SLOT_BOUNDARIES_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENED_VARIANT_JIT_SLOT_BOUNDARIES_2026-04-27.md)
-- `bd-bqm8.6` remains in-progress; the next ready delivery bead is
-  `bd-bqm8.6.4`, covering malformed bytecode, project/source, and runtime-input
-  regressions
+- `bd-bqm8.6.4` is complete for malformed VM bytecode and runtime-input
+  regressions, with evidence in
+  [V02_MALFORMED_VM_INPUT_REGRESSIONS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_MALFORMED_VM_INPUT_REGRESSIONS_2026-04-27.md)
+- `bd-bqm8.6` remains in-progress; the next ready evidence bead is
+  `bd-bqm8.6.5`, covering formal/security evidence refresh and residual
+  classification
 
 ## Delivery Rules for This Workset
 
