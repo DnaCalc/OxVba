@@ -1,4 +1,4 @@
-case_id|level|title|status|backend|runtime_profile|policy_preset|policy_overrides|unsupported_mode|expect_status|expect_phase|expect_slots|expect_error_contains|reference_order|deferred_gate|topic_refs|project_name|notes
+case_id|level|title|status|backend|runtime_profile|policy_preset|policy_overrides|unsupported_mode|expect_status|expect_phase|expect_compat_slots|expect_error_contains|reference_order|deferred_gate|topic_refs|project_name|notes
 INTP-001|L1|Single-module arithmetic smoke|active|both|windows-headless|deterministic-runtime||runtime|ok|any|15||| |CCT-034|AlphaSmoke|Baseline project execution lane for deterministic arithmetic.
 INTP-002|L2|Multi-module intra-project call wiring|active|both|windows-headless|deterministic-runtime||runtime|ok|any|7||| |CCT-037|AlphaModules|Exercises module-qualified project call lowering.
 INTP-003|L3|Cross-project module-qualified reference call|active|both|windows-headless|deterministic-runtime||runtime|ok|any|9||LibMath| |CCT-037|AlphaCrossRef|Validates reference project lowering/execution under deterministic host profile.

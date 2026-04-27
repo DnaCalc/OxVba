@@ -79,13 +79,15 @@ PMR oracle runner note:
 ## Current policy
 At MVP stage, conformance compares:
 - execution status (`ok` / `error`)
-- slot snapshot output (`SLOTS:` line from CLI)
+- explicit compatibility-slot snapshot output (`SLOTS:` line from CLI)
 - semantic value snapshot output when explicitly requested (`VALUES:` line from CLI)
 
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 Project integration lane:
 - Uses `cargo test -p oxvba-host --test project_integration_suite` over `conformance/integration/catalog.psv`.
+- Treats `expect_compat_slots` as a legacy compatibility assertion derived
+  from retained `Variant` results, not as the primary execution result model.
 - Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
 ## Declared Profile Scope (Current Gate)

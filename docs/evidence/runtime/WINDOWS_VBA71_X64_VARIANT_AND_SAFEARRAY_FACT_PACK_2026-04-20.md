@@ -228,7 +228,7 @@ Migration implication:
 
 ## Current OxVba Baseline Findings
 
-### `OLD-VARIANT-1`: The checked-in runtime `Variant` is a bounded compat slot
+### `OLD-VARIANT-1`: The checked-in runtime `Variant` is a bounded retained carrier with compatibility-slot adapters
 
 - [variant.rs](/C:/Work/DnaCalc/OxVba/crates/oxvba-runtime/src/variant.rs)
   defines a 16-byte `Variant` with:

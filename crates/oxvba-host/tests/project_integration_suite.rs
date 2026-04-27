@@ -55,7 +55,7 @@ struct IntegrationCase {
     unsupported_mode: Option<UnsupportedFeatureMode>,
     expected_status: ExpectedStatus,
     expected_phase: ExpectedPhase,
-    expected_slots: Vec<i32>,
+    expected_compat_slots: Vec<i32>,
     expected_error_contains: Vec<String>,
     reference_order: Vec<String>,
     deferred_gate: String,
@@ -82,7 +82,7 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn project_variants_to_expected_slots(values: &[Variant]) -> Result<Vec<i32>, String> {
+fn project_variants_to_expected_compat_slots(values: &[Variant]) -> Result<Vec<i32>, String> {
     values
         .iter()
         .map(|value| {
@@ -231,7 +231,7 @@ fn load_catalog() -> Result<Vec<IntegrationCase>, String> {
             unsupported_mode: parse_unsupported_mode(parts[8])?,
             expected_status: parse_expected_status(parts[9])?,
             expected_phase: parse_expected_phase(parts[10])?,
-            expected_slots: parse_slots(parts[11])?,
+            expected_compat_slots: parse_slots(parts[11])?,
             expected_error_contains: parse_list(parts[12], ';'),
             reference_order: parse_list(parts[13], ';'),
             deferred_gate: parts[14].to_string(),
@@ -451,14 +451,14 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(values)) => {
-            if case.expected_slots.is_empty() {
+            if case.expected_compat_slots.is_empty() {
                 return Ok(());
             }
-            let observed_slots = project_variants_to_expected_slots(&values)?;
-            if observed_slots != case.expected_slots {
+            let observed_slots = project_variants_to_expected_compat_slots(&values)?;
+            if observed_slots != case.expected_compat_slots {
                 return Err(format!(
-                    "slot mismatch: expected {:?}, got {:?} from values {:?}",
-                    case.expected_slots, observed_slots, values
+                    "compat slot mismatch: expected {:?}, got {:?} from values {:?}",
+                    case.expected_compat_slots, observed_slots, values
                 ));
             }
         }

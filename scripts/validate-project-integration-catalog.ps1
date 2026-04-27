@@ -24,7 +24,7 @@ try {
     $allowedExpectedPhase = @("any", "compile-time", "runtime")
 
     $header = $lines[0].Trim()
-    $expectedHeader = "case_id|level|title|status|backend|runtime_profile|policy_preset|policy_overrides|unsupported_mode|expect_status|expect_phase|expect_slots|expect_error_contains|reference_order|deferred_gate|topic_refs|project_name|notes"
+    $expectedHeader = "case_id|level|title|status|backend|runtime_profile|policy_preset|policy_overrides|unsupported_mode|expect_status|expect_phase|expect_compat_slots|expect_error_contains|reference_order|deferred_gate|topic_refs|project_name|notes"
     if ($header -ne $expectedHeader) {
         throw "Unexpected catalog header. Expected: $expectedHeader"
     }

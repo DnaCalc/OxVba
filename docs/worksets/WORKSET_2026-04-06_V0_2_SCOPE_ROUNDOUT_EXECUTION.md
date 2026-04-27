@@ -370,6 +370,11 @@ Rollout sync, 2026-04-27:
   [V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md)
 - the next ready delivery bead is `bd-bqm8.2.5`, covering tests, conformance
   notes, and product docs that still normalize slot-shaped execution truth
+- `bd-bqm8.2.5` is in-progress; the first slice renamed project integration
+  expectations to `expect_compat_slots` and reclassified conformance/docs
+  language around CLI `SLOTS:` output as compatibility observation, with
+  evidence in
+  [V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md)
 
 ## Delivery Rules for This Workset
 

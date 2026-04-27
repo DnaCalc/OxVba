@@ -577,8 +577,8 @@ Required migration actions:
    new value carrier
 3. reconcile `RuntimeValue`, `Variant`, and `ComValue` so the new internal
    model is not just another adapter layer on top of the old one
-4. update compat-slot assumptions and any VM/JIT helper code coupled to old
-   payload shapes
+4. keep any remaining compat-slot assertions at explicit adapter boundaries
+   and avoid treating old slot payload shapes as product execution truth
 5. update pointer-helper `VARIANT` exposure
 6. preserve correct Windows boundary behavior in `windows_variant.rs`
 7. update docs and evidence to show which old subset limitations disappeared.
