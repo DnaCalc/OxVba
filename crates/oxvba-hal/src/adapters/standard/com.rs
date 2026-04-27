@@ -152,9 +152,9 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
-            match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
+            match self.activate_variant_object_for_prog_id_name(prog_id_name) {
                 Ok(value) => {
-                    return runtime_value_to_com_variant(self, value);
+                    return Ok(value);
                 }
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     let object = allocate_projection_object_ref(self, prog_id_name)?;

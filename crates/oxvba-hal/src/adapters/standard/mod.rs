@@ -62,7 +62,7 @@ use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
-use oxvba_runtime::{RuntimeValue, VarType, Variant};
+use oxvba_runtime::{VarType, Variant};
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
 use std::{
@@ -928,10 +928,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn activate_runtime_object_value_for_prog_id_name(
-        &self,
-        prog_id_name: &str,
-    ) -> HalResult<RuntimeValue> {
+    fn activate_variant_object_for_prog_id_name(&self, prog_id_name: &str) -> HalResult<Variant> {
         let registered_event_override =
             self.registered_event_override_for_prog_id_name(prog_id_name, "create_object")?;
         self.ensure_thread_com_apartment("create_object")?;
@@ -957,7 +954,7 @@ impl StandardHostServices {
                     handle.raw()
                 ))
             })?;
-        Ok(RuntimeValue::Object(object_ref))
+        Ok(Variant::from_object_ref(object_ref))
     }
 
     #[cfg(target_os = "windows")]
@@ -4804,7 +4801,7 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id_hint: &str,
         op: &'static str,
-    ) -> HalResult<RuntimeValue> {
+    ) -> HalResult<oxvba_runtime::RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         let handle = unsafe {
             self.com_bridge
@@ -4829,7 +4826,7 @@ impl StandardHostServices {
                     ),
                 )
             })?;
-        Ok(RuntimeValue::Object(object_ref))
+        Ok(oxvba_runtime::RuntimeValue::Object(object_ref))
     }
 
     // Test-only extension seam intentionally left empty after the callback
