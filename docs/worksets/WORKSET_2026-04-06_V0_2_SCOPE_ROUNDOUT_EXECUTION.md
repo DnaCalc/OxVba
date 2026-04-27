@@ -574,9 +574,11 @@ Rollout sync, 2026-04-27:
   while Cranelift remains an internal execution accelerator with VM fallback;
   evidence is in
   [V02_NATIVE_COMPILATION_PATH_DECISION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_PATH_DECISION_2026-04-27.md)
+- `bd-bqm8.10.3` is complete for publishing native ABI, packaging, platform,
+  artifact, and deployment obligations, with evidence in
+  [V02_NATIVE_COMPILATION_OBLIGATIONS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_OBLIGATIONS_2026-04-27.md)
 - `bd-bqm8.10` remains in-progress; the next ready native compilation bead is
-  `bd-bqm8.10.3`, covering ABI, packaging, platform, artifact, and deployment
-  obligations
+  `bd-bqm8.10.4`, covering the executable native validation scaffold
 
 ## Delivery Rules for This Workset
 
