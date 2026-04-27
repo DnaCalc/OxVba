@@ -23,6 +23,7 @@ workset.
 | support | [VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md) | superseded intermediate-progress checklist for the Variant/SAFEARRAY family |
 | support | [STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md) | current scope amendment for the struct/UDT/native-layout family |
 | support | [STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md) | current closure checklist for the struct/UDT/native-layout family |
+| support | [VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md) | final closure checklist for this value-model migration workset |
 | support | [PAIRED_RESULT_INDEX_2026-04-22.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/PAIRED_RESULT_INDEX_2026-04-22.md) | grouped correctness/perf/memory index for the selected paired artifacts |
 | support | [BASELINE_OLD_ARTIFACT_INDEX.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/report_inputs/BASELINE_OLD_ARTIFACT_INDEX.md) | canonical pointers to the selected fixed-tag baseline-side artifacts |
 
