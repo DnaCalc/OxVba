@@ -115,7 +115,8 @@ Current value-model migration note (2026-04-25):
 50. Standard COM legacy `RuntimeValue` activation/dispatch/event status and callback-argument paths now project through retained `Variant` COM companions and explicit boundary helpers.
 51. Standard dynamic-link legacy descriptor invocation now routes through retained `Variant` descriptor companions before compatibility projection; native m1 ABI marshalling remains explicit internal bridge work.
 52. The SAFEARRAY legacy API audit was refreshed; current production payload retention remains on retained `Variant`/SAFEARRAY paths, while public compatibility API disposition remains open.
-53. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+53. Immediate-session evaluation now exposes retained `Variant` result carriers through `evaluate_variant()` / `ImmediateVariantEvaluationResult`; legacy immediate evaluation remains a compatibility projection for existing display/result callers.
+54. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

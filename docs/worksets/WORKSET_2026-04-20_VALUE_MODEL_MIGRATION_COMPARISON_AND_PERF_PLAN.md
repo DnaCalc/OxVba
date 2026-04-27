@@ -1987,6 +1987,10 @@ Child beads:
        `Variant` and invokes through the host Variant procedure path; its
        display result remains a compatibility projection because the Immediate
        Window exposes formatted values rather than the internal runtime carrier
+     - progress landed: immediate-session evaluation now exposes retained
+       `Variant` result carriers through `evaluate_variant()` and
+       `ImmediateVariantEvaluationResult`; the legacy `evaluate()` API now
+       projects from that retained result path for compatibility callers
      - progress landed: debugger frame value projection now reads `Variant`
        slots first and exposes a `DebugFrameVariantValue` companion; existing
        debugger frame/evaluation values remain compatibility projections for
@@ -2336,13 +2340,12 @@ Child beads:
        `RuntimeValue`-returning snapshots as compatibility projections, without
        removing the legacy aliases yet
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, public VM/JIT compatibility snapshot/result APIs, HAL
-       surfaces that still use semantic values by contract, remaining host
-       service helper families, legacy dynamic-link symbol APIs, legacy
-       SafeArray element compatibility APIs, COM
-       compatibility projection APIs that still expose `RuntimeValue`,
-       embedded/immediate/debugger compatibility display APIs that still expose
-       `RuntimeValue`, and remaining manual pointer-helper / registry
+       helper seams, public VM/JIT compatibility snapshot/result aliases,
+       remaining host service helper families, legacy dynamic-link m1 native
+       ABI marshalling internals, legacy SafeArray element compatibility APIs,
+       COM compatibility projection APIs that still expose `RuntimeValue`,
+       embedded/immediate/debugger display/result compatibility APIs that still
+       expose `RuntimeValue`, and remaining manual pointer-helper / registry
        compatibility seams are audited and either migrated to exact BSTR,
        Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified
        as projection boundaries outside the internal value model

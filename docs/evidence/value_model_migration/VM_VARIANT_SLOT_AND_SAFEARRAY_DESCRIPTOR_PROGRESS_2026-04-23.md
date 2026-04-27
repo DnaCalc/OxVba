@@ -1617,6 +1617,12 @@ Implementation progress:
      owning `Vec<RuntimeValue>` as canonical SAFEARRAY element storage. The
      public compatibility API disposition remains open and does not close
      `vmm-e6`.
+162. Immediate-session evaluation now exposes retained `Variant` result
+     carriers through `evaluate_variant()` and
+     `ImmediateVariantEvaluationResult`. Legacy `evaluate()` and
+     `ImmediateEvaluationResult` now project from that retained result path;
+     the formatted Immediate Window display text remains a bounded textual
+     projection rather than the internal carrier.
 
 Remaining blocker:
 
@@ -1914,3 +1920,8 @@ Remaining blocker:
 7. `BindingHandle` remains intentionally outside the VBA/COM value model; JIT
    slot writes project it to `VT_I4` rather than inventing a custom VARIANT
    tag, while retained internal side lanes keep it separate where needed.
+8. Immediate-session evaluation now exposes retained `Variant` result carriers
+   through `evaluate_variant()` and `ImmediateVariantEvaluationResult`.
+   Legacy `evaluate()` and `ImmediateEvaluationResult` are compatibility
+   projections from that retained result path; display formatting still uses a
+   bounded projection because the Immediate Window surface is textual.
