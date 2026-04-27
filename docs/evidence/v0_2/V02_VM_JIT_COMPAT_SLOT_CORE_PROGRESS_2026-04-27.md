@@ -52,6 +52,20 @@ project_compat_slot_i32}` and legacy Cranelift subset bridges. These must be
 classified as either explicit internal bridges or migrated before the bead can
 close.
 
+Third follow-up slice hid the remaining JIT `RuntimeValue`-returning Cranelift
+and RtSlot compatibility helpers from normal builds where they are only
+test-facing:
+
+- `cranelift::execute_bytecode`
+- `cranelift::execute_bytecode_rtslot`
+- `RtSlot::{from_runtime_value,to_runtime_value}`
+- `rtslot_from_runtime_value`
+
+Normal JIT/host builds continue through retained `Variant` APIs. Remaining
+`RuntimeValue`/compat-slot hits in JIT normal code are now concentrated in the
+explicit `oxvba_jit::compat` adapter and in retained Variant construction from
+the legacy 4-byte subset.
+
 ## Verification
 
 Passed:
