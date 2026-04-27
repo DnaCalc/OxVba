@@ -2493,8 +2493,8 @@ Post-`vmm-d6` rollout refresh:
    - `crates/oxvba-runtime/src/runtime_value.rs`
    - `crates/oxvba-com/src/model.rs`
    - `crates/oxvba-com/src/windows_variant.rs`
-   - current compat-slot and coercion seams that still assume the bounded
-     runtime `Variant` subset
+   - retained compatibility-slot adapters and coercion seams that still assume
+     the bounded runtime `Variant` subset
    - rollout rule:
      this bead is where the old semantic-vs-compat split must be made honest,
      not left as an accidental half-migration.

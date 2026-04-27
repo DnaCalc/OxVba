@@ -628,7 +628,7 @@ impl Variant {
                 .and_then(|value| {
                     i32::try_from(value).map_err(|_| {
                         format!(
-                            "i64 value {value} cannot be represented in current compat slot lane"
+                            "i64 value {value} cannot be represented in legacy compat slot lane"
                         )
                     })
                 }),
@@ -653,20 +653,20 @@ impl Variant {
                 .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string())
                 .and_then(|array| {
                     array_tag_from_safe_array(&array).ok_or_else(|| {
-                        "array intent cannot be represented in current compat slot tag".to_string()
+                        "array intent cannot be represented in legacy compat slot tag".to_string()
                     })
                 }),
             VarType::Single | VarType::Double | VarType::Date => {
-                Err("f64 cannot be represented in current compat slot lane".to_string())
+                Err("f64 cannot be represented in legacy compat slot lane".to_string())
             }
             VarType::Decimal => {
-                Err("decimal cannot be represented in current compat slot lane".to_string())
+                Err("decimal cannot be represented in legacy compat slot lane".to_string())
             }
             VarType::Currency => {
-                Err("currency cannot be represented in current compat slot lane".to_string())
+                Err("currency cannot be represented in legacy compat slot lane".to_string())
             }
             VarType::String => {
-                Err("string cannot be represented in current compat slot lane".to_string())
+                Err("string cannot be represented in legacy compat slot lane".to_string())
             }
         }
     }
@@ -1002,13 +1002,13 @@ mod tests {
             Variant::from_string("ABC")
                 .project_compat_slot_i32()
                 .expect_err("string should stay outside compat slot lane"),
-            "string cannot be represented in current compat slot lane"
+            "string cannot be represented in legacy compat slot lane"
         );
         assert_eq!(
             Variant::from_i64(5_000_000_000)
                 .project_compat_slot_i32()
                 .expect_err("overflow should stay outside compat slot lane"),
-            "i64 value 5000000000 cannot be represented in current compat slot lane"
+            "i64 value 5000000000 cannot be represented in legacy compat slot lane"
         );
     }
 

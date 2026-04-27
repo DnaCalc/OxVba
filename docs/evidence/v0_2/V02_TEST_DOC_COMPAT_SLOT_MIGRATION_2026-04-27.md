@@ -23,6 +23,13 @@ Implemented:
 - Reworded historical implementation log and runtime fact-pack language that
   described the old `RuntimeValue::I32` and `Variant` slot lane as current
   carrier truth.
+- Follow-up scan reclassified additional active runtime fact-pack and value
+  migration planning references so the 16-byte retained `Variant` carrier and
+  remaining compatibility-slot adapters are not described as the product
+  execution model.
+- Runtime/Variant compatibility projection error strings now say `legacy
+  compat slot` instead of `current compat slot`, and matching unit-test
+  expectations were updated.
 
 This does not close `bd-bqm8.2.5`; remaining scans still need to classify or
 update additional architecture, historical evidence, and helper-test wording.
@@ -32,5 +39,6 @@ update additional architecture, historical evidence, and helper-test wording.
 Passed:
 
 - `cargo test -p oxvba-host --test project_integration_suite`
+- `cargo test -p oxvba-runtime compat_slot --lib`
 - `./scripts/validate-project-integration-catalog.ps1`
 - `cargo fmt --check`

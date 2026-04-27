@@ -284,25 +284,23 @@ impl RuntimeValue {
             Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
             Self::I32(value) => Ok(*value),
             Self::I64(value) => i32::try_from(*value).map_err(|_| {
-                format!("i64 value {value} cannot be represented in current compat slot lane")
+                format!("i64 value {value} cannot be represented in legacy compat slot lane")
             }),
-            Self::F64(_) => {
-                Err("f64 cannot be represented in current compat slot lane".to_string())
-            }
+            Self::F64(_) => Err("f64 cannot be represented in legacy compat slot lane".to_string()),
             Self::Decimal(_) => {
-                Err("decimal cannot be represented in current compat slot lane".to_string())
+                Err("decimal cannot be represented in legacy compat slot lane".to_string())
             }
             Self::Currency(_) => {
-                Err("currency cannot be represented in current compat slot lane".to_string())
+                Err("currency cannot be represented in legacy compat slot lane".to_string())
             }
             Self::Bool(value) => Ok(i32::from(*value)),
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
-                "array intent cannot be represented in current compat slot tag".to_string()
+                "array intent cannot be represented in legacy compat slot tag".to_string()
             }),
             Self::Object(handle) => Ok(handle.raw()),
             Self::BindingHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
-                Err("string cannot be represented in current compat slot lane".to_string())
+                Err("string cannot be represented in legacy compat slot lane".to_string())
             }
         }
     }

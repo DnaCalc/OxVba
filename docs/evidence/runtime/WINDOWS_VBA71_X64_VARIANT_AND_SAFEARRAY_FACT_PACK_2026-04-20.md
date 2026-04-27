@@ -80,7 +80,7 @@ Migration implication:
 - the local x64 ABI probe derived from that documented layout reported 16 bytes
 - the checked-in OxVba runtime test
   [variant.rs](/C:/Work/DnaCalc/OxVba/crates/oxvba-runtime/src/variant.rs)
-  also asserts `size_of::<Variant>() == 16` for the current compat slot
+  also asserts `size_of::<Variant>() == 16` for the retained runtime carrier
 
 Migration implication:
 
