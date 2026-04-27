@@ -121,7 +121,8 @@ Current value-model migration note (2026-04-25):
 56. Standard dynamic-link m1 native descriptor invocation now marshals native FFI arguments/returns and Windows ByRef writebacks directly from retained `Variant` carriers.
 57. Windows COM SAFEARRAY import now decodes typed/scalar elements as retained `Variant` values before constructing the internal `SafeArray` carrier.
 58. VM external-call pointer string/byte-array writebacks now read retained `Variant` payloads directly through pointer-helper companion APIs before writing source slots.
-59. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+59. VM `For Each` NewEnum unsupported-result diagnostics now format retained `Variant` results directly without a `RuntimeValue` error-message detour.
+60. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

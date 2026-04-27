@@ -2362,6 +2362,9 @@ Child beads:
      - progress landed: VM external-call pointer string/byte-array writebacks
        now read retained `Variant` payloads directly through pointer-helper
        companion APIs before writing source slots
+     - progress landed: VM `For Each` NewEnum unsupported-result diagnostics
+       now report retained `Variant` values directly without a `RuntimeValue`
+       error-message projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

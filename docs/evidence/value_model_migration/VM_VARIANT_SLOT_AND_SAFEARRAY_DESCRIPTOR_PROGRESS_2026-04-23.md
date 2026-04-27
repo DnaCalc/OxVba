@@ -1649,6 +1649,9 @@ Implementation progress:
      `read_back_byte_array_payload_variant()` directly. The older
      `RuntimeValue` pointer-helper readback APIs remain public compatibility
      projections for legacy callers.
+168. VM `For Each` NewEnum unsupported-result diagnostics now format the
+     retained `Variant` result directly instead of projecting the value through
+     `RuntimeValue` only to build the error message.
 
 Remaining blocker:
 
@@ -1970,3 +1973,6 @@ Remaining blocker:
     `Variant` payloads directly through pointer-helper companion APIs before
     writing source slots; public pointer-helper `RuntimeValue` readbacks remain
     legacy compatibility projections.
+14. VM `For Each` NewEnum unsupported-result diagnostics now report the
+    retained `Variant` result directly without a `RuntimeValue` formatting
+    detour.
