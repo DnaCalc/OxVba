@@ -3643,12 +3643,10 @@ pub fn runtime_array_set_variant(
 
 pub fn runtime_array_lbound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {
     match array_value {
-        RuntimeValue::ArrayIntent(array) => Ok(array
-            .bounds()
-            .as_ref()
-            .and_then(|bounds| bounds.first())
-            .map(|bound| bound.lower)
-            .unwrap_or(0)),
+        RuntimeValue::ArrayIntent(_) => {
+            let array_variant = array_value.to_variant()?;
+            runtime_array_lbound_variant(&array_variant, field)
+        }
         RuntimeValue::I32(legacy) if oxvba_runtime::safe_array::is_array_tag(*legacy) => Ok(0),
         RuntimeValue::I64(legacy)
             if i32::try_from(*legacy)
@@ -3682,16 +3680,9 @@ pub fn runtime_array_lbound_variant(
 
 pub fn runtime_array_ubound(array_value: &RuntimeValue, field: &str) -> Result<i32, String> {
     match array_value {
-        RuntimeValue::ArrayIntent(array) => {
-            let bounds_binding = array.bounds();
-            let Some(bound) = bounds_binding.as_ref().and_then(|bounds| bounds.first()) else {
-                return i32::try_from(array.len())
-                    .map(|len| len - 1)
-                    .map_err(|_| format!("{field} array length exceeds i32 range"));
-            };
-            let count = i32::try_from(bound.count)
-                .map_err(|_| format!("{field} bound metadata overflowed"))?;
-            Ok(bound.lower + count - 1)
+        RuntimeValue::ArrayIntent(_) => {
+            let array_variant = array_value.to_variant()?;
+            runtime_array_ubound_variant(&array_variant, field)
         }
         RuntimeValue::I32(legacy) if oxvba_runtime::safe_array::is_array_tag(*legacy) => {
             Ok(oxvba_runtime::safe_array::array_len_from_tag(*legacy)
