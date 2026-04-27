@@ -126,7 +126,8 @@ Current value-model migration note (2026-04-25):
 61. COM legacy slot-token projection now uses retained `Variant` compatibility-slot projection directly instead of a `ComValue` -> `RuntimeValue` -> token detour.
 62. Windows COM `IEnumVARIANT` and SAFEARRAY legacy runtime-result paths now decode scalar `VARIANT` elements directly into retained `Variant` carriers, with dispatch/unknown binding projection isolated to the existing legacy callback fallback.
 63. VM legacy dynamic array get/set compatibility helpers now delegate through retained `Variant` array helper implementations before projecting back to `RuntimeValue`.
-64. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+64. Dead JIT runtime-slot `RuntimeValue` projection methods were removed from `JitRuntimeSlot`, leaving retained `Variant` state and the explicit `BindingHandle` side lane.
+65. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

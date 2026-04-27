@@ -1668,6 +1668,9 @@ Implementation progress:
      through the retained `Variant` array helper implementations and project
      only at the compatibility API boundary. VM and JIT instruction paths were
      already using the retained Variant helpers directly.
+173. Dead JIT runtime-slot `RuntimeValue` projection methods were removed from
+     `JitRuntimeSlot`; JIT WithEvents state now exposes only the retained
+     `Variant` slot carrier and the separate non-VBA `BindingHandle` side lane.
 
 Remaining blocker:
 
@@ -2005,3 +2008,6 @@ Remaining blocker:
 18. VM legacy `RuntimeValue` dynamic array get/set helpers now route through
     retained `Variant` array helper implementations before projecting back to
     the legacy compatibility result type.
+19. Dead JIT `JitRuntimeSlot` `RuntimeValue` projection methods were removed,
+    leaving retained `Variant` state plus the explicit `BindingHandle` side
+    lane for WithEvents helper storage.
