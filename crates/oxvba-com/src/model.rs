@@ -178,19 +178,13 @@ impl ComValue {
     /// New value-model call sites should prefer [`Self::from_variant`].
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
-            RuntimeValue::Empty => Self::Empty,
-            RuntimeValue::Null => Self::Null,
-            RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
-            RuntimeValue::Bool(value) => Self::Bool(*value),
-            RuntimeValue::I32(value) => Self::I32(*value),
-            RuntimeValue::I64(value) => Self::I64(*value),
-            RuntimeValue::F64(value) => Self::F64(*value),
-            RuntimeValue::Decimal(value) => Self::Decimal(*value),
-            RuntimeValue::Currency(value) => Self::Currency(*value),
-            RuntimeValue::String(value) => Self::String(value.clone()),
-            RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
-            RuntimeValue::Object(object) => Self::Object(object.clone()),
             RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
+            value => {
+                let variant = Variant::try_from_runtime_value(value)
+                    .expect("legacy RuntimeValue must project to retained Variant");
+                Self::from_variant(&variant)
+                    .expect("legacy RuntimeValue Variant must project to ComValue")
+            }
         }
     }
 
@@ -228,20 +222,9 @@ impl ComValue {
     ///
     /// New value-model call sites should prefer [`Self::to_variant`].
     pub fn to_runtime_value(&self) -> RuntimeValue {
-        match self {
-            Self::Empty => RuntimeValue::Empty,
-            Self::Null => RuntimeValue::Null,
-            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
-            Self::Bool(value) => RuntimeValue::Bool(*value),
-            Self::I32(value) => RuntimeValue::I32(*value),
-            Self::I64(value) => RuntimeValue::I64(*value),
-            Self::F64(value) => RuntimeValue::F64(*value),
-            Self::Decimal(value) => RuntimeValue::Decimal(*value),
-            Self::Currency(value) => RuntimeValue::Currency(*value),
-            Self::String(value) => RuntimeValue::String(value.clone()),
-            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
-            Self::Object(object) => RuntimeValue::Object(object.clone()),
-        }
+        self.to_variant()
+            .and_then(|value| value.to_runtime_value())
+            .expect("COM value must project to legacy RuntimeValue")
     }
 
     /// Compatibility projection into legacy slot-token transport.
