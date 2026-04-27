@@ -19,22 +19,6 @@ pub enum JitRuntimeSlot {
     BindingHandle(BindingHandle),
 }
 
-impl JitRuntimeSlot {
-    pub fn from_runtime_value(value: RuntimeValue) -> Result<Self, String> {
-        match value {
-            RuntimeValue::BindingHandle(handle) => Ok(Self::BindingHandle(handle)),
-            value => Variant::try_from_runtime_value(&value).map(Self::Variant),
-        }
-    }
-
-    pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
-        match self {
-            Self::Variant(value) => value.to_runtime_value(),
-            Self::BindingHandle(handle) => Ok(RuntimeValue::BindingHandle(*handle)),
-        }
-    }
-}
-
 // ── JitHostState: Rust-side state accessed only through helpers ────────
 
 /// Iterator state for WithEvents owner enumeration.
