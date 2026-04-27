@@ -2419,6 +2419,10 @@ Child beads:
        `docs/evidence/value_model_migration/REMAINING_RUNTIMEVALUE_PROJECTION_CLASSIFICATION_2026-04-27.md`,
        with explicit compatibility APIs separated from retained production
        paths and concrete follow-up delivery paths listed
+     - progress landed: focused VM/JIT retained-array tests now construct
+       retained SAFEARRAY payloads through `SafeArray::from_variants` instead
+       of `SafeArray::from_values`, leaving the legacy constructor examples to
+       explicit compatibility tests
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

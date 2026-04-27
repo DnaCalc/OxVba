@@ -873,6 +873,24 @@ Validation:
      - result: `1` passed
 215. `./scripts/check-governance.ps1`
      - result: passed
+216. `cargo fmt -p oxvba-jit -p oxvba-vm --check`
+     - result: initially required formatting after retained-array test edits;
+       passed after `cargo fmt -p oxvba-jit -p oxvba-vm`
+217. `cargo check -p oxvba-jit -p oxvba-vm`
+     - result: passed
+218. `cargo test -p oxvba-jit runtime_aggregate_string_helpers_read_variant_carriers --lib`
+     - result: `1` passed
+219. `cargo test -p oxvba-vm aggregate_string_variant_helpers_return_retained_carriers --lib`
+     - result: `1` passed
+220. `cargo test -p oxvba-jit runtime_tag_classifiers_read_variant_array_carriers --lib`
+     - result: `1` passed
+221. `cargo test -p oxvba-vm intrinsic_variant_classifiers_read_retained_carriers --lib`
+     - result: `1` passed
+222. `cargo test -p oxvba-vm intrinsic_tag_predicates_read_retained_variant_carriers --lib`
+     - result: `0` selected; superseded by
+       `intrinsic_variant_classifiers_read_retained_carriers`
+223. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1783,6 +1801,10 @@ Implementation progress:
      separating explicit compatibility APIs from retained production paths and
      leaving concrete `vmm-e6` delivery paths for test-surface cleanup, missing
      retained companions, and final public API disposition.
+185. Focused VM/JIT retained-array tests now construct retained SAFEARRAY
+     payloads through `SafeArray::from_variants` instead of
+     `SafeArray::from_values`, leaving `from_values` examples for explicit
+     legacy compatibility tests rather than retained-carrier examples.
 
 Remaining blocker:
 
@@ -2152,3 +2174,6 @@ Remaining blocker:
 30. Remaining `RuntimeValue` projection surfaces now have a dedicated
     classification note and executable delivery path; this supports continued
     `vmm-e6` work but does not close the bead.
+31. Focused retained-array VM/JIT tests now use `SafeArray::from_variants`,
+    reducing false-positive scan noise from retained-path examples that still
+    constructed arrays through the legacy `RuntimeValue` compatibility API.
