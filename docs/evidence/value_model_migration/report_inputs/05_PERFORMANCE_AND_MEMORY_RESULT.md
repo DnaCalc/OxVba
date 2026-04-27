@@ -1,6 +1,6 @@
 # Performance And Memory Result
 
-Status: in-progress
+Status: final bounded artifact set
 
 Canonical artifacts:
 

@@ -80,9 +80,10 @@ Status: finalized
      only if later evidence shows one of these lanes needs tighter scope
 7. Current canonical string-perf artifact selection
    - decision:
-     keep `vmd6-perf-check` as the canonical string-perf input
+     keep `vmd7-perf-bstr-coreonly` as the canonical string-perf input
    - evidence basis:
-     completed paired one-iteration run across all five workloads
+     completed paired one-iteration run across the current core-only `BStr`
+     workloads
    - compatibility rationale:
      a complete bounded artifact is more trustworthy than a larger partial one
    - revisit trigger:
@@ -107,3 +108,16 @@ Status: finalized
      both OxVba versions
    - revisit trigger:
      rerun and remove the exception once the slice semantics are fixed
+10. Struct / UDT / native layout remains narrowed for this migration
+   - decision:
+     keep broad native struct-overlay parity and unconstrained UDT-byref native
+     ABI parity outside the current migration completion claim
+   - evidence basis:
+     `STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md` and
+     `STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md`
+   - compatibility rationale:
+     the migration has explicit evidence for the bounded non-boundary UDT subset
+     and selected ABI-sensitive rows, but not for arbitrary native layout parity
+   - revisit trigger:
+     only if a later workset explicitly expands scope to broad native
+     struct-overlay or UDT-byref ABI parity

@@ -8,11 +8,13 @@ Status: finalized backlog
 2. Stabilize the multi-iteration string-perf harness
    - replace the current bounded one-iteration canonical artifact once the
      longer paired run completes cleanly
-3. Investigate VM regressions in medium/long/many/code string churn
-   - these remain the largest current candidate slowdowns in the string-perf
-     artifact
-4. Investigate JIT regressions for small/medium/many string churn
-   - the main JIT pressure is still outside the near-neutral code-string case
+3. Investigate the remaining JIT `long_strings` regression in the current
+   core-only `BStr` artifact
+   - this is the largest current candidate slowdown in the string-perf artifact
+4. Investigate the mild JIT `small_strings` regression and keep VM string rows
+   under watch
+   - the refreshed artifact improved several VM rows, but perf tuning should
+     keep those gains from regressing
 5. Look for copy-elision opportunities around `BStr` carrier transitions
    - especially VM/runtime helper paths and COM/native writeback seams
 6. Investigate the Variant scalar-classifier slowdown

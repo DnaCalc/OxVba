@@ -29,7 +29,7 @@ Decision basis:
    - `vmf6-interface-event-matrix-r3`
    - `vmg5-abi-layout-r3`
 2. performance artifacts:
-   - `vmd6-perf-check`
+   - `vmd7-perf-bstr-coreonly`
    - `vme5-perf-check`
 3. memory/layout artifacts:
    - `vmd6-mem-full`
