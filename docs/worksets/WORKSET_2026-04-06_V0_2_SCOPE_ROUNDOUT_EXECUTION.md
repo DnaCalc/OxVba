@@ -470,8 +470,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.6.5` is complete for formal/security evidence refresh and residual
   classification, with evidence in
   [V02_HARDENING_FORMAL_SECURITY_REFRESH_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENING_FORMAL_SECURITY_REFRESH_2026-04-27.md)
-- `bd-bqm8.6` remains in-progress; the next ready validation bead is
-  `bd-bqm8.6.6`, covering the final VM/JIT hardening checklist
+- `bd-bqm8.6.6` is complete for the final VM/JIT hardening checklist, with
+  evidence in
+  [V02_VM_JIT_HARDENING_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_VM_JIT_HARDENING_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.6` is complete for the V0.2 VM/JIT hardening and security pass; raw
+  pointer/unsafe boundary residuals are explicitly classified and remain
+  accepted V0.2 boundary residuals rather than blockers
 
 ## Delivery Rules for This Workset
 
