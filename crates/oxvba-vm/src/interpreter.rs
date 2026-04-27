@@ -5674,14 +5674,14 @@ mod tests {
             .expect("ReDim should retain a SAFEARRAY Variant");
         assert_eq!(
             variant_array,
-            SafeArray::from_typed_values_nd(
+            SafeArray::from_typed_variants_nd(
                 vec![SafeArrayBound { lower: 0, count: 4 }],
                 0x0011,
                 vec![
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
+                    Variant::from_u8(0),
+                    Variant::from_u8(0),
+                    Variant::from_u8(0),
+                    Variant::from_u8(0),
                 ],
             )
             .expect("byte SAFEARRAY expected")
@@ -5708,10 +5708,10 @@ mod tests {
     #[test]
     fn runtime_redim_preserve_1d_retains_overlapping_byte_values() {
         let current = Variant::from_safearray(
-            SafeArray::from_typed_values_nd(
+            SafeArray::from_typed_variants_nd(
                 vec![SafeArrayBound { lower: 0, count: 2 }],
                 0x0011,
-                vec![RuntimeValue::I32(90), RuntimeValue::I32(91)],
+                vec![Variant::from_u8(90), Variant::from_u8(91)],
             )
             .expect("byte SAFEARRAY expected"),
         );
@@ -5720,14 +5720,14 @@ mod tests {
                 .expect("runtime preserve should succeed");
         assert_eq!(
             resized,
-            SafeArray::from_typed_values_nd(
+            SafeArray::from_typed_variants_nd(
                 vec![SafeArrayBound { lower: 0, count: 4 }],
                 0x0011,
                 vec![
-                    RuntimeValue::I32(90),
-                    RuntimeValue::I32(91),
-                    RuntimeValue::I32(0),
-                    RuntimeValue::I32(0),
+                    Variant::from_u8(90),
+                    Variant::from_u8(91),
+                    Variant::from_u8(0),
+                    Variant::from_u8(0),
                 ],
             )
             .expect("byte SAFEARRAY expected")

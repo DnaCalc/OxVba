@@ -474,10 +474,10 @@ mod tests {
             ctx.context.write_variant_slot(
                 0,
                 Variant::from_safearray(
-                    SafeArray::from_typed_values_nd(
+                    SafeArray::from_typed_variants_nd(
                         vec![SafeArrayBound { lower: 0, count: 2 }],
                         VT_UI1_VALUE,
-                        vec![RuntimeValue::I32(90), RuntimeValue::I32(91)],
+                        vec![Variant::from_u8(90), Variant::from_u8(91)],
                     )
                     .expect("byte SAFEARRAY setup should succeed"),
                 ),
@@ -523,14 +523,14 @@ mod tests {
             ctx.context.write_variant_slot(
                 0,
                 Variant::from_safearray(
-                    SafeArray::from_typed_values_nd(
+                    SafeArray::from_typed_variants_nd(
                         vec![SafeArrayBound { lower: 2, count: 4 }],
                         VT_UI1_VALUE,
                         vec![
-                            RuntimeValue::I32(10),
-                            RuntimeValue::I32(20),
-                            RuntimeValue::I32(30),
-                            RuntimeValue::I32(40),
+                            Variant::from_u8(10),
+                            Variant::from_u8(20),
+                            Variant::from_u8(30),
+                            Variant::from_u8(40),
                         ],
                     )
                     .expect("byte SAFEARRAY setup should succeed"),
