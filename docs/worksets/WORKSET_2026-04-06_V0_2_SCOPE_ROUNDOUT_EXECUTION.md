@@ -580,8 +580,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.10.4` is complete for adding the executable native validation
   scaffold, with evidence in
   [V02_NATIVE_COMPILATION_SCAFFOLD_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_SCAFFOLD_2026-04-27.md)
-- `bd-bqm8.10` remains in-progress; the next ready native compilation bead is
-  `bd-bqm8.10.5`, covering the final native compilation path checklist
+- `bd-bqm8.10.5` is complete for the final native compilation path checklist,
+  with evidence in
+  [V02_NATIVE_COMPILATION_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.10` is complete for V0.2 native compilation path selection and
+  scaffold; all V0.2 roundout child epics are now complete, leaving only the
+  umbrella workset final checklist/closure gate
 
 ## Delivery Rules for This Workset
 
