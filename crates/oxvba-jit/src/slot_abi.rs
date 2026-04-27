@@ -4,9 +4,7 @@
 //! VARIANT-shaped for efficient boundary materialization: `VARTYPE` at offset 0,
 //! reserved words at offsets 2/4/6, and the 8-byte union payload at offset 8.
 
-#[cfg(test)]
-use oxvba_runtime::RuntimeValue;
-use oxvba_runtime::{VarType, Variant};
+use oxvba_runtime::{RuntimeValue, VarType, Variant};
 
 pub const VT_EMPTY: u16 = VarType::Empty as u16;
 pub const VT_NULL: u16 = VarType::Null as u16;
@@ -68,10 +66,20 @@ impl RtSlot {
     /// Project the retained ABI slot back to the legacy semantic value API.
     ///
     /// New value-model call sites should use `variant` instead.
+    pub fn try_to_runtime_value(&self) -> Result<RuntimeValue, String> {
+        self.variant.to_runtime_value().map_err(|detail| {
+            format!(
+                "malformed JIT Variant slot for {:?}: {detail}",
+                self.variant.vtype()
+            )
+        })
+    }
+
+    /// Panicking compatibility bridge retained for tests that assert supported
+    /// shapes. Boundary hardening paths should use `try_to_runtime_value`.
     #[cfg(test)]
     pub fn to_runtime_value(&self) -> RuntimeValue {
-        self.variant
-            .to_runtime_value()
+        self.try_to_runtime_value()
             .expect("JIT Variant slot should carry a runtime-supported value")
     }
 
@@ -179,5 +187,24 @@ mod tests {
         let pointer = slot.variant_cell_pointer();
         assert_ne!(pointer, 0);
         assert_eq!(pointer, (&slot as *const RtSlot) as usize as i64);
+    }
+
+    #[test]
+    fn malformed_pointer_slot_projects_to_deterministic_error() {
+        let object_slot = RtSlot::from_variant(Variant::zeroed(VarType::Object));
+        assert_eq!(
+            object_slot
+                .try_to_runtime_value()
+                .expect_err("zero object pointer should be rejected"),
+            "malformed JIT Variant slot for Object: invalid Object variant payload"
+        );
+
+        let array_slot = RtSlot::from_variant(Variant::zeroed(VarType::ArrayVariant));
+        assert_eq!(
+            array_slot
+                .try_to_runtime_value()
+                .expect_err("zero SAFEARRAY pointer should be rejected"),
+            "malformed JIT Variant slot for ArrayVariant: invalid SAFEARRAY variant payload"
+        );
     }
 }

@@ -132,6 +132,11 @@ impl VariantCore {
         let reserved3 = u16::from_le_bytes([bytes[6], bytes[7]]);
         let mut payload = [0u8; 8];
         payload.copy_from_slice(&bytes[8..16]);
+        if vtype != VarType::Decimal && (reserved1 != 0 || reserved2 != 0 || reserved3 != 0) {
+            return Err(format!(
+                "malformed VARIANT wire bytes: non-zero reserved words for {vtype:?}"
+            ));
+        }
         Ok(Self {
             vtype,
             reserved1,
@@ -854,6 +859,29 @@ mod tests {
     }
 
     #[test]
+    fn variant_wire_rejects_non_decimal_reserved_words() {
+        let mut wire = Variant::from_i32(42).to_wire_bytes();
+        wire[2..4].copy_from_slice(&1u16.to_le_bytes());
+
+        assert_eq!(
+            Variant::from_wire_bytes(wire).expect_err("reserved words must be zero"),
+            "malformed VARIANT wire bytes: non-zero reserved words for Long"
+        );
+    }
+
+    #[test]
+    fn decimal_variant_wire_accepts_reserved_payload_words() {
+        let original =
+            Variant::from_decimal96(Decimal96::from_parts(123_450, 7, 0x0002_0001, 3, true));
+        let roundtrip = Variant::from_wire_bytes(original.to_wire_bytes()).expect("decimal wire");
+
+        assert_eq!(
+            roundtrip.as_decimal96(),
+            Some(Decimal96::from_parts(123_450, 7, 0x0002_0001, 3, true))
+        );
+    }
+
+    #[test]
     fn single_variant_bridges_to_runtime_f64_lane() {
         let single_variant = Variant::from_f32(12.5);
         assert_eq!(single_variant.vtype(), VarType::Single);
@@ -1009,6 +1037,22 @@ mod tests {
                 .project_compat_slot_i32()
                 .expect_err("overflow should stay outside compat slot lane"),
             "i64 value 5000000000 cannot be represented in legacy compat slot lane"
+        );
+    }
+
+    #[test]
+    fn variant_runtime_projection_rejects_malformed_pointer_payloads() {
+        assert_eq!(
+            Variant::zeroed(VarType::Object)
+                .to_runtime_value()
+                .expect_err("zero object pointer should be rejected"),
+            "invalid Object variant payload"
+        );
+        assert_eq!(
+            Variant::zeroed(VarType::ArrayVariant)
+                .to_runtime_value()
+                .expect_err("zero SAFEARRAY pointer should be rejected"),
+            "invalid SAFEARRAY variant payload"
         );
     }
 
