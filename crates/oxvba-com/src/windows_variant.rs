@@ -40,6 +40,38 @@ pub enum VariantResultValue {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe fn variant_to_variant_or_bound_runtime<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    variant: &VARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<Variant, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    match variant_to_com_value(variant).and_then(|value| value.to_variant()) {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            let value = variant_to_runtime_value(
+                variant,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            )?;
+            Variant::try_from_runtime_value(&value)
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
 unsafe fn enumvariant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     enum_variant: *mut crate::windows_client::RawIEnumVARIANT,
     query_dispatch_from_unknown: &mut FQueryDispatch,
@@ -68,7 +100,7 @@ where
         if fetched == 0 {
             break;
         }
-        let value = match variant_to_runtime_value(
+        let value = match variant_to_variant_or_bound_runtime(
             &element,
             query_dispatch_from_unknown,
             add_ref_dispatch,
@@ -83,7 +115,7 @@ where
             }
         };
         let _ = VariantClear(&mut element);
-        values.push(Variant::try_from_runtime_value(&value)?);
+        values.push(value);
     }
     Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
         SafeArray::from_variants(values),
@@ -732,7 +764,7 @@ where
                     hr as u32
                 ));
             }
-            let value = match variant_to_runtime_value(
+            let value = match variant_to_variant_or_bound_runtime(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -747,7 +779,7 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Variant::try_from_runtime_value(&value);
+            return Ok(value);
         }
         if element_vt == VT_UNKNOWN {
             let mut unknown: *mut c_void = std::ptr::null_mut();
@@ -765,7 +797,7 @@ where
             let mut element: VARIANT = std::mem::zeroed();
             element.Anonymous.Anonymous.vt = VT_UNKNOWN;
             element.Anonymous.Anonymous.Anonymous.punkVal = unknown.cast();
-            let value = match variant_to_runtime_value(
+            let value = match variant_to_variant_or_bound_runtime(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -780,7 +812,7 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Variant::try_from_runtime_value(&value);
+            return Ok(value);
         }
         if element_vt == VT_DISPATCH {
             let mut dispatch: *mut c_void = std::ptr::null_mut();
@@ -798,7 +830,7 @@ where
             let mut element: VARIANT = std::mem::zeroed();
             element.Anonymous.Anonymous.vt = VT_DISPATCH;
             element.Anonymous.Anonymous.Anonymous.pdispVal = dispatch.cast();
-            let value = match variant_to_runtime_value(
+            let value = match variant_to_variant_or_bound_runtime(
                 &element,
                 query_dispatch_from_unknown,
                 add_ref_dispatch,
@@ -813,7 +845,7 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            return Variant::try_from_runtime_value(&value);
+            return Ok(value);
         }
         let value = safe_array_element_typed_nd(psa.cast_const(), indices, element_vt)?;
         Ok(value)
