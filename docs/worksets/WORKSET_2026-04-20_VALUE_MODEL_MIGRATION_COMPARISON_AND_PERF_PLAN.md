@@ -2365,6 +2365,9 @@ Child beads:
      - progress landed: VM `For Each` NewEnum unsupported-result diagnostics
        now report retained `Variant` values directly without a `RuntimeValue`
        error-message projection
+     - progress landed: host project execution with JIT enabled now consumes
+       retained `Variant` snapshots from the legacy-slot Cranelift fallback
+       instead of converting `RuntimeValue` snapshots back into `Variant`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

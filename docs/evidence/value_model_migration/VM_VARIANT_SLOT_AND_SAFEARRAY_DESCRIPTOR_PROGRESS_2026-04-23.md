@@ -1652,6 +1652,10 @@ Implementation progress:
 168. VM `For Each` NewEnum unsupported-result diagnostics now format the
      retained `Variant` result directly instead of projecting the value through
      `RuntimeValue` only to build the error message.
+169. Host project execution with JIT enabled now consumes the retained
+     `execute_bytecode_variants()` fallback for the legacy-slot Cranelift path
+     instead of calling `execute_bytecode()` and converting `RuntimeValue`
+     snapshots back into `Variant`.
 
 Remaining blocker:
 
@@ -1976,3 +1980,6 @@ Remaining blocker:
 14. VM `For Each` NewEnum unsupported-result diagnostics now report the
     retained `Variant` result directly without a `RuntimeValue` formatting
     detour.
+15. Host project execution with JIT enabled now uses the retained Variant
+    legacy-slot Cranelift fallback, removing the host-side
+    `RuntimeValue`-then-`Variant` snapshot detour from that path.
