@@ -10,6 +10,7 @@ use oxvba_hal::model::{
 };
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
+use oxvba_runtime::Variant;
 const CATALOG_REL_PATH: &str = "conformance/integration/catalog.psv";
 const CASES_REL_PATH: &str = "conformance/integration/projects";
 
@@ -79,6 +80,20 @@ fn workspace_root() -> PathBuf {
         .nth(2)
         .expect("workspace root")
         .to_path_buf()
+}
+
+fn project_variants_to_expected_slots(values: &[Variant]) -> Result<Vec<i32>, String> {
+    values
+        .iter()
+        .map(|value| {
+            value.project_compat_slot_i32().map_err(|err| {
+                format!(
+                    "variant {:?} cannot be projected into legacy expectation slot: {err}",
+                    value
+                )
+            })
+        })
+        .collect()
 }
 
 fn parse_case_status(raw: &str) -> Result<CaseStatus, String> {
@@ -432,24 +447,14 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
         engine.set_unsupported_feature_mode(mode);
     }
 
-    let result = engine.execute_project_with_snapshot_phased(&manifest);
+    let result = engine.execute_project_with_variant_snapshot_phased(&manifest);
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(values)) => {
             if case.expected_slots.is_empty() {
                 return Ok(());
             }
-            let observed_slots = values
-                .iter()
-                .map(|value| {
-                    value.project_compat_slot_i32().map_err(|err| {
-                        format!(
-                            "value {:?} cannot be projected into legacy slot lane: {err}",
-                            value
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let observed_slots = project_variants_to_expected_slots(&values)?;
             if observed_slots != case.expected_slots {
                 return Err(format!(
                     "slot mismatch: expected {:?}, got {:?} from values {:?}",

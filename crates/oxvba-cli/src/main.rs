@@ -203,12 +203,7 @@ fn run_project(args: Vec<String>) {
     match result {
         Ok(values) => {
             if parsed.dump_slots {
-                let payload = values
-                    .iter()
-                    .map(|v| v.project_compat_slot_i32().unwrap_or(EMPTY_TAG).to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                println!("SLOTS:{payload}");
+                println!("SLOTS:{}", format_compat_slot_dump(&values));
             }
             if parsed.dump_values {
                 let payload = values
@@ -2044,18 +2039,7 @@ fn run_execute(cli_args: Vec<String>) {
     match execution {
         Ok(result) => {
             if dump_slots {
-                let payload = result
-                    .values
-                    .iter()
-                    .map(|value| {
-                        value
-                            .project_compat_slot_i32()
-                            .unwrap_or(EMPTY_TAG)
-                            .to_string()
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                println!("SLOTS:{payload}");
+                println!("SLOTS:{}", format_compat_slot_dump(&result.values));
             }
             if dump_values {
                 let payload = result
@@ -2257,6 +2241,19 @@ fn format_variant_value(value: &Variant) -> String {
             None => "object:<null>".to_string(),
         },
     }
+}
+
+fn format_compat_slot_dump(values: &[Variant]) -> String {
+    values
+        .iter()
+        .map(|value| {
+            value
+                .project_compat_slot_i32()
+                .unwrap_or(EMPTY_TAG)
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn parse_bool(value: &str) -> Option<bool> {

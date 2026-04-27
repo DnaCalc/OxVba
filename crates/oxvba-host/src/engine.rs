@@ -195,7 +195,7 @@ fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
 impl ProjectRuntimeSession {
     /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        self.snapshot_compat_values()
+        crate::compat::project_session_snapshot_values(self)
     }
 
     /// Compatibility snapshot that projects retained VM slots into
@@ -203,19 +203,12 @@ impl ProjectRuntimeSession {
     ///
     /// New value-model call sites should prefer [`Self::snapshot_variants`].
     pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
-        self.snapshot_variants()
-            .into_iter()
-            .map(|value| {
-                value
-                    .to_runtime_value()
-                    .expect("project runtime session VARIANT snapshot should project")
-            })
-            .collect()
+        crate::compat::project_session_snapshot_values(self)
     }
 
     /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
-        self.snapshot_compat_values()
+        crate::compat::project_session_snapshot_values(self)
     }
 
     /// Retained value-model snapshot for project-visible slots.
@@ -229,7 +222,7 @@ impl ProjectRuntimeSession {
     }
 
     pub fn snapshot_slots(&self) -> Vec<i32> {
-        project_variants_to_legacy_slots(self.snapshot_variants())
+        crate::compat::project_session_snapshot_slots(self)
     }
 
     pub fn compiled(&self) -> &CompiledProject {
@@ -238,7 +231,7 @@ impl ProjectRuntimeSession {
 
     /// Legacy alias for [`Self::read_compat_slot`].
     pub fn read_slot(&self, slot: usize) -> RuntimeValue {
-        self.read_compat_slot(slot)
+        crate::compat::project_session_read_slot(self, slot)
     }
 
     /// Compatibility slot read that projects the retained slot value into a
@@ -246,9 +239,7 @@ impl ProjectRuntimeSession {
     ///
     /// New value-model call sites should prefer [`Self::read_variant_slot`].
     pub fn read_compat_slot(&self, slot: usize) -> RuntimeValue {
-        self.read_variant_slot(slot)
-            .to_runtime_value()
-            .unwrap_or(RuntimeValue::Empty)
+        crate::compat::project_session_read_slot(self, slot)
     }
 
     /// Retained value-model slot read.
@@ -278,7 +269,7 @@ impl Default for Engine {
     }
 }
 
-fn project_variants_to_legacy_slots(values: Vec<Variant>) -> Vec<i32> {
+pub(crate) fn project_variants_to_legacy_slots(values: Vec<Variant>) -> Vec<i32> {
     values
         .into_iter()
         .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
@@ -1053,7 +1044,7 @@ impl Engine {
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
-        let _ = self.execute_source_with_snapshot(source)?;
+        let _ = self.execute_source_with_variant_snapshot(source)?;
         Ok(())
     }
 
@@ -1063,8 +1054,7 @@ impl Engine {
     /// New value-model call sites should prefer
     /// [`Self::execute_source_with_variant_snapshot`].
     pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<RuntimeValue>, String> {
-        self.execute_source_with_snapshot_phased(source)
-            .map_err(|diagnostic| diagnostic.message().to_string())
+        crate::compat::execute_source_with_snapshot(self, source)
     }
 
     pub fn execute_source_with_variant_snapshot(
@@ -1080,7 +1070,7 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, String> {
-        self.execute_source_with_snapshot(source)
+        crate::compat::execute_source_with_snapshot(self, source)
     }
 
     /// Compatibility phased source execution snapshot projected into
@@ -1092,10 +1082,7 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        self.execute_source_with_variant_snapshot_phased(source)?
-            .into_iter()
-            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
-            .collect()
+        crate::compat::execute_source_with_snapshot_phased(self, source)
     }
 
     pub fn execute_source_with_variant_snapshot_phased(
@@ -1139,7 +1126,7 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        self.execute_source_with_snapshot_phased(source)
+        crate::compat::execute_source_with_snapshot_phased(self, source)
     }
 
     /// Compatibility project execution snapshot projected into [`RuntimeValue`]
@@ -1151,10 +1138,7 @@ impl Engine {
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        self.execute_project_with_variant_snapshot_phased(manifest)?
-            .into_iter()
-            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
-            .collect()
+        crate::compat::execute_project_with_snapshot_phased(self, manifest)
     }
 
     pub fn execute_project_with_variant_snapshot_phased(
@@ -1214,7 +1198,7 @@ impl Engine {
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        self.execute_project_with_snapshot_phased(manifest)
+        crate::compat::execute_project_with_snapshot_phased(self, manifest)
     }
 
     /// Prepare a runtime session from a deserialized OxBundle (no recompilation).
@@ -1262,10 +1246,7 @@ impl Engine {
         &self,
         bundle: &oxvba_compiler::OxBundle,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        self.execute_bundle_with_variant_snapshot(bundle)?
-            .into_iter()
-            .map(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
-            .collect()
+        crate::compat::execute_bundle_with_snapshot(self, bundle)
     }
 
     pub fn execute_bundle_with_variant_snapshot(

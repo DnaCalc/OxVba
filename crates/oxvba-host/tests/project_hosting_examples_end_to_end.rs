@@ -28,9 +28,9 @@ fn example_direct_file_top_level_mainline_executes() {
         enable_jit: false,
         root_object_name: None,
     })
-    .execute_source_with_value_snapshot(source)
+    .execute_source_with_variant_snapshot(source)
     .expect("direct-file example should execute");
-    assert_eq!(values[0].project_compat_slot_i32(), Ok(42));
+    assert_eq!(values[0].as_i32(), Some(42));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn example_basproj_exe_with_explicit_entrypoint_executes() {
         enable_jit: false,
         root_object_name: None,
     })
-    .execute_project_with_snapshot_phased(&loaded.manifest)
+    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
     .expect("basproj example should execute");
     assert!(
         values.is_empty(),
@@ -117,7 +117,7 @@ fn example_convention_directory_top_level_mainline_executes() {
         enable_jit: false,
         root_object_name: None,
     })
-    .execute_project_with_snapshot_phased(&loaded.manifest)
+    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
     .expect("convention example should execute");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
@@ -143,7 +143,7 @@ fn example_vbp_sub_main_executes() {
         enable_jit: false,
         root_object_name: None,
     })
-    .execute_project_with_snapshot_phased(&loaded.manifest)
+    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
     .expect("vbp example should execute");
     assert!(
         values.is_empty(),

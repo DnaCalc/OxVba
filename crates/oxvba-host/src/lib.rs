@@ -1,5 +1,6 @@
 //! oxvba-host: engine orchestration and host integration scaffolding.
 
+pub mod compat;
 pub mod debugger;
 pub mod embedded;
 pub mod engine;
@@ -10,8 +11,9 @@ pub mod runner;
 
 pub use debugger::{
     DebugEvaluationRequest, DebugEvaluationResult, DebugFrame, DebugFrameValue,
-    DebugFrameValueKind, DebugFrameVariantValue, DebugPauseState, DebugSession, DebugSessionError,
-    HostDebugRunResult,
+    DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugPauseState, DebugSession,
+    DebugSessionError, DebugVariantEvaluationResult, DebugVariantPauseState, HostDebugRunResult,
+    HostDebugVariantRunResult,
 };
 pub use embedded::{
     EmbeddedBuildRequest, EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
@@ -30,7 +32,8 @@ pub use engine::{
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
     ImmediateEvaluationResult, ImmediateInputKind, ImmediateResetKind, ImmediateSession,
-    ImmediateSessionError, ImmediateValueProjection,
+    ImmediateSessionError, ImmediateValueProjection, ImmediateVariantEvaluationOutput,
+    ImmediateVariantEvaluationResult, ImmediateVariantValueProjection,
 };
 pub use project::{
     GraphPublicSymbolResolution, HostExportKind, HostProcedureExport, ModuleAttributes, ModuleKind,

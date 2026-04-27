@@ -216,7 +216,7 @@ impl<'engine> ImmediateSession<'engine> {
 
     /// Legacy alias for [`Self::snapshot_compat_values`].
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        self.snapshot_compat_values()
+        crate::compat::immediate_session_snapshot_values(self)
     }
 
     /// Compatibility snapshot that projects retained session slots into
@@ -224,7 +224,7 @@ impl<'engine> ImmediateSession<'engine> {
     ///
     /// New value-model call sites should prefer [`Self::snapshot_variants`].
     pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
-        self.runtime.snapshot_compat_values()
+        crate::compat::immediate_session_snapshot_values(self)
     }
 
     /// Retained value-model snapshot for the immediate session runtime.
