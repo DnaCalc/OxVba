@@ -7,13 +7,13 @@ It is stricter than the general guide.
 The assumption here is:
 - the worksets are already detailed,
 - the beads are expected to be directly executable,
-- and the bead runner should move forward with minimal additional review.
+- and execution should move forward with minimal additional review.
 
 This style is useful when:
 - the engineering direction is already clear,
 - the interfaces are mostly known,
 - the work can be expressed as concrete outcomes,
-- and you want the runner to keep going bead by bead.
+- and you want AutoRun to keep going bead by bead.
 
 ## Example Scenario
 
@@ -145,13 +145,13 @@ Completion evidence:
 
 ## Why This Breakdown Is Auto-Run Friendly
 
-These beads are suitable for a runner because:
+These beads are suitable for AutoRun because:
 - each bead has one clear outcome,
 - each bead has explicit dependency order,
 - each bead has visible completion evidence,
 - and each bead is framed as a capability rather than an open-ended investigation.
 
-There is little room for the runner to ask:
+There is little room to ask:
 - "what exactly do you mean?"
 - "what counts as done?"
 - "should I keep going?"
@@ -168,13 +168,13 @@ When a bead is worked, one of two things must happen:
 2. the bead cannot be fully completed, and a new bead must be created for the blocking or follow-up work
 
 What should not happen:
-- the runner silently leaves the bead half-done
-- the runner smears extra work into the bead without tracking it
-- the runner declares success when the stated outcome is not actually achieved
+- the bead is silently left half-done
+- extra work is smeared into the bead without tracking it
+- success is declared when the stated outcome is not actually achieved
 
 ## The Blocking / Follow-Up Rule
 
-If the runner encounters a real blocker, it must:
+If execution encounters a real blocker, it must:
 
 1. explain the blocker clearly
 2. create a new bead for the blocker or follow-up work
@@ -196,9 +196,9 @@ The important principle is:
 
 Nothing should disappear into narrative text.
 
-## Auto-Run Bead Runner Prompt
+## Auto-Run Bead Execution Prompt
 
-Use a stricter runner prompt for this style of bead graph:
+Use a stricter prompt for this style of bead graph:
 
 ```text
 Work exactly one bead at a time.
@@ -245,7 +245,7 @@ That is what makes it suitable for higher-autonomy execution.
 
 Use this stricter style when:
 - the design is already specific,
-- you want a runner to keep moving,
+- you want AutoRun to keep moving,
 - and you want bead state to remain trustworthy without constant reinterpretation.
 
 Do not use it when:

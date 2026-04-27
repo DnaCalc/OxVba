@@ -7,6 +7,21 @@ Primary guidance for automated contributors, in order:
 
 Use `docs/` and `synthesis/` for supporting context and provenance.
 
+## GPT-5.5 Agent Operating Shape
+- Treat this file as the startup contract for GPT-5.5/Codex-style agents: outcome first, constraints explicit, evidence before completion language.
+- Keep startup context lean. Read the three primary guidance documents first, then open only the active workset, bead, blocker, or evidence files needed for the current outcome.
+- Prefer bounded context gathering:
+  - start broad enough to identify the exact files and truth surfaces,
+  - stop gathering once the next concrete edit/check path is clear,
+  - search again only when validation fails, signals conflict, or new unknowns appear.
+- Use `medium` reasoning as the default balanced mode for this repo. Escalate effort only for hard architectural, formal, or parity decisions where extra reasoning is likely to improve correctness.
+- For tool-heavy work, state the intended action briefly, execute it, then verify the outcome. Do not add long progress narratives that compete with the bead/workset truth surfaces.
+- Before finalizing a cycle, check:
+  - the requested outcome is satisfied or explicitly blocked,
+  - compatibility/parity claims are backed by tests or evidence,
+  - docs and bead state reflect the same truth,
+  - no required follow-up is left only in chat.
+
 ## Workset Status Doctrine
 - Follow `OPERATIONS.md` section `3.1 Workset Completion Doctrine` as binding terminology and execution policy.
 - Do not describe partial subsets as `implemented`, `closed`, or `closure`.

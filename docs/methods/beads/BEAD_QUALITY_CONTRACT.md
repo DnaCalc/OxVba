@@ -13,6 +13,10 @@ A bead is only useful if someone else can:
 
 This contract exists to keep bead state trustworthy.
 
+For GPT-5.5/Codex sessions, keep bead records outcome-first and compact. A
+good bead gives the agent enough context to act decisively without embedding a
+long procedural script.
+
 ## Required Elements
 
 Every executable bead should identify:
@@ -49,6 +53,12 @@ Examples:
 - archive/demotion action completed.
 
 If the evidence is not visible, the bead is not ready to close.
+
+Prefer evidence that can be verified locally:
+- targeted tests or checks,
+- updated canonical docs/matrices,
+- reproducible evidence artifacts,
+- committed bead-state changes.
 
 Effect rule:
 - `delivery` beads change or prove real behavior in the capability lane.

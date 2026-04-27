@@ -21,6 +21,13 @@ The core idea is:
 4. express those outcomes as dependency-aware beads,
 5. execute one ready bead at a time.
 
+For GPT-5.5/Codex agents, express this as an outcome contract rather than a
+long procedural script:
+- expected outcome,
+- completion evidence,
+- constraints and dependencies,
+- stop or blocker conditions.
+
 ## The Layers
 
 Design should move through these layers:
@@ -335,6 +342,11 @@ Bad dependency use:
 ## Execution Philosophy
 
 The beads method embodies a specific execution style.
+
+The execution agent should be trusted to choose the efficient implementation
+path from repo context, but not to weaken the bead outcome or evidence bar.
+This keeps GPT-5.5 runs decisive without turning bead records into rigid
+step-by-step recipes.
 
 ### 1. Work from Ready Beads
 

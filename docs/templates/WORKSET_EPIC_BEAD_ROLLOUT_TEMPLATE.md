@@ -2,6 +2,10 @@
 
 Use this template when a new active workset is accepted.
 
+GPT-5.5 note: keep rollout content compact and outcome-first. Prefer clear
+terminal conditions, completion evidence, and dependencies over procedural
+detail that the execution agent can infer from repo context.
+
 ## 1. Workset
 
 - Workset title:
@@ -47,6 +51,7 @@ Each should identify:
 - completion evidence
 - canonical truth artifact touched
 - matrix rows touched, if validation-related
+- blocker/follow-up behavior if the outcome exposes uncovered scope
 
 ## 5. Traceability
 

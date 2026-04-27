@@ -8,6 +8,8 @@ This document defines how OxVBA work is executed day-to-day: fast iteration, cle
 - Compatibility claims require reproducible evidence.
 - Regressions become permanent tests.
 - Keep process lightweight: only require artifacts that directly improve correctness, compatibility, or delivery confidence.
+- For GPT-5.5/Codex sessions, write and interpret operational instructions as outcome-first contracts: expected result, constraints, evidence, and stop condition before procedural detail.
+- Keep durable guidance short and stable. Put volatile execution state in active worksets, bead records, `docs/AUTORUN_STATE.md`, and `CURRENT_BLOCKERS.md`.
 
 ## 3. Execution Model
 OxVBA follows the sequencing in `MACH1000_PLAN.md`.
@@ -18,6 +20,7 @@ Execution defaults:
 - Keep high-risk performance paths behind feature flags until parity/correctness gates are green.
 - Use measurable phase gates (pass rates, divergence counts, benchmark thresholds).
 - Execute active worksets through bead subtrees so completion and follow-up work are tracked at near-atomic outcome granularity.
+- Gather only the context needed for the next bead or verification step, then act. Re-open broader context when evidence conflicts, dependencies are unclear, or validation fails.
 
 ### 3.1 Workset Completion Doctrine
 
@@ -50,6 +53,11 @@ Stopping rule:
 ### 3.2 Workset-Bead Execution Doctrine
 
 Worksets remain the high-level execution unit, but active work must proceed through bead subtrees.
+
+Bead running operation: use the current agent session to inspect ready beads,
+work one unblocked bead, update code/docs/evidence/bead state, run targeted
+checks, commit, push, and continue under AutoRun until the configured terminal
+gate is reached or all remaining progress is blocked.
 
 Method references:
 - `docs/methods/beads/BEADS_WORKING_METHOD.md`
@@ -101,6 +109,7 @@ Bead quality contract:
   - and, for validation or conformance work, the canonical matrix or matrix rows it advances.
 - Use `docs/methods/beads/BEAD_QUALITY_CONTRACT.md` and `docs/templates/WORKSET_EPIC_BEAD_ROLLOUT_TEMPLATE.md` when creating or refreshing workset rollout.
 - For repo project-scope work, every bead should also make clear whether it is a `delivery` bead or a `support` bead.
+- Bead descriptions should be concise enough for startup use: outcome, evidence, dependencies, and residual/blocker behavior are more important than exhaustive procedure.
 
 Subset-labeling rules:
 - Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.

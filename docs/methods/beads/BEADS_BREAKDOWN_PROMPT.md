@@ -12,6 +12,10 @@ This prompt is for preparation.
 
 It should not immediately generate a giant backlog.
 
+For GPT-5.5/Codex use, keep the prompt outcome-first. Ask for the smallest
+useful executable set, success criteria, dependencies, and blockers rather than
+a rigid implementation script.
+
 ## Prompt
 
 ```text
@@ -62,6 +66,7 @@ Constraints:
 - Keep bead candidates outcome-oriented and dependency-aware.
 - Distinguish clearly between worksets and beads.
 - Avoid beads for distant speculative work unless they unblock the thin slice.
+- State completion evidence for the first executable set.
 ```
 
 ## Optional Tightening Line

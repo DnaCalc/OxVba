@@ -8,6 +8,7 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Recovery rule: an accidental interim status reply is non-blocking and must be treated as a logging mistake, not a stop condition. Resume execution immediately.
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Current user instruction: execute the active ladder continuously through terminal gate `v620` and apply blocker protocol from `AGENTS.md`.
+GPT-5.5 startup note: keep resume context bounded. Read the authoritative status surfaces below, then open only the active workset/bead/evidence files needed for the next outcome.
 
 Active ladders:
 - `v467..v620` (`docs/worksets/PROFILE_LADDER_2026-03-08_MACH1000_V467_V620_VBA71_WINDOWS_OFFICE_COMPLIANCE.md`)
