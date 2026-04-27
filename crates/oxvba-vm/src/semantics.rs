@@ -2653,11 +2653,13 @@ mod tests {
         );
         assert_eq!(
             super::runtime_join_variant_bounded(
-                &Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_values(vec![
-                    RuntimeValue::I32(1),
-                    RuntimeValue::I32(2),
-                    RuntimeValue::I32(3),
-                ])),
+                &Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(
+                    vec![
+                        Variant::from_i32(1),
+                        Variant::from_i32(2),
+                        Variant::from_i32(3),
+                    ]
+                )),
                 &Variant::from_i32(0),
             )
             .expect("Join should succeed")

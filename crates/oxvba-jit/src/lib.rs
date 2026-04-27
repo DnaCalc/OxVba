@@ -800,10 +800,10 @@ mod tests {
             ctx.context.write_variant_slot(5, Variant::from_i32(23));
             ctx.context.write_variant_slot(
                 6,
-                Variant::from_safearray(SafeArray::from_values(vec![
-                    RuntimeValue::I32(1),
-                    RuntimeValue::I32(2),
-                    RuntimeValue::I32(3),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
+                    Variant::from_i32(3),
                 ])),
             );
             ctx.context.write_variant_slot(7, Variant::from_i32(0));
@@ -828,9 +828,9 @@ mod tests {
         unsafe {
             ctx.context.write_variant_slot(
                 0,
-                Variant::from_safearray(SafeArray::from_values(vec![
-                    RuntimeValue::I32(1),
-                    RuntimeValue::I32(2),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
                 ])),
             );
         }
@@ -860,9 +860,9 @@ mod tests {
         unsafe {
             ctx.context.write_variant_slot(
                 0,
-                Variant::from_safearray(SafeArray::from_values(vec![
-                    RuntimeValue::I32(1),
-                    RuntimeValue::I32(2),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
                 ])),
             );
             ctx.context
@@ -911,9 +911,9 @@ mod tests {
                 .write_variant_slot(5, Variant::from_error_code(9));
             ctx.context.write_variant_slot(
                 6,
-                Variant::from_safearray(SafeArray::from_values(vec![
-                    RuntimeValue::I32(1),
-                    RuntimeValue::I32(2),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
                 ])),
             );
         }
