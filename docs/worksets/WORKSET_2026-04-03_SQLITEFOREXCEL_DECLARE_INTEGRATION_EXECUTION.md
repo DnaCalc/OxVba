@@ -146,6 +146,8 @@ Delivered so far in this lane:
   for SQLite native buffer helpers
 - `bd-sql1.16.2` implement one-dimensional non-`Preserve` runtime `ReDim`
   allocation into the base array slot
+  - complete on 2026-04-27 with evidence in
+    [SQLITE_RUNTIME_REDIM_BASE_ARRAY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/SQLITE_RUNTIME_REDIM_BASE_ARRAY_2026-04-27.md)
 - `bd-sql1.16.3` bridge `VarPtr(buf(0))` and array return/assignment over that
   runtime array payload
 - `bd-sql1.16.4` rerun the SQLite fixture matrix and publish the moved boundary
