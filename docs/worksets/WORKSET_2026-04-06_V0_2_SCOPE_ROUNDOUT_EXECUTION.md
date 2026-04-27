@@ -569,8 +569,14 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.10.1` is complete for rolling out native compilation path child
   beads, with evidence in
   [V02_NATIVE_COMPILATION_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.10.2` is complete for selecting the native compilation path as a
+  staged hybrid: wrapper-hosted compiled artifacts are the V0.2 product target,
+  while Cranelift remains an internal execution accelerator with VM fallback;
+  evidence is in
+  [V02_NATIVE_COMPILATION_PATH_DECISION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_PATH_DECISION_2026-04-27.md)
 - `bd-bqm8.10` remains in-progress; the next ready native compilation bead is
-  `bd-bqm8.10.2`, covering the path decision
+  `bd-bqm8.10.3`, covering ABI, packaging, platform, artifact, and deployment
+  obligations
 
 ## Delivery Rules for This Workset
 
