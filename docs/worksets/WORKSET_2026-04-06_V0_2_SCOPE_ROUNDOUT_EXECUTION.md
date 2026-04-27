@@ -320,6 +320,13 @@ deferred.
     slot-shaped execution truth
   - `bd-bqm8.2.6` run the final excision checklist for `v02.2`
 - `bd-bqm8.3` late-bound `IDispatch` parity clarification and delivery (`v02.3`)
+  - `bd-bqm8.3.1` audit and roll out late-bound `IDispatch` child beads
+  - `bd-bqm8.3.2` publish the supported/unsupported late-bound matrix
+  - `bd-bqm8.3.3` deliver in-scope metadata-backed member/default/named-arg
+    behavior
+  - `bd-bqm8.3.4` extend controlled COM and host VM/JIT evidence for supported
+    rows
+  - `bd-bqm8.3.5` run the final late-bound `IDispatch` parity checklist
 - `bd-bqm8.4` date-string parsing/coercion completion (`v02.4`)
 - `bd-bqm8.5` runtime representation/layout investigation and architecture decision (`v02.5`)
 - `bd-bqm8.6` VM/JIT hardening and security pass (`v02.6`)
@@ -379,6 +386,16 @@ Rollout sync, 2026-04-27:
   [V02_COMPAT_SLOT_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COMPAT_SLOT_FINAL_CHECKLIST_2026-04-27.md)
 - `bd-bqm8.2` is complete; the next ready V0.2 delivery bead is `bd-bqm8.3`
   for late-bound `IDispatch` parity clarification and delivery
+
+`v02.3` rollout, 2026-04-27:
+
+- `bd-bqm8.3.1` published the late-bound `IDispatch` supported/unsupported
+  scope split and child delivery graph in
+  [V02_IDISPATCH_PARITY_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_PARITY_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.3` remains in-progress; the rollout does not close the capability
+  lane
+- the next ready delivery bead is `bd-bqm8.3.2`, covering the published
+  supported/unsupported late-bound matrix
 
 ## Delivery Rules for This Workset
 
