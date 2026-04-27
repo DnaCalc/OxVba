@@ -2887,6 +2887,16 @@ Child beads:
    - completion evidence:
      - the family truth no longer depends on a silent substitution of bounded
        subset behavior for broad layout closure
+   - landed 2026-04-27:
+     - [STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md)
+       records the explicit narrowed migration endpoint for the
+       struct/UDT/native-layout family
+     - broad native struct-overlay parity and unconstrained UDT-byref native
+       ABI parity are not claimed by this migration and remain outside the
+       current scope unless a later workset expands that scope explicitly
+     - the closed migration truth is the bounded non-boundary UDT subset plus
+       the selected pointer-helper/native-writeback ABI-sensitive rows already
+       evidenced by `vmm-g4` and `vmm-g5`
 8. `vmm-g7`
    - kind: `support`
    - priority: `P1`
