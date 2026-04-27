@@ -397,8 +397,7 @@ End Sub
             panic!("expected array result, got {:?}", out[1]);
         };
         let elements = array
-            .elements
-            .as_ref()
+            .elements()
             .expect("ReturnLongArray should preserve elements");
         assert_eq!(elements.len(), 3, "ReturnLongArray length mismatch");
         assert_eq!(
@@ -432,8 +431,7 @@ End Sub
             panic!("expected array result, got {:?}", out[1]);
         };
         let elements = array
-            .elements
-            .as_ref()
+            .elements()
             .expect("ReturnSelfArray should preserve elements");
         assert_eq!(elements.len(), 1, "ReturnSelfArray length mismatch");
         let RuntimeValue::Object(handle) = &elements[0] else {

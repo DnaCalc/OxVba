@@ -20995,6 +20995,25 @@ End Sub";
     }
 
     #[test]
+    fn formal_v02_7_excel_com_fixture_pack_exists_and_compiles() {
+        let root = repo_path("conformance/com/office/excel");
+        assert!(root.join("README.md").exists());
+        assert!(root.join("FIXTURE_CATALOG.md").exists());
+
+        for fixture in [
+            "excel_application_activation_smoke.bas",
+            "excel_workbook_range_smoke.bas",
+            "excel_named_argument_smoke.bas",
+            "excel_unsupported_event_sink_boundary.bas",
+        ] {
+            let source = std::fs::read_to_string(root.join(fixture))
+                .unwrap_or_else(|err| panic!("Excel COM fixture {fixture} should load: {err}"));
+            oxvba_compiler::compile(&source)
+                .unwrap_or_else(|err| panic!("Excel COM fixture {fixture} should compile: {err}"));
+        }
+    }
+
+    #[test]
     fn formal_v417_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V417.md").exists());
     }
