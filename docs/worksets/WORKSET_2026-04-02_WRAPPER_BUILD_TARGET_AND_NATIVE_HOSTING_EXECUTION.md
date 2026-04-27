@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: closed
 
 ## Near-Term Priority Position
 
@@ -70,6 +70,11 @@ Current execution state:
 - COM/XLL handoff documentation remains the next boundary (`bd-wrap1.6`);
   binary-packaging and Excel-facing closure must remain owned by their later
   lanes until execution evidence exists
+- COM/XLL handoff boundary is now published with evidence in
+  [WRAPPER_COM_XLL_HANDOFF_BOUNDARY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/WRAPPER_COM_XLL_HANDOFF_BOUNDARY_2026-04-27.md)
+- this wrapper substrate workset is closed as generated-source and metadata
+  handoff infrastructure only; registered COM server parity and Excel-loaded
+  XLL parity remain downstream work
 
 ## Relationship To Prior Work
 
@@ -90,3 +95,7 @@ This workset is complete only when:
 - wrapper EXE and wrapper DLL/shared-library lanes are real,
 - `BuildTarget` is explicit and honest,
 - and COM/XLL lanes are unblocked by a usable wrapper substrate.
+
+Closure status 2026-04-27: complete for the generated-source wrapper substrate
+and downstream handoff boundary. Not a COM server or Excel XLL deployment parity
+claim.
