@@ -506,8 +506,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.8.1` is complete for rolling out language-service child beads, with
   evidence in
   [V02_LANGUAGE_SERVICE_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.8.2` is complete for publishing the V0.2 language-service product
+  matrix, with evidence in
+  [V02_LANGUAGE_SERVICE_PRODUCT_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_PRODUCT_MATRIX_2026-04-27.md)
 - `bd-bqm8.8` remains in-progress; the next ready language-service bead is
-  `bd-bqm8.8.2`, covering the V0.2 product matrix
+  `bd-bqm8.8.3`, covering direct language-service semantic query tests
 
 ## Delivery Rules for This Workset
 
