@@ -39,6 +39,19 @@ The normal VM root API exposes retained `Variant` snapshot functions directly.
 root `RuntimeValue` snapshot methods. Those JIT methods are the next core
 surface to externalize before this delivery bead can close.
 
+Second follow-up slice moved JIT normal-build `RuntimeValue` snapshot access
+behind `oxvba_jit::compat`. The launcher now calls the explicit compatibility
+adapter when it runs JIT and still needs legacy semantic snapshots. `JitEngine`
+normal-build methods now expose retained `Variant` snapshots; the old
+`RuntimeValue` methods remain test-only while the test/conformance migration
+beads continue.
+
+`bd-bqm8.2.2` remains in-progress because VM/JIT still contain internal
+compat-slot constructors and projectors such as `RuntimeSlot::{from_compat_slot_i32,
+project_compat_slot_i32}` and legacy Cranelift subset bridges. These must be
+classified as either explicit internal bridges or migrated before the bead can
+close.
+
 ## Verification
 
 Passed:
