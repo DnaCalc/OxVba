@@ -489,57 +489,6 @@ fn variant_to_dynlink_runtime_value(
     })
 }
 
-fn variants_to_runtime_values(
-    profile: HalProfileId,
-    args: &[Variant],
-) -> HalResult<Vec<RuntimeValue>> {
-    // Compatibility adapter for native FFI lanes that still share the legacy
-    // semantic-value marshalling implementation.
-    args.iter()
-        .map(|value| {
-            value.to_runtime_value().map_err(|detail| {
-                HalError::adapter_fault(
-                    profile,
-                    CapabilityId::DynamicLinking,
-                    "invoke_descriptor_variants",
-                    detail,
-                )
-            })
-        })
-        .collect()
-}
-
-fn runtime_result_to_variants(
-    profile: HalProfileId,
-    ret: RuntimeValue,
-    writebacks: Vec<RuntimeValue>,
-) -> HalResult<(Variant, Vec<Variant>)> {
-    // Compatibility adapter for native FFI lanes that still share the legacy
-    // semantic-value marshalling implementation.
-    let ret = Variant::try_from_runtime_value(&ret).map_err(|detail| {
-        HalError::adapter_fault(
-            profile,
-            CapabilityId::DynamicLinking,
-            "invoke_descriptor_variants",
-            detail,
-        )
-    })?;
-    let writebacks = writebacks
-        .iter()
-        .map(|value| {
-            Variant::try_from_runtime_value(value).map_err(|detail| {
-                HalError::adapter_fault(
-                    profile,
-                    CapabilityId::DynamicLinking,
-                    "invoke_descriptor_variants",
-                    detail,
-                )
-            })
-        })
-        .collect::<HalResult<Vec<_>>>()?;
-    Ok((ret, writebacks))
-}
-
 // ── m1-native-ffi invocation ──
 
 fn invoke_m1_native_variants(
@@ -547,17 +496,15 @@ fn invoke_m1_native_variants(
     descriptor: &DynLinkDescriptorView<'_>,
     args: &[Variant],
 ) -> HalResult<(Variant, Vec<Variant>)> {
-    let args = variants_to_runtime_values(host.profile, args)?;
-    let (ret, writebacks) = invoke_m1_native(host, descriptor, &args)?;
-    runtime_result_to_variants(host.profile, ret, writebacks)
+    invoke_m1_native(host, descriptor, args)
 }
 
 #[cfg(target_os = "windows")]
 fn invoke_m1_native(
     host: &StandardHostServices,
     descriptor: &DynLinkDescriptorView<'_>,
-    args: &[RuntimeValue],
-) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
+    args: &[Variant],
+) -> HalResult<(Variant, Vec<Variant>)> {
     use oxvba_com::windows_ffi_bridge::{
         FfiArg, FfiReturnType, get_proc_address, get_proc_address_ordinal, invoke_stdcall,
         load_library,
@@ -590,16 +537,16 @@ fn invoke_m1_native(
     let ffi_args: Vec<FfiArg> = args
         .iter()
         .enumerate()
-        .map(|(i, rv)| {
+        .map(|(i, value)| {
             let param_type = descriptor
                 .param_types
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("Long");
             let by_ref = descriptor.param_by_ref.get(i).copied().unwrap_or(false);
-            marshal_runtime_to_ffi(
+            marshal_variant_to_ffi(
                 host.profile,
-                rv,
+                value,
                 param_type,
                 by_ref,
                 descriptor.alias,
@@ -626,10 +573,10 @@ fn invoke_m1_native(
     let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
         .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
-    let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
+    let result = unmarshal_ffi_to_variant(raw_result, descriptor.return_type.as_deref());
     let mut writeback_values = args.to_vec();
     for cell in &byref_cells {
-        writeback_values[cell.index] = cell.storage.read_back_value();
+        writeback_values[cell.index] = cell.storage.read_back_variant();
     }
     Ok((result, writeback_values))
 }
@@ -638,8 +585,8 @@ fn invoke_m1_native(
 fn invoke_m1_native(
     host: &StandardHostServices,
     descriptor: &DynLinkDescriptorView<'_>,
-    args: &[RuntimeValue],
-) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
+    args: &[Variant],
+) -> HalResult<(Variant, Vec<Variant>)> {
     use oxvba_com::windows_ffi_bridge::{
         FfiArg, FfiReturnType, get_proc_address, invoke_stdcall, load_library,
     };
@@ -675,13 +622,13 @@ fn invoke_m1_native(
     let ffi_args: Vec<FfiArg> = args
         .iter()
         .enumerate()
-        .map(|(i, rv)| {
+        .map(|(i, value)| {
             let param_type = descriptor
                 .param_types
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("Long");
-            marshal_runtime_to_ffi_unix(rv, param_type)
+            marshal_variant_to_ffi_unix(value, param_type)
         })
         .collect();
 
@@ -701,7 +648,7 @@ fn invoke_m1_native(
     let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
         .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
-    let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
+    let result = unmarshal_ffi_to_variant(raw_result, descriptor.return_type.as_deref());
     Ok((result, Vec::new()))
 }
 
@@ -726,7 +673,7 @@ enum NativeByRefStorage {
 
 #[cfg(target_os = "windows")]
 impl NativeByRefStorage {
-    fn from_runtime_value(value: &RuntimeValue, param_type: &str) -> Result<Self, String> {
+    fn from_variant(value: &Variant, param_type: &str) -> Result<Self, String> {
         Ok(match param_type {
             "Long" => Self::I32(Box::new(value.project_compat_slot_i32().unwrap_or(0))),
             "Integer" => Self::I16(Box::new(value.project_compat_slot_i32().unwrap_or(0) as i16)),
@@ -739,43 +686,39 @@ impl NativeByRefStorage {
                 },
             )),
             "Double" => {
-                let raw = match value {
-                    RuntimeValue::F64(bits) => bits.as_f64(),
-                    _ => value.project_compat_slot_i32().unwrap_or(0) as f64,
-                };
+                let raw = value
+                    .as_f64()
+                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
                 Self::F64(Box::new(raw))
             }
             "Single" => {
-                let raw = match value {
-                    RuntimeValue::F64(bits) => bits.as_f64() as f32,
-                    _ => value.project_compat_slot_i32().unwrap_or(0) as f32,
-                };
+                let raw = value
+                    .as_f64()
+                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
+                    as f32;
                 Self::F32(Box::new(raw))
             }
             "LongLong" | "LongPtr" => {
-                let raw = match value {
-                    RuntimeValue::I64(v) => *v,
-                    _ => value.project_compat_slot_i32().unwrap_or(0) as i64,
-                };
+                let raw = value
+                    .as_i64()
+                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
                 Self::I64(Box::new(raw))
             }
             "Currency" => {
-                let raw = match value {
-                    RuntimeValue::Currency(v) => v.scaled_i64(),
-                    RuntimeValue::I64(v) => *v,
-                    _ => {
+                let raw = value
+                    .as_currency_scaled_i64()
+                    .or_else(|| value.as_i64())
+                    .unwrap_or_else(|| {
                         i64::from(value.project_compat_slot_i32().unwrap_or(0))
                             * oxvba_runtime::CurrencyValue::SCALE
-                    }
-                };
+                    });
                 Self::Currency(Box::new(raw))
             }
             "Date" => {
-                let raw = match value {
-                    RuntimeValue::F64(v) => v.as_f64(),
-                    RuntimeValue::I64(v) => *v as f64,
-                    _ => value.project_compat_slot_i32().unwrap_or(0) as f64,
-                };
+                let raw = value
+                    .as_f64()
+                    .or_else(|| value.as_i64().map(|value| value as f64))
+                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
                 Self::Date(Box::new(raw))
             }
             other => {
@@ -803,28 +746,24 @@ impl NativeByRefStorage {
         }
     }
 
-    fn read_back_value(&self) -> RuntimeValue {
+    fn read_back_variant(&self) -> Variant {
         match self {
-            Self::I32(value) => RuntimeValue::I32(**value),
-            Self::I16(value) => RuntimeValue::I32(**value as i32),
-            Self::U8(value) => RuntimeValue::I32(**value as i32),
-            Self::Bool(value) => RuntimeValue::Bool(**value != 0),
-            Self::F32(value) => {
-                RuntimeValue::F64(oxvba_runtime::F64Value::from_single_f64(**value as f64))
-            }
-            Self::F64(value) => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(**value)),
-            Self::I64(value) => RuntimeValue::I64(**value),
-            Self::Currency(value) => {
-                RuntimeValue::Currency(oxvba_runtime::CurrencyValue::from_scaled_i64(**value))
-            }
-            Self::Date(value) => RuntimeValue::F64(oxvba_runtime::F64Value::from_date_f64(**value)),
+            Self::I32(value) => Variant::from_i32(**value),
+            Self::I16(value) => Variant::from_i16(**value),
+            Self::U8(value) => Variant::from_i32(**value as i32),
+            Self::Bool(value) => Variant::from_bool(**value != 0),
+            Self::F32(value) => Variant::from_f32(**value),
+            Self::F64(value) => Variant::from_f64(**value),
+            Self::I64(value) => Variant::from_i64(**value),
+            Self::Currency(value) => Variant::from_currency_scaled_i64(**value),
+            Self::Date(value) => Variant::from_date_f64(**value),
         }
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn marshal_runtime_to_ffi_unix(
-    value: &RuntimeValue,
+fn marshal_variant_to_ffi_unix(
+    value: &Variant,
     param_type: &str,
 ) -> oxvba_com::windows_ffi_bridge::FfiArg {
     use oxvba_com::windows_ffi_bridge::FfiArg;
@@ -839,24 +778,22 @@ fn marshal_runtime_to_ffi_unix(
             0
         }),
         "Double" => {
-            let f = match value {
-                RuntimeValue::F64(bits) => bits.as_f64(),
-                _ => value.project_compat_slot_i32().unwrap_or(0) as f64,
-            };
+            let f = value
+                .as_f64()
+                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
             FfiArg::Double(f)
         }
         "Single" => {
-            let f = match value {
-                RuntimeValue::F64(bits) => bits.as_f64() as f32,
-                _ => value.project_compat_slot_i32().unwrap_or(0) as f32,
-            };
+            let f = value
+                .as_f64()
+                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
+                as f32;
             FfiArg::Single(f)
         }
         "LongLong" | "LongPtr" => {
-            let v = match value {
-                RuntimeValue::I64(v) => *v,
-                _ => value.project_compat_slot_i32().unwrap_or(0) as i64,
-            };
+            let v = value
+                .as_i64()
+                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
             if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
                 FfiArg::Pointer(pointer)
             } else {
@@ -864,10 +801,10 @@ fn marshal_runtime_to_ffi_unix(
             }
         }
         "String" => {
-            let text = match value {
-                RuntimeValue::String(s) => s.as_str().to_string(),
-                _ => String::new(),
-            };
+            let text = value
+                .as_bstr()
+                .map(|text| text.as_str())
+                .unwrap_or_default();
             // On Unix, we still marshal as wide string for API compatibility.
             // Individual native functions that expect UTF-8 would need a separate
             // marshaling path in the future.
@@ -879,9 +816,9 @@ fn marshal_runtime_to_ffi_unix(
 }
 
 #[cfg(target_os = "windows")]
-fn marshal_runtime_to_ffi(
+fn marshal_variant_to_ffi(
     profile: HalProfileId,
-    value: &RuntimeValue,
+    value: &Variant,
     param_type: &str,
     by_ref: bool,
     alias: &str,
@@ -892,10 +829,9 @@ fn marshal_runtime_to_ffi(
     use oxvba_com::windows_ffi_bridge::FfiArg;
 
     if by_ref {
-        let mut storage =
-            NativeByRefStorage::from_runtime_value(value, param_type).map_err(|msg| {
-                HalError::adapter_fault(profile, CapabilityId::DynamicLinking, "invoke_symbol", msg)
-            })?;
+        let mut storage = NativeByRefStorage::from_variant(value, param_type).map_err(|msg| {
+            HalError::adapter_fault(profile, CapabilityId::DynamicLinking, "invoke_symbol", msg)
+        })?;
         let ffi_arg = storage.as_ffi_arg();
         byref_cells.push(NativeByRefCell {
             index: arg_index,
@@ -919,25 +855,19 @@ fn marshal_runtime_to_ffi(
                 0
             },
         )),
-        "Double" => {
-            let f = match value {
-                RuntimeValue::F64(bits) => bits.as_f64(),
-                _ => value.project_compat_slot_i32().unwrap_or(0) as f64,
-            };
-            Ok(FfiArg::Double(f))
-        }
-        "Single" => {
-            let f = match value {
-                RuntimeValue::F64(bits) => bits.as_f64() as f32,
-                _ => value.project_compat_slot_i32().unwrap_or(0) as f32,
-            };
-            Ok(FfiArg::Single(f))
-        }
+        "Double" => Ok(FfiArg::Double(value.as_f64().unwrap_or_else(|| {
+            value.project_compat_slot_i32().unwrap_or(0) as f64
+        }))),
+        "Single" => Ok(FfiArg::Single(
+            value
+                .as_f64()
+                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
+                as f32,
+        )),
         "LongLong" | "LongPtr" => {
-            let v = match value {
-                RuntimeValue::I64(v) => *v,
-                _ => value.project_compat_slot_i32().unwrap_or(0) as i64,
-            };
+            let v = value
+                .as_i64()
+                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
             if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
                 Ok(FfiArg::Pointer(pointer))
             } else {
@@ -945,10 +875,10 @@ fn marshal_runtime_to_ffi(
             }
         }
         "String" => {
-            let text = match value {
-                RuntimeValue::String(s) => s.as_str().to_string(),
-                _ => String::new(),
-            };
+            let text = value
+                .as_bstr()
+                .map(|text| text.as_str())
+                .unwrap_or_default();
             if !ordinal_alias && alias.ends_with('A') {
                 return Ok(FfiArg::AnsiString(
                     oxvba_com::windows_ffi_bridge::ansi_c_string(&text),
@@ -961,20 +891,16 @@ fn marshal_runtime_to_ffi(
     }
 }
 
-fn unmarshal_ffi_to_runtime(raw: i64, return_type: Option<&str>) -> RuntimeValue {
+fn unmarshal_ffi_to_variant(raw: i64, return_type: Option<&str>) -> Variant {
     match return_type {
-        None => RuntimeValue::I32(0),
-        Some("Long") => RuntimeValue::I32(raw as i32),
-        Some("Integer") => RuntimeValue::I32(raw as i16 as i32),
-        Some("Byte") => RuntimeValue::I32(raw as u8 as i32),
-        Some("Boolean") => RuntimeValue::Bool(raw != 0),
-        Some("Double") => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(f64::from_bits(
-            raw as u64,
-        ))),
-        Some("Single") => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(f32::from_bits(
-            raw as u32,
-        ) as f64)),
-        Some("LongLong") | Some("LongPtr") => RuntimeValue::I64(raw),
-        Some(_) => RuntimeValue::I32(raw as i32),
+        None => Variant::empty(),
+        Some("Long") => Variant::from_i32(raw as i32),
+        Some("Integer") => Variant::from_i16(raw as i16),
+        Some("Byte") => Variant::from_i32(raw as u8 as i32),
+        Some("Boolean") => Variant::from_bool(raw != 0),
+        Some("Double") => Variant::from_f64(f64::from_bits(raw as u64)),
+        Some("Single") => Variant::from_f32(f32::from_bits(raw as u32)),
+        Some("LongLong") | Some("LongPtr") => Variant::from_i64(raw),
+        Some(_) => Variant::from_i32(raw as i32),
     }
 }
