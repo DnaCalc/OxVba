@@ -1664,6 +1664,10 @@ Implementation progress:
      carriers. Dispatch/unknown binding remains limited by the legacy callback
      contract that returns `RuntimeValue`, with projection isolated to that
      compatibility fallback.
+172. VM legacy `RuntimeValue` dynamic array get/set helpers now delegate
+     through the retained `Variant` array helper implementations and project
+     only at the compatibility API boundary. VM and JIT instruction paths were
+     already using the retained Variant helpers directly.
 
 Remaining blocker:
 
@@ -1998,3 +2002,6 @@ Remaining blocker:
     decode scalar `VARIANT` elements into retained `Variant` carriers before
     returning through legacy compatibility APIs; dispatch/unknown binding still
     falls back through the existing `RuntimeValue` callback contract.
+18. VM legacy `RuntimeValue` dynamic array get/set helpers now route through
+    retained `Variant` array helper implementations before projecting back to
+    the legacy compatibility result type.

@@ -2375,6 +2375,9 @@ Child beads:
        runtime-result paths now decode scalar `VARIANT` elements directly into
        retained `Variant` carriers; dispatch/unknown binding remains isolated
        to the existing legacy `RuntimeValue` callback fallback
+     - progress landed: VM legacy dynamic array get/set compatibility helpers
+       now delegate through retained `Variant` array helper implementations
+       before projecting back to `RuntimeValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
