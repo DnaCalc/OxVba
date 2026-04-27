@@ -139,6 +139,7 @@ Current value-model migration note (2026-04-25):
 74. Runtime SAFEARRAY raw descriptor adoption now requires the OxVba owner-prefix marker, preventing the retained internal descriptor lane from treating arbitrary SAFEARRAY-shaped pointers as locally allocated carriers.
 75. Runtime retained typed-SAFEARRAY tests now construct typed payload examples through `SafeArray::from_typed_variants`, leaving legacy typed `RuntimeValue` constructors to explicit compatibility coverage.
 76. VM/JIT retained byte-SAFEARRAY resize/bounds tests now use `SafeArray::from_typed_variants_nd`; remaining typed-value constructors in that focused area are compatibility snapshot assertions.
+77. Windows COM bridge retained SAFEARRAY roundtrip tests now build expected carriers through `SafeArray::from_variants` / `from_typed_variants`, leaving legacy constructors only on explicit runtime-result compatibility assertions.
 74. Standard HAL native COM activation now materializes retained object `Variant` carriers directly for `create_object_variant()` instead of returning a private `RuntimeValue::Object` and converting it back.
 75. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 

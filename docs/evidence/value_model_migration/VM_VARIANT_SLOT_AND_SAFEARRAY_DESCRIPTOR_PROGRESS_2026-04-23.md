@@ -1819,6 +1819,11 @@ Implementation progress:
      setup/expected typed byte payloads through `SafeArray::from_typed_variants_nd`
      with `VT_UI1` `Variant` elements. Remaining `from_typed_values_nd` hits in
      those tests are legacy snapshot compatibility assertions.
+189. Windows COM bridge retained SAFEARRAY tests now construct expected
+     Variant and typed SAFEARRAY carriers through `SafeArray::from_variants`
+     and `SafeArray::from_typed_variants`. Legacy runtime-result assertions
+     remain on `RuntimeValue` constructors only where the test explicitly
+     exercises a compatibility API.
 
 Remaining blocker:
 
@@ -2201,3 +2206,6 @@ Remaining blocker:
 34. VM/JIT retained byte-SAFEARRAY resize/bounds tests now use
     `from_typed_variants_nd`; legacy typed-value construction remains only on
     explicit compatibility snapshot assertions in that focused area.
+35. Windows COM bridge SAFEARRAY roundtrip tests now build retained expected
+    carriers from `Variant` elements, further reducing legacy constructor scan
+    noise outside explicit runtime-result compatibility tests.

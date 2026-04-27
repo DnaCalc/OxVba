@@ -2435,6 +2435,10 @@ Child beads:
        now construct typed byte setup/expected arrays through
        `SafeArray::from_typed_variants_nd`, leaving legacy typed-value
        construction to explicit compatibility snapshot assertions
+     - progress landed: Windows COM bridge retained SAFEARRAY roundtrip tests
+       now build expected carriers through `SafeArray::from_variants` and
+       `SafeArray::from_typed_variants`, leaving legacy constructors to
+       explicit runtime-result compatibility assertions
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
