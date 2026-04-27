@@ -30,6 +30,9 @@ Implemented:
 - Runtime/Variant compatibility projection error strings now say `legacy
   compat slot` instead of `current compat slot`, and matching unit-test
   expectations were updated.
+- Consolidation/architecture docs and downstream V0.2 evidence now describe
+  remaining slot lanes as legacy adapter seams rather than current carrier
+  truth.
 
 This does not close `bd-bqm8.2.5`; remaining scans still need to classify or
 update additional architecture, historical evidence, and helper-test wording.

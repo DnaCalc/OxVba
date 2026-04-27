@@ -53,9 +53,10 @@ Migration input:
 5. `VarPtr(v As Variant)` must continue to expose a real container shape rather
    than a payload pointer alias
 
-Current old-code truth:
+Current retained-carrier truth:
 
-- current runtime `Variant` is already a 16-byte compat slot
+- runtime `Variant` is a 16-byte retained carrier with legacy compat-slot
+  adapters
 - but it still rejects canonical string, array, object, and binding-handle
   shapes
 

@@ -38,9 +38,9 @@ Important current carrier truth:
 - `RuntimeValue::String` stores `BStr`, not plain `String`
 - `RuntimeValue::Object` stores `ObjectRef`, whose base object exposes a
   runtime `IUnknown`-style vtable and reference counting
-- the VM still projects to compat-slot `i32` lanes where required for older
-  bytecode/helper seams, but those integers are no longer the canonical object
-  carrier
+- the VM still projects to legacy compat-slot `i32` lanes at explicit older
+  bytecode/helper adapter seams, but those integers are no longer the canonical
+  object carrier
 - `RuntimeValue` now round-trips through the owned semantic `Variant` carrier in
   `oxvba-runtime` rather than relying on a separate token-era bridge model
 

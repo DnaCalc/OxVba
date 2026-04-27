@@ -50,9 +50,9 @@ Passed:
 - `cargo test -p oxvba-host immediate_session_snapshot_compat_values_projects_runtime_state --lib`
 - `cargo test -p oxvba-host execute_source_returns_slot_snapshot --lib`
 
-## Remaining Downstream Work
+## Downstream Status
 
-- `bd-bqm8.2.4`: reconcile COM/HAL legacy compatibility bridges.
-- `bd-bqm8.2.5`: migrate remaining tests, conformance notes, and docs that
-  still normalize legacy `RuntimeValue`/slot-shaped observation as ordinary
-  execution truth.
+- `bd-bqm8.2.4` completed COM/HAL compatibility bridge externalization.
+- `bd-bqm8.2.5` is migrating remaining tests, conformance notes, and docs so
+  legacy `RuntimeValue`/slot-shaped observations are labeled as compatibility
+  adapter assertions instead of ordinary execution truth.
