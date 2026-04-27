@@ -1180,13 +1180,9 @@ impl Engine {
                 }
             }
             if cranelift::supports_bytecode(&compiled.bytecode)
-                && let Ok(values) = cranelift::execute_bytecode(&compiled.bytecode)
+                && let Ok(values) = cranelift::execute_bytecode_variants(&compiled.bytecode)
             {
-                return values
-                    .into_iter()
-                    .map(|value| Variant::try_from_runtime_value(&value))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(PhaseDiagnostic::runtime);
+                return Ok(values);
             }
 
             return self.execute_compiled_project_with_variant_snapshot_vm(&compiled);
