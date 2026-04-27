@@ -2769,6 +2769,16 @@ End Sub";
     }
 
     #[test]
+    fn formal_v50_isdate_string_policy_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim valid\nDim invalid\nvalid = IsDate(\"1 Jan 2000\")\ninvalid = IsDate(\"February 30, 2000\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("IsDate string policy subset should execute");
+        assert_eq!(snapshot, vec![1, 0]);
+    }
+
+    #[test]
     fn formal_v51_err_raise_maps_to_runtime_error_state() {
         let engine = Engine::new(HostConfig::default());
         let source =

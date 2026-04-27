@@ -419,8 +419,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.4.2` is complete for publishing the accepted grammar, locale policy,
   and unsupported ambiguity boundaries, with evidence in
   [V02_DATE_STRING_GRAMMAR_POLICY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_GRAMMAR_POLICY_2026-04-27.md)
-- `bd-bqm8.4` remains in-progress; the next ready delivery bead is
-  `bd-bqm8.4.3`, covering accepted parser/coercion gaps
+- `bd-bqm8.4.3` is complete for accepted parser/coercion gaps, with evidence
+  in
+  [V02_DATE_STRING_IMPLEMENTATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_IMPLEMENTATION_2026-04-27.md)
+- `bd-bqm8.4` remains in-progress; the next ready evidence bead is
+  `bd-bqm8.4.4`, covering VM/JIT/host/conformance evidence refresh
 
 ## Delivery Rules for This Workset
 

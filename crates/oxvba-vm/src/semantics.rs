@@ -1096,27 +1096,29 @@ fn parse_string_date_to_packed(text: &str) -> Option<i32> {
         .replace('-', " ")
         .replace('/', " ");
     let parts: Vec<&str> = normalized.split_whitespace().collect();
-    match parts.as_slice() {
+    let packed = match parts.as_slice() {
         [year, month, day] if year.len() == 4 => {
             let year = year.parse::<i32>().ok()?;
             let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
             let day = day.parse::<i32>().ok()?;
-            Some(year.saturating_mul(10_000) + month.saturating_mul(100) + day)
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
         }
         [month, day, year] if parse_month_token(month).is_some() => {
             let month = parse_month_token(month)?;
             let day = day.parse::<i32>().ok()?;
             let year = year.parse::<i32>().ok()?;
-            Some(year.saturating_mul(10_000) + month.saturating_mul(100) + day)
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
         }
         [day, month, year] => {
             let day = day.parse::<i32>().ok()?;
             let month = parse_month_token(month).or_else(|| month.parse::<i32>().ok())?;
             let year = year.parse::<i32>().ok()?;
-            Some(year.saturating_mul(10_000) + month.saturating_mul(100) + day)
+            year.saturating_mul(10_000) + month.saturating_mul(100) + day
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    packed_date_components(packed)?;
+    Some(packed)
 }
 
 fn is_leap_year(year: i32) -> bool {
@@ -2435,7 +2437,8 @@ mod tests {
     use super::{
         SECONDS_PER_DAY, format_date_serial_digits, runtime_value_is_date, runtime_value_to_cdate,
         runtime_value_to_date_value_digits, runtime_value_to_datevalue, runtime_value_to_text,
-        runtime_value_to_timevalue, runtime_variant_to_text, typed_compare_values,
+        runtime_value_to_timevalue, runtime_variant_is_date, runtime_variant_to_text,
+        typed_compare_values,
     };
     use oxvba_compiler::bytecode::StringCompareMode;
     use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
@@ -2520,13 +2523,27 @@ mod tests {
     }
 
     #[test]
-    fn is_date_accepts_real_date_subtype_and_rejects_plain_string() {
+    fn is_date_accepts_real_date_subtype_and_supported_string() {
         assert!(runtime_value_is_date(&RuntimeValue::F64(
             F64Value::from_date_f64(46081.5)
         )));
-        assert!(!runtime_value_is_date(&RuntimeValue::String(BStr::from(
-            "not a date"
+        assert!(runtime_value_is_date(&RuntimeValue::String(BStr::from(
+            "1 Jan 2000"
         ))));
+    }
+
+    #[test]
+    fn string_date_parser_rejects_calendar_invalid_date() {
+        assert!(!runtime_value_is_date(&RuntimeValue::String(BStr::from(
+            "February 30, 2000"
+        ))));
+        assert!(!runtime_variant_is_date(&Variant::from_string(
+            "February 30, 2000"
+        )));
+        assert!(
+            runtime_value_to_datevalue(&RuntimeValue::String(BStr::from("February 30, 2000")))
+                .is_err()
+        );
     }
 
     #[test]
