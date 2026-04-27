@@ -1629,6 +1629,10 @@ Implementation progress:
      `DebugFrameVariant`/`DebugVariantEvaluationResult`. Legacy debugger
      pause/evaluation APIs now project from those retained frame values for
      compatibility display callers.
+164. CLI source/project execution now consumes retained `Variant` snapshot APIs
+     for run-project and run execution paths. `--dump-slots` projects through
+     the existing compatibility slot classifier and `--dump-values` projects
+     only at the terminal display formatter boundary.
 
 Remaining blocker:
 
@@ -1934,3 +1938,6 @@ Remaining blocker:
 9. Debugger run/pause/evaluation APIs now expose retained `Variant` frame
    carriers through Variant companion methods and result types. Legacy debugger
    pause/evaluation APIs remain compatibility projections for display callers.
+10. CLI run-project/run execution paths now retain `Variant` snapshots until
+    the terminal display boundary. Slot and value dumps remain explicit CLI
+    compatibility projections.

@@ -117,7 +117,8 @@ Current value-model migration note (2026-04-25):
 52. The SAFEARRAY legacy API audit was refreshed; current production payload retention remains on retained `Variant`/SAFEARRAY paths, while public compatibility API disposition remains open.
 53. Immediate-session evaluation now exposes retained `Variant` result carriers through `evaluate_variant()` / `ImmediateVariantEvaluationResult`; legacy immediate evaluation remains a compatibility projection for existing display/result callers.
 54. Host debugger run/pause/evaluation APIs now expose retained `Variant` frame carriers through Variant companion methods/results; legacy debugger evaluation remains a compatibility projection for existing display/result callers.
-55. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+55. CLI run-project/run execution paths now retain `Variant` snapshots until the terminal display boundary; slot/value dump flags remain explicit compatibility projections.
+56. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
