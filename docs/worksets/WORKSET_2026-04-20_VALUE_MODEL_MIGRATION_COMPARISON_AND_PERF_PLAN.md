@@ -2371,6 +2371,10 @@ Child beads:
      - progress landed: COM legacy slot-token projection now uses retained
        `Variant` compatibility-slot projection directly instead of detouring
        through `RuntimeValue`
+     - progress landed: Windows COM `IEnumVARIANT` and SAFEARRAY legacy
+       runtime-result paths now decode scalar `VARIANT` elements directly into
+       retained `Variant` carriers; dispatch/unknown binding remains isolated
+       to the existing legacy `RuntimeValue` callback fallback
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

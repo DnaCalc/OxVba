@@ -1659,6 +1659,11 @@ Implementation progress:
 170. COM legacy slot-token projection now converts `ComValue` through retained
      `Variant::project_compat_slot_i32()` instead of first projecting the COM
      carrier into `RuntimeValue`.
+171. Windows COM `IEnumVARIANT` and SAFEARRAY legacy runtime-result paths now
+     first decode scalar `VARIANT` elements directly into retained `Variant`
+     carriers. Dispatch/unknown binding remains limited by the legacy callback
+     contract that returns `RuntimeValue`, with projection isolated to that
+     compatibility fallback.
 
 Remaining blocker:
 
@@ -1989,3 +1994,7 @@ Remaining blocker:
 16. COM legacy slot-token projection now uses retained `Variant` compatibility
     slot projection directly rather than a `ComValue -> RuntimeValue -> token`
     detour.
+17. Windows COM `IEnumVARIANT` and SAFEARRAY legacy runtime-result paths now
+    decode scalar `VARIANT` elements into retained `Variant` carriers before
+    returning through legacy compatibility APIs; dispatch/unknown binding still
+    falls back through the existing `RuntimeValue` callback contract.

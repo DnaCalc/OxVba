@@ -124,7 +124,8 @@ Current value-model migration note (2026-04-25):
 59. VM `For Each` NewEnum unsupported-result diagnostics now format retained `Variant` results directly without a `RuntimeValue` error-message detour.
 60. Host project execution with JIT enabled now consumes retained `Variant` snapshots from the legacy-slot Cranelift fallback instead of converting `RuntimeValue` snapshots back into `Variant`.
 61. COM legacy slot-token projection now uses retained `Variant` compatibility-slot projection directly instead of a `ComValue` -> `RuntimeValue` -> token detour.
-62. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+62. Windows COM `IEnumVARIANT` and SAFEARRAY legacy runtime-result paths now decode scalar `VARIANT` elements directly into retained `Variant` carriers, with dispatch/unknown binding projection isolated to the existing legacy callback fallback.
+63. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 
