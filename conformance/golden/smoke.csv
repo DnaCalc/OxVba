@@ -143,6 +143,7 @@
 "stdlib_array_introspection_types.bas","ok","-999999998,8204,1001"
 "stdlib_date_add_diff.bas","ok","20260231,3"
 "stdlib_datetime_expansion.bas","ok","2024,2,3,7"
+"stdlib_date_string_policy.bas","ok","2000,1,1,1,0"
 "stdlib_date_serial_value.bas","ok","20260228,20260228"
 "stdlib_error_cverr_identity.bas","ok","-899999983"
 "stdlib_error_err_raise_fail.bas","error",""

@@ -422,8 +422,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.4.3` is complete for accepted parser/coercion gaps, with evidence
   in
   [V02_DATE_STRING_IMPLEMENTATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_IMPLEMENTATION_2026-04-27.md)
-- `bd-bqm8.4` remains in-progress; the next ready evidence bead is
-  `bd-bqm8.4.4`, covering VM/JIT/host/conformance evidence refresh
+- `bd-bqm8.4.4` is complete for VM/JIT/host/conformance evidence refresh,
+  with evidence in
+  [V02_DATE_STRING_VM_JIT_HOST_CONFORMANCE_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_VM_JIT_HOST_CONFORMANCE_EVIDENCE_2026-04-27.md)
+- `bd-bqm8.4` remains in-progress; the next ready validation bead is
+  `bd-bqm8.4.5`, covering the final date-string parsing checklist
 
 ## Delivery Rules for This Workset
 
