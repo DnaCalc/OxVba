@@ -660,9 +660,11 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
     // HAL-DYN-005: VARIANT byref discriminant legality — I64 carrier preserves large integer values.
     let i64_roundtrip_ok = {
         let value = RuntimeValue::I64(5_000_000_000i64);
-        let com_value = oxvba_com::ComValue::from_runtime_value(&value);
+        let variant = value.to_variant().expect("I64 RuntimeValue should project");
+        let com_value =
+            oxvba_com::ComValue::from_variant(&variant).expect("I64 Variant should project");
         com_value == oxvba_com::ComValue::I64(5_000_000_000i64)
-            && com_value.to_runtime_value() == value
+            && com_value.to_variant().expect("I64 ComValue should project") == variant
     };
     if !i64_roundtrip_ok {
         failures.push("I64 carrier roundtrip failed".to_string());
@@ -728,10 +730,14 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
         let date = RuntimeValue::F64(F64Value::from_date_f64(45200.25));
         let currency = RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000));
         let decimal = RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false));
-        oxvba_com::ComValue::from_runtime_value(&single).to_runtime_value() == single
-            && oxvba_com::ComValue::from_runtime_value(&date).to_runtime_value() == date
-            && oxvba_com::ComValue::from_runtime_value(&currency).to_runtime_value() == currency
-            && oxvba_com::ComValue::from_runtime_value(&decimal).to_runtime_value() == decimal
+        [single, date, currency, decimal].into_iter().all(|value| {
+            let variant = value
+                .to_variant()
+                .expect("semantic RuntimeValue should project");
+            oxvba_com::ComValue::from_variant(&variant)
+                .and_then(|value| value.to_variant())
+                .is_ok_and(|roundtrip| roundtrip == variant)
+        })
     };
     if !semantic_carrier_ok {
         failures
