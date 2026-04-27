@@ -231,8 +231,8 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         let upper = lower + bounds[0].count as i32 - 1;
         let mut values = Vec::with_capacity(total_len);
         for index in lower..=upper {
-            let value = safe_array_element_to_runtime_value(psa.cast_const(), index, element_vt)?;
-            values.push(Variant::try_from_runtime_value(&value)?);
+            let value = safe_array_element_to_variant(psa.cast_const(), index, element_vt)?;
+            values.push(value);
         }
         values
     } else {
@@ -241,7 +241,6 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
 
         for _ in 0..total_len {
             let value = safe_array_element_nd(psa.cast_const(), &indices, element_vt)?;
-            let value = Variant::try_from_runtime_value(&value)?;
             values.push(value);
 
             let mut carry = true;
@@ -282,7 +281,7 @@ unsafe fn safe_array_element_nd(
     psa: *const SAFEARRAY,
     indices: &[i32],
     element_vt: u16,
-) -> Result<oxvba_runtime::RuntimeValue, String> {
+) -> Result<Variant, String> {
     // SafeArrayGetElement accepts a pointer to an array of i32 indices for multi-dim access.
     if element_vt == VT_VARIANT {
         let mut element: VARIANT = std::mem::zeroed();
@@ -294,12 +293,12 @@ unsafe fn safe_array_element_nd(
             ));
         }
         let value = match variant_to_com_value(&element) {
-            Ok(value) => value.to_runtime_value(),
+            Ok(value) => value.to_variant(),
             Err(detail) => {
                 let _ = VariantClear(&mut element);
                 return Err(detail);
             }
-        };
+        }?;
         let _ = VariantClear(&mut element);
         return Ok(value);
     }
@@ -317,7 +316,7 @@ unsafe fn safe_array_element_typed_nd(
     psa: *const SAFEARRAY,
     indices: &[i32],
     element_vt: u16,
-) -> Result<oxvba_runtime::RuntimeValue, String> {
+) -> Result<Variant, String> {
     macro_rules! get_element {
         ($ty:ty, $indices:expr) => {{
             let mut element: $ty = std::mem::zeroed();
@@ -332,66 +331,63 @@ unsafe fn safe_array_element_typed_nd(
         }};
     }
     match element_vt {
-        VT_I1 => Ok(ComValue::I32(get_element!(i8, indices) as i32).to_runtime_value()),
-        VT_I2 => Ok(ComValue::I32(get_element!(i16, indices) as i32).to_runtime_value()),
-        VT_I4 => Ok(ComValue::I32(get_element!(i32, indices)).to_runtime_value()),
+        VT_I1 => ComValue::I32(get_element!(i8, indices) as i32).to_variant(),
+        VT_I2 => ComValue::I32(get_element!(i16, indices) as i32).to_variant(),
+        VT_I4 => ComValue::I32(get_element!(i32, indices)).to_variant(),
         VT_I8 => {
             let val = get_element!(i64, indices);
             match i32::try_from(val) {
-                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(val).to_runtime_value()),
+                Ok(n) => ComValue::I32(n).to_variant(),
+                Err(_) => ComValue::I64(val).to_variant(),
             }
         }
-        VT_INT => Ok(ComValue::I32(get_element!(i32, indices)).to_runtime_value()),
-        VT_UI1 => Ok(ComValue::I32(get_element!(u8, indices) as i32).to_runtime_value()),
-        VT_UI2 => Ok(ComValue::I32(get_element!(u16, indices) as i32).to_runtime_value()),
+        VT_INT => ComValue::I32(get_element!(i32, indices)).to_variant(),
+        VT_UI1 => ComValue::I32(get_element!(u8, indices) as i32).to_variant(),
+        VT_UI2 => ComValue::I32(get_element!(u16, indices) as i32).to_variant(),
         VT_UI4 => {
             let val = get_element!(u32, indices);
             match i32::try_from(val) {
-                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(val as i64).to_runtime_value()),
+                Ok(n) => ComValue::I32(n).to_variant(),
+                Err(_) => ComValue::I64(val as i64).to_variant(),
             }
         }
         VT_UI8 => {
             let val = get_element!(u64, indices);
             match i32::try_from(val) {
-                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
+                Ok(n) => ComValue::I32(n).to_variant(),
                 Err(_) => match i64::try_from(val) {
-                    Ok(n) => Ok(ComValue::I64(n).to_runtime_value()),
+                    Ok(n) => ComValue::I64(n).to_variant(),
                     Err(_) => Err(format!(
                         "VT_UI8 SAFEARRAY element {val} exceeds i64 carrier range"
                     )),
                 },
             }
         }
-        VT_R4_VARENUM => Ok(ComValue::F64(F64Value::from_single_f64(
-            get_element!(f32, indices) as f64
-        ))
-        .to_runtime_value()),
-        VT_R8_VARENUM => {
-            Ok(ComValue::F64(F64Value::from_f64(get_element!(f64, indices))).to_runtime_value())
+        VT_R4_VARENUM => {
+            ComValue::F64(F64Value::from_single_f64(get_element!(f32, indices) as f64)).to_variant()
         }
+        VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(get_element!(f64, indices))).to_variant(),
         VT_CY_VARENUM => {
             let cy: CY = get_element!(CY, indices);
-            Ok(ComValue::Currency(CurrencyValue::from_scaled_i64(cy.int64)).to_runtime_value())
+            ComValue::Currency(CurrencyValue::from_scaled_i64(cy.int64)).to_variant()
         }
-        VT_DATE_VARENUM => Ok(
-            ComValue::F64(F64Value::from_date_f64(get_element!(f64, indices))).to_runtime_value(),
-        ),
+        VT_DATE_VARENUM => {
+            ComValue::F64(F64Value::from_date_f64(get_element!(f64, indices))).to_variant()
+        }
         VT_DECIMAL => {
             let dec: DECIMAL = get_element!(DECIMAL, indices);
-            Ok(ComValue::Decimal(decimal96_from_windows(dec)).to_runtime_value())
+            ComValue::Decimal(decimal96_from_windows(dec)).to_variant()
         }
         VT_UINT => {
             let val = get_element!(u32, indices);
             match i32::try_from(val) {
-                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(val as i64).to_runtime_value()),
+                Ok(n) => ComValue::I32(n).to_variant(),
+                Err(_) => ComValue::I64(val as i64).to_variant(),
             }
         }
         VT_BOOL => {
             let val = get_element!(VARIANT_BOOL, indices);
-            Ok(ComValue::Bool(val != 0).to_runtime_value())
+            ComValue::Bool(val != 0).to_variant()
         }
         VT_BSTR => {
             let bstr: windows_sys::core::BSTR = get_element!(windows_sys::core::BSTR, indices);
@@ -404,7 +400,7 @@ unsafe fn safe_array_element_typed_nd(
                 SysFreeString(bstr);
                 text
             };
-            Ok(ComValue::String(BStr::from(text)).to_runtime_value())
+            ComValue::String(BStr::from(text)).to_variant()
         }
         other => Err(format!(
             "unsupported SAFEARRAY element vartype {other} in multi-dimensional array"
@@ -414,11 +410,11 @@ unsafe fn safe_array_element_typed_nd(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn safe_array_element_to_runtime_value(
+unsafe fn safe_array_element_to_variant(
     psa: *const SAFEARRAY,
     index: i32,
     element_vt: u16,
-) -> Result<oxvba_runtime::RuntimeValue, String> {
+) -> Result<Variant, String> {
     match element_vt {
         VT_VARIANT => {
             let mut element: VARIANT = std::mem::zeroed();
@@ -430,12 +426,12 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             let value = match variant_to_com_value(&element) {
-                Ok(value) => value.to_runtime_value(),
+                Ok(value) => value.to_variant(),
                 Err(detail) => {
                     let _ = VariantClear(&mut element);
                     return Err(detail);
                 }
-            };
+            }?;
             let _ = VariantClear(&mut element);
             Ok(value)
         }
@@ -448,7 +444,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            ComValue::I32(element as i32).to_variant()
         }
         VT_I2 => {
             let mut element = 0i16;
@@ -459,7 +455,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            ComValue::I32(element as i32).to_variant()
         }
         VT_I4 => {
             let mut element = 0i32;
@@ -470,7 +466,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element).to_runtime_value())
+            ComValue::I32(element).to_variant()
         }
         VT_I8 => {
             let mut element = 0i64;
@@ -482,8 +478,8 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             match i32::try_from(element) {
-                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(element).to_runtime_value()),
+                Ok(narrowed) => ComValue::I32(narrowed).to_variant(),
+                Err(_) => ComValue::I64(element).to_variant(),
             }
         }
         VT_INT => {
@@ -495,7 +491,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element).to_runtime_value())
+            ComValue::I32(element).to_variant()
         }
         VT_UI2 => {
             let mut element = 0u16;
@@ -506,7 +502,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            ComValue::I32(element as i32).to_variant()
         }
         VT_UI1 => {
             let mut element = 0u8;
@@ -517,7 +513,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            ComValue::I32(element as i32).to_variant()
         }
         VT_UI4 => {
             let mut element = 0u32;
@@ -529,8 +525,8 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             match i32::try_from(element) {
-                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(element as i64).to_runtime_value()),
+                Ok(narrowed) => ComValue::I32(narrowed).to_variant(),
+                Err(_) => ComValue::I64(element as i64).to_variant(),
             }
         }
         VT_UI8 => {
@@ -543,9 +539,9 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             match i32::try_from(element) {
-                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
+                Ok(narrowed) => ComValue::I32(narrowed).to_variant(),
                 Err(_) => match i64::try_from(element) {
-                    Ok(narrowed) => Ok(ComValue::I64(narrowed).to_runtime_value()),
+                    Ok(narrowed) => ComValue::I64(narrowed).to_variant(),
                     Err(_) => Err(format!(
                         "VT_UI8 SAFEARRAY element {element} exceeds i64 carrier range"
                     )),
@@ -561,7 +557,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::F64(F64Value::from_single_f64(element as f64)).to_runtime_value())
+            ComValue::F64(F64Value::from_single_f64(element as f64)).to_variant()
         }
         VT_R8_VARENUM => {
             let mut element = 0f64;
@@ -572,7 +568,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::F64(F64Value::from_f64(element)).to_runtime_value())
+            ComValue::F64(F64Value::from_f64(element)).to_variant()
         }
         VT_CY_VARENUM => {
             let mut element: CY = std::mem::zeroed();
@@ -583,10 +579,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(
-                ComValue::Currency(CurrencyValue::from_scaled_i64(element.int64))
-                    .to_runtime_value(),
-            )
+            ComValue::Currency(CurrencyValue::from_scaled_i64(element.int64)).to_variant()
         }
         VT_DATE_VARENUM => {
             let mut element = 0f64;
@@ -597,7 +590,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::F64(F64Value::from_date_f64(element)).to_runtime_value())
+            ComValue::F64(F64Value::from_date_f64(element)).to_variant()
         }
         VT_DECIMAL => {
             let mut element: DECIMAL = std::mem::zeroed();
@@ -608,7 +601,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::Decimal(decimal96_from_windows(element)).to_runtime_value())
+            ComValue::Decimal(decimal96_from_windows(element)).to_variant()
         }
         VT_UINT => {
             let mut element = 0u32;
@@ -620,8 +613,8 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             match i32::try_from(element) {
-                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
-                Err(_) => Ok(ComValue::I64(element as i64).to_runtime_value()),
+                Ok(narrowed) => ComValue::I32(narrowed).to_variant(),
+                Err(_) => ComValue::I64(element as i64).to_variant(),
             }
         }
         VT_BOOL => {
@@ -633,7 +626,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::Bool(element != 0).to_runtime_value())
+            ComValue::Bool(element != 0).to_variant()
         }
         VT_BSTR => {
             let mut element: windows_sys::core::BSTR = std::ptr::null_mut();
@@ -652,7 +645,7 @@ unsafe fn safe_array_element_to_runtime_value(
             if !element.is_null() {
                 SysFreeString(element);
             }
-            Ok(ComValue::String(value).to_runtime_value())
+            ComValue::String(value).to_variant()
         }
         other => Err(format!(
             "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_R4, VT_R8, VT_CY, VT_DATE, VT_UINT, VT_BOOL, and VT_BSTR"
@@ -823,7 +816,7 @@ where
             return Variant::try_from_runtime_value(&value);
         }
         let value = safe_array_element_typed_nd(psa.cast_const(), indices, element_vt)?;
-        Variant::try_from_runtime_value(&value)
+        Ok(value)
     };
 
     let mut values = Vec::with_capacity(total_len);
