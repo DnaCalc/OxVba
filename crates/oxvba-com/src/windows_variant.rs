@@ -154,38 +154,6 @@ where
 }
 
 #[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
-unsafe fn unknown_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
-    unknown: *mut c_void,
-    query_dispatch_from_unknown: &mut FQueryDispatch,
-    add_ref_dispatch: &mut FAddRefDispatch,
-    bind_dispatch_result: &mut FBindDispatch,
-    prog_id_hint: &str,
-    op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
-where
-    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
-    FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
-{
-    let mut bind_variant =
-        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
-            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
-            Variant::try_from_runtime_value(&value)
-        };
-    unknown_to_variant_value(
-        unknown,
-        query_dispatch_from_unknown,
-        add_ref_dispatch,
-        &mut bind_variant,
-        prog_id_hint,
-        op,
-    )?
-    .to_runtime_value()
-}
-
-#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn alloc_bstr(text: &BStr) -> windows_sys::core::BSTR {
     text.clone_raw_bstr()
@@ -914,38 +882,6 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn safe_array_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
-    psa: *mut SAFEARRAY,
-    query_dispatch_from_unknown: &mut FQueryDispatch,
-    add_ref_dispatch: &mut FAddRefDispatch,
-    bind_dispatch_result: &mut FBindDispatch,
-    prog_id_hint: &str,
-    op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
-where
-    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
-    FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
-{
-    let mut bind_variant =
-        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
-            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
-            Variant::try_from_runtime_value(&value)
-        };
-    safe_array_to_variant_value(
-        psa,
-        query_dispatch_from_unknown,
-        add_ref_dispatch,
-        &mut bind_variant,
-        prog_id_hint,
-        op,
-    )?
-    .to_runtime_value()
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn set_variant_array_arg<FResolve, FAddRef>(
     variant: *mut VARIANT,
     array: &SafeArray,
@@ -1604,90 +1540,20 @@ where
     FBindDispatch:
         FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
 {
-    let vt = variant.Anonymous.Anonymous.vt;
-    if vt & VT_BYREF != 0 {
-        let base_vt = vt & !VT_BYREF;
-        // VT_BYREF | VT_ARRAY: dereference pparray then delegate to the full runtime path.
-        if base_vt & VT_ARRAY != 0 {
-            let pparray = variant.Anonymous.Anonymous.Anonymous.pparray;
-            if pparray.is_null() {
-                return Err("VT_BYREF|VT_ARRAY carried null pparray pointer".to_string());
-            }
-            let parray = *pparray;
-            return safe_array_to_runtime_value(
-                parray,
-                query_dispatch_from_unknown,
-                add_ref_dispatch,
-                bind_dispatch_result,
-                prog_id_hint,
-                op,
-            );
-        }
-        // VT_BYREF | VT_VARIANT: dereference to the inner VARIANT and recurse.
-        if base_vt == VT_VARIANT {
-            let pvar = variant.Anonymous.Anonymous.Anonymous.pvarVal;
-            if pvar.is_null() {
-                return Err("VT_BYREF|VT_VARIANT carried null pvarVal pointer".to_string());
-            }
-            return variant_to_runtime_value(
-                &*pvar,
-                query_dispatch_from_unknown,
-                add_ref_dispatch,
-                bind_dispatch_result,
-                prog_id_hint,
-                op,
-            );
-        }
-        // VT_BYREF | VT_DISPATCH: dereference the double-pointer and bind.
-        if base_vt == VT_DISPATCH {
-            let ppdispatch = variant.Anonymous.Anonymous.Anonymous.ppdispVal;
-            if ppdispatch.is_null() {
-                return Err("VT_BYREF|VT_DISPATCH carried null ppdispVal pointer".to_string());
-            }
-            let dispatch = *ppdispatch;
-            if !dispatch.is_null() {
-                add_ref_dispatch(dispatch.cast());
-            }
-            return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
-        }
-        // Other scalar BYREF types: retain the decoded payload as a Variant,
-        // then project only at the legacy runtime-result boundary.
-        return variant_to_com_value(variant)?
-            .to_variant()?
-            .to_runtime_value();
-    }
-    if vt & VT_ARRAY != 0 {
-        let parray = variant.Anonymous.Anonymous.Anonymous.parray;
-        return safe_array_to_runtime_value(
-            parray,
-            query_dispatch_from_unknown,
-            add_ref_dispatch,
-            bind_dispatch_result,
-            prog_id_hint,
-            op,
-        );
-    }
-    if vt == VT_DISPATCH {
-        let dispatch = variant.Anonymous.Anonymous.Anonymous.pdispVal;
-        if !dispatch.is_null() {
-            add_ref_dispatch(dispatch.cast());
-        }
-        return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
-    }
-    if vt == VT_UNKNOWN {
-        let unknown = variant.Anonymous.Anonymous.Anonymous.punkVal;
-        return unknown_to_runtime_value(
-            unknown.cast(),
-            query_dispatch_from_unknown,
-            add_ref_dispatch,
-            bind_dispatch_result,
-            prog_id_hint,
-            op,
-        );
-    }
-    variant_to_com_value(variant)?
-        .to_variant()?
-        .to_runtime_value()
+    let mut bind_variant =
+        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
+            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
+            Variant::try_from_runtime_value(&value)
+        };
+    variant_to_variant_value(
+        variant,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+        &mut bind_variant,
+        prog_id_hint,
+        op,
+    )?
+    .to_runtime_value()
 }
 
 #[cfg(target_os = "windows")]
