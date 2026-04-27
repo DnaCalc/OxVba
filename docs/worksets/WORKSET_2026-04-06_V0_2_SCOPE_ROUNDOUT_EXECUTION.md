@@ -558,8 +558,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.11.5` is complete for thresholds and trend surfaces, with evidence
   in
   [V02_PERFORMANCE_THRESHOLDS_AND_TRENDS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_THRESHOLDS_AND_TRENDS_2026-04-27.md)
-- `bd-bqm8.11` remains in-progress; the next ready performance scaffold bead
-  is `bd-bqm8.11.6`, covering the final checklist
+- `bd-bqm8.11.6` is complete for the final performance and VBA comparison
+  checklist, with evidence in
+  [V02_PERFORMANCE_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.11` is complete for V0.2 performance scaffolding against VBA; the
+  next ready V0.2 roundout bead is `bd-bqm8.10`
 
 ## Delivery Rules for This Workset
 
