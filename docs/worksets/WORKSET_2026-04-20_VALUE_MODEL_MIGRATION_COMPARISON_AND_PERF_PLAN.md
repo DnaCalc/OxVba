@@ -2428,6 +2428,9 @@ Child beads:
        adoption/cloning rejects descriptors without that provenance marker,
        narrowing allocator ownership to descriptors produced by the retained
        internal carrier path
+     - progress landed: runtime retained typed-SAFEARRAY tests now construct
+       intrinsic typed payload examples through `SafeArray::from_typed_variants`,
+       leaving `from_typed_values` examples to explicit compatibility coverage
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

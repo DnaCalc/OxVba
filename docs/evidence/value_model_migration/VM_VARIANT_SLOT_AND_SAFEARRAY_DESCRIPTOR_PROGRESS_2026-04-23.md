@@ -1811,6 +1811,10 @@ Implementation progress:
      to descriptors produced by OxVba allocation, while external COM
      SAFEARRAY allocator identity remains an interop boundary handled by the
      Windows bridge rather than a generalized raw-adoption claim.
+187. Runtime retained typed-SAFEARRAY tests now use
+     `SafeArray::from_typed_variants` for intrinsic typed payload examples.
+     Legacy `from_typed_values` usage remains in explicit compatibility
+     coverage, reducing scan noise around retained descriptor/payload paths.
 
 Remaining blocker:
 
@@ -2187,3 +2191,6 @@ Remaining blocker:
     owner-prefix marker before ownership transfer or clone, narrowing the
     allocator provenance audit for internal carriers without closing the
     broader `vmm-e6` projection/classification work.
+33. Runtime typed-SAFEARRAY retained-carrier tests now construct payloads with
+    `from_typed_variants`, leaving legacy typed `RuntimeValue` constructors to
+    compatibility coverage.

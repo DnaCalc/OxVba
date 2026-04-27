@@ -137,6 +137,7 @@ Current value-model migration note (2026-04-25):
 72. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent` projection isolated to the explicit legacy runtime-result API boundary.
 73. Windows COM legacy `variant_to_runtime_value()` now shares the retained `Variant` result bridge for scalars, arrays, dispatch, and unknowns, so runtime projection occurs once at the explicit compatibility API boundary.
 74. Runtime SAFEARRAY raw descriptor adoption now requires the OxVba owner-prefix marker, preventing the retained internal descriptor lane from treating arbitrary SAFEARRAY-shaped pointers as locally allocated carriers.
+75. Runtime retained typed-SAFEARRAY tests now construct typed payload examples through `SafeArray::from_typed_variants`, leaving legacy typed `RuntimeValue` constructors to explicit compatibility coverage.
 74. Standard HAL native COM activation now materializes retained object `Variant` carriers directly for `create_object_variant()` instead of returning a private `RuntimeValue::Object` and converting it back.
 75. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
