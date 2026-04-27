@@ -4,7 +4,9 @@
 //! COM layout used by `oxvba_runtime::Variant`: `VARTYPE` at offset 0, reserved
 //! words at offsets 2/4/6, and the 8-byte union payload at offset 8.
 
-use oxvba_runtime::{RuntimeValue, VarType, Variant};
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{VarType, Variant};
 
 pub const VT_EMPTY: u16 = VarType::Empty as u16;
 pub const VT_NULL: u16 = VarType::Null as u16;
@@ -53,6 +55,7 @@ impl RtSlot {
     /// The retained JIT carrier is still `Variant`; this accepts
     /// `RuntimeValue` only for compatibility callers that have not migrated to
     /// `from_variant`.
+    #[cfg(test)]
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::BindingHandle(handle) => Self::from_i32(handle.raw()),
@@ -65,6 +68,7 @@ impl RtSlot {
     /// Project the retained ABI slot back to the legacy semantic value API.
     ///
     /// New value-model call sites should use `variant` instead.
+    #[cfg(test)]
     pub fn to_runtime_value(&self) -> RuntimeValue {
         self.variant
             .to_runtime_value()
@@ -98,6 +102,7 @@ impl RtSlot {
 /// Long carrier accepted by the WithEvents semantics bridge instead of becoming
 /// a custom JIT storage tag. This is a compatibility wrapper around the retained
 /// `RtSlot`/`Variant` carrier.
+#[cfg(test)]
 pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
     RtSlot::from_runtime_value(value)
 }

@@ -12,7 +12,9 @@ use cranelift_module::{Linkage, Module};
 use oxvba_compiler::bytecode::StringCompareMode;
 use oxvba_compiler::{Bytecode, Instruction};
 use oxvba_hal::traits::HostServices;
-use oxvba_runtime::{RuntimeValue, Variant};
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::Variant;
 
 use crate::jit_context::JitContextOwned;
 use crate::runtime_helpers;
@@ -497,6 +499,7 @@ pub fn supports_bytecode_rtslot(bytecode: &Bytecode) -> bool {
 /// Compatibility execution API for the legacy 4-byte slot path.
 ///
 /// New value-model call sites should prefer [`execute_bytecode_variants`].
+#[cfg(test)]
 pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
     execute_bytecode_variants(bytecode)?
         .into_iter()
@@ -520,6 +523,7 @@ pub fn execute_bytecode_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, St
 ///
 /// New value-model call sites should prefer
 /// [`execute_bytecode_rtslot_variants`].
+#[cfg(test)]
 pub fn execute_bytecode_rtslot(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
