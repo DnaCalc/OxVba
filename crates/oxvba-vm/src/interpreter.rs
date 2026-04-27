@@ -3450,9 +3450,7 @@ impl Vm {
                             writeback.arg_index
                         ));
                     };
-                    Variant::try_from_runtime_value(
-                        &oxvba_runtime::pointer_helpers::read_back_byte_array_payload(pointer)?,
-                    )?
+                    oxvba_runtime::pointer_helpers::read_back_byte_array_payload_variant(pointer)?
                 }
                 ExternalCallWritebackKind::PointerStringPayload => {
                     let Some(pointer) = arg_values
@@ -3464,9 +3462,7 @@ impl Vm {
                             writeback.arg_index
                         ));
                     };
-                    Variant::try_from_runtime_value(
-                        &oxvba_runtime::pointer_helpers::read_back_string_payload(pointer)?,
-                    )?
+                    oxvba_runtime::pointer_helpers::read_back_string_payload_variant(pointer)?
                 }
             };
             self.write_variant_slot(writeback.source_slot, value)?;
