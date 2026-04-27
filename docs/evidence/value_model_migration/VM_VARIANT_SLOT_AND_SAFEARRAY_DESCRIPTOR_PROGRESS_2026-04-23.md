@@ -1611,6 +1611,12 @@ Implementation progress:
      m1 native FFI ABI marshaller remains an explicit internal semantic bridge
      behind a retained `Variant` wrapper until the by-ref/native ABI lane is
      migrated directly.
+161. The SAFEARRAY legacy API audit was refreshed against the current tree.
+     Current hits are the public compatibility API definitions and
+     test/assertion fixtures; no current hit shows production payload retention
+     owning `Vec<RuntimeValue>` as canonical SAFEARRAY element storage. The
+     public compatibility API disposition remains open and does not close
+     `vmm-e6`.
 
 Remaining blocker:
 

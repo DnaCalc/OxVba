@@ -37,6 +37,21 @@ Observed categories:
    element transport, dynamic `ParamArray` construction, and HAL conformance
    SAFEARRAY shape probing.
 
+Refreshed scan (2026-04-27):
+
+1. The same audit command now reports only:
+   - the legacy compatibility API definitions in `safe_array.rs`,
+   - runtime/variant compatibility bridge unit tests,
+   - pointer-helper, HAL, COM, VM, and JIT assertion fixtures that construct
+     expected legacy `RuntimeValue::ArrayIntent` values, and
+   - retained `Variant::from_safearray(...)` fixtures that intentionally use
+     the legacy constructors only to build expected SAFEARRAY payloads.
+2. No current hit shows production VM/JIT/HAL/COM payload retention owning a
+   `Vec<RuntimeValue>` as the canonical SAFEARRAY element store.
+3. This refreshed classification is support evidence only. The public
+   compatibility constructors/accessors still need final API disposition before
+   a Variant/SAFEARRAY closure checklist can pass.
+
 Open result:
 
 1. This audit does not close `vmm-e6`.
