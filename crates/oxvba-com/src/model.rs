@@ -246,7 +246,7 @@ impl ComValue {
 
     /// Compatibility projection into legacy slot-token transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
-        self.to_runtime_value().project_compat_slot_i32()
+        self.to_variant()?.project_compat_slot_i32()
     }
 
     /// Compatibility projection into legacy dispatch-token transport.
