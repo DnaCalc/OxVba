@@ -453,6 +453,14 @@ Rollout sync, 2026-04-27:
   wire layouts remain boundary representations, and downstream boundary risk
   work is owned by `bd-bqm8.6`, `bd-bqm8.7`, and `bd-bqm8.10`
 
+`v02.6` rollout, 2026-04-27:
+
+- `bd-bqm8.6.1` is complete for rolling out VM/JIT hardening child beads, with
+  evidence in
+  [V02_HARDENING_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENING_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.6` remains in-progress; the next ready matrix bead is
+  `bd-bqm8.6.2`, covering the V0.2 VM/JIT hardening matrix and scan baseline
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
