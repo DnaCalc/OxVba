@@ -328,6 +328,11 @@ deferred.
     rows
   - `bd-bqm8.3.5` run the final late-bound `IDispatch` parity checklist
 - `bd-bqm8.4` date-string parsing/coercion completion (`v02.4`)
+  - `bd-bqm8.4.1` audit and roll out date-string parsing child beads
+  - `bd-bqm8.4.2` publish accepted grammar and locale policy
+  - `bd-bqm8.4.3` implement accepted parser/coercion gaps
+  - `bd-bqm8.4.4` refresh VM/JIT/host/conformance evidence
+  - `bd-bqm8.4.5` run the final date-string parsing checklist
 - `bd-bqm8.5` runtime representation/layout investigation and architecture decision (`v02.5`)
 - `bd-bqm8.6` VM/JIT hardening and security pass (`v02.6`)
 - `bd-bqm8.7` Excel + Access/JET COM interop corpus buildout (`v02.7`)
@@ -408,8 +413,12 @@ Rollout sync, 2026-04-27:
   [V02_IDISPATCH_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_FINAL_CHECKLIST_2026-04-27.md)
 - `bd-bqm8.3` is complete for the bounded V0.2 late-bound `IDispatch` lane;
   unsupported rows remain explicit in the matrix and conformance docs
-- the next ready V0.2 delivery bead is `bd-bqm8.4`, covering date-string
-  parsing and coercion completion
+- `bd-bqm8.4.1` is complete for rolling out the date-string parsing/coercion
+  child beads, with evidence in
+  [V02_DATE_STRING_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.4` remains in-progress; the next ready delivery/support bead is
+  `bd-bqm8.4.2`, covering the accepted grammar, locale policy, and unsupported
+  ambiguity boundaries
 
 ## Delivery Rules for This Workset
 
