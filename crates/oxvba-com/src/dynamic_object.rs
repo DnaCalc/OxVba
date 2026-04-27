@@ -107,7 +107,9 @@ impl DynamicValue {
     ///
     /// New value-model call sites should prefer [`Self::variant`].
     pub fn to_runtime_value(&self) -> RuntimeValue {
-        self.to_com_value().to_runtime_value()
+        self.value
+            .to_runtime_value()
+            .expect("dynamic COM VARIANT payload must project to RuntimeValue")
     }
 
     /// Retained value-model payload for dynamic COM dispatch.
