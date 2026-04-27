@@ -532,9 +532,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.9.2` is complete for active Linux, macOS, and wasm validation jobs,
   with evidence in
   [V02_NON_PRIMARY_HOST_CI_VALIDATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NON_PRIMARY_HOST_CI_VALIDATION_2026-04-27.md)
+- `bd-bqm8.9.3` is complete for the non-primary host product-truth matrix, with
+  evidence in
+  [V02_NON_PRIMARY_HOST_PRODUCT_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NON_PRIMARY_HOST_PRODUCT_MATRIX_2026-04-27.md)
 - `bd-bqm8.9` remains in-progress; the next ready non-primary host validation
-  bead is `bd-bqm8.9.3`, covering the product-truth matrix for non-primary host
-  claims
+  bead is `bd-bqm8.9.4`, covering the final checklist
 
 ## Delivery Rules for This Workset
 
