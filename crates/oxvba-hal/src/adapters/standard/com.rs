@@ -71,6 +71,26 @@ fn projection_prog_id_name(
     Ok(state.prog_ids_by_handle.get(&object.raw()).cloned())
 }
 
+fn runtime_value_to_com_variant(
+    host: &StandardHostServices,
+    value: RuntimeValue,
+) -> HalResult<Variant> {
+    match value {
+        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
+        value => Variant::try_from_runtime_value(&value)
+            .map_err(|message| host.com_dispatch_adapter_fault(message)),
+    }
+}
+
+fn com_variant_to_runtime_value(
+    host: &StandardHostServices,
+    value: Variant,
+) -> HalResult<RuntimeValue> {
+    value
+        .to_runtime_value()
+        .map_err(|message| host.com_dispatch_adapter_fault(message))
+}
+
 #[cfg(target_os = "windows")]
 fn try_bind_projection_object_metadata(
     host: &StandardHostServices,
@@ -94,12 +114,9 @@ impl ComHal for StandardHostServices {
     // Legacy COM activation path. Retained VM/JIT callers should use
     // `create_object_variant`, which preserves the object as a Variant carrier.
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
-        let prog_id = Variant::try_from_runtime_value(&prog_id)
-            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
+        let prog_id = runtime_value_to_com_variant(self, prog_id)?;
         let value = self.create_object_variant(prog_id)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
@@ -137,8 +154,7 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
                 Ok(value) => {
-                    return Variant::try_from_runtime_value(&value)
-                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    return runtime_value_to_com_variant(self, value);
                 }
                 Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     let object = allocate_projection_object_ref(self, prog_id_name)?;
@@ -158,9 +174,7 @@ impl ComHal for StandardHostServices {
     // `release_object_variant`.
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
         let value = self.release_object_variant(object)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
@@ -267,9 +281,7 @@ impl ComHal for StandardHostServices {
         // Legacy dispatch result projection. Retained callers should use
         // `dispatch_invoke_variant`.
         let value = self.dispatch_invoke_variant(request)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn dispatch_invoke_dynamic_runtime_value_v2(
@@ -279,9 +291,7 @@ impl ComHal for StandardHostServices {
         // Legacy dynamic dispatch result projection. Retained callers should
         // use `dispatch_invoke_dynamic_variant`.
         let value = self.dispatch_invoke_dynamic_variant(request)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
@@ -303,8 +313,7 @@ impl ComHal for StandardHostServices {
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
                 Ok(Some(value)) => {
-                    return Variant::try_from_runtime_value(&value)
-                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    return runtime_value_to_com_variant(self, value);
                 }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
@@ -335,10 +344,9 @@ impl ComHal for StandardHostServices {
                 // path by returning the already bound object identity rather than inventing
                 // another raw handle that carries no metadata.
                 23 | 24 => {
-                    return Variant::try_from_runtime_value(&RuntimeValue::Object(
-                        ObjectRef::from_compat_identity(object),
-                    ))
-                    .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    return Ok(Variant::from_object_ref(ObjectRef::from_compat_identity(
+                        object,
+                    )));
                 }
                 _ => {}
             }
@@ -367,8 +375,7 @@ impl ComHal for StandardHostServices {
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
                 Ok(Some(value)) => {
-                    return Variant::try_from_runtime_value(&value)
-                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    return runtime_value_to_com_variant(self, value);
                 }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
@@ -492,9 +499,7 @@ impl ComHal for StandardHostServices {
     // `unsubscribe_event_variant`.
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         let value = self.unsubscribe_event_variant(subscription)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn unsubscribe_event_variant(&self, subscription: ComSubscriptionToken) -> HalResult<Variant> {
@@ -622,31 +627,8 @@ impl ComHal for StandardHostServices {
     ) -> HalResult<RuntimeValue> {
         // Legacy event callback argument projection. Retained callers should
         // use `event_callback_variant`.
-        let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "event_callback_arg"));
-        }
-        if !self.policy.allow_com_activation {
-            return Err(self.denied(capability, "event_callback_arg"));
-        }
-        if !self.native_com_enabled() {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arg",
-                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
-            ));
-        }
-        #[cfg(target_os = "windows")]
-        {
-            self.com_bridge
-                .event_callback_arg(callback, index)
-                .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
-                })
-        }
-        #[cfg(not(target_os = "windows"))]
-        unreachable!("native COM is not available on this platform")
+        let value = self.event_callback_variant(callback, index)?;
+        com_variant_to_runtime_value(self, value)
     }
 
     fn event_callback_variant(
@@ -690,9 +672,7 @@ impl ComHal for StandardHostServices {
     // use `release_event_callback_variant`.
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let value = self.release_event_callback_variant(callback)?;
-        value
-            .to_runtime_value()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+        com_variant_to_runtime_value(self, value)
     }
 
     fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
