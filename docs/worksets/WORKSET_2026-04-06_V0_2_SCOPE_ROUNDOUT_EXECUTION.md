@@ -47,9 +47,15 @@ documentation:
 - legacy compat-slot projection still survives as a snapshot/debug/interop seam
 - late-bound `IDispatch` parity is still below VBA/Excel behavior
 - some date-string coercion/parsing remains intentionally narrow
-- internal runtime representation is not yet committed as either:
-  - intentionally OxVba-native with explicit boundary marshaling forever, or
-  - converging toward bit-compatible VBA/Automation-style internal carriers
+- internal runtime representation has now been substantially decided by the
+  completed value-model migration workset:
+  - canonical string storage is BSTR-aligned
+  - canonical Variant/SAFEARRAY carriers are retained as the primary value
+    substrate for scoped runtime lanes
+  - remaining `RuntimeValue` surfaces are compatibility contracts, not internal
+    storage truth
+  - broad native struct-overlay and unconstrained UDT-byref ABI parity remain
+    explicitly outside the current migration scope
 - language services exist, but OxIde, `oxvba-lsp`, and the VS Code surface are
   still bounded and not yet first-class platform consumers
 - native compilation is still future-facing rather than an active shipped lane
@@ -157,6 +163,16 @@ Completion target:
 - a migration plan for the chosen answer
 - no ambiguity in docs about whether current marshaling is temporary,
   permanent, or under review
+
+Current rollout note, 2026-04-27:
+
+- the value-model migration workset
+  [WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md](/C:/Work/DnaCalc/OxVba/docs/worksets/WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md)
+  is complete
+- `v02.5` should consume that completed decision/evidence and decide only the
+  remaining V0.2 doctrine gaps rather than reopening the full migration
+- `v02.2` remains the next blocking delivery lane because remaining
+  compat-slot projection seams still distort product truth
 
 ### 5. Language Services Roundout
 
@@ -317,6 +333,15 @@ Current dependency truth:
 - `bd-bqm8.9` depends on `bd-bqm8.1`
 - `bd-bqm8.10` depends on `bd-bqm8.1` and `bd-bqm8.5`
 - `bd-bqm8.11` depends on `bd-bqm8.1` and `bd-bqm8.2`
+
+Rollout sync, 2026-04-27:
+
+- the dependency graph remains valid after value-model migration closure
+- `bd-bqm8.1` is complete as a rollout/support bead
+- the next ready delivery bead is `bd-bqm8.2`
+- `bd-bqm8.5` remains downstream of `bd-bqm8.2`, but its role is now a
+  V0.2 doctrine reconciliation over the completed value-model migration
+  artifacts, not a second full representation migration
 
 ## Delivery Rules for This Workset
 
