@@ -2381,6 +2381,8 @@ Child beads:
      - progress landed: dead JIT runtime-slot `RuntimeValue` projection methods
        were removed from `JitRuntimeSlot`, leaving retained `Variant` storage
        and the explicit `BindingHandle` side lane
+     - progress landed: dynamic COM value legacy projection now reads retained
+       `Variant` payloads directly instead of detouring through `ComValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

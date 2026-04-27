@@ -1671,6 +1671,9 @@ Implementation progress:
 173. Dead JIT runtime-slot `RuntimeValue` projection methods were removed from
      `JitRuntimeSlot`; JIT WithEvents state now exposes only the retained
      `Variant` slot carrier and the separate non-VBA `BindingHandle` side lane.
+174. Dynamic COM value legacy `RuntimeValue` projection now reads directly
+     from the retained `Variant` payload instead of detouring through
+     `DynamicValue -> ComValue -> RuntimeValue`.
 
 Remaining blocker:
 
@@ -2011,3 +2014,5 @@ Remaining blocker:
 19. Dead JIT `JitRuntimeSlot` `RuntimeValue` projection methods were removed,
     leaving retained `Variant` state plus the explicit `BindingHandle` side
     lane for WithEvents helper storage.
+20. Dynamic COM value legacy projection now converts retained `Variant`
+    payloads directly to `RuntimeValue` without a `ComValue` detour.
