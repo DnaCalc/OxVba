@@ -467,9 +467,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.6.4` is complete for malformed VM bytecode and runtime-input
   regressions, with evidence in
   [V02_MALFORMED_VM_INPUT_REGRESSIONS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_MALFORMED_VM_INPUT_REGRESSIONS_2026-04-27.md)
-- `bd-bqm8.6` remains in-progress; the next ready evidence bead is
-  `bd-bqm8.6.5`, covering formal/security evidence refresh and residual
-  classification
+- `bd-bqm8.6.5` is complete for formal/security evidence refresh and residual
+  classification, with evidence in
+  [V02_HARDENING_FORMAL_SECURITY_REFRESH_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENING_FORMAL_SECURITY_REFRESH_2026-04-27.md)
+- `bd-bqm8.6` remains in-progress; the next ready validation bead is
+  `bd-bqm8.6.6`, covering the final VM/JIT hardening checklist
 
 ## Delivery Rules for This Workset
 
