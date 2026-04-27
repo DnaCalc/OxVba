@@ -564,6 +564,14 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.11` is complete for V0.2 performance scaffolding against VBA; the
   next ready V0.2 roundout bead is `bd-bqm8.10`
 
+`v02.10` rollout, 2026-04-27:
+
+- `bd-bqm8.10.1` is complete for rolling out native compilation path child
+  beads, with evidence in
+  [V02_NATIVE_COMPILATION_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.10` remains in-progress; the next ready native compilation bead is
+  `bd-bqm8.10.2`, covering the path decision
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
