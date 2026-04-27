@@ -8,7 +8,7 @@ use oxvba_host::{
     RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
     resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
-use oxvba_runtime::{Variant, value_tags::EMPTY_TAG};
+use oxvba_runtime::{VarType, Variant, value_tags::EMPTY_TAG};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -2219,25 +2219,43 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
 }
 
 fn format_variant_value(value: &Variant) -> String {
-    match value.to_runtime_value() {
-        Ok(value) => match value {
-            oxvba_runtime::RuntimeValue::Empty => "empty".to_string(),
-            oxvba_runtime::RuntimeValue::Null => "null".to_string(),
-            oxvba_runtime::RuntimeValue::ErrorCode(code) => format!("error:{code}"),
-            oxvba_runtime::RuntimeValue::I32(value) => format!("i32:{value}"),
-            oxvba_runtime::RuntimeValue::I64(value) => format!("i64:{value}"),
-            oxvba_runtime::RuntimeValue::F64(value) => format!("f64:{}", value.as_f64()),
-            oxvba_runtime::RuntimeValue::Decimal(value) => format!("decimal:{}", value),
-            oxvba_runtime::RuntimeValue::Currency(value) => format!("currency:{}", value),
-            oxvba_runtime::RuntimeValue::Bool(value) => format!("bool:{value}"),
-            oxvba_runtime::RuntimeValue::String(value) => {
-                format!("string:{:?}", value.as_str())
-            }
-            oxvba_runtime::RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
-            oxvba_runtime::RuntimeValue::Object(handle) => format!("object:{handle}"),
-            oxvba_runtime::RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),
+    match value.vtype() {
+        VarType::Empty => "empty".to_string(),
+        VarType::Null => "null".to_string(),
+        VarType::Error => format!("error:{}", value.as_error_code().unwrap_or(0)),
+        VarType::Integer | VarType::Long | VarType::Byte => {
+            format!("i32:{}", value.as_i32().unwrap_or(0))
+        }
+        VarType::LongLong => format!("i64:{}", value.as_i64().unwrap_or(0)),
+        VarType::Single | VarType::Double | VarType::Date => {
+            format!("f64:{}", value.as_f64().unwrap_or(0.0))
+        }
+        VarType::Decimal => match value.as_decimal96() {
+            Some(value) => format!("decimal:{value}"),
+            None => "decimal:<invalid>".to_string(),
         },
-        Err(err) => format!("variant:{value:?}:projection-error:{err}"),
+        VarType::Currency => format!(
+            "currency:{}",
+            oxvba_runtime::CurrencyValue::from_scaled_i64(
+                value.as_currency_scaled_i64().unwrap_or(0)
+            )
+        ),
+        VarType::Boolean => format!("bool:{}", value.as_bool().unwrap_or(false)),
+        VarType::String => format!(
+            "string:{:?}",
+            value
+                .as_bstr()
+                .map(|text| text.as_str())
+                .unwrap_or_default()
+        ),
+        VarType::ArrayVariant => match value.as_safearray() {
+            Some(array) => format!("array:{array:?}"),
+            None => "array:<invalid>".to_string(),
+        },
+        VarType::Object => match value.as_object_ref() {
+            Some(handle) => format!("object:{handle}"),
+            None => "object:<null>".to_string(),
+        },
     }
 }
 
