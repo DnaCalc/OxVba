@@ -57,7 +57,12 @@ What is still largely unstarted is the packaging/hosting layer above that:
 Current execution state:
 - workset is now the active execution owner for wrapper/native-hosting work
 - the explicit `BuildTarget` and wrapper-boundary model is now landed in the project system and `.basproj` spec
-- wrapper EXE/DLL packaging remains the next real delivery lane on top of that substrate
+- wrapper EXE/DLL shim generation is now present in `crates/oxvba-build`
+  and covered by `cargo test -p oxvba-build --lib -- --nocapture`
+  evidence in
+  [WRAPPER_EXE_DLL_GENERATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/WRAPPER_EXE_DLL_GENERATION_2026-04-27.md)
+- wrapper launch/config/reference behavior and native metadata handoff remain
+  the next real validation lane (`bd-wrap1.5`) before COM/XLL handoff claims
 
 ## Relationship To Prior Work
 
