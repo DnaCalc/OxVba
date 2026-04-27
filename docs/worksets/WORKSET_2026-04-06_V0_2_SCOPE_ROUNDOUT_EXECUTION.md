@@ -577,8 +577,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.10.3` is complete for publishing native ABI, packaging, platform,
   artifact, and deployment obligations, with evidence in
   [V02_NATIVE_COMPILATION_OBLIGATIONS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_OBLIGATIONS_2026-04-27.md)
+- `bd-bqm8.10.4` is complete for adding the executable native validation
+  scaffold, with evidence in
+  [V02_NATIVE_COMPILATION_SCAFFOLD_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NATIVE_COMPILATION_SCAFFOLD_2026-04-27.md)
 - `bd-bqm8.10` remains in-progress; the next ready native compilation bead is
-  `bd-bqm8.10.4`, covering the executable native validation scaffold
+  `bd-bqm8.10.5`, covering the final native compilation path checklist
 
 ## Delivery Rules for This Workset
 
