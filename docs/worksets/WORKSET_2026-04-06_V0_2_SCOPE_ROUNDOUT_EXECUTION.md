@@ -374,8 +374,11 @@ Rollout sync, 2026-04-27:
   compatibility observation, and remaining slot references are explicit
   adapter/evidence references, with evidence in
   [V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_TEST_DOC_COMPAT_SLOT_MIGRATION_2026-04-27.md)
-- the next ready validation bead is `bd-bqm8.2.6`, covering the final
-  compat-slot excision checklist
+- `bd-bqm8.2.6` is complete for the final compat-slot excision checklist, with
+  evidence in
+  [V02_COMPAT_SLOT_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COMPAT_SLOT_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.2` is complete; the next ready V0.2 delivery bead is `bd-bqm8.3`
+  for late-bound `IDispatch` parity clarification and delivery
 
 ## Delivery Rules for This Workset
 
