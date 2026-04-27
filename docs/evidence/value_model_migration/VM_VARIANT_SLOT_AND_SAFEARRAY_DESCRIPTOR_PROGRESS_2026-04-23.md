@@ -1598,6 +1598,13 @@ Implementation progress:
      the retained filesystem path, and the obsolete shared legacy i32 token
      projection helper was removed after filesystem moved to boundary-only
      projection.
+159. Standard COM legacy activation, release, dispatch, event unsubscribe,
+     callback-argument, and callback-release `RuntimeValue` methods now project
+     through explicit COM boundary helpers around retained `Variant` companion
+     methods. Legacy event callback argument lookup now delegates through
+     `event_callback_variant` before compatibility projection, leaving the
+     Windows bridge `RuntimeValue` returns as an explicit native-bridge seam
+     inside retained COM companion implementation.
 
 Remaining blocker:
 
