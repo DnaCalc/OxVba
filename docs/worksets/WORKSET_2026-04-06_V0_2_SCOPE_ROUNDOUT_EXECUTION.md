@@ -425,8 +425,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.4.4` is complete for VM/JIT/host/conformance evidence refresh,
   with evidence in
   [V02_DATE_STRING_VM_JIT_HOST_CONFORMANCE_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_VM_JIT_HOST_CONFORMANCE_EVIDENCE_2026-04-27.md)
-- `bd-bqm8.4` remains in-progress; the next ready validation bead is
-  `bd-bqm8.4.5`, covering the final date-string parsing checklist
+- `bd-bqm8.4.5` is complete for the final date-string parsing checklist,
+  with evidence in
+  [V02_DATE_STRING_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.4` is complete for the bounded V0.2 date-string parsing/coercion
+  lane; accepted rows have VM/JIT/host/conformance evidence and unsupported
+  ambiguity remains explicit in the grammar policy
 
 ## Delivery Rules for This Workset
 
