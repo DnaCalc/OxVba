@@ -133,7 +133,8 @@ Current value-model migration note (2026-04-25):
 68. VM legacy dynamic-array bound compatibility helpers now route real SAFEARRAY carriers through retained `Variant` bound helpers, leaving only old array-tag tokens on the compatibility branch.
 69. Immediate-session and debugger retained display text now formats directly from `Variant` carriers instead of projecting through `RuntimeValue`.
 70. Windows COM scalar runtime-result compatibility projection now decodes scalar payloads as retained `Variant` carriers before the final `RuntimeValue` projection.
-71. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+71. HAL marshaling conformance now validates scalar/subtype carrier fidelity with retained `Variant` roundtrips rather than `RuntimeValue` projections.
+72. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

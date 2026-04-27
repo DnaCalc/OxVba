@@ -841,6 +841,14 @@ Validation:
      - result: `28` passed
 199. `./scripts/check-governance.ps1`
      - result: passed
+200. `cargo fmt -p oxvba-hal --check`
+     - result: passed
+201. `cargo check -p oxvba-hal`
+     - result: passed
+202. `cargo test -p oxvba-hal conformance --lib`
+     - result: `11` passed
+203. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1731,6 +1739,9 @@ Implementation progress:
 179. Windows COM scalar legacy runtime-result projection now decodes through
      retained `Variant` carriers first, including scalar BYREF cases, before
      projecting at the final public `RuntimeValue` compatibility boundary.
+180. HAL marshaling conformance probes now validate COM carrier fidelity by
+     comparing retained `Variant` roundtrips instead of routing the probe
+     through `ComValue -> RuntimeValue` projections.
 
 Remaining blocker:
 
@@ -2086,3 +2097,5 @@ Remaining blocker:
 25. Windows COM scalar runtime-result compatibility projection now decodes
     scalar payloads as retained `Variant` carriers before the final
     `RuntimeValue` projection.
+26. HAL marshaling conformance now validates scalar/subtype carrier fidelity
+    with retained `Variant` roundtrips rather than `RuntimeValue` projections.

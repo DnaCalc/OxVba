@@ -2399,6 +2399,9 @@ Child beads:
      - progress landed: Windows COM scalar runtime-result compatibility
        projection now decodes scalar payloads as retained `Variant` carriers
        before the final `RuntimeValue` projection
+     - progress landed: HAL marshaling conformance now validates
+       scalar/subtype carrier fidelity with retained `Variant` roundtrips
+       rather than `RuntimeValue` projections
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
