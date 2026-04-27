@@ -113,7 +113,8 @@ Current value-model migration note (2026-04-25):
 48. Standard console legacy `RuntimeValue` calls now delegate through retained `Variant` console companions.
 49. Standard filesystem legacy `RuntimeValue` calls now delegate through retained `Variant` filesystem companions, including the new retained `seek_variant` companion.
 50. Standard COM legacy `RuntimeValue` activation/dispatch/event status and callback-argument paths now project through retained `Variant` COM companions and explicit boundary helpers.
-51. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+51. Standard dynamic-link legacy descriptor invocation now routes through retained `Variant` descriptor companions before compatibility projection; native m1 ABI marshalling remains explicit internal bridge work.
+52. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

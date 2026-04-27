@@ -1605,6 +1605,12 @@ Implementation progress:
      `event_callback_variant` before compatibility projection, leaving the
      Windows bridge `RuntimeValue` returns as an explicit native-bridge seam
      inside retained COM companion implementation.
+160. Standard dynamic-link legacy descriptor invocation now routes through the
+     retained `invoke_descriptor_variants` companion before compatibility
+     projection for both single-argument and multi-argument entry points. The
+     m1 native FFI ABI marshaller remains an explicit internal semantic bridge
+     behind a retained `Variant` wrapper until the by-ref/native ABI lane is
+     migrated directly.
 
 Remaining blocker:
 
