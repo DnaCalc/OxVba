@@ -2668,15 +2668,15 @@ mod tests {
     }
 
     #[test]
-    fn runtime_value_to_usize_and_array_indices_use_numeric_compatibility() {
+    fn runtime_value_to_usize_and_variant_array_indices_use_numeric_compatibility() {
         assert_eq!(
             super::runtime_value_to_usize(&RuntimeValue::String(BStr::from("12")))
                 .expect("numeric text usize coercion should succeed"),
             12
         );
         assert_eq!(
-            super::runtime_array_indices(
-                &[RuntimeValue::String(BStr::from("1")), RuntimeValue::I32(2),],
+            super::runtime_array_variant_indices(
+                &[Variant::from_string(BStr::from("1")), Variant::from_i32(2),],
                 "array index"
             )
             .expect("numeric-compatible array indices should succeed"),
@@ -3552,13 +3552,6 @@ fn runtime_array_offset(
     Ok(offset)
 }
 
-fn runtime_array_indices(index_values: &[RuntimeValue], field: &str) -> Result<Vec<i32>, String> {
-    index_values
-        .iter()
-        .map(|value| runtime_value_to_i32_compat(value, field))
-        .collect()
-}
-
 fn runtime_array_variant_indices(
     index_values: &[oxvba_runtime::Variant],
     field: &str,
@@ -3574,22 +3567,12 @@ pub fn runtime_array_get(
     index_values: &[RuntimeValue],
     field: &str,
 ) -> Result<RuntimeValue, String> {
-    let RuntimeValue::ArrayIntent(array) = array_value else {
-        return Err(format!(
-            "{field} requires a runtime array value, got {array_value:?}"
-        ));
-    };
-    let elements_binding = array.variant_elements();
-    let elements = elements_binding
-        .as_ref()
-        .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
-    let indices = runtime_array_indices(index_values, field)?;
-    let bounds = runtime_array_bounds(&array);
-    let offset = runtime_array_offset(&bounds, &indices, field)?;
-    elements
-        .get(offset)
-        .ok_or_else(|| format!("{field} index {:?} is out of range", indices))?
-        .to_runtime_value()
+    let array_variant = array_value.to_variant()?;
+    let index_variants = index_values
+        .iter()
+        .map(RuntimeValue::to_variant)
+        .collect::<Result<Vec<_>, _>>()?;
+    runtime_array_get_variant(&array_variant, &index_variants, field)?.to_runtime_value()
 }
 
 pub fn runtime_array_get_variant(
@@ -3621,25 +3604,14 @@ pub fn runtime_array_set(
     new_value: &RuntimeValue,
     field: &str,
 ) -> Result<RuntimeValue, String> {
-    let RuntimeValue::ArrayIntent(array) = array_value else {
-        return Err(format!(
-            "{field} requires a runtime array value, got {array_value:?}"
-        ));
-    };
-    let updated = array.clone();
-    let bounds = runtime_array_bounds(&updated);
-    let indices = runtime_array_indices(index_values, field)?;
-    let offset = runtime_array_offset(&bounds, &indices, field)?;
-    let mut elements = updated
-        .variant_elements()
-        .ok_or_else(|| format!("{field} array payload is missing element storage"))?;
-    let Some(slot) = elements.get_mut(offset) else {
-        return Err(format!("{field} index {:?} is out of range", indices));
-    };
-    *slot = oxvba_runtime::Variant::try_from_runtime_value(new_value)?;
-    Ok(RuntimeValue::ArrayIntent(
-        updated.replace_variant_elements(elements)?,
-    ))
+    let array_variant = array_value.to_variant()?;
+    let index_variants = index_values
+        .iter()
+        .map(RuntimeValue::to_variant)
+        .collect::<Result<Vec<_>, _>>()?;
+    let value_variant = new_value.to_variant()?;
+    runtime_array_set_variant(&array_variant, &index_variants, &value_variant, field)?
+        .to_runtime_value()
 }
 
 pub fn runtime_array_set_variant(
