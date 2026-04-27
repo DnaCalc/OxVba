@@ -1648,6 +1648,123 @@ mod tests {
     }
 
     #[test]
+    fn v02_direct_language_service_provider_exercises_product_matrix_queries() {
+        let src = "Option Explicit\nPublic Sub Foo(ByVal value As Long)\nEnd Sub\nPublic Sub Bar()\n    Dim localValue As Long\n    localValue = Abs(1)\n    Foo localValue\n    missingValue = localValue\nEnd Sub\n";
+        let (svc, id) = setup_single_module(src);
+        let project = ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: Vec::new(),
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let diagnostics = LanguageServiceProvider::diagnostics(&svc, &project, "TestModule");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("undeclared variable")),
+            "expected undeclared-variable diagnostic"
+        );
+
+        let document_symbols =
+            LanguageServiceProvider::document_symbols(&svc, &project, "TestModule");
+        assert!(document_symbols.iter().any(|symbol| symbol.name == "Foo"));
+        assert!(
+            document_symbols
+                .iter()
+                .any(|symbol| symbol.name == "localValue"
+                    && symbol.container_name.as_deref() == Some("Bar"))
+        );
+
+        let workspace_symbols = LanguageServiceProvider::workspace_symbols(&svc, &project, "Fo");
+        assert!(
+            workspace_symbols
+                .iter()
+                .any(|symbol| symbol.symbol.name == "Foo")
+        );
+
+        let classifications =
+            LanguageServiceProvider::semantic_classifications(&svc, &project, "TestModule");
+        assert!(
+            classifications
+                .iter()
+                .any(|classification| classification.kind == SemanticTokenKind::Keyword)
+        );
+        assert!(
+            classifications
+                .iter()
+                .any(|classification| classification.kind == SemanticTokenKind::Intrinsic)
+        );
+
+        let completion_pos = src.find("missingValue").expect("missingValue") as u32;
+        let completions =
+            LanguageServiceProvider::completions(&svc, &project, "TestModule", completion_pos);
+        assert!(completions.iter().any(|item| item.label == "Foo"));
+        assert!(completions.iter().any(|item| item.label == "Abs"));
+
+        let signature_src =
+            "Sub Multi(a As Long, b As String)\nEnd Sub\nSub Test()\n    Multi 1, \"x\"\nEnd Sub\n";
+        let (signature_svc, _) = setup_single_module(signature_src);
+        let signature_pos =
+            (signature_src.find("Multi 1").expect("Multi call") + "Multi 1, ".len()) as u32;
+        let signature = LanguageServiceProvider::signature_help(
+            &signature_svc,
+            &project,
+            "TestModule",
+            signature_pos,
+        )
+        .expect("signature help for Multi");
+        assert_eq!(signature.name, "Multi");
+        assert_eq!(signature.parameters.len(), 2);
+        assert_eq!(signature.active_parameter, 1);
+
+        let local_use = src.rfind("localValue").expect("localValue use") as u32;
+        let hover = LanguageServiceProvider::hover(&svc, &project, "TestModule", local_use)
+            .expect("hover for localValue");
+        assert!(hover.label.contains("localValue"));
+
+        let foo_call = src.find("Foo localValue").expect("Foo call") as u32;
+        let definition =
+            LanguageServiceProvider::go_to_definition(&svc, &project, "TestModule", foo_call)
+                .expect("definition for Foo");
+        assert_eq!(definition.document, id);
+        assert!(definition.symbol_identity.is_some());
+
+        let references =
+            LanguageServiceProvider::find_references(&svc, &project, "TestModule", foo_call);
+        assert!(
+            references.len() >= 2,
+            "expected declaration and call-site references"
+        );
+
+        let rename =
+            LanguageServiceProvider::prepare_rename(&svc, &project, "TestModule", foo_call)
+                .expect("rename preparation for Foo");
+        assert_eq!(rename.current_name, "Foo");
+        assert!(rename.reference_analysis.safe_to_apply);
+
+        let analysis = LanguageServiceProvider::reference_update_analysis(
+            &svc,
+            &project,
+            "TestModule",
+            foo_call,
+        )
+        .expect("reference update analysis for Foo");
+        assert!(analysis.safe_to_apply);
+        assert!(!analysis.references.is_empty());
+
+        let actions = LanguageServiceProvider::code_actions(&svc, &project, "TestModule");
+        assert!(
+            actions
+                .iter()
+                .any(|action| action.title.starts_with("Declare local variable")),
+            "expected an undeclared-variable quick fix, got {actions:?}"
+        );
+    }
+
+    #[test]
     fn diagnostics_for_valid_code() {
         let (svc, id) = setup_single_module("Sub Foo()\nEnd Sub\n");
         let diags = svc.diagnostics(&id);

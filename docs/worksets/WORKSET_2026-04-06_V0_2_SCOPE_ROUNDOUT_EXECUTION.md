@@ -509,8 +509,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.8.2` is complete for publishing the V0.2 language-service product
   matrix, with evidence in
   [V02_LANGUAGE_SERVICE_PRODUCT_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_PRODUCT_MATRIX_2026-04-27.md)
+- `bd-bqm8.8.3` is complete for hardening direct language-service semantic query
+  tests, with evidence in
+  [V02_LANGUAGE_SERVICE_DIRECT_API_TESTS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_DIRECT_API_TESTS_2026-04-27.md)
 - `bd-bqm8.8` remains in-progress; the next ready language-service bead is
-  `bd-bqm8.8.3`, covering direct language-service semantic query tests
+  `bd-bqm8.8.4`, covering LSP transport and workspace tests
 
 ## Delivery Rules for This Workset
 
