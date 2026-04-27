@@ -488,8 +488,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.7.3` is complete for adding the Excel COM corpus fixtures and active
   compiler-acceptance test, with evidence in
   [V02_EXCEL_COM_CORPUS_FIXTURES_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_EXCEL_COM_CORPUS_FIXTURES_2026-04-27.md)
+- `bd-bqm8.7.4` is complete for adding the Access/JET COM corpus fixtures and
+  active compiler-acceptance test, with evidence in
+  [V02_ACCESS_JET_COM_CORPUS_FIXTURES_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_ACCESS_JET_COM_CORPUS_FIXTURES_2026-04-27.md)
 - `bd-bqm8.7` remains in-progress; the next ready corpus bead is
-  `bd-bqm8.7.4`, covering the Access/JET COM corpus fixtures
+  `bd-bqm8.7.5`, covering refreshed Office COM VM/JIT/host evidence
 
 ## Delivery Rules for This Workset
 

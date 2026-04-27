@@ -21014,6 +21014,27 @@ End Sub";
     }
 
     #[test]
+    fn formal_v02_7_access_jet_com_fixture_pack_exists_and_compiles() {
+        let root = repo_path("conformance/com/office/access_jet");
+        assert!(root.join("README.md").exists());
+        assert!(root.join("FIXTURE_CATALOG.md").exists());
+
+        for fixture in [
+            "access_application_activation_smoke.bas",
+            "access_database_query_smoke.bas",
+            "jet_adodb_provider_activation_smoke.bas",
+            "access_jet_provider_boundary.bas",
+        ] {
+            let source = std::fs::read_to_string(root.join(fixture)).unwrap_or_else(|err| {
+                panic!("Access/JET COM fixture {fixture} should load: {err}")
+            });
+            oxvba_compiler::compile(&source).unwrap_or_else(|err| {
+                panic!("Access/JET COM fixture {fixture} should compile: {err}")
+            });
+        }
+    }
+
+    #[test]
     fn formal_v417_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V417.md").exists());
     }
