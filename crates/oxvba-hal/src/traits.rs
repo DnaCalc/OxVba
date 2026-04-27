@@ -182,6 +182,9 @@ pub trait FileSystemHal: Send + Sync {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "kill_variant")
     }
     fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
+    }
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "eof_variant")

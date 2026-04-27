@@ -731,23 +731,6 @@ impl StandardHostServices {
         path
     }
 
-    fn runtime_value_project_compat_slot_i32(
-        &self,
-        value: &RuntimeValue,
-        capability: CapabilityId,
-        op: &'static str,
-        field: &'static str,
-    ) -> HalResult<i32> {
-        value.project_compat_slot_i32().map_err(|detail| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                op,
-                format!("{field} cannot enter the legacy runtime token lane: {detail}"),
-            )
-        })
-    }
-
     fn variant_project_compat_slot_i32(
         &self,
         value: &Variant,
@@ -1779,6 +1762,14 @@ mod tests {
         let loc = crate::traits::FileSystemHal::loc_variant(&host, handle_variant.clone())
             .expect("variant loc");
         assert_eq!(loc, Variant::from_i32(0));
+
+        let seek = crate::traits::FileSystemHal::seek_variant(
+            &host,
+            handle_variant.clone(),
+            Variant::from_i32(2),
+        )
+        .expect("variant seek");
+        assert_eq!(seek, Variant::from_i32(2));
 
         let lof = crate::traits::FileSystemHal::lof_variant(&host, handle_variant.clone())
             .expect("variant lof");
