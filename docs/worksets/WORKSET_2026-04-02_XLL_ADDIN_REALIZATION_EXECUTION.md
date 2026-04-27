@@ -49,8 +49,13 @@ Current execution state:
   `Excel12v` / `xlfRegister` source path
 - evidence:
   [XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md)
-- next delivery slice: bridge XLOPER12 invocation arguments/results to
-  `RuntimeValue` procedure invocation without claiming Excel-loaded parity
+- `bd-xll1.3` is complete: generated XLL exports now bridge bounded XLOPER12
+  arguments/results to `RuntimeValue` procedure invocation over an embedded
+  `.oxb` runtime session
+- evidence:
+  [XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md)
+- next delivery slice: publish the validation matrix and exact supported subset
+  without claiming Excel-loaded parity from source-generation tests alone
 
 ## Relationship To Prior Work
 

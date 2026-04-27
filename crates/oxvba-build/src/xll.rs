@@ -15,6 +15,12 @@ pub fn generate_xll_shim(
 
 #![allow(non_snake_case)]
 
+use std::sync::OnceLock;
+
+use oxvba_compiler::{{DeclareParamType, OxBundle}};
+use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
+use oxvba_runtime::{{BStr, F64Value, RuntimeValue}};
+
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
 #[repr(C)]
@@ -33,6 +39,31 @@ struct XllRegistration {{
 }}
 
 const XLF_REGISTER: i32 = 149;
+const XL_TYPE_NUM: u32 = 0x0001;
+const XL_TYPE_STR: u32 = 0x0002;
+const XL_TYPE_BOOL: u32 = 0x0004;
+const XL_TYPE_INT: u32 = 0x0020;
+const XL_TYPE_NIL: u32 = 0x0100;
+
+static SESSION: OnceLock<std::sync::Mutex<(Engine, ProjectRuntimeSession)>> = OnceLock::new();
+
+fn with_session<F, R>(f: F) -> R
+where
+    F: FnOnce(&Engine, &mut ProjectRuntimeSession) -> R,
+{{
+    let pair = SESSION.get_or_init(|| {{
+        let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
+            .expect("failed to deserialize embedded bundle");
+        let engine = Engine::new(HostConfig::default());
+        let session = engine
+            .compile_and_prepare_session_from_bundle(&bundle)
+            .expect("failed to prepare XLL session from bundle");
+        std::sync::Mutex::new((engine, session))
+    }});
+    let mut guard = pair.lock().expect("XLL session lock poisoned");
+    let (ref engine, ref mut session) = *guard;
+    f(engine, session)
+}}
 
 #[cfg(target_os = "windows")]
 unsafe extern "system" {{
@@ -48,6 +79,10 @@ unsafe extern "system" {{
     );
 
     source.push_str(&generate_registration_table(project_name, exports));
+
+    for export in exports {
+        source.push_str(&generate_export_wrapper(export));
+    }
 
     // xlAutoOpen
     source.push_str(&generate_xl_auto_open());
@@ -76,6 +111,8 @@ pub extern "system" fn xlAutoFree12(p: *mut u8) {
 
 "#,
     );
+
+    source.push_str(generate_xll_runtime_helpers());
 
     source
 }
@@ -154,6 +191,98 @@ fn xll_string(text: &str) -> XLOPER12 {
     )
 }
 
+fn generate_export_wrapper(export: &NativeExportDescriptor) -> String {
+    let name = &export.exported_name;
+    let params = export.param_types.as_deref().unwrap_or(&[]);
+    let module = &export.module_name;
+    let procedure = &export.procedure_name;
+
+    let signature_params = params
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("arg{i}: *const XLOPER12"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let marshal_args = params
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| format!("        xll_arg_to_runtime(arg{i}, DeclareParamType::{ty:?})"))
+        .collect::<Vec<_>>()
+        .join(",\n");
+
+    format!(
+        r#"#[no_mangle]
+pub extern "system" fn {name}({signature_params}) -> *mut XLOPER12 {{
+    let args: Vec<RuntimeValue> = vec![
+{marshal_args}
+    ];
+    let result = with_session(|engine, session| {{
+        engine
+            .invoke_procedure(session, "{module}", "{procedure}", &args)
+            .expect("XLL procedure invocation failed")
+    }});
+    runtime_to_xll(result)
+}}
+
+"#
+    )
+}
+
+fn generate_xll_runtime_helpers() -> &'static str {
+    r#"fn xll_arg_to_runtime(arg: *const XLOPER12, ty: DeclareParamType) -> RuntimeValue {
+    if arg.is_null() {
+        return RuntimeValue::Empty;
+    }
+    let value = unsafe { &*arg };
+    match ty {
+        DeclareParamType::Double | DeclareParamType::Date => {
+            RuntimeValue::F64(F64Value::from_f64(value.value as f64))
+        }
+        DeclareParamType::Single => RuntimeValue::F64(F64Value::from_single_f64(value.value as f64)),
+        DeclareParamType::Boolean => RuntimeValue::Bool(value.value != 0),
+        DeclareParamType::LongLong | DeclareParamType::LongPtr => RuntimeValue::I64(value.value as i64),
+        DeclareParamType::String => RuntimeValue::String(BStr::from("")),
+        DeclareParamType::Byte
+        | DeclareParamType::Currency
+        | DeclareParamType::Integer
+        | DeclareParamType::Long => RuntimeValue::I32(value.value as i32),
+        DeclareParamType::Variant | DeclareParamType::Any => RuntimeValue::I64(value.value as i64),
+    }
+}
+
+fn runtime_to_xll(value: RuntimeValue) -> *mut XLOPER12 {
+    let result = match value {
+        RuntimeValue::I32(value) => XLOPER12 {
+            xltype: XL_TYPE_INT,
+            value: value as isize as usize,
+        },
+        RuntimeValue::I64(value) => XLOPER12 {
+            xltype: XL_TYPE_INT,
+            value: value as isize as usize,
+        },
+        RuntimeValue::F64(value) => XLOPER12 {
+            xltype: XL_TYPE_NUM,
+            value: value.as_f64().to_bits() as usize,
+        },
+        RuntimeValue::Bool(value) => XLOPER12 {
+            xltype: XL_TYPE_BOOL,
+            value: usize::from(value),
+        },
+        RuntimeValue::String(text) => XLOPER12 {
+            xltype: XL_TYPE_STR,
+            value: text.as_str().as_ptr() as usize,
+        },
+        _ => XLOPER12 {
+            xltype: XL_TYPE_NIL,
+            value: 0,
+        },
+    };
+    Box::into_raw(Box::new(result))
+}
+
+"#
+}
+
 fn rust_string_literal(value: &str) -> String {
     format!("{value:?}")
 }
@@ -192,6 +321,10 @@ mod tests {
         assert!(source.contains("category: \"Pricing\""));
         assert!(source.contains("function_help: \"Calculates a value\""));
         assert!(source.contains("argument_text: \"spot\""));
+        assert!(source.contains("pub extern \"system\" fn MyFunc(arg0: *const XLOPER12)"));
+        assert!(source.contains("xll_arg_to_runtime(arg0, DeclareParamType::Double)"));
+        assert!(source.contains(".invoke_procedure(session, \"Mod1\", \"MyFunc\", &args)"));
+        assert!(source.contains("fn runtime_to_xll(value: RuntimeValue) -> *mut XLOPER12"));
     }
 
     #[test]
