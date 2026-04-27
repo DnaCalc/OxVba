@@ -442,9 +442,11 @@ Rollout sync, 2026-04-27:
   [V02_REPRESENTATION_LAYOUT_DECISION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_DECISION_2026-04-27.md)
   and the accepted doctrine in
   [OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md](/C:/Work/DnaCalc/OxVba/docs/spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md)
-- `bd-bqm8.5` remains in-progress; the next ready evidence bead is
-  `bd-bqm8.5.3`, covering boundary evidence scans and representation risk
-  classification
+- `bd-bqm8.5.3` is complete for boundary evidence scans and representation
+  risk classification, with evidence in
+  [V02_REPRESENTATION_LAYOUT_EVIDENCE_SCAN_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_EVIDENCE_SCAN_2026-04-27.md)
+- `bd-bqm8.5` remains in-progress; the next ready validation bead is
+  `bd-bqm8.5.4`, covering the final representation/layout doctrine checklist
 
 ## Delivery Rules for This Workset
 

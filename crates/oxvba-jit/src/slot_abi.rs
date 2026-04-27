@@ -1,8 +1,8 @@
 //! JIT slot ABI.
 //!
-//! JIT slots are the runtime's canonical `VARIANT` carrier. The layout is the
-//! COM layout used by `oxvba_runtime::Variant`: `VARTYPE` at offset 0, reserved
-//! words at offsets 2/4/6, and the 8-byte union payload at offset 8.
+//! JIT slots retain the runtime `Variant` carrier. The slot ABI is intentionally
+//! VARIANT-shaped for efficient boundary materialization: `VARTYPE` at offset 0,
+//! reserved words at offsets 2/4/6, and the 8-byte union payload at offset 8.
 
 #[cfg(test)]
 use oxvba_runtime::RuntimeValue;
@@ -12,11 +12,11 @@ pub const VT_EMPTY: u16 = VarType::Empty as u16;
 pub const VT_NULL: u16 = VarType::Null as u16;
 pub const VT_I4: u16 = VarType::Long as u16;
 
-/// Offset (in bytes) of the VARTYPE field within an RtSlot/VARIANT.
+/// Offset (in bytes) of the VARTYPE field within an RtSlot.
 pub const SLOT_VTYPE_OFFSET: i32 = 0;
-/// Offset (in bytes) of the VARIANT union payload field.
+/// Offset (in bytes) of the Variant payload field.
 pub const SLOT_PAYLOAD_OFFSET: i32 = 8;
-/// Total size of one VARIANT slot in bytes.
+/// Total size of one retained Variant slot in bytes.
 pub const SLOT_SIZE: i32 = 16;
 
 #[repr(transparent)]
@@ -72,7 +72,7 @@ impl RtSlot {
     pub fn to_runtime_value(&self) -> RuntimeValue {
         self.variant
             .to_runtime_value()
-            .expect("JIT VARIANT slot should carry a runtime-supported value")
+            .expect("JIT Variant slot should carry a runtime-supported value")
     }
 
     pub fn variant(&self) -> &Variant {
@@ -96,7 +96,7 @@ impl RtSlot {
     }
 }
 
-/// Convert a legacy semantic value to a VARIANT-backed JIT slot.
+/// Convert a legacy semantic value to a retained-Variant JIT slot.
 ///
 /// `BindingHandle` is an internal non-VBA token, so it is projected to the same
 /// Long carrier accepted by the WithEvents semantics bridge instead of becoming
