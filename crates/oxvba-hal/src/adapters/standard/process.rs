@@ -1,5 +1,6 @@
 use super::filesystem::{expand_host_wildcard_paths, path_contains_wildcards};
 use crate::{
+    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::ProcessEnvHal,
@@ -20,10 +21,15 @@ impl ProcessEnvHal for StandardHostServices {
     // `RuntimeValue` contract, including compatibility slot-token projection.
     fn shell(&self, command: RuntimeValue, _window_style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
-        let command =
-            runtime_value_to_process_variant(self, capability, "shell", "command", command)?;
+        let command = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "shell",
+            "command",
+            command,
+        )?;
         let result = self.shell_variant(command, Variant::empty())?;
-        process_variant_to_runtime_value(self, capability, "shell", result)
+        compat::variant_to_runtime_value(self.profile, capability, "shell", result)
     }
 
     // Legacy compatibility wrapper. The retained value-model entry point for
@@ -31,9 +37,10 @@ impl ProcessEnvHal for StandardHostServices {
     // `RuntimeValue` contract, including compatibility slot-token projection.
     fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
-        let key = runtime_value_to_process_variant(self, capability, "environ", "key", key)?;
+        let key =
+            compat::runtime_value_to_variant(self.profile, capability, "environ", "key", key)?;
         let result = self.environ_variant(key)?;
-        process_variant_to_runtime_value(self, capability, "environ", result)
+        compat::variant_to_runtime_value(self.profile, capability, "environ", result)
     }
 
     // Legacy compatibility wrapper. The retained value-model entry point for
@@ -41,9 +48,9 @@ impl ProcessEnvHal for StandardHostServices {
     // `RuntimeValue` contract, including compatibility slot-token projection.
     fn dir(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
-        let path = runtime_value_to_process_variant(self, capability, "dir", "path", path)?;
+        let path = compat::runtime_value_to_variant(self.profile, capability, "dir", "path", path)?;
         let result = self.dir_variant(path, Variant::empty())?;
-        process_variant_to_runtime_value(self, capability, "dir", result)
+        compat::variant_to_runtime_value(self.profile, capability, "dir", result)
     }
 
     fn shell_variant(&self, command: Variant, _window_style: Variant) -> HalResult<Variant> {
@@ -212,40 +219,4 @@ fn enumerate_dir_matches(target: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
         return Ok(vec![target.clone()]);
     }
     Ok(Vec::new())
-}
-
-fn runtime_value_to_process_variant(
-    host: &StandardHostServices,
-    capability: CapabilityId,
-    operation: &'static str,
-    argument: &'static str,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                host.profile,
-                capability,
-                operation,
-                format!("failed to project {argument} RuntimeValue into Variant: {detail}"),
-            )
-        }),
-    }
-}
-
-fn process_variant_to_runtime_value(
-    host: &StandardHostServices,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: Variant,
-) -> HalResult<RuntimeValue> {
-    value.to_runtime_value().map_err(|detail| {
-        HalError::adapter_fault(
-            host.profile,
-            capability,
-            operation,
-            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
-        )
-    })
 }

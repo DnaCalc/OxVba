@@ -177,21 +177,13 @@ impl ComValue {
     ///
     /// New value-model call sites should prefer [`Self::from_variant`].
     pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        match value {
-            RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
-            value => {
-                let variant = Variant::try_from_runtime_value(value)
-                    .expect("legacy RuntimeValue must project to retained Variant");
-                Self::from_variant(&variant)
-                    .expect("legacy RuntimeValue Variant must project to ComValue")
-            }
-        }
+        crate::compat::com_value_from_runtime_value(value)
     }
 
     /// Compatibility projection from legacy slot-token transport into the
     /// shared COM semantic carrier.
     pub fn from_runtime_token(value: i32) -> Self {
-        Self::from_runtime_value(&RuntimeValue::from_compat_slot_i32(value))
+        crate::compat::com_value_from_runtime_token(value)
     }
 
     /// Converts the shared COM semantic carrier into a retained runtime
@@ -222,14 +214,12 @@ impl ComValue {
     ///
     /// New value-model call sites should prefer [`Self::to_variant`].
     pub fn to_runtime_value(&self) -> RuntimeValue {
-        self.to_variant()
-            .and_then(|value| value.to_runtime_value())
-            .expect("COM value must project to legacy RuntimeValue")
+        crate::compat::com_value_to_runtime_value(self)
     }
 
     /// Compatibility projection into legacy slot-token transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
-        self.to_variant()?.project_compat_slot_i32()
+        crate::compat::com_value_to_runtime_token(self)
     }
 
     /// Compatibility projection into legacy dispatch-token transport.

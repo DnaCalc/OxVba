@@ -2,6 +2,7 @@
 
 pub mod adapters;
 pub mod callbacks;
+pub mod compat;
 pub mod conformance;
 pub mod dynamic_bridge;
 pub mod error;
