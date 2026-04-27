@@ -445,8 +445,13 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.5.3` is complete for boundary evidence scans and representation
   risk classification, with evidence in
   [V02_REPRESENTATION_LAYOUT_EVIDENCE_SCAN_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_EVIDENCE_SCAN_2026-04-27.md)
-- `bd-bqm8.5` remains in-progress; the next ready validation bead is
-  `bd-bqm8.5.4`, covering the final representation/layout doctrine checklist
+- `bd-bqm8.5.4` is complete for the final representation/layout doctrine
+  checklist, with evidence in
+  [V02_REPRESENTATION_LAYOUT_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.5` is complete for the V0.2 representation/layout doctrine lane;
+  semantic OxVba runtime values remain canonical internally, OLE Automation
+  wire layouts remain boundary representations, and downstream boundary risk
+  work is owned by `bd-bqm8.6`, `bd-bqm8.7`, and `bd-bqm8.10`
 
 ## Delivery Rules for This Workset
 
