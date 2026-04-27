@@ -2908,6 +2908,15 @@ Child beads:
    - completion evidence:
      - the workset and final report inputs explicitly state whether the
        struct/UDT/layout lane is intrinsically migrated or still bounded.
+   - landed 2026-04-27:
+     - [STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md)
+       records the final implemented/projected/bounded classification for the
+       narrowed struct/UDT/native-layout family
+     - the lane passes for the current migration only under the narrowed
+       endpoint recorded by `vmm-g6`
+     - broad native struct-overlay parity, unconstrained UDT-byref native ABI
+       parity, and arbitrary native field packing/alignment parity remain
+       bounded outside the current migration scope
 
 ### 11.11 Epic H Bead Set: Final Matrix, Docs, and Report
 
