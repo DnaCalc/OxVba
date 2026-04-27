@@ -388,7 +388,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1217,7 +1217,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1239,7 +1239,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1252,7 +1252,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit fallback should execute");
@@ -1269,7 +1269,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit fallback should execute");
@@ -1295,7 +1295,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit fallback should execute");
@@ -1320,7 +1320,7 @@ mod tests {
         // Now supported via RtSlot JIT (Resume/ResumeNext ungated)
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1349,7 +1349,7 @@ mod tests {
     fn rtslot_execution_matches_vm_for_basic_arithmetic() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1360,7 +1360,7 @@ mod tests {
     fn rtslot_execution_matches_vm_for_loop() {
         let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 5\nx = x + i\nNext i\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1371,7 +1371,7 @@ mod tests {
     fn rtslot_execution_matches_vm_for_comparisons() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = 3\nb = 2\nIf a > b Then\nc = 1\nElse\nc = 0\nEnd If\nIf a < b Then\nd = 1\nElse\nd = 0\nEnd If\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1382,7 +1382,7 @@ mod tests {
     fn rtslot_execution_matches_vm_for_abs_sgn_fix() {
         let source = "Sub Main()\nDim x\nx = Abs(-7)\nx = Sgn(x)\nx = Fix(x)\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1397,7 +1397,7 @@ mod tests {
         let source = "Sub Main()\nDim a\nDim x\nx = 0\nOn Error Resume Next\na = 1 / x\na = Err.Number\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1409,7 +1409,7 @@ mod tests {
         let source = "Sub Main()\nDim a\nOn Error GoTo H\nError 5\na = 1\nGoTo Done\nH:\na = Err.Number\nResume Next\nDone:\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1423,7 +1423,7 @@ mod tests {
         let source = "Sub Main()\nDim a\nOn Error GoTo H\nError 9\na = 99\nGoTo Done\nH:\nResume Done\nDone:\na = 1\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1437,7 +1437,7 @@ mod tests {
             "Sub Main()\nDim a\nOn Error Resume Next\nResume Next\na = Err.Number\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
@@ -1453,7 +1453,7 @@ mod tests {
         let source = "Sub Main()\nDim a\nOn Error GoTo H\nError 5\na = 1\nGoTo Done\nH:\na = 99\nResume Next\nDone:\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::compat::execute_and_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");

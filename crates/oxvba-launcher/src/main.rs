@@ -62,7 +62,7 @@ fn main() {
         jit.execute_and_snapshot_with_host(&bundle.bytecode, host_services)
             .map_err(|e| e.to_string())
     } else {
-        oxvba_vm::execute_and_snapshot_with_host(&bundle.bytecode, host_services)
+        oxvba_vm::compat::execute_and_snapshot_with_host(&bundle.bytecode, host_services)
     };
 
     match result {

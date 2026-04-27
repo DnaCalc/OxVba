@@ -2130,10 +2130,11 @@ End Sub";
         let source = "Sub Main()\nDim x As Long\nDim i As Long\nx = 0\nFor i = 1 To 100\nx = x + 3\nNext i\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
 
-        let fast = oxvba_vm::execute_and_snapshot_with_typed_fastpaths(&bytecode, true)
+        let fast = oxvba_vm::compat::execute_and_snapshot_with_typed_fastpaths(&bytecode, true)
             .expect("fastpath execution should succeed");
-        let baseline = oxvba_vm::execute_and_snapshot_with_typed_fastpaths(&bytecode, false)
-            .expect("baseline execution should succeed");
+        let baseline =
+            oxvba_vm::compat::execute_and_snapshot_with_typed_fastpaths(&bytecode, false)
+                .expect("baseline execution should succeed");
 
         assert_eq!(fast, baseline);
         assert_eq!(fast[0], RuntimeValue::I32(300));
@@ -20219,8 +20220,8 @@ End Sub";
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::compat::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::compat::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -20232,8 +20233,8 @@ End Sub";
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::compat::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::compat::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -20245,8 +20246,8 @@ End Sub";
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::compat::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::compat::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -22874,8 +22875,8 @@ End Sub";
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::compat::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::compat::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
