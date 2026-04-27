@@ -311,6 +311,14 @@ deferred.
 - `bd-bqm8` umbrella epic: `v02` V0.2 scope roundout execution
 - `bd-bqm8.1` rollout/support bead for the `v0.2` execution graph (`v02.1`)
 - `bd-bqm8.2` compat-slot excision (`v02.2`)
+  - `bd-bqm8.2.1` audit and roll out compat-slot excision child beads
+  - `bd-bqm8.2.2` remove or externalize VM/JIT core compat-slot surfaces
+  - `bd-bqm8.2.3` migrate host/CLI/debugger observation off core slot
+    projection
+  - `bd-bqm8.2.4` externalize COM/HAL legacy compatibility bridges
+  - `bd-bqm8.2.5` migrate tests, conformance notes, and product docs away from
+    slot-shaped execution truth
+  - `bd-bqm8.2.6` run the final excision checklist for `v02.2`
 - `bd-bqm8.3` late-bound `IDispatch` parity clarification and delivery (`v02.3`)
 - `bd-bqm8.4` date-string parsing/coercion completion (`v02.4`)
 - `bd-bqm8.5` runtime representation/layout investigation and architecture decision (`v02.5`)
@@ -342,6 +350,15 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.5` remains downstream of `bd-bqm8.2`, but its role is now a
   V0.2 doctrine reconciliation over the completed value-model migration
   artifacts, not a second full representation migration
+
+`v02.2` rollout, 2026-04-27:
+
+- `bd-bqm8.2.1` published the compat-slot excision surface map in
+  [V02_COMPAT_SLOT_EXCISION_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COMPAT_SLOT_EXCISION_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.2` remains in-progress; the rollout does not close the capability
+  lane
+- the next ready delivery bead is `bd-bqm8.2.2`, covering VM/JIT core
+  compatibility snapshot and slot-token surfaces
 
 ## Delivery Rules for This Workset
 
