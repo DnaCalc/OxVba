@@ -2352,6 +2352,9 @@ Child beads:
      - progress landed: CLI run-project/run execution paths now consume
        retained `Variant` snapshot APIs and project only at `--dump-slots` /
        `--dump-values` terminal display boundaries
+     - progress landed: CLI `--dump-values` now formats directly from retained
+       `Variant` accessors, leaving only `--dump-slots` on the explicit
+       compatibility slot projection path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, legacy SafeArray element compatibility APIs,

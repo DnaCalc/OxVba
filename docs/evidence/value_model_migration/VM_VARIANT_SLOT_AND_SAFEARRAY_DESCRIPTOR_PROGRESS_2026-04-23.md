@@ -1632,7 +1632,8 @@ Implementation progress:
 164. CLI source/project execution now consumes retained `Variant` snapshot APIs
      for run-project and run execution paths. `--dump-slots` projects through
      the existing compatibility slot classifier and `--dump-values` projects
-     only at the terminal display formatter boundary.
+     directly from retained `Variant` accessors at the terminal display
+     formatter boundary.
 165. Standard dynamic-link m1 native descriptor invocation now marshals native
      FFI arguments, returns, and Windows ByRef writebacks directly from retained
      `Variant` carriers. The legacy `RuntimeValue` dynamic-link trait methods
@@ -1943,8 +1944,9 @@ Remaining blocker:
    carriers through Variant companion methods and result types. Legacy debugger
    pause/evaluation APIs remain compatibility projections for display callers.
 10. CLI run-project/run execution paths now retain `Variant` snapshots until
-    the terminal display boundary. Slot and value dumps remain explicit CLI
-    compatibility projections.
+    the terminal display boundary. Slot dumps remain explicit CLI
+    compatibility projections; value dumps now format directly from retained
+    `Variant` accessors.
 11. Standard dynamic-link m1 native descriptor invocation now marshals native
     FFI arguments/returns and Windows ByRef writebacks directly from retained
     `Variant` carriers rather than through a temporary semantic-value bridge.
