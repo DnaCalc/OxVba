@@ -1638,13 +1638,19 @@ Implementation progress:
      FFI arguments, returns, and Windows ByRef writebacks directly from retained
      `Variant` carriers. The legacy `RuntimeValue` dynamic-link trait methods
      remain boundary projections into the retained descriptor path.
+166. Windows COM SAFEARRAY import now constructs retained `Variant` elements
+     directly for typed and scalar element payloads before building the
+     internal `SafeArray` carrier. The public `RuntimeValue` Windows bridge
+     result APIs remain compatibility projections, and dispatch/unknown array
+     binding still crosses the legacy callback boundary where the callback
+     contract itself returns `RuntimeValue`.
 
 Remaining blocker:
 
 1. This does not close `vmm-e6`.
 2. `RuntimeValue` remains a semantic projection type used across interpreter
-   helper functions, JIT helper functions, legacy `SafeArray`
-   compatibility element APIs, and legacy dynamic-link compatibility APIs. VM register
+   helper functions, JIT helper functions, public legacy `SafeArray`
+   compatibility APIs, and legacy dynamic-link compatibility APIs. VM register
    storage, JIT slot storage, `For Each` iterator storage,
    VM/JIT WithEvents binding storage, VM/JIT descriptor external-call transport,
    VM/JIT COM event callback argument transport, and VM dynamic-dispatch
@@ -1950,3 +1956,8 @@ Remaining blocker:
 11. Standard dynamic-link m1 native descriptor invocation now marshals native
     FFI arguments/returns and Windows ByRef writebacks directly from retained
     `Variant` carriers rather than through a temporary semantic-value bridge.
+12. Windows COM SAFEARRAY import now decodes typed/scalar elements as retained
+    `Variant` values before constructing the internal `SafeArray` carrier;
+    public bridge APIs that return `RuntimeValue` remain compatibility
+    projections, with dispatch/unknown array binding still limited by the
+    legacy callback contract.

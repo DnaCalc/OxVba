@@ -2355,9 +2355,13 @@ Child beads:
      - progress landed: CLI `--dump-values` now formats directly from retained
        `Variant` accessors, leaving only `--dump-slots` on the explicit
        compatibility slot projection path
+     - progress landed: Windows COM SAFEARRAY import now decodes typed/scalar
+       elements as retained `Variant` values before constructing the internal
+       `SafeArray` carrier; public `RuntimeValue` result APIs and
+       dispatch/unknown callback binding remain compatibility boundaries
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
-       remaining host service helper families, legacy SafeArray element compatibility APIs,
+       remaining host service helper families, public legacy SafeArray compatibility APIs,
        COM compatibility projection APIs that still expose `RuntimeValue`,
        remaining embedded/immediate/debugger display/result compatibility APIs
        that still expose `RuntimeValue`, and remaining manual pointer-helper / registry
