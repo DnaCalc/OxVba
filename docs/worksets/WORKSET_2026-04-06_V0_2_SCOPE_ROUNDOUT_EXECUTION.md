@@ -552,8 +552,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.11.3` is complete for the reproducible OxVba backend runner, with
   evidence in
   [V02_PERFORMANCE_BACKEND_RUNNER_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_BACKEND_RUNNER_2026-04-27.md)
+- `bd-bqm8.11.4` is complete for bounded VBA comparison capture/import, with
+  evidence in
+  [V02_PERFORMANCE_VBA_COMPARISON_HARNESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_VBA_COMPARISON_HARNESS_2026-04-27.md)
 - `bd-bqm8.11` remains in-progress; the next ready performance scaffold bead
-  is `bd-bqm8.11.4`, covering bounded VBA comparison capture/import
+  is `bd-bqm8.11.5`, covering thresholds and trend surfaces
 
 ## Delivery Rules for This Workset
 
