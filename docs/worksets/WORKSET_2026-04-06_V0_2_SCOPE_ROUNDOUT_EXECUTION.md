@@ -437,8 +437,14 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.5.1` is complete for rolling out representation/layout doctrine
   child beads, with evidence in
   [V02_REPRESENTATION_LAYOUT_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_ROLLOUT_2026-04-27.md)
-- `bd-bqm8.5` remains in-progress; the next ready decision bead is
-  `bd-bqm8.5.2`, covering the V0.2 representation/layout doctrine decision
+- `bd-bqm8.5.2` is complete for the V0.2 representation/layout doctrine
+  decision, with evidence in
+  [V02_REPRESENTATION_LAYOUT_DECISION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_REPRESENTATION_LAYOUT_DECISION_2026-04-27.md)
+  and the accepted doctrine in
+  [OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md](/C:/Work/DnaCalc/OxVba/docs/spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md)
+- `bd-bqm8.5` remains in-progress; the next ready evidence bead is
+  `bd-bqm8.5.3`, covering boundary evidence scans and representation risk
+  classification
 
 ## Delivery Rules for This Workset
 
