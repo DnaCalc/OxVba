@@ -35,6 +35,8 @@ pub const FADF_BSTR_VALUE: u16 = 0x0100;
 pub const FADF_UNKNOWN_VALUE: u16 = 0x0200;
 pub const FADF_DISPATCH_VALUE: u16 = 0x0400;
 pub const FADF_VARIANT_VALUE: u16 = 0x0800;
+const OXVBA_SAFEARRAY_OWNER_MAGIC: u32 = u32::from_le_bytes(*b"OVSA");
+const OXVBA_SAFEARRAY_OWNER_VERSION: u16 = 1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,9 +49,9 @@ pub struct SafeArrayBound {
 struct RawSafeArrayOwnerPrefix {
     // COM Automation stores HAVEVARTYPE metadata adjacent to the descriptor.
     // The public descriptor pointer still starts at RawSafeArray.
+    magic: u32,
+    version: u16,
     element_vt: u16,
-    _reserved: u16,
-    _padding: u32,
 }
 
 #[repr(C)]
@@ -276,6 +278,20 @@ fn header_prefix_ptr(header: *const RawSafeArray) -> *const RawSafeArrayOwnerPre
             .cast::<u8>()
             .sub(core::mem::size_of::<RawSafeArrayOwnerPrefix>())
             .cast::<RawSafeArrayOwnerPrefix>()
+    }
+}
+
+unsafe fn validated_header_prefix(
+    header: *const RawSafeArray,
+) -> Option<*const RawSafeArrayOwnerPrefix> {
+    let prefix = header_prefix_ptr(header);
+    let prefix_ref = unsafe { &*prefix };
+    if prefix_ref.magic == OXVBA_SAFEARRAY_OWNER_MAGIC
+        && prefix_ref.version == OXVBA_SAFEARRAY_OWNER_VERSION
+    {
+        Some(prefix)
+    } else {
+        None
     }
 }
 
@@ -557,9 +573,9 @@ fn alloc_header(
             .cast::<RawSafeArrayOwnerPrefix>()
             .as_ptr()
             .write(RawSafeArrayOwnerPrefix {
+                magic: OXVBA_SAFEARRAY_OWNER_MAGIC,
+                version: OXVBA_SAFEARRAY_OWNER_VERSION,
                 element_vt,
-                _reserved: 0,
-                _padding: 0,
             });
         let header = raw_owner
             .as_ptr()
@@ -746,7 +762,9 @@ impl SafeArray {
     }
 
     pub fn element_vartype(&self) -> u16 {
-        unsafe { (*header_prefix_ptr(self.0.as_ptr())).element_vt }
+        let prefix = unsafe { validated_header_prefix(self.0.as_ptr()) }
+            .expect("SAFEARRAY descriptor is not owned by OxVba");
+        unsafe { (*prefix).element_vt }
     }
 
     pub fn feature_flags(&self) -> u16 {
@@ -856,12 +874,31 @@ impl SafeArray {
         raw
     }
 
+    /// Takes ownership of a raw SAFEARRAY descriptor produced by this runtime.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must be a descriptor pointer previously returned by
+    /// [`Self::clone_raw_safearray_ptr`] or by moving a [`SafeArray`] into a
+    /// [`Variant`](crate::Variant). This is not an external COM
+    /// `SafeArrayDestroy` adapter; non-OxVba descriptors are rejected when the
+    /// local owner prefix provenance marker is absent.
     pub unsafe fn from_raw_safearray_owned(raw: *mut core::ffi::c_void) -> Option<Self> {
-        NonNull::new(raw.cast::<RawSafeArray>()).map(Self)
+        let header = NonNull::new(raw.cast::<RawSafeArray>())?;
+        unsafe { validated_header_prefix(header.as_ptr()) }?;
+        Some(Self(header))
     }
 
+    /// Clones a raw SAFEARRAY descriptor produced by this runtime.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must point at a live OxVba-owned descriptor. The clone receives
+    /// independent descriptor/payload storage; ownership of `raw` is unchanged.
     pub unsafe fn clone_from_raw_safearray(raw: *mut core::ffi::c_void) -> Option<Self> {
-        let borrowed = unsafe { Self::from_raw_safearray_owned(raw) }?;
+        let header = NonNull::new(raw.cast::<RawSafeArray>())?;
+        unsafe { validated_header_prefix(header.as_ptr()) }?;
+        let borrowed = Self(header);
         let cloned = borrowed.clone();
         core::mem::forget(borrowed);
         Some(cloned)
@@ -969,7 +1006,8 @@ mod tests {
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
         FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, SafeArray, SafeArrayBound, VT_BSTR_VALUE,
         VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
-        array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
+        array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
+        safe_array_from_tag,
     };
     use crate::{ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
@@ -1045,6 +1083,27 @@ mod tests {
         assert_eq!(
             array.feature_flags(),
             FADF_HAVEVARTYPE_VALUE | FADF_VARIANT_VALUE
+        );
+    }
+
+    #[test]
+    fn raw_safearray_adoption_requires_oxvba_owner_prefix() {
+        let array = SafeArray::from_variants(vec![Variant::from_i32(4)]);
+        let raw = array.clone_raw_safearray_ptr();
+        let prefix = header_prefix_ptr(raw.cast());
+        let original_magic = unsafe { (*prefix).magic };
+        unsafe {
+            (*prefix.cast_mut()).magic = 0;
+        }
+        assert!(unsafe { SafeArray::from_raw_safearray_owned(raw) }.is_none());
+        unsafe {
+            (*prefix.cast_mut()).magic = original_magic;
+        }
+        let adopted = unsafe { SafeArray::from_raw_safearray_owned(raw) }
+            .expect("restored OxVba-owned SAFEARRAY should be adopted");
+        assert_eq!(
+            adopted.variant_elements().expect("elements"),
+            vec![Variant::from_i32(4)]
         );
     }
 

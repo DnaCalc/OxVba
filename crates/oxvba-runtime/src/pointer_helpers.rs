@@ -262,8 +262,7 @@ unsafe fn set_windows_variant_from_variant(
         }
         crate::VarType::Long => {
             (*variant).Anonymous.Anonymous.vt = VT_I4;
-            (*variant).Anonymous.Anonymous.Anonymous.lVal =
-                value.as_i32().expect("long payload");
+            (*variant).Anonymous.Anonymous.Anonymous.lVal = value.as_i32().expect("long payload");
         }
         crate::VarType::Byte => {
             (*variant).Anonymous.Anonymous.vt = VT_UI1;
@@ -614,14 +613,13 @@ fn byte_array_variant_pointer_entry(
         match element.vtype() {
             crate::VarType::Empty | crate::VarType::Null => bytes.push(0),
             crate::VarType::Byte => bytes.push(element.as_u8().expect("Byte Variant payload")),
-            crate::VarType::Boolean => bytes.push(if element
-                .as_bool()
-                .expect("Boolean Variant payload")
-            {
-                1
-            } else {
-                0
-            }),
+            crate::VarType::Boolean => {
+                bytes.push(if element.as_bool().expect("Boolean Variant payload") {
+                    1
+                } else {
+                    0
+                })
+            }
             crate::VarType::Integer => {
                 let value = i32::from(element.as_i16().expect("Integer Variant payload"));
                 if !(0..=255).contains(&value) {
@@ -987,7 +985,9 @@ mod tests {
     fn variant_pointer_preserves_date_and_byte_array_payloads() {
         let date_ptr =
             register_variant_pointer(&Variant::from_date_f64(42.25)).expect("register date");
-        let date_raw = lookup_pointer(date_ptr).expect("lookup date pointer").cast::<f64>();
+        let date_raw = lookup_pointer(date_ptr)
+            .expect("lookup date pointer")
+            .cast::<f64>();
         assert!(!date_raw.is_null());
         assert_eq!(unsafe { *date_raw }, 42.25);
 

@@ -529,7 +529,9 @@ impl Variant {
             return Ok(Self::null());
         }
         if is_error_tag(value) {
-            return Ok(Self::from_error_code(error_code_from_tag(value).unwrap_or(0)));
+            return Ok(Self::from_error_code(
+                error_code_from_tag(value).unwrap_or(0),
+            ));
         }
         if let Some(array) = safe_array_from_tag(value) {
             return Ok(Self::from_safearray(array));
@@ -651,8 +653,7 @@ impl Variant {
                 .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string())
                 .and_then(|array| {
                     array_tag_from_safe_array(&array).ok_or_else(|| {
-                        "array intent cannot be represented in current compat slot tag"
-                            .to_string()
+                        "array intent cannot be represented in current compat slot tag".to_string()
                     })
                 }),
             VarType::Single | VarType::Double | VarType::Date => {
