@@ -1815,6 +1815,10 @@ Implementation progress:
      `SafeArray::from_typed_variants` for intrinsic typed payload examples.
      Legacy `from_typed_values` usage remains in explicit compatibility
      coverage, reducing scan noise around retained descriptor/payload paths.
+188. VM/JIT retained byte-SAFEARRAY resize and bounds tests now construct
+     setup/expected typed byte payloads through `SafeArray::from_typed_variants_nd`
+     with `VT_UI1` `Variant` elements. Remaining `from_typed_values_nd` hits in
+     those tests are legacy snapshot compatibility assertions.
 
 Remaining blocker:
 
@@ -2194,3 +2198,6 @@ Remaining blocker:
 33. Runtime typed-SAFEARRAY retained-carrier tests now construct payloads with
     `from_typed_variants`, leaving legacy typed `RuntimeValue` constructors to
     compatibility coverage.
+34. VM/JIT retained byte-SAFEARRAY resize/bounds tests now use
+    `from_typed_variants_nd`; legacy typed-value construction remains only on
+    explicit compatibility snapshot assertions in that focused area.

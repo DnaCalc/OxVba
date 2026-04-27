@@ -2431,6 +2431,10 @@ Child beads:
      - progress landed: runtime retained typed-SAFEARRAY tests now construct
        intrinsic typed payload examples through `SafeArray::from_typed_variants`,
        leaving `from_typed_values` examples to explicit compatibility coverage
+     - progress landed: VM/JIT retained byte-SAFEARRAY resize and bounds tests
+       now construct typed byte setup/expected arrays through
+       `SafeArray::from_typed_variants_nd`, leaving legacy typed-value
+       construction to explicit compatibility snapshot assertions
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
