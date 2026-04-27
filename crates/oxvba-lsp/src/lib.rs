@@ -514,6 +514,7 @@ fn canonical_or_original(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{DocumentId, OxvbaLspCore, server_capabilities, server_info};
+    use oxvba_languageservice::SemanticTokenKind;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -611,7 +612,7 @@ mod tests {
         fs::write(temp_root.join("Module1.bas"), "Sub Main()\nEnd Sub\n").expect("module write");
         fs::write(
             temp_root.join("App.basproj"),
-            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
         )
         .expect("basproj write");
 
@@ -820,6 +821,122 @@ mod tests {
                 .and_then(|uri| uri.to_file_path().ok())
                 .map(|path| super::canonical_or_original(&path)),
             Some(super::canonical_or_original(&lib_module_path))
+        );
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn v02_lsp_core_exposes_transport_neutral_product_matrix_queries() {
+        let temp_root = unique_temp_dir("oxvba_lsp_v02_query_workspace");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        let module_path = temp_root.join("Module1.bas");
+        fs::write(&module_path, "Sub Baseline()\nEnd Sub\n").expect("module write");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj write");
+
+        let source = "Option Explicit\nPublic Sub Foo(ByVal value As Long)\nEnd Sub\nPublic Sub Multi(a As Long, b As String)\nEnd Sub\nPublic Sub Bar()\n    Dim localValue As Long\n    localValue = Abs(1)\n    Foo localValue\n    Multi 1, \"x\"\n    missingValue = localValue\nEnd Sub\n";
+        let core = OxvbaLspCore::new();
+        core.load_workspace_path(&temp_root)
+            .expect("load workspace");
+        let uri = Url::from_file_path(&module_path).expect("module uri");
+        let module_id = core.open_text_document(&uri, source).expect("open module");
+
+        assert_eq!(module_id, DocumentId::new("Module1"));
+        assert_eq!(core.synchronized_document_id(&uri), Some(module_id.clone()));
+        assert_eq!(
+            core.document_uri(&module_id)
+                .and_then(|uri| uri.to_file_path().ok())
+                .map(|path| super::canonical_or_original(&path)),
+            Some(super::canonical_or_original(&module_path))
+        );
+        assert_eq!(
+            core.semantic_provenance(&module_id)
+                .and_then(|provenance| provenance.project_name),
+            Some("App".to_string())
+        );
+
+        let diagnostics = core.document_diagnostics(&module_id);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("undeclared variable")),
+            "expected undeclared-variable diagnostic"
+        );
+
+        let document_symbols = core.document_symbols(&module_id);
+        assert!(document_symbols.iter().any(|symbol| symbol.name == "Foo"));
+        assert!(
+            document_symbols
+                .iter()
+                .any(|symbol| symbol.name == "localValue"
+                    && symbol.container_name.as_deref() == Some("Bar"))
+        );
+        assert!(
+            core.workspace_symbols("Fo")
+                .iter()
+                .any(|symbol| symbol.symbol.name == "Foo")
+        );
+
+        let classifications = core.semantic_classifications(&module_id);
+        assert!(
+            classifications
+                .iter()
+                .any(|classification| classification.kind == SemanticTokenKind::Keyword)
+        );
+        assert!(
+            classifications
+                .iter()
+                .any(|classification| classification.kind == SemanticTokenKind::Intrinsic)
+        );
+
+        let completion_pos = source.find("missingValue").expect("missingValue") as u32;
+        let completions = core.completions(&module_id, completion_pos);
+        assert!(completions.iter().any(|item| item.label == "Foo"));
+        assert!(completions.iter().any(|item| item.label == "Abs"));
+
+        let signature_pos =
+            (source.find("Multi 1").expect("Multi call") + "Multi 1, ".len()) as u32;
+        let signature = core
+            .signature_help(&module_id, signature_pos)
+            .expect("signature help for Multi");
+        assert_eq!(signature.name, "Multi");
+        assert_eq!(signature.parameters.len(), 2);
+        assert_eq!(signature.active_parameter, 1);
+
+        let local_use = source.rfind("localValue").expect("localValue use") as u32;
+        let hover = core
+            .hover(&module_id, local_use)
+            .expect("hover for localValue");
+        assert!(hover.label.contains("localValue"));
+
+        let foo_call = source.find("Foo localValue").expect("Foo call") as u32;
+        let definition = core
+            .go_to_definition(&module_id, foo_call)
+            .expect("definition for Foo");
+        assert_eq!(definition.document, module_id);
+
+        let references = core.find_references(&module_id, foo_call);
+        assert!(
+            references.len() >= 2,
+            "expected declaration and call-site references"
+        );
+
+        let rename = core
+            .prepare_rename(&module_id, foo_call)
+            .expect("rename preparation for Foo");
+        assert_eq!(rename.current_name, "Foo");
+        assert!(rename.reference_analysis.safe_to_apply);
+
+        let actions = core.code_actions(&module_id);
+        assert!(
+            actions
+                .iter()
+                .any(|action| action.title.starts_with("Declare local variable")),
+            "expected undeclared-variable quick fix, got {actions:?}"
         );
 
         let _ = fs::remove_dir_all(&temp_root);

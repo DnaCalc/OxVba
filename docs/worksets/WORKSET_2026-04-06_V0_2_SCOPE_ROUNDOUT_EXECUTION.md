@@ -512,8 +512,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.8.3` is complete for hardening direct language-service semantic query
   tests, with evidence in
   [V02_LANGUAGE_SERVICE_DIRECT_API_TESTS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_DIRECT_API_TESTS_2026-04-27.md)
+- `bd-bqm8.8.4` is complete for hardening LSP transport and workspace tests,
+  with evidence in
+  [V02_LANGUAGE_SERVICE_LSP_TRANSPORT_TESTS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_LSP_TRANSPORT_TESTS_2026-04-27.md)
 - `bd-bqm8.8` remains in-progress; the next ready language-service bead is
-  `bd-bqm8.8.4`, covering LSP transport and workspace tests
+  `bd-bqm8.8.5`, covering OxIde and VS Code host-consumption guidance
 
 ## Delivery Rules for This Workset
 
