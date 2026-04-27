@@ -3546,13 +3546,10 @@ impl Vm {
         match &result_slot {
             RuntimeSlot::Variant(value) => {
                 let Some(array) = value.as_safearray() else {
-                    let other = result_slot
-                        .to_runtime_value()
-                        .map_err(|detail| ForEachInitError { code: 13, detail })?;
                     return Err(ForEachInitError {
                         code: 13,
                         detail: format!(
-                            "For Each NewEnum source on object {object} returned unsupported value {other:?}"
+                            "For Each NewEnum source on object {object} returned unsupported value {value:?}"
                         ),
                     });
                 };
