@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::ConsoleHal,
@@ -89,9 +90,10 @@ impl ConsoleHal for StandardHostServices {
     // `print_line_variant`.
     fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
-        let data = runtime_value_to_console_variant(self.profile, capability, "print_line", data)?;
+        let data =
+            compat::runtime_value_to_variant(self.profile, capability, "print_line", "data", data)?;
         let result = self.print_line_variant(data)?;
-        console_variant_to_runtime_value(self.profile, capability, "print_line", result)
+        compat::variant_to_runtime_value(self.profile, capability, "print_line", result)
     }
 
     fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
@@ -132,10 +134,15 @@ impl ConsoleHal for StandardHostServices {
     // `input_fields_variant`.
     fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
-        let count =
-            runtime_value_to_console_variant(self.profile, capability, "input_fields", count)?;
+        let count = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "input_fields",
+            "count",
+            count,
+        )?;
         let result = self.input_fields_variant(count)?;
-        console_variant_to_runtime_value(self.profile, capability, "input_fields", result)
+        compat::variant_to_runtime_value(self.profile, capability, "input_fields", result)
     }
 
     fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
@@ -168,7 +175,7 @@ impl ConsoleHal for StandardHostServices {
     fn line_input(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ConsoleIo;
         let result = self.line_input_variant()?;
-        console_variant_to_runtime_value(self.profile, capability, "line_input", result)
+        compat::variant_to_runtime_value(self.profile, capability, "line_input", result)
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
@@ -179,39 +186,4 @@ impl ConsoleHal for StandardHostServices {
         let line = self.console_read_line("line_input")?;
         Ok(Variant::from_string(line))
     }
-}
-
-fn runtime_value_to_console_variant(
-    profile: crate::model::HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                profile,
-                capability,
-                operation,
-                format!("failed to project RuntimeValue argument into Variant: {detail}"),
-            )
-        }),
-    }
-}
-
-fn console_variant_to_runtime_value(
-    profile: crate::model::HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: Variant,
-) -> HalResult<RuntimeValue> {
-    value.to_runtime_value().map_err(|detail| {
-        HalError::adapter_fault(
-            profile,
-            capability,
-            operation,
-            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
-        )
-    })
 }

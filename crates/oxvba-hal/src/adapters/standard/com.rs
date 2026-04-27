@@ -1,6 +1,7 @@
 #[cfg(target_os = "windows")]
 use crate::model::ComInvocationStrategy;
 use crate::{
+    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::{
@@ -75,20 +76,25 @@ fn runtime_value_to_com_variant(
     host: &StandardHostServices,
     value: RuntimeValue,
 ) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value)
-            .map_err(|message| host.com_dispatch_adapter_fault(message)),
-    }
+    compat::runtime_value_to_variant(
+        host.profile,
+        CapabilityId::ComActivationDispatch,
+        "com_compat_projection",
+        "value",
+        value,
+    )
 }
 
 fn com_variant_to_runtime_value(
     host: &StandardHostServices,
     value: Variant,
 ) -> HalResult<RuntimeValue> {
-    value
-        .to_runtime_value()
-        .map_err(|message| host.com_dispatch_adapter_fault(message))
+    compat::variant_to_runtime_value(
+        host.profile,
+        CapabilityId::ComActivationDispatch,
+        "com_compat_projection",
+        value,
+    )
 }
 
 #[cfg(target_os = "windows")]

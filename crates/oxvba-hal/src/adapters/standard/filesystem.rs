@@ -1,4 +1,5 @@
 use crate::{
+    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::FileSystemHal,
@@ -1030,17 +1031,7 @@ fn runtime_value_to_filesystem_variant(
     operation: &'static str,
     value: RuntimeValue,
 ) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
-            HalError::adapter_fault(
-                profile,
-                capability,
-                operation,
-                format!("failed to project RuntimeValue argument into Variant: {detail}"),
-            )
-        }),
-    }
+    compat::runtime_value_to_variant(profile, capability, operation, "argument", value)
 }
 
 fn filesystem_variant_to_runtime_value(
@@ -1049,14 +1040,7 @@ fn filesystem_variant_to_runtime_value(
     operation: &'static str,
     value: Variant,
 ) -> HalResult<RuntimeValue> {
-    value.to_runtime_value().map_err(|detail| {
-        HalError::adapter_fault(
-            profile,
-            capability,
-            operation,
-            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
-        )
-    })
+    compat::variant_to_runtime_value(profile, capability, operation, value)
 }
 
 pub(super) fn path_contains_wildcards(path: &Path) -> bool {

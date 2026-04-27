@@ -1,4 +1,4 @@
-use crate::{error::HalResult, model::CapabilityId, traits::DiagnosticsHal};
+use crate::{compat, error::HalResult, model::CapabilityId, traits::DiagnosticsHal};
 use oxvba_runtime::{RuntimeValue, Variant};
 
 use super::StandardHostServices;
@@ -8,21 +8,27 @@ impl DiagnosticsHal for StandardHostServices {
     // `emit_variant`, which avoids `RuntimeValue` projection.
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DiagnosticsTelemetry;
-        let code = runtime_value_to_diagnostics_variant(self.profile, capability, "emit", code)?;
+        let code =
+            compat::runtime_value_to_variant(self.profile, capability, "emit", "code", code)?;
         let payload =
-            runtime_value_to_diagnostics_variant(self.profile, capability, "emit", payload)?;
+            compat::runtime_value_to_variant(self.profile, capability, "emit", "payload", payload)?;
         let result = self.emit_variant(code, payload)?;
-        diagnostics_variant_to_runtime_value(self.profile, capability, "emit", result)
+        compat::variant_to_runtime_value(self.profile, capability, "emit", result)
     }
 
     // Legacy debug-print path. Retained VM/JIT callers should use
     // `debug_print_variant`, which avoids `RuntimeValue` projection.
     fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DiagnosticsTelemetry;
-        let text =
-            runtime_value_to_diagnostics_variant(self.profile, capability, "debug_print", text)?;
+        let text = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "debug_print",
+            "text",
+            text,
+        )?;
         let result = self.debug_print_variant(text)?;
-        diagnostics_variant_to_runtime_value(self.profile, capability, "debug_print", result)
+        compat::variant_to_runtime_value(self.profile, capability, "debug_print", result)
     }
 
     fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
@@ -55,39 +61,4 @@ impl DiagnosticsHal for StandardHostServices {
         eprintln!("{text}");
         Ok(Variant::from_i32(0))
     }
-}
-
-fn runtime_value_to_diagnostics_variant(
-    profile: crate::model::HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
-            crate::error::HalError::adapter_fault(
-                profile,
-                capability,
-                operation,
-                format!("failed to project RuntimeValue argument into Variant: {detail}"),
-            )
-        }),
-    }
-}
-
-fn diagnostics_variant_to_runtime_value(
-    profile: crate::model::HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: Variant,
-) -> HalResult<RuntimeValue> {
-    value.to_runtime_value().map_err(|detail| {
-        crate::error::HalError::adapter_fault(
-            profile,
-            capability,
-            operation,
-            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
-        )
-    })
 }

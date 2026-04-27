@@ -1,4 +1,5 @@
 use crate::{
+    compat,
     error::HalResult,
     model::{CapabilityId, HalProfileId, HalRuntimeClass, UiVirtualizationMode},
     traits::UiInteractionHal,
@@ -12,10 +13,17 @@ impl UiInteractionHal for StandardHostServices {
     // which preserves the prompt/style as Variant carriers.
     fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::UiInteraction;
-        let prompt = runtime_value_to_ui_variant(self.profile, capability, "msg_box", prompt)?;
-        let style = runtime_value_to_ui_variant(self.profile, capability, "msg_box", style)?;
+        let prompt = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "msg_box",
+            "prompt",
+            prompt,
+        )?;
+        let style =
+            compat::runtime_value_to_variant(self.profile, capability, "msg_box", "style", style)?;
         let result = self.msg_box_variant(prompt, style)?;
-        ui_variant_to_runtime_value(self.profile, capability, "msg_box", result)
+        compat::variant_to_runtime_value(self.profile, capability, "msg_box", result)
     }
 
     fn msg_box_variant(&self, prompt: Variant, style: Variant) -> HalResult<Variant> {
@@ -74,11 +82,22 @@ impl UiInteractionHal for StandardHostServices {
         // `input_box_variant`, which preserves prompt/default values as
         // Variant carriers.
         let capability = CapabilityId::UiInteraction;
-        let prompt = runtime_value_to_ui_variant(self.profile, capability, "input_box", prompt)?;
-        let default_value =
-            runtime_value_to_ui_variant(self.profile, capability, "input_box", default_value)?;
+        let prompt = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "input_box",
+            "prompt",
+            prompt,
+        )?;
+        let default_value = compat::runtime_value_to_variant(
+            self.profile,
+            capability,
+            "input_box",
+            "default_value",
+            default_value,
+        )?;
         let result = self.input_box_variant(prompt, default_value)?;
-        ui_variant_to_runtime_value(self.profile, capability, "input_box", result)
+        compat::variant_to_runtime_value(self.profile, capability, "input_box", result)
     }
 
     fn input_box_variant(&self, prompt: Variant, default_value: Variant) -> HalResult<Variant> {
@@ -117,39 +136,4 @@ impl UiInteractionHal for StandardHostServices {
             UiVirtualizationMode::Disabled => Ok(prompt),
         }
     }
-}
-
-fn runtime_value_to_ui_variant(
-    profile: HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    match value {
-        RuntimeValue::BindingHandle(handle) => Ok(Variant::from_i32(handle.raw())),
-        value => Variant::try_from_runtime_value(&value).map_err(|detail| {
-            crate::error::HalError::adapter_fault(
-                profile,
-                capability,
-                operation,
-                format!("failed to project RuntimeValue argument into Variant: {detail}"),
-            )
-        }),
-    }
-}
-
-fn ui_variant_to_runtime_value(
-    profile: HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: Variant,
-) -> HalResult<RuntimeValue> {
-    value.to_runtime_value().map_err(|detail| {
-        crate::error::HalError::adapter_fault(
-            profile,
-            capability,
-            operation,
-            format!("failed to project retained Variant result into RuntimeValue: {detail}"),
-        )
-    })
 }
