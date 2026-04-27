@@ -120,7 +120,8 @@ Current value-model migration note (2026-04-25):
 55. CLI run-project/run execution paths now retain `Variant` snapshots until the terminal display boundary; value dumps format directly from retained `Variant` accessors and slot dumps remain explicit compatibility projections.
 56. Standard dynamic-link m1 native descriptor invocation now marshals native FFI arguments/returns and Windows ByRef writebacks directly from retained `Variant` carriers.
 57. Windows COM SAFEARRAY import now decodes typed/scalar elements as retained `Variant` values before constructing the internal `SafeArray` carrier.
-58. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+58. VM external-call pointer string/byte-array writebacks now read retained `Variant` payloads directly through pointer-helper companion APIs before writing source slots.
+59. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

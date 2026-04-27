@@ -2359,6 +2359,9 @@ Child beads:
        elements as retained `Variant` values before constructing the internal
        `SafeArray` carrier; public `RuntimeValue` result APIs and
        dispatch/unknown callback binding remain compatibility boundaries
+     - progress landed: VM external-call pointer string/byte-array writebacks
+       now read retained `Variant` payloads directly through pointer-helper
+       companion APIs before writing source slots
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

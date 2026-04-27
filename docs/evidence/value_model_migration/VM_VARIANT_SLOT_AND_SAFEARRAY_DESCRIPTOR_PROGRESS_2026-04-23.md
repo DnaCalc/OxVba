@@ -817,9 +817,9 @@ Implementation progress:
    projection for older adapters.
 3. VM external descriptor calls now read source slots as `Variant`, write
    return values with `write_variant_slot()`, and apply ByRef writebacks as
-   `Variant` payloads. Pointer string/byte-array writebacks still call
-   pointer-helper APIs, but immediately convert those boundary projections back
-   into `Variant` before slot writeback.
+   `Variant` payloads. Pointer string/byte-array writebacks now read retained
+   `Variant` payloads through pointer-helper companion APIs before slot
+   writeback.
 4. JIT external descriptor calls now mirror the VM path with exact slot-level
    `read_variant_slot()` / `write_variant_slot()` helpers over the `RtSlot`
    Windows `VARIANT` layout.
@@ -1644,6 +1644,11 @@ Implementation progress:
      result APIs remain compatibility projections, and dispatch/unknown array
      binding still crosses the legacy callback boundary where the callback
      contract itself returns `RuntimeValue`.
+167. VM external-call pointer string and byte-array writebacks now use
+     `read_back_string_payload_variant()` and
+     `read_back_byte_array_payload_variant()` directly. The older
+     `RuntimeValue` pointer-helper readback APIs remain public compatibility
+     projections for legacy callers.
 
 Remaining blocker:
 
@@ -1961,3 +1966,7 @@ Remaining blocker:
     public bridge APIs that return `RuntimeValue` remain compatibility
     projections, with dispatch/unknown array binding still limited by the
     legacy callback contract.
+13. VM external-call pointer string/byte-array writebacks now read retained
+    `Variant` payloads directly through pointer-helper companion APIs before
+    writing source slots; public pointer-helper `RuntimeValue` readbacks remain
+    legacy compatibility projections.
