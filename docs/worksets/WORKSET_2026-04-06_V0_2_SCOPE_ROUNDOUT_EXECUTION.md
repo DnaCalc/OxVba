@@ -477,6 +477,14 @@ Rollout sync, 2026-04-27:
   pointer/unsafe boundary residuals are explicitly classified and remain
   accepted V0.2 boundary residuals rather than blockers
 
+`v02.7` rollout, 2026-04-27:
+
+- `bd-bqm8.7.1` is complete for rolling out Excel and Access/JET COM interop
+  corpus child beads, with evidence in
+  [V02_OFFICE_COM_CORPUS_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_OFFICE_COM_CORPUS_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.7` remains in-progress; the next ready corpus bead is
+  `bd-bqm8.7.2`, covering the explicit Excel and Access/JET corpus matrix
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
