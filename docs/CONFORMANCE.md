@@ -98,6 +98,13 @@ Late-bound `IDispatch` V0.2 matrix:
 - Unsupported rows must remain explicit; architecture prose does not count as
   implementation evidence.
 
+Date-string parsing V0.2 policy:
+- Accepted grammar, invariant locale policy, and unsupported ambiguity rows are
+  recorded in
+  [V02_DATE_STRING_GRAMMAR_POLICY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_DATE_STRING_GRAMMAR_POLICY_2026-04-27.md).
+- V0.2 date-string support is deterministic and does not claim host-locale
+  parsing parity.
+
 ## Declared Profile Scope (Current Gate)
 - Profile id: `mvp-profile-v620` (VBA 7.1 + Windows Office COM compliance ladder terminal gate)
 - Platform: Windows x64
