@@ -1656,6 +1656,9 @@ Implementation progress:
      `execute_bytecode_variants()` fallback for the legacy-slot Cranelift path
      instead of calling `execute_bytecode()` and converting `RuntimeValue`
      snapshots back into `Variant`.
+170. COM legacy slot-token projection now converts `ComValue` through retained
+     `Variant::project_compat_slot_i32()` instead of first projecting the COM
+     carrier into `RuntimeValue`.
 
 Remaining blocker:
 
@@ -1983,3 +1986,6 @@ Remaining blocker:
 15. Host project execution with JIT enabled now uses the retained Variant
     legacy-slot Cranelift fallback, removing the host-side
     `RuntimeValue`-then-`Variant` snapshot detour from that path.
+16. COM legacy slot-token projection now uses retained `Variant` compatibility
+    slot projection directly rather than a `ComValue -> RuntimeValue -> token`
+    detour.

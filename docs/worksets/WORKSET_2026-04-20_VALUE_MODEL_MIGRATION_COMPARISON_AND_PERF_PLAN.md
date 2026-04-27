@@ -2368,6 +2368,9 @@ Child beads:
      - progress landed: host project execution with JIT enabled now consumes
        retained `Variant` snapshots from the legacy-slot Cranelift fallback
        instead of converting `RuntimeValue` snapshots back into `Variant`
+     - progress landed: COM legacy slot-token projection now uses retained
+       `Variant` compatibility-slot projection directly instead of detouring
+       through `RuntimeValue`
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
