@@ -294,11 +294,6 @@ impl DynamicLinkHal for StandardHostServices {
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
         // Legacy descriptor path retained for compatibility callers.
-        if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
-            return self
-                .invoke_descriptor_multi(descriptor, &[arg])
-                .map(|(rv, _)| rv);
-        }
         let arg = runtime_value_to_dynlink_variant(
             self.profile,
             CapabilityId::DynamicLinking,
@@ -320,9 +315,40 @@ impl DynamicLinkHal for StandardHostServices {
         args: &[RuntimeValue],
     ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
         // Legacy multi-argument descriptor path retained for compatibility
-        // callers. Variant-native descriptor calls bypass this for m0 lanes.
+        // callers. Retained descriptor execution uses `invoke_descriptor_variants`.
         if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
-            return invoke_m1_native(self, descriptor, args);
+            let capability = CapabilityId::DynamicLinking;
+            let args = args
+                .iter()
+                .cloned()
+                .map(|arg| {
+                    runtime_value_to_dynlink_variant(
+                        self.profile,
+                        capability,
+                        "invoke_descriptor_multi",
+                        arg,
+                    )
+                })
+                .collect::<HalResult<Vec<_>>>()?;
+            let (ret, writebacks) = self.invoke_descriptor_variants(descriptor, &args)?;
+            let ret = variant_to_dynlink_runtime_value(
+                self.profile,
+                capability,
+                "invoke_descriptor_multi",
+                ret,
+            )?;
+            let writebacks = writebacks
+                .into_iter()
+                .map(|value| {
+                    variant_to_dynlink_runtime_value(
+                        self.profile,
+                        capability,
+                        "invoke_descriptor_multi",
+                        value,
+                    )
+                })
+                .collect::<HalResult<Vec<_>>>()?;
+            return Ok((ret, writebacks));
         }
         // Fall back to m0 deterministic (single-arg)
         let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
@@ -373,9 +399,7 @@ impl DynamicLinkHal for StandardHostServices {
                 Vec::new(),
             ));
         }
-        let args = variants_to_runtime_values(self.profile, args)?;
-        let (ret, writebacks) = self.invoke_descriptor_multi(descriptor, &args)?;
-        runtime_result_to_variants(self.profile, ret, writebacks)
+        invoke_m1_native_variants(self, descriptor, args)
     }
 
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -517,6 +541,16 @@ fn runtime_result_to_variants(
 }
 
 // ── m1-native-ffi invocation ──
+
+fn invoke_m1_native_variants(
+    host: &StandardHostServices,
+    descriptor: &DynLinkDescriptorView<'_>,
+    args: &[Variant],
+) -> HalResult<(Variant, Vec<Variant>)> {
+    let args = variants_to_runtime_values(host.profile, args)?;
+    let (ret, writebacks) = invoke_m1_native(host, descriptor, &args)?;
+    runtime_result_to_variants(host.profile, ret, writebacks)
+}
 
 #[cfg(target_os = "windows")]
 fn invoke_m1_native(
