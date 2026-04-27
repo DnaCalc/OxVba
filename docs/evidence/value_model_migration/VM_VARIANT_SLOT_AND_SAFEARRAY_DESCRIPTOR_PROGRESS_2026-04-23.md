@@ -1674,6 +1674,10 @@ Implementation progress:
 174. Dynamic COM value legacy `RuntimeValue` projection now reads directly
      from the retained `Variant` payload instead of detouring through
      `DynamicValue -> ComValue -> RuntimeValue`.
+175. HAL replay journal decoding now materializes retained `Variant` values
+     first; legacy `RuntimeValue` replay APIs project from that retained
+     decoder instead of the `_variant` companions converting a legacy replay
+     result back into `Variant`.
 
 Remaining blocker:
 
@@ -2016,3 +2020,5 @@ Remaining blocker:
     lane for WithEvents helper storage.
 20. Dynamic COM value legacy projection now converts retained `Variant`
     payloads directly to `RuntimeValue` without a `ComValue` detour.
+21. HAL replay journal decoding now uses a retained `Variant` decoder first,
+    with legacy replay APIs projecting from that decoder.
