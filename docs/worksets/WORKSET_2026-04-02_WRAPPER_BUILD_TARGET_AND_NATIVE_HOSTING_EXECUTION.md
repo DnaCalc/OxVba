@@ -61,8 +61,15 @@ Current execution state:
   and covered by `cargo test -p oxvba-build --lib -- --nocapture`
   evidence in
   [WRAPPER_EXE_DLL_GENERATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/WRAPPER_EXE_DLL_GENERATION_2026-04-27.md)
-- wrapper launch/config/reference behavior and native metadata handoff remain
-  the next real validation lane (`bd-wrap1.5`) before COM/XLL handoff claims
+- wrapper validation exposed and fixed the generated DLL metadata handoff gap:
+  generated native exports now import `DeclareParamType` and emit bounded
+  scalar/string pointer marshaling helpers between `NativeExportDescriptor`
+  metadata and `RuntimeValue` procedure invocation
+- `bd-wrap1.5` is complete with evidence in
+  [WRAPPER_VALIDATION_AND_METADATA_HANDOFF_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/WRAPPER_VALIDATION_AND_METADATA_HANDOFF_2026-04-27.md)
+- COM/XLL handoff documentation remains the next boundary (`bd-wrap1.6`);
+  binary-packaging and Excel-facing closure must remain owned by their later
+  lanes until execution evidence exists
 
 ## Relationship To Prior Work
 

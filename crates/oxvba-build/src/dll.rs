@@ -13,9 +13,9 @@ pub fn generate_dll_shim(
         r#"//! Auto-generated OxVBA DLL shim for project "{project_name}".
 
 use std::sync::OnceLock;
-use oxvba_compiler::OxBundle;
+use oxvba_compiler::{{DeclareParamType, OxBundle}};
 use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{{BStr, F64Value, RuntimeValue}};
 
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
@@ -36,6 +36,165 @@ where
     let mut guard = pair.lock().expect("session lock poisoned");
     let (ref engine, ref mut session) = *guard;
     f(engine, session)
+}}
+
+trait IntoRuntimeArg {{
+    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue;
+}}
+
+macro_rules! int_runtime_arg {{
+    ($ty:ty) => {{
+        impl IntoRuntimeArg for $ty {{
+            fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+                match ty {{
+                    DeclareParamType::LongLong => RuntimeValue::I64(self as i64),
+                    DeclareParamType::LongPtr => RuntimeValue::I64(self as i64),
+                    DeclareParamType::Boolean => RuntimeValue::Bool(self != 0),
+                    DeclareParamType::Byte
+                    | DeclareParamType::Integer
+                    | DeclareParamType::Long
+                    | DeclareParamType::Currency => RuntimeValue::I32(self as i32),
+                    DeclareParamType::Single
+                    | DeclareParamType::Double
+                    | DeclareParamType::Date => RuntimeValue::F64(F64Value::from_f64(self as f64)),
+                    DeclareParamType::String
+                    | DeclareParamType::Variant
+                    | DeclareParamType::Any => RuntimeValue::I64(self as i64),
+                }}
+            }}
+        }}
+    }};
+}}
+
+int_runtime_arg!(i16);
+int_runtime_arg!(i32);
+int_runtime_arg!(i64);
+int_runtime_arg!(isize);
+int_runtime_arg!(u8);
+
+impl IntoRuntimeArg for f32 {{
+    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+        match ty {{
+            DeclareParamType::Single => RuntimeValue::F64(F64Value::from_single_f64(self as f64)),
+            DeclareParamType::Date => RuntimeValue::F64(F64Value::from_date_f64(self as f64)),
+            _ => RuntimeValue::F64(F64Value::from_f64(self as f64)),
+        }}
+    }}
+}}
+
+impl IntoRuntimeArg for f64 {{
+    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+        match ty {{
+            DeclareParamType::Single => RuntimeValue::F64(F64Value::from_single_f64(self)),
+            DeclareParamType::Date => RuntimeValue::F64(F64Value::from_date_f64(self)),
+            _ => RuntimeValue::F64(F64Value::from_f64(self)),
+        }}
+    }}
+}}
+
+impl IntoRuntimeArg for *const u16 {{
+    fn into_runtime_arg(self, _ty: DeclareParamType) -> RuntimeValue {{
+        if self.is_null() {{
+            return RuntimeValue::String(BStr::from(""));
+        }}
+        let mut len = 0usize;
+        unsafe {{
+            while *self.add(len) != 0 {{
+                len += 1;
+            }}
+            RuntimeValue::String(BStr::from(String::from_utf16_lossy(std::slice::from_raw_parts(
+                self, len,
+            ))))
+        }}
+    }}
+}}
+
+impl IntoRuntimeArg for *mut u8 {{
+    fn into_runtime_arg(self, _ty: DeclareParamType) -> RuntimeValue {{
+        RuntimeValue::I64(self as isize as i64)
+    }}
+}}
+
+fn marshal_to_runtime<T: IntoRuntimeArg>(value: T, ty: DeclareParamType) -> RuntimeValue {{
+    value.into_runtime_arg(ty)
+}}
+
+trait FromRuntimeReturn {{
+    fn from_runtime_return(value: RuntimeValue) -> Self;
+}}
+
+macro_rules! int_runtime_return {{
+    ($ty:ty) => {{
+        impl FromRuntimeReturn for $ty {{
+            fn from_runtime_return(value: RuntimeValue) -> Self {{
+                match value {{
+                    RuntimeValue::I32(n) => n as $ty,
+                    RuntimeValue::I64(n) => n as $ty,
+                    RuntimeValue::Bool(flag) => if flag {{ -1i32 as $ty }} else {{ 0i32 as $ty }},
+                    RuntimeValue::F64(value) => value.as_f64() as $ty,
+                    _ => 0 as $ty,
+                }}
+            }}
+        }}
+    }};
+}}
+
+int_runtime_return!(i16);
+int_runtime_return!(i32);
+int_runtime_return!(i64);
+int_runtime_return!(isize);
+int_runtime_return!(u8);
+
+impl FromRuntimeReturn for f32 {{
+    fn from_runtime_return(value: RuntimeValue) -> Self {{
+        match value {{
+            RuntimeValue::F64(value) => value.as_f64() as f32,
+            RuntimeValue::I32(n) => n as f32,
+            RuntimeValue::I64(n) => n as f32,
+            _ => 0.0,
+        }}
+    }}
+}}
+
+impl FromRuntimeReturn for f64 {{
+    fn from_runtime_return(value: RuntimeValue) -> Self {{
+        match value {{
+            RuntimeValue::F64(value) => value.as_f64(),
+            RuntimeValue::I32(n) => n as f64,
+            RuntimeValue::I64(n) => n as f64,
+            _ => 0.0,
+        }}
+    }}
+}}
+
+impl FromRuntimeReturn for *const u16 {{
+    fn from_runtime_return(value: RuntimeValue) -> Self {{
+        let text = match value {{
+            RuntimeValue::String(text) => text.as_str().to_string(),
+            RuntimeValue::I32(n) => n.to_string(),
+            RuntimeValue::I64(n) => n.to_string(),
+            RuntimeValue::Bool(flag) => if flag {{ "True".to_string() }} else {{ "False".to_string() }},
+            RuntimeValue::F64(value) => value.as_f64().to_string(),
+            _ => String::new(),
+        }};
+        let mut utf16: Vec<u16> = text.encode_utf16().collect();
+        utf16.push(0);
+        Box::leak(utf16.into_boxed_slice()).as_ptr()
+    }}
+}}
+
+impl FromRuntimeReturn for *mut u8 {{
+    fn from_runtime_return(value: RuntimeValue) -> Self {{
+        match value {{
+            RuntimeValue::I32(n) => n as isize as *mut u8,
+            RuntimeValue::I64(n) => n as isize as *mut u8,
+            _ => std::ptr::null_mut(),
+        }}
+    }}
+}}
+
+fn marshal_from_runtime<T: FromRuntimeReturn>(value: RuntimeValue) -> T {{
+    T::from_runtime_return(value)
 }}
 
 "#
@@ -158,6 +317,9 @@ mod tests {
         assert!(source.contains("arg1: i32"));
         assert!(source.contains("-> i32"));
         assert!(source.contains("invoke_procedure"));
+        assert!(source.contains("use oxvba_compiler::{DeclareParamType, OxBundle};"));
+        assert!(source.contains("fn marshal_to_runtime<T: IntoRuntimeArg>"));
+        assert!(source.contains("fn marshal_from_runtime<T: FromRuntimeReturn>"));
         assert!(source.contains("\"Math\""));
         assert!(source.contains("\"Sum\""));
     }
