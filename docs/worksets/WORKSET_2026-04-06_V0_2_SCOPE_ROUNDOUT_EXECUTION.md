@@ -555,8 +555,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.11.4` is complete for bounded VBA comparison capture/import, with
   evidence in
   [V02_PERFORMANCE_VBA_COMPARISON_HARNESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_VBA_COMPARISON_HARNESS_2026-04-27.md)
+- `bd-bqm8.11.5` is complete for thresholds and trend surfaces, with evidence
+  in
+  [V02_PERFORMANCE_THRESHOLDS_AND_TRENDS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_THRESHOLDS_AND_TRENDS_2026-04-27.md)
 - `bd-bqm8.11` remains in-progress; the next ready performance scaffold bead
-  is `bd-bqm8.11.5`, covering thresholds and trend surfaces
+  is `bd-bqm8.11.6`, covering the final checklist
 
 ## Delivery Rules for This Workset
 

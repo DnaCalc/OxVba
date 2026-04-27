@@ -1,0 +1,6 @@
+id,area,metric,pass_condition,warn_condition,fail_condition,policy
+PERF-V02-T001,backend_runner,schema,required columns present,missing optional columns,missing required columns,backend artifacts must be machine-readable before timing is interpreted
+PERF-V02-T002,backend_runner,rows,at least one backend row is present,not applicable,no backend rows,empty backend artifacts fail the trend surface
+PERF-V02-T003,backend_runner,jit_vm_ratio,ratio <= 1.25,ratio > 1.25 and <= 1.75,ratio > 1.75,ratio is advisory on shared hosts and gates only the scaffold summary severity
+PERF-V02-T004,vba_comparison,status,captured or imported rows present,only skipped rows present,no VBA comparison rows,skipped rows are allowed for non-Excel hosts but cannot support VBA speed claims
+PERF-V02-T005,all,product_claims,claims include workload and host boundary,claims omit some context,claims assert absolute superiority without evidence,performance product language must stay workload-bound
