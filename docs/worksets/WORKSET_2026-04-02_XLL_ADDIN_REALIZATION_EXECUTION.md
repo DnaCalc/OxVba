@@ -57,9 +57,14 @@ Current execution state:
 - `bd-xll1.4` is complete: validation matrix and exact supported subset are
   published in
   [XLL_VALIDATION_MATRIX_AND_BOUNDARY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_VALIDATION_MATRIX_AND_BOUNDARY_2026-04-27.md)
+- `bd-xll1.5.1` is complete: generated XLL source now has a local compile
+  staging path through `ShimOutputType::Xll`, including dynamic `Excel12v`
+  lookup and a compile smoke test that produces a non-empty `.xll` artifact
+- evidence:
+  [XLL_COMPILE_STAGING_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_COMPILE_STAGING_2026-04-27.md)
 - remaining blocker: Excel-loaded XLL validation is not proven in this run; the
-  next bead must build/load a generated `.xll` in Excel and record registration
-  plus invocation evidence before this parent workset can close
+  next host validation bead must load a generated `.xll` in Excel and record
+  registration plus invocation evidence before this parent workset can close
 
 ## Relationship To Prior Work
 

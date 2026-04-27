@@ -26,6 +26,7 @@ impl std::fmt::Display for BuildError {
 pub enum ShimOutputType {
     Exe,
     Dll,
+    Xll,
 }
 
 /// Compile a generated Rust shim source file into a binary.
@@ -49,14 +50,16 @@ pub fn compile_shim(
     // Write source
     let src_file = match output_type {
         ShimOutputType::Exe => src_dir.join("main.rs"),
-        ShimOutputType::Dll => src_dir.join("lib.rs"),
+        ShimOutputType::Dll | ShimOutputType::Xll => src_dir.join("lib.rs"),
     };
     std::fs::write(&src_file, source).map_err(BuildError::Io)?;
 
     // Write Cargo.toml
     let crate_type = match output_type {
         ShimOutputType::Exe => "[[bin]]\nname = \"shim\"\npath = \"src/main.rs\"",
-        ShimOutputType::Dll => "[lib]\ncrate-type = [\"cdylib\"]\npath = \"src/lib.rs\"",
+        ShimOutputType::Dll | ShimOutputType::Xll => {
+            "[lib]\ncrate-type = [\"cdylib\"]\npath = \"src/lib.rs\""
+        }
     };
     let compiler_path = workspace_crate_path("oxvba-compiler")?;
     let hal_path = workspace_crate_path("oxvba-hal")?;
@@ -103,7 +106,7 @@ oxvba-runtime = {{ path = "{}" }}
     // Copy result to output_path
     let built_binary = match output_type {
         ShimOutputType::Exe => temp_dir.join(format!("target/release/shim{}", exe_suffix())),
-        ShimOutputType::Dll => temp_dir.join("target/release/oxvba_shim.dll"),
+        ShimOutputType::Dll | ShimOutputType::Xll => temp_dir.join("target/release/oxvba_shim.dll"),
     };
 
     if built_binary.exists() {

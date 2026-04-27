@@ -59,8 +59,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `bd-xll1.2` delivered generated `xlAutoOpen` / `xlfRegister` registration source from native export metadata.
   - `bd-xll1.3` delivered generated XLL export wrappers that bridge XLOPER12-shaped arguments/results to `RuntimeValue` procedure invocation.
   - `bd-xll1.4` published the validation matrix and explicit non-claims.
+  - `bd-xll1.5.1` proved local compile staging: generated source compiles through `ShimOutputType::Xll` and produces a non-empty `.xll` artifact.
 - Exact unblocking steps:
-  - build or stage a generated `.xll` binary from the current wrapper source,
   - load it in Excel on a Windows host,
   - verify `xlAutoOpen` registration,
   - invoke at least one exported function from Excel,

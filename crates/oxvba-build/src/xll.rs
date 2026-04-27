@@ -15,11 +15,12 @@ pub fn generate_xll_shim(
 
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::sync::OnceLock;
 
 use oxvba_compiler::{{DeclareParamType, OxBundle}};
 use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
-use oxvba_runtime::{{BStr, F64Value, RuntimeValue}};
+use oxvba_runtime::{{bstr::BStr, F64Value, RuntimeValue}};
 
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
@@ -45,34 +46,28 @@ const XL_TYPE_BOOL: u32 = 0x0004;
 const XL_TYPE_INT: u32 = 0x0020;
 const XL_TYPE_NIL: u32 = 0x0100;
 
-static SESSION: OnceLock<std::sync::Mutex<(Engine, ProjectRuntimeSession)>> = OnceLock::new();
+thread_local! {{
+    static SESSION: RefCell<Option<(Engine, ProjectRuntimeSession)>> = RefCell::new(None);
+}}
 
 fn with_session<F, R>(f: F) -> R
 where
     F: FnOnce(&Engine, &mut ProjectRuntimeSession) -> R,
 {{
-    let pair = SESSION.get_or_init(|| {{
-        let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
-            .expect("failed to deserialize embedded bundle");
-        let engine = Engine::new(HostConfig::default());
-        let session = engine
-            .compile_and_prepare_session_from_bundle(&bundle)
-            .expect("failed to prepare XLL session from bundle");
-        std::sync::Mutex::new((engine, session))
-    }});
-    let mut guard = pair.lock().expect("XLL session lock poisoned");
-    let (ref engine, ref mut session) = *guard;
-    f(engine, session)
-}}
-
-#[cfg(target_os = "windows")]
-unsafe extern "system" {{
-    fn Excel12v(
-        xlfn: i32,
-        oper_result: *mut XLOPER12,
-        count: i32,
-        opers: *mut *mut XLOPER12,
-    ) -> i32;
+    SESSION.with(|cell| {{
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {{
+            let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
+                .expect("failed to deserialize embedded bundle");
+            let engine = Engine::new(HostConfig::default());
+            let session = engine
+                .compile_and_prepare_session_from_bundle(&bundle)
+                .expect("failed to prepare XLL session from bundle");
+            *slot = Some((engine, session));
+        }}
+        let (engine, session) = slot.as_mut().expect("XLL session initialized");
+        f(engine, session)
+    }})
 }}
 
 "#
@@ -90,7 +85,7 @@ unsafe extern "system" {{
     // xlAutoClose
     source.push_str(
         r#"
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn xlAutoClose() -> i32 {
     // Cleanup: unregister functions
     1
@@ -101,8 +96,8 @@ pub extern "system" fn xlAutoClose() -> i32 {
 
     // xlAutoFree12
     source.push_str(
-        r#"#[no_mangle]
-pub extern "system" fn xlAutoFree12(p: *mut u8) {
+        r#"#[unsafe(no_mangle)]
+pub extern "system" fn xlAutoFree12(p: *mut XLOPER12) {
     // Free XLOPER12 memory allocated by the add-in
     if !p.is_null() {
         unsafe { drop(Box::from_raw(p)); }
@@ -145,7 +140,7 @@ fn generate_registration_table(project_name: &str, exports: &[NativeExportDescri
 
 fn generate_xl_auto_open() -> String {
     String::from(
-        r#"#[no_mangle]
+        r#"#[unsafe(no_mangle)]
 pub extern "system" fn xlAutoOpen() -> i32 {
     for registration in REGISTRATIONS {
         if !register_xll_function(registration) {
@@ -172,7 +167,50 @@ fn register_xll_function(registration: &XllRegistration) -> bool {
         &mut category as *mut XLOPER12,
         &mut function_help as *mut XLOPER12,
     ];
-    unsafe { Excel12v(XLF_REGISTER, &mut result, args.len() as i32, args.as_mut_ptr()) == 0 }
+    excel12v(XLF_REGISTER, &mut result, args.len() as i32, args.as_mut_ptr()) == 0
+}
+
+#[cfg(target_os = "windows")]
+type Excel12vFn =
+    unsafe extern "system" fn(i32, *mut XLOPER12, i32, *mut *mut XLOPER12) -> i32;
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetModuleHandleA(module_name: *const i8) -> *mut std::ffi::c_void;
+    fn GetProcAddress(
+        module: *mut std::ffi::c_void,
+        proc_name: *const i8,
+    ) -> *mut std::ffi::c_void;
+}
+
+#[cfg(target_os = "windows")]
+fn excel12v(
+    xlfn: i32,
+    oper_result: *mut XLOPER12,
+    count: i32,
+    opers: *mut *mut XLOPER12,
+) -> i32 {
+    static EXCEL12V: OnceLock<Option<Excel12vFn>> = OnceLock::new();
+    let Some(function) = *EXCEL12V.get_or_init(resolve_excel12v) else {
+        return -1;
+    };
+    unsafe { function(xlfn, oper_result, count, opers) }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_excel12v() -> Option<Excel12vFn> {
+    for module_name in [b"EXCEL.EXE\0".as_ptr(), b"XLCALL32.DLL\0".as_ptr()] {
+        let module = unsafe { GetModuleHandleA(module_name.cast()) };
+        if module.is_null() {
+            continue;
+        }
+        let proc = unsafe { GetProcAddress(module, b"Excel12v\0".as_ptr().cast()) };
+        if !proc.is_null() {
+            return Some(unsafe { std::mem::transmute::<*mut std::ffi::c_void, Excel12vFn>(proc) });
+        }
+    }
+    None
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -211,7 +249,7 @@ fn generate_export_wrapper(export: &NativeExportDescriptor) -> String {
         .join(",\n");
 
     format!(
-        r#"#[no_mangle]
+        r#"#[unsafe(no_mangle)]
 pub extern "system" fn {name}({signature_params}) -> *mut XLOPER12 {{
     let args: Vec<RuntimeValue> = vec![
 {marshal_args}
@@ -315,7 +353,10 @@ mod tests {
         assert!(source.contains("xlAutoFree12"));
         assert!(source.contains("MyFunc"));
         assert!(source.contains("XLF_REGISTER"));
-        assert!(source.contains("Excel12v"));
+        assert!(source.contains("resolve_excel12v"));
+        assert!(source.contains("GetProcAddress"));
+        assert!(source.contains("xlAutoFree12(p: *mut XLOPER12)"));
+        assert!(source.contains("#[unsafe(no_mangle)]"));
         assert!(source.contains("REGISTRATIONS"));
         assert!(source.contains("type_text: \"BB\""));
         assert!(source.contains("category: \"Pricing\""));
@@ -345,5 +386,24 @@ mod tests {
 
         let source = generate_xll_shim("Math", "math.oxb", &exports);
         assert!(source.contains("type_text: \"BBB\""));
+    }
+
+    #[test]
+    fn xll_shim_compiles_to_xll_artifact() {
+        let temp_root =
+            std::env::temp_dir().join(format!("oxvba_xll_compile_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_root).expect("create temp root");
+        let bundle_path = temp_root.join("dummy.oxb");
+        std::fs::write(&bundle_path, b"dummy bundle bytes").expect("write dummy bundle");
+        let bundle_literal = bundle_path.to_string_lossy().replace('\\', "/");
+        let source = generate_xll_shim("CompileProbe", &bundle_literal, &[]);
+        let output_path = temp_root.join("CompileProbe.xll");
+
+        crate::compile::compile_shim(&source, &output_path, crate::compile::ShimOutputType::Xll)
+            .expect("compile generated XLL shim");
+
+        assert!(output_path.exists());
+        assert!(std::fs::metadata(&output_path).expect("xll metadata").len() > 0);
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }
