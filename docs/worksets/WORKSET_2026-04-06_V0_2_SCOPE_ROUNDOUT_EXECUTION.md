@@ -458,8 +458,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.6.1` is complete for rolling out VM/JIT hardening child beads, with
   evidence in
   [V02_HARDENING_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENING_ROLLOUT_2026-04-27.md)
-- `bd-bqm8.6` remains in-progress; the next ready matrix bead is
-  `bd-bqm8.6.2`, covering the V0.2 VM/JIT hardening matrix and scan baseline
+- `bd-bqm8.6.2` is complete for the V0.2 VM/JIT hardening matrix and scan
+  baseline, with evidence in
+  [V02_HARDENING_MATRIX_BASELINE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HARDENING_MATRIX_BASELINE_2026-04-27.md)
+- `bd-bqm8.6` remains in-progress; the next ready delivery bead is
+  `bd-bqm8.6.3`, covering malformed retained-Variant and JIT-slot boundary
+  handling
 
 ## Delivery Rules for This Workset
 
