@@ -2231,3 +2231,7 @@ Remaining blocker:
     the current migration does not claim broad native struct-overlay or
     unconstrained UDT-byref ABI parity, and the delivered truth is the bounded
     non-boundary UDT subset plus selected ABI-sensitive pointer/native rows.
+39. The struct/UDT/native-layout intrinsic closure checklist is recorded in
+    `docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md`.
+    It closes `vmm-g7` for the narrowed migration scope while keeping broad
+    native layout parity explicitly bounded outside the current migration.
