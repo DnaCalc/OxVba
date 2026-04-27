@@ -400,9 +400,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.3.3` is complete for in-scope metadata-backed
   member/default/named-argument behavior, with evidence in
   [V02_IDISPATCH_METADATA_BACKED_BEHAVIOR_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_METADATA_BACKED_BEHAVIOR_2026-04-27.md)
-- `bd-bqm8.3` remains in-progress; the next ready delivery/evidence bead is
-  `bd-bqm8.3.4`, covering controlled COM plus VM/JIT/host evidence for the
-  supported rows
+- `bd-bqm8.3.4` is complete for controlled COM plus VM/JIT/host evidence for
+  the supported rows, with evidence in
+  [V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md)
+- `bd-bqm8.3` remains in-progress; the next ready validation bead is
+  `bd-bqm8.3.5`, covering the final late-bound `IDispatch` parity checklist
 
 ## Delivery Rules for This Workset
 

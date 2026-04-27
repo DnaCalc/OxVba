@@ -93,6 +93,8 @@ Project integration lane:
 Late-bound `IDispatch` V0.2 matrix:
 - Supported and unsupported rows are recorded in
   [V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md).
+- Controlled COM VM/JIT/host evidence for those rows is recorded in
+  [V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md).
 - Unsupported rows must remain explicit; architecture prose does not count as
   implementation evidence.
 
