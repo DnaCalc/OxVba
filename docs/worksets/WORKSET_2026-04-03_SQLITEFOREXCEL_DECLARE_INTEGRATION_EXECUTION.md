@@ -153,6 +153,11 @@ Delivered so far in this lane:
   - complete on 2026-04-27 with evidence in
     [SQLITE_RUNTIME_BYTE_BUFFER_BRIDGE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/SQLITE_RUNTIME_BYTE_BUFFER_BRIDGE_2026-04-27.md)
 - `bd-sql1.16.4` rerun the SQLite fixture matrix and publish the moved boundary
+  - complete on 2026-04-27 with evidence in
+    [SQLITE_RUNTIME_REDIM_FIXTURE_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/SQLITE_RUNTIME_REDIM_FIXTURE_MATRIX_2026-04-27.md)
+  - `bd-sql1.16` is now complete: the scoped SQLite UTF-8 helper `ReDim`
+    boundary has host, direct-compile, raw CLI, normalized CLI, and JIT
+    evidence beyond the old `ReDim buf(length - 1)` frontier
 - `bd-sql1.17` comparison-valued expressions in value position, first observed
   through the demo line
   `Debug.Print "Long String is the same: " & (myStringResult = myLongString)`
