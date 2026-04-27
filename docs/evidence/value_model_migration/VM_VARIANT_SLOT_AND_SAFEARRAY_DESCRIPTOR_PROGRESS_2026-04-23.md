@@ -2225,3 +2225,9 @@ Remaining blocker:
 37. The remaining `RuntimeValue` projection surfaces have final disposition as
     compatibility contracts, and the current Variant/SAFEARRAY intrinsic
     closure checklist records `vmm-e6` / `vmm-e7` completion.
+38. The struct/UDT/native-layout scope amendment is recorded in
+    `docs/evidence/value_model_migration/STRUCT_UDT_LAYOUT_SCOPE_AMENDMENT_2026-04-27.md`.
+    It closes `vmm-g6` by making the narrowed migration endpoint explicit:
+    the current migration does not claim broad native struct-overlay or
+    unconstrained UDT-byref ABI parity, and the delivered truth is the bounded
+    non-boundary UDT subset plus selected ABI-sensitive pointer/native rows.
