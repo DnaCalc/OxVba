@@ -3016,6 +3016,12 @@ Child beads:
        representation-growth deltas recorded explicitly, and the remaining
        non-migration follow-on mitigations called out as backlog rather than
        closure blockers
+   - reissued 2026-04-27:
+     - the final report status is back to `final` after the `vmm-d8`, `vmm-e7`,
+       and `vmm-g7` intrinsic checklist beads passed
+     - the report now links the current Variant/SAFEARRAY and
+       struct/UDT/native-layout closure checklist evidence and current bounded
+       perf artifacts
 6. `vmm-h5`
    - kind: `support`
    - priority: `P1`
