@@ -29,9 +29,9 @@ use oxvba_runtime::safe_array::{
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
-use oxvba_runtime::value_tags::{
-    EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag,
-};
+#[cfg(test)]
+use oxvba_runtime::value_tags::EMPTY_TAG;
+use oxvba_runtime::value_tags::{NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag};
 use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
@@ -280,6 +280,7 @@ impl Vm {
         }
     }
 
+    #[cfg(test)]
     pub fn snapshot_slots(&self, slot_count: usize) -> Vec<i32> {
         let end = slot_count.min(self.registers.registers.len());
         self.registers.registers[..end]
@@ -290,12 +291,14 @@ impl Vm {
 
     /// Legacy snapshot alias. Prefer `snapshot_variants` for retained
     /// value-model work.
+    #[cfg(test)]
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_compat_values(slot_count)
     }
 
     /// Compatibility snapshot boundary that projects retained `Variant` slots
     /// to `RuntimeValue` for older tests and host surfaces.
+    #[cfg(test)]
     pub fn snapshot_compat_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_variants(slot_count)
             .into_iter()
@@ -308,6 +311,7 @@ impl Vm {
     }
 
     /// Legacy snapshot alias. Prefer `snapshot_variants`.
+    #[cfg(test)]
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot_compat_values(slot_count)
     }

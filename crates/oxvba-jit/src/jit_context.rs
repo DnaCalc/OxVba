@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use oxvba_compiler::bytecode::ExternalCallDescriptor;
 use oxvba_hal::traits::HostServices;
-use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant};
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{BindingHandle, ObjectRef, Variant};
 
 use crate::slot_abi::RtSlot;
 
@@ -157,6 +159,7 @@ impl JitContextOwned {
     /// projections.
     ///
     /// New value-model call sites should prefer [`Self::extract_user_variants`].
+    #[cfg(test)]
     pub fn extract_user_values(&self) -> Vec<RuntimeValue> {
         self.extract_user_variants()
             .into_iter()
@@ -201,6 +204,7 @@ impl JitContext {
     ///
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
+    #[cfg(test)]
     pub unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
         unsafe {
             self.read_variant_slot(slot)
@@ -254,6 +258,7 @@ impl JitContext {
     ///
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
+    #[cfg(test)]
     pub unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
         let variant = match value {
             RuntimeValue::BindingHandle(handle) => Variant::from_i32(handle.raw()),
