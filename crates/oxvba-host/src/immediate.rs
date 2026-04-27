@@ -1,5 +1,5 @@
 use oxvba_compiler::ProjectManifest;
-use oxvba_runtime::{RuntimeValue, Variant, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, VarType, Variant, variant_to_vba_string};
 use thiserror::Error;
 
 use crate::engine::PhaseDiagnostic;
@@ -306,22 +306,19 @@ impl<'engine> ImmediateSession<'engine> {
                 &parsed.args,
             )
             .map_err(ImmediateSessionError::Phase)?;
-        let runtime_value = variant_value
-            .to_runtime_value()
-            .map_err(|message| ImmediateSessionError::Phase(PhaseDiagnostic::runtime(message)))?;
 
         let output = if parsed.is_statement {
-            ImmediateVariantEvaluationOutput::PrintedLine(format_invoked_statement_line(
+            ImmediateVariantEvaluationOutput::PrintedLine(format_invoked_statement_variant_line(
                 &module_name,
                 &parsed.procedure_name,
-                &runtime_value,
+                &variant_value,
                 request.display_style,
             ))
-        } else if matches!(runtime_value, RuntimeValue::Empty) {
+        } else if matches!(variant_value.vtype(), VarType::Empty) {
             ImmediateVariantEvaluationOutput::Empty
         } else {
             ImmediateVariantEvaluationOutput::Value(ImmediateVariantValueProjection {
-                display_text: format_runtime_value_for_immediate(&runtime_value),
+                display_text: format_variant_for_immediate(&variant_value),
                 variant_value,
             })
         };
@@ -478,24 +475,23 @@ fn parse_immediate_literal(token: &str) -> Result<Variant, String> {
     ))
 }
 
-fn format_runtime_value_for_immediate(value: &RuntimeValue) -> String {
-    match runtime_value_to_vba_string(value) {
-        Ok(RuntimeValue::String(text)) => text.into_string(),
-        Ok(other) => format!("{other:?}"),
+fn format_variant_for_immediate(value: &Variant) -> String {
+    match variant_to_vba_string(value) {
+        Ok(text) => text.into_string(),
         Err(_) => format!("{value:?}"),
     }
 }
 
-fn format_invoked_statement_line(
+fn format_invoked_statement_variant_line(
     module_name: &str,
     procedure_name: &str,
-    runtime_value: &RuntimeValue,
+    value: &Variant,
     display_style: ImmediateDisplayStyle,
 ) -> String {
-    let rendered_value = format_runtime_value_for_immediate(runtime_value);
+    let rendered_value = format_variant_for_immediate(value);
     match display_style {
         ImmediateDisplayStyle::ImmediateWindow | ImmediateDisplayStyle::PrintLike => {
-            if matches!(runtime_value, RuntimeValue::Empty) {
+            if matches!(value.vtype(), VarType::Empty) {
                 format!("ok: {module_name}.{procedure_name}")
             } else {
                 format!("ok: {module_name}.{procedure_name} => {rendered_value}")

@@ -2,7 +2,7 @@ use oxvba_compiler::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProjectManifest,
 };
-use oxvba_runtime::{RuntimeValue, Variant, runtime_value_to_vba_string};
+use oxvba_runtime::{RuntimeValue, Variant, variant_to_vba_string};
 use oxvba_vm::{DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop};
 use thiserror::Error;
 
@@ -445,10 +445,7 @@ impl<'engine> DebugSession<'engine> {
     ) -> DebugFrameVariantValue {
         // Retained debugger frame value read.
         let variant_value = self.runtime.read_variant_slot(slot.slot);
-        let display_text = variant_value
-            .to_runtime_value()
-            .map(|runtime_value| format_runtime_value_for_debug(&runtime_value))
-            .unwrap_or_else(|_| format!("{variant_value:?}"));
+        let display_text = format_variant_for_debug(&variant_value);
         DebugFrameVariantValue {
             name: slot.name.clone(),
             slot: slot.slot,
@@ -477,10 +474,9 @@ fn project_slot_kind(kind: ProcedureRuntimeSlotKind) -> DebugFrameValueKind {
     }
 }
 
-fn format_runtime_value_for_debug(value: &RuntimeValue) -> String {
-    match runtime_value_to_vba_string(value) {
-        Ok(RuntimeValue::String(text)) => text.into_string(),
-        Ok(other) => format!("{other:?}"),
+fn format_variant_for_debug(value: &Variant) -> String {
+    match variant_to_vba_string(value) {
+        Ok(text) => text.into_string(),
         Err(_) => format!("{value:?}"),
     }
 }
