@@ -2423,6 +2423,11 @@ Child beads:
        retained SAFEARRAY payloads through `SafeArray::from_variants` instead
        of `SafeArray::from_values`, leaving the legacy constructor examples to
        explicit compatibility tests
+     - progress landed: runtime SAFEARRAY descriptors now stamp the hidden
+       local owner prefix with an OxVba marker/version and raw descriptor
+       adoption/cloning rejects descriptors without that provenance marker,
+       narrowing allocator ownership to descriptors produced by the retained
+       internal carrier path
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

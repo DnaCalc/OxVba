@@ -99,7 +99,7 @@ Current value-model migration note (2026-04-25):
 34. VM/JIT scalar/control/binding helper operands now read retained `Variant` slots directly for `Int`/`Fix`, conditional jumps, runtime assignment validation, finance/collection numeric lanes, and WithEvents binding-token lanes.
 35. VM/JIT `For Each` iterator initialization and JIT WithEvents retained-value get now write compatibility-token outputs as retained `Variant` carriers directly instead of entering legacy `RuntimeValue` slot-write helpers.
 36. Dead private VM/JIT compatibility helper definitions were removed or gated to tests after the retained-`Variant` execution migration, leaving production VM/JIT checks free of the previous private helper dead-code warning set.
-37. Runtime `SafeArray` descriptors now advertise COM Automation element metadata through `fFeatures` (`FADF_HAVEVARTYPE` plus the relevant `VARIANT`/`BSTR`/`DISPATCH`/`UNKNOWN` bits) while leaving allocator/ownership provenance as remaining audit work.
+37. Runtime `SafeArray` descriptors now advertise COM Automation element metadata through `fFeatures` (`FADF_HAVEVARTYPE` plus the relevant `VARIANT`/`BSTR`/`DISPATCH`/`UNKNOWN` bits) and stamp the local owner prefix with an OxVba descriptor marker before raw pointer adoption/cloning; external COM allocator identity remains an interop boundary rather than a closed parity claim.
 38. HAL recording wrapper `_variant` methods now delegate directly to retained inner `Variant` companion methods and record from `Variant` results instead of inheriting trait-level `RuntimeValue` projection fallbacks.
 39. Standard HAL dynamic-link bound-token `_variant` invocation now uses a direct retained `Variant` implementation instead of inheriting the trait-level `RuntimeValue` fallback.
 40. HAL trait-level retained `_variant` companion defaults now fault explicitly when an adapter does not implement the retained companion, removing the silent `RuntimeValue` projection fallback seam.
@@ -136,6 +136,7 @@ Current value-model migration note (2026-04-25):
 71. HAL marshaling conformance now validates scalar/subtype carrier fidelity with retained `Variant` roundtrips rather than `RuntimeValue` projections.
 72. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent` projection isolated to the explicit legacy runtime-result API boundary.
 73. Windows COM legacy `variant_to_runtime_value()` now shares the retained `Variant` result bridge for scalars, arrays, dispatch, and unknowns, so runtime projection occurs once at the explicit compatibility API boundary.
+74. Runtime SAFEARRAY raw descriptor adoption now requires the OxVba owner-prefix marker, preventing the retained internal descriptor lane from treating arbitrary SAFEARRAY-shaped pointers as locally allocated carriers.
 74. Standard HAL native COM activation now materializes retained object `Variant` carriers directly for `create_object_variant()` instead of returning a private `RuntimeValue::Object` and converting it back.
 75. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 

@@ -1805,6 +1805,12 @@ Implementation progress:
      payloads through `SafeArray::from_variants` instead of
      `SafeArray::from_values`, leaving `from_values` examples for explicit
      legacy compatibility tests rather than retained-carrier examples.
+186. Runtime SAFEARRAY raw descriptor adoption now validates an OxVba
+     owner-prefix marker/version before taking ownership or cloning from a raw
+     descriptor pointer. This keeps the retained internal descriptor lane tied
+     to descriptors produced by OxVba allocation, while external COM
+     SAFEARRAY allocator identity remains an interop boundary handled by the
+     Windows bridge rather than a generalized raw-adoption claim.
 
 Remaining blocker:
 
@@ -2177,3 +2183,7 @@ Remaining blocker:
 31. Focused retained-array VM/JIT tests now use `SafeArray::from_variants`,
     reducing false-positive scan noise from retained-path examples that still
     constructed arrays through the legacy `RuntimeValue` compatibility API.
+32. Runtime SAFEARRAY raw descriptor adoption now requires the OxVba
+    owner-prefix marker before ownership transfer or clone, narrowing the
+    allocator provenance audit for internal carriers without closing the
+    broader `vmm-e6` projection/classification work.
