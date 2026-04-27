@@ -33,3 +33,7 @@ pub fn com_value_to_runtime_value(value: &ComValue) -> RuntimeValue {
 pub fn com_value_to_runtime_token(value: &ComValue) -> Result<i32, String> {
     value.to_variant()?.project_compat_slot_i32()
 }
+
+pub fn variant_to_runtime_value(value: &Variant) -> Result<RuntimeValue, String> {
+    value.to_runtime_value()
+}

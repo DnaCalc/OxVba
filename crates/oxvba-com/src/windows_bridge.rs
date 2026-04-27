@@ -280,9 +280,7 @@ impl WindowsComBridge {
     ) -> Result<RuntimeValue, String> {
         let state = self.lock_state("event_callback_arg")?;
         callback_arg(&state, callback, index).and_then(|value| {
-            value
-                .variant()
-                .to_runtime_value()
+            crate::compat::variant_to_runtime_value(value.variant())
                 .map_err(|detail| format!("COM-E-EVENT-CALLBACK-VARIANT: {detail}"))
         })
     }

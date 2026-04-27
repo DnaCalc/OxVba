@@ -363,12 +363,13 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.2.3` is complete for host, CLI, debugger export, immediate, and
   project integration observation boundaries; evidence is recorded in
   [V02_HOST_OBSERVATION_COMPAT_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_HOST_OBSERVATION_COMPAT_PROGRESS_2026-04-27.md)
-- the next ready delivery bead is `bd-bqm8.2.4`, covering COM/HAL compatibility
-  bridges
-- `bd-bqm8.2.4` is in-progress; the first COM/HAL bridge slice introduced
-  explicit `oxvba_com::compat` and `oxvba_hal::compat` adapters, with evidence
-  in
+- `bd-bqm8.2.4` is complete for COM/HAL compatibility bridge
+  externalization; COM `ComValue`/slot-token/dynamic/event callback projection
+  and standard HAL wrapper projection now delegate through explicit
+  `oxvba_com::compat` and `oxvba_hal::compat` adapters, with evidence in
   [V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_COM_HAL_COMPAT_BRIDGE_PROGRESS_2026-04-27.md)
+- the next ready delivery bead is `bd-bqm8.2.5`, covering tests, conformance
+  notes, and product docs that still normalize slot-shaped execution truth
 
 ## Delivery Rules for This Workset
 

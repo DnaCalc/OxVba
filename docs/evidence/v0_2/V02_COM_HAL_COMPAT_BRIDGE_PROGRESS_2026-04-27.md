@@ -3,7 +3,7 @@
 Date: 2026-04-27
 Owner: Codex
 Bead: `bd-bqm8.2.4`
-Status: in-progress
+Status: complete
 
 ## Change
 
@@ -24,12 +24,16 @@ Implemented:
 - Follow-up slice routed the remaining standard HAL local projection helpers
   for UI, console, diagnostics, filesystem, dynamic-link, and COM wrapper
   paths through `oxvba_hal::compat`.
+- Final COM bridge slice routed dynamic object value projection and Windows
+  event callback argument projection through `oxvba_com::compat`, leaving
+  retained `Variant` payloads as the COM transport truth and isolating
+  `RuntimeValue` projection at an explicit adapter boundary.
 
-This does not close `bd-bqm8.2.4`. File-system, console/UI/time/diagnostic,
-dynamic-link, and standard COM local projection helpers now delegate through
-the explicit HAL adapter boundary. Windows COM bridge compatibility entry
-points and broader cross-adapter classification still need final review before
-COM/HAL compatibility bridges are fully externalized.
+Remaining direct `RuntimeValue::I32` hits in the Windows COM layer are the
+legacy vtable invoke result shims inside the documented compatibility dynamic
+dispatch path. The broader COM/HAL conversion surfaces now delegate through
+explicit `oxvba_com::compat` and `oxvba_hal::compat` adapter modules rather
+than treating slot projection as core execution truth.
 
 ## Verification
 
@@ -43,3 +47,5 @@ Passed:
 - `cargo test -p oxvba-hal filesystem --lib`
 - `cargo test -p oxvba-hal dynlink --lib`
 - `cargo test -p oxvba-hal com --lib`
+- `cargo test -p oxvba-com dynamic --lib`
+- `cargo fmt --check`
