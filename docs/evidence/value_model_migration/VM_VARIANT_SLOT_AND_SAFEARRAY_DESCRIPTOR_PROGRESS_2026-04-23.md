@@ -805,6 +805,14 @@ Validation:
      - result: passed
 181. `./scripts/check-governance.ps1`
      - result: passed
+182. `cargo fmt -p oxvba-com --check`
+     - result: passed
+183. `cargo check -p oxvba-com`
+     - result: passed
+184. `cargo test -p oxvba-com model --lib`
+     - result: `9` passed
+185. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1678,6 +1686,11 @@ Implementation progress:
      first; legacy `RuntimeValue` replay APIs project from that retained
      decoder instead of the `_variant` companions converting a legacy replay
      result back into `Variant`.
+176. COM model legacy `RuntimeValue` bridge methods now route through retained
+     `Variant` conversion before producing or consuming `ComValue`. The
+     `BindingHandle` case remains the explicit non-VBA compatibility side
+     lane, but ordinary COM scalar/string/object/SAFEARRAY projection no
+     longer duplicates a separate semantic-value mapping.
 
 Remaining blocker:
 
@@ -2022,3 +2035,6 @@ Remaining blocker:
     payloads directly to `RuntimeValue` without a `ComValue` detour.
 21. HAL replay journal decoding now uses a retained `Variant` decoder first,
     with legacy replay APIs projecting from that decoder.
+22. COM model legacy `RuntimeValue` projection now routes through retained
+    `Variant` conversion, leaving only the explicit `BindingHandle` token
+    side lane outside the VBA/COM value carrier.
