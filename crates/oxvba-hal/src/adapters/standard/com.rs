@@ -740,7 +740,10 @@ impl ComHal for StandardHostServices {
                 })
         }
         #[cfg(not(target_os = "windows"))]
-        unreachable!("typelib resolution is not available on this platform")
+        {
+            let _ = request;
+            Err(self.unsupported(capability, "resolve_typelib_reference"))
+        }
     }
 
     fn load_typelib_metadata(
@@ -768,7 +771,10 @@ impl ComHal for StandardHostServices {
                 })
         }
         #[cfg(not(target_os = "windows"))]
-        unreachable!("typelib resolution is not available on this platform")
+        {
+            let _ = identity;
+            Err(self.unsupported(capability, "load_typelib_metadata"))
+        }
     }
 
     fn invalidate_typelib_cache(
@@ -801,6 +807,9 @@ impl ComHal for StandardHostServices {
             ))
         }
         #[cfg(not(target_os = "windows"))]
-        unreachable!("typelib resolution is not available on this platform")
+        {
+            let _ = (scope, reference_name);
+            Err(self.unsupported(capability, "invalidate_typelib_cache"))
+        }
     }
 }

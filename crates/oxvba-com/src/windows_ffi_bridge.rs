@@ -15,9 +15,9 @@ use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::sync::Mutex;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 use std::collections::HashMap;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 use std::sync::Mutex;
 
 // ── FFI argument types ──
@@ -400,12 +400,12 @@ unsafe fn invoke_stdcall_raw(proc_addr: usize, args: &[i64], _return_type: FfiRe
 // Linux / macOS implementation (dlopen / dlsym / C-ABI)
 // ══════════════════════════════════════════════════════════════════════
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 struct SoCache {
     modules: HashMap<String, usize>, // library name -> dlopen handle as usize
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 static SO_CACHE: Mutex<Option<SoCache>> = Mutex::new(None);
 
 /// Translates a VBA-style library name to a platform-appropriate shared library path.
@@ -417,7 +417,7 @@ static SO_CACHE: Mutex<Option<SoCache>> = Mutex::new(None);
 ///     or `.dylib` (macOS).
 ///   - For well-known system libraries (`libc`, `libm`, `libpthread`, `libdl`),
 ///     return the platform canonical name.
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 fn translate_library_name(library: &str) -> String {
     // Already looks like a Unix shared library path
     if library.contains('/')
@@ -483,7 +483,7 @@ fn translate_library_name(library: &str) -> String {
 }
 
 /// Returns the last dlopen/dlsym error as a String, or a generic message.
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 fn dlerror_string() -> String {
     let err = unsafe { libc::dlerror() };
     if err.is_null() {
@@ -499,7 +499,7 @@ fn dlerror_string() -> String {
 ///
 /// The library name is translated from VBA/Windows conventions to Unix conventions:
 /// e.g. `"mylib.dll"` becomes `"libmylib.so"` on Linux or `"libmylib.dylib"` on macOS.
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 pub fn load_library(library: &str) -> Result<usize, String> {
     let mut guard = SO_CACHE
         .lock()
@@ -536,7 +536,14 @@ pub fn load_library(library: &str) -> Result<usize, String> {
 }
 
 /// Resolves a function address from a loaded module using `dlsym`.
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "wasi")]
+pub fn load_library(library: &str) -> Result<usize, String> {
+    Err(format!(
+        "dynamic library loading is not available on wasm32/WASI for `{library}`"
+    ))
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
     let c_name = std::ffi::CString::new(name)
         .map_err(|_| format!("symbol name `{}` contains null byte", name))?;
@@ -559,6 +566,13 @@ pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
 
 /// Ordinal-based symbol resolution is not supported on Unix platforms.
 /// Shared libraries on Linux/macOS do not use ordinal exports.
+#[cfg(target_os = "wasi")]
+pub fn get_proc_address(_module: usize, name: &str) -> Result<usize, String> {
+    Err(format!(
+        "dynamic symbol lookup is not available on wasm32/WASI for `{name}`"
+    ))
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn get_proc_address_ordinal(_module: usize, ordinal: u16) -> Result<usize, String> {
     Err(format!(

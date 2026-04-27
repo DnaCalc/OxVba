@@ -2,6 +2,10 @@ name: ci
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
 
 permissions:
   contents: read
@@ -34,6 +38,32 @@ jobs:
       - name: Meta check (fast, no artifacts)
         shell: pwsh
         run: ./scripts/meta-check.ps1 -Fast -NoArtifacts
+
+  macos-ready:
+    name: macos-ready
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Meta check (fast, no artifacts)
+        shell: pwsh
+        run: ./scripts/meta-check.ps1 -Fast -NoArtifacts
+
+  wasm-hal-ready:
+    name: wasm-hal-ready
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - name: HAL conformance on wasm32/WASI
+        shell: pwsh
+        run: ./scripts/run-hal-conformance-wasm32.ps1 -SkipTests -OutputDir temp/no-artifacts/hal_wasm32_ci
 
   extended:
     if: ${{ github.event_name == 'workflow_dispatch' }}

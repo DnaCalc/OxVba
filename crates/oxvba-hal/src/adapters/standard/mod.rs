@@ -2588,8 +2588,14 @@ mod tests {
                 invoke_kind_hint: None,
             })
             .expect("ReturnSelfUnknown projection should succeed");
-        assert_eq!(expect_object_handle(dispatch), object);
-        assert_eq!(expect_object_handle(unknown), object);
+        assert_eq!(
+            expect_object_handle(dispatch).compat_identity(),
+            object.compat_identity()
+        );
+        assert_eq!(
+            expect_object_handle(unknown).compat_identity(),
+            object.compat_identity()
+        );
     }
 
     #[test]

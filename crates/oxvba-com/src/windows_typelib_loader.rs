@@ -1400,6 +1400,16 @@ pub fn resolve_typelib_identity_from_registry(
 }
 
 #[cfg(not(target_os = "windows"))]
+pub fn resolve_typelib_identity_from_prog_id(
+    prog_id_name: &str,
+) -> Result<TypeLibResolvedIdentity, String> {
+    Err(format!(
+        "live ProgID typelib resolution not available on this platform for `{}`",
+        prog_id_name.trim()
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn discover_registered_typelib_identities_by_name(
     reference_name: &str,
 ) -> Result<Vec<TypeLibResolvedIdentity>, String> {
