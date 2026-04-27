@@ -833,6 +833,14 @@ Validation:
      - result: `5` passed
 195. `./scripts/check-governance.ps1`
      - result: passed
+196. `cargo fmt -p oxvba-com --check`
+     - result: passed
+197. `cargo check -p oxvba-com`
+     - result: passed
+198. `cargo test -p oxvba-com windows_variant --lib`
+     - result: `28` passed
+199. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1720,6 +1728,9 @@ Implementation progress:
      `RuntimeValue` result/frame structs remain compatibility projections, but
      retained display text no longer requires a `Variant -> RuntimeValue`
      detour.
+179. Windows COM scalar legacy runtime-result projection now decodes through
+     retained `Variant` carriers first, including scalar BYREF cases, before
+     projecting at the final public `RuntimeValue` compatibility boundary.
 
 Remaining blocker:
 
@@ -2072,3 +2083,6 @@ Remaining blocker:
     old array-tag tokens on the compatibility branch.
 24. Immediate-session and debugger retained display text now formats directly
     from `Variant` carriers instead of projecting through `RuntimeValue`.
+25. Windows COM scalar runtime-result compatibility projection now decodes
+    scalar payloads as retained `Variant` carriers before the final
+    `RuntimeValue` projection.

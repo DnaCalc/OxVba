@@ -2396,6 +2396,9 @@ Child beads:
      - progress landed: immediate-session and debugger retained display text
        now formats directly from `Variant` carriers instead of projecting
        through `RuntimeValue`
+     - progress landed: Windows COM scalar runtime-result compatibility
+       projection now decodes scalar payloads as retained `Variant` carriers
+       before the final `RuntimeValue` projection
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,
