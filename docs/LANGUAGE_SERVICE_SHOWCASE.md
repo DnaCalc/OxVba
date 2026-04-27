@@ -48,9 +48,13 @@ The current repo state supports these levels:
    - transport-owned `initialize` / `initialized` / `shutdown`
    - full-text `didOpen` / `didChange` / `didClose` synchronization
    - workspace loading from `.basproj`, bounded `.vbp`, or convention directories
+   - protocol-exposed diagnostics, symbols, hover, definition, references,
+     completion, signature help, prepare-rename, code actions, and semantic
+     tokens over the direct semantic core
    - CLI debug harness: `oxvba-lsp debug-workspace <path>`
 
-The current implementation does not yet claim a full `LS-P3` editor transport with the semantic query ladder exposed over LSP methods.
+The current implementation does not claim a full `LS-P3` IDE or full LSP parity
+surface. It claims a bounded transport projection over the direct semantic core.
 
 ## What You Can Use Today
 
@@ -83,10 +87,16 @@ oxvba-lsp
 Current protocol truth:
 - it supports server startup/shutdown,
 - it supports full-text document synchronization,
-- and it can preload a workspace from `rootUri` / `workspaceFolders`.
+- it can preload a workspace from `rootUri` / `workspaceFolders`,
+- and it exposes bounded language features for diagnostics, document/workspace
+  symbols, hover, definition, references, completion, signature help,
+  prepare-rename, code actions, and semantic tokens.
 
 Current protocol boundary:
-- it does not yet advertise hover, completion, definition, references, rename, code actions, symbols, or semantic tokens as LSP methods.
+- it is single-root,
+- it does not own project creation or project editing,
+- it does not implement rename apply orchestration,
+- it is not a complete VS Code extension package.
 
 ### Debug Harness
 
@@ -118,10 +128,8 @@ These things are not inside the current claim:
 - full LSP parity
 - Roslyn parity
 - rust-analyzer parity
-- protocol-exposed semantic query coverage for the whole direct API
 - rename apply/edit orchestration over LSP
 - broad refactoring/code-action families
-- semantic tokens wire protocol support
 - workspace-wide multi-root transport semantics beyond the current single-core shell
 
 ## Validation Snapshot
@@ -136,14 +144,18 @@ Canonical validation rows are tracked in:
 - `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv`
 
 The important honesty rule is:
-- the direct API surface is richer than the current LSP protocol surface,
-- so OxVba should be described as having a first-class language-service core with a thin, still-bounded transport layer.
+- the direct API surface is the canonical semantic and project model,
+- `oxvba-lsp` is a thin, bounded transport projection over that model,
+- VS Code-class project authoring and debugging should use extension commands
+  and DAP-style projections rather than expanding LSP into a second product
+  model.
 
 ## Near-Term Next Steps
 
 The next likely expansion points are:
-- broaden the public direct host-facing interface around the new `HostWorkspaceSession`,
-- add any missing typed workspace/document/session helpers needed by OxIde,
-- expose selected direct queries over actual LSP methods for VS Code-class hosts,
+- capture real OxIde-side consumption evidence over `HostWorkspaceSession`,
+  project helpers, embedded build/run, immediate, and debugger seams,
+- add any missing typed workspace/document/session helpers only when OxIde
+  adoption exposes concrete gaps,
 - keep transport synchronization aligned with the real project model,
 - and publish a broader end-to-end editor showcase with OxIde as the direct-host reference consumer.

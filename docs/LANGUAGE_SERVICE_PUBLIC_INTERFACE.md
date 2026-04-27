@@ -82,9 +82,13 @@ For direct-embed hosts:
 - document identity should remain tied to the real project/workspace model.
 
 For VS Code-class hosts:
-- `oxvba-lsp` should remain a thin transport over the same direct semantics,
-- project creation and project editing should live in extension commands or CLI/direct-helper flows,
-- LSP should not become a second project-authoring model.
+- `oxvba-lsp` remains a thin transport over the same direct semantics,
+- protocol methods may expose diagnostics, symbols, hover, navigation,
+  completion, signature help, rename preparation, code actions, and semantic
+  tokens,
+- project creation and project editing live in extension commands or
+  CLI/direct-helper flows,
+- LSP must not become a second project-authoring model.
 
 ## What OxIde Needs Next From OxVba
 
@@ -94,7 +98,10 @@ OxIde already has the right application seams:
 - an `OxVbaServices` seam,
 - and an editor surface that should stay separate from project/language-service logic.
 
-The current gap is that OxIde still shells out to the CLI for build/run and does not yet consume a first-class direct editor host API.
+The current gap is external adoption evidence: OxVba now exposes the first
+bounded direct editor host API and embedded build/run substrate, but the OxIde
+repo still needs to consume that stack before an end-to-end OxIde showcase can
+be claimed.
 
 The next OxVba-side improvements should therefore be:
 
@@ -188,9 +195,42 @@ Do not use:
 - LSP as the only project-authoring contract,
 - extension-local heuristics for module naming or reference semantics.
 
+## Host Consumption Map
+
+For OxIde-class hosts, the V0.2 consumption path is:
+- load the workspace through `oxvba-project`,
+- keep editor overlays in `HostWorkspaceSession`,
+- query semantics through `oxvba-languageservice`,
+- apply project/module/reference edits through validated `oxvba-project`
+  helper plans,
+- build/run through `EmbeddedBuildRunHost` and keep live runtime ownership in
+  `EmbeddedRunSession`,
+- keep Immediate Window and debugger UI over the same runtime session.
+
+For VS Code-class hosts, the V0.2 consumption path is:
+- start `oxvba-lsp` as the language-feature transport,
+- use one loaded workspace per LSP session,
+- rely on LSP for synchronization, diagnostics, symbols, hover, definition,
+  references, completion, signature help, rename preparation, code actions, and
+  semantic tokens,
+- implement project creation/module/reference authoring as extension commands
+  backed by OxVba CLI or direct helper semantics,
+- use a later DAP projection for debugging rather than folding debugger
+  ownership into `oxvba-lsp`.
+
+Unsupported in V0.2:
+- LSP-owned project authoring,
+- multi-root LSP semantics,
+- full VS Code extension completion,
+- designer/forms editing,
+- complete refactoring parity.
+
 ## Near-Term Execution Direction
 
 The next execution lane should:
-- tighten the documented direct host surface around OxIde,
-- add the missing typed embedded build/run facade on the OxVba side,
-- and treat VS Code as an alternate integration lane over the same semantics rather than the primary editor model.
+- keep the documented direct host surface around OxIde aligned with executable
+  evidence,
+- capture real OxIde-side consumption evidence when that repo adopts the direct
+  stack,
+- and treat VS Code as an alternate integration lane over the same semantics
+  rather than the primary editor model.

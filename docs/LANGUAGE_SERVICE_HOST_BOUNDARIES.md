@@ -24,8 +24,12 @@ For these hosts:
 - do not push project-authoring semantics down into ad hoc LSP-only heuristics.
 
 Current OxVba status:
-- `oxvba-lsp` provides bootstrap, single-root workspace loading, and full-text sync,
-- the direct semantic/query ladder is richer than the currently exposed LSP method surface,
+- `oxvba-lsp` provides bootstrap, single-root workspace loading, full-text sync,
+  diagnostics publishing, document/workspace symbols, hover, definition,
+  references, completion, signature help, rename preparation, code actions, and
+  semantic tokens,
+- the direct semantic/query ladder remains the source of truth and `oxvba-lsp`
+  is only a projection of the supported transport subset,
 - project-authoring flows should stay outside LSP for now.
 
 ### Direct-embed hosts
@@ -42,8 +46,10 @@ These hosts do not need LSP unless they specifically want protocol interoperabil
 
 Current OxIde reality:
 - OxIde already models explicit `ProjectSession` and `DocumentSession` seams,
-- but its current `OxVbaServices` seam is still CLI-oriented and build/run-focused,
-- so the next OxVba-side work should expand the direct typed host surface rather than pushing OxIde through LSP.
+- OxVba now exposes direct workspace, semantic, project-helper, embedded
+  build/run, immediate, and debugger substrates for those seams,
+- the remaining gap is real OxIde-side adoption evidence, not routing OxIde
+  through LSP.
 
 ## Responsibility Split
 
@@ -84,6 +90,9 @@ Current host-helper operations live in `oxvba-project::host_helpers` and cover:
 - initialize/shutdown behavior,
 - single-root workspace session selection,
 - full-text `didOpen` / `didChange` / `didClose` synchronization,
+- protocol projection for diagnostics, document/workspace symbols, hover,
+  definition, references, completion, signature help, prepare-rename, code
+  actions, and semantic tokens,
 - protocol-shaped errors and capability advertisement.
 
 `oxvba-lsp` must not own:
@@ -114,10 +123,12 @@ For a direct-embed host, that usually means:
 - apply file/project changes,
 - refresh the in-process language-service workspace.
 
-Near-term OxIde-driven additions should include:
-- a clearer public host-facing session API over the current `LanguageService`,
-- broader typed project-authoring operations for module rosters and references,
-- typed build/run requests and results suitable for embedded IDE consumption.
+Near-term OxIde-driven additions are now mostly consumer proof:
+- keep the public host-facing session API aligned with OxIde needs,
+- add any missing typed project-authoring operations only when concrete host
+  flows expose a gap,
+- capture evidence when OxIde consumes typed build/run and language-service
+  requests directly.
 
 The intended design for that remaining build/run area now lives in:
 - `docs/spec/OXVBA_EMBEDDED_BUILD_RUN_CONTRACT_V1.md`
@@ -154,6 +165,23 @@ OxVba does not yet claim:
 - a complete editor extension package for VS Code,
 - multi-root transport semantics,
 - host-authoring flows exposed over LSP methods.
+
+## V0.2 Host Rules
+
+OxIde/direct-embed hosts:
+- consume `HostWorkspaceSession`, `oxvba-project` helper plans, and
+  `EmbeddedBuildRunHost` directly,
+- keep document overlays synchronized into OxVba rather than reconstructing
+  compiler input from buffers,
+- avoid CLI parsing for semantic, project, build/run, immediate, or debugger
+  behavior.
+
+VS Code-class hosts:
+- consume `oxvba-lsp` for language features,
+- keep project creation/module/reference authoring in commands outside LSP,
+- treat debugging as a later DAP projection over the OxVba debugger core,
+- do not treat the current single-root LSP shell as multi-root or full IDE
+  parity.
 
 ## Practical Guidance
 
