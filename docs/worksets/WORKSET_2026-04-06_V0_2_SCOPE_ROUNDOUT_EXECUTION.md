@@ -494,8 +494,12 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.7.5` is complete for refreshing controlled COM, Office fixture, VM,
   JIT, and host evidence, with evidence in
   [V02_OFFICE_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_OFFICE_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md)
-- `bd-bqm8.7` remains in-progress; the next ready corpus bead is
-  `bd-bqm8.7.6`, covering the final Office COM corpus checklist
+- `bd-bqm8.7.6` is complete for the final Office COM corpus checklist, with
+  evidence in
+  [V02_OFFICE_COM_CORPUS_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_OFFICE_COM_CORPUS_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.7` is complete for the V0.2 Excel and Access/JET COM corpus scope;
+  real Office and provider rows remain explicitly environment-dependent and
+  unsupported residual rows remain bounded
 
 ## Delivery Rules for This Workset
 
