@@ -546,8 +546,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.11.1` is complete for rolling out performance and VBA comparison
   child beads, with evidence in
   [V02_PERFORMANCE_VBA_COMPARISON_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_VBA_COMPARISON_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.11.2` is complete for the benchmark corpus and methodology matrix,
+  with evidence in
+  [V02_PERFORMANCE_BENCHMARK_CORPUS_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_PERFORMANCE_BENCHMARK_CORPUS_2026-04-27.md)
 - `bd-bqm8.11` remains in-progress; the next ready performance scaffold bead
-  is `bd-bqm8.11.2`, covering the benchmark corpus and methodology matrix
+  is `bd-bqm8.11.3`, covering the reproducible OxVba backend runner
 
 ## Delivery Rules for This Workset
 
