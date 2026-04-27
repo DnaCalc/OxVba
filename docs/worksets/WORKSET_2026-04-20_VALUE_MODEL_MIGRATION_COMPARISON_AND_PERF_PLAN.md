@@ -2,7 +2,7 @@
 
 Date: 2026-04-20
 Owner: Codex
-Status: in-progress
+Status: complete
 
 Reopen note, 2026-04-22:
 
@@ -12,6 +12,17 @@ object identity and has partially migrated `VARIANT`, but it has not yet
 completed full internal native-layout alignment for `BSTR`, `SAFEARRAY`, or
 broad struct / UDT layout. Epic and workset status were therefore reopened so
 the tracker matches the actual implementation truth.
+
+Closure note, 2026-04-27:
+
+The reopened closure path is complete for this value-model migration workset.
+The string/BSTR, Variant/SAFEARRAY, interface/event, and narrowed
+struct/UDT/native-layout family checklist beads have passed, the final report is
+back to `final`, and
+[VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md)
+records the terminal decision. Broad native struct-overlay and unconstrained
+UDT-byref ABI parity remain explicitly outside this migration scope unless a
+later workset expands scope.
 
 ## 1. Purpose
 
@@ -3034,6 +3045,13 @@ Child beads:
    - completion evidence:
      - the final report and workset both return to `final` / `complete` only
        after the family closure checklist beads are closed.
+   - landed 2026-04-27:
+     - [VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/value_model_migration/VALUE_MODEL_MIGRATION_FINAL_CLOSURE_CHECKLIST_2026-04-27.md)
+       records that `vmm-d8`, `vmm-e7`, `vmm-f6`, `vmm-g7`, and `vmm-h4`
+       passed
+     - the final report status is `final`
+     - this value-model migration workset status is `complete` for the current
+       scoped migration
 
 ### 11.12 Bead-Plan Coverage Check
 
