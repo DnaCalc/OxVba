@@ -8,7 +8,7 @@ use oxvba_host::{
     RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
     resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
-use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
+use oxvba_runtime::{Variant, value_tags::EMPTY_TAG};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -198,7 +198,7 @@ fn run_project(args: Vec<String>) {
         println!("BOOTSTRAP:{}", resolved.fingerprint());
     }
 
-    let result = engine.execute_project_with_snapshot_phased(&loaded.manifest);
+    let result = engine.execute_project_with_variant_snapshot_phased(&loaded.manifest);
 
     match result {
         Ok(values) => {
@@ -213,7 +213,7 @@ fn run_project(args: Vec<String>) {
             if parsed.dump_values {
                 let payload = values
                     .iter()
-                    .map(format_runtime_value)
+                    .map(format_variant_value)
                     .collect::<Vec<_>>()
                     .join("|");
                 println!("VALUES:{payload}");
@@ -2037,15 +2037,9 @@ fn run_execute(cli_args: Vec<String>) {
     let dump_slots = args.as_ref().map(|a| a.dump_slots).unwrap_or(false);
     let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
 
-    let execution = if dump_slots || dump_values {
-        engine
-            .execute_source_with_value_snapshot(&source)
-            .map(|values| ExecutionResult { values })
-    } else {
-        engine
-            .execute_source_with_snapshot(&source)
-            .map(|values| ExecutionResult { values })
-    };
+    let execution = engine
+        .execute_source_with_variant_snapshot(&source)
+        .map(|values| ExecutionResult { values });
 
     match execution {
         Ok(result) => {
@@ -2067,7 +2061,7 @@ fn run_execute(cli_args: Vec<String>) {
                 let payload = result
                     .values
                     .iter()
-                    .map(format_runtime_value)
+                    .map(format_variant_value)
                     .collect::<Vec<_>>()
                     .join("|");
                 println!("VALUES:{payload}");
@@ -2091,7 +2085,7 @@ struct RunArgs {
 }
 
 struct ExecutionResult {
-    values: Vec<RuntimeValue>,
+    values: Vec<Variant>,
 }
 
 #[derive(Debug)]
@@ -2224,21 +2218,26 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     })
 }
 
-fn format_runtime_value(value: &RuntimeValue) -> String {
-    match value {
-        RuntimeValue::Empty => "empty".to_string(),
-        RuntimeValue::Null => "null".to_string(),
-        RuntimeValue::ErrorCode(code) => format!("error:{code}"),
-        RuntimeValue::I32(value) => format!("i32:{value}"),
-        RuntimeValue::I64(value) => format!("i64:{value}"),
-        RuntimeValue::F64(value) => format!("f64:{}", value.as_f64()),
-        RuntimeValue::Decimal(value) => format!("decimal:{}", value),
-        RuntimeValue::Currency(value) => format!("currency:{}", value),
-        RuntimeValue::Bool(value) => format!("bool:{value}"),
-        RuntimeValue::String(value) => format!("string:{:?}", value.as_str()),
-        RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
-        RuntimeValue::Object(handle) => format!("object:{handle}"),
-        RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),
+fn format_variant_value(value: &Variant) -> String {
+    match value.to_runtime_value() {
+        Ok(value) => match value {
+            oxvba_runtime::RuntimeValue::Empty => "empty".to_string(),
+            oxvba_runtime::RuntimeValue::Null => "null".to_string(),
+            oxvba_runtime::RuntimeValue::ErrorCode(code) => format!("error:{code}"),
+            oxvba_runtime::RuntimeValue::I32(value) => format!("i32:{value}"),
+            oxvba_runtime::RuntimeValue::I64(value) => format!("i64:{value}"),
+            oxvba_runtime::RuntimeValue::F64(value) => format!("f64:{}", value.as_f64()),
+            oxvba_runtime::RuntimeValue::Decimal(value) => format!("decimal:{}", value),
+            oxvba_runtime::RuntimeValue::Currency(value) => format!("currency:{}", value),
+            oxvba_runtime::RuntimeValue::Bool(value) => format!("bool:{value}"),
+            oxvba_runtime::RuntimeValue::String(value) => {
+                format!("string:{:?}", value.as_str())
+            }
+            oxvba_runtime::RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
+            oxvba_runtime::RuntimeValue::Object(handle) => format!("object:{handle}"),
+            oxvba_runtime::RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),
+        },
+        Err(err) => format!("variant:{value:?}:projection-error:{err}"),
     }
 }
 
@@ -2905,7 +2904,7 @@ End Function
             root_object_name: None,
         });
         engine
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("convention-mode Sub Main project should execute");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
@@ -2994,7 +2993,7 @@ End Function
             root_object_name: None,
         });
         engine
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("convention-mode top-level mainline project should execute");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
@@ -3131,7 +3130,7 @@ End Function
             root_object_name: None,
         });
         engine
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("overridden startup procedure should execute");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
