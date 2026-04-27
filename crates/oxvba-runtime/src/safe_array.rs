@@ -1161,9 +1161,9 @@ mod tests {
 
     #[test]
     fn typed_i2_safearray_preserves_intrinsic_element_vartype() {
-        let array = SafeArray::from_typed_values(
+        let array = SafeArray::from_typed_variants(
             VT_I2_VALUE,
-            vec![RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            vec![Variant::from_i16(4), Variant::from_i16(9)],
         )
         .expect("typed array");
         assert_eq!(array.element_vartype(), VT_I2_VALUE);
@@ -1176,9 +1176,9 @@ mod tests {
 
     #[test]
     fn safearray_descriptor_advertises_special_typed_element_metadata() {
-        let bstr = SafeArray::from_typed_values(
+        let bstr = SafeArray::from_typed_variants(
             VT_BSTR_VALUE,
-            vec![RuntimeValue::String(BStr::from("Alpha"))],
+            vec![Variant::from_string(BStr::from("Alpha"))],
         )
         .expect("typed bstr array");
         assert_eq!(
@@ -1186,9 +1186,11 @@ mod tests {
             FADF_HAVEVARTYPE_VALUE | FADF_BSTR_VALUE
         );
 
-        let dispatch = SafeArray::from_typed_values(
+        let dispatch = SafeArray::from_typed_variants(
             VT_DISPATCH_VALUE,
-            vec![RuntimeValue::Object(ObjectRef::from_compat_identity(41))],
+            vec![Variant::from_object_ref(ObjectRef::from_compat_identity(
+                41,
+            ))],
         )
         .expect("typed dispatch array");
         assert_eq!(
@@ -1196,9 +1198,11 @@ mod tests {
             FADF_HAVEVARTYPE_VALUE | FADF_DISPATCH_VALUE
         );
 
-        let unknown = SafeArray::from_typed_values(
+        let unknown = SafeArray::from_typed_variants(
             VT_UNKNOWN_VALUE,
-            vec![RuntimeValue::Object(ObjectRef::from_compat_identity(77))],
+            vec![Variant::from_object_ref(ObjectRef::from_compat_identity(
+                77,
+            ))],
         )
         .expect("typed unknown array");
         assert_eq!(
@@ -1209,9 +1213,9 @@ mod tests {
 
     #[test]
     fn typed_safearray_variant_elements_preserve_intrinsic_carriers_before_projection() {
-        let array = SafeArray::from_typed_values(
+        let array = SafeArray::from_typed_variants(
             VT_I2_VALUE,
-            vec![RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            vec![Variant::from_i16(4), Variant::from_i16(9)],
         )
         .expect("typed array");
 
@@ -1246,11 +1250,11 @@ mod tests {
 
     #[test]
     fn typed_bstr_safearray_roundtrips_strings_without_variant_normalization() {
-        let array = SafeArray::from_typed_values(
+        let array = SafeArray::from_typed_variants(
             VT_BSTR_VALUE,
             vec![
-                RuntimeValue::String(BStr::from("Alpha")),
-                RuntimeValue::String(BStr::from("Beta")),
+                Variant::from_string(BStr::from("Alpha")),
+                Variant::from_string(BStr::from("Beta")),
             ],
         )
         .expect("typed bstr array");
@@ -1267,9 +1271,9 @@ mod tests {
     #[test]
     fn typed_dispatch_safearray_preserves_intrinsic_object_payloads() {
         let object = ObjectRef::from_compat_identity(41);
-        let array = SafeArray::from_typed_values(
+        let array = SafeArray::from_typed_variants(
             VT_DISPATCH_VALUE,
-            vec![RuntimeValue::Object(object.clone())],
+            vec![Variant::from_object_ref(object.clone())],
         )
         .expect("typed dispatch array");
         assert_eq!(array.element_vartype(), VT_DISPATCH_VALUE);
@@ -1281,9 +1285,9 @@ mod tests {
     #[test]
     fn typed_unknown_safearray_preserves_intrinsic_object_payloads() {
         let object = ObjectRef::from_compat_identity(77);
-        let array = SafeArray::from_typed_values(
+        let array = SafeArray::from_typed_variants(
             VT_UNKNOWN_VALUE,
-            vec![RuntimeValue::Object(object.clone())],
+            vec![Variant::from_object_ref(object.clone())],
         )
         .expect("typed unknown array");
         assert_eq!(array.element_vartype(), VT_UNKNOWN_VALUE);
