@@ -1721,7 +1721,7 @@ mod tests {
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, RuntimeValue,
+        CurrencyValue, Decimal96, F64Value, RuntimeValue, Variant,
         bstr::BStr,
         safe_array::{
             SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_I2_VALUE,
@@ -1988,11 +1988,11 @@ mod tests {
     #[test]
     fn safe_array_variant_roundtrips_through_windows_bridge() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        let value = ComValue::ArrayIntent(SafeArray::from_values(vec![
-            RuntimeValue::I32(4),
-            RuntimeValue::Bool(true),
-            RuntimeValue::String(BStr::from("Hello")),
-            RuntimeValue::Null,
+        let value = ComValue::ArrayIntent(SafeArray::from_variants(vec![
+            Variant::from_i32(4),
+            Variant::from_bool(true),
+            Variant::from_string(BStr::from("Hello")),
+            Variant::null(),
         ]));
         let mut resolve_object =
             |_handle| Err("object dispatch resolution not expected".to_string());
@@ -2032,12 +2032,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_I2 SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_I2_VALUE,
                         vec![
-                            RuntimeValue::I32(12),
-                            RuntimeValue::I32(-4),
-                            RuntimeValue::I32(321),
+                            Variant::from_i16(12),
+                            Variant::from_i16(-4),
+                            Variant::from_i16(321)
                         ],
                     )
                     .expect("typed i2 array"),
@@ -2070,12 +2070,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_I8 SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_I8_VALUE,
                         vec![
-                            RuntimeValue::I32(12),
-                            RuntimeValue::I64(5_000_000_000),
-                            RuntimeValue::I32(-4),
+                            Variant::from_i64(12),
+                            Variant::from_i64(5_000_000_000),
+                            Variant::from_i64(-4),
                         ],
                     )
                     .expect("typed i8 array"),
@@ -2108,12 +2108,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_UI8 SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_UI8_VALUE,
                         vec![
-                            RuntimeValue::I32(12),
-                            RuntimeValue::I64(5_000_000_000),
-                            RuntimeValue::I32(321),
+                            Variant::from_i64(12),
+                            Variant::from_i64(5_000_000_000),
+                            Variant::from_i64(321),
                         ],
                     )
                     .expect("typed ui8 array"),
@@ -2146,12 +2146,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_R4_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_R4_VALUE,
                         vec![
-                            RuntimeValue::F64(F64Value::from_single_f64(12.5)),
-                            RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
-                            RuntimeValue::F64(F64Value::from_single_f64(321.0)),
+                            Variant::from_f32(12.5),
+                            Variant::from_f32(-4.25),
+                            Variant::from_f32(321.0),
                         ],
                     )
                     .expect("typed r4 array"),
@@ -2188,12 +2188,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_CY_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_CY_VALUE,
                         vec![
-                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
-                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
-                            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+                            Variant::from_currency_scaled_i64(125_000),
+                            Variant::from_currency_scaled_i64(-42_500),
+                            Variant::from_currency_scaled_i64(3_210_000),
                         ],
                     )
                     .expect("typed currency array"),
@@ -2237,12 +2237,16 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_DECIMAL SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_DECIMAL_VALUE,
                         vec![
-                            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
-                            RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
-                            RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
+                            Variant::from_decimal96(
+                                Decimal96::from_parts(123_450, 0, 0, 3, false,)
+                            ),
+                            Variant::from_decimal96(Decimal96::from_parts(42_500, 0, 0, 4, true,)),
+                            Variant::from_decimal96(Decimal96::from_parts(
+                                3_210_000, 0, 0, 4, false,
+                            )),
                         ],
                     )
                     .expect("typed decimal array"),
@@ -2275,12 +2279,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_DATE_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_DATE_VALUE,
                         vec![
-                            RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
-                            RuntimeValue::F64(F64Value::from_date_f64(12.5)),
-                            RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
+                            Variant::from_date_f64(45200.25),
+                            Variant::from_date_f64(12.5),
+                            Variant::from_date_f64(-4.25),
                         ],
                     )
                     .expect("typed date array"),
@@ -2313,12 +2317,12 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_R8_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_R8_VALUE,
                         vec![
-                            RuntimeValue::F64(F64Value::from_f64(12.5)),
-                            RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                            RuntimeValue::F64(F64Value::from_f64(321.0)),
+                            Variant::from_f64(12.5),
+                            Variant::from_f64(-4.25),
+                            Variant::from_f64(321.0),
                         ],
                     )
                     .expect("typed r8 array"),
@@ -2354,11 +2358,11 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_BSTR SAFEARRAY"),
                 ComValue::ArrayIntent(
-                    SafeArray::from_typed_values(
+                    SafeArray::from_typed_variants(
                         VT_BSTR_VALUE,
                         vec![
-                            RuntimeValue::String(BStr::from("Alpha")),
-                            RuntimeValue::String(BStr::from("Beta")),
+                            Variant::from_string(BStr::from("Alpha")),
+                            Variant::from_string(BStr::from("Beta")),
                         ],
                     )
                     .expect("typed bstr array"),
