@@ -518,8 +518,11 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.8.5` is complete for OxIde and VS Code host-consumption guidance,
   with evidence in
   [V02_LANGUAGE_SERVICE_HOST_CONSUMPTION_GUIDANCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_HOST_CONSUMPTION_GUIDANCE_2026-04-27.md)
-- `bd-bqm8.8` remains in-progress; the next ready language-service bead is
-  `bd-bqm8.8.6`, covering the final language-service checklist
+- `bd-bqm8.8.6` is complete for the final language-service checklist, with
+  evidence in
+  [V02_LANGUAGE_SERVICE_FINAL_CHECKLIST_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_LANGUAGE_SERVICE_FINAL_CHECKLIST_2026-04-27.md)
+- `bd-bqm8.8` is complete for the V0.2 language-service roundout; the next
+  ready V0.2 roundout bead is `bd-bqm8.9`
 
 ## Delivery Rules for This Workset
 
