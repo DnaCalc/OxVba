@@ -2410,6 +2410,10 @@ Child beads:
        shares the retained `Variant` result bridge for scalars, arrays,
        dispatch, and unknowns, so runtime projection occurs once at the
        explicit compatibility API boundary
+     - progress landed: Standard HAL native COM activation now materializes
+       retained object `Variant` carriers directly for `create_object_variant`
+       instead of returning a private `RuntimeValue::Object` and converting it
+       back
      - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
        helper seams, public VM/JIT compatibility snapshot/result aliases,
        remaining host service helper families, public legacy SafeArray compatibility APIs,

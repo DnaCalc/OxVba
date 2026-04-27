@@ -136,7 +136,8 @@ Current value-model migration note (2026-04-25):
 71. HAL marshaling conformance now validates scalar/subtype carrier fidelity with retained `Variant` roundtrips rather than `RuntimeValue` projections.
 72. Windows COM SAFEARRAY and `IEnumVARIANT` result materialization now builds retained `Variant` array carriers first, with `RuntimeValue::ArrayIntent` projection isolated to the explicit legacy runtime-result API boundary.
 73. Windows COM legacy `variant_to_runtime_value()` now shares the retained `Variant` result bridge for scalars, arrays, dispatch, and unknowns, so runtime projection occurs once at the explicit compatibility API boundary.
-74. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
+74. Standard HAL native COM activation now materializes retained object `Variant` carriers directly for `create_object_variant()` instead of returning a private `RuntimeValue::Object` and converting it back.
+75. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 
 ## 4. Why this order is correct
 

@@ -865,6 +865,14 @@ Validation:
      - result: `28` passed
 211. `./scripts/check-governance.ps1`
      - result: passed
+212. `cargo fmt -p oxvba-hal --check`
+     - result: passed
+213. `cargo check -p oxvba-hal`
+     - result: passed
+214. `cargo test -p oxvba-hal create_object --lib`
+     - result: `1` passed
+215. `./scripts/check-governance.ps1`
+     - result: passed
 
 Implementation progress:
 
@@ -1766,6 +1774,10 @@ Implementation progress:
      retained `variant_to_variant_value()` path and performs a single final
      compatibility projection, removing duplicate runtime-specific
      SAFEARRAY/dispatch/unknown helper logic from the public result bridge.
+183. Standard HAL native COM activation now returns retained object
+     `Variant` carriers directly from `activate_variant_object_for_prog_id_name`;
+     the previous private `RuntimeValue::Object` activation detour was removed
+     from the `create_object_variant` path.
 
 Remaining blocker:
 
@@ -2129,3 +2141,6 @@ Remaining blocker:
 28. Windows COM legacy `variant_to_runtime_value()` now shares the retained
     `Variant` result bridge for scalars, arrays, dispatch, and unknowns, so
     runtime projection occurs once at the explicit compatibility API boundary.
+29. Standard HAL native COM activation now materializes the retained object
+    `Variant` directly for `create_object_variant()` instead of returning a
+    private `RuntimeValue::Object` and converting it back.
