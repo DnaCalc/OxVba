@@ -524,6 +524,14 @@ Rollout sync, 2026-04-27:
 - `bd-bqm8.8` is complete for the V0.2 language-service roundout; the next
   ready V0.2 roundout bead is `bd-bqm8.9`
 
+`v02.9` rollout, 2026-04-27:
+
+- `bd-bqm8.9.1` is complete for rolling out non-primary host validation child
+  beads, with evidence in
+  [V02_NON_PRIMARY_HOST_ROLLOUT_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_NON_PRIMARY_HOST_ROLLOUT_2026-04-27.md)
+- `bd-bqm8.9` remains in-progress; the next ready non-primary host validation
+  bead is `bd-bqm8.9.2`, covering active Linux, macOS, and wasm validation jobs
+
 ## Delivery Rules for This Workset
 
 - support-only audit or doc beads do not close any capability epic here
