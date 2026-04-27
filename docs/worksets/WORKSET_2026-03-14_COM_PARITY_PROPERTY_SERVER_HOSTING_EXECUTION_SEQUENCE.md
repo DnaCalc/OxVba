@@ -141,6 +141,7 @@ Current value-model migration note (2026-04-25):
 76. VM/JIT retained byte-SAFEARRAY resize/bounds tests now use `SafeArray::from_typed_variants_nd`; remaining typed-value constructors in that focused area are compatibility snapshot assertions.
 77. Windows COM bridge retained SAFEARRAY roundtrip tests now build expected carriers through `SafeArray::from_variants` / `from_typed_variants`, leaving legacy constructors only on explicit runtime-result compatibility assertions.
 78. COM model and standard HAL retained bridge tests now construct SAFEARRAY setup carriers through `SafeArray::from_variants`, leaving `from_values` only on explicit legacy compatibility expectations in those focused tests.
+79. Final `vmm-e6` projection classification and the current `vmm-e7` closure checklist are recorded: remaining `RuntimeValue` surfaces are compatibility contracts, while the internal late-bound/general value carrier is retained as Variant/SAFEARRAY.
 74. Standard HAL native COM activation now materializes retained object `Variant` carriers directly for `create_object_variant()` instead of returning a private `RuntimeValue::Object` and converting it back.
 75. Legacy `SafeArray`/host/COM/JIT compatibility APIs remain migration/classification work and do not close the `IP-03` `VARIANT`/SAFEARRAY foundation area.
 

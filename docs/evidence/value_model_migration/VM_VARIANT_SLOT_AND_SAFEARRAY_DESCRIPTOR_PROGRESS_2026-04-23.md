@@ -1828,6 +1828,12 @@ Implementation progress:
      SAFEARRAY setup carriers through `SafeArray::from_variants`, leaving
      `SafeArray::from_values` only on explicit legacy `RuntimeValue`
      compatibility expectations in those focused tests.
+191. Final `RuntimeValue` projection classification is complete in
+     `REMAINING_RUNTIMEVALUE_PROJECTION_CLASSIFICATION_2026-04-27.md`: the
+     remaining projection surfaces are public compatibility contracts or
+     explicit compatibility assertions, not production internal value storage.
+192. The current Variant/SAFEARRAY intrinsic closure checklist is recorded in
+     `VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md`.
 
 Remaining blocker:
 
@@ -2216,3 +2222,6 @@ Remaining blocker:
 36. COM model and standard HAL retained bridge tests now use retained
     `from_variants` setup carriers, leaving legacy constructors only on
     compatibility result assertions in that scan slice.
+37. The remaining `RuntimeValue` projection surfaces have final disposition as
+    compatibility contracts, and the current Variant/SAFEARRAY intrinsic
+    closure checklist records `vmm-e6` / `vmm-e7` completion.

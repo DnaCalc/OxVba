@@ -2442,15 +2442,10 @@ Child beads:
      - progress landed: COM model and standard HAL retained bridge tests now
        construct SAFEARRAY setup carriers through `SafeArray::from_variants`,
        leaving legacy constructors to explicit compatibility expectations
-     - remaining blocker: `vmm-e6` still remains open until the interpreter/JIT
-       helper seams, public VM/JIT compatibility snapshot/result aliases,
-       remaining host service helper families, public legacy SafeArray compatibility APIs,
-       COM compatibility projection APIs that still expose `RuntimeValue`,
-       remaining embedded/immediate/debugger display/result compatibility APIs
-       that still expose `RuntimeValue`, and remaining manual pointer-helper / registry
-       compatibility seams are audited and either migrated to exact BSTR,
-       Windows/COM `VARIANT`, and SAFEARRAY carriers or explicitly classified
-       as projection boundaries outside the internal value model
+     - final classification: `vmm-e6` delivery is complete. The remaining
+       `RuntimeValue` surfaces are public compatibility contracts or explicit
+       compatibility assertions, with retained Variant/SAFEARRAY companions on
+       the production paths in scope.
    - completion evidence:
      - the workset can describe the internal late-bound/general value carrier
        as exactly Windows/COM `VARIANT`, not only native-shaped or
@@ -2467,7 +2462,8 @@ Child beads:
      - the workset and final report inputs explicitly state whether the
        Variant/SAFEARRAY lane is intrinsically migrated or still bounded, with
        the checklist result recorded in
-       `docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-23.md`.
+      `docs/evidence/value_model_migration/VARIANT_SAFEARRAY_INTRINSIC_CLOSURE_CHECKLIST_2026-04-27.md`.
+    - status: complete; current checklist recorded.
 
 Post-`vmm-d6` rollout refresh:
 

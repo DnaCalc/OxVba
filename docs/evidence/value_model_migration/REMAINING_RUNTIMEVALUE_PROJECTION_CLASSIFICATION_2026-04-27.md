@@ -5,8 +5,9 @@ retained VM/JIT slot migration, Windows COM result bridge narrowing, HAL
 companion migration, host/immediate/debugger retained display migration, and
 recent Windows result-boundary cleanup.
 
-Status: in-progress. This note does not close `vmm-e6`; it narrows the
-remaining migration surface so the next delivery work is executable.
+Status: final `vmm-e6` projection classification. This note closes the
+remaining classification blocker for `vmm-e6`; `vmm-e7` remains the separate
+closure-checklist bookkeeping step.
 
 ## Retained Carrier Floor
 
@@ -51,28 +52,42 @@ evidence that retained slot storage is still semantic-value backed:
 8. Pointer-helper `RuntimeValue` registration/readback APIs remain legacy
    wrappers over retained pointer-helper `Variant` APIs.
 
-## Remaining Delivery Paths
+## Final Delivery Disposition
 
-The remaining executable delivery work is:
+The remaining delivery paths from the initial classification were resolved as
+follows:
 
 1. Reduce or classify the interpreter/JIT helper test scaffolds that still
    construct retained arrays through `SafeArray::from_values` instead of
-   `SafeArray::from_variants`. These are mostly tests, but converting them
-   lowers false-positive scan noise and keeps new examples on retained APIs.
+   `SafeArray::from_variants`.
+   - Disposition: retained-path VM/JIT/runtime/COM/HAL tests were migrated to
+     `SafeArray::from_variants`, `from_typed_variants`, or
+     `from_typed_variants_nd`; remaining hits are explicit compatibility API
+     tests or compatibility result assertions.
 2. Add retained public alternatives only where a compatibility API is still the
-   only available path for a production caller. Current scan shows no obvious
-   production-only retained path without a companion, but this must be checked
-   per call family before `vmm-e6` closure.
+   only available path for a production caller.
+   - Disposition: final scan found retained companions for the production
+     surfaces in scope: VM/JIT snapshots, host/project/immediate/debugger
+     surfaces, HAL service families, COM model/Windows bridge, dynamic COM,
+     and pointer-helper retained entry points.
 3. Decide whether to keep public compatibility APIs indefinitely or gate some
-   of them to tests/features after downstream callers are migrated. This is an
-   API-compatibility decision, not a hidden storage migration blocker.
+   of them to tests/features after downstream callers are migrated.
+   - Disposition: keep compatibility APIs as public legacy projection
+     contracts. They are not internal value storage and are documented as
+     projections beside retained Variant/SAFEARRAY companions.
 4. Run a final scan that separates test-only assertions, public compatibility
    APIs, and production retained paths before `vmm-e7` can run the closure
    checklist.
+   - Disposition: completed. The remaining `RuntimeValue`/`SafeArray` scan
+     hits are public compatibility bridge APIs, explicit compatibility result
+     assertions, or tests of those compatibility APIs.
 
-## Current Blocker
+## Final Scan Result
 
-`vmm-e6` remains in-progress because the remaining projection surface has not
-yet been fully reduced or formally classified at every public API boundary.
-This blocker is actionable through the delivery paths above; it is not a
-global halt condition.
+`vmm-e6` no longer has an internal carrier blocker. The retained value floor is
+the internal production path: general VM/JIT slots, SAFEARRAY payloads, Windows
+COM result materialization, HAL Variant companions, host/project/immediate/
+debugger retained result surfaces, and pointer-helper retained entry points all
+have `Variant`/SAFEARRAY carriers before any legacy projection. Remaining
+`RuntimeValue` APIs are compatibility contracts and do not own the internal
+late-bound/general value model.
