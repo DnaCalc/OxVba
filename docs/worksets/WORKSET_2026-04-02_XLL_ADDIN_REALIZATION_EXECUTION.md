@@ -54,8 +54,12 @@ Current execution state:
   `.oxb` runtime session
 - evidence:
   [XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md)
-- next delivery slice: publish the validation matrix and exact supported subset
-  without claiming Excel-loaded parity from source-generation tests alone
+- `bd-xll1.4` is complete: validation matrix and exact supported subset are
+  published in
+  [XLL_VALIDATION_MATRIX_AND_BOUNDARY_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_VALIDATION_MATRIX_AND_BOUNDARY_2026-04-27.md)
+- remaining blocker: Excel-loaded XLL validation is not proven in this run; the
+  next bead must build/load a generated `.xll` in Excel and record registration
+  plus invocation evidence before this parent workset can close
 
 ## Relationship To Prior Work
 

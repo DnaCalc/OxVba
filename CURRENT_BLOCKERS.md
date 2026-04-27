@@ -51,6 +51,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### BLK-XLL-EXCEL-HOST-001: Excel-loaded XLL validation not yet proven
+- Impact:
+  - Blocks closure of `bd-xll1` / `WORKSET_2026-04-02_XLL_ADDIN_REALIZATION_EXECUTION.md`.
+  - Source-generation coverage exists for XLL registration and runtime invocation, but Excel-host registration/invocation parity is not yet evidenced.
+- Current state:
+  - `bd-xll1.2` delivered generated `xlAutoOpen` / `xlfRegister` registration source from native export metadata.
+  - `bd-xll1.3` delivered generated XLL export wrappers that bridge XLOPER12-shaped arguments/results to `RuntimeValue` procedure invocation.
+  - `bd-xll1.4` published the validation matrix and explicit non-claims.
+- Exact unblocking steps:
+  - build or stage a generated `.xll` binary from the current wrapper source,
+  - load it in Excel on a Windows host,
+  - verify `xlAutoOpen` registration,
+  - invoke at least one exported function from Excel,
+  - capture pass/fail evidence and then close `bd-xll1.5` and the parent lane if successful.
+
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
 - Impact:
   - Blocks `IP-03` Windows late-bound COM client parity.
