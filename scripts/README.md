@@ -3,8 +3,14 @@
 - `meta-check.ps1`: one-command readiness check for this repository.
 - `check-governance.ps1`: single governance pass for doctrine/registry checks (doc presence, gate sync, deferred-gate schema, PMR follow-up links, integration catalog integrity, PMR diagnostic manifest sync).
 - `docs-check.ps1`: verifies required top-level docs exist.
-- `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
-- `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
+- `run-smoke.ps1`: executes the smoke VBA sample through the CLI and prints retained value output.
+- `run-conformance.ps1`: runs the manifest-selected conformance corpus and checks retained `VALUES:` output against golden expectations.
+- `stage-xll-scalar-addin.ps1`: builds and stages the deterministic XLL scalar Addin fixture, copying source inputs, build transcript, artifact, and manifest under `target/xll-host-validation/` for later Excel-host validation.
+- `stage-xll-array-addin.ps1`: builds and stages the deterministic XLL array Addin fixture, copying source inputs, build transcript, artifact, and manifest under `target/xll-host-validation/` for later Excel-host validation.
+- `stage-xll-application-addin.ps1`: builds and stages the XLL Application Addin fixture, including the host-injected `Application.Value` surface used to validate Excel root object injection.
+- `run-xll-excel-load-smoke.ps1`: uses hidden Excel COM automation to load and unload a staged scalar Addin `.xll`, capturing Excel host metadata and pass/fail JSON under `target/xll-host-validation/excel-load/`.
+- `run-xll-excel-worksheet-smoke.ps1`: loads a staged Addin `.xll` in Excel, writes expected worksheet formulas, recalculates, and compares observed cell values against the selected expected CSV.
+- `run-xll-excel-application-identity-smoke.ps1`: starts separate host and decoy Excel instances, loads a staged Application Addin `.xll` only in the host, verifies `ExcelHwnd()` returns the host `Application.Hwnd`, and checks XLL trace output for matching host and non-matching decoy ROT candidates.
 - `run-com-conformance.ps1`: COM conformance orchestrator (required registrationless lane + optional registered external-server matrix + optional registered event-callback lane) with summary artifacts under `docs/evidence/conformance/com/` (`COM_CONFORMANCE_RUN_*` + `COM_CONFORMANCE_LATEST.*`); exposes registered-event callback override surface (`-RegisteredEventExpectedArgCount`, `-RegisteredEventPath`, `-RegisteredEventConnectionPointIid`, `-RegisteredEventDispatchMember`, `-RegisteredEventTriggerRequiresArg`, `-RegisteredEventTriggerInvokeKind`, `-RegisteredEventPollIterations`, `-RegisteredEventPollDelayMs`).
 - `run-com-registrationless.ps1`: runs registrationless controlled COM client end-to-end lane (`com_client_end_to_end`) and emits lane artifacts.
 - `run-com-registered.ps1`: runs registered external COM client lane (`com_client_registered_lane`, ignored tests) with selected ProgID (`-ProgId` / `OXVBA_REGISTERED_COM_PROGID`) and emits lane artifacts.

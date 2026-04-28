@@ -1,0 +1,4 @@
+function,formula,expected
+MakeVectorFirst,"=INDEX(MakeVector(),1,1)",10
+MakeVectorThird,"=INDEX(MakeVector(),3,1)",30
+SumArrayLiteral,"=SumArray({1,2,3})",6

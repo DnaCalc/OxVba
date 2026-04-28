@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 Owner: Codex
-Status: in-progress
+Status: complete
 
 ## Near-Term Priority Position
 
@@ -50,7 +50,7 @@ Current execution state:
 - evidence:
   [XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_REGISTRATION_SOURCE_GENERATION_2026-04-27.md)
 - `bd-xll1.3` is complete: generated XLL exports now bridge bounded XLOPER12
-  arguments/results to `RuntimeValue` procedure invocation over an embedded
+  arguments/results to retained `Variant` procedure invocation over an embedded
   `.oxb` runtime session
 - evidence:
   [XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_RUNTIME_INVOCATION_BRIDGE_2026-04-27.md)
@@ -62,9 +62,22 @@ Current execution state:
   lookup and a compile smoke test that produces a non-empty `.xll` artifact
 - evidence:
   [XLL_COMPILE_STAGING_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_COMPILE_STAGING_2026-04-27.md)
-- remaining blocker: Excel-loaded XLL validation is not proven in this run; the
-  next host validation bead must load a generated `.xll` in Excel and record
-  registration plus invocation evidence before this parent workset can close
+- `bd-xll1.6` is complete: generated XLL source now emits the Excel scalar
+  `XLOPER12` ABI shape (`val` union followed by `xltype`), uses the correct
+  `xltypeInt = 0x0800` constant, decodes XLOPER12 arguments by `xltype`, and
+  returns owned counted-wide strings through `xlbitDLLFree` / `xlAutoFree12`
+- `bd-xll1.7` is complete: `oxvba build` now gives `OutputType=Addin` a
+  concrete package handoff by defaulting to `<ProjectName>.xll`, generating an
+  XLL shim from validated native export metadata, and compiling it through
+  `ShimOutputType::Xll`
+- `bd-xll1.5` is complete through the staged child workset
+  [WORKSET_2026-04-28_XLL_EXCEL_HOST_VALIDATION_EXECUTION.md](/C:/Work/DnaCalc/OxVba/docs/worksets/WORKSET_2026-04-28_XLL_EXCEL_HOST_VALIDATION_EXECUTION.md):
+  Excel 16.0 build 19929 loaded the generated scalar fixture `.xll`, `xlAutoOpen`
+  registered all four scoped exports, and worksheet formulas returned the
+  expected Double, String, Boolean, and Long values
+- final Excel-host evidence:
+  [XLL_EXCEL_REGISTRATION_TRACE_2026-04-28.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_EXCEL_REGISTRATION_TRACE_2026-04-28.md) and
+  [XLL_EXCEL_WORKSHEET_INVOCATION_2026-04-28.md](/C:/Work/DnaCalc/OxVba/docs/evidence/XLL_EXCEL_WORKSHEET_INVOCATION_2026-04-28.md)
 
 ## Relationship To Prior Work
 

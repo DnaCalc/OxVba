@@ -61,13 +61,13 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 | `HostModule` | `Host` | `.oxb` bundle | not required |
 | `Library` | `Library` | library-style project semantics | not required |
 | `Exe` | `Source` | executable/program-style semantics | required via explicit `EntryPoint`, unique top-level mainline, or unique `Sub Main` |
-| `Addin` | `Library` | add-in-style semantics | optional; top-level mainline rejected |
+| `Addin` | `Library` | XLL add-in package via `oxvba build` | optional; top-level mainline rejected |
 | `ComServer` | `Library` | in-process COM server semantics | not required (uses creatable classes) |
 | `ComExe` | `Library` | out-of-process COM server semantics | not required (uses creatable classes) |
 
 **OxVBA extension note:** top-level executable statements are an OxVBA hosting/project extension, not an Office-VBA parity claim. In `.basproj` program-style execution (`OutputType=Exe`), a module containing top-level executable statements may supply the startup mainline when no explicit `EntryPoint` is configured. In the current bounded lane, top-level executable statements are rejected for `Library`, `Addin`, `ComServer`, and `ComExe`.
 
-**Packaging note:** `OutputType` is the semantic project kind, not a guarantee of today's emitted file shape. `BuildTarget` controls the physical packaging lane. `Bundle` is the stable default and emits the canonical `.oxb` artifact. `WrapperExe` and `WrapperLibrary` are wrapper/native-hosting lanes over that canonical bundle, not a second compiler path.
+**Packaging note:** `OutputType` is primarily the semantic project kind. For the current Addin lane, `OutputType=Addin` also selects the XLL package handoff for `oxvba build` and defaults the output to `<ProjectName>.xll`. For other project kinds, `BuildTarget` controls the physical packaging lane. `Bundle` emits the canonical `.oxb` artifact. `WrapperExe` and `WrapperLibrary` are wrapper/native-hosting lanes over that canonical bundle, not a second compiler path.
 
 **Planned extension:** a future `WinExe` `OutputType` is expected for windowed executable semantics distinct from console/program-style `Exe`. That future lane is intentionally separate from the physical build-target choice.
 

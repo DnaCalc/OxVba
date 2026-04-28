@@ -83,10 +83,7 @@ pub fn serialize_basproj_xml(basproj: &BasProj) -> String {
     {
         xml.push_str("  <ItemGroup>\n");
         for reference in &basproj.project_references {
-            xml.push_str(&format!(
-                "    <ProjectReference Include=\"{}\" />\n",
-                xml_escape(&reference.include)
-            ));
+            serialize_project_reference_item(&mut xml, reference);
         }
         for reference in &basproj.com_references {
             serialize_com_reference_item(&mut xml, reference);
@@ -280,14 +277,25 @@ pub fn generate_basproj_xml(
     if has_project_refs || has_com_refs {
         xml.push_str("  <ItemGroup>\n");
         for reference in &manifest.references {
-            if reference.reference_kind == ReferenceKind::Project {
-                xml.push_str(&format!(
-                    "    <ProjectReference Include=\"{}\" />\n",
-                    xml_escape(&format!(
-                        "..\\{}\\{}.basproj",
-                        reference.referenced_project_name, reference.referenced_project_name
-                    ))
-                ));
+            if matches!(
+                reference.reference_kind,
+                ReferenceKind::Project | ReferenceKind::HostInjected
+            ) {
+                let include = format!(
+                    "..\\{}\\{}.basproj",
+                    reference.referenced_project_name, reference.referenced_project_name
+                );
+                if reference.reference_kind == ReferenceKind::HostInjected {
+                    xml.push_str(&format!(
+                        "    <ProjectReference Include=\"{}\">\n      <Kind>HostInjected</Kind>\n    </ProjectReference>\n",
+                        xml_escape(&include)
+                    ));
+                } else {
+                    xml.push_str(&format!(
+                        "    <ProjectReference Include=\"{}\" />\n",
+                        xml_escape(&include)
+                    ));
+                }
             }
         }
         for catalog_entry in type_library_catalog {
@@ -476,6 +484,25 @@ fn serialize_module_item(xml: &mut String, module: &BasProjModule) {
                     xml_escape(&module.include)
                 ));
             }
+        }
+    }
+}
+
+fn serialize_project_reference_item(xml: &mut String, reference: &BasProjProjectReference) {
+    match reference.kind {
+        BasProjProjectReferenceKind::Project => {
+            xml.push_str(&format!(
+                "    <ProjectReference Include=\"{}\" />\n",
+                xml_escape(&reference.include)
+            ));
+        }
+        BasProjProjectReferenceKind::HostInjected => {
+            xml.push_str(&format!(
+                "    <ProjectReference Include=\"{}\">\n",
+                xml_escape(&reference.include)
+            ));
+            xml.push_str("      <Kind>HostInjected</Kind>\n");
+            xml.push_str("    </ProjectReference>\n");
         }
     }
 }

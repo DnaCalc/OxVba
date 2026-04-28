@@ -1,6 +1,6 @@
 //! Post-compilation validation for native exports and COM class exports.
 
-use oxvba_compiler::{CompiledProject, DeclareParamType};
+use oxvba_compiler::CompiledProject;
 
 use crate::error::BasProjError;
 use crate::model::*;
@@ -93,21 +93,22 @@ pub fn validate_native_exports(
             export.module_name.to_ascii_lowercase(),
             export.procedure_name.to_ascii_lowercase()
         );
-        if let Some(metadata) = compiled.procedure_runtime_metadata.get(&key) {
-            // Populate param_types from param_slots (as Variant since we don't
-            // have bound type info at this level — full type info requires
-            // re-analyzing the HIR, which is deferred)
-            let param_types: Vec<DeclareParamType> = metadata
-                .param_slots
-                .iter()
-                .map(|_| DeclareParamType::Variant)
-                .collect();
-            export.param_types = Some(param_types);
-            export.return_type = Some(if metadata.return_slot.is_some() {
-                Some(DeclareParamType::Variant)
-            } else {
-                None
-            });
+        let metadata = compiled.procedure_runtime_metadata.get(&key).or_else(|| {
+            compiled
+                .procedure_runtime_metadata
+                .values()
+                .find(|metadata| {
+                    metadata
+                        .module_name
+                        .eq_ignore_ascii_case(&export.module_name)
+                        && metadata
+                            .procedure_name
+                            .eq_ignore_ascii_case(&export.procedure_name)
+                })
+        });
+        if let Some(metadata) = metadata {
+            export.param_types = Some(metadata.param_types.clone());
+            export.return_type = Some(metadata.return_type);
         }
     }
 

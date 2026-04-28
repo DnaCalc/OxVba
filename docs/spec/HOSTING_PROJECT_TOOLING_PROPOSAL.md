@@ -178,7 +178,7 @@ The current CLI supports a single command:
 oxvba run <file.bas> [options]
 ```
 
-Options: `--dump-slots`, `--dump-values`, `--dump-bootstrap`, `--jit`, `--config <path>`, `--profile <id>`, `--policy <preset>`, `--runtime-class <class>`, `--allow-interaction`, `--allow-process-spawn`, `--allow-filesystem-mutation`, `--allow-dynamic-link`, `--allow-com-activation`, `--deterministic-mode`, `--ui-virtualization`, `--unsupported-mode`, `--wasm-runtime-class`.
+Options: `--dump-values`, `--dump-bootstrap`, `--jit`, `--config <path>`, `--profile <id>`, `--policy <preset>`, `--runtime-class <class>`, `--allow-interaction`, `--allow-process-spawn`, `--allow-filesystem-mutation`, `--allow-dynamic-link`, `--allow-com-activation`, `--deterministic-mode`, `--ui-virtualization`, `--unsupported-mode`, `--wasm-runtime-class`.
 
 No project-level commands exist.
 
@@ -632,7 +632,6 @@ Options:
   --policy <preset>         Host policy preset (strict-ci, deterministic-runtime, ...)
   --jit                     Enable JIT compilation
   --no-jit                  Force VM-only execution
-  --dump-slots              Output execution slot values
   --dump-values             Output semantic runtime values
   --dump-bootstrap          Emit resolved runtime/policy fingerprint
   --format <text|json>      Output format
@@ -640,7 +639,6 @@ Options:
 Examples:
   oxvba run hello.bas
   oxvba run script.bas --profile windows-stdio
-  oxvba run benchmark.bas --jit --dump-slots
   oxvba run benchmark.bas --jit --dump-values
 ```
 

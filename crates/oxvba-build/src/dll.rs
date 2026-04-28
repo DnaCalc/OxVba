@@ -12,54 +12,58 @@ pub fn generate_dll_shim(
     let mut source = format!(
         r#"//! Auto-generated OxVBA DLL shim for project "{project_name}".
 
-use std::sync::OnceLock;
+use std::cell::RefCell;
 use oxvba_compiler::{{DeclareParamType, OxBundle}};
 use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
-use oxvba_runtime::{{BStr, F64Value, RuntimeValue}};
+use oxvba_runtime::{{bstr::BStr, Variant}};
 
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
-static SESSION: OnceLock<std::sync::Mutex<(Engine, ProjectRuntimeSession)>> = OnceLock::new();
+thread_local! {{
+    static SESSION: RefCell<Option<(Engine, ProjectRuntimeSession)>> = RefCell::new(None);
+}}
 
 fn with_session<F, R>(f: F) -> R
 where
     F: FnOnce(&Engine, &mut ProjectRuntimeSession) -> R,
 {{
-    let pair = SESSION.get_or_init(|| {{
-        let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
-            .expect("failed to deserialize embedded bundle");
-        let engine = Engine::new(HostConfig::default());
-        let session = engine.compile_and_prepare_session_from_bundle(&bundle)
-            .expect("failed to prepare session from bundle");
-        std::sync::Mutex::new((engine, session))
-    }});
-    let mut guard = pair.lock().expect("session lock poisoned");
-    let (ref engine, ref mut session) = *guard;
-    f(engine, session)
+    SESSION.with(|cell| {{
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {{
+            let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
+                .expect("failed to deserialize embedded bundle");
+            let engine = Engine::new(HostConfig::default());
+            let session = engine.compile_and_prepare_session_from_bundle(&bundle)
+                .expect("failed to prepare session from bundle");
+            *slot = Some((engine, session));
+        }}
+        let (engine, session) = slot.as_mut().expect("session initialized");
+        f(engine, session)
+    }})
 }}
 
-trait IntoRuntimeArg {{
-    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue;
+trait IntoVariantArg {{
+    fn into_variant_arg(self, ty: DeclareParamType) -> Variant;
 }}
 
 macro_rules! int_runtime_arg {{
     ($ty:ty) => {{
-        impl IntoRuntimeArg for $ty {{
-            fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+        impl IntoVariantArg for $ty {{
+            fn into_variant_arg(self, ty: DeclareParamType) -> Variant {{
                 match ty {{
-                    DeclareParamType::LongLong => RuntimeValue::I64(self as i64),
-                    DeclareParamType::LongPtr => RuntimeValue::I64(self as i64),
-                    DeclareParamType::Boolean => RuntimeValue::Bool(self != 0),
+                    DeclareParamType::LongLong => Variant::from_i64(self as i64),
+                    DeclareParamType::LongPtr => Variant::from_i64(self as i64),
+                    DeclareParamType::Boolean => Variant::from_bool(self != 0),
                     DeclareParamType::Byte
                     | DeclareParamType::Integer
                     | DeclareParamType::Long
-                    | DeclareParamType::Currency => RuntimeValue::I32(self as i32),
-                    DeclareParamType::Single
-                    | DeclareParamType::Double
-                    | DeclareParamType::Date => RuntimeValue::F64(F64Value::from_f64(self as f64)),
+                    | DeclareParamType::Currency => Variant::from_i32(self as i32),
+                    DeclareParamType::Single => Variant::from_f32(self as f32),
+                    DeclareParamType::Double => Variant::from_f64(self as f64),
+                    DeclareParamType::Date => Variant::from_date_f64(self as f64),
                     DeclareParamType::String
                     | DeclareParamType::Variant
-                    | DeclareParamType::Any => RuntimeValue::I64(self as i64),
+                    | DeclareParamType::Any => Variant::from_i64(self as i64),
                 }}
             }}
         }}
@@ -72,67 +76,73 @@ int_runtime_arg!(i64);
 int_runtime_arg!(isize);
 int_runtime_arg!(u8);
 
-impl IntoRuntimeArg for f32 {{
-    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+impl IntoVariantArg for f32 {{
+    fn into_variant_arg(self, ty: DeclareParamType) -> Variant {{
         match ty {{
-            DeclareParamType::Single => RuntimeValue::F64(F64Value::from_single_f64(self as f64)),
-            DeclareParamType::Date => RuntimeValue::F64(F64Value::from_date_f64(self as f64)),
-            _ => RuntimeValue::F64(F64Value::from_f64(self as f64)),
+            DeclareParamType::Single => Variant::from_f32(self),
+            DeclareParamType::Date => Variant::from_date_f64(self as f64),
+            _ => Variant::from_f64(self as f64),
         }}
     }}
 }}
 
-impl IntoRuntimeArg for f64 {{
-    fn into_runtime_arg(self, ty: DeclareParamType) -> RuntimeValue {{
+impl IntoVariantArg for f64 {{
+    fn into_variant_arg(self, ty: DeclareParamType) -> Variant {{
         match ty {{
-            DeclareParamType::Single => RuntimeValue::F64(F64Value::from_single_f64(self)),
-            DeclareParamType::Date => RuntimeValue::F64(F64Value::from_date_f64(self)),
-            _ => RuntimeValue::F64(F64Value::from_f64(self)),
+            DeclareParamType::Single => Variant::from_f32(self as f32),
+            DeclareParamType::Date => Variant::from_date_f64(self),
+            _ => Variant::from_f64(self),
         }}
     }}
 }}
 
-impl IntoRuntimeArg for *const u16 {{
-    fn into_runtime_arg(self, _ty: DeclareParamType) -> RuntimeValue {{
+impl IntoVariantArg for *const u16 {{
+    fn into_variant_arg(self, _ty: DeclareParamType) -> Variant {{
         if self.is_null() {{
-            return RuntimeValue::String(BStr::from(""));
+            return Variant::from_string(BStr::from(""));
         }}
         let mut len = 0usize;
         unsafe {{
             while *self.add(len) != 0 {{
                 len += 1;
             }}
-            RuntimeValue::String(BStr::from(String::from_utf16_lossy(std::slice::from_raw_parts(
+            Variant::from_string(BStr::from(String::from_utf16_lossy(std::slice::from_raw_parts(
                 self, len,
             ))))
         }}
     }}
 }}
 
-impl IntoRuntimeArg for *mut u8 {{
-    fn into_runtime_arg(self, _ty: DeclareParamType) -> RuntimeValue {{
-        RuntimeValue::I64(self as isize as i64)
+impl IntoVariantArg for *mut u8 {{
+    fn into_variant_arg(self, _ty: DeclareParamType) -> Variant {{
+        Variant::from_i64(self as isize as i64)
     }}
 }}
 
-fn marshal_to_runtime<T: IntoRuntimeArg>(value: T, ty: DeclareParamType) -> RuntimeValue {{
-    value.into_runtime_arg(ty)
+fn marshal_to_variant<T: IntoVariantArg>(value: T, ty: DeclareParamType) -> Variant {{
+    value.into_variant_arg(ty)
 }}
 
-trait FromRuntimeReturn {{
-    fn from_runtime_return(value: RuntimeValue) -> Self;
+trait FromVariantReturn {{
+    fn from_variant_return(value: Variant) -> Self;
 }}
 
 macro_rules! int_runtime_return {{
     ($ty:ty) => {{
-        impl FromRuntimeReturn for $ty {{
-            fn from_runtime_return(value: RuntimeValue) -> Self {{
-                match value {{
-                    RuntimeValue::I32(n) => n as $ty,
-                    RuntimeValue::I64(n) => n as $ty,
-                    RuntimeValue::Bool(flag) => if flag {{ -1i32 as $ty }} else {{ 0i32 as $ty }},
-                    RuntimeValue::F64(value) => value.as_f64() as $ty,
-                    _ => 0 as $ty,
+        impl FromVariantReturn for $ty {{
+            fn from_variant_return(value: Variant) -> Self {{
+                if let Some(n) = value.as_i32() {{
+                    n as $ty
+                }} else if let Some(n) = value.as_i64() {{
+                    n as $ty
+                }} else if let Some(flag) = value.as_bool() {{
+                    if flag {{ -1i32 as $ty }} else {{ 0i32 as $ty }}
+                }} else if let Some(n) = value.as_f64() {{
+                    n as $ty
+                }} else if let Some(n) = value.as_f32() {{
+                    n as $ty
+                }} else {{
+                    0 as $ty
                 }}
             }}
         }}
@@ -145,37 +155,42 @@ int_runtime_return!(i64);
 int_runtime_return!(isize);
 int_runtime_return!(u8);
 
-impl FromRuntimeReturn for f32 {{
-    fn from_runtime_return(value: RuntimeValue) -> Self {{
-        match value {{
-            RuntimeValue::F64(value) => value.as_f64() as f32,
-            RuntimeValue::I32(n) => n as f32,
-            RuntimeValue::I64(n) => n as f32,
-            _ => 0.0,
-        }}
+impl FromVariantReturn for f32 {{
+    fn from_variant_return(value: Variant) -> Self {{
+        value.as_f32()
+            .or_else(|| value.as_f64().map(|value| value as f32))
+            .or_else(|| value.as_i32().map(|value| value as f32))
+            .or_else(|| value.as_i64().map(|value| value as f32))
+            .unwrap_or(0.0)
     }}
 }}
 
-impl FromRuntimeReturn for f64 {{
-    fn from_runtime_return(value: RuntimeValue) -> Self {{
-        match value {{
-            RuntimeValue::F64(value) => value.as_f64(),
-            RuntimeValue::I32(n) => n as f64,
-            RuntimeValue::I64(n) => n as f64,
-            _ => 0.0,
-        }}
+impl FromVariantReturn for f64 {{
+    fn from_variant_return(value: Variant) -> Self {{
+        value.as_f64()
+            .or_else(|| value.as_f32().map(|value| value as f64))
+            .or_else(|| value.as_i32().map(|value| value as f64))
+            .or_else(|| value.as_i64().map(|value| value as f64))
+            .unwrap_or(0.0)
     }}
 }}
 
-impl FromRuntimeReturn for *const u16 {{
-    fn from_runtime_return(value: RuntimeValue) -> Self {{
-        let text = match value {{
-            RuntimeValue::String(text) => text.as_str().to_string(),
-            RuntimeValue::I32(n) => n.to_string(),
-            RuntimeValue::I64(n) => n.to_string(),
-            RuntimeValue::Bool(flag) => if flag {{ "True".to_string() }} else {{ "False".to_string() }},
-            RuntimeValue::F64(value) => value.as_f64().to_string(),
-            _ => String::new(),
+impl FromVariantReturn for *const u16 {{
+    fn from_variant_return(value: Variant) -> Self {{
+        let text = if let Some(text) = value.as_bstr() {{
+            text.as_str().to_string()
+        }} else if let Some(n) = value.as_i32() {{
+            n.to_string()
+        }} else if let Some(n) = value.as_i64() {{
+            n.to_string()
+        }} else if let Some(flag) = value.as_bool() {{
+            if flag {{ "True".to_string() }} else {{ "False".to_string() }}
+        }} else if let Some(n) = value.as_f64() {{
+            n.to_string()
+        }} else if let Some(n) = value.as_f32() {{
+            n.to_string()
+        }} else {{
+            String::new()
         }};
         let mut utf16: Vec<u16> = text.encode_utf16().collect();
         utf16.push(0);
@@ -183,18 +198,20 @@ impl FromRuntimeReturn for *const u16 {{
     }}
 }}
 
-impl FromRuntimeReturn for *mut u8 {{
-    fn from_runtime_return(value: RuntimeValue) -> Self {{
-        match value {{
-            RuntimeValue::I32(n) => n as isize as *mut u8,
-            RuntimeValue::I64(n) => n as isize as *mut u8,
-            _ => std::ptr::null_mut(),
+impl FromVariantReturn for *mut u8 {{
+    fn from_variant_return(value: Variant) -> Self {{
+        if let Some(n) = value.as_i32() {{
+            n as isize as *mut u8
+        }} else if let Some(n) = value.as_i64() {{
+            n as isize as *mut u8
+        }} else {{
+            std::ptr::null_mut()
         }}
     }}
 }}
 
-fn marshal_from_runtime<T: FromRuntimeReturn>(value: RuntimeValue) -> T {{
-    T::from_runtime_return(value)
+fn marshal_from_variant<T: FromVariantReturn>(value: Variant) -> T {{
+    T::from_variant_return(value)
 }}
 
 "#
@@ -231,38 +248,38 @@ fn generate_export_function(export: &NativeExportDescriptor) -> String {
     let marshal_args: Vec<String> = param_types
         .iter()
         .enumerate()
-        .map(|(i, ty)| format!("        marshal_to_runtime(arg{i}, DeclareParamType::{ty:?})"))
+        .map(|(i, ty)| format!("        marshal_to_variant(arg{i}, DeclareParamType::{ty:?})"))
         .collect();
 
     let module = &export.module_name;
     let procedure = &export.procedure_name;
     let body = if return_type.is_some() {
         format!(
-            r#"    let args: Vec<RuntimeValue> = vec![
+            r#"    let args: Vec<Variant> = vec![
 {}
     ];
     with_session(|engine, session| {{
-        let result = engine.invoke_procedure(session, "{module}", "{procedure}", &args)
-            .expect("invoke_procedure failed");
-        marshal_from_runtime(result)
+        let result = engine.invoke_procedure_with_variants(session, "{module}", "{procedure}", &args)
+            .expect("invoke_procedure_with_variants failed");
+        marshal_from_variant(result)
     }})"#,
             marshal_args.join(",\n"),
         )
     } else {
         format!(
-            r#"    let args: Vec<RuntimeValue> = vec![
+            r#"    let args: Vec<Variant> = vec![
 {}
     ];
     with_session(|engine, session| {{
-        let _ = engine.invoke_procedure(session, "{module}", "{procedure}", &args)
-            .expect("invoke_procedure failed");
+        let _ = engine.invoke_procedure_with_variants(session, "{module}", "{procedure}", &args)
+            .expect("invoke_procedure_with_variants failed");
     }})"#,
             marshal_args.join(",\n"),
         )
     };
 
     format!(
-        r#"#[no_mangle]
+        r#"#[unsafe(no_mangle)]
 pub extern "{cc}" fn {name}({params}){ret} {{
 {body}
 }}
@@ -311,15 +328,18 @@ mod tests {
         }];
 
         let source = generate_dll_shim("MathLib", "math.oxb", &exports);
-        assert!(source.contains("#[no_mangle]"));
+        assert!(source.contains("#[unsafe(no_mangle)]"));
         assert!(source.contains("pub extern \"system\" fn CalcSum"));
         assert!(source.contains("arg0: i32"));
         assert!(source.contains("arg1: i32"));
         assert!(source.contains("-> i32"));
-        assert!(source.contains("invoke_procedure"));
+        assert!(source.contains("invoke_procedure_with_variants"));
         assert!(source.contains("use oxvba_compiler::{DeclareParamType, OxBundle};"));
-        assert!(source.contains("fn marshal_to_runtime<T: IntoRuntimeArg>"));
-        assert!(source.contains("fn marshal_from_runtime<T: FromRuntimeReturn>"));
+        assert!(source.contains("use oxvba_runtime::{bstr::BStr, Variant};"));
+        assert!(source.contains("thread_local!"));
+        assert!(source.contains("let args: Vec<Variant>"));
+        assert!(source.contains("fn marshal_to_variant<T: IntoVariantArg>"));
+        assert!(source.contains("fn marshal_from_variant<T: FromVariantReturn>"));
         assert!(source.contains("\"Math\""));
         assert!(source.contains("\"Sum\""));
     }
@@ -344,5 +364,37 @@ mod tests {
         assert!(source.contains("pub extern \"C\" fn DoWork()"));
         // The function itself should not have a return type
         assert!(source.contains("fn DoWork() {\n"));
+    }
+
+    #[test]
+    fn dll_shim_with_export_compiles_to_dll_artifact() {
+        let temp_root =
+            std::env::temp_dir().join(format!("oxvba_dll_compile_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_root).expect("create temp root");
+        let bundle_path = temp_root.join("dummy.oxb");
+        std::fs::write(&bundle_path, b"dummy bundle bytes").expect("write dummy bundle");
+        let bundle_literal = bundle_path.to_string_lossy().replace('\\', "/");
+        let exports = vec![NativeExportDescriptor {
+            exported_name: "CalcSum".to_string(),
+            module_name: "Math".to_string(),
+            procedure_name: "Sum".to_string(),
+            calling_convention: CallingConvention::Stdcall,
+            ordinal: None,
+            kind: Some(oxvba_compiler::ExportKind::Function),
+            param_types: Some(vec![DeclareParamType::Long, DeclareParamType::Long]),
+            return_type: Some(Some(DeclareParamType::Long)),
+            category: None,
+            description: None,
+            argument_descriptions: None,
+        }];
+        let source = generate_dll_shim("CompileProbe", &bundle_literal, &exports);
+        let output_path = temp_root.join("CompileProbe.dll");
+
+        crate::compile::compile_shim(&source, &output_path, crate::compile::ShimOutputType::Dll)
+            .expect("compile generated DLL shim with exports");
+
+        assert!(output_path.exists());
+        assert!(std::fs::metadata(&output_path).expect("dll metadata").len() > 0);
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }

@@ -355,8 +355,13 @@ fn emit_item(
             });
         }
         "ProjectReference" => {
+            let kind = match ctx.meta_str("Kind").as_deref() {
+                Some("HostInjected") => BasProjProjectReferenceKind::HostInjected,
+                _ => BasProjProjectReferenceKind::Project,
+            };
             project_refs.push(BasProjProjectReference {
                 include: ctx.include,
+                kind,
             });
         }
         "COMReference" => {

@@ -1,0 +1,12 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>HostModule</OutputType>
+    <ProjectName>ExcelHost</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClassModule Include="Application.cls">
+      <VBPredeclaredId>true</VBPredeclaredId>
+      <VBExposed>true</VBExposed>
+    </ClassModule>
+  </ItemGroup>
+</Project>

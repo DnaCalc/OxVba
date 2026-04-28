@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::vbp::VbpReference;
 use crate::{
     BasProj, BasProjComReference, BasProjError, BasProjModule, BasProjModuleKind,
-    BasProjProjectReference, OutputType, discover_project_file_in_dir,
+    BasProjProjectReference, BasProjProjectReferenceKind, OutputType, discover_project_file_in_dir,
     infer_project_name_from_path, parse_basproj_xml, parse_vbp, serialize_basproj_xml,
 };
 
@@ -59,6 +59,7 @@ pub struct HostProjectModuleInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostProjectReferenceKind {
     Project,
+    HostInjected,
     Com,
     Native,
 }
@@ -301,6 +302,7 @@ pub fn remove_module_edit(include: impl Into<String>) -> HostProjectEdit {
 pub fn add_project_reference_edit(include: impl Into<String>) -> HostProjectEdit {
     HostProjectEdit::AddProjectReference(BasProjProjectReference {
         include: include.into(),
+        kind: BasProjProjectReferenceKind::Project,
     })
 }
 
@@ -573,7 +575,10 @@ fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, Ba
     let mut references = Vec::new();
     references.extend(basproj.project_references.iter().map(|reference| {
         HostProjectReferenceInfo {
-            kind: HostProjectReferenceKind::Project,
+            kind: match reference.kind {
+                BasProjProjectReferenceKind::Project => HostProjectReferenceKind::Project,
+                BasProjProjectReferenceKind::HostInjected => HostProjectReferenceKind::HostInjected,
+            },
             include: reference.include.clone(),
             guid: None,
             version_major: None,
@@ -799,8 +804,9 @@ fn parse_version_pair(version: &str) -> (Option<u16>, Option<u16>) {
 fn host_reference_sort_key(kind: HostProjectReferenceKind) -> u8 {
     match kind {
         HostProjectReferenceKind::Project => 0,
-        HostProjectReferenceKind::Com => 1,
-        HostProjectReferenceKind::Native => 2,
+        HostProjectReferenceKind::HostInjected => 1,
+        HostProjectReferenceKind::Com => 2,
+        HostProjectReferenceKind::Native => 3,
     }
 }
 

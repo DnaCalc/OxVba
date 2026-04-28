@@ -1,0 +1,30 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Addin</OutputType>
+    <ProjectName>ApplicationAddin</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="ApplicationExports.bas" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../excel_host/ExcelHost.basproj">
+      <Kind>HostInjected</Kind>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <NativeExport Include="ExcelVersion">
+      <Module>ApplicationExports</Module>
+      <Procedure>ExcelVersion</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Application Validation</Category>
+      <Description>Returns Application.Value.Version from the injected Excel root object.</Description>
+    </NativeExport>
+    <NativeExport Include="ExcelHwnd">
+      <Module>ApplicationExports</Module>
+      <Procedure>ExcelHwnd</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Application Validation</Category>
+      <Description>Returns Application.Value.Hwnd from the injected Excel root object.</Description>
+    </NativeExport>
+  </ItemGroup>
+</Project>

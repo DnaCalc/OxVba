@@ -1,0 +1,5 @@
+function,formula,expected
+AddDouble,"=AddDouble(2.5,3.25)",5.75
+EchoText,"=EchoText(""abc"")",abc
+NotFlag,"=NotFlag(TRUE)",FALSE
+IncLong,"=IncLong(41)",42

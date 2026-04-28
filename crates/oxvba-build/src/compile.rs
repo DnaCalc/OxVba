@@ -62,6 +62,7 @@ pub fn compile_shim(
         }
     };
     let compiler_path = workspace_crate_path("oxvba-compiler")?;
+    let com_path = workspace_crate_path("oxvba-com")?;
     let hal_path = workspace_crate_path("oxvba-hal")?;
     let host_path = workspace_crate_path("oxvba-host")?;
     let runtime_path = workspace_crate_path("oxvba-runtime")?;
@@ -77,11 +78,21 @@ edition = "2024"
 debug = true
 
 [dependencies]
+oxvba-com = {{ path = "{}" }}
 oxvba-compiler = {{ path = "{}" }}
 oxvba-hal = {{ path = "{}" }}
 oxvba-host = {{ path = "{}" }}
 oxvba-runtime = {{ path = "{}" }}
+windows-sys = {{ version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_WindowsAndMessaging",
+] }}
 "#,
+        cargo_path_literal(&com_path),
         cargo_path_literal(&compiler_path),
         cargo_path_literal(&hal_path),
         cargo_path_literal(&host_path),
@@ -106,12 +117,19 @@ oxvba-runtime = {{ path = "{}" }}
     // Copy result to output_path
     let built_binary = match output_type {
         ShimOutputType::Exe => temp_dir.join(format!("target/release/shim{}", exe_suffix())),
-        ShimOutputType::Dll | ShimOutputType::Xll => temp_dir.join("target/release/oxvba_shim.dll"),
+        ShimOutputType::Dll | ShimOutputType::Xll => {
+            temp_dir.join(format!("target/release/{}", dylib_name()))
+        }
     };
 
-    if built_binary.exists() {
-        std::fs::copy(&built_binary, output_path).map_err(BuildError::Io)?;
+    if !built_binary.exists() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(BuildError::CompileFailed(format!(
+            "expected build artifact was not produced: {}",
+            built_binary.display()
+        )));
     }
+    std::fs::copy(&built_binary, output_path).map_err(BuildError::Io)?;
 
     // Clean up
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -131,4 +149,14 @@ fn cargo_path_literal(path: &Path) -> String {
 
 fn exe_suffix() -> &'static str {
     if cfg!(windows) { ".exe" } else { "" }
+}
+
+fn dylib_name() -> &'static str {
+    if cfg!(windows) {
+        "oxvba_shim.dll"
+    } else if cfg!(target_os = "macos") {
+        "liboxvba_shim.dylib"
+    } else {
+        "liboxvba_shim.so"
+    }
 }

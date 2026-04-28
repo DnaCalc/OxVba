@@ -150,7 +150,10 @@ pub(crate) fn build_loaded_project(
     for pr in &basproj.project_references {
         references.push(ProjectReference {
             referenced_project_name: project_ref_name(&pr.include),
-            reference_kind: ReferenceKind::Project,
+            reference_kind: match pr.kind {
+                BasProjProjectReferenceKind::Project => ReferenceKind::Project,
+                BasProjProjectReferenceKind::HostInjected => ReferenceKind::HostInjected,
+            },
         });
     }
     for cr in &basproj.com_references {

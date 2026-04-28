@@ -1,0 +1,26 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Addin</OutputType>
+    <ProjectName>ArrayAddin</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="ArrayExports.bas" />
+  </ItemGroup>
+  <ItemGroup>
+    <NativeExport Include="MakeVector">
+      <Module>ArrayExports</Module>
+      <Procedure>MakeVector</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Array Validation</Category>
+      <Description>Returns a small vertical Variant array.</Description>
+    </NativeExport>
+    <NativeExport Include="SumArray">
+      <Module>ArrayExports</Module>
+      <Procedure>SumArray</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Array Validation</Category>
+      <Description>Sums a Variant array argument.</Description>
+      <ArgumentDescriptions>values</ArgumentDescriptions>
+    </NativeExport>
+  </ItemGroup>
+</Project>

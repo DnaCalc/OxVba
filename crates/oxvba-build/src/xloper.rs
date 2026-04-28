@@ -4,29 +4,24 @@
 pub const XL_TYPE_NUM: u32 = 0x0001;
 pub const XL_TYPE_STR: u32 = 0x0002;
 pub const XL_TYPE_BOOL: u32 = 0x0004;
+pub const XL_TYPE_REF: u32 = 0x0008;
 pub const XL_TYPE_ERR: u32 = 0x0010;
-pub const XL_TYPE_INT: u32 = 0x0020;
+pub const XL_TYPE_FLOW: u32 = 0x0020;
+pub const XL_TYPE_MULTI: u32 = 0x0040;
 pub const XL_TYPE_MISSING: u32 = 0x0080;
 pub const XL_TYPE_NIL: u32 = 0x0100;
+pub const XL_TYPE_SREF: u32 = 0x0400;
+pub const XL_TYPE_INT: u32 = 0x0800;
+pub const XL_BIT_XL_FREE: u32 = 0x1000;
+pub const XL_BIT_DLL_FREE: u32 = 0x4000;
 
-/// Map a `DeclareParamType` to an Excel type registration letter.
-pub fn declare_param_type_to_excel_letter(ty: &oxvba_compiler::DeclareParamType) -> &'static str {
-    use oxvba_compiler::DeclareParamType;
-    match ty {
-        DeclareParamType::Double => "B",
-        DeclareParamType::Single => "E",
-        DeclareParamType::Long => "J",
-        DeclareParamType::Integer => "I",
-        DeclareParamType::Boolean => "A",
-        DeclareParamType::String => "C%",
-        DeclareParamType::Currency => "J",
-        DeclareParamType::Date => "B",
-        DeclareParamType::Byte => "I",
-        DeclareParamType::LongLong => "J",
-        DeclareParamType::LongPtr => "J",
-        DeclareParamType::Variant => "Q",
-        DeclareParamType::Any => "Q",
-    }
+/// Map the generated XLL wrapper ABI to an Excel type registration letter.
+///
+/// The current generated exports receive arguments as `LPXLOPER12` and return
+/// an owned `LPXLOPER12`, so every registered argument and return uses `Q`
+/// regardless of the VBA scalar type carried inside the XLOPER12 value.
+pub fn declare_param_type_to_excel_letter(_ty: &oxvba_compiler::DeclareParamType) -> &'static str {
+    "Q"
 }
 
 /// Build the Excel type string for a function registration.
@@ -39,27 +34,13 @@ pub fn build_type_string(
     if let Some(ret) = return_type {
         s.push_str(declare_param_type_to_excel_letter(ret));
     } else {
-        s.push('J'); // Default to Long for void/Sub
+        s.push('Q');
     }
     // Parameter types
     for param in param_types {
         s.push_str(declare_param_type_to_excel_letter(param));
     }
     s
-}
-
-/// Generate Rust code for RuntimeValue → XLOPER12 marshaling.
-pub fn generate_marshal_to_xloper(var_name: &str) -> String {
-    format!(
-        r#"match {var_name} {{
-    RuntimeValue::I32(v) => xloper12_int(v),
-    RuntimeValue::F64(v) => xloper12_num(v.as_f64()),
-    RuntimeValue::Bool(v) => xloper12_bool(v),
-    RuntimeValue::String(s) => xloper12_str(s.as_str()),
-    RuntimeValue::Empty => xloper12_nil(),
-    _ => xloper12_nil(),
-}}"#
-    )
 }
 
 #[cfg(test)]
@@ -73,38 +54,38 @@ mod tests {
             &[DeclareParamType::Double, DeclareParamType::Double],
             Some(&DeclareParamType::Double),
         );
-        assert_eq!(s, "BBB");
+        assert_eq!(s, "QQQ");
     }
 
     #[test]
     fn type_string_for_long_sub() {
         let s = build_type_string(&[DeclareParamType::Long], None);
-        assert_eq!(s, "JJ");
+        assert_eq!(s, "QQ");
     }
 
     #[test]
     fn type_string_for_string_function() {
         let s = build_type_string(&[DeclareParamType::String], Some(&DeclareParamType::String));
-        assert_eq!(s, "C%C%");
+        assert_eq!(s, "QQ");
     }
 
     #[test]
     fn excel_letter_mapping() {
         assert_eq!(
             declare_param_type_to_excel_letter(&DeclareParamType::Double),
-            "B"
+            "Q"
         );
         assert_eq!(
             declare_param_type_to_excel_letter(&DeclareParamType::Long),
-            "J"
+            "Q"
         );
         assert_eq!(
             declare_param_type_to_excel_letter(&DeclareParamType::Boolean),
-            "A"
+            "Q"
         );
         assert_eq!(
             declare_param_type_to_excel_letter(&DeclareParamType::String),
-            "C%"
+            "Q"
         );
     }
 }

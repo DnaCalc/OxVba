@@ -110,6 +110,14 @@ pub struct BasProjModule {
 pub struct BasProjProjectReference {
     /// Relative path to the referenced project file (`.basproj` or adapted `.vbp`).
     pub include: String,
+    /// Reference binding kind. Defaults to a normal project reference.
+    pub kind: BasProjProjectReferenceKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BasProjProjectReferenceKind {
+    Project,
+    HostInjected,
 }
 
 /// A `<COMReference>` item.

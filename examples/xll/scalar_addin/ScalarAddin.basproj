@@ -1,0 +1,43 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Addin</OutputType>
+    <ProjectName>ScalarAddin</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="ScalarExports.bas" />
+  </ItemGroup>
+  <ItemGroup>
+    <NativeExport Include="AddDouble">
+      <Module>ScalarExports</Module>
+      <Procedure>AddDouble</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Scalar Validation</Category>
+      <Description>Adds two Double values.</Description>
+      <ArgumentDescriptions>x,y</ArgumentDescriptions>
+    </NativeExport>
+    <NativeExport Include="EchoText">
+      <Module>ScalarExports</Module>
+      <Procedure>EchoText</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Scalar Validation</Category>
+      <Description>Returns the input text unchanged.</Description>
+      <ArgumentDescriptions>s</ArgumentDescriptions>
+    </NativeExport>
+    <NativeExport Include="NotFlag">
+      <Module>ScalarExports</Module>
+      <Procedure>NotFlag</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Scalar Validation</Category>
+      <Description>Returns the Boolean negation of the input.</Description>
+      <ArgumentDescriptions>b</ArgumentDescriptions>
+    </NativeExport>
+    <NativeExport Include="IncLong">
+      <Module>ScalarExports</Module>
+      <Procedure>IncLong</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+      <Category>OxVba Scalar Validation</Category>
+      <Description>Adds one to a Long value.</Description>
+      <ArgumentDescriptions>n</ArgumentDescriptions>
+    </NativeExport>
+  </ItemGroup>
+</Project>

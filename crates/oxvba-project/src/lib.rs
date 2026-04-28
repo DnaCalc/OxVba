@@ -62,9 +62,9 @@ pub use load::{
 };
 pub use model::{
     BasProj, BasProjComReference, BasProjModule, BasProjModuleKind, BasProjNativeExport,
-    BasProjNativeReference, BasProjProjectReference, BasProjProperties, BuildTarget,
-    CallingConvention, ClassModuleMetadata, Instancing, NativeExportDescriptor, OutputType,
-    RuntimeFlavor,
+    BasProjNativeReference, BasProjProjectReference, BasProjProjectReferenceKind,
+    BasProjProperties, BuildTarget, CallingConvention, ClassModuleMetadata, Instancing,
+    NativeExportDescriptor, OutputType, RuntimeFlavor,
 };
 pub use parse::parse_basproj_xml;
 pub use validate::{ComClassExportDescriptor, DispatchMemberInfo};

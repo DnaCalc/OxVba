@@ -35,7 +35,7 @@ This separation is required so wrapper/native-hosting lanes do not overload sema
 
 | BuildTarget | Meaning | Current expectation |
 |-------------|---------|---------------------|
-| `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default |
+| `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default except `OutputType=Addin`, where `oxvba build` packages the bundle into a generated `.xll` |
 | `WrapperExe` | Native executable wrapper over a canonical `.oxb` payload | planned delivery lane |
 | `WrapperLibrary` | Native DLL/shared-library wrapper over a canonical `.oxb` payload | planned delivery lane |
 

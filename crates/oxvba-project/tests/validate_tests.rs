@@ -65,6 +65,8 @@ fn make_runtime_metadata(
     param_slots: Vec<usize>,
     return_slot: Option<usize>,
 ) -> ProcedureRuntimeMetadata {
+    let param_count = param_slots.len();
+    let has_return = return_slot.is_some();
     ProcedureRuntimeMetadata {
         module_name: module_name.to_string(),
         procedure_name: procedure_name.to_string(),
@@ -76,6 +78,8 @@ fn make_runtime_metadata(
         slots: Vec::<ProcedureRuntimeSlotMetadata>::new(),
         param_slots,
         return_slot,
+        param_types: vec![DeclareParamType::Variant; param_count],
+        return_type: has_return.then_some(DeclareParamType::Variant),
     }
 }
 
@@ -168,6 +172,42 @@ fn valid_native_export_sub_with_no_return_slot() {
         Some(None),
         "return_slot == None should produce Some(None)"
     );
+}
+
+#[test]
+fn native_export_uses_decorated_runtime_metadata_types() {
+    let host_exports = vec![HostProcedureExport {
+        project_name: "ScalarAddin".to_string(),
+        module_name: "ScalarExports".to_string(),
+        procedure_name: "AddDouble".to_string(),
+        kind: ExportKind::Function,
+    }];
+
+    let mut typed_metadata =
+        make_runtime_metadata("ScalarExports", "AddDouble", 0, vec![1, 2], Some(3));
+    typed_metadata.param_types = vec![DeclareParamType::Double, DeclareParamType::Double];
+    typed_metadata.return_type = Some(DeclareParamType::Double);
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "pmr_scalaraddin_scalarexports_adddouble".to_string(),
+        typed_metadata,
+    );
+
+    let compiled = make_compiled_project(host_exports, metadata, Vec::new());
+    let mut exports = vec![make_native_export(
+        "AddDouble",
+        "ScalarExports",
+        "AddDouble",
+    )];
+
+    validate_native_exports(&mut exports, &compiled).expect("native export validation");
+
+    assert_eq!(
+        exports[0].param_types,
+        Some(vec![DeclareParamType::Double, DeclareParamType::Double])
+    );
+    assert_eq!(exports[0].return_type, Some(Some(DeclareParamType::Double)));
 }
 
 // ---------------------------------------------------------------------------
