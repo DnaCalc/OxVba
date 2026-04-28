@@ -13,11 +13,12 @@ wrapper substrate.
 `crates/oxvba-build/src/xll.rs` now emits generated XLL source with:
 
 - a `REGISTRATIONS` table derived from `NativeExportDescriptor` rows,
-- Excel type strings from the existing `xloper::build_type_string(...)` mapper,
+- Excel type strings from `xloper::build_type_string(...)`; the current
+  generated wrapper ABI registers `Q` XLOPER12 pointer return/argument lanes,
 - add-in category, function help, and argument help metadata from `.basproj`
   native-export metadata,
 - `xlAutoOpen` iteration over the registration table,
-- a Windows `Excel12v` / `xlfRegister` call path in generated source,
+- a Windows Excel callback / `xlfRegister` call path in generated source,
 - a deterministic non-Windows registration stub for source-generation tests,
 - and focused assertions that the generated source includes the registration
   table, `XLF_REGISTER`, `Excel12v`, type text, category, function help, and
@@ -40,6 +41,6 @@ Results:
 ## Remaining Boundary
 
 This is registration source generation only. The next XLL delivery slice is the
-runtime invocation bridge: XLOPER12 arguments into `RuntimeValue`, runtime
-procedure invocation, and `RuntimeValue` results back to XLOPER12-compatible
+runtime invocation bridge: XLOPER12 arguments into retained `Variant`, runtime
+procedure invocation, and retained `Variant` results back to XLOPER12-compatible
 return values.

@@ -11,8 +11,8 @@ handoff gap exposed by the wrapper validation pass.
 ## Finding
 
 The pre-existing DLL shim generator emitted native export functions that
-referenced `DeclareParamType`, `marshal_to_runtime`, and
-`marshal_from_runtime`, but the generated source did not import or define those
+referenced `DeclareParamType`, `marshal_to_variant`, and
+`marshal_from_variant`, but the generated source did not import or define those
 symbols. String-shape tests covered the export signatures but not the generated
 runtime handoff body.
 
@@ -22,14 +22,14 @@ runtime handoff body.
 
 - `use oxvba_compiler::{DeclareParamType, OxBundle};`
 - bounded scalar/string pointer argument marshaling through
-  `marshal_to_runtime<T: IntoRuntimeArg>(...)`
+  `marshal_to_variant<T: IntoVariantArg>(...)`
 - bounded scalar/string pointer return marshaling through
-  `marshal_from_runtime<T: FromRuntimeReturn>(...)`
+  `marshal_from_variant<T: FromVariantReturn>(...)`
 - regression assertions that the generated DLL source contains the import and
   marshaling handoff layer beside the exported function body
 
 The wrapper DLL source now has an explicit generated bridge from
-`NativeExportDescriptor` parameter/return metadata to `RuntimeValue` invocation
+`NativeExportDescriptor` parameter/return metadata to retained `Variant` invocation
 arguments and return values.
 
 ## Validation

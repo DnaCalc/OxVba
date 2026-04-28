@@ -15,10 +15,11 @@ OxVba runtime procedure invocation.
 - shared embedded `.oxb` session initialization via `OxBundle`,
   `oxvba_host::Engine`, and `ProjectRuntimeSession`,
 - one exported `extern "system"` XLL function per `NativeExportDescriptor`,
-- bounded XLOPER12 pointer argument conversion into `RuntimeValue` arguments,
-- `Engine::invoke_procedure(session, module, procedure, &args)` dispatch using
-  the descriptor's canonical module/procedure handoff,
-- bounded `RuntimeValue` to XLOPER12-compatible return allocation, and
+- bounded XLOPER12 pointer argument conversion into retained `Variant`
+  arguments,
+- `Engine::invoke_procedure_with_variants(session, module, procedure, &args)`
+  dispatch using the descriptor's canonical module/procedure handoff,
+- bounded retained `Variant` to XLOPER12-compatible return allocation, and
 - focused source-generation regressions for the emitted exported wrapper,
   argument conversion, runtime invocation, and return bridge.
 
@@ -34,7 +35,7 @@ cargo test -p oxvba-build --lib xll -- --nocapture
 Results:
 
 - `cargo fmt --check -p oxvba-build`: pass
-- `cargo test -p oxvba-build --lib xll -- --nocapture`: pass, 2/2
+- `cargo test -p oxvba-build --lib xll --quiet`: pass, 5/5
 
 ## Remaining Boundary
 

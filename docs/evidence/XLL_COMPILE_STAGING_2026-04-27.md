@@ -21,6 +21,9 @@ invocation parity.
   `ProjectRuntimeSession` is not `Send`/`Sync` and therefore cannot be placed
   behind a process-global `OnceLock<Mutex<_>>`.
 - `xlAutoFree12` now accepts the generated `XLOPER12` pointer type directly.
+- Generated XLL source now uses an Excel-compatible scalar `XLOPER12` layout
+  with a `val` union before `xltype`, uses `xltypeInt = 0x0800`, and keeps
+  counted-wide-string return buffers owned until `xlAutoFree12`.
 
 ## Validation Commands
 
@@ -31,7 +34,7 @@ cargo test -p oxvba-build --lib xll -- --nocapture
 
 Results:
 
-- `cargo test -p oxvba-build --lib xll -- --nocapture`: pass, 3/3
+- `cargo test -p oxvba-build --lib xll --quiet`: pass, 5/5
 - `xll::tests::xll_shim_compiles_to_xll_artifact`: pass; generated source
   compiled through `ShimOutputType::Xll` and produced a non-empty `.xll`
   artifact from a dummy embedded bundle file.
