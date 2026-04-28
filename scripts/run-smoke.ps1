@@ -8,7 +8,7 @@ try {
         throw "Missing smoke source: $sample"
     }
 
-    cargo run -q -p oxvba-cli -- run $sample --dump-slots
+    cargo run -q -p oxvba-cli -- run $sample --dump-values
     Write-Host "smoke run: ok"
 }
 finally {

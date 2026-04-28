@@ -1,0 +1,8 @@
+"file","values"
+"arithmetic.bas","i32:14"
+"conditionals.bas","i32:82|i32:1"
+"loops.bas","i32:15|i32:6"
+"procedures.bas","i32:20"
+"arrays.bas","empty|i32:4|i32:5|i32:6|i32:10"
+"strings.bas","string:""OxVBA""|string:""OxVBA"""
+"errors.bas","i32:7|i32:0"

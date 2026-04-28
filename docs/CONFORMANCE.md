@@ -79,15 +79,16 @@ PMR oracle runner note:
 ## Current policy
 At MVP stage, conformance compares:
 - execution status (`ok` / `error`)
-- explicit compatibility-slot snapshot output (`SLOTS:` line from CLI)
-- semantic value snapshot output when explicitly requested (`VALUES:` line from CLI)
+- retained semantic value snapshot output (`VALUES:` line from CLI)
 
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 Project integration lane:
 - Uses `cargo test -p oxvba-host --test project_integration_suite` over `conformance/integration/catalog.psv`.
-- Treats `expect_compat_slots` as a legacy compatibility assertion derived
-  from retained `Variant` results, not as the primary execution result model.
+- `expect_compat_slots` is legacy evidence debt, not an accepted current
+  conformance oracle. New rows must use retained value assertions or add a
+  delivery bead to remove the remaining compatibility projection at that
+  boundary.
 - Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
 Late-bound `IDispatch` V0.2 matrix:

@@ -36,7 +36,7 @@ try {
     }
 
     # ── golden reference ──────────────────────────────────────────────────
-    $goldenFile = "conformance/golden/smoke.csv"
+    $goldenFile = "conformance/golden/values.csv"
     if (-not (Test-Path $goldenFile)) {
         throw "Missing golden file: $goldenFile"
     }
@@ -69,28 +69,30 @@ try {
         $false
     }
 
-    # ── EncodeSlot VBA helper (injected into every harness module) ────────
-    # Constants mirror crates/oxvba-runtime/src/value_tags.rs:
-    #   EMPTY_TAG = 0, NULL_TAG = -1, ERROR_TAG_BASE = -900000000
-    $encodeSlotCode = @'
-Private Function EncodeSlot(ByVal v As Variant) As String
+    # ── EncodeValue VBA helper (injected into every harness module) ───────
+    # Emits the retained-value oracle shape used by oxvba-cli --dump-values
+    # for the portable scalar subset covered by this Excel harness.
+    $encodeValueCode = @'
+Private Function EncodeValue(ByVal v As Variant) As String
     If IsEmpty(v) Then
-        EncodeSlot = "0"
+        EncodeValue = "empty"
     ElseIf IsNull(v) Then
-        EncodeSlot = "-1"
+        EncodeValue = "null"
     ElseIf IsError(v) Then
         Dim ec As Long
         ec = CLng(v)
         If ec < 0 Then ec = -ec
-        EncodeSlot = CStr(CLng(-900000000) + ec)
+        EncodeValue = "error:" & CStr(ec)
     ElseIf VarType(v) = vbBoolean Then
-        If v Then EncodeSlot = "1" Else EncodeSlot = "0"
+        If v Then EncodeValue = "bool:true" Else EncodeValue = "bool:false"
+    ElseIf VarType(v) = vbString Then
+        EncodeValue = "string:" & Chr$(34) & CStr(v) & Chr$(34)
     Else
         On Error Resume Next
-        EncodeSlot = CStr(CLng(v))
+        EncodeValue = "i32:" & CStr(CLng(v))
         If Err.Number <> 0 Then
             Err.Clear
-            EncodeSlot = "0"
+            EncodeValue = "empty"
         End If
         On Error GoTo 0
     End If
@@ -138,12 +140,12 @@ End Function
             }
         }
 
-        # Build slot capture expression
+        # Build value capture expression
         if ($dimVars.Count -gt 0) {
-            $parts = $dimVars | ForEach-Object { "EncodeSlot($_)" }
-            $slotExpr = "    RunProbe = " + ($parts -join ' & "," & ')
+            $parts = $dimVars | ForEach-Object { "EncodeValue($_)" }
+            $valueExpr = "    RunProbe = " + ($parts -join ' & "|" & ')
         } else {
-            $slotExpr = '    RunProbe = ""'
+            $valueExpr = '    RunProbe = ""'
         }
 
         # Assemble harness
@@ -157,12 +159,12 @@ End Function
             $harness += $moduleTrimmed
             $harness += ""
         }
-        $harness += $encodeSlotCode
+        $harness += $encodeValueCode
         $harness += ""
         $harness += "Public Function RunProbe() As String"
         $harness += "    On Error GoTo RunProbeErr"
         foreach ($line in $body) { $harness += $line }
-        $harness += $slotExpr
+        $harness += $valueExpr
         $harness += "    Exit Function"
         $harness += "RunProbeErr:"
         $harness += '    RunProbe = "RTMERR:" & Err.Number'
@@ -193,18 +195,18 @@ End Function
                 $result = [string]$Excel.Run("RunProbe")
                 # Check for runtime error marker injected by On Error GoTo
                 if ($result -match '^RTMERR:') {
-                    @{ status = "error"; slots = ""; message = "VBA runtime error $result" }
+                    @{ status = "error"; values = ""; message = "VBA runtime error $result" }
                 } else {
-                    @{ status = "ok"; slots = $result }
+                    @{ status = "ok"; values = $result }
                 }
             } catch {
-                @{ status = "error"; slots = ""; message = $_.Exception.Message }
+                @{ status = "error"; values = ""; message = $_.Exception.Message }
             } finally {
                 # Clear deadline regardless of success/failure
                 if (Test-Path $deadlineFile) { Remove-Item -Force $deadlineFile -ErrorAction SilentlyContinue }
             }
         } catch {
-            @{ status = "error"; slots = ""; message = $_.Exception.Message }
+            @{ status = "error"; values = ""; message = $_.Exception.Message }
         } finally {
             if ($null -ne $wb) {
                 try { $wb.Close($false) } catch {}
@@ -464,7 +466,7 @@ public static class Win32User32PidOracle {
 
             $goldenEntry = $goldenMap[$fileName]
             $goldenStatus = if ($goldenEntry) { $goldenEntry.status } else { "" }
-            $goldenSlots = if ($goldenEntry -and $goldenEntry.slots) { $goldenEntry.slots } else { "" }
+            $goldenValues = if ($goldenEntry -and $goldenEntry.values) { $goldenEntry.values } else { "" }
 
             Write-Host "[$index/$totalCount] $fileName" -NoNewline
 
@@ -474,9 +476,9 @@ public static class Win32User32PidOracle {
                 $rows.Add([PSCustomObject]@{
                     file          = $fileName
                     oracle_status = "skip"
-                    oracle_slots  = ""
+                    oracle_values = ""
                     golden_status = $goldenStatus
-                    golden_slots  = $goldenSlots
+                    golden_values = $goldenValues
                     match         = ""
                     notes         = "non-portable (OxVba synthetic builtins)"
                 }) | Out-Null
@@ -490,9 +492,9 @@ public static class Win32User32PidOracle {
                 $rows.Add([PSCustomObject]@{
                     file          = $fileName
                     oracle_status = "skip"
-                    oracle_slots  = ""
+                    oracle_values = ""
                     golden_status = $goldenStatus
-                    golden_slots  = $goldenSlots
+                    golden_values = $goldenValues
                     match         = ""
                     notes         = "harness generation failed (no Sub Main found)"
                 }) | Out-Null
@@ -502,7 +504,7 @@ public static class Win32User32PidOracle {
             # Execute in Excel
             $result = Invoke-OracleTest -Excel $script:excel -HarnessCode $harness -TimeoutMs $TestTimeoutMs
             $oracleStatus = $result.status
-            $oracleSlots = $result.slots
+            $oracleValues = $result.values
 
             # Restart Excel if it died or entered a corrupt state (VBE compile
             # error handling by the handler process may have killed it).
@@ -523,7 +525,7 @@ public static class Win32User32PidOracle {
             if ($goldenEntry) {
                 if ($oracleStatus -eq $goldenStatus) {
                     if ($oracleStatus -eq "ok") {
-                        $matchResult = if ($oracleSlots -eq $goldenSlots) { "true" } else { "false" }
+                        $matchResult = if ($oracleValues -eq $goldenValues) { "true" } else { "false" }
                     } elseif ($oracleStatus -eq "error") {
                         $matchResult = "true"
                     }
@@ -539,7 +541,7 @@ public static class Win32User32PidOracle {
 
             $notes = ""
             if ($matchResult -eq "false") {
-                $notes = "oracle=$oracleStatus/$oracleSlots golden=$goldenStatus/$goldenSlots"
+                $notes = "oracle=$oracleStatus/$oracleValues golden=$goldenStatus/$goldenValues"
             }
             if ($result.message -and $oracleStatus -eq "error") {
                 if ($notes) { $notes += "; " }
@@ -549,9 +551,9 @@ public static class Win32User32PidOracle {
             $rows.Add([PSCustomObject]@{
                 file          = $fileName
                 oracle_status = $oracleStatus
-                oracle_slots  = $oracleSlots
+                oracle_values = $oracleValues
                 golden_status = $goldenStatus
-                golden_slots  = $goldenSlots
+                golden_values = $goldenValues
                 match         = $matchResult
                 notes         = $notes
             }) | Out-Null
@@ -601,8 +603,8 @@ public static class Win32User32PidOracle {
             $md += "| File | Oracle | Golden | Notes |"
             $md += "|------|--------|--------|-------|"
             foreach ($m in $mismatches) {
-                $oracleCell = "$($m.oracle_status): ``$($m.oracle_slots)``"
-                $goldenCell = "$($m.golden_status): ``$($m.golden_slots)``"
+                $oracleCell = "$($m.oracle_status): ``$($m.oracle_values)``"
+                $goldenCell = "$($m.golden_status): ``$($m.golden_values)``"
                 $md += "| $($m.file) | $oracleCell | $goldenCell | $($m.notes) |"
             }
             $md += ""
@@ -610,10 +612,10 @@ public static class Win32User32PidOracle {
 
         $md += "## All Results"
         $md += ""
-        $md += "| File | Oracle Status | Oracle Slots | Golden Status | Golden Slots | Match |"
+        $md += "| File | Oracle Status | Oracle Values | Golden Status | Golden Values | Match |"
         $md += "|------|-------------|-------------|--------------|-------------|-------|"
         foreach ($row in $rows) {
-            $md += "| $($row.file) | $($row.oracle_status) | ``$($row.oracle_slots)`` | $($row.golden_status) | ``$($row.golden_slots)`` | $($row.match) |"
+            $md += "| $($row.file) | $($row.oracle_status) | ``$($row.oracle_values)`` | $($row.golden_status) | ``$($row.golden_values)`` | $($row.match) |"
         }
 
         Set-Content -Path $summaryPath -Value ($md -join [Environment]::NewLine)

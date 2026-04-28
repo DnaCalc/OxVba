@@ -46,8 +46,9 @@ machine code.
 
 `oxvba-jit` already owns a Cranelift execution lane, but its public execution
 contract is subset support plus fallback. The engine attempts the retained
-RtSlot Cranelift path, then the legacy i32 subset, then the VM interpreter.
-That makes Cranelift an accelerator, not the V0.2 product packaging boundary.
+RtSlot Cranelift path and falls back to the VM interpreter when a bytecode
+shape is unsupported or execution fails. That makes Cranelift an accelerator,
+not the V0.2 product packaging boundary.
 
 Direct native image output is deferred because it needs separate closure on:
 

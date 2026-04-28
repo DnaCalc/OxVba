@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)][string]$OracleResultsCsv,
-    [string]$GoldenCsv = "conformance/golden/smoke.csv",
+    [string]$GoldenCsv = "conformance/golden/values.csv",
     [string]$OutputPath = ""
 )
 
@@ -33,7 +33,7 @@ try {
     foreach ($row in $oracle) {
         $fileName = $row.file
         $oracleStatus = $row.oracle_status
-        $oracleSlots = $row.oracle_slots
+        $oracleValues = $row.oracle_values
 
         if ($oracleStatus -eq "skip") {
             $skipCount++
@@ -53,7 +53,7 @@ try {
             $results += [PSCustomObject]@{
                 file    = $fileName
                 verdict = "missing-golden"
-                oracle  = "${oracleStatus}:${oracleSlots}"
+                oracle  = "${oracleStatus}:${oracleValues}"
                 golden  = ""
                 detail  = "no golden expectation"
             }
@@ -61,12 +61,12 @@ try {
         }
 
         $goldenStatus = $goldenEntry.status
-        $goldenSlots = $goldenEntry.slots
+        $goldenValues = $goldenEntry.values
 
         $match = $false
         if ($oracleStatus -eq $goldenStatus) {
             if ($oracleStatus -eq "ok") {
-                $match = ($oracleSlots -eq $goldenSlots)
+                $match = ($oracleValues -eq $goldenValues)
             } elseif ($oracleStatus -eq "error") {
                 $match = $true
             }
@@ -83,8 +83,8 @@ try {
         $results += [PSCustomObject]@{
             file    = $fileName
             verdict = $verdict
-            oracle  = "${oracleStatus}:${oracleSlots}"
-            golden  = "${goldenStatus}:${goldenSlots}"
+            oracle  = "${oracleStatus}:${oracleValues}"
+            golden  = "${goldenStatus}:${goldenValues}"
             detail  = ""
         }
     }
