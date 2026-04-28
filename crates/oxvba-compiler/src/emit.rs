@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use oxvba_runtime::{DynLinkSymbol, value_tags::ERROR_TAG_BASE};
+use oxvba_runtime::DynLinkSymbol;
 
 use crate::{
     bytecode::{
@@ -97,10 +97,43 @@ pub struct ProcedureRuntimeMetadata {
     pub slots: Vec<ProcedureRuntimeSlotMetadata>,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
+    pub param_types: Vec<DeclareParamType>,
+    pub return_type: Option<DeclareParamType>,
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     emit_bytecode_with_runtime_metadata(module).0
+}
+
+fn declare_param_type_from_bound_type(ty: BoundType) -> DeclareParamType {
+    match ty {
+        BoundType::Integer => DeclareParamType::Integer,
+        BoundType::Long => DeclareParamType::Long,
+        BoundType::LongLong => DeclareParamType::LongLong,
+        BoundType::LongPtr => DeclareParamType::LongPtr,
+        BoundType::Byte => DeclareParamType::Byte,
+        BoundType::Single => DeclareParamType::Single,
+        BoundType::Double => DeclareParamType::Double,
+        BoundType::Currency => DeclareParamType::Currency,
+        BoundType::Date => DeclareParamType::Date,
+        BoundType::String => DeclareParamType::String,
+        BoundType::Boolean => DeclareParamType::Boolean,
+        BoundType::Variant | BoundType::Array | BoundType::Object | BoundType::Decimal => {
+            DeclareParamType::Variant
+        }
+    }
+}
+
+fn procedure_return_declare_type(proc: &BoundProcedure) -> Option<DeclareParamType> {
+    if proc.name.eq_ignore_ascii_case("main") {
+        return None;
+    }
+    let has_return_slot = proc.declaration_types.contains_key(&proc.name)
+        || proc
+            .name
+            .strip_prefix("property_get_")
+            .is_some_and(|base| proc.declaration_types.contains_key(base));
+    has_return_slot.then(|| declare_param_type_from_bound_type(proc.return_type))
 }
 
 pub fn emit_bytecode_with_runtime_metadata(
@@ -289,6 +322,12 @@ pub fn emit_bytecode_with_runtime_metadata(
                         .and_then(|base| proc_slots[entry_idx].get(base))
                 })
                 .copied(),
+            param_types: procedures[entry_idx]
+                .params
+                .iter()
+                .map(|param| declare_param_type_from_bound_type(param.ty))
+                .collect(),
+            return_type: procedure_return_declare_type(&procedures[entry_idx]),
         },
     );
 
@@ -371,6 +410,12 @@ pub fn emit_bytecode_with_runtime_metadata(
                             .and_then(|base| proc_slots[idx].get(base))
                     })
                     .copied(),
+                param_types: proc
+                    .params
+                    .iter()
+                    .map(|param| declare_param_type_from_bound_type(param.ty))
+                    .collect(),
+                return_type: procedure_return_declare_type(proc),
             },
         );
     }
@@ -3048,6 +3093,9 @@ fn emit_expr_into(
             }
 
             match (name.as_str(), arg_slots.as_slice()) {
+                ("__empty", []) => {
+                    instructions.push(Instruction::LoadEmpty { slot: dst });
+                }
                 ("__null", []) => {
                     instructions.push(Instruction::LoadNull { slot: dst });
                 }
@@ -3056,12 +3104,7 @@ fn emit_expr_into(
                     value: String::new(),
                 }),
                 ("cverr", [src]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *src });
-                    instructions.push(Instruction::IntrinsicAbsI32 { dst, src: dst });
-                    instructions.push(Instruction::AddConstI32 {
-                        slot: dst,
-                        value: ERROR_TAG_BASE,
-                    });
+                    instructions.push(Instruction::IntrinsicCVErr { dst, src: *src });
                 }
                 ("date", []) => instructions.push(Instruction::IntrinsicDateNowHost { dst }),
                 ("time", []) => instructions.push(Instruction::IntrinsicTimeNowHost { dst }),
@@ -3813,7 +3856,14 @@ fn emit_err_member_value(name: &str, dst: usize, instructions: &mut Vec<Instruct
             instructions.push(Instruction::LoadErrSource { slot: dst });
             true
         }
-        "err_helpcontext" | "err_helpfile" | "err_lastdllerror" => {
+        "err_helpfile" => {
+            instructions.push(Instruction::LoadConstString {
+                slot: dst,
+                value: String::new(),
+            });
+            true
+        }
+        "err_helpcontext" | "err_lastdllerror" => {
             instructions.push(Instruction::LoadConstI32 {
                 slot: dst,
                 value: 0,
@@ -3909,7 +3959,7 @@ fn reset_array_slots(
         .collect::<Vec<_>>();
     slots.sort_unstable();
     for slot in slots {
-        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+        instructions.push(Instruction::LoadEmpty { slot });
     }
 }
 
@@ -3941,7 +3991,7 @@ fn reset_array_slots_range(
         .collect::<Vec<_>>();
     slots.sort_unstable();
     for slot in slots {
-        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+        instructions.push(Instruction::LoadEmpty { slot });
     }
 }
 

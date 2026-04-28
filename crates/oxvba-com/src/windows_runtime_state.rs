@@ -12,6 +12,7 @@ use crate::{
 };
 
 use oxvba_runtime::ObjectRef;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -42,6 +43,7 @@ impl WindowsComSubscriptionTransport {
 #[derive(Debug, Default)]
 pub struct WindowsComClientState {
     inner: ComRuntimeState<WindowsComSubscriptionTransport>,
+    host_objects_by_prog_id: BTreeMap<String, ComObjectToken>,
 }
 
 impl Deref for WindowsComClientState {
@@ -72,6 +74,7 @@ impl Drop for WindowsComClientState {
         self.subscriptions.clear();
         self.callbacks.clear();
         self.pending_callbacks.clear();
+        self.host_objects_by_prog_id.clear();
         for binding in self.bindings.values_mut() {
             if binding.native_dispatch != 0 {
                 unsafe {
@@ -89,6 +92,10 @@ impl Drop for WindowsComClientState {
         }
         self.bindings.clear();
     }
+}
+
+fn normalize_prog_id_name(prog_id_name: &str) -> String {
+    prog_id_name.trim().to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone)]
@@ -481,6 +488,43 @@ pub fn insert_bound_object_binding(
     object
 }
 
+pub fn bind_host_dispatch_object(
+    state: &mut WindowsComClientState,
+    prog_id_name: &str,
+    mut binding: ComBinding,
+) -> ObjectRef {
+    let normalized_prog_id = normalize_prog_id_name(prog_id_name);
+    if let Some(handle) = state
+        .host_objects_by_prog_id
+        .get(&normalized_prog_id)
+        .copied()
+        && let Some(existing) = state.bindings.get_mut(&handle)
+    {
+        return retained_runtime_object(existing, handle);
+    }
+    let handle = state.allocate_handle();
+    let object = retained_runtime_object(&mut binding, handle);
+    state
+        .host_objects_by_prog_id
+        .insert(normalized_prog_id, handle);
+    state.bindings.insert(handle, binding);
+    object
+}
+
+pub fn host_dispatch_object_for_prog_id(
+    state: &mut WindowsComClientState,
+    prog_id_name: &str,
+) -> Option<ObjectRef> {
+    let handle = state
+        .host_objects_by_prog_id
+        .get(&normalize_prog_id_name(prog_id_name))
+        .copied()?;
+    state
+        .bindings
+        .get_mut(&handle)
+        .map(|binding| retained_runtime_object(binding, handle))
+}
+
 pub fn insert_bound_object_binding_at_handle(
     state: &mut WindowsComClientState,
     object: ObjectRef,
@@ -596,6 +640,23 @@ pub fn insert_bound_object_binding_shared(
 ) -> Result<ObjectRef, String> {
     let mut state = lock_state(com_state, "insert_bound_object_binding")?;
     Ok(insert_bound_object_binding(&mut state, binding))
+}
+
+pub fn bind_host_dispatch_object_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    prog_id_name: &str,
+    binding: ComBinding,
+) -> Result<ObjectRef, String> {
+    let mut state = lock_state(com_state, "bind_host_dispatch_object")?;
+    Ok(bind_host_dispatch_object(&mut state, prog_id_name, binding))
+}
+
+pub fn host_dispatch_object_for_prog_id_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    prog_id_name: &str,
+) -> Result<Option<ObjectRef>, String> {
+    let mut state = lock_state(com_state, "host_dispatch_object_for_prog_id")?;
+    Ok(host_dispatch_object_for_prog_id(&mut state, prog_id_name))
 }
 
 pub fn insert_bound_object_binding_at_handle_shared(

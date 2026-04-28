@@ -10,7 +10,7 @@ use oxvba_hal::model::{
 };
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
-use oxvba_runtime::Variant;
+use oxvba_runtime::{VarType, Variant};
 const CATALOG_REL_PATH: &str = "conformance/integration/catalog.psv";
 const CASES_REL_PATH: &str = "conformance/integration/projects";
 
@@ -55,7 +55,7 @@ struct IntegrationCase {
     unsupported_mode: Option<UnsupportedFeatureMode>,
     expected_status: ExpectedStatus,
     expected_phase: ExpectedPhase,
-    expected_compat_slots: Vec<i32>,
+    expected_values: Vec<String>,
     expected_error_contains: Vec<String>,
     reference_order: Vec<String>,
     deferred_gate: String,
@@ -82,18 +82,102 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn project_variants_to_expected_compat_slots(values: &[Variant]) -> Result<Vec<i32>, String> {
-    values
-        .iter()
-        .map(|value| {
-            value.project_compat_slot_i32().map_err(|err| {
-                format!(
-                    "variant {:?} cannot be projected into legacy expectation slot: {err}",
-                    value
-                )
-            })
-        })
-        .collect()
+fn format_expected_variant(value: &Variant) -> Result<String, String> {
+    Ok(match value.vtype() {
+        VarType::Empty => "empty".to_string(),
+        VarType::Null => "null".to_string(),
+        VarType::Boolean => format!(
+            "bool:{}",
+            value
+                .as_bool()
+                .ok_or_else(|| "invalid Boolean payload".to_string())?
+        ),
+        VarType::Integer => format!(
+            "i32:{}",
+            value
+                .as_i16()
+                .ok_or_else(|| "invalid Integer payload".to_string())?
+        ),
+        VarType::Long => format!(
+            "i32:{}",
+            value
+                .as_i32()
+                .ok_or_else(|| "invalid Long payload".to_string())?
+        ),
+        VarType::LongLong => format!(
+            "i64:{}",
+            value
+                .as_i64()
+                .ok_or_else(|| "invalid LongLong payload".to_string())?
+        ),
+        VarType::Byte => format!(
+            "i32:{}",
+            value
+                .as_u8()
+                .ok_or_else(|| "invalid Byte payload".to_string())?
+        ),
+        VarType::String => format!(
+            "string:{:?}",
+            value
+                .as_bstr()
+                .ok_or_else(|| "invalid String payload".to_string())?
+                .as_str()
+        ),
+        VarType::Error => format!(
+            "error:{}",
+            value
+                .as_error_code()
+                .ok_or_else(|| "invalid Error payload".to_string())?
+        ),
+        VarType::Object => format!(
+            "object:{}",
+            value
+                .as_object_ref()
+                .ok_or_else(|| "invalid Object payload".to_string())?
+                .raw()
+        ),
+        VarType::ArrayVariant => format!(
+            "array:{}",
+            value
+                .as_safearray()
+                .ok_or_else(|| "invalid SAFEARRAY payload".to_string())?
+                .len()
+        ),
+        VarType::Single => format!(
+            "f32:{}",
+            value
+                .as_f32()
+                .ok_or_else(|| "invalid Single payload".to_string())?
+        ),
+        VarType::Double => format!(
+            "f64:{}",
+            value
+                .as_f64()
+                .ok_or_else(|| "invalid Double payload".to_string())?
+        ),
+        VarType::Date => format!(
+            "date:{}",
+            value
+                .as_date_f64()
+                .ok_or_else(|| "invalid Date payload".to_string())?
+        ),
+        VarType::Decimal => format!(
+            "decimal:{}",
+            value
+                .as_decimal96()
+                .ok_or_else(|| "invalid Decimal payload".to_string())?
+        ),
+        VarType::Currency => format!(
+            "currency:{}",
+            value
+                .as_currency_scaled_i64()
+                .ok_or_else(|| "invalid Currency payload".to_string())?
+        ),
+    })
+}
+
+fn project_variants_to_expected_values(values: &[Variant]) -> Result<Vec<String>, String> {
+    values.iter().map(format_expected_variant).collect()
 }
 
 fn parse_case_status(raw: &str) -> Result<CaseStatus, String> {
@@ -177,18 +261,11 @@ fn parse_policy_overrides(raw: &str) -> Result<Vec<(String, String)>, String> {
     Ok(parsed)
 }
 
-fn parse_slots(raw: &str) -> Result<Vec<i32>, String> {
+fn parse_expected_values(raw: &str) -> Result<Vec<String>, String> {
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
-    parse_list(raw, ',')
-        .into_iter()
-        .map(|value| {
-            value
-                .parse::<i32>()
-                .map_err(|err| format!("invalid expected slot `{value}`: {err}"))
-        })
-        .collect()
+    Ok(parse_list(raw, ','))
 }
 
 fn load_catalog() -> Result<Vec<IntegrationCase>, String> {
@@ -231,7 +308,7 @@ fn load_catalog() -> Result<Vec<IntegrationCase>, String> {
             unsupported_mode: parse_unsupported_mode(parts[8])?,
             expected_status: parse_expected_status(parts[9])?,
             expected_phase: parse_expected_phase(parts[10])?,
-            expected_compat_slots: parse_slots(parts[11])?,
+            expected_values: parse_expected_values(parts[11])?,
             expected_error_contains: parse_list(parts[12], ';'),
             reference_order: parse_list(parts[13], ';'),
             deferred_gate: parts[14].to_string(),
@@ -451,14 +528,14 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(values)) => {
-            if case.expected_compat_slots.is_empty() {
+            if case.expected_values.is_empty() {
                 return Ok(());
             }
-            let observed_slots = project_variants_to_expected_compat_slots(&values)?;
-            if observed_slots != case.expected_compat_slots {
+            let observed_values = project_variants_to_expected_values(&values)?;
+            if observed_values != case.expected_values {
                 return Err(format!(
-                    "compat slot mismatch: expected {:?}, got {:?} from values {:?}",
-                    case.expected_compat_slots, observed_slots, values
+                    "retained value mismatch: expected {:?}, got {:?} from values {:?}",
+                    case.expected_values, observed_values, values
                 ));
             }
         }

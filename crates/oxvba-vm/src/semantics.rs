@@ -1684,11 +1684,7 @@ pub fn runtime_variant_is_object(value: &oxvba_runtime::Variant) -> bool {
 }
 
 pub fn runtime_value_is_array_compat(value: &RuntimeValue) -> bool {
-    match value {
-        RuntimeValue::ArrayIntent(_) => true,
-        RuntimeValue::I32(v) => oxvba_runtime::safe_array::is_array_tag(*v),
-        _ => false,
-    }
+    matches!(value, RuntimeValue::ArrayIntent(_))
 }
 
 pub fn runtime_vartype_tag_bounded(value: &RuntimeValue) -> i32 {
@@ -1697,13 +1693,6 @@ pub fn runtime_vartype_tag_bounded(value: &RuntimeValue) -> i32 {
         RuntimeValue::Null => 1,
         RuntimeValue::ErrorCode(_) => 10,
         RuntimeValue::ArrayIntent(_) => 8192 + 12,
-        RuntimeValue::I32(v) if runtime_value_is_array_compat(value) => {
-            let _ = v;
-            8192 + 12
-        }
-        RuntimeValue::I32(v) if *v == oxvba_runtime::value_tags::EMPTY_TAG => 0,
-        RuntimeValue::I32(v) if *v == oxvba_runtime::value_tags::NULL_TAG => 1,
-        RuntimeValue::I32(v) if oxvba_runtime::value_tags::is_error_tag(*v) => 10,
         _ => 3,
     }
 }
@@ -1767,14 +1756,6 @@ pub fn runtime_is_numeric_tag_bounded(value: &RuntimeValue) -> i32 {
         | RuntimeValue::Null
         | RuntimeValue::ErrorCode(_)
         | RuntimeValue::ArrayIntent(_) => 0,
-        RuntimeValue::I32(v)
-            if runtime_value_is_array_compat(value)
-                || *v == oxvba_runtime::value_tags::EMPTY_TAG
-                || *v == oxvba_runtime::value_tags::NULL_TAG
-                || oxvba_runtime::value_tags::is_error_tag(*v) =>
-        {
-            0
-        }
         _ => 1,
     }
 }

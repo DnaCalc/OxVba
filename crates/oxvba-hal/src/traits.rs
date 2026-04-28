@@ -252,6 +252,24 @@ pub trait ComHal: Send + Sync {
             "create_object_variant",
         )
     }
+    /// Bind an existing native `IDispatch` pointer into the host COM state and
+    /// associate it with a ProgID for subsequent host-root activation.
+    ///
+    /// # Safety
+    ///
+    /// `dispatch` must be null or a valid `IDispatch` pointer carrying one
+    /// retained reference owned by the caller. Implementations that accept the
+    /// pointer take ownership of that reference.
+    unsafe fn bind_native_dispatch_object_variant(
+        &self,
+        _prog_id: &str,
+        _dispatch: *mut core::ffi::c_void,
+    ) -> HalResult<Variant> {
+        variant_companion_not_overridden(
+            CapabilityId::ComActivationDispatch,
+            "bind_native_dispatch_object_variant",
+        )
+    }
     fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
     fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         variant_companion_not_overridden(

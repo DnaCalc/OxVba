@@ -3119,6 +3119,15 @@ fn parse_inline_stmt_or_unsupported(
     if lower == "err.clear" {
         return BoundStmt::ErrClear;
     }
+    if lower == "exit do" {
+        return BoundStmt::ExitDo;
+    }
+    if lower == "exit for" {
+        return BoundStmt::ExitFor;
+    }
+    if lower == "exit sub" || lower == "exit function" || lower == "exit property" {
+        return BoundStmt::ExitProcedure;
+    }
     parse_assign_or_unsupported(
         line.trim(),
         declarations,
@@ -4647,7 +4656,10 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         });
     }
     if expr.eq_ignore_ascii_case("empty") {
-        return Some(BoundExpr::IntConst(0));
+        return Some(BoundExpr::IntrinsicCall {
+            name: "__empty".to_string(),
+            args: Vec::new(),
+        });
     }
     if expr.eq_ignore_ascii_case("null") {
         return Some(BoundExpr::IntrinsicCall {
@@ -6588,6 +6600,22 @@ mod tests {
             panic!("expected inline raise body");
         };
         assert_eq!(*code, 5);
+    }
+
+    #[test]
+    fn resolve_single_line_if_statement_routes_inline_exit_do_body() {
+        let source =
+            "Sub Main()\nDim x\nDo While x < 5\nx = x + 1\nIf x = 3 Then Exit Do\nLoop\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::DoWhile { body, .. }) = module.body.first() else {
+            panic!("expected do while");
+        };
+        let Some(BoundStmt::IfCond { then_body, .. }) =
+            body.iter().find(|s| matches!(s, BoundStmt::IfCond { .. }))
+        else {
+            panic!("expected inline if");
+        };
+        assert!(matches!(then_body.first(), Some(BoundStmt::ExitDo)));
     }
 
     #[test]

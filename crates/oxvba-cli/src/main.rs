@@ -8,7 +8,7 @@ use oxvba_host::{
     RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
     resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
-use oxvba_runtime::{VarType, Variant, value_tags::EMPTY_TAG};
+use oxvba_runtime::{VarType, Variant};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -31,13 +31,13 @@ fn main() {
 }
 
 // ---------------------------------------------------------------------------
-// build subcommand: project target -> compile -> .oxb
+// build subcommand: project target -> compile -> artifact
 // ---------------------------------------------------------------------------
 
 fn run_build(args: Vec<String>) {
     let parsed = parse_build_args(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba build [path] [-o <output.oxb>] [--project-ref <path>] [--com-ref <lib-or-lib=importlib>] [--native-ref <path>]"
+            "usage: oxvba build [path] [-o <output>] [--project-ref <path>] [--com-ref <lib-or-lib=importlib>] [--native-ref <path>]"
         );
         std::process::exit(2);
     });
@@ -139,6 +139,11 @@ fn run_build(args: Vec<String>) {
         .output_path
         .unwrap_or_else(|| default_build_output_path(&input, &loaded));
 
+    if loaded.output_type == oxvba_project::OutputType::Addin {
+        build_xll_addin(&input, &out, &loaded, &bytes);
+        return;
+    }
+
     fs::write(&out, &bytes).unwrap_or_else(|err| {
         eprintln!("oxvba build: cannot write {}: {err}", out.display());
         std::process::exit(1);
@@ -149,6 +154,54 @@ fn run_build(args: Vec<String>) {
         input.display(),
         out.display(),
         bytes.len()
+    );
+}
+
+fn build_xll_addin(
+    input: &Path,
+    out: &Path,
+    loaded: &oxvba_project::LoadedProject,
+    bundle_bytes: &[u8],
+) {
+    let temp_bundle_path = std::env::temp_dir().join(format!(
+        "oxvba_addin_bundle_{}_{}.oxb",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    fs::write(&temp_bundle_path, bundle_bytes).unwrap_or_else(|err| {
+        eprintln!(
+            "oxvba build: cannot stage add-in bundle {}: {err}",
+            temp_bundle_path.display()
+        );
+        std::process::exit(1);
+    });
+
+    let bundle_literal = temp_bundle_path.to_string_lossy().replace('\\', "/");
+    let source = oxvba_build::xll::generate_xll_shim(
+        &loaded.manifest.project_name,
+        &bundle_literal,
+        &loaded.native_exports,
+    );
+    let compile_result =
+        oxvba_build::compile::compile_shim(&source, out, oxvba_build::compile::ShimOutputType::Xll);
+    let _ = fs::remove_file(&temp_bundle_path);
+
+    compile_result.unwrap_or_else(|err| {
+        eprintln!("oxvba build: XLL packaging failed: {err}");
+        std::process::exit(1);
+    });
+
+    let len = fs::metadata(out)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    println!(
+        "built {} -> {} ({} bytes)",
+        input.display(),
+        out.display(),
+        len
     );
 }
 
@@ -202,9 +255,6 @@ fn run_project(args: Vec<String>) {
 
     match result {
         Ok(values) => {
-            if parsed.dump_slots {
-                println!("SLOTS:{}", format_compat_slot_dump(&values));
-            }
             if parsed.dump_values {
                 let payload = values
                     .iter()
@@ -280,7 +330,6 @@ struct RunProjectArgs {
     input_path: Option<PathBuf>,
     enable_jit: bool,
     dump_values: bool,
-    dump_slots: bool,
     dump_bootstrap: bool,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
@@ -306,7 +355,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     let mut input_path: Option<PathBuf> = None;
     let mut enable_jit = false;
     let mut dump_values = false;
-    let mut dump_slots = false;
     let mut dump_bootstrap = false;
     let mut bootstrap = RunnerBootstrapOptions::default();
     let mut entry_point_override: Option<String> = None;
@@ -318,7 +366,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         match collected[i].as_str() {
             "--jit" => enable_jit = true,
             "--dump-values" => dump_values = true,
-            "--dump-slots" => dump_slots = true,
             "--dump-bootstrap" => dump_bootstrap = true,
             "--entry" => {
                 i += 1;
@@ -413,7 +460,6 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         input_path,
         enable_jit,
         dump_values,
-        dump_slots,
         dump_bootstrap,
         bootstrap,
         entry_point_override,
@@ -1949,13 +1995,18 @@ fn cli_output_type_name(output_type: oxvba_project::OutputType) -> &'static str 
 }
 
 fn default_build_output_path(input: &Path, loaded: &oxvba_project::LoadedProject) -> PathBuf {
+    let extension = if loaded.output_type == oxvba_project::OutputType::Addin {
+        "xll"
+    } else {
+        "oxb"
+    };
     if input.is_dir() || input == Path::new(".") {
-        return input.join(format!("{}.oxb", loaded.manifest.project_name));
+        return input.join(format!("{}.{}", loaded.manifest.project_name, extension));
     }
     input
         .parent()
         .unwrap_or(Path::new("."))
-        .join(format!("{}.oxb", loaded.manifest.project_name))
+        .join(format!("{}.{}", loaded.manifest.project_name, extension))
 }
 
 // ---------------------------------------------------------------------------
@@ -2029,7 +2080,6 @@ fn run_execute(cli_args: Vec<String>) {
         .map(|a| a.source.clone())
         .unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
 
-    let dump_slots = args.as_ref().map(|a| a.dump_slots).unwrap_or(false);
     let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
 
     let execution = engine
@@ -2038,9 +2088,6 @@ fn run_execute(cli_args: Vec<String>) {
 
     match execution {
         Ok(result) => {
-            if dump_slots {
-                println!("SLOTS:{}", format_compat_slot_dump(&result.values));
-            }
             if dump_values {
                 let payload = result
                     .values
@@ -2061,7 +2108,6 @@ fn run_execute(cli_args: Vec<String>) {
 #[derive(Debug, Clone)]
 struct RunArgs {
     source: String,
-    dump_slots: bool,
     dump_values: bool,
     dump_bootstrap: bool,
     enable_jit: bool,
@@ -2115,7 +2161,6 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     }
 
     let mut path: Option<String> = None;
-    let mut dump_slots = false;
     let mut dump_values = false;
     let mut dump_bootstrap = false;
     let mut enable_jit = false;
@@ -2126,7 +2171,6 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     while index < args.len() {
         let arg = &args[index];
         match arg.as_str() {
-            "--dump-slots" => dump_slots = true,
             "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
             "--jit" => enable_jit = true,
@@ -2194,7 +2238,6 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     let source = fs::read_to_string(path?).ok()?;
     Some(RunArgs {
         source,
-        dump_slots,
         dump_values,
         dump_bootstrap,
         enable_jit,
@@ -2241,19 +2284,6 @@ fn format_variant_value(value: &Variant) -> String {
             None => "object:<null>".to_string(),
         },
     }
-}
-
-fn format_compat_slot_dump(values: &[Variant]) -> String {
-    values
-        .iter()
-        .map(|value| {
-            value
-                .project_compat_slot_i32()
-                .unwrap_or(EMPTY_TAG)
-                .to_string()
-        })
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -2312,7 +2342,7 @@ mod tests {
         apply_cli_reference_overrides, default_build_output_path, load_run_project_target,
         parse_cli_com_reference, parse_com_ref_args, parse_immediate_args_from,
         parse_init_args_from, parse_run_args_from, parse_run_project_args_from,
-        resolve_project_runner_bootstrap, run_immediate_shell, run_init,
+        resolve_project_runner_bootstrap, run_build, run_immediate_shell, run_init,
     };
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
     use oxvba_hal::model::{HostPolicyPreset, UnsupportedFeatureMode};
@@ -2340,12 +2370,10 @@ mod tests {
         let args = vec![
             "run".to_string(),
             path,
-            "--dump-slots".to_string(),
             "--dump-values".to_string(),
             "--jit".to_string(),
         ];
         let parsed = parse_run_args_from(args).expect("args should parse");
-        assert!(parsed.dump_slots);
         assert!(parsed.dump_values);
         assert!(parsed.enable_jit);
     }
@@ -2926,6 +2954,35 @@ End Function
     }
 
     #[test]
+    fn run_project_directory_convention_mode_jit_preserves_project_visible_snapshot() {
+        let temp_root = unique_temp_dir("oxvba_cli_convention_project_jit_snapshot");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim result\nresult = Add(19, 23)\nEnd Sub\n",
+        )
+        .expect("write main module");
+        std::fs::write(
+            temp_root.join("Math.bas"),
+            "Attribute VB_Name = \"Math\"\nPublic Function Add(lhs, rhs)\nAdd = lhs + rhs\nEnd Function\n",
+        )
+        .expect("write math module");
+        let loaded = load_run_project_target(Some(temp_root.clone()))
+            .expect("directory convention mode should load");
+
+        let engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let snapshot = engine
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+            .expect("JIT-enabled convention project should execute");
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].as_i32(), Some(42));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
     fn run_project_directory_prefers_nested_basproj_when_present() {
         let temp_root = std::env::temp_dir().join(format!(
             "oxvba_cli_directory_basproj_{}_{}",
@@ -3177,6 +3234,59 @@ End Function
             default_build_output_path(Path::new("legacy.vbp"), &loaded),
             PathBuf::from("BuildTarget.oxb")
         );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn default_build_output_path_uses_xll_for_addin_projects() {
+        let temp_root = unique_temp_dir("oxvba_cli_addin_output_default");
+        std::fs::write(
+            temp_root.join("Module1.bas"),
+            "Public Sub RegisterAddin()\nEnd Sub\n",
+        )
+        .expect("write addin module");
+        let loaded = oxvba_project::load_basproj_from_str(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Addin</OutputType>\n    <ProjectName>ExcelAddin</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+            &temp_root,
+        )
+        .expect("temp addin project should load");
+
+        assert_eq!(
+            default_build_output_path(&temp_root, &loaded),
+            temp_root.join("ExcelAddin.xll")
+        );
+        assert_eq!(
+            default_build_output_path(Path::new("legacy.vbp"), &loaded),
+            PathBuf::from("ExcelAddin.xll")
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn build_addin_project_produces_xll_artifact() {
+        let temp_root = unique_temp_dir("oxvba_cli_addin_build");
+        std::fs::write(
+            temp_root.join("Module1.bas"),
+            "Public Function AddOne(ByVal value As Double) As Double\n    AddOne = value + 1\nEnd Function\n",
+        )
+        .expect("write addin module");
+        std::fs::write(
+            temp_root.join("ExcelAddin.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Addin</OutputType>\n    <ProjectName>ExcelAddin</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n  <ItemGroup>\n    <NativeExport Include=\"AddOne\">\n      <Module>Module1</Module>\n      <Procedure>AddOne</Procedure>\n      <CallingConvention>Stdcall</CallingConvention>\n      <Category>Math</Category>\n      <Description>Adds one.</Description>\n      <ArgumentDescriptions>value</ArgumentDescriptions>\n    </NativeExport>\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write addin project");
+
+        run_build(vec![
+            "build".to_string(),
+            temp_root.to_string_lossy().to_string(),
+        ]);
+
+        let output = temp_root.join("ExcelAddin.xll");
+        assert!(output.exists(), "expected {}", output.display());
+        assert!(std::fs::metadata(&output).expect("xll metadata").len() > 0);
+        assert!(!temp_root.join("ExcelAddin.oxb").exists());
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

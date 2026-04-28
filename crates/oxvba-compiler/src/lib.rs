@@ -122,7 +122,6 @@ mod tests {
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
     };
     use crate::{resolve, typecheck};
-    use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum DispatchInvokeMemberSelector {
@@ -992,18 +991,19 @@ mod tests {
     }
 
     #[test]
-    fn compile_cverr_emits_error_tag_encoding_sequence() {
+    fn compile_cverr_emits_retained_error_instruction() {
         let source = "Sub Main()\nDim x\nx = CVErr(7)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::IntrinsicAbsI32 { .. }))
+                .any(|i| matches!(i, Instruction::IntrinsicCVErr { .. }))
         );
-        assert!(out.instructions.iter().any(|i| matches!(
-            i,
-            Instruction::AddConstI32 { value, .. } if *value == ERROR_TAG_BASE
-        )));
+        assert!(
+            !out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddConstI32 { .. }))
+        );
     }
 
     #[test]

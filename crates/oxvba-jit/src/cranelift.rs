@@ -15,7 +15,6 @@ use oxvba_hal::traits::HostServices;
 #[cfg(test)]
 use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::Variant;
-use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
 use crate::jit_context::JitContextOwned;
 use crate::runtime_helpers;
@@ -315,12 +314,6 @@ fn supports_rtslot(bytecode: &Bytecode) -> bool {
     }
 
     for instruction in &bytecode.instructions {
-        if matches!(
-            instruction,
-            Instruction::AddConstI32 { value, .. } if *value == ERROR_TAG_BASE
-        ) {
-            return false;
-        }
         if !supports_rtslot_instruction(instruction) {
             return false;
         }
@@ -334,6 +327,32 @@ fn supports_rtslot(bytecode: &Bytecode) -> bool {
         }
     }
     true
+}
+
+fn has_proc_call_and_error_state(bytecode: &Bytecode) -> bool {
+    let has_proc_call = bytecode
+        .instructions
+        .iter()
+        .any(|inst| matches!(inst, Instruction::CallProc { .. }));
+    if !has_proc_call {
+        return false;
+    }
+
+    bytecode.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            Instruction::SetOnErrorResumeNext
+                | Instruction::SetOnErrorGoto0
+                | Instruction::SetOnErrorGotoLabel { .. }
+                | Instruction::LoadErrNumber { .. }
+                | Instruction::LoadErrDescription { .. }
+                | Instruction::LoadErrSource { .. }
+                | Instruction::RaiseError { .. }
+                | Instruction::Resume
+                | Instruction::ResumeNext
+                | Instruction::ResumeLabel { .. }
+        )
+    })
 }
 
 // ── Inlining ──────────────────────────────────────────────────────────
@@ -350,6 +369,20 @@ fn find_first_return(instructions: &[Instruction], start_pc: usize) -> Option<us
         .iter()
         .position(|inst| matches!(inst, Instruction::Return))?;
     Some(start_pc + rel)
+}
+
+fn segment_contains_branch(instructions: &[Instruction], start_pc: usize, end_pc: usize) -> bool {
+    instructions.iter().take(end_pc).skip(start_pc).any(|inst| {
+        matches!(
+            inst,
+            Instruction::Jump { .. }
+                | Instruction::JumpIfZero { .. }
+                | Instruction::SetOnErrorGotoLabel { .. }
+                | Instruction::ResumeLabel { .. }
+                | Instruction::Resume
+                | Instruction::ResumeNext
+        )
+    })
 }
 
 fn inline_segment(
@@ -396,6 +429,11 @@ fn inline_segment(
                 let proc_end = find_first_return(instructions, *target_pc).ok_or_else(|| {
                     format!("cannot locate callee return for call target {target_pc}")
                 })?;
+                if segment_contains_branch(instructions, *target_pc, proc_end) {
+                    return Err(format!(
+                        "callee with branch control-flow is not supported by cranelift jit inliner (pc={target_pc})"
+                    ));
+                }
                 let nested = inline_segment(
                     instructions,
                     *target_pc,
@@ -489,6 +527,9 @@ fn inline_bytecode(bytecode: &Bytecode) -> Result<Bytecode, String> {
 // ── Public API ────────────────────────────────────────────────────────
 
 pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
+    if has_proc_call_and_error_state(bytecode) {
+        return false;
+    }
     let Ok(inlined) = inline_bytecode(bytecode) else {
         return false;
     };
@@ -497,13 +538,16 @@ pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
 
 /// Returns true if the bytecode can run on the RtSlot JIT path.
 pub fn supports_bytecode_rtslot(bytecode: &Bytecode) -> bool {
+    if has_proc_call_and_error_state(bytecode) {
+        return false;
+    }
     let Ok(inlined) = inline_bytecode(bytecode) else {
         return false;
     };
     supports_rtslot(&inlined)
 }
 
-/// Compatibility execution API for the legacy 4-byte slot path.
+/// Compatibility execution API for the narrow 4-byte integer slot path.
 ///
 /// New value-model call sites should prefer [`execute_bytecode_variants`].
 #[cfg(test)]
@@ -514,15 +558,11 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String
         .collect()
 }
 
-/// Execute bytecode through the legacy 4-byte slot path and project results
-/// directly to exact Variant carriers.
+/// Execute bytecode through the narrow 4-byte integer slot path and project
+/// results directly to exact Long `Variant` carriers.
 pub fn execute_bytecode_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
-    execute_bytecode_legacy(bytecode).map(|values| {
-        values
-            .into_iter()
-            .map(Variant::from_compat_slot_i32)
-            .collect()
-    })
+    execute_bytecode_legacy(bytecode)
+        .map(|values| values.into_iter().map(Variant::from_i32).collect())
 }
 
 /// Compatibility execution API for the RtSlot path that projects retained
@@ -546,6 +586,9 @@ pub fn execute_bytecode_rtslot_variants(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<Variant>, String> {
+    if has_proc_call_and_error_state(bytecode) {
+        return Err("procedure calls with error-state instructions are not supported by rtslot cranelift execution".to_string());
+    }
     let inlined = inline_bytecode(bytecode)?;
     if !supports_rtslot(&inlined) {
         return Err("unsupported bytecode for rtslot cranelift execution".to_string());

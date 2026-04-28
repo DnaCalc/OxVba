@@ -4,7 +4,8 @@
 
 Workspace crates and current roles:
 - `oxvba-syntax`: lexer/parser and syntax-tree infrastructure
-- `oxvba-runtime`: runtime value/tag/SAFEARRAY support
+- `oxvba-runtime`: retained `Variant`, `BStr`, `ObjectRef`, and `SAFEARRAY`
+  value-carrier support plus explicit compatibility projections
 - `oxvba-ir`: HIR/MIR/CFG lowering structures
 - `oxvba-compiler`: resolve/typecheck/project lowering/bytecode emission
 - `oxvba-vm`: register-slot interpreter
@@ -20,10 +21,17 @@ Workspace crates and current roles:
 High-level execution path:
 - source/project inputs enter through `oxvba-host` or `oxvba-cli`
 - `oxvba-compiler` produces `Bytecode`
-- `oxvba-vm` and `oxvba-jit` execute compiled code (JIT has full instruction parity with the interpreter)
+- `oxvba-vm` executes compiled code over retained `Variant` register slots;
+  `oxvba-jit` covers a supported subset and falls back to the VM for unsupported
+  or project-visible snapshot paths
 - `oxvba-hal` provides profile/policy-governed host services
-- OxVba semantic values remain the canonical runtime value model for compiler/VM/host coordination
-- `oxvba-com` is the COM boundary crate that should translate those values to and from COM wire representations (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, event payload transport)
+- retained `Variant` values are the canonical execution and snapshot carrier for
+  VM/JIT/host coordination
+- `RuntimeValue` remains as an explicit compatibility/projection surface for
+  older APIs, tests, and embedding callers that have not moved to `Variant`
+- `oxvba-com` is the COM boundary crate that translates retained values to and
+  from COM wire representations (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`,
+  event payload transport)
 - imported COM libraries should increasingly present as synthetic reference/project metadata to the compiler rather than as a special parallel symbol world
 - COM-backed objects should increasingly adapt into the same internal late-bound object protocol used for OxVba/VBA objects
 - live Windows COM client execution/state is now materially centered in `oxvba-com` through `WindowsComBridge`, while HAL retains the narrowed capability/bootstrap/delegation seam
@@ -44,12 +52,16 @@ High-level execution path:
 - late-bound `IDispatch` parity still remains below VBA/Excel behavior,
 - richer COM value transport still needs broader object/interface/SAFEARRAY coverage,
 - those lanes now proceed on the corrected architecture with `oxvba-com` as the live bridge.
-7. The checked-in implementation is in the middle of the value-model migration and no longer uses token-only object identity:
-- `RuntimeValue` is the canonical execution substrate today,
-- `RuntimeValue::String` now carries `BStr`, and `BStr` exposes a Windows-style
-  owned UTF-16 core view (`OwnedBStrCore`) for boundary projection,
+7. The checked-in implementation has completed the scoped value-model carrier
+   migration for the active VM/JIT/host lanes:
+- retained `Variant` is the canonical execution/snapshot substrate today,
+- `RuntimeValue` surfaces are compatibility projections and must be named that
+  way when they remain in public APIs,
+- `BStr` exposes a Windows-style owned UTF-16 core view (`OwnedBStrCore`) for
+  boundary projection,
 - canonical runtime object identity now flows through `ObjectRef`, whose base object implements a runtime `IUnknown`-style vtable with `AddRef` / `Release`,
-- raw integer compat identities still exist as projection/order/debug compatibility data, but they are no longer the canonical object carrier,
+- raw integer identities remain only where they are explicit control-plane
+  tokens or projection/debug compatibility data, not canonical value storage,
 - `BindingHandle` remains a typed semantic leaf for non-object binding identity,
 - the runtime `Variant` type is now an owned semantic carrier over a
   Windows-shaped 16-byte `VariantCore`, with owned side data for strings,
@@ -64,7 +76,8 @@ High-level execution path:
 - those are current checked-in differences, not hidden assumptions:
   - they may leak at some boundaries from time to time,
   - they should be monitored through interop/conformance evidence,
-  - and they are now explicitly scheduled for migration in `WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md`.
+  - and any remaining compatibility projection must be tracked as a named
+    boundary, not treated as execution truth.
 8. The next architectural step is broader than a value-carrier patch:
 - early-bound COM should converge on a synthetic reference facade in the compiler/binder,
 - late-bound COM should converge on the same internal dynamic-object protocol used for VBA objects,
@@ -75,8 +88,10 @@ High-level execution path:
 Near-term architectural direction remains:
 - keep HAL contracted to host/profile/policy/bootstrap/delegation concerns
 - continue parity and facade work with COM transport/state/metadata ownership centered in `oxvba-com`
-- introduce a richer OxVba-side external value carrier so compiler/VM/host stay on semantic values while `oxvba-com` handles COM translation
-- replace the current old semantic-first string/value substrate with the Windows VBA 7.1 x64-aligned internal model described in `WORKSET_2026-04-20_VALUE_MODEL_MIGRATION_COMPARISON_AND_PERF_PLAN.md`
+- keep wrapper, XLL, COM, and embedding generators on retained `Variant`
+  arguments/results unless they are deliberately exposing a compatibility API
+- continue tightening Windows VBA 7.1 x64-aligned representation gaps that were
+  explicitly left as bounded follow-up scope by the value-model migration
 - define a unified late-bound object protocol so COM and native VBA objects share one dynamic-call model
 - make typelib-backed COM imports look like synthetic reference/project metadata to the compiler where VBA semantics allow
 - keep compiler/VM/host semantics aligned while that extraction happens in staged slices

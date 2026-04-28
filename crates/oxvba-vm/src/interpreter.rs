@@ -9,9 +9,9 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
-    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
-    ProjectDynamicParamRoute,
+    Bytecode, Instruction, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -29,9 +29,6 @@ use oxvba_runtime::safe_array::{
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
-#[cfg(test)]
-use oxvba_runtime::value_tags::EMPTY_TAG;
-use oxvba_runtime::value_tags::{NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag};
 use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant, bstr::BStr};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
@@ -280,15 +277,6 @@ impl Vm {
         }
     }
 
-    #[cfg(test)]
-    pub fn snapshot_slots(&self, slot_count: usize) -> Vec<i32> {
-        let end = slot_count.min(self.registers.registers.len());
-        self.registers.registers[..end]
-            .iter()
-            .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
-            .collect()
-    }
-
     /// Legacy snapshot alias. Prefer `snapshot_variants` for retained
     /// value-model work.
     #[cfg(test)]
@@ -501,7 +489,7 @@ impl Vm {
         }
         self.reset_execution_state(bytecode.slot_count, true);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
-            self.write_legacy_scalar_slot(*slot, *value)?;
+            self.write_i32_slot(*slot, *value)?;
         }
         self.execute_loop(
             bytecode,
@@ -557,6 +545,7 @@ impl Vm {
         };
 
         self.reset_execution_state(bytecode.slot_count, true);
+        self.clear_invoked_procedure_slots(entry_pc)?;
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_variant_slot(*slot, value.clone())?;
         }
@@ -621,6 +610,26 @@ impl Vm {
         self.on_error_resume_next = false;
         self.on_error_goto_label_target = None;
         self.clear_error_state();
+    }
+
+    fn clear_invoked_procedure_slots(&mut self, entry_pc: usize) -> Result<(), String> {
+        let slots = self
+            .procedure_runtime_metadata
+            .values()
+            .find(|metadata| metadata.entry_pc == entry_pc)
+            .map(|metadata| metadata.slots.clone())
+            .unwrap_or_default();
+        for slot in slots {
+            if matches!(
+                slot.kind,
+                ProcedureRuntimeSlotKind::Parameter
+                    | ProcedureRuntimeSlotKind::Local
+                    | ProcedureRuntimeSlotKind::ReturnValue
+            ) {
+                self.write_variant_slot(slot.slot, Variant::empty())?;
+            }
+        }
+        Ok(())
     }
 
     fn resume_debug_session(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
@@ -747,15 +756,7 @@ impl Vm {
             }
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
-                    // Use compat-slot decoding for the special tag values (0=Empty,
-                    // error tags, array tags) but NOT for -1 which is now
-                    // properly represented via LoadNull.
-                    let value = if *value == NULL_TAG {
-                        Variant::from_i32(*value)
-                    } else {
-                        Variant::try_from_compat_slot_i32(*value)?
-                    };
-                    self.write_variant_slot(*slot, value)?;
+                    self.write_variant_slot(*slot, Variant::from_i32(*value))?;
                     pc += 1;
                 }
                 Instruction::LoadConstBool { slot, value } => {
@@ -1825,20 +1826,20 @@ impl Vm {
                     pv,
                     due,
                 } => {
-                    let rate = self.read_legacy_scalar_slot(*rate)?;
-                    let nper = self.read_legacy_scalar_slot(*nper)?;
-                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
+                    let rate = self.read_i32_slot(*rate)?;
+                    let nper = self.read_i32_slot(*nper)?;
+                    let pmt = self.read_i32_slot(*pmt)?;
                     let pv = match pv {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::fv_i32(rate, nper, pmt, pv, due)),
+                        Variant::from_i32(Self::fv_i32(rate, nper, pmt, pv, due)),
                     )?;
                     pc += 1;
                 }
@@ -1850,20 +1851,20 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_legacy_scalar_slot(*rate)?;
-                    let nper = self.read_legacy_scalar_slot(*nper)?;
-                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
+                    let rate = self.read_i32_slot(*rate)?;
+                    let nper = self.read_i32_slot(*nper)?;
+                    let pmt = self.read_i32_slot(*pmt)?;
                     let fv = match fv {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::pv_i32(rate, nper, pmt, fv, due)),
+                        Variant::from_i32(Self::pv_i32(rate, nper, pmt, fv, due)),
                     )?;
                     pc += 1;
                 }
@@ -1875,45 +1876,42 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_legacy_scalar_slot(*rate)?;
-                    let nper = self.read_legacy_scalar_slot(*nper)?;
-                    let pv = self.read_legacy_scalar_slot(*pv)?;
+                    let rate = self.read_i32_slot(*rate)?;
+                    let nper = self.read_i32_slot(*nper)?;
+                    let pv = self.read_i32_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::pmt_i32(rate, nper, pv, fv, due)),
+                        Variant::from_i32(Self::pmt_i32(rate, nper, pv, fv, due)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNpvI32 { dst, rate, values } => {
-                    let rate = self.read_legacy_scalar_slot(*rate)?;
+                    let rate = self.read_i32_slot(*rate)?;
                     let mut cash_flows = Vec::with_capacity(values.len());
                     for slot in values {
-                        cash_flows.push(self.read_legacy_scalar_slot(*slot)?);
+                        cash_flows.push(self.read_i32_slot(*slot)?);
                     }
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::npv_i32(rate, &cash_flows)),
+                        Variant::from_i32(Self::npv_i32(rate, &cash_flows)),
                     )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIrrI32 { dst, value, guess } => {
-                    let value = self.read_legacy_scalar_slot(*value)?;
+                    let value = self.read_i32_slot(*value)?;
                     let guess = match guess {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_variant_slot(
-                        *dst,
-                        Variant::from_compat_slot_i32(Self::irr_i32(value, guess)),
-                    )?;
+                    self.write_variant_slot(*dst, Variant::from_i32(Self::irr_i32(value, guess)))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMirrI32 {
@@ -1922,16 +1920,12 @@ impl Vm {
                     finance_rate,
                     reinvest_rate,
                 } => {
-                    let value = self.read_legacy_scalar_slot(*value)?;
-                    let finance_rate = self.read_legacy_scalar_slot(*finance_rate)?;
-                    let reinvest_rate = self.read_legacy_scalar_slot(*reinvest_rate)?;
+                    let value = self.read_i32_slot(*value)?;
+                    let finance_rate = self.read_i32_slot(*finance_rate)?;
+                    let reinvest_rate = self.read_i32_slot(*reinvest_rate)?;
                     self.write_variant_slot(
                         *dst,
-                        Variant::from_compat_slot_i32(Self::mirr_i32(
-                            value,
-                            finance_rate,
-                            reinvest_rate,
-                        )),
+                        Variant::from_i32(Self::mirr_i32(value, finance_rate, reinvest_rate)),
                     )?;
                     pc += 1;
                 }
@@ -1944,27 +1938,26 @@ impl Vm {
                     due,
                     guess,
                 } => {
-                    let nper = self.read_legacy_scalar_slot(*nper)?;
-                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
-                    let pv = self.read_legacy_scalar_slot(*pv)?;
+                    let nper = self.read_i32_slot(*nper)?;
+                    let pmt = self.read_i32_slot(*pmt)?;
+                    let pv = self.read_i32_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let guess = match guess {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_variant_slot(
-                        *dst,
-                        Variant::from_compat_slot_i32(Self::rate_i32(
-                            nper, pmt, pv, fv, due, guess,
-                        )),
-                    )?;
+                    let value = match Self::rate_i32(nper, pmt, pv, fv, due, guess) {
+                        Ok(value) => Variant::from_i32(value),
+                        Err(code) => Variant::from_error_code(code),
+                    };
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNPerI32 {
@@ -1975,21 +1968,22 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_legacy_scalar_slot(*rate)?;
-                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
-                    let pv = self.read_legacy_scalar_slot(*pv)?;
+                    let rate = self.read_i32_slot(*rate)?;
+                    let pmt = self.read_i32_slot(*pmt)?;
+                    let pv = self.read_i32_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
+                        Some(slot) => self.read_i32_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_variant_slot(
-                        *dst,
-                        Variant::from_compat_slot_i32(Self::nper_i32(rate, pmt, pv, fv, due)),
-                    )?;
+                    let value = match Self::nper_i32(rate, pmt, pv, fv, due) {
+                        Ok(value) => Variant::from_i32(value),
+                        Err(code) => Variant::from_error_code(code),
+                    };
+                    self.write_variant_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicArrayLiteral { dst, values } => {
@@ -2298,6 +2292,11 @@ impl Vm {
                     )?;
                     pc += 1;
                 }
+                Instruction::IntrinsicCVErr { dst, src } => {
+                    let code = self.read_i32_slot(*src)?.saturating_abs();
+                    self.write_variant_slot(*dst, Variant::from_error_code(code))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicIsDateTag { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
                     let out = if crate::semantics::runtime_variant_is_date(&value) {
@@ -2374,31 +2373,31 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicCollectionAdd { dst, count, item } => {
-                    let count = self.read_legacy_scalar_slot(*count)?;
-                    let _item = self.read_legacy_scalar_slot(*item)?;
-                    self.write_legacy_scalar_slot(*dst, (count + 1).max(0))?;
+                    let count = self.read_i32_slot(*count)?;
+                    let _item = self.read_i32_slot(*item)?;
+                    self.write_i32_slot(*dst, (count + 1).max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionItem { dst, count, index } => {
-                    let count = self.read_legacy_scalar_slot(*count)?;
-                    let index = self.read_legacy_scalar_slot(*index)?;
+                    let count = self.read_i32_slot(*count)?;
+                    let index = self.read_i32_slot(*index)?;
                     let out = if index >= 1 && index <= count {
                         index
                     } else {
                         0
                     };
-                    self.write_legacy_scalar_slot(*dst, out)?;
+                    self.write_i32_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionRemove { dst, count, index } => {
-                    let count = self.read_legacy_scalar_slot(*count)?;
-                    let _index = self.read_legacy_scalar_slot(*index)?;
-                    self.write_legacy_scalar_slot(*dst, (count - 1).max(0))?;
+                    let count = self.read_i32_slot(*count)?;
+                    let _index = self.read_i32_slot(*index)?;
+                    self.write_i32_slot(*dst, (count - 1).max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionCount { dst, count } => {
-                    let count = self.read_legacy_scalar_slot(*count)?;
-                    self.write_legacy_scalar_slot(*dst, count.max(0))?;
+                    let count = self.read_i32_slot(*count)?;
+                    self.write_i32_slot(*dst, count.max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
@@ -3114,6 +3113,10 @@ impl Vm {
                     self.write_variant_slot(*slot, Variant::null())?;
                     pc += 1;
                 }
+                Instruction::LoadEmpty { slot } => {
+                    self.write_variant_slot(*slot, Variant::empty())?;
+                    pc += 1;
+                }
                 Instruction::BoolNot { dst, src } => {
                     let src = self.read_variant_slot(*src)?;
                     let out = !crate::semantics::variant_truthy_value(&src)?;
@@ -3339,18 +3342,16 @@ impl Vm {
         Ok(())
     }
 
-    fn read_legacy_scalar_slot(&self, slot: usize) -> Result<i32, String> {
+    fn read_i32_slot(&self, slot: usize) -> Result<i32, String> {
         crate::semantics::runtime_variant_to_i32_compat(
             &self.read_variant_slot(slot)?,
-            "legacy i32 lane",
+            "i32 intrinsic operand",
         )
-        .map_err(|detail| {
-            format!("runtime value in slot {slot} cannot enter legacy i32 lane: {detail}")
-        })
+        .map_err(|detail| format!("runtime value in slot {slot} cannot be read as i32: {detail}"))
     }
 
-    fn write_legacy_scalar_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
-        self.write_variant_slot(slot, Variant::from_compat_slot_i32(value))
+    fn write_i32_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
+        self.write_variant_slot(slot, Variant::from_i32(value))
     }
 
     #[cfg(test)]
@@ -3566,12 +3567,6 @@ impl Vm {
     }
 
     fn normalize_dynamic_result_variant(value: &Variant) -> Variant {
-        if let Some(value) = value.as_i32()
-            && is_error_tag(value)
-            && let Some(code) = error_code_from_tag(value)
-        {
-            return Variant::from_error_code(code);
-        }
         value.clone()
     }
 
@@ -4210,10 +4205,7 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        let Ok(value) = RuntimeSlot::from_compat_slot_i32(current + value) else {
-            return false;
-        };
-        *dst = value;
+        *dst = RuntimeSlot::Variant(Variant::from_i32(current + value));
         true
     }
 
@@ -4228,10 +4220,7 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        let Ok(value) = RuntimeSlot::from_compat_slot_i32(current - value) else {
-            return false;
-        };
-        *dst = value;
+        *dst = RuntimeSlot::Variant(Variant::from_i32(current - value));
         true
     }
 
@@ -4431,9 +4420,9 @@ impl Vm {
         pv * growth_prime + pmt * (due * c + (1.0 + r * due) * c_prime)
     }
 
-    fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
+    fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> Result<i32, i32> {
         if nper == 0 {
-            return error_tag_from_code(FIN_RATE_ERROR_CODE);
+            return Err(FIN_RATE_ERROR_CODE);
         }
         let n = nper as f64;
         let pmt = pmt as f64;
@@ -4446,22 +4435,22 @@ impl Vm {
             let f = Self::rate_func(r, n, pmt, pv, fv, due);
             let fp = Self::rate_func_derivative(r, n, pmt, pv, fv, due);
             if fp.abs() < 1e-12 {
-                return error_tag_from_code(FIN_RATE_ERROR_CODE);
+                return Err(FIN_RATE_ERROR_CODE);
             }
             let next = (r - f / fp).clamp(-0.99, 10.0);
             if !next.is_finite() {
-                return error_tag_from_code(FIN_RATE_ERROR_CODE);
+                return Err(FIN_RATE_ERROR_CODE);
             }
             if (next - r).abs() < FIN_EPS {
                 r = next;
-                return (r * 100.0).round() as i32;
+                return Ok((r * 100.0).round() as i32);
             }
             r = next;
         }
-        error_tag_from_code(FIN_RATE_ERROR_CODE)
+        Err(FIN_RATE_ERROR_CODE)
     }
 
-    fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
+    fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> Result<i32, i32> {
         let pmt = pmt as f64;
         let pv = pv as f64;
         let fv = fv as f64;
@@ -4469,23 +4458,23 @@ impl Vm {
 
         if rate == 0 {
             if pmt == 0.0 {
-                return error_tag_from_code(FIN_NPER_ERROR_CODE);
+                return Err(FIN_NPER_ERROR_CODE);
             }
-            return (-(pv + fv) / pmt).round() as i32;
+            return Ok((-(pv + fv) / pmt).round() as i32);
         }
 
         let r = rate as f64 / 100.0;
         let numerator = pmt * (1.0 + r * due) - fv * r;
         let denominator = pv * r + pmt * (1.0 + r * due);
         if numerator <= 0.0 || denominator <= 0.0 || (1.0 + r) <= 0.0 {
-            return error_tag_from_code(FIN_NPER_ERROR_CODE);
+            return Err(FIN_NPER_ERROR_CODE);
         }
 
         let n = (numerator / denominator).ln() / (1.0 + r).ln();
         if !n.is_finite() {
-            return error_tag_from_code(FIN_NPER_ERROR_CODE);
+            return Err(FIN_NPER_ERROR_CODE);
         }
-        n.round() as i32
+        Ok(n.round() as i32)
     }
 }
 
@@ -4646,11 +4635,10 @@ mod tests {
         error::{HalError, HalErrorKind},
         model::CapabilityId,
     };
-    use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
     use oxvba_runtime::{
         F64Value, ObjectRef, RuntimeValue, VarType, Variant,
         bstr::BStr,
-        safe_array::{ARRAY_TAG_BASE, SafeArray, SafeArrayBound},
+        safe_array::{SafeArray, SafeArrayBound},
     };
     use std::collections::BTreeMap;
 
@@ -4672,7 +4660,16 @@ mod tests {
             slots: Vec::new(),
             param_slots: Vec::new(),
             return_slot: None,
+            param_types: Vec::new(),
+            return_type: None,
         }
+    }
+
+    fn snapshot_i32_values(vm: &Vm, slot_count: usize) -> Vec<Option<i32>> {
+        vm.snapshot_variants(slot_count)
+            .iter()
+            .map(Variant::as_i32)
+            .collect()
     }
 
     #[test]
@@ -4690,7 +4687,7 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(1), vec![15]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(15)]);
     }
 
     #[test]
@@ -4831,7 +4828,7 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(1), vec![7]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(7)]);
     }
 
     #[test]
@@ -4845,7 +4842,7 @@ mod tests {
             vm.snapshot_values(1),
             vec![RuntimeValue::String(BStr::from("ABC"))]
         );
-        assert_eq!(vm.snapshot_slots(1), vec![EMPTY_TAG]);
+        assert_eq!(vm.snapshot_variants(1)[0].vtype(), VarType::String);
     }
 
     #[test]
@@ -4887,19 +4884,12 @@ mod tests {
     }
 
     #[test]
-    fn load_const_i32_preserves_tagged_runtime_value_shape() {
+    fn load_const_i32_is_plain_long_and_null_uses_dedicated_instruction() {
         let bytecode = Bytecode {
             instructions: vec![
-                // LoadNull is now the canonical way to produce RuntimeValue::Null.
-                Instruction::LoadNull { slot: 0 },
-                Instruction::LoadConstI32 {
-                    slot: 1,
-                    value: error_tag_from_code(17),
-                },
-                Instruction::LoadConstI32 {
-                    slot: 2,
-                    value: EMPTY_TAG,
-                },
+                Instruction::LoadConstI32 { slot: 0, value: 0 },
+                Instruction::LoadConstI32 { slot: 1, value: -1 },
+                Instruction::LoadNull { slot: 2 },
             ],
             external_call_descriptors: vec![],
             slot_count: 3,
@@ -4907,20 +4897,19 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.execute(&bytecode)
-            .expect("vm should execute tagged constants");
+        vm.execute(&bytecode).expect("vm should execute constants");
 
         assert_eq!(
-            vm.read_value_slot(0).expect("null slot"),
+            vm.read_value_slot(0).expect("zero slot"),
+            RuntimeValue::I32(0)
+        );
+        assert_eq!(
+            vm.read_value_slot(1).expect("minus one slot"),
+            RuntimeValue::I32(-1)
+        );
+        assert_eq!(
+            vm.read_value_slot(2).expect("null slot"),
             RuntimeValue::Null
-        );
-        assert_eq!(
-            vm.read_value_slot(1).expect("error slot"),
-            RuntimeValue::ErrorCode(17)
-        );
-        assert_eq!(
-            vm.read_value_slot(2).expect("empty slot"),
-            RuntimeValue::Empty
         );
     }
 
@@ -5033,7 +5022,7 @@ mod tests {
             .execute_with_typed_fastpaths(&bytecode, false)
             .expect("baseline execution should succeed");
 
-        assert_eq!(fast.snapshot_slots(4), baseline.snapshot_slots(4));
+        assert_eq!(fast.snapshot_variants(4), baseline.snapshot_variants(4));
     }
 
     #[test]
@@ -5080,9 +5069,23 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(10);
+        let out = snapshot_i32_values(&vm, 10);
         let values = vm.snapshot_values(10);
-        assert_eq!(out, vec![12345, 2, 3, 5, 0, 0, 0, 3, 0, 0]);
+        assert_eq!(
+            out,
+            vec![
+                Some(12345),
+                Some(2),
+                Some(3),
+                Some(5),
+                None,
+                None,
+                None,
+                Some(3),
+                None,
+                None
+            ]
+        );
         assert_eq!(values[4], RuntimeValue::String(BStr::from("12")));
         assert_eq!(values[5], RuntimeValue::String(BStr::from("45")));
         assert_eq!(values[6], RuntimeValue::String(BStr::from("234")));
@@ -5116,7 +5119,10 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(4), vec![19945, 2, 2, 99]);
+        assert_eq!(
+            snapshot_i32_values(&vm, 4),
+            vec![Some(19945), Some(2), Some(2), Some(99)]
+        );
     }
 
     #[test]
@@ -5219,12 +5225,26 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(15);
+        let out = snapshot_i32_values(&vm, 15);
         let values = vm.snapshot_values(15);
         assert_eq!(
             out,
             vec![
-                123231, 23, 12345, 67, 12, 123, 3, 12345, 0, 0, 0, 0, -1, 4, -1
+                Some(123231),
+                Some(23),
+                Some(12345),
+                Some(67),
+                Some(12),
+                Some(123),
+                Some(3),
+                Some(12345),
+                None,
+                None,
+                None,
+                None,
+                Some(-1),
+                Some(4),
+                Some(-1)
             ]
         );
         assert_eq!(values[8], RuntimeValue::String(BStr::from("16745")));
@@ -5237,10 +5257,6 @@ mod tests {
     fn join_intrinsic_maps_array_tag_to_count() {
         let bytecode = Bytecode {
             instructions: vec![
-                Instruction::LoadConstI32 {
-                    slot: 0,
-                    value: ARRAY_TAG_BASE + 3,
-                },
                 Instruction::LoadConstI32 { slot: 1, value: 0 },
                 Instruction::IntrinsicJoinDigits {
                     dst: 2,
@@ -5255,8 +5271,21 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(3), vec![ARRAY_TAG_BASE + 3, 0, 3]);
+        vm.invoke_procedure_with_variants(
+            &bytecode,
+            0,
+            &[0],
+            &[Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_i32(1),
+                Variant::from_i32(2),
+                Variant::from_i32(3),
+            ]))],
+        )
+        .expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(3);
+        assert_eq!(variants[0].vtype(), oxvba_runtime::VarType::ArrayVariant);
+        assert_eq!(variants[1].as_i32(), Some(0));
+        assert_eq!(variants[2].as_i32(), Some(3));
     }
 
     #[test]
@@ -5273,10 +5302,6 @@ mod tests {
                 Instruction::LoadConstI32 { slot: 4, value: 1 },
                 Instruction::LoadConstI32 { slot: 5, value: 3 },
                 Instruction::LoadConstI32 { slot: 6, value: 2 },
-                Instruction::LoadConstI32 {
-                    slot: 7,
-                    value: ARRAY_TAG_BASE + 3,
-                },
                 Instruction::LoadConstI32 { slot: 22, value: 1 },
                 Instruction::LoadConstI32 {
                     slot: 23,
@@ -5387,8 +5412,18 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(34);
+        vm.invoke_procedure_with_variants(
+            &bytecode,
+            0,
+            &[7],
+            &[Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_i32(10),
+                Variant::from_i32(20),
+                Variant::from_i32(30),
+            ]))],
+        )
+        .expect("vm should execute bytecode");
+        let out = snapshot_i32_values(&vm, 34);
         let values = vm.snapshot_values(34);
         assert_eq!(
             values[8],
@@ -5398,24 +5433,26 @@ mod tests {
             values[9],
             RuntimeValue::F64(F64Value::from_date_f64(46082.0))
         );
-        assert_eq!(out[10], 1);
-        assert_eq!(out[11], 1);
-        assert_eq!(out[12], 1);
+        assert_eq!(out[10], Some(1));
+        assert_eq!(out[11], Some(1));
+        assert_eq!(out[12], Some(1));
         assert_eq!(values[13], RuntimeValue::I32(46081));
-        assert_eq!(out[15], 0);
-        assert_eq!(out[16], 2);
-        assert_eq!(out[17], 1);
-        assert_eq!(out[18], 2);
-        assert_eq!(out[19], 2);
+        assert_eq!(out[15], Some(0));
+        assert_eq!(out[16], Some(2));
+        assert_eq!(out[17], Some(1));
+        assert_eq!(out[18], Some(2));
+        assert_eq!(out[19], Some(2));
         let object_handle = match &values[20] {
             RuntimeValue::Object(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
-        assert_eq!(out[20], object_handle);
-        assert_eq!(out[21], object_handle + 3);
-        assert_eq!(out[31], 59);
-        assert_eq!(out[32], -50);
-        assert_eq!(out[33], -28);
+        assert!(
+            matches!(&values[20], RuntimeValue::Object(handle) if handle.raw() == object_handle)
+        );
+        assert_eq!(out[21], Some(object_handle + 3));
+        assert_eq!(out[31], Some(59));
+        assert_eq!(out[32], Some(-50));
+        assert_eq!(out[33], Some(-28));
     }
 
     #[test]
@@ -5454,9 +5491,9 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(8);
-        assert_eq!(out[6], -99);
-        assert_eq!(out[7], -38);
+        let out = snapshot_i32_values(&vm, 8);
+        assert_eq!(out[6], Some(-99));
+        assert_eq!(out[7], Some(-38));
     }
 
     #[test]
@@ -5492,9 +5529,9 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(5);
-        assert_eq!(out[3], error_tag_from_code(2001));
-        assert_eq!(out[4], error_tag_from_code(2002));
+        let out = vm.snapshot_variants(5);
+        assert_eq!(out[3].as_error_code(), Some(2001));
+        assert_eq!(out[4].as_error_code(), Some(2002));
     }
 
     #[test]
@@ -5502,24 +5539,8 @@ mod tests {
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::LoadConstI32 {
-                    slot: 0,
-                    value: EMPTY_TAG,
-                },
-                Instruction::LoadConstI32 {
-                    slot: 1,
-                    value: NULL_TAG,
-                },
-                Instruction::LoadConstI32 {
-                    slot: 2,
-                    value: error_tag_from_code(17),
-                },
-                Instruction::LoadConstI32 {
                     slot: 3,
                     value: 123,
-                },
-                Instruction::LoadConstI32 {
-                    slot: 4,
-                    value: ARRAY_TAG_BASE + 2,
                 },
                 Instruction::IntrinsicVarTypeTag { dst: 5, src: 0 },
                 Instruction::IntrinsicVarTypeTag { dst: 6, src: 1 },
@@ -5539,15 +5560,29 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.execute(&bytecode).expect("vm should execute bytecode");
+        vm.invoke_procedure_with_variants(
+            &bytecode,
+            0,
+            &[0, 1, 2, 4],
+            &[
+                Variant::empty(),
+                Variant::null(),
+                Variant::from_error_code(17),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
+                ])),
+            ],
+        )
+        .expect("vm should execute bytecode");
         let out = vm.snapshot_variants(15);
         assert_eq!(out[5].as_i32(), Some(0));
-        assert_eq!(out[6].as_i32(), Some(3));
+        assert_eq!(out[6].as_i32(), Some(1));
         assert_eq!(out[7].as_i32(), Some(10));
         assert_eq!(out[8].as_i32(), Some(3));
         assert_eq!(out[9].as_i32(), Some(8192 + 12));
         assert_eq!(out[10].as_i32(), Some(0));
-        assert_eq!(out[11].as_i32(), Some(1));
+        assert_eq!(out[11].as_i32(), Some(0));
         assert_eq!(out[12].as_i32(), Some(0));
         assert_eq!(out[13].as_i32(), Some(1));
         assert_eq!(out[14].as_i32(), Some(0));
@@ -5588,14 +5623,12 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(8);
         let values = vm.snapshot_values(8);
         let variants = vm.snapshot_variants(8);
         let object_handle = match &values[1] {
             RuntimeValue::Object(handle) => handle.raw(),
             other => panic!("expected object handle result, got {other:?}"),
         };
-        assert_eq!(out[1], object_handle);
         assert_eq!(
             variants[1]
                 .as_object_ref()
@@ -5603,7 +5636,6 @@ mod tests {
                 .raw(),
             object_handle
         );
-        assert_eq!(out[7], object_handle + 6 + (ARRAY_TAG_BASE + 3));
         assert_eq!(
             values[6],
             RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
@@ -6205,12 +6237,18 @@ mod tests {
         );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
-        let out = vm.snapshot_slots(13);
-        assert!(out[1] >= 20_001, "expected native COM object handle");
-        assert!(out[3] >= 40_001, "expected native COM subscription handle");
-        assert_eq!(out[6], 77, "expected FireChanged return value");
+        let out = snapshot_i32_values(&vm, 13);
         assert!(
-            out[7] >= 60_001,
+            out[1].expect("object handle") >= 20_001,
+            "expected native COM object handle"
+        );
+        assert!(
+            out[3].expect("subscription handle") >= 40_001,
+            "expected native COM subscription handle"
+        );
+        assert_eq!(out[6], Some(77), "expected FireChanged return value");
+        assert!(
+            out[7].expect("callback token") >= 60_001,
             "expected DoEvents callback pump to return callback token"
         );
         assert_eq!(
@@ -6218,11 +6256,12 @@ mod tests {
             "expected callback subscription lookup to return subscription token"
         );
         assert_eq!(
-            out[10], 77,
+            out[10],
+            Some(77),
             "expected callback arg lookup to return event payload"
         );
-        assert_eq!(out[11], 1, "expected callback release token");
-        assert_eq!(out[12], 1, "expected unsubscribe success token");
+        assert_eq!(out[11], Some(1), "expected callback release token");
+        assert_eq!(out[12], Some(1), "expected unsubscribe success token");
     }
 
     #[cfg(target_os = "windows")]
@@ -6292,22 +6331,28 @@ mod tests {
         );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
-        let out = vm.snapshot_slots(15);
-        assert!(out[1] >= 20_001, "expected native COM object handle");
-        assert!(out[3] >= 40_001, "expected native COM subscription handle");
-        assert_eq!(out[6], 91, "expected FireChangedPair return value");
+        let out = snapshot_i32_values(&vm, 15);
         assert!(
-            out[7] >= 60_001,
+            out[1].expect("object handle") >= 20_001,
+            "expected native COM object handle"
+        );
+        assert!(
+            out[3].expect("subscription handle") >= 40_001,
+            "expected native COM subscription handle"
+        );
+        assert_eq!(out[6], Some(91), "expected FireChangedPair return value");
+        assert!(
+            out[7].expect("callback token") >= 60_001,
             "expected DoEvents callback pump to return callback token"
         );
         assert_eq!(
             out[8], out[3],
             "expected callback subscription lookup to return subscription token"
         );
-        assert_eq!(out[10], 90, "expected callback arg0 payload");
-        assert_eq!(out[12], 91, "expected callback arg1 payload");
-        assert_eq!(out[13], 1, "expected callback release token");
-        assert_eq!(out[14], 1, "expected unsubscribe success token");
+        assert_eq!(out[10], Some(90), "expected callback arg0 payload");
+        assert_eq!(out[12], Some(91), "expected callback arg1 payload");
+        assert_eq!(out[13], Some(1), "expected callback release token");
+        assert_eq!(out[14], Some(1), "expected unsubscribe success token");
     }
 
     #[cfg(target_os = "windows")]
@@ -6367,6 +6412,11 @@ mod tests {
                 slots: vec![],
                 param_slots: vec![20, 21],
                 return_slot: None,
+                param_types: vec![
+                    oxvba_compiler::DeclareParamType::Variant,
+                    oxvba_compiler::DeclareParamType::Variant,
+                ],
+                return_type: None,
             },
         );
 
@@ -6422,8 +6472,8 @@ mod tests {
                 .build(),
         );
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(2);
-        assert_eq!(out[1], 1_237);
+        let out = snapshot_i32_values(&vm, 2);
+        assert_eq!(out[1], Some(1_237));
     }
 
     #[test]
@@ -6470,8 +6520,8 @@ mod tests {
                 .build(),
         );
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(2);
-        assert_eq!(out[1], 2_348);
+        let out = snapshot_i32_values(&vm, 2);
+        assert_eq!(out[1], Some(2_348));
     }
 
     #[test]
@@ -6664,7 +6714,14 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(7), vec![0, 0, 3, 1, 13, 4, 0]);
+        let variants = vm.snapshot_variants(7);
+        assert_eq!(variants[0].as_i32(), Some(0));
+        assert_eq!(variants[1].as_i32(), Some(0));
+        assert_eq!(variants[2].as_i32(), Some(3));
+        assert_eq!(variants[3].as_bool(), Some(true));
+        assert_eq!(variants[4].as_i32(), Some(13));
+        assert_eq!(variants[5].as_i32(), Some(4));
+        assert_eq!(variants[6].as_bool(), Some(false));
     }
 
     #[test]
@@ -6804,7 +6861,8 @@ mod tests {
         assert_eq!(values[5], RuntimeValue::Bool(true));
         assert_eq!(values[6], RuntimeValue::Bool(true));
         assert_eq!(values[7], RuntimeValue::Bool(true));
-        assert_eq!(vm.snapshot_slots(8), vec![5, 3, 1, 0, 1, 1, 1, 1]);
+        assert_eq!(values[0], RuntimeValue::I32(5));
+        assert_eq!(values[1], RuntimeValue::I32(3));
     }
 
     #[test]
@@ -6821,14 +6879,19 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.write_value_slot(0, RuntimeValue::Object(ObjectRef::from_compat_identity(42)))
-            .expect("object slot should be writable");
-        vm.write_value_slot(1, RuntimeValue::I32(7))
-            .expect("scalar slot should be writable");
-
-        vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(4)[2], 1);
-        assert_eq!(vm.snapshot_slots(4)[3], 0);
+        vm.invoke_procedure_with_values(
+            &bytecode,
+            0,
+            &[0, 1],
+            &[
+                RuntimeValue::Object(ObjectRef::from_compat_identity(42)),
+                RuntimeValue::I32(7),
+            ],
+        )
+        .expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(4);
+        assert_eq!(variants[2].as_i32(), Some(1));
+        assert_eq!(variants[3].as_i32(), Some(0));
     }
 
     #[test]
@@ -6854,42 +6917,36 @@ mod tests {
         };
 
         let mut vm = Vm::default();
-        vm.write_variant_slot(
+        vm.invoke_procedure_with_variants(
+            &bytecode,
             0,
-            Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(vec![
-                Variant::from_i32(1),
-                Variant::from_i32(2),
-            ])),
+            &[0, 1, 2, 3, 4, 5, 6],
+            &[
+                Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(vec![
+                    Variant::from_i32(1),
+                    Variant::from_i32(2),
+                ])),
+                Variant::from_date_f64(42.0),
+                Variant::from_error_code(9),
+                Variant::from_object_ref(ObjectRef::from_compat_identity(42)),
+                Variant::null(),
+                Variant::empty(),
+                Variant::from_u8(7),
+            ],
         )
-        .expect("array slot should be writable");
-        vm.write_variant_slot(1, Variant::from_date_f64(42.0))
-            .expect("date slot should be writable");
-        vm.write_variant_slot(2, Variant::from_error_code(9))
-            .expect("error slot should be writable");
-        vm.write_variant_slot(
-            3,
-            Variant::from_object_ref(ObjectRef::from_compat_identity(42)),
-        )
-        .expect("object slot should be writable");
-        vm.write_variant_slot(4, Variant::null())
-            .expect("null slot should be writable");
-        vm.write_variant_slot(5, Variant::empty())
-            .expect("empty slot should be writable");
-        vm.write_variant_slot(6, Variant::from_u8(7))
-            .expect("byte slot should be writable");
-
-        vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(18)[7], 1);
-        assert_eq!(vm.snapshot_slots(18)[8], 8204);
-        assert_eq!(vm.snapshot_slots(18)[9], 2);
-        assert_eq!(vm.snapshot_slots(18)[10], 1001);
-        assert_eq!(vm.snapshot_slots(18)[11], 0);
-        assert_eq!(vm.snapshot_slots(18)[12], 1);
-        assert_eq!(vm.snapshot_slots(18)[13], 1);
-        assert_eq!(vm.snapshot_slots(18)[14], 1);
-        assert_eq!(vm.snapshot_slots(18)[15], 1);
-        assert_eq!(vm.snapshot_slots(18)[16], 1);
-        assert_eq!(vm.snapshot_slots(18)[17], 1);
+        .expect("vm should execute bytecode");
+        let variants = vm.snapshot_variants(18);
+        assert_eq!(variants[7].as_i32(), Some(1));
+        assert_eq!(variants[8].as_i32(), Some(8204));
+        assert_eq!(variants[9].as_i32(), Some(2));
+        assert_eq!(variants[10].as_i32(), Some(1001));
+        assert_eq!(variants[11].as_i32(), Some(0));
+        assert_eq!(variants[12].as_bool(), Some(true));
+        assert_eq!(variants[13].as_bool(), Some(true));
+        assert_eq!(variants[14].as_i32(), Some(1));
+        assert_eq!(variants[15].as_i32(), Some(1));
+        assert_eq!(variants[16].as_bool(), Some(true));
+        assert_eq!(variants[17].as_bool(), Some(true));
     }
 
     #[test]
@@ -6910,7 +6967,7 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(1), vec![7]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(7)]);
     }
 
     #[test]
@@ -6949,7 +7006,7 @@ mod tests {
             .expect("initial run should seed WithEvents bindings");
         vm.invoke_procedure_with_i32_args(&bytecode, 5, &[6], &[1])
             .expect("procedure invoke should execute against existing VM state");
-        assert_eq!(vm.snapshot_slots(7)[5], 100);
+        assert_eq!(snapshot_i32_values(&vm, 7)[5], Some(100));
     }
 
     #[test]
@@ -6989,7 +7046,9 @@ mod tests {
             .expect("invoke with runtime values");
         assert_eq!(vm.snapshot_values(2)[0], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_values(2)[1], RuntimeValue::Bool(true));
-        assert_eq!(vm.snapshot_slots(2), vec![1, 1]);
+        let variants = vm.snapshot_variants(2);
+        assert_eq!(variants[0].as_bool(), Some(true));
+        assert_eq!(variants[1].as_bool(), Some(true));
     }
 
     #[test]
@@ -7048,7 +7107,9 @@ mod tests {
             vm.snapshot_values(2)[0],
             RuntimeValue::String(BStr::from("ABC"))
         );
-        assert_eq!(vm.snapshot_slots(2), vec![EMPTY_TAG, EMPTY_TAG]);
+        let variants = vm.snapshot_variants(2);
+        assert_eq!(variants[0].vtype(), VarType::String);
+        assert_eq!(variants[1].vtype(), VarType::String);
     }
 
     #[test]
@@ -7097,8 +7158,9 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(9)[7], 101);
-        assert_eq!(vm.snapshot_slots(9)[8], 202);
+        let out = snapshot_i32_values(&vm, 9);
+        assert_eq!(out[7], Some(101));
+        assert_eq!(out[8], Some(202));
     }
 
     #[test]
@@ -7154,8 +7216,9 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(11)[9], 0);
-        assert_eq!(vm.snapshot_slots(11)[10], 202);
+        let out = snapshot_i32_values(&vm, 11);
+        assert_eq!(out[9], Some(0));
+        assert_eq!(out[10], Some(202));
     }
 
     #[test]
@@ -7221,9 +7284,10 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(14)[11], 0);
-        assert_eq!(vm.snapshot_slots(14)[12], 0);
-        assert_eq!(vm.snapshot_slots(14)[13], 303);
+        let out = snapshot_i32_values(&vm, 14);
+        assert_eq!(out[11], Some(0));
+        assert_eq!(out[12], Some(0));
+        assert_eq!(out[13], Some(303));
     }
 
     #[test]
@@ -7270,9 +7334,10 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        assert_eq!(vm.snapshot_slots(12)[9], 11);
-        assert_eq!(vm.snapshot_slots(12)[10], 22);
-        assert_eq!(vm.snapshot_slots(12)[11], 0);
+        let values = vm.snapshot_values(12);
+        assert!(matches!(&values[9], RuntimeValue::Object(owner) if owner.raw() == 11));
+        assert!(matches!(&values[10], RuntimeValue::Object(owner) if owner.raw() == 22));
+        assert_eq!(values[11], RuntimeValue::I32(0));
     }
 
     #[test]
@@ -7307,7 +7372,7 @@ mod tests {
 
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_values(5)[4], RuntimeValue::Bool(true));
-        assert_eq!(vm.snapshot_slots(5)[4], 1);
+        assert_eq!(vm.snapshot_variants(5)[4].as_bool(), Some(true));
     }
 
     #[test]
@@ -7325,7 +7390,7 @@ mod tests {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should continue on error");
-        assert_eq!(vm.snapshot_slots(1), vec![5]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(5)]);
     }
 
     #[test]
@@ -7347,7 +7412,7 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode)
             .expect("vm should jump to label handler");
-        assert_eq!(vm.snapshot_slots(1), vec![7]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(7)]);
     }
 
     #[test]
@@ -7371,7 +7436,7 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode)
             .expect("resume next should raise error 20 under OERN");
-        assert_eq!(vm.snapshot_slots(1), vec![20]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(20)]);
     }
 
     #[test]
@@ -7393,7 +7458,7 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode)
             .expect("resume label should clear error state");
-        assert_eq!(vm.snapshot_slots(1), vec![0]);
+        assert_eq!(snapshot_i32_values(&vm, 1), vec![Some(0)]);
     }
 
     #[test]
@@ -7450,7 +7515,6 @@ mod tests {
 mod kani_proofs {
     use crate::interpreter::Vm;
     use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
-    use oxvba_runtime::value_tags::error_tag_from_code;
 
     #[kani::proof]
     fn pc_progression_is_safe_for_valid_jump_target() {
@@ -7523,22 +7587,22 @@ mod kani_proofs {
 
         let mut vm = Vm::default();
         assert!(vm.execute(&bytecode).is_ok());
-        let out = vm.snapshot_slots(8);
+        let out = vm.snapshot_variants(8);
         for idx in 2..=7 {
-            assert!(out[idx] == 0 || out[idx] == 1);
+            assert!(matches!(out[idx].as_bool(), Some(false) | Some(true)));
         }
     }
 
     #[kani::proof]
-    fn financial_rate_zero_nper_yields_error_tag() {
+    fn financial_rate_zero_nper_yields_error_value() {
         let out = Vm::rate_i32(0, 0, 0, 0, 0, 0);
-        assert_eq!(out, error_tag_from_code(2001));
+        assert_eq!(out, Err(2001));
     }
 
     #[kani::proof]
-    fn financial_nper_invalid_domain_yields_error_tag() {
+    fn financial_nper_invalid_domain_yields_error_value() {
         let out = Vm::nper_i32(1, 0, 0, 0, 0);
-        assert_eq!(out, error_tag_from_code(2002));
+        assert_eq!(out, Err(2002));
     }
 
     #[kani::proof]
@@ -7556,15 +7620,32 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         assert!(vm.execute(&bytecode).is_ok());
-        let out = vm.snapshot_slots(2)[1];
+        let out = vm.snapshot_variants(2)[1].as_i32().unwrap_or(-1);
         assert!(matches!(out, 0 | 1 | 3 | 10 | 8204));
     }
 
     #[kani::proof]
-    fn cverr_tag_encoding_stays_in_reserved_error_band() {
+    fn cverr_intrinsic_materializes_error_variant() {
         let code: i32 = kani::any();
-        let tag = error_tag_from_code(code);
-        assert!(oxvba_runtime::value_tags::is_error_tag(tag));
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: code,
+                },
+                Instruction::IntrinsicCVErr { dst: 1, src: 0 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+        let mut vm = Vm::default();
+        assert!(vm.execute(&bytecode).is_ok());
+        assert_eq!(
+            vm.snapshot_variants(2)[1].as_error_code(),
+            Some(code.saturating_abs())
+        );
     }
 
     #[kani::proof]
@@ -7584,7 +7665,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         assert!(vm.execute(&bytecode).is_ok());
-        assert_eq!(vm.snapshot_slots(1)[0], 0);
+        assert_eq!(vm.snapshot_variants(1)[0].as_i32(), Some(0));
     }
 
     #[test]
@@ -7606,7 +7687,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 42);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(42));
     }
 
     #[test]
@@ -7628,7 +7709,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 5);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(5));
     }
 
     #[test]
@@ -7673,7 +7754,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 5);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(5));
     }
 
     #[test]
@@ -7695,7 +7776,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 2);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(2));
     }
 
     #[test]
@@ -7717,7 +7798,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 1024);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(1024));
     }
 
     #[test]
@@ -7739,7 +7820,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(3)[2], 7);
+        assert_eq!(vm.snapshot_variants(3)[2].as_i32(), Some(7));
     }
 
     #[test]
@@ -7756,7 +7837,7 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute");
-        assert_eq!(vm.snapshot_slots(2)[1], -5);
+        assert_eq!(vm.snapshot_variants(2)[1].as_i32(), Some(-5));
     }
 
     // --- Feature 2: Currency/Decimal f64 promotion (v521-v522) ---

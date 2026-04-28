@@ -206,7 +206,7 @@ function Get-MemoryWorkloads {
             description = "CLI run on short scalar string churn"
             command = {
                 param($sourcePath)
-                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-slots")
+                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-values")
             }
             source = (New-SmallStringWorkloadSource)
         }
@@ -216,7 +216,7 @@ function Get-MemoryWorkloads {
             description = "CLI run on split/join many-string churn"
             command = {
                 param($sourcePath)
-                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-slots")
+                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-values")
             }
             source = (New-ManyStringWorkloadSource)
         }
@@ -226,7 +226,7 @@ function Get-MemoryWorkloads {
             description = "CLI run on large source-text module with many string literals"
             command = {
                 param($sourcePath)
-                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-slots")
+                @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-values")
             }
             source = (New-CodeStringWorkloadSource)
         }

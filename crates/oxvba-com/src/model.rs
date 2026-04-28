@@ -180,7 +180,7 @@ impl ComValue {
         crate::compat::com_value_from_runtime_value(value)
     }
 
-    /// Compatibility projection from legacy slot-token transport into the
+    /// Compatibility projection from scalar i32 transport into the
     /// shared COM semantic carrier.
     pub fn from_runtime_token(value: i32) -> Self {
         crate::compat::com_value_from_runtime_token(value)
@@ -217,7 +217,7 @@ impl ComValue {
         crate::compat::com_value_to_runtime_value(self)
     }
 
-    /// Compatibility projection into legacy slot-token transport.
+    /// Compatibility projection into scalar i32 transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
         crate::compat::com_value_to_runtime_token(self)
     }
@@ -257,7 +257,7 @@ impl ComInvokeValue {
         ComValue::from_variant(&self.value).expect("COM invoke VARIANT must project to ComValue")
     }
 
-    /// Compatibility projection into legacy slot-token transport.
+    /// Compatibility projection into scalar i32 transport.
     pub fn to_runtime_token(&self) -> Result<i32, String> {
         self.to_com_value().to_runtime_token()
     }
@@ -292,7 +292,7 @@ pub struct ComInvokeArg {
 }
 
 impl ComInvokeArg {
-    /// Compatibility positional argument from legacy slot-token transport.
+    /// Compatibility positional argument from scalar i32 transport.
     ///
     /// New value-model call sites should prefer [`Self::positional_value`].
     pub fn positional(value: i32) -> Self {
@@ -302,7 +302,7 @@ impl ComInvokeArg {
         }
     }
 
-    /// Compatibility named argument from legacy slot-token transport.
+    /// Compatibility named argument from scalar i32 transport.
     ///
     /// New value-model call sites should prefer [`Self::named_value`].
     pub fn named(value: i32, name: impl Into<String>) -> Self {
@@ -430,33 +430,20 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComCallbackValue, ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType, Variant,
-        bstr::BStr,
-        safe_array::{ARRAY_TAG_BASE, SafeArray},
-        value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
+        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr,
+        safe_array::SafeArray,
     };
 
     #[test]
-    fn com_value_from_runtime_token_preserves_array_null_error_shape() {
-        assert_eq!(ComValue::from_runtime_token(EMPTY_TAG), ComValue::Empty);
-        assert_eq!(ComValue::from_runtime_token(NULL_TAG), ComValue::Null);
-        assert_eq!(
-            ComValue::from_runtime_token(error_tag_from_code(17)),
-            ComValue::ErrorCode(17)
-        );
-        assert_eq!(
-            ComValue::from_runtime_token(ARRAY_TAG_BASE + 3),
-            ComValue::ArrayIntent(SafeArray::vector(3))
-        );
+    fn com_value_from_runtime_token_is_plain_i32() {
+        assert_eq!(ComValue::from_runtime_token(0), ComValue::I32(0));
+        assert_eq!(ComValue::from_runtime_token(-1), ComValue::I32(-1));
     }
 
     #[test]
-    fn com_value_array_intent_roundtrips_to_runtime_tag() {
+    fn com_value_array_intent_projects_to_length_token() {
         let value = ComValue::ArrayIntent(SafeArray::vector(4));
-        assert_eq!(
-            value.to_runtime_token().expect("array token"),
-            ARRAY_TAG_BASE + 4
-        );
+        assert_eq!(value.to_runtime_token().expect("array token"), 4);
         assert_eq!(
             value
                 .to_legacy_dispatch_token()
@@ -545,10 +532,7 @@ mod tests {
                 RuntimeValue::String(BStr::from("A")),
             ]))
         );
-        assert_eq!(
-            value.to_runtime_token().expect("array tag"),
-            ARRAY_TAG_BASE + 2
-        );
+        assert_eq!(value.to_runtime_token().expect("array token"), 2);
     }
 
     #[test]

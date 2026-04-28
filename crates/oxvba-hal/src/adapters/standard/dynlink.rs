@@ -41,6 +41,44 @@ pub(super) fn external_symbol_token(library: &str, alias: &str, name: &str) -> i
     (hash & 0x7fff_ffff).max(1) as i32
 }
 
+fn variant_i32(value: &Variant) -> i32 {
+    value
+        .as_i32()
+        .or_else(|| value.as_i16().map(i32::from))
+        .or_else(|| value.as_u8().map(i32::from))
+        .or_else(|| value.as_bool().map(i32::from))
+        .or_else(|| value.as_i64().and_then(|value| i32::try_from(value).ok()))
+        .or_else(|| value.as_f64().map(|value| value as i32))
+        .or_else(|| value.as_f32().map(|value| value as i32))
+        .or_else(|| {
+            value
+                .as_currency_scaled_i64()
+                .map(|value| (value / 10_000) as i32)
+        })
+        .or_else(|| value.as_error_code())
+        .or_else(|| value.as_object_ref().map(|value| value.raw()))
+        .unwrap_or(0)
+}
+
+fn variant_f64(value: &Variant) -> f64 {
+    value
+        .as_f64()
+        .or_else(|| value.as_date_f64())
+        .or_else(|| value.as_f32().map(f64::from))
+        .or_else(|| value.as_i64().map(|value| value as f64))
+        .unwrap_or_else(|| f64::from(variant_i32(value)))
+}
+
+fn variant_i64(value: &Variant) -> i64 {
+    value
+        .as_i64()
+        .or_else(|| value.as_i32().map(i64::from))
+        .or_else(|| value.as_i16().map(i64::from))
+        .or_else(|| value.as_u8().map(i64::from))
+        .or_else(|| value.as_bool().map(i64::from))
+        .unwrap_or_else(|| i64::from(variant_i32(value)))
+}
+
 impl DynamicLinkHal for StandardHostServices {
     fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<BindingHandle> {
         let capability = CapabilityId::DynamicLinking;
@@ -260,8 +298,7 @@ impl DynamicLinkHal for StandardHostServices {
             .first()
             .cloned()
             .unwrap_or_else(|| Variant::from_i32(0));
-        let arg =
-            self.variant_project_compat_slot_i32(&arg, capability, "invoke_bound_variants", "arg")?;
+        let arg = self.variant_to_i32(&arg, capability, "invoke_bound_variants", "arg")?;
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
@@ -368,12 +405,8 @@ impl DynamicLinkHal for StandardHostServices {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| Variant::from_i32(0));
-            let arg = self.variant_project_compat_slot_i32(
-                &arg,
-                CapabilityId::DynamicLinking,
-                "invoke_symbol",
-                "arg",
-            )?;
+            let arg =
+                self.variant_to_i32(&arg, CapabilityId::DynamicLinking, "invoke_symbol", "arg")?;
             if self.native_mode_enabled()
                 && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
             {
@@ -427,12 +460,7 @@ impl DynamicLinkHal for StandardHostServices {
         if !self.policy.allow_dynamic_link {
             return Err(self.denied(capability, "invoke_symbol"));
         }
-        let arg = self.variant_project_compat_slot_i32(
-            arg,
-            CapabilityId::DynamicLinking,
-            "invoke_symbol",
-            "arg",
-        )?;
+        let arg = self.variant_to_i32(arg, CapabilityId::DynamicLinking, "invoke_symbol", "arg")?;
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
@@ -659,33 +687,20 @@ enum NativeByRefStorage {
 impl NativeByRefStorage {
     fn from_variant(value: &Variant, param_type: &str) -> Result<Self, String> {
         Ok(match param_type {
-            "Long" => Self::I32(Box::new(value.project_compat_slot_i32().unwrap_or(0))),
-            "Integer" => Self::I16(Box::new(value.project_compat_slot_i32().unwrap_or(0) as i16)),
-            "Byte" => Self::U8(Box::new(value.project_compat_slot_i32().unwrap_or(0) as u8)),
-            "Boolean" => Self::Bool(Box::new(
-                if value.project_compat_slot_i32().unwrap_or(0) != 0 {
-                    -1
-                } else {
-                    0
-                },
-            )),
+            "Long" => Self::I32(Box::new(variant_i32(value))),
+            "Integer" => Self::I16(Box::new(variant_i32(value) as i16)),
+            "Byte" => Self::U8(Box::new(variant_i32(value) as u8)),
+            "Boolean" => Self::Bool(Box::new(if variant_i32(value) != 0 { -1 } else { 0 })),
             "Double" => {
-                let raw = value
-                    .as_f64()
-                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
+                let raw = value.as_f64().unwrap_or_else(|| variant_f64(value));
                 Self::F64(Box::new(raw))
             }
             "Single" => {
-                let raw = value
-                    .as_f64()
-                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
-                    as f32;
+                let raw = value.as_f64().unwrap_or_else(|| variant_f64(value)) as f32;
                 Self::F32(Box::new(raw))
             }
             "LongLong" | "LongPtr" => {
-                let raw = value
-                    .as_i64()
-                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
+                let raw = value.as_i64().unwrap_or_else(|| variant_i64(value));
                 Self::I64(Box::new(raw))
             }
             "Currency" => {
@@ -693,8 +708,7 @@ impl NativeByRefStorage {
                     .as_currency_scaled_i64()
                     .or_else(|| value.as_i64())
                     .unwrap_or_else(|| {
-                        i64::from(value.project_compat_slot_i32().unwrap_or(0))
-                            * oxvba_runtime::CurrencyValue::SCALE
+                        i64::from(variant_i32(value)) * oxvba_runtime::CurrencyValue::SCALE
                     });
                 Self::Currency(Box::new(raw))
             }
@@ -702,7 +716,7 @@ impl NativeByRefStorage {
                 let raw = value
                     .as_f64()
                     .or_else(|| value.as_i64().map(|value| value as f64))
-                    .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
+                    .unwrap_or_else(|| variant_f64(value));
                 Self::Date(Box::new(raw))
             }
             other => {
@@ -753,31 +767,20 @@ fn marshal_variant_to_ffi_unix(
     use oxvba_com::windows_ffi_bridge::FfiArg;
 
     match param_type {
-        "Long" => FfiArg::Long(value.project_compat_slot_i32().unwrap_or(0)),
-        "Integer" => FfiArg::Integer(value.project_compat_slot_i32().unwrap_or(0) as i16),
-        "Byte" => FfiArg::Byte(value.project_compat_slot_i32().unwrap_or(0) as u8),
-        "Boolean" => FfiArg::Boolean(if value.project_compat_slot_i32().unwrap_or(0) != 0 {
-            -1
-        } else {
-            0
-        }),
+        "Long" => FfiArg::Long(variant_i32(value)),
+        "Integer" => FfiArg::Integer(variant_i32(value) as i16),
+        "Byte" => FfiArg::Byte(variant_i32(value) as u8),
+        "Boolean" => FfiArg::Boolean(if variant_i32(value) != 0 { -1 } else { 0 }),
         "Double" => {
-            let f = value
-                .as_f64()
-                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64);
+            let f = value.as_f64().unwrap_or_else(|| variant_f64(value));
             FfiArg::Double(f)
         }
         "Single" => {
-            let f = value
-                .as_f64()
-                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
-                as f32;
+            let f = value.as_f64().unwrap_or_else(|| variant_f64(value)) as f32;
             FfiArg::Single(f)
         }
         "LongLong" | "LongPtr" => {
-            let v = value
-                .as_i64()
-                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
+            let v = value.as_i64().unwrap_or_else(|| variant_i64(value));
             if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
                 FfiArg::Pointer(pointer)
             } else {
@@ -795,7 +798,7 @@ fn marshal_variant_to_ffi_unix(
             let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
             FfiArg::String(wide)
         }
-        _ => FfiArg::Long(value.project_compat_slot_i32().unwrap_or(0)),
+        _ => FfiArg::Long(variant_i32(value)),
     }
 }
 
@@ -826,33 +829,22 @@ fn marshal_variant_to_ffi(
     }
 
     match param_type {
-        "Long" => Ok(FfiArg::Long(value.project_compat_slot_i32().unwrap_or(0))),
-        "Integer" => Ok(FfiArg::Integer(
-            value.project_compat_slot_i32().unwrap_or(0) as i16,
+        "Long" => Ok(FfiArg::Long(variant_i32(value))),
+        "Integer" => Ok(FfiArg::Integer(variant_i32(value) as i16)),
+        "Byte" => Ok(FfiArg::Byte(variant_i32(value) as u8)),
+        "Boolean" => Ok(FfiArg::Boolean(if variant_i32(value) != 0 {
+            -1
+        } else {
+            0
+        })),
+        "Double" => Ok(FfiArg::Double(
+            value.as_f64().unwrap_or_else(|| variant_f64(value)),
         )),
-        "Byte" => Ok(FfiArg::Byte(
-            value.project_compat_slot_i32().unwrap_or(0) as u8
-        )),
-        "Boolean" => Ok(FfiArg::Boolean(
-            if value.project_compat_slot_i32().unwrap_or(0) != 0 {
-                -1
-            } else {
-                0
-            },
-        )),
-        "Double" => Ok(FfiArg::Double(value.as_f64().unwrap_or_else(|| {
-            value.project_compat_slot_i32().unwrap_or(0) as f64
-        }))),
         "Single" => Ok(FfiArg::Single(
-            value
-                .as_f64()
-                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as f64)
-                as f32,
+            value.as_f64().unwrap_or_else(|| variant_f64(value)) as f32,
         )),
         "LongLong" | "LongPtr" => {
-            let v = value
-                .as_i64()
-                .unwrap_or_else(|| value.project_compat_slot_i32().unwrap_or(0) as i64);
+            let v = value.as_i64().unwrap_or_else(|| variant_i64(value));
             if let Some(pointer) = oxvba_runtime::pointer_helpers::lookup_pointer(v) {
                 Ok(FfiArg::Pointer(pointer))
             } else {
@@ -872,7 +864,7 @@ fn marshal_variant_to_ffi(
             let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
             Ok(FfiArg::String(wide))
         }
-        _ => Ok(FfiArg::Long(value.project_compat_slot_i32().unwrap_or(0))),
+        _ => Ok(FfiArg::Long(variant_i32(value))),
     }
 }
 

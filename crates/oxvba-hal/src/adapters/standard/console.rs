@@ -150,8 +150,7 @@ impl ConsoleHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_fields"));
         }
-        let count =
-            self.variant_project_compat_slot_i32(&count, capability, "input_fields", "count")?;
+        let count = self.variant_to_i32(&count, capability, "input_fields", "count")?;
         let count = count.max(1) as usize;
         let mut state = self.console_lock("input_fields")?;
         while state.pending_fields.len() < count {

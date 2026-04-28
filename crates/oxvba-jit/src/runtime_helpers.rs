@@ -26,7 +26,6 @@ use oxvba_runtime::safe_array::{
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
-use oxvba_runtime::value_tags::{error_tag_from_code, is_error_tag as runtime_is_error_tag};
 use oxvba_runtime::{F64Value, VarType, Variant, bstr::BStr};
 use oxvba_vm::semantics;
 
@@ -415,11 +414,7 @@ pub extern "C" fn oxrt_copy_slot(ctx: *mut JitContext, dst: u32, src: u32) -> i3
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_load_i32(ctx: *mut JitContext, dst: u32, value: i32) -> i32 {
-    let value = match Variant::try_from_compat_slot_i32(value) {
-        Ok(value) => value,
-        Err(_) => return ERR_RUNTIME,
-    };
-    write_variant_slot!(ctx, dst, value);
+    write_variant_slot!(ctx, dst, Variant::from_i32(value));
     OK
 }
 
@@ -1434,11 +1429,7 @@ pub extern "C" fn oxrt_fv(
     };
     let pv = opt_compat_i32_slot(ctx, pv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(
-        ctx,
-        dst,
-        Variant::from_compat_slot_i32(fv_i32(r, n, p, pv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_i32(fv_i32(r, n, p, pv, due)));
     OK
 }
 
@@ -1461,11 +1452,7 @@ pub extern "C" fn oxrt_pv(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(
-        ctx,
-        dst,
-        Variant::from_compat_slot_i32(pv_i32(r, n, p, fv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_i32(pv_i32(r, n, p, fv, due)));
     OK
 }
 
@@ -1488,11 +1475,7 @@ pub extern "C" fn oxrt_pmt(
     };
     let fv = opt_compat_i32_slot(ctx, fv_slot, 0);
     let due = opt_compat_i32_slot(ctx, due_slot, 0);
-    write_variant_slot!(
-        ctx,
-        dst,
-        Variant::from_compat_slot_i32(pmt_i32(r, n, p, fv, due))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_i32(pmt_i32(r, n, p, fv, due)));
     OK
 }
 
@@ -1517,11 +1500,7 @@ pub extern "C" fn oxrt_npv(
             Err(_) => return ERR_RUNTIME,
         }
     }
-    write_variant_slot!(
-        ctx,
-        dst,
-        Variant::from_compat_slot_i32(npv_i32(r, &cash_flows))
-    );
+    write_variant_slot!(ctx, dst, Variant::from_i32(npv_i32(r, &cash_flows)));
     OK
 }
 
@@ -1532,7 +1511,7 @@ pub extern "C" fn oxrt_irr(ctx: *mut JitContext, dst: u32, value: u32, guess_slo
         Err(_) => return ERR_RUNTIME,
     };
     let guess = opt_compat_i32_slot(ctx, guess_slot, 10);
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(irr_i32(v, guess)));
+    write_variant_slot!(ctx, dst, Variant::from_i32(irr_i32(v, guess)));
     OK
 }
 
@@ -1556,7 +1535,7 @@ pub extern "C" fn oxrt_mirr(
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_variant_slot!(ctx, dst, Variant::from_compat_slot_i32(mirr_i32(v, fr, rr)));
+    write_variant_slot!(ctx, dst, Variant::from_i32(mirr_i32(v, fr, rr)));
     OK
 }
 
@@ -1589,7 +1568,10 @@ pub extern "C" fn oxrt_rate(
     write_variant_slot!(
         ctx,
         dst,
-        Variant::from_compat_slot_i32(rate_i32(n, p, pv, fv, due, guess))
+        match rate_i32(n, p, pv, fv, due, guess) {
+            Ok(value) => Variant::from_i32(value),
+            Err(code) => Variant::from_error_code(code),
+        }
     );
     OK
 }
@@ -1621,7 +1603,10 @@ pub extern "C" fn oxrt_nper(
     write_variant_slot!(
         ctx,
         dst,
-        Variant::from_compat_slot_i32(nper_i32(r, p, pv, fv, due))
+        match nper_i32(r, p, pv, fv, due) {
+            Ok(value) => Variant::from_i32(value),
+            Err(code) => Variant::from_error_code(code),
+        }
     );
     OK
 }
@@ -2614,7 +2599,6 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     let bridge = HalComDynamicBridge::new(host.profile(), host.com());
     match bridge.invoke_dynamic(&request) {
         Ok(value) => {
-            // Normalize: COM dispatch may return error tags as I32 instead of VT_ERROR.
             write_variant_slot!(ctx, dst, normalize_com_result_variant(value.variant()));
             OK
         }
@@ -3292,12 +3276,6 @@ fn route_hal_error(ctx: *mut JitContext, err: HalError) -> i32 {
 }
 
 fn normalize_com_result_variant(value: &Variant) -> Variant {
-    if let Some(value) = value.as_i32()
-        && runtime_is_error_tag(value)
-        && let Some(code) = oxvba_runtime::value_tags::error_code_from_tag(value)
-    {
-        return Variant::from_error_code(code);
-    }
     value.clone()
 }
 
@@ -3440,9 +3418,9 @@ fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64)
     pv * growth_prime + pmt * (due * c + (1.0 + r * due) * c_prime)
 }
 
-fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
+fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> Result<i32, i32> {
     if nper == 0 {
-        return error_tag_from_code(FIN_RATE_ERROR_CODE);
+        return Err(FIN_RATE_ERROR_CODE);
     }
     let n = nper as f64;
     let pmt = pmt as f64;
@@ -3454,42 +3432,42 @@ fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 
         let f = rate_func(r, n, pmt, pv, fv, due);
         let fp = rate_func_derivative(r, n, pmt, pv, fv, due);
         if fp.abs() < 1e-12 {
-            return error_tag_from_code(FIN_RATE_ERROR_CODE);
+            return Err(FIN_RATE_ERROR_CODE);
         }
         let next = (r - f / fp).clamp(-0.99, 10.0);
         if !next.is_finite() {
-            return error_tag_from_code(FIN_RATE_ERROR_CODE);
+            return Err(FIN_RATE_ERROR_CODE);
         }
         if (next - r).abs() < FIN_EPS {
-            return (next * 100.0).round() as i32;
+            return Ok((next * 100.0).round() as i32);
         }
         r = next;
     }
-    error_tag_from_code(FIN_RATE_ERROR_CODE)
+    Err(FIN_RATE_ERROR_CODE)
 }
 
-fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
+fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> Result<i32, i32> {
     let pmt = pmt as f64;
     let pv = pv as f64;
     let fv = fv as f64;
     let due = if due != 0 { 1.0 } else { 0.0 };
     if rate == 0 {
         if pmt == 0.0 {
-            return error_tag_from_code(FIN_NPER_ERROR_CODE);
+            return Err(FIN_NPER_ERROR_CODE);
         }
-        return (-(pv + fv) / pmt).round() as i32;
+        return Ok((-(pv + fv) / pmt).round() as i32);
     }
     let r = rate as f64 / 100.0;
     let numerator = pmt * (1.0 + r * due) - fv * r;
     let denominator = pv * r + pmt * (1.0 + r * due);
     if numerator <= 0.0 || denominator <= 0.0 || (1.0 + r) <= 0.0 {
-        return error_tag_from_code(FIN_NPER_ERROR_CODE);
+        return Err(FIN_NPER_ERROR_CODE);
     }
     let n = (numerator / denominator).ln() / (1.0 + r).ln();
     if !n.is_finite() {
-        return error_tag_from_code(FIN_NPER_ERROR_CODE);
+        return Err(FIN_NPER_ERROR_CODE);
     }
-    n.round() as i32
+    Ok(n.round() as i32)
 }
 
 // ── Symbol registration ───────────────────────────────────────────────

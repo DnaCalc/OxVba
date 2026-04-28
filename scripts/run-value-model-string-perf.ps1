@@ -418,7 +418,7 @@ try {
 
                 for ($iteration = 1; $iteration -le $Iterations; $iteration++) {
                     Add-Content -Path $logPath -Value ("## Iteration {0}" -f $iteration)
-                    $command = @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $workload.source_path, "--dump-slots")
+                    $command = @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $workload.source_path, "--dump-values")
                     if ($backendName -eq "jit") {
                         $command += "--jit"
                     }

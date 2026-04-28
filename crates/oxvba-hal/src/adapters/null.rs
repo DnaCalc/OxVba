@@ -14,6 +14,39 @@ use crate::{
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
 
+fn runtime_value_i32(value: &RuntimeValue) -> i32 {
+    match value {
+        RuntimeValue::Empty | RuntimeValue::Null => 0,
+        RuntimeValue::ErrorCode(code) => *code,
+        RuntimeValue::Bool(value) => i32::from(*value),
+        RuntimeValue::I32(value) => *value,
+        RuntimeValue::I64(value) => i32::try_from(*value).unwrap_or(0),
+        RuntimeValue::F64(value) => value.as_f64() as i32,
+        RuntimeValue::Decimal(value) => value.to_string().parse::<i32>().unwrap_or(0),
+        RuntimeValue::Currency(value) => (value.scaled_i64() / 10_000) as i32,
+        RuntimeValue::String(value) => value.as_str().trim().parse::<i32>().unwrap_or(0),
+        RuntimeValue::Object(value) => value.raw(),
+        RuntimeValue::ArrayIntent(value) => value.len().min(i32::MAX as usize) as i32,
+        RuntimeValue::BindingHandle(value) => value.raw(),
+    }
+}
+
+fn variant_i32(value: &Variant) -> i32 {
+    value
+        .as_i32()
+        .or_else(|| value.as_i16().map(i32::from))
+        .or_else(|| value.as_u8().map(i32::from))
+        .or_else(|| value.as_bool().map(i32::from))
+        .or_else(|| value.as_error_code())
+        .or_else(|| value.as_object_ref().map(|value| value.raw()))
+        .or_else(|| {
+            value
+                .as_safearray()
+                .map(|value| value.len().min(i32::MAX as usize) as i32)
+        })
+        .unwrap_or(0)
+}
+
 // Null adapter keeps the complete legacy `RuntimeValue` trait surface for
 // compatibility callers. The `_variant` methods below are the retained
 // value-model entry points for slot-facing VM/JIT code.
@@ -445,8 +478,8 @@ impl DynamicLinkHal for NullHostServices {
 
 impl DiagnosticsHal for NullHostServices {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
-        let code = code.project_compat_slot_i32().unwrap_or(0);
-        let payload = payload.project_compat_slot_i32().unwrap_or(0);
+        let code = runtime_value_i32(&code);
+        let payload = runtime_value_i32(&payload);
         Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 
@@ -455,8 +488,8 @@ impl DiagnosticsHal for NullHostServices {
     }
 
     fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
-        let code = code.project_compat_slot_i32().unwrap_or(0);
-        let payload = payload.project_compat_slot_i32().unwrap_or(0);
+        let code = variant_i32(&code);
+        let payload = variant_i32(&payload);
         Ok(Variant::from_i32(code.saturating_add(payload)))
     }
 
@@ -564,7 +597,7 @@ mod tests {
         assert_eq!(
             host.emit_variant(Variant::null(), Variant::from_i32(3))
                 .expect("emit"),
-            Variant::from_i32(2)
+            Variant::from_i32(3)
         );
         assert_eq!(
             host.debug_print_variant(Variant::null())

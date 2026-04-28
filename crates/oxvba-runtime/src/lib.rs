@@ -10,7 +10,6 @@ pub mod object_ref;
 pub mod pointer_helpers;
 pub mod runtime_value;
 pub mod safe_array;
-pub mod value_tags;
 pub mod variant;
 
 pub use coerce::{runtime_value_to_vba_str, runtime_value_to_vba_string, variant_to_vba_string};

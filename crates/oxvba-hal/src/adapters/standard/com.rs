@@ -12,6 +12,8 @@ use crate::{
     },
 };
 #[cfg(target_os = "windows")]
+use oxvba_com::RawIDispatch;
+#[cfg(target_os = "windows")]
 use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
@@ -160,6 +162,13 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
+            if let Some(object) = self
+                .com_bridge
+                .host_dispatch_object_for_prog_id(prog_id_name)
+                .map_err(|message| self.com_createobject_adapter_fault(message))?
+            {
+                return Ok(Variant::from_object_ref(object));
+            }
             match self.activate_variant_object_for_prog_id_name(prog_id_name) {
                 Ok(value) => {
                     return Ok(value);
@@ -176,6 +185,50 @@ impl ComHal for StandardHostServices {
         #[cfg(target_os = "windows")]
         try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
         Ok(Variant::from_object_ref(object))
+    }
+
+    unsafe fn bind_native_dispatch_object_variant(
+        &self,
+        prog_id: &str,
+        dispatch: *mut core::ffi::c_void,
+    ) -> HalResult<Variant> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "bind_native_dispatch_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "bind_native_dispatch_object"));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if !self.native_com_enabled() {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "bind_native_dispatch_object",
+                    "native COM is disabled for this host profile",
+                ));
+            }
+            self.ensure_thread_com_apartment("bind_native_dispatch_object")?;
+            let object = unsafe {
+                self.com_bridge
+                    .bind_host_dispatch_object(prog_id, dispatch.cast::<RawIDispatch>())
+            }
+            .map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "bind_native_dispatch_object",
+                    message,
+                )
+            })?;
+            return Ok(Variant::from_object_ref(object));
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (prog_id, dispatch);
+            Err(self.unsupported(capability, "bind_native_dispatch_object"))
+        }
     }
 
     // Legacy COM release path. Retained VM/JIT callers should use

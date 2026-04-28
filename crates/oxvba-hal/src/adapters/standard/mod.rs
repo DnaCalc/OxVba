@@ -731,21 +731,99 @@ impl StandardHostServices {
         path
     }
 
-    fn variant_project_compat_slot_i32(
+    fn variant_to_i32(
         &self,
         value: &Variant,
         capability: CapabilityId,
         op: &'static str,
         field: &'static str,
     ) -> HalResult<i32> {
-        value.project_compat_slot_i32().map_err(|detail| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                op,
-                format!("{field} cannot enter the legacy runtime token lane: {detail}"),
-            )
-        })
+        let value = match value.vtype() {
+            VarType::Empty | VarType::Null => 0,
+            VarType::Boolean => i32::from(value.as_bool().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid Boolean payload"),
+                )
+            })?),
+            VarType::Integer => i32::from(value.as_i16().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid Integer payload"),
+                )
+            })?),
+            VarType::Long => value.as_i32().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid Long payload"),
+                )
+            })?,
+            VarType::LongLong => {
+                let value = value.as_i64().ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} has an invalid LongLong payload"),
+                    )
+                })?;
+                i32::try_from(value).map_err(|_| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} LongLong value {value} is outside i32 range"),
+                    )
+                })?
+            }
+            VarType::Byte => i32::from(value.as_u8().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid Byte payload"),
+                )
+            })?),
+            VarType::Single => value.as_f32().unwrap_or(0.0) as i32,
+            VarType::Double | VarType::Date => value
+                .as_f64()
+                .or_else(|| value.as_date_f64())
+                .unwrap_or(0.0) as i32,
+            VarType::Currency => value
+                .as_currency_scaled_i64()
+                .map(|scaled| {
+                    (scaled / 10_000).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+                })
+                .unwrap_or(0),
+            VarType::Decimal => value
+                .as_decimal96()
+                .and_then(|decimal| decimal.to_string().parse::<i32>().ok())
+                .unwrap_or(0),
+            VarType::String => value
+                .as_bstr()
+                .and_then(|text| text.as_str().trim().parse::<i32>().ok())
+                .unwrap_or(0),
+            VarType::Error => value.as_error_code().unwrap_or(0),
+            VarType::Object => value
+                .as_object_ref()
+                .map(|object| object.raw())
+                .unwrap_or(0),
+            VarType::ArrayVariant => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} is a SAFEARRAY and cannot be coerced to i32"),
+                ));
+            }
+        };
+        Ok(value)
     }
 
     fn variant_to_display_text(&self, value: &Variant) -> String {
@@ -819,7 +897,7 @@ impl StandardHostServices {
                     )
                 }),
             _ => self
-                .variant_project_compat_slot_i32(value, capability, op, field)
+                .variant_to_i32(value, capability, op, field)
                 .map(|token| self.host_path_from_token(token)),
         }
     }
@@ -1452,9 +1530,11 @@ mod tests {
         host: &StandardHostServices,
         request: &ComInvokeRequest,
     ) -> crate::error::HalResult<i32> {
-        host.dispatch_invoke_runtime_value_v2(request)?
-            .project_compat_slot_i32()
-            .map_err(|message| host.com_dispatch_adapter_fault(message))
+        Ok(match host.dispatch_invoke_runtime_value_v2(request)? {
+            RuntimeValue::I32(value) => value,
+            RuntimeValue::Bool(value) => i32::from(value),
+            other => panic!("expected scalar dispatch result, got {other:?}"),
+        })
     }
 
     fn bound_member_token_by_name(
@@ -4772,7 +4852,7 @@ mod tests {
             let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
             prop_assert_eq!(
                 host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
-                RuntimeValue::from_compat_slot_i32(shell_expected)
+                RuntimeValue::I32(shell_expected)
             );
             let first_object = host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
                 .expect("create_object should succeed");
@@ -4786,9 +4866,7 @@ mod tests {
             prop_assert_eq!(
                 host.dispatch_invoke_legacy_v2(&request)
                     .expect("dispatch_invoke legacy projection should succeed"),
-                semantic
-                    .project_compat_slot_i32()
-                    .expect("semantic dispatch result should project to legacy slot")
+                expect_i32(semantic)
             );
             prop_assert_eq!(
                 host.invoke_symbol(symbol.into(), rv(arg))

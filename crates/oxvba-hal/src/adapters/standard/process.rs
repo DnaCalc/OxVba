@@ -82,7 +82,7 @@ impl ProcessEnvHal for StandardHostServices {
         }
         if self.native_process_enabled() {
             let command = self
-                .variant_project_compat_slot_i32(&command, capability, "shell", "command")
+                .variant_to_i32(&command, capability, "shell", "command")
                 .unwrap_or(0);
             if command != 0 {
                 let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
@@ -101,14 +101,10 @@ impl ProcessEnvHal for StandardHostServices {
         let command = match command.as_bstr() {
             Some(text) => i32::from(!text.as_str().trim().is_empty()),
             None => self
-                .variant_project_compat_slot_i32(&command, capability, "shell", "command")
+                .variant_to_i32(&command, capability, "shell", "command")
                 .unwrap_or(0),
         };
-        Ok(Variant::from_compat_slot_i32(if command == 0 {
-            0
-        } else {
-            1
-        }))
+        Ok(Variant::from_i32(if command == 0 { 0 } else { 1 }))
     }
 
     fn environ_variant(&self, key: Variant) -> HalResult<Variant> {
@@ -132,7 +128,7 @@ impl ProcessEnvHal for StandardHostServices {
             }
             vars.sort_by(|a, b| a.0.cmp(&b.0));
             let key = self
-                .variant_project_compat_slot_i32(&key, capability, "environ", "key")
+                .variant_to_i32(&key, capability, "environ", "key")
                 .unwrap_or(0);
             let idx = (key.unsigned_abs() as usize) % vars.len();
             let entry = format!(
@@ -145,10 +141,10 @@ impl ProcessEnvHal for StandardHostServices {
         let key = match key.as_bstr() {
             Some(text) => text.as_str().len().min(i32::MAX as usize) as i32,
             None => self
-                .variant_project_compat_slot_i32(&key, capability, "environ", "key")
+                .variant_to_i32(&key, capability, "environ", "key")
                 .unwrap_or(0),
         };
-        Ok(Variant::from_compat_slot_i32(key))
+        Ok(Variant::from_i32(key))
     }
 
     fn dir_variant(&self, path: Variant, _attrs: Variant) -> HalResult<Variant> {
@@ -157,8 +153,18 @@ impl ProcessEnvHal for StandardHostServices {
             return Err(self.unsupported(capability, "dir"));
         }
         if self.native_process_enabled() {
-            let is_continuation = matches!(path.vtype(), VarType::Empty | VarType::Null)
-                || path.project_compat_slot_i32().unwrap_or(1) == 0;
+            let is_continuation = match path.vtype() {
+                VarType::Empty | VarType::Null => true,
+                VarType::String => path
+                    .as_bstr()
+                    .map(|text| text.as_str().is_empty())
+                    .unwrap_or(false),
+                _ => {
+                    self.variant_to_i32(&path, capability, "dir", "path")
+                        .unwrap_or(1)
+                        == 0
+                }
+            };
             if is_continuation {
                 let mut state = self.dir_lock(capability, "dir")?;
                 let next = if state.remaining.is_empty() {
@@ -202,7 +208,7 @@ impl ProcessEnvHal for StandardHostServices {
                 i32::from(path.as_bstr().map(|text| !text.is_empty()).unwrap_or(false))
             }
             _ => i32::from(
-                self.variant_project_compat_slot_i32(&path, capability, "dir", "path")
+                self.variant_to_i32(&path, capability, "dir", "path")
                     .unwrap_or(0)
                     != 0,
             ),

@@ -7,17 +7,18 @@ use crate::{
     ReleasedWindowsComObject, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibMetadataCacheState,
     TypeLibResolveRequest, TypeLibResolvedIdentity, WindowsComClientState,
     activate_runtime_dispatch, activate_runtime_object_binding_shared,
-    bind_native_dispatch_result_shared, binding_from_typelib_metadata, build_typelib_metadata,
-    callback_arg, callback_arity, callback_subscription_token,
-    execute_bound_runtime_value_with_shared_state, insert_bound_object_binding_at_handle_shared,
+    bind_host_dispatch_object_shared, bind_native_dispatch_result_shared,
+    binding_from_typelib_metadata, build_typelib_metadata, callback_arg, callback_arity,
+    callback_subscription_token, execute_bound_runtime_value_with_shared_state,
+    host_dispatch_object_for_prog_id_shared, insert_bound_object_binding_at_handle_shared,
     invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
     legacy_runtime_arg_values, member_spec_from_typelib_metadata,
-    member_token_and_spec_from_typelib_metadata_name, queue_projection_event_callbacks_shared,
-    release_callback, release_object_binding_shared, release_subscription_transport,
-    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
-    resolve_named_argument_dispids, resolve_typelib_identity_for_prog_id_name,
-    subscribe_event_shared, take_polled_callback_payload, unsubscribe_event_shared,
-    validate_named_arg_order,
+    member_token_and_spec_from_typelib_metadata_name, query_unknown_from_dispatch,
+    queue_projection_event_callbacks_shared, release_callback, release_object_binding_shared,
+    release_subscription_transport, resolve_bound_native_dispatch_shared,
+    resolve_known_typelib_identity, resolve_named_argument_dispids,
+    resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
+    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -183,6 +184,54 @@ impl WindowsComBridge {
         let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
         let binding = binding_from_typelib_metadata(prog_id_name.to_string(), 0, metadata.as_ref());
         insert_bound_object_binding_at_handle_shared(&self.state, object, binding)
+    }
+
+    /// # Safety
+    ///
+    /// `dispatch` must be null or carry one retained `IDispatch` reference
+    /// owned by the caller. On success or failure this method takes ownership
+    /// of that reference.
+    pub unsafe fn bind_host_dispatch_object(
+        &self,
+        prog_id_name: &str,
+        dispatch: *mut RawIDispatch,
+    ) -> Result<ObjectRef, String> {
+        if dispatch.is_null() {
+            return Ok(ObjectRef::from_compat_identity(0));
+        }
+        let metadata = match self.load_typelib_metadata_for_prog_id_name(prog_id_name) {
+            Ok(metadata) => metadata,
+            Err(message) => {
+                unsafe {
+                    crate::release_dispatch(dispatch);
+                }
+                return Err(message);
+            }
+        };
+        let mut binding = binding_from_typelib_metadata(
+            prog_id_name.to_string(),
+            dispatch as usize,
+            metadata.as_ref(),
+        );
+        match unsafe { query_unknown_from_dispatch(dispatch) } {
+            Ok(unknown) => {
+                binding.native_unknown = unknown as usize;
+            }
+            Err(message) => {
+                unsafe {
+                    crate::release_dispatch(dispatch);
+                }
+                return Err(message);
+            }
+        }
+        bind_host_dispatch_object_shared(&self.state, prog_id_name, binding)
+    }
+
+    pub fn host_dispatch_object_for_prog_id(
+        &self,
+        prog_id_name: &str,
+    ) -> Result<Option<ObjectRef>, String> {
+        host_dispatch_object_for_prog_id_shared(&self.state, prog_id_name)
     }
 
     pub fn describe_object(

@@ -258,6 +258,8 @@ mod tests {
                 slots: vec![],
                 param_slots: vec![],
                 return_slot: None,
+                param_types: vec![],
+                return_type: None,
             },
         );
         OxBundle::new(bytecode, metadata)

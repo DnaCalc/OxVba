@@ -189,7 +189,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "open"));
         }
-        let mode_raw = self.variant_project_compat_slot_i32(&mode, capability, "open", "mode")?;
+        let mode_raw = self.variant_to_i32(&mode, capability, "open", "mode")?;
         let requested_handle = mode_raw >> 16;
         let mode = mode_raw & 0xFFFF;
         if mode != 0 && !self.policy.allow_filesystem_mutation {
@@ -333,7 +333,7 @@ impl FileSystemHal for StandardHostServices {
             self.assert_fs_invariants(&state, "open-post");
             return Ok(Variant::from_i32(handle));
         }
-        let path = self.variant_project_compat_slot_i32(&path, capability, "open", "path")?;
+        let path = self.variant_to_i32(&path, capability, "open", "path")?;
         let mut state = self.fs_lock(capability, "open")?;
         self.assert_fs_invariants(&state, "open-pre");
         let Some(handle) = state.first_free_in(1, 511) else {
@@ -477,8 +477,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "close"));
         }
-        let handle =
-            self.variant_project_compat_slot_i32(&handle, capability, "close", "handle")?;
+        let handle = self.variant_to_i32(&handle, capability, "close", "handle")?;
         let mut state = self.fs_lock(capability, "close")?;
         self.assert_fs_invariants(&state, "close-pre");
         if handle == 0 {
@@ -631,9 +630,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "seek"));
         }
-        let handle = self.variant_project_compat_slot_i32(&handle, capability, "seek", "handle")?;
-        let position =
-            self.variant_project_compat_slot_i32(&position, capability, "seek", "position")?;
+        let handle = self.variant_to_i32(&handle, capability, "seek", "handle")?;
+        let position = self.variant_to_i32(&position, capability, "seek", "position")?;
         if position < 0 {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -726,7 +724,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "eof"));
         }
-        let handle = self.variant_project_compat_slot_i32(&handle, capability, "eof", "handle")?;
+        let handle = self.variant_to_i32(&handle, capability, "eof", "handle")?;
         let mut state = self.fs_lock(capability, "eof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "eof")?;
         Ok(Variant::from_i32(if entry.position >= entry.len {
@@ -750,7 +748,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "lof"));
         }
-        let handle = self.variant_project_compat_slot_i32(&handle, capability, "lof", "handle")?;
+        let handle = self.variant_to_i32(&handle, capability, "lof", "handle")?;
         let mut state = self.fs_lock(capability, "lof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
         Ok(Variant::from_i32(entry.len))
@@ -775,12 +773,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "free_file"));
         }
-        let range_selector = self.variant_project_compat_slot_i32(
-            &range_selector,
-            capability,
-            "free_file",
-            "range_selector",
-        )?;
+        let range_selector =
+            self.variant_to_i32(&range_selector, capability, "free_file", "range_selector")?;
         let (start, end) = if range_selector == 1 {
             (256, 511)
         } else {
@@ -823,10 +817,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "read_bytes"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "read_bytes", "handle")?;
-        let count =
-            self.variant_project_compat_slot_i32(&count, capability, "read_bytes", "count")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "read_bytes", "handle")?;
+        let count = self.variant_to_i32(&count, capability, "read_bytes", "count")?;
         let mut state = self.fs_lock(capability, "read_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "read_bytes")?;
         let pos = entry.position as usize;
@@ -860,8 +852,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "write_bytes"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "write_bytes", "handle")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "write_bytes", "handle")?;
         let bytes = format!("{}\r\n", format_write_field_variant(&data)).into_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
@@ -896,13 +887,11 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "print_line"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "print_line", "handle")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "print_line", "handle")?;
         let text = match data.as_bstr() {
             Some(text) => format!("{text}\r\n"),
             None => {
-                let val =
-                    self.variant_project_compat_slot_i32(&data, capability, "print_line", "data")?;
+                let val = self.variant_to_i32(&data, capability, "print_line", "data")?;
                 format!("{val}\r\n")
             }
         };
@@ -937,10 +926,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_fields"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "input_fields", "handle")?;
-        let count =
-            self.variant_project_compat_slot_i32(&count, capability, "input_fields", "count")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "input_fields", "handle")?;
+        let count = self.variant_to_i32(&count, capability, "input_fields", "count")?;
         let count = count.max(1) as usize;
         let mut state = self.fs_lock(capability, "input_fields")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "input_fields")?;
@@ -978,8 +965,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "line_input"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "line_input", "handle")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "line_input", "handle")?;
         let mut state = self.fs_lock(capability, "line_input")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "line_input")?;
         let pos = entry.position as usize;
@@ -1017,8 +1003,7 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "loc"));
         }
-        let handle_id =
-            self.variant_project_compat_slot_i32(&handle, capability, "loc", "handle")?;
+        let handle_id = self.variant_to_i32(&handle, capability, "loc", "handle")?;
         let mut state = self.fs_lock(capability, "loc")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "loc")?;
         Ok(Variant::from_i32(entry.position))

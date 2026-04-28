@@ -15,7 +15,6 @@ use crate::windows_variant::{
     variant_to_com_value as com_variant_to_com_value,
 };
 use crate::{COM_DISPID_PROPERTYPUT, ComValue};
-use oxvba_runtime::value_tags::{NULL_TAG, error_tag_from_code};
 use std::{
     collections::BTreeMap,
     sync::Mutex,
@@ -1409,10 +1408,8 @@ unsafe fn raw_variant_token_from_invoke_arg(
         } else {
             1
         }),
-        VT_NULL => Ok(NULL_TAG),
-        VT_ERROR => Ok(error_tag_from_code(
-            (*variant).Anonymous.Anonymous.Anonymous.scode,
-        )),
+        VT_NULL => Ok(0),
+        VT_ERROR => Ok((*variant).Anonymous.Anonymous.Anonymous.scode),
         VT_EMPTY if arg_index == 0 => Ok(0),
         _ => Err(COM_DISP_E_TYPEMISMATCH),
     }

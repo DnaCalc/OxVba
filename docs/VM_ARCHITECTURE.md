@@ -25,24 +25,25 @@ The compiler (`oxvba-compiler/src/bytecode.rs`) defines 152 instruction variants
 
 All 152 instructions are implemented in both the interpreter and the JIT backend (155 JIT mapping entries, covering all branches).
 
-### RuntimeValue execution model
+### Retained Variant Execution Model
 
-The interpreter operates on `RuntimeValue` slots — a 15-variant tagged value type defined in `oxvba-runtime`:
+The interpreter operates on retained `Variant` slots defined in
+`oxvba-runtime`. `Variant` is the canonical execution and snapshot carrier for
+current VM/JIT/host coordination.
 
-`Empty`, `Null`, `ErrorCode(i32)`, `I32`, `I64`, `F64` (with Double/Single/Date subtype), `Decimal`, `Currency`, `Bool`, `String`, `ArrayIntent(SafeArray)`, `Object(ObjectRef)`, `BindingHandle`
-
-A flat `RegisterFile` (vector of `RuntimeValue` slots, initially 256, dynamically resized) provides shared register storage.
+A flat `RegisterFile` (vector of `RuntimeSlot` entries backed by `Variant`,
+initially 256 and dynamically resized) provides shared register storage.
 
 Important current carrier truth:
 
-- `RuntimeValue::String` stores `BStr`, not plain `String`
-- `RuntimeValue::Object` stores `ObjectRef`, whose base object exposes a
+- `Variant` stores strings through `BStr`, not plain `String`
+- `Variant` stores object identity through `ObjectRef`, whose base object exposes a
   runtime `IUnknown`-style vtable and reference counting
-- the VM still projects to legacy compat-slot `i32` lanes at explicit older
-  bytecode/helper adapter seams, but those integers are no longer the canonical
-  object carrier
-- `RuntimeValue` now round-trips through the owned semantic `Variant` carrier in
-  `oxvba-runtime` rather than relying on a separate token-era bridge model
+- `RuntimeValue` is now a compatibility/projection carrier for older APIs and
+  selected tests; it is not VM register storage or conformance truth
+- legacy compat-slot `i32` projections are not an accepted VM observation model
+  and must not be used for new conformance gates
+- retained `VALUES:` snapshots are the basic-language conformance oracle
 
 ### Call stack and register-window frames
 

@@ -28,16 +28,6 @@ pub enum JitError {
 #[derive(Debug, Default)]
 pub struct JitEngine;
 
-#[cfg(test)]
-fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
-    use oxvba_runtime::value_tags::EMPTY_TAG;
-
-    values
-        .into_iter()
-        .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
-        .collect()
-}
-
 impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
         Ok(())
@@ -114,10 +104,6 @@ impl JitEngine {
                         .map_err(JitError::Execution);
                 }
             }
-        }
-        // Fall back to legacy i32 path for the original 23-instruction subset.
-        if cranelift::supports_bytecode(bytecode) {
-            return cranelift::execute_bytecode_variants(bytecode).map_err(JitError::Execution);
         }
         // Fall back to VM interpreter for unsupported bytecode.
         execute_and_snapshot_variants_with_host(bytecode, host_services)
@@ -201,8 +187,6 @@ fn default_host_services() -> Arc<dyn HostServices> {
 #[cfg(test)]
 mod tests {
     use super::{JitEngine, cranelift};
-    #[cfg(target_os = "windows")]
-    use crate::project_runtime_values_to_legacy_slots;
     use crate::{jit_context::JitContextOwned, runtime_helpers};
     use oxvba_compiler::bytecode::RuntimeArrayElementType;
     use oxvba_hal::{
@@ -280,24 +264,16 @@ mod tests {
     }
 
     #[test]
-    fn execute_bytecode_variants_legacy_subset_reads_compat_slots_directly() {
+    fn execute_bytecode_variants_legacy_subset_returns_retained_longs() {
         let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub")
             .expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
         let out = cranelift::execute_bytecode_variants(&bytecode)
-            .expect("legacy variant execution should succeed");
-        let compat =
-            cranelift::execute_bytecode(&bytecode).expect("legacy compat execution should succeed");
+            .expect("variant execution should succeed");
 
-        assert_eq!(out, vec![Variant::from_compat_slot_i32(3)]);
+        assert_eq!(out, vec![Variant::from_i32(3)]);
         assert_eq!(out[0].as_i32(), Some(3));
-        assert_eq!(
-            compat,
-            out.into_iter()
-                .map(|value| value.to_runtime_value().expect("variant projection"))
-                .collect::<Vec<_>>()
-        );
     }
 
     #[test]
@@ -399,7 +375,7 @@ mod tests {
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)
-            .policy(HostPolicy::interactive_dev())
+            .policy(HostPolicy::deterministic_runtime())
             .build();
 
         let out = JitEngine
@@ -414,7 +390,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn execute_and_snapshot_fallback_projects_non_legacy_runtime_values_to_legacy_slots() {
+    fn execute_and_snapshot_fallback_preserves_non_i32_runtime_values() {
         let bytecode = oxvba_compiler::compile(
             "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub",
         )
@@ -422,16 +398,14 @@ mod tests {
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)
-            .policy(HostPolicy::interactive_dev())
+            .policy(HostPolicy::deterministic_runtime())
             .build();
 
-        let out = project_runtime_values_to_legacy_slots(
-            JitEngine
-                .execute_and_snapshot_with_host(&bytecode, host_services)
-                .expect("fallback semantic snapshot should succeed"),
-        );
+        let out = JitEngine
+            .execute_and_snapshot_variants_with_host(&bytecode, host_services)
+            .expect("fallback variant snapshot should succeed");
         assert_eq!(out.len(), 1);
-        assert!(out[0] > 0);
+        assert!(matches!(out[0].as_object_ref(), Some(ref object_ref) if object_ref.raw() > 0));
     }
 
     #[test]
@@ -1274,6 +1248,64 @@ mod tests {
             .execute_and_snapshot(&bytecode)
             .expect("jit should execute");
         assert_eq!(jit, vm);
+    }
+
+    #[test]
+    fn jit_falls_back_for_called_function_with_select_case() {
+        let source = "\
+Sub Main()
+Dim total
+Dim i
+total = 0
+For i = 1 To 5
+    total = total + Score(i)
+Next i
+End Sub
+
+Function Score(n)
+    Select Case n
+        Case 1, 3, 5
+            Score = 10
+        Case 2, 4
+            Score = 1
+    End Select
+End Function";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode_rtslot(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot_variants(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot_variants(&bytecode)
+            .expect("jit fallback should execute");
+        assert_eq!(jit, vm);
+        assert_eq!(jit[0].as_i32(), Some(32));
+        assert_eq!(jit[1].as_i32(), Some(6));
+    }
+
+    #[test]
+    fn jit_falls_back_for_proc_call_with_error_state() {
+        let source = "\
+Sub Main()
+    Dim x
+    On Error Resume Next
+    Error 7
+    Call Worker
+    x = Err.Number
+End Sub
+
+Sub Worker()
+    Dim y
+    y = 1
+End Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode_rtslot(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot_variants(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot_variants(&bytecode)
+            .expect("jit fallback should execute");
+        assert_eq!(jit, vm);
+        assert_eq!(jit[0].as_i32(), Some(7));
     }
 
     #[test]

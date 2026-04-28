@@ -676,6 +676,11 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    /// CVErr(value): materializes a retained Error variant from a numeric code.
+    IntrinsicCVErr {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicIsDateTag {
         dst: usize,
         src: usize,
@@ -849,6 +854,10 @@ pub enum Instruction {
     /// Loads `RuntimeValue::Null` into a slot — distinct from `LoadConstI32 { value: -1 }`
     /// which produces `RuntimeValue::I32(-1)`.
     LoadNull {
+        slot: usize,
+    },
+    /// Loads an uninitialized Variant/Empty value into a slot.
+    LoadEmpty {
         slot: usize,
     },
     BoolNot {

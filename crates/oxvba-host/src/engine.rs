@@ -22,8 +22,7 @@ use oxvba_hal::{
     },
     traits::HostServices,
 };
-use oxvba_jit::{JitEngine, cranelift};
-use oxvba_runtime::value_tags::EMPTY_TAG;
+use oxvba_jit::JitEngine;
 use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
 use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
@@ -221,24 +220,17 @@ impl ProjectRuntimeSession {
         )
     }
 
-    pub fn snapshot_slots(&self) -> Vec<i32> {
-        crate::compat::project_session_snapshot_slots(self)
-    }
-
     pub fn compiled(&self) -> &CompiledProject {
         &self.compiled
     }
 
-    /// Legacy alias for [`Self::read_compat_slot`].
+    /// Legacy alias for [`Self::read_slot_value`].
     pub fn read_slot(&self, slot: usize) -> RuntimeValue {
-        crate::compat::project_session_read_slot(self, slot)
+        self.read_slot_value(slot)
     }
 
-    /// Compatibility slot read that projects the retained slot value into a
-    /// [`RuntimeValue`].
-    ///
-    /// New value-model call sites should prefer [`Self::read_variant_slot`].
-    pub fn read_compat_slot(&self, slot: usize) -> RuntimeValue {
+    /// Slot read that projects the retained slot value into a [`RuntimeValue`].
+    pub fn read_slot_value(&self, slot: usize) -> RuntimeValue {
         crate::compat::project_session_read_slot(self, slot)
     }
 
@@ -269,10 +261,19 @@ impl Default for Engine {
     }
 }
 
-pub(crate) fn project_variants_to_legacy_slots(values: Vec<Variant>) -> Vec<i32> {
+#[cfg(test)]
+pub(crate) fn project_variants_to_test_i32_values(values: Vec<Variant>) -> Vec<i32> {
     values
         .into_iter()
-        .map(|value| value.project_compat_slot_i32().unwrap_or(EMPTY_TAG))
+        .map(|value| match value.to_runtime_value() {
+            Ok(RuntimeValue::I32(value)) => value,
+            Ok(RuntimeValue::I64(value)) => i32::try_from(value).unwrap_or(0),
+            Ok(RuntimeValue::Bool(value)) => i32::from(value),
+            Ok(RuntimeValue::ErrorCode(value)) => value,
+            Ok(RuntimeValue::Object(handle)) => handle.raw(),
+            Ok(RuntimeValue::BindingHandle(handle)) => handle.raw(),
+            _ => 0,
+        })
         .collect()
 }
 
@@ -651,6 +652,32 @@ impl Engine {
             .com()
             .describe_object(object_token)
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))
+    }
+
+    /// Bind an existing native `IDispatch` pointer into this engine's host COM
+    /// state under a ProgID such as `Excel.Application`.
+    ///
+    /// # Safety
+    ///
+    /// `dispatch` must be null or a valid `IDispatch` pointer carrying one
+    /// retained reference owned by the caller. On success or failure the host
+    /// COM adapter takes ownership of that reference.
+    pub unsafe fn bind_native_dispatch_object(
+        &self,
+        prog_id: &str,
+        dispatch: *mut core::ffi::c_void,
+    ) -> Result<ObjectRef, PhaseDiagnostic> {
+        let value = unsafe {
+            self.host_services
+                .com()
+                .bind_native_dispatch_object_variant(prog_id, dispatch)
+        }
+        .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        value.as_object_ref().ok_or_else(|| {
+            PhaseDiagnostic::runtime(format!(
+                "COM-E-OBJECT-BINDING-MISSING: native dispatch binding for `{prog_id}` did not return an object"
+            ))
+        })
     }
 
     pub fn poll_com_event_callback(
@@ -1155,20 +1182,10 @@ impl Engine {
             self.jit
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            if cranelift::supports_bytecode_rtslot(&compiled.bytecode)
-                && let Ok(values) = cranelift::execute_bytecode_rtslot_variants(
-                    &compiled.bytecode,
-                    self.host_services.clone(),
-                )
-            {
-                return Ok(values);
-            }
-            if cranelift::supports_bytecode(&compiled.bytecode)
-                && let Ok(values) = cranelift::execute_bytecode_variants(&compiled.bytecode)
-            {
-                return Ok(values);
-            }
-
+            // Project snapshots need procedure metadata filtering over the
+            // full slot file. The direct JIT bytecode APIs expose only raw
+            // user-slot snapshots, so project execution falls back to the VM
+            // until the JIT has a project-visible snapshot boundary.
             return self.execute_compiled_project_with_variant_snapshot_vm(&compiled);
         }
 
@@ -1414,12 +1431,12 @@ fn normalize_callback_payload(
 impl Engine {
     fn execute_source_slots_test(&self, source: &str) -> Result<Vec<i32>, String> {
         self.execute_source_with_variant_snapshot(source)
-            .map(project_variants_to_legacy_slots)
+            .map(project_variants_to_test_i32_values)
     }
 
     fn execute_source_slots_test_phased(&self, source: &str) -> Result<Vec<i32>, PhaseDiagnostic> {
         self.execute_source_with_variant_snapshot_phased(source)
-            .map(project_variants_to_legacy_slots)
+            .map(project_variants_to_test_i32_values)
     }
 
     fn execute_project_slots_test_phased(
@@ -1427,7 +1444,7 @@ impl Engine {
         manifest: &ProjectManifest,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
         self.execute_project_with_variant_snapshot_phased(manifest)
-            .map(project_variants_to_legacy_slots)
+            .map(project_variants_to_test_i32_values)
     }
 }
 
@@ -1503,9 +1520,7 @@ mod tests {
             ProjectDescriptorKind, ProjectReferenceDescriptor, ProjectReferenceKind,
         },
     };
-    use oxvba_runtime::{
-        F64Value, ObjectRef, RuntimeValue, VarType, bstr::BStr, value_tags::error_tag_from_code,
-    };
+    use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue, VarType, bstr::BStr};
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
@@ -2077,10 +2092,7 @@ End Sub";
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot[0],
-            5004 + 6 + (oxvba_runtime::safe_array::ARRAY_TAG_BASE + 3)
-        );
+        assert_eq!(snapshot[0], 5004 + 6 + 3);
     }
 
     #[test]
@@ -2090,10 +2102,7 @@ End Sub";
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(
-            snapshot[0],
-            5004 + 4 + (oxvba_runtime::safe_array::ARRAY_TAG_BASE + 2)
-        );
+        assert_eq!(snapshot[0], 5004 + 4 + 2);
     }
 
     #[test]
@@ -2790,13 +2799,13 @@ End Sub";
     }
 
     #[test]
-    fn formal_v51_cverr_error_tag_subset() {
+    fn formal_v51_cverr_retained_error_subset() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CVErr(17)\nEnd Sub";
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![error_tag_from_code(17)]);
+        assert_eq!(snapshot, vec![17]);
     }
 
     #[test]
@@ -21841,7 +21850,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        assert_eq!(out, vec![1, 1, 1, 0]);
+        assert_eq!(out, vec![0, 1, 1, 0]);
     }
 
     #[test]
@@ -21875,7 +21884,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        // Rnd() and Rnd(seed) now produce F64 values; legacy i32 projection yields EMPTY_TAG (0)
+        // Rnd() and Rnd(seed) produce F64 values; this scalar-only test helper maps them to 0.
         assert_eq!(out, vec![0, 0, 59, -50, -28, -99, -38]);
     }
 
@@ -21898,7 +21907,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        // Rnd() and Rnd(seed) now produce F64 values; legacy i32 projection yields EMPTY_TAG (0)
+        // Rnd() and Rnd(seed) produce F64 values; this scalar-only test helper maps them to 0.
         assert_eq!(out, vec![0, 0, 59, -50, -28, -99, -38]);
     }
 
@@ -21913,7 +21922,7 @@ End Sub";
     }
 
     #[test]
-    fn formal_v156_financial_non_convergence_signals_error_tags() {
+    fn formal_v156_financial_non_convergence_signals_error_values() {
         let source = "Sub Main()\nDim a\nDim b\na = Rate(0, 0, 0)\nb = NPer(1, 0, 0, 0)\nEnd Sub";
         let out = Engine::new(HostConfig {
             enable_jit: false,
@@ -21921,10 +21930,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        assert_eq!(
-            out,
-            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
-        );
+        assert_eq!(out, vec![2001, 2002]);
     }
 
     #[test]
@@ -21982,10 +21988,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        assert_eq!(
-            out,
-            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
-        );
+        assert_eq!(out, vec![2001, 2002]);
     }
 
     #[test]
@@ -22027,10 +22030,7 @@ End Sub";
         .execute_source_slots_test(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
-        assert_eq!(
-            jit_out,
-            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
-        );
+        assert_eq!(jit_out, vec![2001, 2002]);
     }
 
     #[test]
@@ -22102,7 +22102,7 @@ End Sub";
         })
         .execute_source_slots_test(coercion_source)
         .expect("coercion fixture should execute");
-        assert_eq!(coercion_out, vec![-899999996, -899999996, 1]);
+        assert_eq!(coercion_out, vec![4, 4, 1]);
     }
 
     #[test]
@@ -22149,15 +22149,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        assert_eq!(
-            out,
-            vec![
-                error_tag_from_code(2001),
-                error_tag_from_code(2002),
-                -99,
-                -38
-            ]
-        );
+        assert_eq!(out, vec![2001, 2002, -99, -38]);
     }
 
     #[test]
@@ -22178,8 +22170,8 @@ End Sub";
     fn formal_v162_vm_kani_harnesses_cover_financial_and_vartype_paths() {
         let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
             .expect("interpreter exists");
-        assert!(text.contains("financial_rate_zero_nper_yields_error_tag"));
-        assert!(text.contains("financial_nper_invalid_domain_yields_error_tag"));
+        assert!(text.contains("financial_rate_zero_nper_yields_error_value"));
+        assert!(text.contains("financial_nper_invalid_domain_yields_error_value"));
         assert!(text.contains("vartype_intrinsic_outputs_expected_domain"));
         assert!(text.contains("#[cfg(kani)]"));
     }
@@ -22488,7 +22480,7 @@ End Sub";
     fn formal_v175_vm_kani_harnesses_cover_new_cverr_and_resume_paths() {
         let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
             .expect("interpreter exists");
-        assert!(text.contains("cverr_tag_encoding_stays_in_reserved_error_band"));
+        assert!(text.contains("cverr_intrinsic_materializes_error_variant"));
         assert!(text.contains("resume_next_clears_err_number_after_raise"));
     }
 
@@ -22832,8 +22824,7 @@ End Sub";
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        let expected_tag = oxvba_runtime::safe_array::ARRAY_TAG_BASE + 3;
-        assert_eq!(out, vec![expected_tag, 3]);
+        assert_eq!(out, vec![0, 3]);
     }
 
     #[test]

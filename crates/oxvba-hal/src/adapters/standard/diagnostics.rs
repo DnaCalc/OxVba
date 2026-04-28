@@ -36,9 +36,8 @@ impl DiagnosticsHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "emit"));
         }
-        let code = self.variant_project_compat_slot_i32(&code, capability, "emit", "code")?;
-        let payload =
-            self.variant_project_compat_slot_i32(&payload, capability, "emit", "payload")?;
+        let code = self.variant_to_i32(&code, capability, "emit", "code")?;
+        let payload = self.variant_to_i32(&payload, capability, "emit", "payload")?;
         if self.native_diagnostics_enabled() {
             eprintln!(
                 "[oxvba-hal] profile={:?} code={} payload={}",

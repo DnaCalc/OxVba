@@ -8,18 +8,11 @@
 use oxvba_compiler::{OxBundle, ProjectManifest};
 use oxvba_runtime::{RuntimeValue, Variant};
 
-use crate::{
-    Engine, ImmediateSession, PhaseDiagnostic, ProjectRuntimeSession,
-    engine::project_variants_to_legacy_slots,
-};
+use crate::{Engine, ImmediateSession, PhaseDiagnostic, ProjectRuntimeSession};
 
 pub fn project_session_snapshot_values(session: &ProjectRuntimeSession) -> Vec<RuntimeValue> {
     project_variants_to_runtime_values(session.snapshot_variants())
         .expect("project runtime session VARIANT snapshot should project")
-}
-
-pub fn project_session_snapshot_slots(session: &ProjectRuntimeSession) -> Vec<i32> {
-    project_variants_to_legacy_slots(session.snapshot_variants())
 }
 
 pub fn project_session_read_slot(session: &ProjectRuntimeSession, slot: usize) -> RuntimeValue {

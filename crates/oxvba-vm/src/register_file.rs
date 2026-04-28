@@ -28,14 +28,6 @@ impl RuntimeSlot {
         }
     }
 
-    /// Build a retained VM slot from the legacy 4-byte compatibility token.
-    ///
-    /// This preserves historical slot-token meanings while materializing the
-    /// value as a `Variant` carrier.
-    pub(crate) fn from_compat_slot_i32(value: i32) -> Result<Self, String> {
-        Variant::try_from_compat_slot_i32(value).map(Self::Variant)
-    }
-
     /// Project a retained slot back to the legacy semantic value API.
     ///
     /// New value-model call sites should read the `Variant` slot directly.
@@ -62,16 +54,25 @@ impl RuntimeSlot {
         matches!(self, Self::Variant(value) if value.as_variant_cell_ptr() as usize as i64 == pointer)
     }
 
-    /// Project a retained slot to the legacy 4-byte JIT/interpreter slot token.
-    pub(crate) fn project_compat_slot_i32(&self) -> Result<i32, String> {
-        match self {
-            Self::Variant(value) => value.project_compat_slot_i32(),
-            Self::BindingHandle(handle) => Ok(handle.raw()),
-        }
-    }
-
     pub(crate) fn as_i32_lossy(&self) -> Option<i32> {
-        self.project_compat_slot_i32().ok()
+        match self {
+            Self::Variant(value) => {
+                if let Some(value) = value.as_i32() {
+                    Some(value)
+                } else if let Some(value) = value.as_i16() {
+                    Some(i32::from(value))
+                } else if let Some(value) = value.as_u8() {
+                    Some(i32::from(value))
+                } else if let Some(value) = value.as_bool() {
+                    Some(i32::from(value))
+                } else if let Some(value) = value.as_object_ref() {
+                    Some(value.raw())
+                } else {
+                    None
+                }
+            }
+            Self::BindingHandle(handle) => Some(handle.raw()),
+        }
     }
 
     pub(crate) fn is_null(&self) -> bool {

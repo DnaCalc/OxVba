@@ -108,18 +108,21 @@ pub use windows_invoke::{
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{
     ReleasedWindowsComObject, WindowsComClientState, WindowsComSubscriptionTransport,
-    advise_event_subscription, bind_native_dispatch_result, bind_native_dispatch_result_shared,
-    cache_member_dispid, callback_arg, callback_arity, callback_subscription_token,
+    advise_event_subscription, bind_host_dispatch_object, bind_host_dispatch_object_shared,
+    bind_native_dispatch_result, bind_native_dispatch_result_shared, cache_member_dispid,
+    callback_arg, callback_arity, callback_subscription_token,
     collect_stale_callbacks_for_subscription, event_callback_args_from_invoke_args,
-    event_is_source_interface_only, event_signature_arity_for_binding, insert_bound_object_binding,
-    insert_bound_object_binding_at_handle, insert_bound_object_binding_at_handle_shared,
-    insert_bound_object_binding_shared, mark_next_callback_pumped_shared,
-    queue_projection_event_callbacks_shared, release_callback, release_object_binding,
-    release_object_binding_shared, release_subscription_transport, remove_subscription_callbacks,
-    resolve_bound_native_dispatch, resolve_bound_native_dispatch_shared,
-    resolve_bound_runtime_object, resolve_bound_runtime_object_shared,
-    resolve_member_dispid_cached, resolve_subscription_transport, subscribe_event_shared,
-    take_polled_callback_payload, unsubscribe_event_shared,
+    event_is_source_interface_only, event_signature_arity_for_binding,
+    host_dispatch_object_for_prog_id, host_dispatch_object_for_prog_id_shared,
+    insert_bound_object_binding, insert_bound_object_binding_at_handle,
+    insert_bound_object_binding_at_handle_shared, insert_bound_object_binding_shared,
+    mark_next_callback_pumped_shared, queue_projection_event_callbacks_shared, release_callback,
+    release_object_binding, release_object_binding_shared, release_subscription_transport,
+    remove_subscription_callbacks, resolve_bound_native_dispatch,
+    resolve_bound_native_dispatch_shared, resolve_bound_runtime_object,
+    resolve_bound_runtime_object_shared, resolve_member_dispid_cached,
+    resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
+    unsubscribe_event_shared,
 };
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub use windows_test_dispatch::{

@@ -3,8 +3,7 @@ use crate::{
     bstr::{BStr, OwnedBStrCore},
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
-    safe_array::{SafeArray, array_tag_from_safe_array, safe_array_from_tag},
-    value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
+    safe_array::SafeArray,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -524,33 +523,6 @@ impl Variant {
             .expect("runtime Variant bridge should only be used for supported exact carriers")
     }
 
-    /// Compatibility bridge from the legacy i32 slot-token lane into a retained
-    /// `Variant`.
-    pub fn try_from_compat_slot_i32(value: i32) -> Result<Self, String> {
-        if value == EMPTY_TAG {
-            return Ok(Self::empty());
-        }
-        if value == NULL_TAG {
-            return Ok(Self::null());
-        }
-        if is_error_tag(value) {
-            return Ok(Self::from_error_code(
-                error_code_from_tag(value).unwrap_or(0),
-            ));
-        }
-        if let Some(array) = safe_array_from_tag(value) {
-            return Ok(Self::from_safearray(array));
-        }
-        Ok(Self::from_i32(value))
-    }
-
-    /// Panicking compatibility bridge from the legacy i32 slot-token lane into
-    /// a retained `Variant`.
-    pub fn from_compat_slot_i32(value: i32) -> Self {
-        Self::try_from_compat_slot_i32(value)
-            .expect("compat slot -> Variant bridge should stay on the supported exact subset")
-    }
-
     /// Compatibility projection from the retained runtime `Variant` into the
     /// legacy semantic [`RuntimeValue`] carrier.
     pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
@@ -613,66 +585,6 @@ impl Variant {
                 .as_safearray()
                 .map(RuntimeValue::ArrayIntent)
                 .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string()),
-        }
-    }
-
-    pub fn project_compat_slot_i32(&self) -> Result<i32, String> {
-        match self.vtype() {
-            VarType::Empty => Ok(EMPTY_TAG),
-            VarType::Null => Ok(NULL_TAG),
-            VarType::Integer => self
-                .as_i16()
-                .map(|value| value as i32)
-                .ok_or_else(|| "invalid Integer variant payload".to_string()),
-            VarType::Long => self
-                .as_i32()
-                .ok_or_else(|| "invalid Long variant payload".to_string()),
-            VarType::LongLong => self
-                .as_i64()
-                .ok_or_else(|| "invalid LongLong variant payload".to_string())
-                .and_then(|value| {
-                    i32::try_from(value).map_err(|_| {
-                        format!(
-                            "i64 value {value} cannot be represented in legacy compat slot lane"
-                        )
-                    })
-                }),
-            VarType::Byte => self
-                .as_u8()
-                .map(i32::from)
-                .ok_or_else(|| "invalid Byte variant payload".to_string()),
-            VarType::Boolean => self
-                .as_bool()
-                .map(i32::from)
-                .ok_or_else(|| "invalid Boolean variant payload".to_string()),
-            VarType::Error => self
-                .as_error_code()
-                .map(error_tag_from_code)
-                .ok_or_else(|| "invalid Error variant payload".to_string()),
-            VarType::Object => self
-                .as_object_ref()
-                .map(|value| value.raw())
-                .ok_or_else(|| "invalid Object variant payload".to_string()),
-            VarType::ArrayVariant => self
-                .as_safearray()
-                .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string())
-                .and_then(|array| {
-                    array_tag_from_safe_array(&array).ok_or_else(|| {
-                        "array intent cannot be represented in legacy compat slot tag".to_string()
-                    })
-                }),
-            VarType::Single | VarType::Double | VarType::Date => {
-                Err("f64 cannot be represented in legacy compat slot lane".to_string())
-            }
-            VarType::Decimal => {
-                Err("decimal cannot be represented in legacy compat slot lane".to_string())
-            }
-            VarType::Currency => {
-                Err("currency cannot be represented in legacy compat slot lane".to_string())
-            }
-            VarType::String => {
-                Err("string cannot be represented in legacy compat slot lane".to_string())
-            }
         }
     }
 }
@@ -1004,43 +916,6 @@ mod tests {
     }
 
     #[test]
-    fn variant_compat_slot_boundary_roundtrips_supported_subset() {
-        let value = Variant::from_compat_slot_i32(42);
-        assert_eq!(value.project_compat_slot_i32().expect("compat slot"), 42);
-
-        let bool_value = Variant::from_bool(true);
-        assert_eq!(bool_value.project_compat_slot_i32().expect("bool slot"), 1);
-
-        let error_value = Variant::from_error_code(17);
-        assert_eq!(
-            error_value.project_compat_slot_i32().expect("error slot"),
-            crate::value_tags::error_tag_from_code(17)
-        );
-
-        let array_value = Variant::from_safearray(SafeArray::vector(3));
-        assert_eq!(
-            array_value.project_compat_slot_i32().expect("array slot"),
-            crate::safe_array::ARRAY_TAG_BASE + 3
-        );
-    }
-
-    #[test]
-    fn variant_compat_slot_boundary_rejects_non_legacy_carriers() {
-        assert_eq!(
-            Variant::from_string("ABC")
-                .project_compat_slot_i32()
-                .expect_err("string should stay outside compat slot lane"),
-            "string cannot be represented in legacy compat slot lane"
-        );
-        assert_eq!(
-            Variant::from_i64(5_000_000_000)
-                .project_compat_slot_i32()
-                .expect_err("overflow should stay outside compat slot lane"),
-            "i64 value 5000000000 cannot be represented in legacy compat slot lane"
-        );
-    }
-
-    #[test]
     fn variant_runtime_projection_rejects_malformed_pointer_payloads() {
         assert_eq!(
             Variant::zeroed(VarType::Object)
@@ -1054,26 +929,6 @@ mod tests {
                 .expect_err("zero SAFEARRAY pointer should be rejected"),
             "invalid SAFEARRAY variant payload"
         );
-    }
-
-    #[test]
-    fn compat_slot_variant_bridge_preserves_tagged_shapes_without_runtime_value_detour() {
-        let empty = Variant::try_from_compat_slot_i32(crate::value_tags::EMPTY_TAG)
-            .expect("empty compat slot");
-        assert_eq!(empty.vtype(), VarType::Empty);
-
-        let null = Variant::try_from_compat_slot_i32(crate::value_tags::NULL_TAG)
-            .expect("null compat slot");
-        assert_eq!(null.vtype(), VarType::Null);
-
-        let error = Variant::try_from_compat_slot_i32(crate::value_tags::error_tag_from_code(17))
-            .expect("error compat slot");
-        assert_eq!(error.as_error_code(), Some(17));
-
-        let array = Variant::try_from_compat_slot_i32(crate::safe_array::ARRAY_TAG_BASE + 2)
-            .expect("array compat slot");
-        assert_eq!(array.vtype(), VarType::ArrayVariant);
-        assert_eq!(array.as_safearray().expect("array").len(), 2);
     }
 }
 

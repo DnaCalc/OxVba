@@ -92,6 +92,25 @@ fn invoke_function_returns_value() {
     }
 }
 
+#[test]
+fn invoke_function_clears_return_slot_between_repeated_calls() {
+    let source = "Public Function Accum() As Long\nAccum = Accum + 1\nEnd Function\n";
+    let manifest = make_manifest(vec![make_module("Mod1", source)]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+
+    let first = engine
+        .invoke_procedure(&mut session, "Mod1", "Accum", &[])
+        .unwrap();
+    let second = engine
+        .invoke_procedure(&mut session, "Mod1", "Accum", &[])
+        .unwrap();
+
+    assert_eq!(first, RuntimeValue::I32(1));
+    assert_eq!(second, RuntimeValue::I32(1));
+}
+
 // ---------------------------------------------------------------------------
 // Invoke with wrong arity
 // ---------------------------------------------------------------------------
