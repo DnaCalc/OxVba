@@ -21,7 +21,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - VM/register/host execution is now value-first end to end:
     - register storage persists `RuntimeValue`,
     - public VM/JIT/host execution APIs are semantic-snapshot first,
-    - `snapshot_slots(...)` survives only as an explicit compatibility projection.
+    - retained `Variant`/`RuntimeValue` snapshots are the supported execution observation surface; the old integer-slot observation lane has since been removed.
   - The interpreter loop no longer executes through the old raw slot-helper vocabulary:
     - core compare/boolean/jump/increment lanes now read/write semantic runtime values,
     - the wider loop now uses explicit legacy-projection helpers over `RuntimeValue` where scalar compatibility is still intentional,
@@ -51,20 +51,64 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
-### BLK-XLL-EXCEL-HOST-001: Excel-loaded XLL validation not yet proven
-- Impact:
-  - Blocks closure of `bd-xll1` / `WORKSET_2026-04-02_XLL_ADDIN_REALIZATION_EXECUTION.md`.
-  - Source-generation coverage exists for XLL registration and runtime invocation, but Excel-host registration/invocation parity is not yet evidenced.
-- Current state:
+### BLK-XLL-EXCEL-HOST-001: resolved in current run
+- Status: resolved.
+- Resolution summary:
   - `bd-xll1.2` delivered generated `xlAutoOpen` / `xlfRegister` registration source from native export metadata.
-  - `bd-xll1.3` delivered generated XLL export wrappers that bridge XLOPER12-shaped arguments/results to `RuntimeValue` procedure invocation.
+  - `bd-xll1.3` delivered generated XLL export wrappers that bridge XLOPER12-shaped arguments/results to retained `Variant` procedure invocation.
   - `bd-xll1.4` published the validation matrix and explicit non-claims.
   - `bd-xll1.5.1` proved local compile staging: generated source compiles through `ShimOutputType::Xll` and produces a non-empty `.xll` artifact.
+  - `bd-xll1.6` replaced the placeholder XLOPER12 scalar lane with the Excel 12 scalar ABI shape, xltype-driven argument decoding, and owned counted-wide-string return handling.
+  - `bd-xll1.7` wired `oxvba build` for `OutputType=Addin` to emit a real local `.xll` package by default.
+  - The staged child workset
+    `docs/worksets/WORKSET_2026-04-28_XLL_EXCEL_HOST_VALIDATION_EXECUTION.md`
+    is complete.
+  - Excel-host validation now proves:
+    - `Application.RegisterXLL(...)` loads the staged `.xll`,
+    - `xlAutoOpen` runs,
+    - `MdCallBack12` is resolved from `EXCEL.EXE`,
+    - `xlGetName` succeeds,
+    - `xlfRegister` succeeds for all four scoped exported functions,
+    - worksheet formulas return expected Double, String, Boolean, and Long
+      scalar values.
+  - Implementation-owned findings were fixed in code rather than by deleting
+    tests:
+    - callback resolution now uses `MdCallBack12` instead of assuming an
+      exported `Excel12v`,
+    - compiler/native-export metadata now carries typed procedure signatures,
+    - registration uses SDK-shaped `xlfRegister` arguments with `xlGetName`,
+    - type strings now match the generated XLOPER12 pointer wrapper ABI.
+  - Evidence:
+    - `docs/evidence/XLL_EXCEL_REGISTRATION_TRACE_2026-04-28.md`
+    - `docs/evidence/XLL_EXCEL_WORKSHEET_INVOCATION_2026-04-28.md`
+
+### BLK-OXIDE-DIRECT-CONSUMPTION-001: Direct Immediate/debug consumption not yet evidenced
+- Impact:
+  - Blocks closure of `bd-oxi1.6.2`, `bd-oxi1.6`, and the `bd-oxi1` parent.
+  - The OxIde-side direct workspace/project-helper/runtime evidence is now
+    captured, but the bead explicitly also requires direct Immediate Window and
+    debug-seam consumption evidence.
+- Current state:
+  - Evidence captured in `docs/evidence/OXIDE_DIRECT_HOST_CONSUMPTION_EVIDENCE_2026-04-27.md`.
+  - `C:\Work\DnaCalc\OxIde\src\shell\oxvba.rs` directly consumes
+    `HostWorkspaceSession` for workspace semantics and direct hover/definition
+    style queries.
+  - `C:\Work\DnaCalc\OxIde\src\shell\project_actions.rs` directly consumes
+    `oxvba_project` host-helper surfaces for project/module/reference flows.
+  - OxIde focused validation passes:
+    - `cargo test real_oxvba --quiet`
+    - `cargo test project_actions --quiet`
+  - OxIde Immediate/debug docs still describe planned or future
+    OxVba-contract-dependent surfaces rather than proved direct consumption.
 - Exact unblocking steps:
-  - load it in Excel on a Windows host,
-  - verify `xlAutoOpen` registration,
-  - invoke at least one exported function from Excel,
-  - capture pass/fail evidence and then close `bd-xll1.5` and the parent lane if successful.
+  - land or identify OxIde code that routes Immediate Window evaluation through
+    the direct OxVba immediate/debug/session APIs,
+  - land or identify OxIde code that routes debug controls/state through the
+    direct OxVba debugger seam,
+  - add or run focused OxIde tests proving those paths do not use CLI or LSP
+    fallbacks,
+  - update the evidence file and then close `bd-oxi1.6.2`, `bd-oxi1.6`, and
+    the parent if no other child blockers remain.
 
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
 - Impact:
