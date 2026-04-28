@@ -70,10 +70,15 @@ Updated current status:
 - OxVba-side direct-host showcase boundary docs now exist
 - the remaining showcase gap is real OxIde-side consumption evidence over that stack
 
-Current VS Code gaps:
-- `oxvba-lsp` still exposes only a bounded subset of the direct semantic ladder,
-- there is no OxVba VS Code extension package yet,
-- project authoring commands for VS Code are still only conceptual.
+Current VS Code state:
+- `oxvba-lsp` exposes the bounded language-feature ladder over the direct
+  semantic core,
+- the minimal OxVba VS Code extension package exists under
+  `extensions/vscode-oxvba`,
+- project authoring is owned by extension commands over `oxvba-cli` and helper
+  flows rather than by LSP-local project semantics,
+- debugger integration remains a later DAP projection over the shared OxVba
+  debugger model.
 
 ## Intended OxVba-Side Outcome
 
