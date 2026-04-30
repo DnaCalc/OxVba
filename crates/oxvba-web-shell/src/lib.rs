@@ -389,6 +389,30 @@ mod tests {
     }
 
     #[test]
+    fn frankentui_assets_define_all_first_pass_screens() {
+        let html = include_str!("../assets/index.html");
+        let js = include_str!("../assets/app.js");
+        for screen in [
+            "workspace",
+            "editor",
+            "diagnostics",
+            "immediate",
+            "debugger",
+        ] {
+            assert!(
+                html.contains(&format!("data-screen=\"{screen}\"")),
+                "missing screen markup for {screen}"
+            );
+            assert!(
+                js.contains(&format!("\"{screen}\"")),
+                "missing screen wiring for {screen}"
+            );
+        }
+        assert!(html.contains("data-app=\"oxide-frankentui\""));
+        assert!(html.contains("data-screen-target=\"workspace\""));
+    }
+
+    #[test]
     fn load_workspace_emits_workspace_and_diagnostics() {
         let temp_root = unique_temp_dir("oxvba_web_shell_workspace_load");
         fs::create_dir_all(&temp_root).expect("temp dir");
