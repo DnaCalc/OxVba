@@ -56,36 +56,42 @@ Out of scope:
 
 ## Current RuntimeValue Inventory Snapshot
 
-Initial `rg "\bRuntimeValue\b" crates` evidence shows this is not a single-file
-rename. Active references are concentrated in:
+Detailed evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md).
 
-- `oxvba-runtime`: definition/re-export plus `Variant` compatibility bridges,
-  `SafeArray`, coercion, pointer helper, and variant tests.
-- `oxvba-hal`: trait signatures, compatibility adapters, standard/null/wasm
-  adapters, recording/replay adapters, and conformance probes.
-- `oxvba-com`: compatibility projections, COM value model tests, portable COM
-  surface, Windows bridge/invoke/variant conversion code.
-- `oxvba-vm`: register file, interpreter, semantics, and snapshot helpers.
-- `oxvba-jit`: public snapshot APIs, Cranelift wrapper, JIT context, slot ABI,
-  and tests.
-- `oxvba-host`: engine snapshots/tests, compatibility helpers, debugger,
-  immediate execution, embedded host surface, and end-to-end tests.
-- `oxvba-launcher`, `oxvba-web-host`, and `oxvba-languageservice`: presentation
-  and result surfaces that likely need explicit DTOs.
-- `oxvba-compiler`: bytecode and test surfaces that still traffic in projected
-  runtime values.
+The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
+occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
+(excluding `docs/archive/**` and `docs/spec/archive/**`). Active use families
+are not a single-file rename; they are grouped as:
 
-The migration should proceed by boundary family, not by global search/replace.
+- runtime enum/re-export and `Variant` bridge helpers;
+- `SafeArray`, pointer-helper, string/coercion, and runtime compatibility APIs;
+- VM slots/snapshots/invocation plus legacy semantic helper families;
+- host engine/session/event surfaces plus immediate/debugger/embedded value DTOs;
+- HAL trait/adapters and recording/replay compatibility surfaces;
+- COM model, dynamic object, Windows bridge/invoke/variant conversion, and
+  portable COM surfaces;
+- JIT snapshot/slot ABI compatibility surfaces;
+- launcher/web/language-service presentation surfaces;
+- tests, stale compiler comments, and historical non-archived evidence/docs.
+
+The migration must proceed by boundary family, not by global search/replace.
+If any residual survives the delivery beads, it must be isolated in one named
+compatibility module or approved residual note before the search gate can close.
 
 ## First Beads
 
-- `cleanout-001`: produce `RuntimeValue` active-use inventory.
-- `cleanout-002`: migrate VM snapshot/invoke compatibility surfaces.
-- `cleanout-003`: migrate JIT compatibility snapshot surfaces.
-- `cleanout-004`: migrate launcher/web/language-service presentation surfaces.
-- `cleanout-005`: remove `oxvba-ir` scaffold dependency edges. Done
-  2026-04-30.
-- `cleanout-006`: run search gates and document blockers.
+- `cleanout-000`: roll out the phase-2 executable bead path. Done 2026-05-01.
+- `cleanout-001`: produce `RuntimeValue` active-use inventory. Done 2026-05-01.
+- `cleanout-002`: migrate VM and host snapshot/invoke/observation surfaces,
+  including immediate/debugger/embedded host-side value DTOs.
+- `cleanout-003`: migrate JIT compatibility snapshot and slot ABI surfaces.
+- `cleanout-004`: migrate HAL, COM, runtime helper, and compatibility adapter
+  boundaries.
+- `cleanout-005`: split launcher/web/language-service presentation DTOs.
+- `cleanout-006`: verify completed IR scaffold removal. Done 2026-05-01.
+- `cleanout-007`: run `RuntimeValue` and fake IR search gates and document any
+  approved residuals or blockers.
 
 ## Terminal Gate
 
