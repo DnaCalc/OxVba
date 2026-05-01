@@ -2418,7 +2418,7 @@ mod tests {
         typed_compare_values,
     };
     use oxvba_compiler::bytecode::StringCompareMode;
-    use oxvba_runtime::{F64Value, Variant, bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{Decimal96, F64Value, VarType, Variant, bstr::BStr, compat::RuntimeValue};
 
     #[test]
     fn string_equals_empty_coerces_without_legacy_token_failure() {
@@ -2855,6 +2855,88 @@ mod tests {
                 .to_runtime_value()
                 .expect("integer Variant should project for assertions"),
             RuntimeValue::I32(-4)
+        );
+    }
+
+    #[test]
+    fn mixed_numeric_matrix_current_variant_results() {
+        fn assert_long(value: Variant, expected: i32) {
+            assert_eq!(value.vtype(), VarType::Long);
+            assert_eq!(value.as_i32(), Some(expected));
+        }
+
+        fn assert_double(value: Variant, expected: f64) {
+            assert_eq!(value.vtype(), VarType::Double);
+            let actual = value.as_f64().expect("Double payload");
+            assert!(
+                (actual - expected).abs() < f64::EPSILON,
+                "expected {expected}, got {actual}"
+            );
+        }
+
+        assert_long(
+            super::variant_add_values(&Variant::from_i16(7), &Variant::from_i32(5))
+                .expect("Integer + Long"),
+            12,
+        );
+        assert_double(
+            super::variant_add_values(&Variant::from_i32(7), &Variant::from_f64(0.5))
+                .expect("Long + Double"),
+            7.5,
+        );
+        assert_double(
+            super::variant_add_values(
+                &Variant::from_currency_scaled_i64(25_000),
+                &Variant::from_i32(2),
+            )
+            .expect("Currency + Long"),
+            4.5,
+        );
+        assert_double(
+            super::variant_add_values(
+                &Variant::from_decimal96(Decimal96::from_parts(125, 0, 0, 1, false)),
+                &Variant::from_i16(2),
+            )
+            .expect("Decimal + Integer"),
+            14.5,
+        );
+        assert_double(
+            super::variant_add_values(&Variant::from_date_f64(10.5), &Variant::from_i32(1))
+                .expect("Date + Long"),
+            11.5,
+        );
+        assert_long(
+            super::variant_add_values(&Variant::from_bool(true), &Variant::from_i32(2))
+                .expect("Boolean + Long"),
+            1,
+        );
+        assert_long(
+            super::variant_add_values(
+                &Variant::from_string(BStr::from("12")),
+                &Variant::from_i32(5),
+            )
+            .expect("numeric String + Long"),
+            17,
+        );
+        assert_eq!(
+            super::variant_add_values(&Variant::null(), &Variant::from_i32(5))
+                .expect("Null + Long")
+                .vtype(),
+            VarType::Null,
+        );
+        assert!(
+            super::variant_add_values(&Variant::from_error_code(7), &Variant::from_i32(5)).is_err()
+        );
+        assert_double(
+            super::variant_div_values(&Variant::from_i32(7), &Variant::from_i32(2))
+                .expect("Long / Long")
+                .expect("division should not raise"),
+            3.5,
+        );
+        assert_eq!(
+            super::variant_div_values(&Variant::from_i32(7), &Variant::from_i32(0))
+                .expect("division helper should classify divide by zero"),
+            Err(11),
         );
     }
 
