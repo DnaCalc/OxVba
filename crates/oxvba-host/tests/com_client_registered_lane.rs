@@ -2,8 +2,8 @@
 mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{ObjectRef, bstr::BStr, compat::RuntimeValue};
+    use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::{ObjectRef, Variant, bstr::BStr};
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
@@ -43,10 +43,10 @@ mod windows_registered_com_lane {
             }
         }
 
-        fn expected_exists_42_value(self) -> Option<RuntimeValue> {
+        fn expected_exists_42_value(self) -> Option<Variant> {
             match self {
-                Self::ScriptingDictionary => Some(RuntimeValue::Bool(false)),
-                Self::OxvbaTestDispatch => Some(RuntimeValue::I32(1)),
+                Self::ScriptingDictionary => Some(Variant::from_bool(false)),
+                Self::OxvbaTestDispatch => Some(Variant::from_i32(1)),
                 Self::OxvbaTestEventServer => None,
                 Self::ExcelApplication => None,
                 Self::Other => None,
@@ -150,14 +150,14 @@ mod windows_registered_com_lane {
         format!("obj = CreateObject(\"{}\")", selected_registered_prog_id())
     }
 
-    fn run_registered_lane_source(source: &str) -> Vec<RuntimeValue> {
+    fn run_registered_lane_source(source: &str) -> Vec<Variant> {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_variant_snapshot_phased(source)
             .expect("registered COM lane source should execute")
     }
 
@@ -171,11 +171,10 @@ mod windows_registered_com_lane {
         .is_ok()
     }
 
-    fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
-        match value {
-            RuntimeValue::Object(handle) => handle.clone(),
-            other => panic!("expected object handle, got {:?}", other),
-        }
+    fn expect_object_handle(value: &Variant) -> ObjectRef {
+        value
+            .as_object_ref()
+            .unwrap_or_else(|| panic!("expected object handle, got {:?}", value))
     }
 
     #[test]
@@ -208,7 +207,7 @@ End Sub
         if let Some(expected) = flavor.expected_count_value() {
             assert_eq!(
                 out[1],
-                RuntimeValue::I32(expected),
+                Variant::from_i32(expected),
                 "Count result mismatch for ProgID `{selected_prog_id}`"
             );
         } else {
@@ -255,7 +254,7 @@ End Sub
         let out = run_registered_lane_source(&source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
-            !matches!(out[2], RuntimeValue::I32(0)),
+            out[2].as_i32() != Some(0),
             "missing argument should set Err.Number under resume-next, got {:?}",
             out
         );
@@ -291,7 +290,7 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::Bool(false),
+            Variant::from_bool(false),
             "final Exists(7) should remain deterministic for empty dictionary"
         );
     }
@@ -316,7 +315,7 @@ End Sub
 
         let out = run_registered_lane_source(source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-        assert_eq!(out[1], RuntimeValue::I32(17), "SumPair result mismatch");
+        assert_eq!(out[1], Variant::from_i32(17), "SumPair result mismatch");
     }
 
     #[test]
@@ -345,7 +344,7 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::String(BStr::from("rank=1;len=3;lb=0;ub=2;first=1")),
+            Variant::from_string(BStr::from("rank=1;len=3;lb=0;ub=2;first=1")),
             "DescribeArrayShape result mismatch"
         );
     }
@@ -370,7 +369,7 @@ End Sub
 
         let out = run_registered_lane_source(source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-        assert_eq!(out[1], RuntimeValue::Bool(true), "IsSelf result mismatch");
+        assert_eq!(out[1], Variant::from_bool(true), "IsSelf result mismatch");
     }
 
     #[test]
@@ -393,16 +392,16 @@ End Sub
 
         let out = run_registered_lane_source(source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-        let RuntimeValue::ArrayIntent(array) = &out[1] else {
-            panic!("expected array result, got {:?}", out[1]);
-        };
+        let array = out[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected array result, got {:?}", out[1]));
         let elements = array
-            .elements()
+            .variant_elements()
             .expect("ReturnLongArray should preserve elements");
         assert_eq!(elements.len(), 3, "ReturnLongArray length mismatch");
         assert_eq!(
             elements[0],
-            RuntimeValue::I32(4),
+            Variant::from_i32(4),
             "ReturnLongArray first element mismatch"
         );
     }
@@ -427,19 +426,19 @@ End Sub
 
         let out = run_registered_lane_source(source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-        let RuntimeValue::ArrayIntent(array) = &out[1] else {
-            panic!("expected array result, got {:?}", out[1]);
-        };
+        let array = out[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected array result, got {:?}", out[1]));
         let elements = array
-            .elements()
+            .variant_elements()
             .expect("ReturnSelfArray should preserve elements");
         assert_eq!(elements.len(), 1, "ReturnSelfArray length mismatch");
-        let RuntimeValue::Object(handle) = &elements[0] else {
+        let handle = elements[0].as_object_ref().unwrap_or_else(|| {
             panic!(
                 "expected first ReturnSelfArray element to be an object handle, got {:?}",
                 elements[0]
-            );
-        };
+            )
+        });
         assert!(
             handle.raw() >= 20_001,
             "ReturnSelfArray object handle mismatch"
@@ -473,7 +472,7 @@ End Sub
         let out = run_registered_lane_source(&source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
-            !matches!(out[2], RuntimeValue::I32(0)),
+            out[2].as_i32() != Some(0),
             "member-not-found invoke should set Err.Number, got {:?}",
             out
         );
@@ -487,7 +486,7 @@ End Sub
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         let err = engine
-            .execute_source_with_snapshot_phased(
+            .execute_source_with_variant_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -535,7 +534,7 @@ End Sub
             selected_registered_createobject_line()
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("registered lane should create COM object");
         let object = expect_object_handle(&out[0]);
         let err = engine
@@ -596,7 +595,7 @@ End Sub
         );
 
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("registered lane should create COM object");
         let object = expect_object_handle(&out[0]);
 
@@ -631,7 +630,7 @@ End Sub
         let trigger_source = format!(
             "Sub Main()\nDim value\nvalue = DispatchInvoke({object}, {trigger_member}, {trigger_arg})\nEnd Sub\n"
         );
-        let trigger_result = engine.execute_source_with_snapshot_phased(&trigger_source);
+        let trigger_result = engine.execute_source_with_variant_snapshot_phased(&trigger_source);
         if let Err(err) = trigger_result {
             let _ = engine.unsubscribe_com_event_handler(subscription);
             if require_success {
@@ -651,7 +650,7 @@ End Sub
 
         let mut callback = None;
         for _ in 0..poll_iterations {
-            match engine.poll_com_event_callback() {
+            match engine.poll_com_event_callback_variants() {
                 Ok(Some(next)) => {
                     callback = Some(next);
                     break;
@@ -659,7 +658,7 @@ End Sub
                 Ok(None) => {
                     let burst_count = (poll_delay_ms / 5).max(1);
                     for _ in 0..burst_count {
-                        let _ = engine.poll_com_event_callback();
+                        let _ = engine.poll_com_event_callback_variants();
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
                 }
@@ -713,13 +712,13 @@ End Sub
         } else {
             assert_eq!(
                 callback.args[0],
-                RuntimeValue::I32(trigger_arg),
+                Variant::from_i32(trigger_arg),
                 "callback first-arg mismatch for `{selected_prog_id}`"
             );
             if expected_arg_count == 1 {
                 assert_eq!(
                     callback.args,
-                    vec![RuntimeValue::I32(trigger_arg)],
+                    vec![Variant::from_i32(trigger_arg)],
                     "callback payload mismatch for `{selected_prog_id}`"
                 );
             }
@@ -733,7 +732,7 @@ End Sub
         );
         assert!(
             engine
-                .poll_com_event_callback()
+                .poll_com_event_callback_variants()
                 .expect("post-unsubscribe callback poll should succeed")
                 .is_none(),
             "post-unsubscribe callback queue should be empty"
