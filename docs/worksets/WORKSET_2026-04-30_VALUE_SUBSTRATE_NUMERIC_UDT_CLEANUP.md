@@ -34,6 +34,8 @@ Out of scope:
   [`../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md`](../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md)
 - RuntimeValue bridge public-API blocker register:
   [`../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md)
+- Variant-native numeric helper evidence:
+  [`../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md`](../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md)
 - Phase-2 RuntimeValue/IR search gate feeding this workset:
   [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
 
@@ -69,7 +71,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
   names `Variant` as canonical, limits `RuntimeValue` to approved residuals,
   and maps phase-3 gates to bead IDs.
 - `bd-9xmu.3.4` / `value-clean-003`: migrate remaining numeric helper
-  families to retained `Variant` carriers on the normal path.
+  families to retained `Variant` carriers on the normal path. Done 2026-05-01;
+  normal VM/JIT helper call-site searches are clean for legacy arithmetic/math
+  helpers, and VM/JIT retained-Variant helper tests pass.
 - `bd-9xmu.3.5` / `value-clean-004`: expand mixed numeric result matrix
   and tests.
 - `bd-9xmu.3.6` / `value-clean-005`: pin exact `Currency`, `Decimal`,
