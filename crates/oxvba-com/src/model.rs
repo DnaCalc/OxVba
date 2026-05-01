@@ -3,7 +3,6 @@ pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 use oxvba_runtime::{
     CurrencyValue, Decimal96, F64Value, ObjectRef, Variant,
     bstr::BStr,
-    compat::RuntimeValue,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
 
@@ -173,14 +172,6 @@ impl ComValue {
         })
     }
 
-    /// Compatibility projection from legacy [`RuntimeValue`] callers into the
-    /// shared COM semantic carrier.
-    ///
-    /// New value-model call sites should prefer [`Self::from_variant`].
-    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        crate::compat::com_value_from_runtime_value(value)
-    }
-
     /// Compatibility projection from scalar i32 transport into the
     /// shared COM semantic carrier.
     pub fn from_runtime_token(value: i32) -> Self {
@@ -208,14 +199,6 @@ impl ComValue {
             Self::ArrayIntent(array) => Variant::from_safearray(array.clone()),
             Self::Object(handle) => Variant::from_object_ref(handle.clone()),
         })
-    }
-
-    /// Compatibility projection from the shared COM semantic carrier into
-    /// [`RuntimeValue`] for legacy callers.
-    ///
-    /// New value-model call sites should prefer [`Self::to_variant`].
-    pub fn to_runtime_value(&self) -> RuntimeValue {
-        crate::compat::com_value_to_runtime_value(self)
     }
 
     /// Compatibility projection into scalar i32 transport.
@@ -432,7 +415,7 @@ mod tests {
     use super::{ComCallbackValue, ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, ObjectRef, VarType, Variant, bstr::BStr,
-        compat::RuntimeValue, safe_array::SafeArray,
+        safe_array::SafeArray,
     };
 
     #[test]
@@ -454,64 +437,75 @@ mod tests {
     }
 
     #[test]
-    fn com_value_roundtrips_runtime_value_shape() {
+    fn com_value_roundtrips_variant_shape() {
         let value = ComValue::ArrayIntent(SafeArray::vector(5));
         assert_eq!(
-            value.to_runtime_value(),
-            RuntimeValue::ArrayIntent(SafeArray::vector(5))
+            value.to_variant().expect("array variant"),
+            Variant::from_safearray(SafeArray::vector(5))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::Bool(true)),
+            ComValue::from_variant(&Variant::from_bool(true)).expect("bool variant"),
             ComValue::Bool(true)
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5))),
+            ComValue::from_variant(&Variant::from_f64(3.5)).expect("f64 variant"),
             ComValue::F64(F64Value::from_f64(3.5))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::Decimal(Decimal96::from_parts(
+            ComValue::from_variant(&Variant::from_decimal96(Decimal96::from_parts(
                 123_450, 0, 0, 3, false
-            ))),
+            )))
+            .expect("decimal variant"),
             ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::Currency(CurrencyValue::from_scaled_i64(
-                125_000
-            ))),
+            ComValue::from_variant(&Variant::from_currency_scaled_i64(125_000))
+                .expect("currency variant"),
             ComValue::Currency(CurrencyValue::from_scaled_i64(125_000))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::String(BStr::from("ABC"))),
+            ComValue::from_variant(&Variant::from_string(BStr::from("ABC")))
+                .expect("string variant"),
             ComValue::String(BStr::from("ABC"))
         );
         assert_eq!(
-            ComValue::String(BStr::from("ABC")).to_runtime_value(),
-            RuntimeValue::String(BStr::from("ABC"))
+            ComValue::String(BStr::from("ABC"))
+                .to_variant()
+                .expect("string variant"),
+            Variant::from_string(BStr::from("ABC"))
         );
         assert_eq!(
-            ComValue::F64(F64Value::from_f64(3.5)).to_runtime_value(),
-            RuntimeValue::F64(F64Value::from_f64(3.5))
+            ComValue::F64(F64Value::from_f64(3.5))
+                .to_variant()
+                .expect("f64 variant"),
+            Variant::from_f64(3.5)
         );
         assert_eq!(
-            ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true)).to_runtime_value(),
-            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
+            ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
+                .to_variant()
+                .expect("decimal variant"),
+            Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, true))
         );
         assert_eq!(
-            ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500)).to_runtime_value(),
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
+            ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
+                .to_variant()
+                .expect("currency variant"),
+            Variant::from_currency_scaled_i64(-42_500)
         );
-        let object_value = ComValue::from_runtime_value(&RuntimeValue::Object(
+        let object_value = ComValue::from_variant(&Variant::from_object_ref(
             ObjectRef::from_compat_identity(1234),
-        ));
+        ))
+        .expect("object variant");
         let ComValue::Object(object_ref) = object_value else {
             panic!("expected ObjectRef-backed COM value");
         };
         assert_eq!(object_ref.raw(), 1234);
-        let roundtripped =
-            ComValue::Object(ObjectRef::from_compat_identity(1234)).to_runtime_value();
-        let RuntimeValue::Object(object_ref) = roundtripped else {
-            panic!("expected object-ref runtime carrier");
-        };
+        let roundtripped = ComValue::Object(ObjectRef::from_compat_identity(1234))
+            .to_variant()
+            .expect("object variant");
+        let object_ref = roundtripped
+            .as_object_ref()
+            .expect("expected object-ref variant carrier");
         assert_eq!(object_ref.raw(), 1234);
         assert!(
             ComValue::String(BStr::from("ABC"))
@@ -527,29 +521,29 @@ mod tests {
             Variant::from_string(BStr::from("A")),
         ]));
         assert_eq!(
-            value.to_runtime_value(),
-            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::I32(4),
-                RuntimeValue::String(BStr::from("A")),
+            value.to_variant().expect("safe array variant"),
+            Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_i32(4),
+                Variant::from_string(BStr::from("A")),
             ]))
         );
         assert_eq!(value.to_runtime_token().expect("array token"), 2);
     }
 
     #[test]
-    fn com_value_i64_roundtrips_runtime_value() {
+    fn com_value_i64_roundtrips_variant() {
         let large: i64 = 5_000_000_000;
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::I64(large)),
+            ComValue::from_variant(&Variant::from_i64(large)).expect("i64 variant"),
             ComValue::I64(large)
         );
         assert_eq!(
-            ComValue::I64(large).to_runtime_value(),
-            RuntimeValue::I64(large)
+            ComValue::I64(large).to_variant().expect("i64 variant"),
+            Variant::from_i64(large)
         );
         // I64 that fits in i32 stays I64 (no auto-narrowing at ComValue level)
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::I64(42)),
+            ComValue::from_variant(&Variant::from_i64(42)).expect("i64 variant"),
             ComValue::I64(42)
         );
     }

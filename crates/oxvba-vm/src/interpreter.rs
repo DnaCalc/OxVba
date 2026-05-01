@@ -5918,7 +5918,7 @@ mod tests {
             object: ObjectRef::from_compat_identity(object),
             member: DynamicMemberSelector::Name("Ping".to_string()),
             args: vec![DynamicCallArg {
-                value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(7))),
+                value: Some(DynamicValue::from_variant(Variant::from_i32(7))),
                 name: Some("n".to_string()),
             }],
             call_kind_hint: None,
@@ -6129,11 +6129,11 @@ mod tests {
             member: DynamicMemberSelector::Name("Capture".to_string()),
             args: vec![
                 DynamicCallArg {
-                    value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(11))),
+                    value: Some(DynamicValue::from_variant(Variant::from_i32(11))),
                     name: None,
                 },
                 DynamicCallArg {
-                    value: Some(DynamicValue::from_runtime_value(&RuntimeValue::I32(14))),
+                    value: Some(DynamicValue::from_variant(Variant::from_i32(14))),
                     name: None,
                 },
             ],

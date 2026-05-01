@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComSubscriptionToken, ComValue,
 };
-use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
+use oxvba_runtime::{ObjectRef, Variant};
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {
@@ -83,14 +83,6 @@ impl DynamicValue {
         }
     }
 
-    /// Compatibility projection from legacy [`RuntimeValue`] callers.
-    ///
-    /// New value-model call sites should prefer [`Self::from_variant`] or
-    /// [`Self::from_com_value`].
-    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        Self::from_com_value(ComValue::from_runtime_value(value))
-    }
-
     /// Builds a dynamic value from a retained runtime [`Variant`].
     pub fn from_variant(value: Variant) -> Self {
         Self { value }
@@ -101,14 +93,6 @@ impl DynamicValue {
     pub fn to_com_value(&self) -> ComValue {
         ComValue::from_variant(&self.value)
             .expect("dynamic COM VARIANT payload must project to ComValue")
-    }
-
-    /// Compatibility projection into [`RuntimeValue`] for legacy callers.
-    ///
-    /// New value-model call sites should prefer [`Self::variant`].
-    pub fn to_runtime_value(&self) -> RuntimeValue {
-        crate::compat::variant_to_runtime_value(&self.value)
-            .expect("dynamic COM VARIANT payload must project to RuntimeValue")
     }
 
     /// Retained value-model payload for dynamic COM dispatch.
