@@ -1,6 +1,6 @@
 # Correctness Corpus And Oracle Stress Workset
 
-Status: `in-progress`
+Status: `complete`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -40,6 +40,8 @@ Out of scope:
   [`../evidence/native_ready/COERCION_ERROR_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/COERCION_ERROR_STRESS_CASES_2026-05-01.md)
 - UDT semantic/layout non-claim cases:
   [`../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md)
+- Oracle foldback packet:
+  [`../evidence/native_ready/ORACLE_FOLDBACK_PACKET_2026-05-01.md`](../evidence/native_ready/ORACLE_FOLDBACK_PACKET_2026-05-01.md)
 
 ## Execution Epics
 
@@ -76,7 +78,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.4`:
 - `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases. Done
   2026-05-01; `NR-UDT-001` records nested field access, same-shape cross-type
   rejection, whole-copy fixture coverage, and native-layout non-claims.
-- `bd-9xmu.4.6` / `stress-005`: add Office/VBA oracle capture packet for selected rows.
+- `bd-9xmu.4.6` / `stress-005`: add Office/VBA oracle capture packet for
+  selected rows. Done 2026-05-01; `NR-ORACLE-001` has VBA source,
+  instructions, output schema, and headless-CI skip rationale.
 
 ## Terminal Gate
 

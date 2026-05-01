@@ -54,7 +54,11 @@ The value/numeric/UDT cleanup has landed with evidence across:
 [`EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md),
 [`UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md), and
 [`UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md`](../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md).
-The stress corpus and runner/performance scaffold remain open follow-on work.
+
+The correctness corpus/oracle stress slice has landed with matrix, numeric,
+coercion/error, UDT/layout, and oracle packet evidence rooted at
+[`CORRECTNESS_CORPUS_MATRIX_2026-05-01.md`](../evidence/native_ready/CORRECTNESS_CORPUS_MATRIX_2026-05-01.md).
+The runner/performance scaffold remains open follow-on work.
 
 ## Child Worksets
 
