@@ -38,6 +38,8 @@ Out of scope:
   [`../evidence/native_ready/NUMERIC_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/NUMERIC_STRESS_CASES_2026-05-01.md)
 - Coercion/error stress cases:
   [`../evidence/native_ready/COERCION_ERROR_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/COERCION_ERROR_STRESS_CASES_2026-05-01.md)
+- UDT semantic/layout non-claim cases:
+  [`../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md)
 
 ## Execution Epics
 
@@ -71,7 +73,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.4`:
 - `bd-9xmu.4.4` / `stress-003`: add string-number/Null/Empty/Error coercion
   cases. Done 2026-05-01; `NR-COERCE-001` covers blank numeric string, Empty,
   Null, CVErr, Null comparison, and Let/Object assignment timing.
-- `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases.
+- `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases. Done
+  2026-05-01; `NR-UDT-001` records nested field access, same-shape cross-type
+  rejection, whole-copy fixture coverage, and native-layout non-claims.
 - `bd-9xmu.4.6` / `stress-005`: add Office/VBA oracle capture packet for selected rows.
 
 ## Terminal Gate
