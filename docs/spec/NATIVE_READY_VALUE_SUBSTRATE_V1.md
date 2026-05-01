@@ -99,9 +99,17 @@ Required model concepts:
 - nested UDT reference
 - semantic copy/init rules
 
+V1 storage is descriptor-backed logical aggregation over retained `Variant`
+field slots. A UDT variable is not a native struct overlay, and the current
+implementation path may preserve flattened field slots while adding descriptor
+identity, field descriptors, and descriptor-driven copy/init rules.
+
 Internal UDT semantics are separate from native ABI layout. A future ABI layer
 may materialize a UDT as a platform struct for `Declare` or native exports, but
 that materialization is not the canonical internal value model.
+
+Detailed model path:
+[`../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md).
 
 ## Residual Boundaries
 
