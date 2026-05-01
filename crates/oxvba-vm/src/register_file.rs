@@ -65,10 +65,8 @@ impl RuntimeSlot {
                     Some(i32::from(value))
                 } else if let Some(value) = value.as_bool() {
                     Some(i32::from(value))
-                } else if let Some(value) = value.as_object_ref() {
-                    Some(value.raw())
                 } else {
-                    None
+                    value.as_object_ref().map(|value| value.raw())
                 }
             }
             Self::BindingHandle(handle) => Some(handle.raw()),
