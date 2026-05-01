@@ -482,13 +482,9 @@ mod tests {
         EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
         EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
     };
-    use crate::compat::{
-        EmbeddedInvokeProcedureRequest, RuntimeValueCompatEmbeddedProcedureVariantRequestExt,
-        RuntimeValueCompatEmbeddedRunSessionExt,
-    };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{VarType, Variant, compat::RuntimeValue};
+    use oxvba_runtime::{VarType, Variant};
 
     fn make_manifest(source: &str) -> ProjectManifest {
         ProjectManifest {
@@ -537,15 +533,15 @@ mod tests {
     }
 
     #[test]
-    fn invoke_procedure_request_preserves_target_and_args() {
-        let request = EmbeddedInvokeProcedureRequest::new(
+    fn invoke_procedure_variant_request_preserves_target_and_args() {
+        let request = EmbeddedInvokeProcedureVariantRequest::new(
             EmbeddedProcedureTarget::new("Module1", "Main"),
-            vec![RuntimeValue::I32(42)],
+            vec![Variant::from_i32(42)],
         );
 
         assert_eq!(request.target.module_name, "Module1");
         assert_eq!(request.target.procedure_name, "Main");
-        assert_eq!(request.args, vec![RuntimeValue::I32(42)]);
+        assert_eq!(request.args, vec![Variant::from_i32(42)]);
     }
 
     #[test]
@@ -558,10 +554,7 @@ mod tests {
         assert_eq!(request.target.module_name, "Module1");
         assert_eq!(request.target.procedure_name, "Main");
         assert_eq!(request.args[0].vtype(), VarType::String);
-        assert_eq!(
-            request.to_runtime_request().expect("runtime request").args,
-            vec![RuntimeValue::String("ABC".into())]
-        );
+        assert_eq!(request.args, vec![Variant::from_string("ABC")]);
     }
 
     #[test]
@@ -660,12 +653,12 @@ mod tests {
         assert_eq!(session.run_result().status, EmbeddedRunStatus::SessionReady);
 
         let result = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "GetValue"),
                 Vec::new(),
             ))
             .expect("invoke");
-        assert_eq!(result.return_value, Some(RuntimeValue::I32(42)));
+        assert_eq!(result.return_value, Some(Variant::from_i32(42)));
     }
 
     #[test]
@@ -710,19 +703,19 @@ mod tests {
         let mut session = host.run_project(&request).expect("run session");
 
         let first = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("first");
         let second = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("second");
-        assert_eq!(first.return_value, Some(RuntimeValue::I32(1)));
-        assert_eq!(second.return_value, Some(RuntimeValue::I32(2)));
+        assert_eq!(first.return_value, Some(Variant::from_i32(1)));
+        assert_eq!(second.return_value, Some(Variant::from_i32(2)));
 
         let reset = session
             .reset_runtime(&EmbeddedResetRequest::new(
@@ -733,12 +726,12 @@ mod tests {
         assert_eq!(reset.kind, EmbeddedResetKind::ClearSessionState);
 
         let after_reset = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("after reset");
-        assert_eq!(after_reset.return_value, Some(RuntimeValue::I32(1)));
+        assert_eq!(after_reset.return_value, Some(Variant::from_i32(1)));
     }
 
     #[test]
@@ -761,25 +754,25 @@ mod tests {
         let mut session = host.run_project(&request).expect("run session");
 
         let before = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "GetCounter"),
                 Vec::new(),
             ))
             .expect("before invoke");
-        assert_eq!(before.return_value, Some(RuntimeValue::I32(0)));
+        assert_eq!(before.return_value, Some(Variant::from_i32(0)));
 
         let invoked = session
-            .invoke_entry_point(&EmbeddedInvokeEntryPointRequest::new(snapshot))
+            .invoke_entry_point_variant(&EmbeddedInvokeEntryPointRequest::new(snapshot))
             .expect("invoke entry point");
         assert_eq!(invoked.status, super::EmbeddedInvokeStatus::Completed);
 
         let after = session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "GetCounter"),
                 Vec::new(),
             ))
             .expect("after invoke");
-        assert_eq!(after.return_value, Some(RuntimeValue::I32(1)));
+        assert_eq!(after.return_value, Some(Variant::from_i32(1)));
     }
 
     #[test]

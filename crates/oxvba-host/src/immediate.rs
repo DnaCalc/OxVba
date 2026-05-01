@@ -416,13 +416,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{VarType, bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{VarType, Variant, bstr::BStr};
 
     use super::{
         ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateSession,
         ImmediateVariantEvaluationOutput,
     };
-    use crate::compat::{ImmediateEvaluationOutput, RuntimeValueCompatImmediateSessionExt};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {
@@ -515,13 +514,13 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::query("DoubleValue(21)"))
+            .evaluate_variant(&ImmediateEvaluationRequest::query("DoubleValue(21)"))
             .expect("evaluate");
 
-        let ImmediateEvaluationOutput::Value(value) = result.output else {
+        let ImmediateVariantEvaluationOutput::Value(value) = result.output else {
             panic!("expected value result");
         };
-        assert_eq!(value.runtime_value, RuntimeValue::I32(42));
+        assert_eq!(value.variant_value, Variant::from_i32(42));
         assert_eq!(value.display_text, "42");
     }
 
@@ -572,20 +571,20 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let first = session
-            .evaluate(&ImmediateEvaluationRequest::query("IncrementCounter()"))
+            .evaluate_variant(&ImmediateEvaluationRequest::query("IncrementCounter()"))
             .expect("first");
         let second = session
-            .evaluate(&ImmediateEvaluationRequest::query("IncrementCounter()"))
+            .evaluate_variant(&ImmediateEvaluationRequest::query("IncrementCounter()"))
             .expect("second");
 
-        let ImmediateEvaluationOutput::Value(first_value) = first.output else {
+        let ImmediateVariantEvaluationOutput::Value(first_value) = first.output else {
             panic!("expected first value result");
         };
-        let ImmediateEvaluationOutput::Value(second_value) = second.output else {
+        let ImmediateVariantEvaluationOutput::Value(second_value) = second.output else {
             panic!("expected second value result");
         };
-        assert_eq!(first_value.runtime_value, RuntimeValue::I32(1));
-        assert_eq!(second_value.runtime_value, RuntimeValue::I32(2));
+        assert_eq!(first_value.variant_value, Variant::from_i32(1));
+        assert_eq!(second_value.variant_value, Variant::from_i32(2));
 
         let reset = session
             .reset(super::ImmediateResetKind::ClearSessionState)
@@ -596,12 +595,12 @@ End Function
         ));
 
         let after_reset = session
-            .evaluate(&ImmediateEvaluationRequest::query("IncrementCounter()"))
+            .evaluate_variant(&ImmediateEvaluationRequest::query("IncrementCounter()"))
             .expect("after reset");
-        let ImmediateEvaluationOutput::Value(reset_value) = after_reset.output else {
+        let ImmediateVariantEvaluationOutput::Value(reset_value) = after_reset.output else {
             panic!("expected reset value result");
         };
-        assert_eq!(reset_value.runtime_value, RuntimeValue::I32(1));
+        assert_eq!(reset_value.variant_value, Variant::from_i32(1));
     }
 
     #[test]
@@ -621,15 +620,15 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .evaluate_variant(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
             .expect("evaluate");
 
-        let ImmediateEvaluationOutput::Value(value) = result.output else {
+        let ImmediateVariantEvaluationOutput::Value(value) = result.output else {
             panic!("expected value result");
         };
         assert_eq!(
-            value.runtime_value,
-            RuntimeValue::String(BStr::from("hello"))
+            value.variant_value,
+            Variant::from_string(BStr::from("hello"))
         );
         assert_eq!(value.display_text, "hello");
     }
@@ -654,7 +653,7 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         session
-            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .evaluate_variant(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
             .expect("evaluate");
         let variants = session.snapshot_variants();
 
@@ -664,7 +663,7 @@ End Function
     }
 
     #[test]
-    fn immediate_session_snapshot_compat_values_projects_runtime_state() {
+    fn immediate_session_snapshot_variants_retain_runtime_state() {
         let engine = Engine::new(HostConfig::default());
         let manifest = make_manifest(
             r#"
@@ -683,22 +682,14 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         session
-            .evaluate(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
+            .evaluate_variant(&ImmediateEvaluationRequest::new(r#"? EchoText("hello")"#))
             .expect("evaluate");
 
         let variants = session.snapshot_variants();
-        let compat = session.snapshot_compat_values();
 
-        assert_eq!(
-            compat,
-            variants
-                .into_iter()
-                .map(|value| value.to_runtime_value().expect("variant projection"))
-                .collect::<Vec<_>>()
-        );
-        assert!(compat.iter().any(
-            |value| matches!(value, RuntimeValue::String(text) if text == &BStr::from("hello"))
-        ));
+        assert!(variants.iter().any(|value| {
+            value.vtype() == VarType::String && value.as_bstr() == Some(BStr::from("hello"))
+        }));
     }
 
     #[test]
@@ -718,12 +709,12 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::statement(
+            .evaluate_variant(&ImmediateEvaluationRequest::statement(
                 "Call DoubleValue(21)",
             ))
             .expect("evaluate");
 
-        let ImmediateEvaluationOutput::PrintedLine(line) = result.output else {
+        let ImmediateVariantEvaluationOutput::PrintedLine(line) = result.output else {
             panic!("expected printed-line result");
         };
         assert_eq!(line, "ok: Module1.DoubleValue => 42");
@@ -746,10 +737,13 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::new("DoubleValue(counter)"))
+            .evaluate_variant(&ImmediateEvaluationRequest::new("DoubleValue(counter)"))
             .expect("evaluate");
 
-        assert!(matches!(result.output, ImmediateEvaluationOutput::Empty));
+        assert!(matches!(
+            result.output,
+            ImmediateVariantEvaluationOutput::Empty
+        ));
         assert_eq!(result.diagnostics.len(), 1);
         assert_eq!(
             result.diagnostics[0].phase(),
@@ -778,7 +772,7 @@ End Function
             .expect("immediate session");
 
         let err = session
-            .evaluate(&ImmediateEvaluationRequest::new("GetValue()"))
+            .evaluate_variant(&ImmediateEvaluationRequest::new("GetValue()"))
             .expect_err("missing module should fail");
 
         assert_eq!(
@@ -806,10 +800,13 @@ End Function
         session.set_default_target_module(Some("Module1"));
 
         let result = session
-            .evaluate(&ImmediateEvaluationRequest::new("reset"))
+            .evaluate_variant(&ImmediateEvaluationRequest::new("reset"))
             .expect("reset should evaluate");
 
-        assert!(matches!(result.output, ImmediateEvaluationOutput::Reset));
+        assert!(matches!(
+            result.output,
+            ImmediateVariantEvaluationOutput::Reset
+        ));
         assert!(result.diagnostics.is_empty());
     }
 }

@@ -329,11 +329,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{VarType, compat::RuntimeValue};
+    use oxvba_runtime::VarType;
     use oxvba_vm::DebugStopReason;
 
     use super::{DebugEvaluationRequest, DebugFrameValueKind, HostDebugVariantRunResult};
-    use crate::compat::{HostDebugRunResult, RuntimeValueCompatDebugSessionExt};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {
@@ -384,15 +383,15 @@ mod tests {
             .prepare_debug_session(&manifest)
             .expect("debug session should prepare");
 
-        let HostDebugRunResult::Paused(entry_pause) =
-            session.start().expect("debug start should pause")
+        let HostDebugVariantRunResult::Paused(entry_pause) =
+            session.start_variants().expect("debug start should pause")
         else {
             panic!("expected entry pause");
         };
         assert_eq!(entry_pause.stop.reason, DebugStopReason::Entry);
         assert_eq!(entry_pause.frames.len(), 1);
-        let HostDebugRunResult::Paused(callee_pause) = session
-            .step_into()
+        let HostDebugVariantRunResult::Paused(callee_pause) = session
+            .step_into_variants()
             .expect("step into should pause in callee")
         else {
             panic!("expected callee pause");
@@ -402,9 +401,9 @@ mod tests {
         let current = callee_pause.frames.last().expect("current frame");
         assert!(current.procedure_name.eq_ignore_ascii_case("Foo"));
         let y = session
-            .evaluate(&DebugEvaluationRequest::new("y"))
+            .evaluate_variant(&DebugEvaluationRequest::new("y"))
             .expect("y should be visible in callee");
-        assert_eq!(y.value.runtime_value, RuntimeValue::I32(4));
+        assert_eq!(y.value.variant_value.as_i32(), Some(4));
         assert_eq!(y.value.kind, DebugFrameValueKind::Parameter);
         let y_slot = current
             .values
@@ -467,17 +466,19 @@ mod tests {
             .expect("debug session should prepare");
         assert_eq!(
             session
-                .current_pause_state()
+                .current_variant_pause_state()
                 .expect("pause query should succeed"),
             None
         );
         assert!(matches!(
-            session.start().expect("debug start should complete"),
-            HostDebugRunResult::Completed
+            session
+                .start_variants()
+                .expect("debug start should complete"),
+            HostDebugVariantRunResult::Completed
         ));
         assert_eq!(
             session
-                .current_pause_state()
+                .current_variant_pause_state()
                 .expect("pause query should succeed"),
             None
         );
@@ -490,19 +491,20 @@ mod tests {
         let mut session = engine
             .prepare_debug_session(&manifest)
             .expect("debug session should prepare");
-        let HostDebugRunResult::Paused(_) = session.start().expect("debug start should pause")
+        let HostDebugVariantRunResult::Paused(_) =
+            session.start_variants().expect("debug start should pause")
         else {
             panic!("expected entry pause");
         };
         let unsupported = session
-            .evaluate(&DebugEvaluationRequest::new("answer + 1"))
+            .evaluate_variant(&DebugEvaluationRequest::new("answer + 1"))
             .expect_err("non-identifier expression should be rejected");
         assert!(matches!(
             unsupported,
             super::DebugSessionError::UnsupportedEvaluation { .. }
         ));
         let unknown = session
-            .evaluate(&DebugEvaluationRequest::new("missingValue"))
+            .evaluate_variant(&DebugEvaluationRequest::new("missingValue"))
             .expect_err("unknown name should be rejected");
         assert!(matches!(
             unknown,
