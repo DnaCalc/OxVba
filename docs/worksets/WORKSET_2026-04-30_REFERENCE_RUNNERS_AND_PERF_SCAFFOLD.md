@@ -29,6 +29,8 @@ Out of scope:
 
 - Runner schema lock:
   [`../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md`](../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md)
+- VM/JIT runner row normalization:
+  [`../evidence/native_ready/VM_JIT_RUNNER_ROWS_2026-05-01.md`](../evidence/native_ready/VM_JIT_RUNNER_ROWS_2026-05-01.md)
 
 ## Execution Epics
 
@@ -57,6 +59,8 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
   2026-05-01; the schema is locked, canonical header sample exists, and writer
   validation rules are recorded.
 - `bd-9xmu.5.3` / `runner-002`: normalize VM/JIT rows with fallback status.
+  Done 2026-05-01; sample rows cover VM, JIT without fallback, and JIT with VM
+  fallback under the shared schema.
 - `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows.
 - `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields.
 - `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared schema.
