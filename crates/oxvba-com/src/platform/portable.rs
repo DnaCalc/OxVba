@@ -5,7 +5,7 @@
 //! On Linux/macOS, it's the only COM-like mechanism. On WASM, the JS host
 //! registers objects into it.
 
-use oxvba_runtime::{Variant, compat::RuntimeValue};
+use oxvba_runtime::Variant;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -16,55 +16,12 @@ pub trait PortableObjectFactory: Send + Sync {
 
 /// Late-bound dispatch interface for host-registered objects.
 ///
-/// This portable host API carries retained [`Variant`] values. Legacy callers
-/// that still need `RuntimeValue` projections must enter through
-/// [`compat::RuntimeValueCompatPortableDispatch`].
+/// This portable host API carries retained [`Variant`] values.
 pub trait PortableDispatch: Send + Sync {
     fn invoke(&self, member: &str, args: &[Variant]) -> Result<Variant, String>;
     fn get(&self, member: &str) -> Result<Variant, String>;
     fn put(&self, member: &str, value: Variant) -> Result<(), String>;
     fn member_names(&self) -> Vec<String>;
-}
-
-pub mod compat {
-    use super::{PortableDispatch, RuntimeValue, Variant};
-
-    /// Compatibility projection over the retained `Variant` portable dispatch
-    /// contract for legacy host-registered objects.
-    pub trait RuntimeValueCompatPortableDispatch {
-        fn invoke_runtime_value(
-            &self,
-            member: &str,
-            args: &[RuntimeValue],
-        ) -> Result<RuntimeValue, String>;
-        fn get_runtime_value(&self, member: &str) -> Result<RuntimeValue, String>;
-        fn put_runtime_value(&self, member: &str, value: RuntimeValue) -> Result<(), String>;
-    }
-
-    impl<T> RuntimeValueCompatPortableDispatch for T
-    where
-        T: PortableDispatch + ?Sized,
-    {
-        fn invoke_runtime_value(
-            &self,
-            member: &str,
-            args: &[RuntimeValue],
-        ) -> Result<RuntimeValue, String> {
-            let args = args
-                .iter()
-                .map(Variant::try_from_runtime_value)
-                .collect::<Result<Vec<_>, _>>()?;
-            self.invoke(member, &args)?.to_runtime_value()
-        }
-
-        fn get_runtime_value(&self, member: &str) -> Result<RuntimeValue, String> {
-            self.get(member)?.to_runtime_value()
-        }
-
-        fn put_runtime_value(&self, member: &str, value: RuntimeValue) -> Result<(), String> {
-            self.put(member, Variant::try_from_runtime_value(&value)?)
-        }
-    }
 }
 
 /// Registry of host-provided COM-like objects, keyed by ProgID.
