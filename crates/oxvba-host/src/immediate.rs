@@ -1,5 +1,5 @@
 use oxvba_compiler::ProjectManifest;
-use oxvba_runtime::{RuntimeValue, VarType, Variant, variant_to_vba_string};
+use oxvba_runtime::{VarType, Variant, variant_to_vba_string};
 use thiserror::Error;
 
 use crate::engine::PhaseDiagnostic;
@@ -58,40 +58,10 @@ impl ImmediateEvaluationRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImmediateValueProjection {
-    /// Compatibility projection of the evaluated retained `Variant` result.
-    ///
-    /// Immediate evaluation keeps this legacy field for callers that format or
-    /// assert through `RuntimeValue`; retained value-model execution uses the
-    /// `Variant` result before this projection.
-    pub runtime_value: RuntimeValue,
-    pub display_text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImmediateVariantValueProjection {
     /// Retained value-model evaluation result.
     pub variant_value: Variant,
     pub display_text: String,
-}
-
-impl ImmediateVariantValueProjection {
-    /// Project a retained immediate value into the legacy result shape.
-    pub fn to_runtime_value(&self) -> Result<ImmediateValueProjection, String> {
-        let runtime_value = self.variant_value.to_runtime_value()?;
-        Ok(ImmediateValueProjection {
-            runtime_value,
-            display_text: self.display_text.clone(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImmediateEvaluationOutput {
-    Empty,
-    Value(ImmediateValueProjection),
-    PrintedLine(String),
-    Reset,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,35 +70,6 @@ pub enum ImmediateVariantEvaluationOutput {
     Value(ImmediateVariantValueProjection),
     PrintedLine(String),
     Reset,
-}
-
-impl ImmediateVariantEvaluationOutput {
-    /// Project retained immediate output into the legacy compatibility shape.
-    pub fn to_runtime_output(&self) -> Result<ImmediateEvaluationOutput, String> {
-        match self {
-            Self::Empty => Ok(ImmediateEvaluationOutput::Empty),
-            Self::Value(value) => value
-                .to_runtime_value()
-                .map(ImmediateEvaluationOutput::Value),
-            Self::PrintedLine(line) => Ok(ImmediateEvaluationOutput::PrintedLine(line.clone())),
-            Self::Reset => Ok(ImmediateEvaluationOutput::Reset),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImmediateEvaluationResult {
-    pub output: ImmediateEvaluationOutput,
-    pub diagnostics: Vec<PhaseDiagnostic>,
-}
-
-impl ImmediateEvaluationResult {
-    pub fn empty() -> Self {
-        Self {
-            output: ImmediateEvaluationOutput::Empty,
-            diagnostics: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,15 +84,6 @@ impl ImmediateVariantEvaluationResult {
             output: ImmediateVariantEvaluationOutput::Empty,
             diagnostics: Vec::new(),
         }
-    }
-
-    /// Project a retained Variant evaluation result into the legacy result
-    /// surface.
-    pub fn to_runtime_result(&self) -> Result<ImmediateEvaluationResult, String> {
-        Ok(ImmediateEvaluationResult {
-            output: self.output.to_runtime_output()?,
-            diagnostics: self.diagnostics.clone(),
-        })
     }
 }
 
@@ -214,19 +146,6 @@ impl<'engine> ImmediateSession<'engine> {
         self.default_target_module = module.map(|value| value.into());
     }
 
-    /// Legacy alias for [`Self::snapshot_compat_values`].
-    pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        crate::compat::immediate_session_snapshot_values(self)
-    }
-
-    /// Compatibility snapshot that projects retained session slots into
-    /// [`RuntimeValue`] values.
-    ///
-    /// New value-model call sites should prefer [`Self::snapshot_variants`].
-    pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
-        crate::compat::immediate_session_snapshot_values(self)
-    }
-
     /// Retained value-model snapshot for the immediate session runtime.
     pub fn snapshot_variants(&self) -> Vec<Variant> {
         self.runtime.snapshot_variants()
@@ -239,25 +158,16 @@ impl<'engine> ImmediateSession<'engine> {
     pub fn reset(
         &mut self,
         kind: ImmediateResetKind,
-    ) -> Result<ImmediateEvaluationResult, PhaseDiagnostic> {
+    ) -> Result<ImmediateVariantEvaluationResult, PhaseDiagnostic> {
         match kind {
             ImmediateResetKind::ClearSessionState | ImmediateResetKind::ReloadProject => {
                 self.runtime = self.engine.compile_and_prepare_session(&self.manifest)?;
-                Ok(ImmediateEvaluationResult {
-                    output: ImmediateEvaluationOutput::Reset,
+                Ok(ImmediateVariantEvaluationResult {
+                    output: ImmediateVariantEvaluationOutput::Reset,
                     diagnostics: Vec::new(),
                 })
             }
         }
-    }
-
-    pub fn evaluate(
-        &mut self,
-        request: &ImmediateEvaluationRequest,
-    ) -> Result<ImmediateEvaluationResult, ImmediateSessionError> {
-        self.evaluate_variant(request)?
-            .to_runtime_result()
-            .map_err(|message| ImmediateSessionError::Phase(PhaseDiagnostic::runtime(message)))
     }
 
     /// Evaluate immediate input and retain the result as a `Variant`.
@@ -509,9 +419,10 @@ mod tests {
     use oxvba_runtime::{RuntimeValue, VarType, bstr::BStr};
 
     use super::{
-        ImmediateDisplayStyle, ImmediateEvaluationOutput, ImmediateEvaluationRequest,
-        ImmediateInputKind, ImmediateSession, ImmediateVariantEvaluationOutput,
+        ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateSession,
+        ImmediateVariantEvaluationOutput,
     };
+    use crate::compat::{ImmediateEvaluationOutput, RuntimeValueCompatImmediateSessionExt};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {
@@ -679,7 +590,10 @@ End Function
         let reset = session
             .reset(super::ImmediateResetKind::ClearSessionState)
             .expect("reset");
-        assert!(matches!(reset.output, ImmediateEvaluationOutput::Reset));
+        assert!(matches!(
+            reset.output,
+            ImmediateVariantEvaluationOutput::Reset
+        ));
 
         let after_reset = session
             .evaluate(&ImmediateEvaluationRequest::query("IncrementCounter()"))

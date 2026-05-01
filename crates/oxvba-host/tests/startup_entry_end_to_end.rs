@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use oxvba_hal::callbacks::HostCallbacks;
-use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
+use oxvba_host::{Engine, HostConfig, RuntimeProfileId, compat::RuntimeValueCompatEngineExt};
 
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(

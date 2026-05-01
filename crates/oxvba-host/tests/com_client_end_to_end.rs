@@ -6,7 +6,7 @@ mod windows_com_e2e {
     };
 
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue,
         bstr::BStr,

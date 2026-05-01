@@ -9,7 +9,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectRef, RuntimeValue};
 

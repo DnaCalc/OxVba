@@ -58,6 +58,8 @@ Out of scope:
 
 Detailed evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md).
+The VM/host surface migration evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
 
 The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
 occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
@@ -84,7 +86,9 @@ compatibility module or approved residual note before the search gate can close.
 - `cleanout-000`: roll out the phase-2 executable bead path. Done 2026-05-01.
 - `cleanout-001`: produce `RuntimeValue` active-use inventory. Done 2026-05-01.
 - `cleanout-002`: migrate VM and host snapshot/invoke/observation surfaces,
-  including immediate/debugger/embedded host-side value DTOs.
+  including immediate/debugger/embedded host-side value DTOs. Done 2026-05-01;
+  legacy RuntimeValue access now requires explicit `oxvba_vm::compat` or
+  `oxvba_host::compat` boundaries.
 - `cleanout-003`: migrate JIT compatibility snapshot and slot ABI surfaces.
 - `cleanout-004`: migrate HAL, COM, runtime helper, and compatibility adapter
   boundaries.

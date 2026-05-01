@@ -1,7 +1,7 @@
 use oxvba_host::{
-    DebugFrame, DebugFrameValue, DebugFrameValueKind, DebugPauseState, ImmediateDisplayStyle,
-    ImmediateEvaluationOutput, ImmediateEvaluationRequest, ImmediateInputKind,
-    ImmediateValueProjection,
+    DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
+    ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind,
+    ImmediateVariantEvaluationOutput, ImmediateVariantValueProjection,
 };
 use oxvba_languageservice::{
     DiagnosticSeverity, HostWorkspaceDocument, SemanticProvenance, SpannedDiagnostic,
@@ -293,8 +293,8 @@ impl From<ImmediateEvaluationRequest> for WebImmediateRequest {
     }
 }
 
-impl From<ImmediateValueProjection> for WebImmediateOutput {
-    fn from(value: ImmediateValueProjection) -> Self {
+impl From<ImmediateVariantValueProjection> for WebImmediateOutput {
+    fn from(value: ImmediateVariantValueProjection) -> Self {
         Self::Value {
             display_text: value.display_text,
         }
@@ -302,16 +302,16 @@ impl From<ImmediateValueProjection> for WebImmediateOutput {
 }
 
 pub fn project_immediate_result(
-    output: &ImmediateEvaluationOutput,
+    output: &ImmediateVariantEvaluationOutput,
     diagnostics: &[impl ToString],
 ) -> WebImmediateResult {
     let output = match output {
-        ImmediateEvaluationOutput::Empty => WebImmediateOutput::Empty,
-        ImmediateEvaluationOutput::Value(value) => value.clone().into(),
-        ImmediateEvaluationOutput::PrintedLine(line) => {
+        ImmediateVariantEvaluationOutput::Empty => WebImmediateOutput::Empty,
+        ImmediateVariantEvaluationOutput::Value(value) => value.clone().into(),
+        ImmediateVariantEvaluationOutput::PrintedLine(line) => {
             WebImmediateOutput::PrintedLine { text: line.clone() }
         }
-        ImmediateEvaluationOutput::Reset => WebImmediateOutput::Reset,
+        ImmediateVariantEvaluationOutput::Reset => WebImmediateOutput::Reset,
     };
     WebImmediateResult {
         output,
@@ -319,14 +319,14 @@ pub fn project_immediate_result(
     }
 }
 
-pub fn project_debug_pause_state(value: &DebugPauseState) -> WebDebugPauseState {
+pub fn project_debug_pause_state(value: &DebugVariantPauseState) -> WebDebugPauseState {
     WebDebugPauseState {
         stop_kind: format!("{:?}", value.stop),
         frames: value.frames.iter().map(project_debug_frame).collect(),
     }
 }
 
-fn project_debug_frame(value: &DebugFrame) -> WebDebugFrame {
+fn project_debug_frame(value: &DebugFrameVariant) -> WebDebugFrame {
     WebDebugFrame {
         module_name: value.module_name.clone(),
         procedure_name: value.procedure_name.clone(),
@@ -337,7 +337,7 @@ fn project_debug_frame(value: &DebugFrame) -> WebDebugFrame {
     }
 }
 
-fn project_debug_value(value: &DebugFrameValue) -> WebDebugValue {
+fn project_debug_value(value: &DebugFrameVariantValue) -> WebDebugValue {
     WebDebugValue {
         name: value.name.clone(),
         slot: value.slot,
@@ -364,8 +364,8 @@ impl From<SemanticProvenance> for WebSemanticProvenance {
 #[cfg(test)]
 mod tests {
     use oxvba_host::{
-        DebugFrame, DebugFrameValue, DebugFrameValueKind, DebugPauseState,
-        ImmediateEvaluationOutput,
+        DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
+        ImmediateVariantEvaluationOutput,
     };
     use oxvba_languageservice::{
         DiagnosticSeverity, DocumentId, HostWorkspaceDocument, SpannedDiagnostic, TextSpan,
@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn immediate_result_projects_display_text() {
         let result = project_immediate_result(
-            &ImmediateEvaluationOutput::PrintedLine("42".to_string()),
+            &ImmediateVariantEvaluationOutput::PrintedLine("42".to_string()),
             &["note"],
         );
         assert_eq!(
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn debug_pause_projection_projects_frame_values() {
-        let pause = DebugPauseState {
+        let pause = DebugVariantPauseState {
             stop: DebugStop {
                 reason: DebugStopReason::Step,
                 location: DebugSourceLocation {
@@ -447,17 +447,17 @@ mod tests {
                 },
                 call_stack_depth: 1,
             },
-            frames: vec![DebugFrame {
+            frames: vec![DebugFrameVariant {
                 module_name: "Module1".to_string(),
                 procedure_name: "Main".to_string(),
                 entry_pc: 4,
                 source_line_start: 10,
                 source_line_end: 20,
-                values: vec![DebugFrameValue {
+                values: vec![DebugFrameVariantValue {
                     name: "x".to_string(),
                     slot: 1,
                     kind: DebugFrameValueKind::Local,
-                    runtime_value: oxvba_runtime::RuntimeValue::I32(42),
+                    variant_value: oxvba_runtime::Variant::from_i32(42),
                     display_text: "42".to_string(),
                 }],
             }],

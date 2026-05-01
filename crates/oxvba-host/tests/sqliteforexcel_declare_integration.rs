@@ -6,7 +6,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::engine::DiagnosticPhase;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_project::load_basproj;
 
 fn workspace_root() -> PathBuf {

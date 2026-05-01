@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 mod windows_file_io_host_backed_end_to_end {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::{RuntimeValue, bstr::BStr};
     use std::fs;
 

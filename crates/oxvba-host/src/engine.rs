@@ -23,7 +23,9 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{ObjectRef, Variant};
 use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
 use crate::{
@@ -97,16 +99,6 @@ pub struct Engine {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ComEventCallbackDispatch {
-    pub callback_token: ComCallbackToken,
-    pub subscription_token: ComSubscriptionToken,
-    pub object: ObjectRef,
-    pub event: ComMemberToken,
-    pub handler_symbol: String,
-    pub args: Vec<RuntimeValue>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventCallbackVariantDispatch {
     pub callback_token: ComCallbackToken,
     pub subscription_token: ComSubscriptionToken,
@@ -114,23 +106,6 @@ pub struct ComEventCallbackVariantDispatch {
     pub event: ComMemberToken,
     pub handler_symbol: String,
     pub args: Vec<Variant>,
-}
-
-impl ComEventCallbackVariantDispatch {
-    pub fn to_runtime_dispatch(&self) -> Result<ComEventCallbackDispatch, String> {
-        Ok(ComEventCallbackDispatch {
-            callback_token: self.callback_token,
-            subscription_token: self.subscription_token,
-            object: self.object.clone(),
-            event: self.event,
-            handler_symbol: self.handler_symbol.clone(),
-            args: self
-                .args
-                .iter()
-                .map(Variant::to_runtime_value)
-                .collect::<Result<Vec<_>, _>>()?,
-        })
-    }
 }
 
 pub struct ProjectRuntimeSession {
@@ -192,24 +167,6 @@ fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
 }
 
 impl ProjectRuntimeSession {
-    /// Legacy alias for [`Self::snapshot_compat_values`].
-    pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        crate::compat::project_session_snapshot_values(self)
-    }
-
-    /// Compatibility snapshot that projects retained VM slots into
-    /// [`RuntimeValue`] values for legacy host callers.
-    ///
-    /// New value-model call sites should prefer [`Self::snapshot_variants`].
-    pub fn snapshot_compat_values(&self) -> Vec<RuntimeValue> {
-        crate::compat::project_session_snapshot_values(self)
-    }
-
-    /// Legacy alias for [`Self::snapshot_compat_values`].
-    pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
-        crate::compat::project_session_snapshot_values(self)
-    }
-
     /// Retained value-model snapshot for project-visible slots.
     pub fn snapshot_variants(&self) -> Vec<Variant> {
         let all_slots = self.vm.snapshot_variants(self.compiled.bytecode.slot_count);
@@ -222,16 +179,6 @@ impl ProjectRuntimeSession {
 
     pub fn compiled(&self) -> &CompiledProject {
         &self.compiled
-    }
-
-    /// Legacy alias for [`Self::read_slot_value`].
-    pub fn read_slot(&self, slot: usize) -> RuntimeValue {
-        self.read_slot_value(slot)
-    }
-
-    /// Slot read that projects the retained slot value into a [`RuntimeValue`].
-    pub fn read_slot_value(&self, slot: usize) -> RuntimeValue {
-        crate::compat::project_session_read_slot(self, slot)
     }
 
     /// Retained value-model slot read.
@@ -508,30 +455,6 @@ impl Engine {
             .unwrap_or_default()
     }
 
-    pub fn dispatch_host_event_into_runtime(
-        &self,
-        runtime: &mut ProjectRuntimeSession,
-        project_name: &str,
-        module_name: &str,
-        event_name: &str,
-        source_instance: ObjectRef,
-        args: &[RuntimeValue],
-    ) -> Result<bool, PhaseDiagnostic> {
-        let args = args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PhaseDiagnostic::runtime)?;
-        self.dispatch_host_event_variants_into_runtime(
-            runtime,
-            project_name,
-            module_name,
-            event_name,
-            source_instance,
-            &args,
-        )
-    }
-
     pub fn dispatch_host_event_variants_into_runtime(
         &self,
         runtime: &mut ProjectRuntimeSession,
@@ -680,18 +603,6 @@ impl Engine {
         })
     }
 
-    pub fn poll_com_event_callback(
-        &self,
-    ) -> Result<Option<ComEventCallbackDispatch>, PhaseDiagnostic> {
-        self.poll_com_event_callback_variants()?
-            .map(|callback| {
-                callback
-                    .to_runtime_dispatch()
-                    .map_err(PhaseDiagnostic::runtime)
-            })
-            .transpose()
-    }
-
     pub fn poll_com_event_callback_variants(
         &self,
     ) -> Result<Option<ComEventCallbackVariantDispatch>, PhaseDiagnostic> {
@@ -795,23 +706,6 @@ impl Engine {
         Ok(ProjectRuntimeSession { compiled, vm })
     }
 
-    /// Invoke a specific procedure by module and name on an existing session.
-    pub fn invoke_procedure(
-        &self,
-        session: &mut ProjectRuntimeSession,
-        module: &str,
-        procedure: &str,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, PhaseDiagnostic> {
-        let variants = args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PhaseDiagnostic::runtime)?;
-        self.invoke_procedure_with_variants(session, module, procedure, &variants)
-            .and_then(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
-    }
-
     /// Invoke a specific procedure by module and name with exact Variant args.
     pub fn invoke_procedure_with_variants(
         &self,
@@ -912,23 +806,6 @@ impl Engine {
             })
     }
 
-    /// Invoke a method on a class object instance.
-    pub fn invoke_member_on_object(
-        &self,
-        session: &mut ProjectRuntimeSession,
-        object: ObjectRef,
-        member: &str,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, PhaseDiagnostic> {
-        let variants = args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PhaseDiagnostic::runtime)?;
-        self.invoke_member_on_object_with_variants(session, object, member, &variants)
-            .and_then(|value| value.to_runtime_value().map_err(PhaseDiagnostic::runtime))
-    }
-
     /// Invoke a method on a class object instance with exact Variant args.
     pub fn invoke_member_on_object_with_variants(
         &self,
@@ -1000,17 +877,6 @@ impl Engine {
         }
     }
 
-    pub fn poll_and_dispatch_next_com_event_callback(
-        &self,
-        runtime: &mut ProjectRuntimeSession,
-    ) -> Result<bool, PhaseDiagnostic> {
-        let Some(callback) = self.poll_com_event_callback()? else {
-            return Ok(false);
-        };
-        self.dispatch_com_event_callback_into_runtime(runtime, &callback)?;
-        Ok(true)
-    }
-
     pub fn poll_and_dispatch_next_com_event_callback_variants(
         &self,
         runtime: &mut ProjectRuntimeSession,
@@ -1020,28 +886,6 @@ impl Engine {
         };
         self.dispatch_com_event_callback_variants_into_runtime(runtime, &callback)?;
         Ok(true)
-    }
-
-    pub fn dispatch_com_event_callback_into_runtime(
-        &self,
-        runtime: &mut ProjectRuntimeSession,
-        callback: &ComEventCallbackDispatch,
-    ) -> Result<(), PhaseDiagnostic> {
-        let variant_args = callback
-            .args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PhaseDiagnostic::runtime)?;
-        let callback = ComEventCallbackVariantDispatch {
-            callback_token: callback.callback_token,
-            subscription_token: callback.subscription_token,
-            object: callback.object.clone(),
-            event: callback.event,
-            handler_symbol: callback.handler_symbol.clone(),
-            args: variant_args,
-        };
-        self.dispatch_com_event_callback_variants_into_runtime(runtime, &callback)
     }
 
     pub fn dispatch_com_event_callback_variants_into_runtime(
@@ -1075,41 +919,12 @@ impl Engine {
         Ok(())
     }
 
-    /// Compatibility source execution snapshot projected into [`RuntimeValue`]
-    /// values.
-    ///
-    /// New value-model call sites should prefer
-    /// [`Self::execute_source_with_variant_snapshot`].
-    pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<RuntimeValue>, String> {
-        crate::compat::execute_source_with_snapshot(self, source)
-    }
-
     pub fn execute_source_with_variant_snapshot(
         &self,
         source: &str,
     ) -> Result<Vec<Variant>, String> {
         self.execute_source_with_variant_snapshot_phased(source)
             .map_err(|diagnostic| diagnostic.message().to_string())
-    }
-
-    /// Legacy alias for [`Self::execute_source_with_snapshot`].
-    pub fn execute_source_with_value_snapshot(
-        &self,
-        source: &str,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        crate::compat::execute_source_with_snapshot(self, source)
-    }
-
-    /// Compatibility phased source execution snapshot projected into
-    /// [`RuntimeValue`] values.
-    ///
-    /// New value-model call sites should prefer
-    /// [`Self::execute_source_with_variant_snapshot_phased`].
-    pub fn execute_source_with_snapshot_phased(
-        &self,
-        source: &str,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        crate::compat::execute_source_with_snapshot_phased(self, source)
     }
 
     pub fn execute_source_with_variant_snapshot_phased(
@@ -1146,26 +961,6 @@ impl Engine {
             &procedure_runtime_metadata,
             bytecode.user_slot_count,
         ))
-    }
-
-    /// Legacy alias for [`Self::execute_source_with_snapshot_phased`].
-    pub fn execute_source_with_value_snapshot_phased(
-        &self,
-        source: &str,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        crate::compat::execute_source_with_snapshot_phased(self, source)
-    }
-
-    /// Compatibility project execution snapshot projected into [`RuntimeValue`]
-    /// values.
-    ///
-    /// New value-model call sites should prefer
-    /// [`Self::execute_project_with_variant_snapshot_phased`].
-    pub fn execute_project_with_snapshot_phased(
-        &self,
-        manifest: &ProjectManifest,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        crate::compat::execute_project_with_snapshot_phased(self, manifest)
     }
 
     pub fn execute_project_with_variant_snapshot_phased(
@@ -1210,14 +1005,6 @@ impl Engine {
         ))
     }
 
-    /// Legacy alias for [`Self::execute_project_with_snapshot_phased`].
-    pub fn execute_project_with_value_snapshot_phased(
-        &self,
-        manifest: &ProjectManifest,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        crate::compat::execute_project_with_snapshot_phased(self, manifest)
-    }
-
     /// Prepare a runtime session from a deserialized OxBundle (no recompilation).
     ///
     /// Used by DLL shims that need to invoke individual procedures from the
@@ -1251,19 +1038,6 @@ impl Engine {
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         Ok(ProjectRuntimeSession { compiled, vm })
-    }
-
-    /// Execute a pre-compiled OxBundle, returning the final slot values through
-    /// the legacy [`RuntimeValue`] compatibility projection.
-    ///
-    /// This is the entry point used by generated EXE/DLL shims that embed a
-    /// serialized bundle via `include_bytes!`. New value-model call sites
-    /// should prefer [`Self::execute_bundle_with_variant_snapshot`].
-    pub fn execute_bundle_with_snapshot(
-        &self,
-        bundle: &oxvba_compiler::OxBundle,
-    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        crate::compat::execute_bundle_with_snapshot(self, bundle)
     }
 
     pub fn execute_bundle_with_variant_snapshot(
@@ -1504,6 +1278,10 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
+    use crate::compat::{
+        RuntimeValueCompatComEventCallbackExt, RuntimeValueCompatEngineExt,
+        RuntimeValueCompatProjectSessionExt,
+    };
     use oxvba_com::{ComInvokeArg, ComInvokeRequest};
     use oxvba_compiler::{
         ModuleKind, ProjectDynamicMemberKind, ProjectKind, ProjectManifest, ProjectReference,

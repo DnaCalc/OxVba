@@ -4,9 +4,9 @@ use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
 use oxvba_host::{
-    Engine, HostConfig, ImmediateEvaluationOutput, ImmediateEvaluationRequest, ImmediateSession,
-    RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
-    resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+    Engine, HostConfig, ImmediateEvaluationRequest, ImmediateSession,
+    ImmediateVariantEvaluationOutput, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
+    TypeLibraryCatalogEntry, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{VarType, Variant};
 use std::io::{self, BufRead, Write};
@@ -645,20 +645,20 @@ fn run_immediate_shell<R: BufRead, W: Write, E: Write>(
             continue;
         }
 
-        match session.evaluate(&ImmediateEvaluationRequest::new(trimmed)) {
+        match session.evaluate_variant(&ImmediateEvaluationRequest::new(trimmed)) {
             Ok(result) => {
                 for diagnostic in result.diagnostics {
                     writeln!(err, "immediate: {diagnostic}")?;
                 }
                 match result.output {
-                    ImmediateEvaluationOutput::Empty => {}
-                    ImmediateEvaluationOutput::Value(value) => {
+                    ImmediateVariantEvaluationOutput::Empty => {}
+                    ImmediateVariantEvaluationOutput::Value(value) => {
                         writeln!(out, "{}", value.display_text)?;
                     }
-                    ImmediateEvaluationOutput::PrintedLine(line) => {
+                    ImmediateVariantEvaluationOutput::PrintedLine(line) => {
                         writeln!(out, "{line}")?;
                     }
-                    ImmediateEvaluationOutput::Reset => {
+                    ImmediateVariantEvaluationOutput::Reset => {
                         writeln!(out, "reset")?;
                     }
                 }

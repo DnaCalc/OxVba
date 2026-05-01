@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use oxvba_host::{
-    Engine, HostConfig, ImmediateEvaluationOutput, ImmediateSession, PhaseDiagnostic,
+    Engine, HostConfig, ImmediateSession, ImmediateVariantEvaluationOutput, PhaseDiagnostic,
     ProjectRuntimeSession,
 };
 use oxvba_languageservice::{DocumentId, HostWorkspaceSession};
@@ -222,7 +222,7 @@ impl WebShellSession {
             .engine
             .start_project_runtime_session(&manifest)
             .map_err(map_phase_diagnostic)?;
-        let snapshot_len = runtime.snapshot().len();
+        let snapshot_len = runtime.snapshot_variants().len();
         self.runtime_session = Some(runtime);
         Ok(vec![
             WebHostEvent::RunStateChanged(WebRunState::Running),
@@ -279,7 +279,7 @@ impl WebShellSession {
             session.set_default_target_module(Some(module_name));
         }
         let result = session
-            .evaluate(&request)
+            .evaluate_variant(&request)
             .map_err(|err| WebShellError::Host(err.to_string()))?;
         let runtime = session.into_runtime();
         self.runtime_session = Some(runtime);
@@ -287,19 +287,19 @@ impl WebShellSession {
         let immediate_result = project_immediate_result(&result.output, &result.diagnostics);
         let mut events = vec![WebHostEvent::ImmediateResult(immediate_result)];
         match &result.output {
-            ImmediateEvaluationOutput::PrintedLine(line) => {
+            ImmediateVariantEvaluationOutput::PrintedLine(line) => {
                 events.push(WebHostEvent::OutputLine {
                     stream: WebOutputStream::Stdout,
                     text: line.clone(),
                 });
             }
-            ImmediateEvaluationOutput::Value(value) => {
+            ImmediateVariantEvaluationOutput::Value(value) => {
                 events.push(WebHostEvent::OutputLine {
                     stream: WebOutputStream::Stdout,
                     text: value.display_text.clone(),
                 });
             }
-            ImmediateEvaluationOutput::Empty | ImmediateEvaluationOutput::Reset => {}
+            ImmediateVariantEvaluationOutput::Empty | ImmediateVariantEvaluationOutput::Reset => {}
         }
         Ok(events)
     }

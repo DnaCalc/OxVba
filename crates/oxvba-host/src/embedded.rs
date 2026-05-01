@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use oxvba_compiler::{ProjectManifest, compile_project};
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::Variant;
 use thiserror::Error;
 
 use crate::Engine;
@@ -211,36 +211,6 @@ impl EmbeddedInvokeEntryPointRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EmbeddedInvokeProcedureRequest {
-    pub target: EmbeddedProcedureTarget,
-    /// Compatibility argument projection for legacy embedded callers.
-    ///
-    /// New value-model call sites should prefer
-    /// [`EmbeddedInvokeProcedureVariantRequest`].
-    pub args: Vec<RuntimeValue>,
-}
-
-impl EmbeddedInvokeProcedureRequest {
-    pub fn new(target: EmbeddedProcedureTarget, args: Vec<RuntimeValue>) -> Self {
-        Self { target, args }
-    }
-
-    /// Projects this compatibility request into the retained `Variant` request
-    /// shape used by the execution path.
-    pub fn to_variant_request(&self) -> Result<EmbeddedInvokeProcedureVariantRequest, String> {
-        let args = self
-            .args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(EmbeddedInvokeProcedureVariantRequest::new(
-            self.target.clone(),
-            args,
-        ))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedInvokeProcedureVariantRequest {
     pub target: EmbeddedProcedureTarget,
     /// Retained value-model procedure arguments.
@@ -250,20 +220,6 @@ pub struct EmbeddedInvokeProcedureVariantRequest {
 impl EmbeddedInvokeProcedureVariantRequest {
     pub fn new(target: EmbeddedProcedureTarget, args: Vec<Variant>) -> Self {
         Self { target, args }
-    }
-
-    /// Compatibility projection for legacy callers that still need
-    /// [`EmbeddedInvokeProcedureRequest`].
-    pub fn to_runtime_request(&self) -> Result<EmbeddedInvokeProcedureRequest, String> {
-        let args = self
-            .args
-            .iter()
-            .map(Variant::to_runtime_value)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(EmbeddedInvokeProcedureRequest::new(
-            self.target.clone(),
-            args,
-        ))
     }
 }
 
@@ -277,37 +233,6 @@ pub enum EmbeddedInvocationTarget {
 pub enum EmbeddedInvokeStatus {
     Completed,
     Failed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EmbeddedInvokeResult {
-    pub target: EmbeddedInvocationTarget,
-    pub status: EmbeddedInvokeStatus,
-    pub diagnostics: Vec<PhaseDiagnostic>,
-    /// Compatibility return-value projection for legacy embedded callers.
-    ///
-    /// New value-model call sites should prefer [`EmbeddedInvokeVariantResult`].
-    pub return_value: Option<RuntimeValue>,
-}
-
-impl EmbeddedInvokeResult {
-    pub fn completed(target: EmbeddedInvocationTarget, return_value: Option<RuntimeValue>) -> Self {
-        Self {
-            target,
-            status: EmbeddedInvokeStatus::Completed,
-            diagnostics: Vec::new(),
-            return_value,
-        }
-    }
-
-    pub fn failed(target: EmbeddedInvocationTarget, diagnostics: Vec<PhaseDiagnostic>) -> Self {
-        Self {
-            target,
-            status: EmbeddedInvokeStatus::Failed,
-            diagnostics,
-            return_value: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,22 +261,6 @@ impl EmbeddedInvokeVariantResult {
             diagnostics,
             return_value: None,
         }
-    }
-
-    /// Compatibility projection for legacy callers that still need
-    /// [`EmbeddedInvokeResult`].
-    pub fn to_runtime_result(&self) -> Result<EmbeddedInvokeResult, String> {
-        let return_value = self
-            .return_value
-            .as_ref()
-            .map(Variant::to_runtime_value)
-            .transpose()?;
-        Ok(EmbeddedInvokeResult {
-            target: self.target.clone(),
-            status: self.status,
-            diagnostics: self.diagnostics.clone(),
-            return_value,
-        })
     }
 }
 
@@ -386,8 +295,8 @@ pub enum EmbeddedBuildRunEvent {
     SessionReady(EmbeddedRunResult),
     RunFailed(EmbeddedRunResult),
     RuntimeReset(EmbeddedResetResult),
-    InvokeCompleted(EmbeddedInvokeResult),
-    InvokeFailed(EmbeddedInvokeResult),
+    InvokeCompleted(EmbeddedInvokeVariantResult),
+    InvokeFailed(EmbeddedInvokeVariantResult),
     OutputLine(EmbeddedOutputLine),
 }
 
@@ -497,15 +406,6 @@ impl<'engine> EmbeddedRunSession<'engine> {
         ))
     }
 
-    pub fn invoke_entry_point(
-        &mut self,
-        request: &EmbeddedInvokeEntryPointRequest,
-    ) -> Result<EmbeddedInvokeResult, EmbeddedRunSessionError> {
-        self.invoke_entry_point_variant(request)?
-            .to_runtime_result()
-            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))
-    }
-
     pub fn invoke_entry_point_variant(
         &mut self,
         request: &EmbeddedInvokeEntryPointRequest,
@@ -522,18 +422,6 @@ impl<'engine> EmbeddedRunSession<'engine> {
             EmbeddedInvocationTarget::EntryPoint(request.workspace.clone()),
             None,
         ))
-    }
-
-    pub fn invoke_procedure(
-        &mut self,
-        request: &EmbeddedInvokeProcedureRequest,
-    ) -> Result<EmbeddedInvokeResult, EmbeddedRunSessionError> {
-        let request = request
-            .to_variant_request()
-            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))?;
-        self.invoke_procedure_variant(&request)?
-            .to_runtime_result()
-            .map_err(|message| EmbeddedRunSessionError::Phase(PhaseDiagnostic::runtime(message)))
     }
 
     pub fn invoke_procedure_variant(
@@ -590,10 +478,13 @@ mod tests {
     use super::{
         EmbeddedBuildRequest, EmbeddedBuildRunEvent, EmbeddedBuildRunHost, EmbeddedBuildStatus,
         EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
-        EmbeddedInvokeProcedureRequest, EmbeddedInvokeProcedureVariantRequest,
-        EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget, EmbeddedResetKind,
-        EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedRunStatus, EmbeddedWorkspaceInput,
-        EmbeddedWorkspaceSnapshot,
+        EmbeddedInvokeProcedureVariantRequest, EmbeddedOutputChannel, EmbeddedOutputLine,
+        EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
+        EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+    };
+    use crate::compat::{
+        EmbeddedInvokeProcedureRequest, RuntimeValueCompatEmbeddedProcedureVariantRequestExt,
+        RuntimeValueCompatEmbeddedRunSessionExt,
     };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};

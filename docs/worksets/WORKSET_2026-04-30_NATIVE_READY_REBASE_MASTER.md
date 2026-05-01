@@ -33,8 +33,10 @@ telemetry are coherent enough for the later native compiler/linker workset.
 
 The umbrella is active. The docs-truth and IR-scaffold-removal slices have
 landed. Phase 2 has an active `RuntimeValue` family inventory in
-[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md), and the
-VM/host, JIT, HAL/COM/runtime, and presentation delivery migrations remain
+[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md). The VM/host
+snapshot/invoke/observation surface migration has landed with evidence in
+[`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
+The JIT, HAL/COM/runtime, and remaining presentation delivery migrations remain
 open. The value/numeric/UDT cleanup, stress corpus, and runner/performance
 scaffold remain open follow-on work.
 

@@ -2,7 +2,7 @@
 mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::{ObjectRef, RuntimeValue, bstr::BStr};
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";

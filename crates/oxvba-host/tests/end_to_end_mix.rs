@@ -5,7 +5,7 @@ use oxvba_compiler::{
     ReferencedProjectManifest, module_unit_from_source,
 };
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_runtime::RuntimeValue;
 
 fn proc_module(name: &str, source: &str) -> oxvba_compiler::ModuleUnit {

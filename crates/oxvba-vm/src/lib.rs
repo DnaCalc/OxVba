@@ -101,6 +101,32 @@ pub mod compat {
             .collect()
     }
 
+    pub trait RuntimeValueCompatVmExt {
+        fn invoke_procedure_with_values(
+            &mut self,
+            bytecode: &Bytecode,
+            entry_pc: usize,
+            arg_slots: &[usize],
+            args: &[RuntimeValue],
+        ) -> Result<(), String>;
+    }
+
+    impl RuntimeValueCompatVmExt for super::Vm {
+        fn invoke_procedure_with_values(
+            &mut self,
+            bytecode: &Bytecode,
+            entry_pc: usize,
+            arg_slots: &[usize],
+            args: &[RuntimeValue],
+        ) -> Result<(), String> {
+            let variants = args
+                .iter()
+                .map(RuntimeValue::to_variant)
+                .collect::<Result<Vec<_>, _>>()?;
+            self.invoke_procedure_with_variants(bytecode, entry_pc, arg_slots, &variants)
+        }
+    }
+
     pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
         execute_and_snapshot_values(bytecode)
     }

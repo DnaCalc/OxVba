@@ -1,7 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_runtime::RuntimeValue;
 
 #[test]

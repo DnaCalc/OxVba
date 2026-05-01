@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-use oxvba_host::{
-    DebugEvaluationRequest, DebugFrameValueKind, Engine, HostConfig, HostDebugRunResult,
-};
+use oxvba_host::compat::{HostDebugRunResult, RuntimeValueCompatDebugSessionExt};
+use oxvba_host::{DebugEvaluationRequest, DebugFrameValueKind, Engine, HostConfig};
 use oxvba_runtime::RuntimeValue;
 use oxvba_vm::DebugStopReason;
 

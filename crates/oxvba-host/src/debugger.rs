@@ -2,7 +2,7 @@ use oxvba_compiler::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProjectManifest,
 };
-use oxvba_runtime::{RuntimeValue, Variant, variant_to_vba_string};
+use oxvba_runtime::{Variant, variant_to_vba_string};
 use oxvba_vm::{DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop};
 use thiserror::Error;
 
@@ -17,48 +17,12 @@ pub enum DebugFrameValueKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DebugFrameValue {
-    pub name: String,
-    pub slot: usize,
-    pub kind: DebugFrameValueKind,
-    /// Compatibility projection for debugger clients that still consume
-    /// semantic values. Retained frame reads start from `DebugFrameVariantValue`.
-    pub runtime_value: RuntimeValue,
-    pub display_text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebugFrameVariantValue {
     pub name: String,
     pub slot: usize,
     pub kind: DebugFrameValueKind,
     pub variant_value: Variant,
     pub display_text: String,
-}
-
-impl DebugFrameVariantValue {
-    /// Project a retained frame value into the legacy debugger value shape.
-    pub fn to_runtime_value(&self) -> Result<DebugFrameValue, String> {
-        let runtime_value = self.variant_value.to_runtime_value()?;
-        Ok(DebugFrameValue {
-            name: self.name.clone(),
-            slot: self.slot,
-            kind: self.kind,
-            display_text: self.display_text.clone(),
-            runtime_value,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DebugFrame {
-    pub module_name: String,
-    pub procedure_name: String,
-    pub entry_pc: usize,
-    pub source_line_start: usize,
-    pub source_line_end: usize,
-    /// Compatibility frame values projected from retained `Variant` slot reads.
-    pub values: Vec<DebugFrameValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,74 +36,16 @@ pub struct DebugFrameVariant {
     pub values: Vec<DebugFrameVariantValue>,
 }
 
-impl DebugFrameVariant {
-    /// Project retained frame values into the legacy debugger frame shape.
-    pub fn to_runtime_frame(&self) -> Result<DebugFrame, String> {
-        let values = self
-            .values
-            .iter()
-            .map(DebugFrameVariantValue::to_runtime_value)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(DebugFrame {
-            module_name: self.module_name.clone(),
-            procedure_name: self.procedure_name.clone(),
-            entry_pc: self.entry_pc,
-            source_line_start: self.source_line_start,
-            source_line_end: self.source_line_end,
-            values,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DebugPauseState {
-    pub stop: DebugStop,
-    pub frames: Vec<DebugFrame>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebugVariantPauseState {
     pub stop: DebugStop,
     pub frames: Vec<DebugFrameVariant>,
 }
 
-impl DebugVariantPauseState {
-    /// Project retained debugger pause state into the legacy debugger shape.
-    pub fn to_runtime_pause_state(&self) -> Result<DebugPauseState, String> {
-        let frames = self
-            .frames
-            .iter()
-            .map(DebugFrameVariant::to_runtime_frame)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(DebugPauseState {
-            stop: self.stop.clone(),
-            frames,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HostDebugRunResult {
-    Paused(DebugPauseState),
-    Completed,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostDebugVariantRunResult {
     Paused(DebugVariantPauseState),
     Completed,
-}
-
-impl HostDebugVariantRunResult {
-    /// Project retained debugger run state into the legacy debugger shape.
-    pub fn to_runtime_run_result(&self) -> Result<HostDebugRunResult, String> {
-        match self {
-            Self::Completed => Ok(HostDebugRunResult::Completed),
-            Self::Paused(state) => state
-                .to_runtime_pause_state()
-                .map(HostDebugRunResult::Paused),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,22 +62,8 @@ impl DebugEvaluationRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DebugEvaluationResult {
-    pub value: DebugFrameValue,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebugVariantEvaluationResult {
     pub value: DebugFrameVariantValue,
-}
-
-impl DebugVariantEvaluationResult {
-    /// Project a retained debugger evaluation into the legacy debugger shape.
-    pub fn to_runtime_result(&self) -> Result<DebugEvaluationResult, String> {
-        Ok(DebugEvaluationResult {
-            value: self.value.to_runtime_value()?,
-        })
-    }
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -229,12 +121,6 @@ impl<'engine> DebugSession<'engine> {
         self.runtime.vm_mut().debug_set_breakpoints(breakpoints);
     }
 
-    pub fn start(&mut self) -> Result<HostDebugRunResult, DebugSessionError> {
-        self.start_variants()?
-            .to_runtime_run_result()
-            .map_err(DebugSessionError::Runtime)
-    }
-
     /// Start execution and retain debugger frame values as `Variant` carriers.
     pub fn start_variants(&mut self) -> Result<HostDebugVariantRunResult, DebugSessionError> {
         let bytecode = self.runtime.compiled().bytecode.clone();
@@ -244,12 +130,6 @@ impl<'engine> DebugSession<'engine> {
             .debug_start(&bytecode)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
-    }
-
-    pub fn continue_execution(&mut self) -> Result<HostDebugRunResult, DebugSessionError> {
-        self.continue_execution_variants()?
-            .to_runtime_run_result()
-            .map_err(DebugSessionError::Runtime)
     }
 
     /// Continue execution and retain debugger frame values as `Variant`
@@ -266,12 +146,6 @@ impl<'engine> DebugSession<'engine> {
         self.project_variant_run_result(result)
     }
 
-    pub fn step_into(&mut self) -> Result<HostDebugRunResult, DebugSessionError> {
-        self.step_into_variants()?
-            .to_runtime_run_result()
-            .map_err(DebugSessionError::Runtime)
-    }
-
     /// Step into and retain debugger frame values as `Variant` carriers.
     pub fn step_into_variants(&mut self) -> Result<HostDebugVariantRunResult, DebugSessionError> {
         let bytecode = self.runtime.compiled().bytecode.clone();
@@ -281,12 +155,6 @@ impl<'engine> DebugSession<'engine> {
             .debug_step_into(&bytecode)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
-    }
-
-    pub fn step_over(&mut self) -> Result<HostDebugRunResult, DebugSessionError> {
-        self.step_over_variants()?
-            .to_runtime_run_result()
-            .map_err(DebugSessionError::Runtime)
     }
 
     /// Step over and retain debugger frame values as `Variant` carriers.
@@ -300,12 +168,6 @@ impl<'engine> DebugSession<'engine> {
         self.project_variant_run_result(result)
     }
 
-    pub fn step_out(&mut self) -> Result<HostDebugRunResult, DebugSessionError> {
-        self.step_out_variants()?
-            .to_runtime_run_result()
-            .map_err(DebugSessionError::Runtime)
-    }
-
     /// Step out and retain debugger frame values as `Variant` carriers.
     pub fn step_out_variants(&mut self) -> Result<HostDebugVariantRunResult, DebugSessionError> {
         let bytecode = self.runtime.compiled().bytecode.clone();
@@ -315,16 +177,6 @@ impl<'engine> DebugSession<'engine> {
             .debug_step_out(&bytecode)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
-    }
-
-    pub fn current_pause_state(&self) -> Result<Option<DebugPauseState>, DebugSessionError> {
-        self.current_variant_pause_state()?
-            .map(|state| {
-                state
-                    .to_runtime_pause_state()
-                    .map_err(DebugSessionError::Runtime)
-            })
-            .transpose()
     }
 
     /// Current paused state with retained `Variant` frame values.
@@ -338,15 +190,6 @@ impl<'engine> DebugSession<'engine> {
             return Ok(None);
         };
         Ok(Some(self.project_variant_pause_state(stop, &snapshot)?))
-    }
-
-    pub fn evaluate(
-        &self,
-        request: &DebugEvaluationRequest,
-    ) -> Result<DebugEvaluationResult, DebugSessionError> {
-        self.evaluate_variant(request)?
-            .to_runtime_result()
-            .map_err(DebugSessionError::Runtime)
     }
 
     /// Evaluate a visible frame identifier and retain the result as a
@@ -489,9 +332,8 @@ mod tests {
     use oxvba_runtime::{RuntimeValue, VarType};
     use oxvba_vm::DebugStopReason;
 
-    use super::{
-        DebugEvaluationRequest, DebugFrameValueKind, HostDebugRunResult, HostDebugVariantRunResult,
-    };
+    use super::{DebugEvaluationRequest, DebugFrameValueKind, HostDebugVariantRunResult};
+    use crate::compat::{HostDebugRunResult, RuntimeValueCompatDebugSessionExt};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {

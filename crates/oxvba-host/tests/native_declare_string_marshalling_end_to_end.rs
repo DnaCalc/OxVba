@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 mod windows_native_declare_string_e2e {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::CurrencyValue;
     use oxvba_runtime::F64Value;
     use oxvba_runtime::RuntimeValue;

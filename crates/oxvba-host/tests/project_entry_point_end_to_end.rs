@@ -1,4 +1,4 @@
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_runtime::RuntimeValue;
 
 #[test]

@@ -24,12 +24,14 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
+#[cfg(test)]
+use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::safe_array::{
     SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
-use oxvba_runtime::{BindingHandle, ObjectRef, RuntimeValue, Variant, bstr::BStr};
+use oxvba_runtime::{BindingHandle, ObjectRef, Variant, bstr::BStr};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
 
@@ -498,20 +500,6 @@ impl Vm {
             self.typed_fastpaths_default,
             true,
         )
-    }
-
-    pub fn invoke_procedure_with_values(
-        &mut self,
-        bytecode: &Bytecode,
-        entry_pc: usize,
-        arg_slots: &[usize],
-        args: &[RuntimeValue],
-    ) -> Result<(), String> {
-        let variants = args
-            .iter()
-            .map(RuntimeValue::to_variant)
-            .collect::<Result<Vec<_>, _>>()?;
-        self.invoke_procedure_with_variants(bytecode, entry_pc, arg_slots, &variants)
     }
 
     pub fn invoke_procedure_with_variants(
@@ -4617,6 +4605,7 @@ fn runtime_array_element_vartype(element_type: RuntimeArrayElementType) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use crate::compat::RuntimeValueCompatVmExt;
     use crate::register_file::RuntimeSlot;
 
     use super::{

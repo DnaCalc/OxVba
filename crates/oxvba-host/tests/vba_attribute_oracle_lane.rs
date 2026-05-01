@@ -1,6 +1,6 @@
 #[cfg(target_os = "windows")]
 mod windows_vba_attribute_oracle_lane {
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_project::load_basproj_from_str;
     use oxvba_runtime::{RuntimeValue, bstr::BStr};
 

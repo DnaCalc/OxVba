@@ -1,5 +1,5 @@
 use oxvba_compiler::{OxBundle, compile_project};
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_project::load_basproj_from_str;
 use oxvba_runtime::RuntimeValue;
 

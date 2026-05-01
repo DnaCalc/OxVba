@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 mod windows_pointer_helper_e2e {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::{Decimal96, RuntimeValue};
     use windows_sys::Win32::Foundation::SysStringLen;
 
