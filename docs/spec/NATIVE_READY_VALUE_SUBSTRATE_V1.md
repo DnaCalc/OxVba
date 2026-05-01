@@ -1,6 +1,6 @@
 # Native-Ready Value Substrate v1
 
-Status: `working-draft`
+Status: `locked-baseline`
 Date: 2026-04-30
 Scope owner: OxVBA runtime/compiler/native-readiness
 
@@ -33,8 +33,24 @@ Required retained carriers:
 - `ObjectRef`
 - `SafeArray`
 
-`RuntimeValue` is not a future-facing semantic substrate. It must be removed
-from active APIs or isolated as an explicitly temporary compatibility blocker.
+`RuntimeValue` is not a future-facing semantic substrate. It is not re-exported
+from the runtime root and must not be introduced into new execution, snapshot,
+or presentation APIs. Existing uses are only allowed in the residual boundaries
+listed below and must be retired or explicitly public-API-blocked by the phase-3
+bridge-retirement bead.
+
+## Phase-2 Baseline
+
+The 2026-05-01 phase-2 search gate established this baseline:
+
+- active fake HIR/MIR/CFG crate APIs are gone;
+- launcher/web/language-service presentation crates have no `RuntimeValue`
+  matches;
+- normal VM, JIT, and host snapshot/invoke/debug/immediate/embedded surfaces use
+  retained `Variant` or named DTOs;
+- remaining `RuntimeValue` occurrences are compatibility, tests, evidence, or
+  bridge residuals tracked by
+  [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md).
 
 ## Numeric Semantics Direction
 
@@ -77,6 +93,26 @@ that materialization is not the canonical internal value model.
 
 ## Residual Boundaries
 
+### RuntimeValue compatibility residuals
+
+The following `RuntimeValue` residuals are approved only as compatibility or
+public-API-blocker candidates:
+
+- `oxvba_runtime::compat` and subordinate compatibility helper modules such as
+  `coerce::compat` and `pointer_helpers::compat`;
+- legacy VM/JIT/host extension traits and DTOs under explicit `compat` modules;
+- HAL legacy trait methods that still pair with retained `_variant` companions;
+- COM projection helpers under `oxvba_com::compat` plus current COM
+  model/dynamic-object bridge methods until bridge retirement resolves them;
+- tests and evidence documents that assert or classify legacy projection
+  behavior.
+
+No native-facing planning may depend on these residuals as normal value
+semantics. Bead `bd-9xmu.3.2` owns retiring them to explicit compat extension
+traits/modules or recording a public API blocker with owner/removal date.
+
+### Native/UDT residuals
+
 The following remain explicitly outside this v1 substrate until a later workset
 expands scope:
 
@@ -87,8 +123,13 @@ expands scope:
 
 ## Acceptance Gates
 
-- Active runtime APIs use `Variant` or explicit DTOs, not `RuntimeValue`.
-- Numeric helper families are `Variant`-native.
-- UDT semantics are either descriptor-backed or explicitly blocked.
-- Native ABI materialization is documented separately from internal UDT storage.
+- Active runtime APIs use `Variant` or explicit DTOs; any `RuntimeValue`
+  residual is explicit compatibility/public-API-blocker work.
+- Numeric helper families are `Variant`-native (`bd-9xmu.3.4`).
+- Mixed numeric result behavior is matrixed and tested (`bd-9xmu.3.5`).
+- Exact `Currency`, `Decimal`, `Date`, and Boolean carrier behavior is pinned
+  (`bd-9xmu.3.6`).
+- UDT semantics are descriptor-backed or explicitly blocked (`bd-9xmu.3.7`).
+- Native ABI materialization is documented separately from internal UDT storage
+  (`bd-9xmu.3.8`).
 

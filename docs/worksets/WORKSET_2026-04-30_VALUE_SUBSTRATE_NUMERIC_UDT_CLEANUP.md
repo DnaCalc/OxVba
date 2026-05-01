@@ -28,6 +28,13 @@ Out of scope:
 - General native UDT-byref ABI parity.
 - Arbitrary struct overlay/packing parity.
 
+## Evidence
+
+- Spec lock baseline:
+  [`../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md`](../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md)
+- Phase-2 RuntimeValue/IR search gate feeding this workset:
+  [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
+
 ## Execution Epics
 
 1. **Value Substrate Spec Lock**
@@ -54,7 +61,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
 - `bd-9xmu.3.2` / `value-clean-001`: retire residual `RuntimeValue`
   bridge methods or record an explicit public-API blocker.
 - `bd-9xmu.3.3` / `value-clean-002`: lock value substrate spec
-  boundaries against the post-phase-2 baseline.
+  boundaries against the post-phase-2 baseline. Done 2026-05-01; the spec
+  names `Variant` as canonical, limits `RuntimeValue` to approved residuals,
+  and maps phase-3 gates to bead IDs.
 - `bd-9xmu.3.4` / `value-clean-003`: migrate remaining numeric helper
   families to retained `Variant` carriers on the normal path.
 - `bd-9xmu.3.5` / `value-clean-004`: expand mixed numeric result matrix
