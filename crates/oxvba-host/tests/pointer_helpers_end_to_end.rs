@@ -1,26 +1,29 @@
 #[cfg(target_os = "windows")]
 mod windows_pointer_helper_e2e {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{Decimal96, compat::RuntimeValue};
+    use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::{Decimal96, Variant};
     use windows_sys::Win32::Foundation::SysStringLen;
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
         let mut engine = Engine::new(HostConfig {
             enable_jit,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_value_snapshot(source)
+            .execute_source_with_variant_snapshot(source)
             .expect("pointer helper probe should execute")
     }
 
-    fn expect_i64(value: &RuntimeValue) -> i64 {
-        match value {
-            RuntimeValue::I64(value) => *value,
-            other => panic!("expected i64 pointer-like value, got {other:?}"),
-        }
+    fn expect_i64(value: &Variant) -> i64 {
+        value
+            .as_i64()
+            .unwrap_or_else(|| panic!("expected i64 pointer-like value, got {value:?}"))
+    }
+
+    fn non_zero_i64(value: &Variant) -> Option<i64> {
+        value.as_i64().filter(|value| *value != 0)
     }
 
     #[test]
@@ -45,7 +48,7 @@ End Sub
             );
             assert_eq!(
                 snapshot[1],
-                RuntimeValue::I64(8),
+                Variant::from_i64(8),
                 "wcslen should observe the wide string length for enable_jit={enable_jit}"
             );
         }
@@ -66,7 +69,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert_eq!(snapshot.len(), 2);
-            assert_eq!(snapshot[0], RuntimeValue::I32(42));
+            assert_eq!(snapshot[0], Variant::from_i32(42));
             assert!(
                 expect_i64(&snapshot[1]) != 0,
                 "VarPtr should produce a non-zero pointer-like value for enable_jit={enable_jit}"
@@ -96,10 +99,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let pointer = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) => Some(*value),
-                    _ => None,
-                })
+                .find_map(Variant::as_i64)
                 .expect("snapshot should contain a pointer-like value");
             assert!(
                 pointer != 0,
@@ -108,10 +108,10 @@ End Sub
             assert_eq!(
                 snapshot
                     .iter()
-                    .find(|value| matches!(value, RuntimeValue::I64(2)))
+                    .find(|value| value.as_i64() == Some(2))
                     .cloned()
-                    .unwrap_or(RuntimeValue::Empty),
-                RuntimeValue::I64(2),
+                    .unwrap_or(Variant::empty()),
+                Variant::from_i64(2),
                 "strlen should observe the zero-terminated byte buffer for enable_jit={enable_jit}"
             );
         }
@@ -138,10 +138,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let pointer = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) => Some(*value),
-                    _ => None,
-                })
+                .find_map(Variant::as_i64)
                 .expect("snapshot should contain a pointer-like value");
             assert!(
                 pointer != 0,
@@ -150,10 +147,10 @@ End Sub
             assert_eq!(
                 snapshot
                     .iter()
-                    .find(|value| matches!(value, RuntimeValue::I64(2)))
+                    .find(|value| value.as_i64() == Some(2))
                     .cloned()
-                    .unwrap_or(RuntimeValue::Empty),
-                RuntimeValue::I64(2),
+                    .unwrap_or(Variant::empty()),
+                Variant::from_i64(2),
                 "strlen should observe the zero-terminated static byte buffer for enable_jit={enable_jit}"
             );
         }
@@ -183,10 +180,10 @@ End Sub
             assert_eq!(
                 snapshot
                     .iter()
-                    .find(|value| matches!(value, RuntimeValue::I64(2)))
+                    .find(|value| value.as_i64() == Some(2))
                     .cloned()
-                    .unwrap_or(RuntimeValue::Empty),
-                RuntimeValue::I64(2),
+                    .unwrap_or(Variant::empty()),
+                Variant::from_i64(2),
                 "strlen should observe the zero-terminated byte buffer through the array-parameter lane for enable_jit={enable_jit}"
             );
         }
@@ -211,9 +208,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 2)),
+                snapshot.iter().any(|value| value.as_i32() == Some(2)),
                 "UBound on a fixed array passed to a regular array parameter should be 2 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -240,21 +235,15 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 0)),
+                snapshot.iter().any(|value| value.as_i32() == Some(0)),
                 "LBound on a fixed array passed to a regular array parameter should be 0 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 2)),
+                snapshot.iter().any(|value| value.as_i32() == Some(2)),
                 "UBound on a fixed array passed to a regular array parameter should be 2 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 3)),
+                snapshot.iter().any(|value| value.as_i32() == Some(3)),
                 "Span on a fixed array passed to a regular array parameter should be 3 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -278,10 +267,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let pointer = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
+                .find_map(non_zero_i64)
                 .expect("snapshot should contain a non-zero pointer-like value");
             assert_ne!(pointer, 0);
             let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
@@ -318,21 +304,15 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 90)),
+                snapshot.iter().any(|value| value.as_i32() == Some(90)),
                 "direct dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 91)),
+                snapshot.iter().any(|value| value.as_i32() == Some(91)),
                 "direct dynamic-array index 1 should be 91 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 92)),
+                snapshot.iter().any(|value| value.as_i32() == Some(92)),
                 "direct dynamic-array index 2 should be 92 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -372,15 +352,13 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 121)),
+                snapshot.iter().any(|value| value.as_i32() == Some(121)),
                 "runtime-sized byte-array indexed loop sum should be 121 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
                 snapshot
                     .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 43_041_037)),
+                    .any(|value| value.as_i32() == Some(43_041_037)),
                 "runtime-sized byte-array constant index signature should be 43041037 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -413,21 +391,15 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 90)),
+                snapshot.iter().any(|value| value.as_i32() == Some(90)),
                 "returned dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 91)),
+                snapshot.iter().any(|value| value.as_i32() == Some(91)),
                 "returned dynamic-array index 1 should be 91 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 92)),
+                snapshot.iter().any(|value| value.as_i32() == Some(92)),
                 "returned dynamic-array index 2 should be 92 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -448,10 +420,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let pointer = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
+                .find_map(non_zero_i64)
                 .expect("snapshot should contain a non-zero pointer-like value");
             let raw = oxvba_runtime::pointer_helpers::lookup_pointer(pointer)
                 .expect("pointer helper registry should contain VarPtr(String) result")
@@ -482,10 +451,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let pointer = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
+                .find_map(non_zero_i64)
                 .expect("snapshot should contain a non-zero pointer-like value");
             assert_ne!(
                 pointer, 0,
@@ -507,12 +473,13 @@ End Sub
 
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
-            match snapshot.last() {
-                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
-                other => panic!(
-                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
-                ),
+            let Some(value) = snapshot.last().and_then(non_zero_i64) else {
+                panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
+                    snapshot.last()
+                );
             };
+            let _ = value;
         }
     }
 
@@ -532,17 +499,18 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.contains(&RuntimeValue::Decimal(Decimal96::from_parts(
+                snapshot.contains(&Variant::from_decimal96(Decimal96::from_parts(
                     123_450, 0, 0, 3, true
                 ))),
                 "snapshot should preserve the Decimal Variant payload for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
-            match snapshot.last() {
-                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
-                other => panic!(
-                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
-                ),
+            let Some(value) = snapshot.last().and_then(non_zero_i64) else {
+                panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
+                    snapshot.last()
+                );
             };
+            let _ = value;
         }
     }
 
@@ -562,15 +530,16 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.contains(&RuntimeValue::I64(5_000_000_000)),
+                snapshot.contains(&Variant::from_i64(5_000_000_000)),
                 "snapshot should preserve the wide I64 Variant payload for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
-            match snapshot.last() {
-                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
-                other => panic!(
-                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
-                ),
+            let Some(value) = snapshot.last().and_then(non_zero_i64) else {
+                panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
+                    snapshot.last()
+                );
             };
+            let _ = value;
         }
     }
 
@@ -587,12 +556,13 @@ End Sub
 
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
-            match snapshot.last() {
-                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
-                other => panic!(
-                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
-                ),
+            let Some(value) = snapshot.last().and_then(non_zero_i64) else {
+                panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
+                    snapshot.last()
+                );
             };
+            let _ = value;
         }
     }
 
@@ -609,12 +579,13 @@ End Sub
 
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
-            match snapshot.last() {
-                Some(RuntimeValue::I64(value)) if *value != 0 => *value,
-                other => panic!(
-                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {other:?}; snapshot={snapshot:?}"
-                ),
+            let Some(value) = snapshot.last().and_then(non_zero_i64) else {
+                panic!(
+                    "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
+                    snapshot.last()
+                );
             };
+            let _ = value;
         }
     }
 

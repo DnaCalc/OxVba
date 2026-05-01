@@ -1,20 +1,30 @@
 #[cfg(target_os = "windows")]
 mod windows_native_declare_string_e2e {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::CurrencyValue;
-    use oxvba_runtime::F64Value;
-    use oxvba_runtime::compat::RuntimeValue;
+    use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::Variant;
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
         let mut engine = Engine::new(HostConfig {
             enable_jit,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_value_snapshot(source)
+            .execute_source_with_variant_snapshot(source)
             .expect("native declare probe should execute")
+    }
+
+    fn non_zero_i64(value: &Variant) -> Option<i64> {
+        value.as_i64().filter(|value| *value != 0)
+    }
+
+    fn contains_string(snapshot: &[Variant], expected: &str) -> bool {
+        snapshot.iter().any(|value| {
+            value
+                .as_bstr()
+                .is_some_and(|text| text.as_str() == expected)
+        })
     }
 
     #[test]
@@ -36,10 +46,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let handle = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
+                .find_map(non_zero_i64)
                 .expect("snapshot should contain a non-zero module handle");
             assert_ne!(
                 handle, 0,
@@ -69,10 +76,7 @@ End Sub
             let snapshot = run_windows_host_backed(source, enable_jit);
             let handle = snapshot
                 .iter()
-                .find_map(|value| match value {
-                    RuntimeValue::I64(value) if *value != 0 => Some(*value),
-                    _ => None,
-                })
+                .find_map(non_zero_i64)
                 .expect("snapshot should contain a non-zero module handle");
             assert_ne!(
                 handle, 0,
@@ -106,9 +110,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(
-                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
-                ),
+                contains_string(&snapshot, "alpha"),
                 "MultiByteToWideChar should write back through StrPtr target for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -139,9 +141,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(
-                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
-                ),
+                contains_string(&snapshot, "alpha"),
                 "StrPtr writeback should not depend on the declared API name for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -164,9 +164,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(
-                    |value| matches!(value, RuntimeValue::String(text) if text.as_str() == "alpha")
-                ),
+                contains_string(&snapshot, "alpha"),
                 "SysReAllocString should write back through VarPtr(String) for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -196,9 +194,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 2)),
+                snapshot.iter().any(|value| value.as_i32() == Some(2)),
                 "WideCharToMultiByte should write a 2-byte C string into the array slot for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -228,9 +224,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::I32(raw) if *raw == 2)),
+                snapshot.iter().any(|value| value.as_i32() == Some(2)),
                 "VarPtr buffer writeback should not depend on the declared API name for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -250,9 +244,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::F64(raw) if (*raw == F64Value::from_f64(12.5)))),
+                snapshot.iter().any(|value| value.as_f64() == Some(12.5)),
                 "sqrt should return 12.5 through the native Double lane for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -274,10 +266,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(|value| matches!(
-                    value,
-                    RuntimeValue::Currency(raw) if *raw == CurrencyValue::from_scaled_i64(1_230_000)
-                )),
+                snapshot
+                    .iter()
+                    .any(|value| value.as_currency_scaled_i64() == Some(1_230_000)),
                 "VarCyFromI4 should populate ByRef Currency output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -298,7 +289,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.contains(&RuntimeValue::Bool(true)),
+                snapshot.contains(&Variant::from_bool(true)),
                 "VarBoolFromI4 should populate ByRef Boolean output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -319,9 +310,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::F64(raw) if *raw == F64Value::from_f64(123.0))),
+                snapshot.iter().any(|value| value.as_f64() == Some(123.0)),
                 "VarR8FromI4 should populate ByRef Double output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -342,9 +331,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot
-                    .iter()
-                    .any(|value| matches!(value, RuntimeValue::F64(raw) if *raw == F64Value::from_single_f64(123.0))),
+                snapshot.iter().any(|value| value.as_f32() == Some(123.0)),
                 "VarR4FromI4 should populate ByRef Single output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -365,7 +352,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.contains(&RuntimeValue::I32(123)),
+                snapshot.contains(&Variant::from_i32(123)),
                 "VarI2FromI4 should populate ByRef Integer output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -390,7 +377,7 @@ End Sub
             assert!(
                 snapshot
                     .iter()
-                    .any(|value| matches!(value, RuntimeValue::I64(raw) if *raw > 0)),
+                    .any(|value| value.as_i64().is_some_and(|raw| raw > 0)),
                 "GetDiskFreeSpaceExW should populate ByRef LongLong outputs for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -412,10 +399,9 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(|value| matches!(
-                    value,
-                    RuntimeValue::F64(raw) if *raw == F64Value::from_date_f64(36526.0)
-                )),
+                snapshot
+                    .iter()
+                    .any(|value| value.as_date_f64() == Some(36526.0)),
                 "VarDateFromStr should populate ByRef Date output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
