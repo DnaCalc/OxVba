@@ -71,6 +71,18 @@ row must record:
 Native code may inline numeric operations only when the operation matrix proves
 the specialization is equivalent to the retained-`Variant` helper path.
 
+## Exact Scalar Carrier Rules
+
+- `Currency` is exact scaled `i64` with scale 10,000.
+- `Decimal` is exact `Decimal96` parts plus scale/sign.
+- `Date` is a date-tagged `f64`; generic arithmetic currently returns `Double`
+  unless a date-specific helper re-tags the result.
+- `Boolean` preserves a Boolean carrier; numeric coercion uses VBA truth values
+  (`True = -1`, `False = 0`).
+
+Detailed regression evidence is in
+[`../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md).
+
 ## UDT Direction
 
 UDTs need descriptor-backed semantic representation before native-facing code

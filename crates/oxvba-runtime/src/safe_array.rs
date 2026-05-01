@@ -1009,12 +1009,13 @@ pub fn marshal_dispatch_argument(value: i32) -> i32 {
 mod tests {
     use super::{
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
-        FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, SafeArray, SafeArrayBound, VT_BSTR_VALUE,
-        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
+        FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, SafeArray, SafeArrayBound, VT_BOOL_VALUE,
+        VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_DISPATCH_VALUE,
+        VT_I2_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE, array_len_from_tag,
         array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
         safe_array_from_tag,
     };
-    use crate::{ObjectRef, Variant, bstr::BStr, runtime_value::RuntimeValue};
+    use crate::{Decimal96, ObjectRef, Variant, bstr::BStr, runtime_value::RuntimeValue};
 
     #[test]
     fn safe_array_tag_roundtrip_for_vector_shape() {
@@ -1250,6 +1251,45 @@ mod tests {
         assert_eq!(
             array.elements(),
             Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+        );
+    }
+
+    #[test]
+    fn typed_exact_safearray_carriers_preserve_intrinsic_payloads() {
+        let currency = SafeArray::from_typed_variants(
+            VT_CY_VALUE,
+            vec![Variant::from_currency_scaled_i64(-42_500)],
+        )
+        .expect("typed currency array");
+        assert_eq!(
+            currency.variant_elements().expect("currency elements")[0].as_currency_scaled_i64(),
+            Some(-42_500)
+        );
+
+        let decimal_value = Decimal96::from_parts(123_450, 0, 0, 3, true);
+        let decimal = SafeArray::from_typed_variants(
+            VT_DECIMAL_VALUE,
+            vec![Variant::from_decimal96(decimal_value)],
+        )
+        .expect("typed decimal array");
+        assert_eq!(
+            decimal.variant_elements().expect("decimal elements")[0].as_decimal96(),
+            Some(decimal_value)
+        );
+
+        let date =
+            SafeArray::from_typed_variants(VT_DATE_VALUE, vec![Variant::from_date_f64(46_081.25)])
+                .expect("typed date array");
+        assert_eq!(
+            date.variant_elements().expect("date elements")[0].as_date_f64(),
+            Some(46_081.25)
+        );
+
+        let boolean = SafeArray::from_typed_variants(VT_BOOL_VALUE, vec![Variant::from_bool(true)])
+            .expect("typed bool array");
+        assert_eq!(
+            boolean.variant_elements().expect("bool elements")[0].as_bool(),
+            Some(true)
         );
     }
 

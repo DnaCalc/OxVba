@@ -38,6 +38,8 @@ Out of scope:
   [`../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md`](../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md)
 - Mixed numeric matrix evidence:
   [`../evidence/native_ready/MIXED_NUMERIC_MATRIX_2026-05-01.md`](../evidence/native_ready/MIXED_NUMERIC_MATRIX_2026-05-01.md)
+- Exact carrier expectations:
+  [`../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md)
 - Phase-2 RuntimeValue/IR search gate feeding this workset:
   [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
 
@@ -80,7 +82,8 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
   and tests. Done 2026-05-01; representative retained-Variant mixed numeric
   rows are recorded and covered by `mixed_numeric_matrix_current_variant_results`.
 - `bd-9xmu.3.6` / `value-clean-005`: pin exact `Currency`, `Decimal`,
-  `Date`, and Boolean carrier expectations.
+  `Date`, and Boolean carrier expectations. Done 2026-05-01; expectations are
+  recorded and typed SAFEARRAY exact-carrier regression coverage was added.
 - `bd-9xmu.3.7` / `value-clean-006`: design descriptor-backed UDT semantic
   model.
 - `bd-9xmu.3.8` / `value-clean-007`: classify native ABI UDT materialization
