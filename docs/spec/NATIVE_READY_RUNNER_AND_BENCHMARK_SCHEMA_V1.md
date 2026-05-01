@@ -1,6 +1,6 @@
 # Native-Ready Runner And Benchmark Schema v1
 
-Status: `working-draft`
+Status: `locked-baseline`
 Date: 2026-04-30
 Scope owner: OxVBA validation/performance/native-readiness
 
@@ -11,7 +11,8 @@ correctness/performance runs.
 
 ## CSV Columns
 
-Required columns:
+Required columns (canonical header also stored at
+`docs/evidence/native_ready/runner_samples/native_ready_runner_schema_header_v1.csv`):
 
 ```text
 run_id,timestamp_utc,host_os,target_arch,workload_id,workload_name,source_path,backend,artifact_kind,artifact_path,artifact_size_bytes,mode,iterations,warmup_iterations,mean_ms,min_ms,max_ms,exit_status,diagnostic_code,fallback_used,fallback_reason,result_kind,result_digest,claim_boundary

@@ -25,6 +25,11 @@ Out of scope:
 - Product claims of speed superiority.
 - Cross-machine absolute performance claims.
 
+## Evidence
+
+- Runner schema lock:
+  [`../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md`](../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md)
+
 ## Execution Epics
 
 1. **Schema Lock**
@@ -48,7 +53,9 @@ Out of scope:
 Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
 
 - `bd-9xmu.5.1` / `runner-000`: roll out this executable bead path.
-- `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path.
+- `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path. Done
+  2026-05-01; the schema is locked, canonical header sample exists, and writer
+  validation rules are recorded.
 - `bd-9xmu.5.3` / `runner-002`: normalize VM/JIT rows with fallback status.
 - `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows.
 - `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields.
