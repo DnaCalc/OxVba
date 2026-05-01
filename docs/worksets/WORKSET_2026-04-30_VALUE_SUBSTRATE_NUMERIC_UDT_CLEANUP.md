@@ -1,6 +1,6 @@
 # Value Substrate, Numeric, And UDT Cleanup Workset
 
-Status: `in-progress`
+Status: `complete`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -42,6 +42,8 @@ Out of scope:
   [`../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md)
 - Descriptor-backed UDT semantic model path:
   [`../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md)
+- UDT native ABI residual classification:
+  [`../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md`](../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md)
 - Phase-2 RuntimeValue/IR search gate feeding this workset:
   [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
 
@@ -91,7 +93,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
   retained-Variant field-slot storage, copy/init rules, and implementation path
   are recorded.
 - `bd-9xmu.3.8` / `value-clean-007`: classify native ABI UDT materialization
-  residuals.
+  residuals. Done 2026-05-01; internal descriptor-backed UDT semantics are
+  separated from future native ABI materialization, with accepted/deferred/
+  blocked rows recorded.
 
 ## Terminal Gate
 

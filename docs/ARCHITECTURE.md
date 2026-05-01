@@ -120,7 +120,8 @@ The current native-ready execution authority is
 Near-term architectural work is intentionally ordered before direct native AOT:
 - rebase docs around implementation truth and archive historical plans;
 - remove residual `RuntimeValue` and fake IR scaffolds from active APIs;
-- make numeric helpers and UDT planning `Variant`-native and descriptor-backed;
+- make numeric helpers and UDT planning `Variant`-native and descriptor-backed,
+  while keeping native UDT ABI materialization as a separate future layer;
 - build a correctness corpus that exposes numeric, coercion, error-state, array,
   and UDT skeletons;
 - standardize VM/JIT/wrapper runner results before comparing native artifacts;

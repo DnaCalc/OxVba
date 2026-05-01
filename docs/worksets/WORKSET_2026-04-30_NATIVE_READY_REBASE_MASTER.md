@@ -45,8 +45,16 @@ The presentation DTO split has landed with evidence in
 The phase-2 RuntimeValue/IR search gate has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md): active fake IR crate APIs are clean, presentation crates have no
 `RuntimeValue` matches, and residual RuntimeValue bridge families are classified
-for phase-3 follow-up bead `bd-9xmu.3.2`. The value/numeric/UDT cleanup, stress
-corpus, and runner/performance scaffold remain open follow-on work.
+for phase-3 follow-up bead `bd-9xmu.3.2`.
+
+The value/numeric/UDT cleanup has landed with evidence across:
+[`VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md`](../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md),
+[`VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md`](../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md),
+[`MIXED_NUMERIC_MATRIX_2026-05-01.md`](../evidence/native_ready/MIXED_NUMERIC_MATRIX_2026-05-01.md),
+[`EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md),
+[`UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md), and
+[`UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md`](../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md).
+The stress corpus and runner/performance scaffold remain open follow-on work.
 
 ## Child Worksets
 

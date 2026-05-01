@@ -141,7 +141,11 @@ expands scope:
 - arbitrary native UDT-byref ABI parity,
 - native struct-overlay parity,
 - platform packing/alignment equivalence for all UDT shapes,
+- COM record/UDT transport parity,
 - direct native PE/ELF code generation.
+
+Classification evidence:
+[`../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md`](../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md).
 
 ## Acceptance Gates
 
