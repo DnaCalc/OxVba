@@ -1,6 +1,6 @@
 # Correctness Corpus And Oracle Stress Workset
 
-Status: `planned`
+Status: `in-progress`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -49,11 +49,14 @@ Out of scope:
 
 ## First Beads
 
-- `stress-001`: create corpus matrix and fixture naming convention.
-- `stress-002`: add numeric rounding/overflow/truncation cases.
-- `stress-003`: add string-number/Null/Empty/Error coercion cases.
-- `stress-004`: add UDT semantic and non-claim cases.
-- `stress-005`: add Office/VBA oracle capture packet for selected rows.
+Rolled out on 2026-05-01 under bead epic `bd-9xmu.4`:
+
+- `bd-9xmu.4.1` / `stress-000`: roll out this executable bead path.
+- `bd-9xmu.4.2` / `stress-001`: create corpus matrix and fixture naming convention.
+- `bd-9xmu.4.3` / `stress-002`: add numeric rounding/overflow/truncation cases.
+- `bd-9xmu.4.4` / `stress-003`: add string-number/Null/Empty/Error coercion cases.
+- `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases.
+- `bd-9xmu.4.6` / `stress-005`: add Office/VBA oracle capture packet for selected rows.
 
 ## Terminal Gate
 
