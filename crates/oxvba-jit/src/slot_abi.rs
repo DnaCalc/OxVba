@@ -69,63 +69,10 @@ impl RtSlot {
     }
 }
 
-pub mod compat {
-    //! Explicit compatibility adapters for legacy `RuntimeValue` JIT slot ABI
-    //! tests/callers.
-
-    use oxvba_runtime::{Variant, compat::RuntimeValue};
-
-    use super::RtSlot;
-
-    pub trait RuntimeValueCompatRtSlotExt {
-        fn from_runtime_value(value: &RuntimeValue) -> Self
-        where
-            Self: Sized;
-        fn try_to_runtime_value(&self) -> Result<RuntimeValue, String>;
-        fn to_runtime_value(&self) -> RuntimeValue;
-    }
-
-    impl RuntimeValueCompatRtSlotExt for RtSlot {
-        fn from_runtime_value(value: &RuntimeValue) -> Self {
-            match value {
-                RuntimeValue::BindingHandle(handle) => Self::from_i32(handle.raw()),
-                value => Self {
-                    variant: Variant::from_runtime_value(value),
-                },
-            }
-        }
-
-        fn try_to_runtime_value(&self) -> Result<RuntimeValue, String> {
-            self.variant().to_runtime_value().map_err(|detail| {
-                format!(
-                    "malformed JIT Variant slot for {:?}: {detail}",
-                    self.variant().vtype()
-                )
-            })
-        }
-
-        fn to_runtime_value(&self) -> RuntimeValue {
-            self.try_to_runtime_value()
-                .expect("JIT Variant slot should carry a runtime-supported value")
-        }
-    }
-
-    /// Convert a legacy semantic value to a retained-Variant JIT slot.
-    ///
-    /// `BindingHandle` is an internal non-VBA token, so it is projected to the
-    /// same Long carrier accepted by the WithEvents semantics bridge instead of
-    /// becoming a custom JIT storage tag. This is a compatibility wrapper around
-    /// the retained `RtSlot`/`Variant` carrier.
-    pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
-        RtSlot::from_runtime_value(value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::compat::{RuntimeValueCompatRtSlotExt, rtslot_from_runtime_value};
     use super::*;
-    use oxvba_runtime::{CurrencyValue, F64Value, bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::bstr::BStr;
 
     #[test]
     fn rtslot_layout_is_windows_variant_layout() {
@@ -141,77 +88,72 @@ mod tests {
         let slot = RtSlot::from_i32(42);
         assert_eq!(slot.vtype(), VarType::Long);
         assert_eq!(slot.payload_u64() as i32, 42);
-        assert_eq!(slot.to_runtime_value(), RuntimeValue::I32(42));
+        assert_eq!(slot.variant(), &Variant::from_i32(42));
     }
 
     #[test]
     fn scalar_roundtrip_f64_uses_vt_r8() {
         let expected = std::f64::consts::PI;
-        let slot = rtslot_from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(expected)));
+        let slot = RtSlot::from_variant(Variant::from_f64(expected));
         assert_eq!(slot.vtype(), VarType::Double);
-        match slot.to_runtime_value() {
-            RuntimeValue::F64(value) => assert_eq!(value.as_f64().to_bits(), expected.to_bits()),
-            other => panic!("expected F64, got {other:?}"),
-        }
+        assert_eq!(
+            slot.variant().as_f64().map(f64::to_bits),
+            Some(expected.to_bits())
+        );
     }
 
     #[test]
     fn heap_roundtrip_string_uses_vt_bstr() {
         let original = BStr::from("hello");
-        let slot = rtslot_from_runtime_value(&RuntimeValue::String(original.clone()));
+        let slot = RtSlot::from_variant(Variant::from_string(original.clone()));
         assert_eq!(slot.vtype(), VarType::String);
-        assert_eq!(slot.to_runtime_value(), RuntimeValue::String(original));
+        assert_eq!(slot.variant().as_bstr(), Some(original));
     }
 
     #[test]
-    fn rtslot_from_runtime_value_roundtrips_supported_scalars() {
+    fn rtslot_from_variant_roundtrips_supported_scalars() {
         let cases = vec![
-            RuntimeValue::Empty,
-            RuntimeValue::Null,
-            RuntimeValue::I32(-1),
-            RuntimeValue::Bool(true),
-            RuntimeValue::ErrorCode(13),
-            RuntimeValue::I64(i64::MAX),
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(12345)),
+            Variant::empty(),
+            Variant::null(),
+            Variant::from_i32(-1),
+            Variant::from_bool(true),
+            Variant::from_error_code(13),
+            Variant::from_i64(i64::MAX),
+            Variant::from_currency_scaled_i64(12345),
         ];
         for original in cases {
-            let slot = rtslot_from_runtime_value(&original);
-            let recovered = slot.to_runtime_value();
-            assert_eq!(recovered, original, "roundtrip failed for {original:?}");
+            let slot = RtSlot::from_variant(original.clone());
+            assert_eq!(
+                slot.variant(),
+                &original,
+                "roundtrip failed for {original:?}"
+            );
         }
     }
 
     #[test]
     fn binding_handle_projects_to_long_not_custom_variant_tag() {
-        let slot = rtslot_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
+        let slot = RtSlot::from_i32(7);
         assert_eq!(slot.vtype(), VarType::Long);
-        assert_eq!(slot.to_runtime_value(), RuntimeValue::I32(7));
+        assert_eq!(slot.variant(), &Variant::from_i32(7));
     }
 
     #[test]
     fn variant_cell_pointer_exposes_actual_slot_storage() {
-        let slot = rtslot_from_runtime_value(&RuntimeValue::String(BStr::from("ABC")));
+        let slot = RtSlot::from_variant(Variant::from_string(BStr::from("ABC")));
         let pointer = slot.variant_cell_pointer();
         assert_ne!(pointer, 0);
         assert_eq!(pointer, (&slot as *const RtSlot) as usize as i64);
     }
 
     #[test]
-    fn malformed_pointer_slot_projects_to_deterministic_error() {
+    fn malformed_pointer_slot_stays_in_variant_carrier() {
         let object_slot = RtSlot::from_variant(Variant::zeroed(VarType::Object));
-        assert_eq!(
-            object_slot
-                .try_to_runtime_value()
-                .expect_err("zero object pointer should be rejected"),
-            "malformed JIT Variant slot for Object: invalid Object variant payload"
-        );
+        assert_eq!(object_slot.vtype(), VarType::Object);
+        assert!(object_slot.variant().as_object_ref().is_none());
 
         let array_slot = RtSlot::from_variant(Variant::zeroed(VarType::ArrayVariant));
-        assert_eq!(
-            array_slot
-                .try_to_runtime_value()
-                .expect_err("zero SAFEARRAY pointer should be rejected"),
-            "malformed JIT Variant slot for ArrayVariant: invalid SAFEARRAY variant payload"
-        );
+        assert_eq!(array_slot.vtype(), VarType::ArrayVariant);
+        assert!(array_slot.variant().as_safearray().is_none());
     }
 }
