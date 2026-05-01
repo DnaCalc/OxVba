@@ -51,6 +51,54 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### RV-BRIDGE-001: Variant/SafeArray inherent RuntimeValue bridge helpers
+- Status: active future-prerequisite blocker; not blocking the Native-Ready umbrella baseline because it is documented as an explicit compatibility exception.
+- Owner/removal target: value substrate / runtime compatibility lane before native compiler/linker prerequisite checklist closes.
+- Impact:
+  - Blocks treating `Variant`/SAFEARRAY public APIs as fully native-facing without compatibility qualification.
+  - Does not block current retained-`Variant` execution, correctness stress, or runner schema baselines.
+- Exact unblocking steps:
+  - Introduce explicit `oxvba_runtime::compat` extension traits or module functions for RuntimeValue projection helpers.
+  - Migrate tests/callers to retained `Variant`/SAFEARRAY APIs or explicit compat imports.
+  - Deprecate or remove inherent RuntimeValue bridge methods.
+- Evidence/register: `docs/evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`.
+
+### RV-BRIDGE-002: HAL legacy RuntimeValue trait methods
+- Status: active future-prerequisite blocker; not blocking the Native-Ready umbrella baseline because retained `_variant` companions are the normal path and legacy methods are documented compatibility surfaces.
+- Owner/removal target: HAL/native boundary lane before HAL native ABI work begins.
+- Impact:
+  - Blocks treating HAL traits as fully native-facing without compatibility split.
+  - Does not block current VM/host correctness or runner scaffold evidence.
+- Exact unblocking steps:
+  - Split legacy RuntimeValue methods into `oxvba_hal::compat` extension traits or document a semver/public adapter compatibility blocker.
+  - Verify adapters implement retained-Variant companions directly.
+  - Remove new non-compat RuntimeValue imports from HAL work.
+- Evidence/register: `docs/evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`.
+
+### RV-BRIDGE-003: COM model/dynamic-object RuntimeValue bridge methods
+- Status: active future-prerequisite blocker; not blocking the Native-Ready umbrella baseline because normal COM/native-boundary rows are retained-Variant/ComValue-oriented and RuntimeValue projection is documented as compatibility.
+- Owner/removal target: COM/value substrate lane before COM/native boundary is treated as native-ready.
+- Impact:
+  - Blocks claiming COM model/dynamic-object bridges are fully native-facing.
+  - Does not block current compatibility, oracle, or wrapper reference lanes.
+- Exact unblocking steps:
+  - Move inherent `from_runtime_value` / `to_runtime_value` helpers behind `oxvba_com::compat` extension traits or record a semver blocker.
+  - Keep retained `Variant`/`ComValue` carriers as the normal API path.
+  - Re-run RuntimeValue search gate after migration.
+- Evidence/register: `docs/evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`.
+
+### RV-BRIDGE-004: VM/JIT/host compatibility DTOs and tests
+- Status: accepted explicit compatibility surface for the Native-Ready umbrella terminal gate; remains a future-prerequisite blocker only if direct native work wants to delete legacy RuntimeValue access entirely.
+- Owner/removal target: VM/JIT/host compatibility lane before any future claim that RuntimeValue projection APIs have been deleted.
+- Impact:
+  - Blocks saying every RuntimeValue occurrence is removed.
+  - Does not block saying normal execution/snapshot/observation APIs are retained-Variant-first with legacy access quarantined under explicit compat modules/tests.
+- Exact unblocking steps:
+  - Retain compat traits if external compatibility is intentionally supported, or delete them after downstream tests/callers use retained-Variant APIs.
+  - Re-run RuntimeValue crate/docs search and update terminal evidence.
+- Evidence/register: `docs/evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`.
+
+
 ### BLK-XLL-EXCEL-HOST-001: resolved in current run
 - Status: resolved.
 - Resolution summary:

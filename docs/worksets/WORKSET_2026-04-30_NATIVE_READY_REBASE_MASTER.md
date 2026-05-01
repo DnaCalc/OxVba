@@ -1,6 +1,6 @@
 # Native-Ready Rebase Master Workset
 
-Status: `in-progress`
+Status: `complete`
 Date: 2026-04-30
 Scope owner: OxVBA architecture/runtime/native-readiness
 
@@ -58,7 +58,14 @@ The value/numeric/UDT cleanup has landed with evidence across:
 The correctness corpus/oracle stress slice has landed with matrix, numeric,
 coercion/error, UDT/layout, and oracle packet evidence rooted at
 [`CORRECTNESS_CORPUS_MATRIX_2026-05-01.md`](../evidence/native_ready/CORRECTNESS_CORPUS_MATRIX_2026-05-01.md).
-The runner/performance scaffold remains open follow-on work.
+
+The runner/performance scaffold has landed with locked schema, VM/JIT rows,
+wrapper rows, size/timing rows, and benchmark corpus evidence rooted at
+[`RUNNER_SCHEMA_LOCK_2026-05-01.md`](../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md) and
+[`BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md`](../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md).
+
+The umbrella terminal audit/search/check gate passed with evidence in
+[`NATIVE_READY_UMBRELLA_COMPLETION_AUDIT_2026-05-01.md`](../evidence/native_ready/NATIVE_READY_UMBRELLA_COMPLETION_AUDIT_2026-05-01.md).
 
 ## Child Worksets
 
@@ -94,9 +101,10 @@ The umbrella is complete when all child worksets are complete and the following
 search/verification gates are green:
 
 - `rg "\bRuntimeValue\b" crates docs` returns only archived docs, approved
-  compatibility modules, tests, or residual notes with follow-up beads.
-- `rg "CfgIr|VbaHir|VbaMir" crates docs` returns only archived docs or approved
-  residual notes.
+  compatibility modules, tests, historical evidence/logs, or residual notes in
+  `CURRENT_BLOCKERS.md` / native-ready evidence.
+- `rg "CfgIr|VbaHir|VbaMir" crates docs` returns zero active crate matches and
+  only current explanatory or residual-note docs.
 - `docs/ARCHITECTURE.md`, `docs/IR_DESIGN.md`, `docs/BYTECODE_FORMAT.md`, and
   `docs/README.md` describe current implementation truth.
 - VM/JIT/wrapper reference runners use the shared result schema.
