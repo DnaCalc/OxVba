@@ -3,99 +3,130 @@
 ## Current Workspace
 
 Workspace crates and current roles:
-- `oxvba-syntax`: lexer/parser and syntax-tree infrastructure
-- `oxvba-runtime`: retained `Variant`, `BStr`, `ObjectRef`, and `SAFEARRAY`
-  value-carrier support plus explicit compatibility projections
-- `oxvba-ir`: HIR/MIR/CFG lowering structures
-- `oxvba-compiler`: resolve/typecheck/project lowering/bytecode emission
-- `oxvba-vm`: register-slot interpreter
-- `oxvba-jit`: JIT backend subset
-- `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core
-- `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services, COM wire translation, runtime state/metadata, and the compiler-facing COM reference facade direction
-- `oxvba-host`: engine orchestration, host policy, project runtime sessions, event dispatch
-- `oxvba-launcher`: standalone launcher for direct VBA script execution
-- `oxvba-cli`: CLI bootstrap/run surface
+- `oxvba-syntax`: lexer/parser and syntax-tree infrastructure.
+- `oxvba-runtime`: canonical runtime value substrate centered on `Variant`,
+  `BStr`, `ObjectRef`, `SAFEARRAY`, and related semantic carriers.
+- `oxvba-compiler`: resolve/typecheck/project lowering and bytecode emission.
+- `oxvba-vm`: register-slot interpreter over `Variant` values.
+- `oxvba-jit`: Cranelift-backed JIT subset with fallback to VM behavior.
+- `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core.
+- `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services,
+  COM wire translation, runtime state/metadata, and the compiler-facing COM
+  reference facade direction.
+- `oxvba-host`: engine orchestration, host policy, project runtime sessions, and
+  event dispatch.
+- `oxvba-launcher`: standalone launcher for direct VBA script execution.
+- `oxvba-cli`: CLI bootstrap/run surface.
 
-## Current Dependency Shape
+## Current Execution Shape
 
 High-level execution path:
-- source/project inputs enter through `oxvba-host` or `oxvba-cli`
-- `oxvba-compiler` produces `Bytecode`
-- `oxvba-vm` executes compiled code over retained `Variant` register slots;
-  `oxvba-jit` covers a supported subset and falls back to the VM for unsupported
-  or project-visible snapshot paths
-- `oxvba-hal` provides profile/policy-governed host services
-- retained `Variant` values are the canonical execution and snapshot carrier for
-  VM/JIT/host coordination
-- `RuntimeValue` remains as an explicit compatibility/projection surface for
-  older APIs, tests, and embedding callers that have not moved to `Variant`
-- `oxvba-com` is the COM boundary crate that translates retained values to and
-  from COM wire representations (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`,
-  event payload transport)
-- imported COM libraries should increasingly present as synthetic reference/project metadata to the compiler rather than as a special parallel symbol world
-- COM-backed objects should increasingly adapt into the same internal late-bound object protocol used for OxVba/VBA objects
-- live Windows COM client execution/state is now materially centered in `oxvba-com` through `WindowsComBridge`, while HAL retains the narrowed capability/bootstrap/delegation seam
-- the surviving HAL-facing COM seam is now narrower:
-  - `ComHal` carries current activation/invoke/event/object-description/typelib hooks
-  - the old parallel `TypeLibraryHal` surface has been collapsed away
+- source/project inputs enter through `oxvba-host` or `oxvba-cli`;
+- `oxvba-compiler` emits `Bytecode` directly;
+- `oxvba-vm` executes compiled code over `Variant` register slots;
+- `oxvba-jit` covers a supported subset and falls back to VM behavior for
+  unsupported operations or project-visible snapshot paths;
+- wrapper EXE/library paths package compiled OxVba artifacts and dispatch
+  through the existing runtime lanes rather than emitting direct native code;
+- `oxvba-hal` provides profile/policy-governed host services;
+- `oxvba-com` translates runtime values to and from COM wire representations
+  (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, event payload transport).
 
-## Important Current Truths
+The current repository does not have a direct native AOT compiler that emits PE
+or ELF objects. Native compilation is a planned later lane after the
+native-ready rebase worksets establish a coherent value substrate, correctness
+corpus, runner schema, and real native-facing IR decision.
 
-1. `oxvba-hal` is a real workspace crate and part of the active runtime boundary.
-2. `oxvba-com` is now the live Windows COM client bridge and no longer transitional scaffolding.
-3. `StandardHostServices` is currently the shared Windows/Linux/macOS adapter core.
-4. Windows COM support is active and tested; non-Windows COM remains explicitly unsupported.
-5. Host/runtime event ingress exists in two planes:
-- project/runtime event routing in `oxvba-host`
-- COM callback transport through HAL/adapter state, now with payload-based polling support
-6. The current COM blockers are now primarily behavioral/parity blockers rather than HAL ownership blockers:
-- late-bound `IDispatch` parity still remains below VBA/Excel behavior,
-- richer COM value transport still needs broader object/interface/SAFEARRAY coverage,
-- those lanes now proceed on the corrected architecture with `oxvba-com` as the live bridge.
-7. The checked-in implementation has completed the scoped value-model carrier
-   migration for the active VM/JIT/host lanes:
-- retained `Variant` is the canonical execution/snapshot substrate today,
-- `RuntimeValue` surfaces are compatibility projections and must be named that
-  way when they remain in public APIs,
+## Current Value Truth
+
+`Variant` is the canonical execution and snapshot carrier for VM/JIT/host
+coordination. Public or internal APIs that still expose `RuntimeValue` are
+residual compatibility or presentation surfaces and are cleanup targets, not
+future runtime architecture.
+
+Important boundaries:
+- retained `Variant` values are the semantic runtime substrate;
 - `BStr` exposes a Windows-style owned UTF-16 core view (`OwnedBStrCore`) for
-  boundary projection,
-- canonical runtime object identity now flows through `ObjectRef`, whose base object implements a runtime `IUnknown`-style vtable with `AddRef` / `Release`,
+  boundary projection;
+- canonical runtime object identity flows through `ObjectRef`, whose base
+  object implements a runtime `IUnknown`-style vtable with `AddRef` and
+  `Release`;
+- `BindingHandle` remains a typed semantic leaf for non-object binding identity;
 - raw integer identities remain only where they are explicit control-plane
-  tokens or projection/debug compatibility data, not canonical value storage,
-- `BindingHandle` remains a typed semantic leaf for non-object binding identity,
-- the runtime `Variant` type is now an owned semantic carrier over a
-  Windows-shaped 16-byte `VariantCore`, with owned side data for strings,
-  arrays, objects, and binding handles,
-- `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than redefining the runtime around raw COM wire types.
-- Windows-facing layout truth is often projected at helper or boundary seams instead of falling out of the canonical substrate directly:
-  - `BSTR` cells for `StrPtr` / `VarPtr(String)` are synthesized in pointer-helper logic,
-  - `VARIANT` truth for COM calls is translated in `oxvba-com`,
-  - native COM pointer truth remains retained in `oxvba-com`, while runtime
-    object identity is now `ObjectRef` rather than a raw COM interface pointer
-    or an integer handle.
-- those are current checked-in differences, not hidden assumptions:
-  - they may leak at some boundaries from time to time,
-  - they should be monitored through interop/conformance evidence,
-  - and any remaining compatibility projection must be tracked as a named
-    boundary, not treated as execution truth.
-8. The next architectural step is broader than a value-carrier patch:
-- early-bound COM should converge on a synthetic reference facade in the compiler/binder,
-- late-bound COM should converge on the same internal dynamic-object protocol used for VBA objects,
-- `oxvba-com` should sit behind those contracts as the COM adapter rather than defining a separate top-level runtime model.
+  tokens or projection/debug compatibility data;
+- `ComValue` in `oxvba-com` mirrors the semantic carrier direction rather than
+  redefining the runtime around raw COM wire types.
 
-## Intended Near-Term Evolution
+Windows-facing layout truth is projected at helper or boundary seams instead of
+falling out of the canonical substrate directly:
+- `BSTR` cells for `StrPtr` and `VarPtr(String)` are synthesized in
+  pointer-helper logic;
+- `VARIANT` truth for COM calls is translated in `oxvba-com`;
+- native COM pointer truth remains retained in `oxvba-com`, while runtime
+  object identity is `ObjectRef` rather than a raw COM interface pointer or an
+  integer handle.
 
-Near-term architectural direction remains:
-- keep HAL contracted to host/profile/policy/bootstrap/delegation concerns
-- continue parity and facade work with COM transport/state/metadata ownership centered in `oxvba-com`
-- keep wrapper, XLL, COM, and embedding generators on retained `Variant`
-  arguments/results unless they are deliberately exposing a compatibility API
-- continue tightening Windows VBA 7.1 x64-aligned representation gaps that were
-  explicitly left as bounded follow-up scope by the value-model migration
-- define a unified late-bound object protocol so COM and native VBA objects share one dynamic-call model
-- make typelib-backed COM imports look like synthetic reference/project metadata to the compiler where VBA semantics allow
-- keep compiler/VM/host semantics aligned while that extraction happens in staged slices
+These are current checked-in differences, not hidden assumptions. Any remaining
+compatibility projection must be tracked as a named boundary, not treated as
+execution truth.
 
-The implementation still follows `MACH1000_PLAN.md` sequencing, but this file should describe the current code truth first and the destination second.
+## Current IR Truth
 
+The active compiler path is source/project analysis to `Bytecode`; it does not
+flow through a semantic HIR/MIR/CFG pipeline. The previous `oxvba-ir`
+HIR/MIR/CFG crate and `lower_to_hir` no-op lowering were removed during the
+native-ready rebase because they were sequence-preserving scaffolds rather than
+semantic compiler layers. They did not carry the block, terminator, slot-effect,
+helper-call, diagnostic, or source/bytecode mapping structure needed for native
+compilation.
 
+A future native-facing IR may be introduced only when it is a real contract,
+provisionally named `NativeProcIr`, with:
+- basic blocks and typed terminators;
+- explicit slot/value effects;
+- structured helper/runtime calls;
+- error-state and control-flow semantics;
+- diagnostics and source/bytecode mapping;
+- lowering evidence from current bytecode or compiler semantic state.
+
+Until that exists, bytecode plus VM/JIT behavior is the executable truth.
+
+## COM And Host Truth
+
+1. `oxvba-hal` is a real workspace crate and part of the active runtime
+   boundary.
+2. `oxvba-com` is the live Windows COM client bridge and no longer transitional
+   scaffolding.
+3. `StandardHostServices` is currently the shared Windows/Linux/macOS adapter
+   core.
+4. Windows COM support is active and tested; non-Windows COM remains explicitly
+   unsupported.
+5. Host/runtime event ingress exists in two planes:
+   - project/runtime event routing in `oxvba-host`;
+   - COM callback transport through HAL/adapter state, including payload-based
+     polling support.
+6. The current COM blockers are behavioral/parity blockers rather than HAL
+   ownership blockers:
+   - late-bound `IDispatch` parity still remains below VBA/Excel behavior;
+   - richer COM value transport still needs broader object/interface/SAFEARRAY
+     coverage;
+   - those lanes proceed with `oxvba-com` as the live bridge.
+
+## Native-Ready Rebase Direction
+
+The current native-ready execution authority is
+[`docs/worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`](worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md).
+
+Near-term architectural work is intentionally ordered before direct native AOT:
+- rebase docs around implementation truth and archive historical plans;
+- remove residual `RuntimeValue` and fake IR scaffolds from active APIs;
+- make numeric helpers and UDT planning `Variant`-native and descriptor-backed;
+- build a correctness corpus that exposes numeric, coercion, error-state, array,
+  and UDT skeletons;
+- standardize VM/JIT/wrapper runner results before comparing native artifacts;
+- only then introduce direct native compilation and a real native-facing IR or
+  direct bytecode-to-native path.
+
+The MACH-1000 material remains useful historical synthesis and vision context,
+but it is not the current implementation authority where it conflicts with this
+architecture snapshot, the native-ready worksets, or implementation evidence.

@@ -4,8 +4,8 @@ Historical planning documents retained for provenance. These documents are **sup
 
 | Document | Original location | Date | Superseded by | Notes |
 |---|---|---|---|---|
-| [PLAN_v1_20260226.md](PLAN_v1_20260226.md) | `PLAN.md` | 2026-02-26 | [`MACH1000_PLAN.md`](../../MACH1000_PLAN.md) | Original OxVba project plan. Baseline for synthesis run `20260226-mach1000-synthesis`. |
-| [BRAINSTORM_MACH1000_20260226.md](BRAINSTORM_MACH1000_20260226.md) | `BRAINSTORM.md` | 2026-02-26 | [`MACH1000_PLAN.md`](../../MACH1000_PLAN.md) | MACH-1000 theoretical architectures brainstorm. Input to synthesis run `20260226-mach1000-synthesis`. |
+| [PLAN_v1_20260226.md](PLAN_v1_20260226.md) | `PLAN.md` | 2026-02-26 | [`MACH1000_PLAN.md`](../../MACH1000_PLAN.md), then current architecture/worksets | Original OxVba project plan. Baseline for synthesis run `20260226-mach1000-synthesis`. |
+| [BRAINSTORM_MACH1000_20260226.md](BRAINSTORM_MACH1000_20260226.md) | `BRAINSTORM.md` | 2026-02-26 | [`MACH1000_PLAN.md`](../../MACH1000_PLAN.md), then current architecture/worksets | MACH-1000 theoretical architectures brainstorm. Input to synthesis run `20260226-mach1000-synthesis`. |
 
 | [REVIEW_20260309.md](REVIEW_20260309.md) | `docs/` | 2026-03-09 | Subsequent IP-03–IP-09 work | Point-in-time review output (82K). Archived 2026-03-22. |
 | [REVIEW_20260309_PROCEED.md](REVIEW_20260309_PROCEED.md) | `docs/` | 2026-03-09 | All items executed | Approved items from the March 9 review. Archived 2026-03-22. |
@@ -19,4 +19,6 @@ Historical planning documents retained for provenance. These documents are **sup
 
 ## Relationship to Synthesis
 
-These documents were the two inputs to the formal synthesis run documented in [`synthesis/runs/20260226-mach1000-synthesis/`](../../synthesis/runs/20260226-mach1000-synthesis/README.md). The synthesis decision log records how each suggestion from the brainstorm was evaluated (accept/adapt/defer/reject) and integrated into the definitive plan.
+These documents were the two inputs to the formal synthesis run documented in [`synthesis/runs/20260226-mach1000-synthesis/`](../../synthesis/runs/20260226-mach1000-synthesis/README.md). The synthesis decision log records how each suggestion from the brainstorm was evaluated (accept/adapt/defer/reject) and integrated into `MACH1000_PLAN.md`.
+
+As of 2026-04-30, `MACH1000_PLAN.md` remains top-level historical synthesis and vision context rather than the definitive current implementation plan. Current truth lives in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), active worksets, status files, and evidence artifacts; the native-ready rebase umbrella is [`docs/worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`](../worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md).

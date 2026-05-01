@@ -8,7 +8,6 @@ repository.workspace = true
 
 [dependencies]
 oxvba-compiler.workspace = true
-oxvba-ir.workspace = true
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-vm.workspace = true

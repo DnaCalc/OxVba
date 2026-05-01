@@ -13,6 +13,9 @@ oxvba-com.workspace = true
 oxvba-hal.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+
 [features]
 default = []
 mach_broadword_dispatch = []

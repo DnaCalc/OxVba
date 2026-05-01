@@ -12,7 +12,7 @@ This document defines how OxVBA work is executed day-to-day: fast iteration, cle
 - Keep durable guidance short and stable. Put volatile execution state in active worksets, bead records, `docs/AUTORUN_STATE.md`, and `CURRENT_BLOCKERS.md`.
 
 ## 3. Execution Model
-OxVBA follows the sequencing in `MACH1000_PLAN.md`.
+OxVBA follows current architecture and active workset sequencing.
 Execution doctrine details and run hygiene are captured in `docs/LOCAL_EXECUTION_DOCTRINE.md`.
 
 Execution defaults:
@@ -160,7 +160,7 @@ Execution consequences:
 For behavior-affecting changes:
 1. Implement code change.
 2. Add/update tests (unit, conformance, or property tests as appropriate).
-3. Update relevant docs (`MACH1000_PLAN.md`, design notes, or this file if doctrine changed).
+3. Update relevant docs (`docs/ARCHITECTURE.md`, active worksets, design notes, or this file if doctrine changed).
 4. Record compatibility evidence when claiming Office/VBA parity.
 
 Commit discipline for ladder execution:

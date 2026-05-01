@@ -48,9 +48,15 @@ Out of scope:
 Top-level guidance precedence for OxVBA:
 1. `CHARTER.md`
 2. `OPERATIONS.md`
-3. `MACH1000_PLAN.md`
+3. `docs/ARCHITECTURE.md`
+4. Active worksets, status files, and evidence artifacts
 
-`MACH1000_PLAN.md` is the full architecture and phased implementation plan. This charter defines mission, values, and scope boundaries.
+This charter defines mission, values, and scope boundaries. Current
+implementation truth lives in `docs/ARCHITECTURE.md` and active execution truth
+lives in worksets, status files, and evidence artifacts.
 
-## 6. Relationship to MACH-1000 Plan
-`MACH1000_PLAN.md` contains the detailed architecture, formal strategy, testing approach, and implementation sequencing. If details in the plan drift from this charter, this charter is authoritative and the plan must be updated.
+## 6. Relationship to Architecture And Worksets
+`docs/ARCHITECTURE.md` contains the current architecture snapshot and
+near-term implementation direction. Active worksets contain scoped execution
+plans and gates. If details in those documents drift from this charter, this
+charter is authoritative and the downstream documents must be updated.

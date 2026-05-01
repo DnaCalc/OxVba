@@ -149,7 +149,7 @@ fn debug_print_multiple_exprs_executes_on_windows_stdio_profile_for_vm_and_jit()
         .expect("multi-expr debug-print execution should succeed");
         assert_eq!(
             callbacks.debug_output(),
-            vec!["trace\t".to_string()],
+            vec!["trace\t0".to_string()],
             "windows stdio host should preserve multi-expr Debug.Print behavior for enable_jit={enable_jit}"
         );
         assert_eq!(callbacks.console_output(), Vec::<String>::new());

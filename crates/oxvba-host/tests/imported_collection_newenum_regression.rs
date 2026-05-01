@@ -8,6 +8,14 @@ struct TempLoadedProject {
     temp_root: std::path::PathBuf,
 }
 
+fn cleanup_temp_project_root(temp_root: &std::path::Path) {
+    match std::fs::remove_dir_all(temp_root) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => panic!("cleanup temp project root: {err}"),
+    }
+}
+
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "{prefix}_{}_{}",
@@ -65,7 +73,7 @@ fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Run
     };
 
     drop(loaded);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    cleanup_temp_project_root(&temp_root);
     result
 }
 
@@ -89,7 +97,7 @@ fn run_project_with_widget_session(
     };
 
     drop(loaded);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    cleanup_temp_project_root(&temp_root);
     result
 }
 
@@ -110,7 +118,7 @@ fn execute_project_with_widget_snapshot(
     };
 
     drop(loaded);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    cleanup_temp_project_root(&temp_root);
     result
 }
 
@@ -136,7 +144,7 @@ fn run_project_with_widget_bundle_session(
     };
 
     drop(loaded);
-    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    cleanup_temp_project_root(&temp_root);
     result
 }
 

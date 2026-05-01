@@ -3,7 +3,8 @@
 Primary guidance for automated contributors, in order:
 1. `CHARTER.md`
 2. `OPERATIONS.md`
-3. `MACH1000_PLAN.md`
+3. `docs/ARCHITECTURE.md`
+4. Active worksets, status files, and evidence artifacts
 
 Use `docs/` and `synthesis/` for supporting context and provenance.
 

@@ -55,7 +55,7 @@ struct IntegrationCase {
     unsupported_mode: Option<UnsupportedFeatureMode>,
     expected_status: ExpectedStatus,
     expected_phase: ExpectedPhase,
-    expected_values: Vec<String>,
+    expected_compat_slots: Vec<String>,
     expected_error_contains: Vec<String>,
     reference_order: Vec<String>,
     deferred_gate: String,
@@ -176,7 +176,7 @@ fn format_expected_variant(value: &Variant) -> Result<String, String> {
     })
 }
 
-fn project_variants_to_expected_values(values: &[Variant]) -> Result<Vec<String>, String> {
+fn project_variants_to_expected_compat_slots(values: &[Variant]) -> Result<Vec<String>, String> {
     values.iter().map(format_expected_variant).collect()
 }
 
@@ -261,7 +261,7 @@ fn parse_policy_overrides(raw: &str) -> Result<Vec<(String, String)>, String> {
     Ok(parsed)
 }
 
-fn parse_expected_values(raw: &str) -> Result<Vec<String>, String> {
+fn parse_expected_compat_slots(raw: &str) -> Result<Vec<String>, String> {
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -308,7 +308,7 @@ fn load_catalog() -> Result<Vec<IntegrationCase>, String> {
             unsupported_mode: parse_unsupported_mode(parts[8])?,
             expected_status: parse_expected_status(parts[9])?,
             expected_phase: parse_expected_phase(parts[10])?,
-            expected_values: parse_expected_values(parts[11])?,
+            expected_compat_slots: parse_expected_compat_slots(parts[11])?,
             expected_error_contains: parse_list(parts[12], ';'),
             reference_order: parse_list(parts[13], ';'),
             deferred_gate: parts[14].to_string(),
@@ -528,14 +528,14 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(values)) => {
-            if case.expected_values.is_empty() {
+            if case.expected_compat_slots.is_empty() {
                 return Ok(());
             }
-            let observed_values = project_variants_to_expected_values(&values)?;
-            if observed_values != case.expected_values {
+            let observed_values = project_variants_to_expected_compat_slots(&values)?;
+            if observed_values != case.expected_compat_slots {
                 return Err(format!(
                     "retained value mismatch: expected {:?}, got {:?} from values {:?}",
-                    case.expected_values, observed_values, values
+                    case.expected_compat_slots, observed_values, values
                 ));
             }
         }

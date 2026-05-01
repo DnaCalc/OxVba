@@ -11,6 +11,8 @@ Status model:
 - `stable-draft`: implementation-linked and evidence-backed; still not final normative text.
 
 Current draft set:
+- [`NATIVE_READY_VALUE_SUBSTRATE_V1.md`](NATIVE_READY_VALUE_SUBSTRATE_V1.md) (`working-draft`): canonical native-ready value/type substrate target for `Variant`, exact numeric carriers, UDT descriptors, and ABI materialization boundaries.
+- [`NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md`](NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md) (`working-draft`): shared correctness/performance result schema for VM, JIT, wrapper, and future native runners.
 - [`HAL_DESIGN_DRAFT.md`](HAL_DESIGN_DRAFT.md) (`design-draft`): scope, principles, profile targets, and staged design plan for the Host Abstraction Layer.
 - [`HAL_INTERFACE_DRAFT.md`](HAL_INTERFACE_DRAFT.md) (`design-draft`): proposed HAL contracts, capability schema, and maturity model.
 - [`HAL_CONFORMANCE_DRAFT.md`](HAL_CONFORMANCE_DRAFT.md) (`design-draft`): proposed conformance classes, test obligations, and evidence model.

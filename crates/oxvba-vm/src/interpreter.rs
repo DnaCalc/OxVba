@@ -6237,10 +6237,11 @@ mod tests {
         );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
-        let out = snapshot_i32_values(&vm, 13);
+        let variants = vm.snapshot_variants(13);
+        let out: Vec<Option<i32>> = variants.iter().map(Variant::as_i32).collect();
         assert!(
-            out[1].expect("object handle") >= 20_001,
-            "expected native COM object handle"
+            variants[1].as_object_ref().is_some(),
+            "expected retained runtime object"
         );
         assert!(
             out[3].expect("subscription handle") >= 40_001,
@@ -6331,10 +6332,11 @@ mod tests {
         );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
-        let out = snapshot_i32_values(&vm, 15);
+        let variants = vm.snapshot_variants(15);
+        let out: Vec<Option<i32>> = variants.iter().map(Variant::as_i32).collect();
         assert!(
-            out[1].expect("object handle") >= 20_001,
-            "expected native COM object handle"
+            variants[1].as_object_ref().is_some(),
+            "expected retained runtime object"
         );
         assert!(
             out[3].expect("subscription handle") >= 40_001,

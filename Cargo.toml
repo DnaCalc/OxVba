@@ -2,7 +2,6 @@
 members = [
     "crates/oxvba-hal",
     "crates/oxvba-syntax",
-    "crates/oxvba-ir",
     "crates/oxvba-runtime",
     "crates/oxvba-compiler",
     "crates/oxvba-vm",
@@ -29,7 +28,6 @@ repository = "https://github.com/DnaCalc/OxVba"
 
 [workspace.dependencies]
 oxvba-syntax = { path = "crates/oxvba-syntax" }
-oxvba-ir = { path = "crates/oxvba-ir" }
 oxvba-hal = { path = "crates/oxvba-hal" }
 oxvba-runtime = { path = "crates/oxvba-runtime" }
 oxvba-compiler = { path = "crates/oxvba-compiler" }

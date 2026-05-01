@@ -3,7 +3,6 @@
 pub mod bundle;
 pub mod bytecode;
 pub mod emit;
-pub mod lower_to_hir;
 pub mod lsp_support;
 pub mod optimize;
 pub mod project;
@@ -109,7 +108,6 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
                 .insert(var.clone(), resolve::BoundType::Object);
         }
     }
-    let _hir = lower_to_hir::lower_to_hir(&optimized);
     Ok(emit::emit_bytecode_with_runtime_metadata(&optimized))
 }
 

@@ -10,6 +10,7 @@ Authoritative current implementation:
 - `crates/oxvba-vm/src/interpreter.rs`
 
 This document describes the current in-memory bytecode model. It is not a frozen binary serialization spec.
+It is also not a native object format or a direct PE/ELF emission contract.
 
 ## Current Representation
 
@@ -59,7 +60,7 @@ Representative examples:
 - `IntrinsicInvokeSymbolHost`
 - `IntrinsicWithEventsSet`
 - `ClearErr`
-- `RaiseErr`
+- `RaiseError`
 - `ResumeNext`
 
 ## Execution Model Notes
@@ -70,6 +71,12 @@ Current bytecode is:
 - optionally mirrored through `oxvba-jit` for supported subsets
 
 Current slots are not a stable ABI. They are compiler/runtime implementation details.
+
+For native-readiness planning, bytecode is the authoritative executable model
+and the baseline that future direct native lanes must match. A direct native
+compiler may lower from bytecode or from a future real native-facing procedure
+IR, but the current bytecode document does not claim a direct AOT/native-image
+pipeline.
 
 ## Stability Boundary
 
@@ -90,5 +97,7 @@ Planned evolution remains:
 - clearer bytecode authority boundary versus future serialized form
 - tighter documentation of instruction families and invariants
 - eventual stable serialization only after the instruction surface and calling conventions settle
+- shared runner/correctness schema before bytecode behavior is compared with
+  future native artifacts
 
 Until then, code is authoritative and this document should stay synchronized to that code rather than pretending a frozen format already exists.

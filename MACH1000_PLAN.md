@@ -1,5 +1,14 @@
 # OxVBA MACH-1000 Project Plan
 
+> Historical status (2026-04-30): this is a synthesis and vision document, not
+> the current execution authority. Current implementation truth is maintained in
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and the current native-ready
+> rebase program is
+> [`docs/worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`](docs/worksets/WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md).
+> Do not treat multi-level HIR/MIR/CFG or direct native AOT sections here as
+> current implementation truth unless the current architecture and workset docs
+> explicitly say so.
+
 ## Synthesis Provenance
 
 This document is the output of synthesis run `20260226-mach1000-synthesis`. It integrates the baseline OxVBA project plan ([`docs/archive/PLAN_v1_20260226.md`](docs/archive/PLAN_v1_20260226.md)) with the MACH-1000 theoretical architectures ([`docs/archive/BRAINSTORM_MACH1000_20260226.md`](docs/archive/BRAINSTORM_MACH1000_20260226.md)) through a formal decision process documented in [`synthesis/runs/20260226-mach1000-synthesis/`](synthesis/runs/20260226-mach1000-synthesis/README.md).
@@ -8,7 +17,10 @@ This document is further refined by synthesis run `20260226-mach1000-refinement-
 
 **Refinement synthesis: 10 suggestions extracted; 8 accepted, 2 adapted, 0 deferred, 0 rejected.**
 
-This document supersedes `PLAN.md` as the definitive OxVBA project plan.
+This document superseded the original `PLAN.md` as a synthesized project vision.
+It now remains historical architecture and intent context; current execution
+authority lives in the active architecture, workset, status, and evidence
+documents.
 
 ---
 
@@ -951,7 +963,7 @@ Following the DNA Calc Foundation doctrine, OxVBA aims to innovate in the develo
 
 ```
 OxVba/
-├── MACH1000_PLAN.md                    # This document (definitive project plan)
+├── MACH1000_PLAN.md                    # Historical synthesis and vision context
 ├── CHARTER.md                          # Project mission, scope, and values (authoritative charter)
 ├── OPERATIONS.md                       # Lightweight execution and development doctrine
 ├── README.md                           # Project overview, build instructions
@@ -1427,4 +1439,4 @@ Initial policy:
 
 ---
 
-*This document is the definitive MACH-1000 plan for the OxVBA project, produced by formal synthesis of the baseline plan and theoretical architecture brainstorm, then refined by a follow-up synthesis pass. It captures the project charter, architectural decisions, advanced performance engineering, formal verification strategy, and implementation sequencing. It is a living document that will be updated as the project evolves.*
+*This document is the historical MACH-1000 synthesis for OxVBA, produced by formal synthesis of the baseline plan and theoretical architecture brainstorm, then refined by a follow-up synthesis pass. It captures project vision, architectural options, advanced performance engineering goals, formal verification strategy, and implementation sequencing context. Current implementation truth lives in `docs/ARCHITECTURE.md`, active worksets, status files, and evidence artifacts.*
