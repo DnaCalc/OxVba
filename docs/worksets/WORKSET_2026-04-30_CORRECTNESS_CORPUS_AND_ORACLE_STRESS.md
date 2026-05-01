@@ -30,6 +30,11 @@ Out of scope:
 - Direct native execution.
 - Broad Office object model parity.
 
+## Evidence
+
+- Corpus matrix and naming convention:
+  [`../evidence/native_ready/CORRECTNESS_CORPUS_MATRIX_2026-05-01.md`](../evidence/native_ready/CORRECTNESS_CORPUS_MATRIX_2026-05-01.md)
+
 ## Execution Epics
 
 1. **Corpus Matrix Design**
@@ -52,7 +57,9 @@ Out of scope:
 Rolled out on 2026-05-01 under bead epic `bd-9xmu.4`:
 
 - `bd-9xmu.4.1` / `stress-000`: roll out this executable bead path.
-- `bd-9xmu.4.2` / `stress-001`: create corpus matrix and fixture naming convention.
+- `bd-9xmu.4.2` / `stress-001`: create corpus matrix and fixture naming
+  convention. Done 2026-05-01; the matrix schema, fixture naming convention,
+  and initial row IDs are recorded.
 - `bd-9xmu.4.3` / `stress-002`: add numeric rounding/overflow/truncation cases.
 - `bd-9xmu.4.4` / `stress-003`: add string-number/Null/Empty/Error coercion cases.
 - `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases.
