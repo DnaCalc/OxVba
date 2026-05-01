@@ -57,6 +57,10 @@ execution evidence.
 
 ## Performance Policy
 
+`artifact_size_bytes` is recorded in bytes. `mean_ms`, `min_ms`, and `max_ms`
+are elapsed milliseconds over the stated `iterations` after
+`warmup_iterations`.
+
 Performance rows are trend evidence only unless a claim explicitly names:
 
 - workload,

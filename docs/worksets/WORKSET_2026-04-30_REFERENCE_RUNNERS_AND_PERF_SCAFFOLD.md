@@ -33,6 +33,8 @@ Out of scope:
   [`../evidence/native_ready/VM_JIT_RUNNER_ROWS_2026-05-01.md`](../evidence/native_ready/VM_JIT_RUNNER_ROWS_2026-05-01.md)
 - Wrapper runner smoke rows:
   [`../evidence/native_ready/WRAPPER_RUNNER_ROWS_2026-05-01.md`](../evidence/native_ready/WRAPPER_RUNNER_ROWS_2026-05-01.md)
+- Runner artifact size and timing fields:
+  [`../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md`](../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md)
 
 ## Execution Epics
 
@@ -66,7 +68,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
 - `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Done
   2026-05-01; sample rows cover `wrapper-exe` and `wrapper-library` artifact
   identities under the shared schema.
-- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields.
+- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Done
+  2026-05-01; sample benchmark rows populate byte sizes, iterations, warmups,
+  elapsed milliseconds, result digests, and trend-only claim boundaries.
 - `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared schema.
 
 ## Terminal Gate
