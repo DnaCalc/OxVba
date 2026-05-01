@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use oxvba_hal::callbacks::HostCallbacks;
-use oxvba_host::{Engine, HostConfig, RuntimeProfileId, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
+use oxvba_runtime::{Variant, bstr::BStr};
 
 #[derive(Default)]
 struct ConsoleCallbacks {
@@ -97,16 +97,16 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
             enable_jit,
             callbacks.clone(),
         )
-        .execute_source_with_value_snapshot(source)
+        .execute_source_with_variant_snapshot(source)
         .expect("console stdio execution should succeed");
         assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
         assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
         assert_eq!(
             values,
             vec![
-                RuntimeValue::I32(42),
-                RuntimeValue::String(oxvba_runtime::bstr::BStr::from("hello there")),
-                RuntimeValue::String(oxvba_runtime::bstr::BStr::from("rest of line")),
+                Variant::from_i32(42),
+                Variant::from_string(BStr::from("hello there")),
+                Variant::from_string(BStr::from("rest of line")),
             ],
             "windows stdio host should preserve console/debug behavior for enable_jit={enable_jit}"
         );
@@ -123,9 +123,9 @@ fn debug_print_executes_on_windows_stdio_profile_for_vm_and_jit() {
             enable_jit,
             callbacks.clone(),
         )
-        .execute_source_with_value_snapshot(source)
+        .execute_source_with_variant_snapshot(source)
         .expect("debug-print execution should succeed");
-        assert_eq!(values, Vec::<RuntimeValue>::new());
+        assert_eq!(values, Vec::<Variant>::new());
         assert_eq!(
             callbacks.debug_output(),
             vec!["trace".to_string()],
@@ -168,16 +168,16 @@ fn console_print_and_input_execute_on_linux_stdio_profile() {
         Line Input c\n\
         End Sub";
     let values = engine_with_profile(RuntimeProfileId::LinuxStdio, false, callbacks.clone())
-        .execute_source_with_value_snapshot(source)
+        .execute_source_with_variant_snapshot(source)
         .expect("console stdio execution should succeed");
     assert_eq!(callbacks.console_output(), vec!["hello-linux".to_string()]);
     assert_eq!(callbacks.debug_output(), Vec::<String>::new());
     assert_eq!(
         values,
         vec![
-            RuntimeValue::I32(7),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr::from("alpha")),
-            RuntimeValue::String(oxvba_runtime::bstr::BStr::from("omega")),
+            Variant::from_i32(7),
+            Variant::from_string(BStr::from("alpha")),
+            Variant::from_string(BStr::from("omega")),
         ]
     );
 }

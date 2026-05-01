@@ -1,8 +1,8 @@
 #[cfg(target_os = "windows")]
 mod windows_vba_attribute_oracle_lane {
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+    use oxvba_host::{Engine, HostConfig};
     use oxvba_project::load_basproj_from_str;
-    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{Variant, bstr::BStr};
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -15,10 +15,7 @@ mod windows_vba_attribute_oracle_lane {
         ))
     }
 
-    fn run_project_with_widget(
-        main_source: &str,
-        widget_source: &str,
-    ) -> Result<oxvba_runtime::compat::RuntimeValue, String> {
+    fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Variant, String> {
         let temp_root = unique_temp_dir("oxvba_vba_attribute_oracle");
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         std::fs::write(temp_root.join("Main.bas"), main_source).expect("write main module");
@@ -49,18 +46,20 @@ mod windows_vba_attribute_oracle_lane {
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;
         let result = engine
-            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
             .map_err(|err| err.to_string());
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
         result
     }
 
-    fn emit_observed(case_id: &str, value: &RuntimeValue) {
-        let rendered = match value {
-            RuntimeValue::String(text) => text.as_str().to_string(),
-            RuntimeValue::I32(n) => n.to_string(),
-            other => format!("{other:?}"),
+    fn emit_observed(case_id: &str, value: &Variant) {
+        let rendered = if let Some(text) = value.as_bstr() {
+            text.as_str().to_string()
+        } else if let Some(n) = value.as_i32() {
+            n.to_string()
+        } else {
+            format!("{value:?}")
         };
         println!("ODGATTR-OBSERVED[{case_id}]={rendered}");
     }
@@ -116,7 +115,7 @@ mod windows_vba_attribute_oracle_lane {
         )
         .expect("attribute oracle project should execute");
         emit_observed("CCT-049-DEFAULTPROP-001", &value);
-        assert_eq!(value, RuntimeValue::I32(42));
+        assert_eq!(value, Variant::from_i32(42));
     }
 
     #[test]
@@ -141,7 +140,7 @@ mod windows_vba_attribute_oracle_lane {
         match result {
             Ok(value) => {
                 emit_observed("CCT-050-NEWENUM-001", &value);
-                assert_eq!(value, RuntimeValue::String(BStr::from("41,42,")));
+                assert_eq!(value, Variant::from_string(BStr::from("41,42,")));
             }
             Err(err) => {
                 emit_observed_text("CCT-050-NEWENUM-001", &format!("error:{err}"));

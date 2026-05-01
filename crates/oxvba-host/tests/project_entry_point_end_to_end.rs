@@ -1,5 +1,5 @@
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_host::{Engine, HostConfig};
+use oxvba_runtime::Variant;
 
 #[test]
 fn loaded_basproj_configured_entry_point_bypasses_default_main_startup_path() {
@@ -51,11 +51,11 @@ fn loaded_basproj_configured_entry_point_bypasses_default_main_startup_path() {
         root_object_name: Some(loaded.default_root_object.clone()),
     });
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("configured entry point should bypass failing default Main");
     assert_eq!(
         snapshot,
-        vec![RuntimeValue::Empty],
+        vec![Variant::empty()],
         "configured entry point snapshot should reflect the entry procedure slot view"
     );
 
@@ -118,11 +118,11 @@ fn loaded_basproj_unique_sub_main_fallback_bypasses_first_module_order_bias() {
         root_object_name: Some(loaded.default_root_object.clone()),
     });
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("unique Sub Main fallback should bypass first-module Warmup");
     assert_eq!(
         snapshot,
-        vec![RuntimeValue::I32(5)],
+        vec![Variant::from_i32(5)],
         "unique Sub Main fallback should reflect the selected Main procedure slot view"
     );
 

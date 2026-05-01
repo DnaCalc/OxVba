@@ -1,8 +1,8 @@
 #[cfg(target_os = "windows")]
 mod windows_file_io_host_backed_end_to_end {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
+    use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::{Variant, bstr::BStr};
     use std::fs;
 
     #[test]
@@ -32,13 +32,13 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed file roundtrip should execute");
         println!(
             "ODG032-OBSERVED[CCT-033-LINE-001]={}",
             render_observed(&out[0])
         );
-        assert_eq!(out[0], RuntimeValue::String(BStr::from("world")));
+        assert_eq!(out[0], Variant::from_string(BStr::from("world")));
     }
 
     #[test]
@@ -71,7 +71,7 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed file position/introspection case should execute");
         println!(
             "ODG032-OBSERVED[CCT-033-FILEPOS-001]={}",
@@ -106,13 +106,13 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed Write#/Input# case should execute");
         println!(
             "ODG032-OBSERVED[CCT-033-WRITE-001]={}",
             render_observed(&out[0])
         );
-        assert_eq!(out[0], RuntimeValue::String(BStr::from("hello,world")));
+        assert_eq!(out[0], Variant::from_string(BStr::from("hello,world")));
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed multi-field Write#/Input# case should execute");
         let observed = out.last().expect("expected observed slot");
         println!(
@@ -155,7 +155,7 @@ mod windows_file_io_host_backed_end_to_end {
         );
         assert_eq!(
             observed,
-            &RuntimeValue::String(BStr::from("42|True|hello,world"))
+            &Variant::from_string(BStr::from("42|True|hello,world"))
         );
     }
 
@@ -183,7 +183,7 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed Kill should execute");
         assert!(
             !temp_file.exists(),
@@ -218,7 +218,7 @@ mod windows_file_io_host_backed_end_to_end {
 
         let source = format!("Sub Main()\nKill \"{wildcard_literal}\"\nEnd Sub");
         engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed wildcard Kill should execute");
         assert!(
             !txt_a.exists(),
@@ -267,14 +267,14 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed Dir wildcard enumeration should execute");
         assert_eq!(
             out,
             vec![
-                RuntimeValue::String(BStr::from("alpha.txt")),
-                RuntimeValue::String(BStr::from("apple.txt")),
-                RuntimeValue::String(BStr::empty())
+                Variant::from_string(BStr::from("alpha.txt")),
+                Variant::from_string(BStr::from("apple.txt")),
+                Variant::from_string(BStr::empty())
             ]
         );
     }
@@ -312,14 +312,14 @@ mod windows_file_io_host_backed_end_to_end {
              End Sub"
         );
         let out = engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed Dir parent wildcard enumeration should execute");
         assert_eq!(
             out,
             vec![
-                RuntimeValue::String(BStr::from("alpha.txt")),
-                RuntimeValue::String(BStr::from("apple.txt")),
-                RuntimeValue::String(BStr::empty())
+                Variant::from_string(BStr::from("alpha.txt")),
+                Variant::from_string(BStr::from("apple.txt")),
+                Variant::from_string(BStr::empty())
             ]
         );
     }
@@ -354,7 +354,7 @@ mod windows_file_io_host_backed_end_to_end {
 
         let source = format!("Sub Main()\nKill \"{wildcard_literal}\"\nEnd Sub");
         engine
-            .execute_source_with_snapshot_phased(&source)
+            .execute_source_with_variant_snapshot_phased(&source)
             .expect("host-backed parent wildcard Kill should execute");
         assert!(
             !kill_a.exists(),
@@ -373,11 +373,13 @@ mod windows_file_io_host_backed_end_to_end {
         );
     }
 
-    fn render_observed(value: &RuntimeValue) -> String {
-        match value {
-            RuntimeValue::String(text) => text.as_str().to_string(),
-            RuntimeValue::Bool(value) => value.to_string(),
-            other => format!("{other:?}"),
+    fn render_observed(value: &Variant) -> String {
+        if let Some(text) = value.as_bstr() {
+            return text.as_str().to_string();
         }
+        if let Some(value) = value.as_bool() {
+            return value.to_string();
+        }
+        format!("{value:?}")
     }
 }

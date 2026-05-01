@@ -6,7 +6,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::engine::DiagnosticPhase;
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
 
 fn workspace_root() -> PathBuf {
@@ -40,7 +40,7 @@ fn sqliteforexcel_core64_normalized_basproj_moves_past_compile_frontiers_to_runt
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect_err("sqlite core fixture should now reach the runtime LoadLibrary boundary");
     assert_eq!(err.phase(), DiagnosticPhase::Runtime);
     assert!(
@@ -156,7 +156,7 @@ fn sqliteforexcel_demo64_normalized_basproj_now_reaches_runtime_boundary_after_c
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect_err("sqlite demo fixture should currently fail at runtime");
     assert_eq!(err.phase(), DiagnosticPhase::Runtime);
 }
@@ -184,7 +184,7 @@ fn sqliteforexcel_bounded_normalized_demo_completes_in_vm_and_jit() {
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .unwrap_or_else(|err| {
                 panic!(
                     "bounded sqlite demo fixture should complete for enable_jit={enable_jit}: {}",

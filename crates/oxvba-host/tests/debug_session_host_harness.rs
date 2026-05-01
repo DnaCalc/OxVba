@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-use oxvba_host::compat::{HostDebugRunResult, RuntimeValueCompatDebugSessionExt};
-use oxvba_host::{DebugEvaluationRequest, DebugFrameValueKind, Engine, HostConfig};
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_host::{
+    DebugEvaluationRequest, DebugFrameValueKind, Engine, HostConfig, HostDebugVariantRunResult,
+};
+use oxvba_runtime::Variant;
 use oxvba_vm::DebugStopReason;
 
 fn make_manifest(source: &str) -> ProjectManifest {
@@ -39,8 +40,9 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
 
     let mut transcript = Vec::<String>::new();
 
-    let HostDebugRunResult::Paused(entry_pause) =
-        session.start().expect("debug start should pause on entry")
+    let HostDebugVariantRunResult::Paused(entry_pause) = session
+        .start_variants()
+        .expect("debug start should pause on entry")
     else {
         panic!("expected entry pause");
     };
@@ -56,8 +58,8 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
         entry_pause.stop.location.line_number.unwrap_or_default()
     ));
 
-    let HostDebugRunResult::Paused(callee_pause) = session
-        .step_into()
+    let HostDebugVariantRunResult::Paused(callee_pause) = session
+        .step_into_variants()
         .expect("step into should pause in callee")
     else {
         panic!("expected callee pause");
@@ -74,7 +76,7 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
     ));
 
     let value = session
-        .evaluate(&DebugEvaluationRequest::new("y"))
+        .evaluate_variant(&DebugEvaluationRequest::new("y"))
         .expect("y should evaluate while paused");
     transcript.push(format!("eval:y={}", value.value.display_text));
 
@@ -95,15 +97,15 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
     ));
 
     let completion = session
-        .step_out()
+        .step_out_variants()
         .expect("step out should finish bounded sample");
     transcript.push(match completion {
-        HostDebugRunResult::Paused(pause) => format!(
+        HostDebugVariantRunResult::Paused(pause) => format!(
             "step_out:paused:{}:{}",
             pause.frames.len(),
             pause.stop.location.procedure_name
         ),
-        HostDebugRunResult::Completed => "step_out:completed".to_string(),
+        HostDebugVariantRunResult::Completed => "step_out:completed".to_string(),
     });
 
     assert_eq!(
@@ -116,7 +118,7 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
             "step_out:completed".to_string(),
         ]
     );
-    assert_eq!(value.value.runtime_value, RuntimeValue::I32(4));
+    assert_eq!(value.value.variant_value, Variant::from_i32(4));
 }
 
 #[test]
@@ -128,12 +130,12 @@ fn direct_host_debug_harness_reports_completed_session_without_pause_state() {
         .expect("debug session should prepare");
 
     let result = session
-        .start()
+        .start_variants()
         .expect("empty mainline debug start should finish");
-    assert!(matches!(result, HostDebugRunResult::Completed));
+    assert!(matches!(result, HostDebugVariantRunResult::Completed));
     assert_eq!(
         session
-            .current_pause_state()
+            .current_variant_pause_state()
             .expect("pause state query should succeed"),
         None
     );

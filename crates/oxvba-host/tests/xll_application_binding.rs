@@ -1,8 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_host::{Engine, HostConfig};
 
 #[test]
 fn bound_native_host_object_is_consumed_by_project_createobject() {
@@ -36,15 +35,17 @@ fn bound_native_host_object_is_consumed_by_project_createobject() {
     };
 
     let snapshot = engine
-        .execute_project_with_value_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("project should consume bound object through CreateObject");
 
-    match snapshot.as_slice() {
-        [RuntimeValue::Object(object), RuntimeValue::I32(count)]
-            if object.raw() == bound.raw() && *count == 7 => {}
-        other => panic!(
-            "expected CreateObject to return the pre-bound native host object {} and native Count witness 7, got {other:?}",
-            bound.raw()
-        ),
-    }
+    let object = snapshot
+        .first()
+        .and_then(|value| value.as_object_ref())
+        .expect("expected first snapshot slot to contain an object handle");
+    let count = snapshot
+        .get(1)
+        .and_then(|value| value.as_i32())
+        .expect("expected second snapshot slot to contain Count result");
+    assert_eq!(object.raw(), bound.raw());
+    assert_eq!(count, 7);
 }

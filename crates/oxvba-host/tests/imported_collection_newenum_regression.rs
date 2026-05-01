@@ -1,7 +1,7 @@
 use oxvba_compiler::{OxBundle, compile_project};
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj_from_str;
-use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
+use oxvba_runtime::{Variant, bstr::BStr};
 
 struct TempLoadedProject {
     loaded: oxvba_project::LoadedProject,
@@ -57,7 +57,7 @@ fn load_widget_project(
     Ok(TempLoadedProject { loaded, temp_root })
 }
 
-fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<RuntimeValue, String> {
+fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Variant, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
         let engine = Engine::new(HostConfig {
@@ -68,7 +68,7 @@ fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Run
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;
         engine
-            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
             .map_err(|err| err.to_string())
     };
 
@@ -81,7 +81,7 @@ fn run_project_with_widget_session(
     main_source: &str,
     widget_source: &str,
     enable_jit: bool,
-) -> Result<RuntimeValue, String> {
+) -> Result<Variant, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
         let engine = Engine::new(HostConfig {
@@ -92,7 +92,7 @@ fn run_project_with_widget_session(
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;
         engine
-            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
             .map_err(|err| err.to_string())
     };
 
@@ -105,7 +105,7 @@ fn execute_project_with_widget_snapshot(
     main_source: &str,
     widget_source: &str,
     enable_jit: bool,
-) -> Result<Vec<RuntimeValue>, String> {
+) -> Result<Vec<Variant>, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
         let engine = Engine::new(HostConfig {
@@ -113,7 +113,7 @@ fn execute_project_with_widget_snapshot(
             root_object_name: None,
         });
         engine
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .map_err(|err| err.to_string())
     };
 
@@ -126,7 +126,7 @@ fn run_project_with_widget_bundle_session(
     main_source: &str,
     widget_source: &str,
     enable_jit: bool,
-) -> Result<RuntimeValue, String> {
+) -> Result<Variant, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
         let compiled = compile_project(&loaded.manifest).map_err(|err| err.to_string())?;
@@ -139,7 +139,7 @@ fn run_project_with_widget_bundle_session(
             .compile_and_prepare_session_from_bundle(&bundle)
             .map_err(|err| err.to_string())?;
         engine
-            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
             .map_err(|err| err.to_string())
     };
 
@@ -221,7 +221,7 @@ fn imported_collection_field_newenum_for_each_executes() {
         run_project_with_widget(MAIN_FOREACH_WIDGET_FUNCTION_SOURCE, PROJECT_WIDGET_SOURCE)
             .expect("collection-backed NewEnum project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(result, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
@@ -232,7 +232,7 @@ fn imported_collection_field_newenum_for_each_executes_with_excel_import_header(
     )
     .expect("Excel-imported collection-backed NewEnum project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(result, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
@@ -250,7 +250,7 @@ fn imported_collection_field_control_string_accumulator_without_foreach_starts_e
     )
     .expect("control string accumulator project should execute");
 
-    assert_eq!(result, RuntimeValue::String(BStr::from("41,")));
+    assert_eq!(result, Variant::from_string(BStr::from("41,")));
 }
 
 #[test]
@@ -293,7 +293,7 @@ fn imported_collection_field_newenum_direct_session_vm_jit_matches() {
         vm, jit,
         "VM/JIT direct-session snapshots should match for project-backed collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn imported_collection_field_newenum_bundle_session_vm_jit_matches() {
         vm, jit,
         "VM/JIT bundle-session snapshots should match for project-backed collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn imported_collection_field_newenum_direct_session_vm_jit_matches_with_excel_im
         vm, jit,
         "VM/JIT direct-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
@@ -359,5 +359,5 @@ fn imported_collection_field_newenum_bundle_session_vm_jit_matches_with_excel_im
         vm, jit,
         "VM/JIT bundle-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
-    assert_eq!(vm, RuntimeValue::String(BStr::from("41,42,")));
+    assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }

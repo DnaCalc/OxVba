@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use oxvba_hal::callbacks::HostCallbacks;
-use oxvba_host::{Engine, HostConfig, RuntimeProfileId, compat::RuntimeValueCompatEngineExt};
+use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
 
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -97,7 +97,7 @@ fn basproj_exe_executes_unique_top_level_mainline() {
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("project execution should succeed");
         assert_eq!(
             callbacks.console_output(),
@@ -151,7 +151,7 @@ fn basproj_exe_honors_explicit_entry_point_over_sub_main_fallback() {
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("explicit entrypoint should execute instead of Sub Main fallback");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
@@ -190,7 +190,7 @@ fn basproj_exe_top_level_mainline_shares_option_private_module_state_with_helper
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("project execution should succeed with module-scope state preserved");
         assert_eq!(
             callbacks.console_output(),
@@ -263,7 +263,7 @@ fn basproj_exe_top_level_mainline_preserves_mixed_module_scope_declarations() {
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("project execution should succeed with mixed module declarations preserved");
         assert_eq!(
             callbacks.console_output(),
@@ -304,7 +304,7 @@ fn vbp_exe_honors_explicit_startup_procedure() {
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("explicit Startup=Module.Procedure should execute");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
@@ -331,7 +331,7 @@ fn vbp_exe_sub_main_fallback_executes_supported_project() {
         root_object_name: None,
     });
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("Sub Main fallback project should execute");
     assert!(
         snapshot.is_empty(),
@@ -366,7 +366,7 @@ fn vbp_exe_unique_top_level_mainline_executes_supported_project() {
     for enable_jit in [false, true] {
         let callbacks = Arc::new(ConsoleCallbacks::default());
         engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("top-level mainline vbp project should execute");
         assert_eq!(
             callbacks.console_output(),
@@ -422,7 +422,7 @@ fn vbp_exe_resolves_project_reference_to_referenced_vbp_project() {
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("vbp project reference graph should execute");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");

@@ -1,23 +1,25 @@
 #[cfg(target_os = "windows")]
 mod windows_host_sensitive_oracle_lane {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
+    use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::{Variant, bstr::BStr};
     use std::fs;
 
-    fn run_host_backed_source(source: &str) -> Vec<RuntimeValue> {
+    fn run_host_backed_source(source: &str) -> Vec<Variant> {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_variant_snapshot_phased(source)
             .expect("windows host-backed host-sensitive lane should execute")
     }
 
-    fn emit_observed(case_id: &str, value: &RuntimeValue) {
-        let rendered = match value {
-            RuntimeValue::String(text) => text.as_str().to_string(),
-            RuntimeValue::I32(pid) if *pid > 0 => "pid>0".to_string(),
-            other => format!("{other:?}"),
+    fn emit_observed(case_id: &str, value: &Variant) {
+        let rendered = if let Some(text) = value.as_bstr() {
+            text.as_str().to_string()
+        } else if matches!(value.as_i32(), Some(pid) if pid > 0) {
+            "pid>0".to_string()
+        } else {
+            format!("{value:?}")
         };
         println!("ODG033-OBSERVED[{case_id}]={rendered}");
     }
@@ -31,7 +33,7 @@ mod windows_host_sensitive_oracle_lane {
         let out =
             run_host_backed_source("Sub Main()\nDim x\nx = Environ(\"OXVBA_ORACLE_ENV\")\nEnd Sub");
         emit_observed("CCT-035-ENV-001", &out[0]);
-        assert_eq!(out[0], RuntimeValue::String(BStr::from("oracle-033-value")));
+        assert_eq!(out[0], Variant::from_string(BStr::from("oracle-033-value")));
     }
 
     #[test]
@@ -48,7 +50,7 @@ mod windows_host_sensitive_oracle_lane {
         let source = format!("Sub Main()\nDim x\nx = Dir(\"{path_literal}\")\nEnd Sub");
         let out = run_host_backed_source(&source);
         emit_observed("CCT-035-DIR-001", &out[0]);
-        assert_eq!(out[0], RuntimeValue::String(BStr::from("probe-file.txt")));
+        assert_eq!(out[0], Variant::from_string(BStr::from("probe-file.txt")));
     }
 
     #[test]
@@ -57,7 +59,7 @@ mod windows_host_sensitive_oracle_lane {
         let out =
             run_host_backed_source("Sub Main()\nDim x\nx = Shell(\"cmd.exe /c exit 0\")\nEnd Sub");
         emit_observed("CCT-035-SHELL-001", &out[0]);
-        let RuntimeValue::I32(pid) = out[0] else {
+        let Some(pid) = out[0].as_i32() else {
             panic!("expected Shell result to be an I32 pid, got {:?}", out[0]);
         };
         assert!(pid > 0, "Shell should return a positive process identifier");

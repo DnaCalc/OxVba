@@ -5,8 +5,8 @@ use oxvba_compiler::{
     ReferencedProjectManifest, module_unit_from_source,
 };
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_host::{Engine, HostConfig};
+use oxvba_runtime::Variant;
 
 fn proc_module(name: &str, source: &str) -> oxvba_compiler::ModuleUnit {
     module_unit_from_source(name, ModuleKind::Procedural, source).expect("module should parse")
@@ -23,7 +23,7 @@ fn source_project(project_name: &str, modules: Vec<oxvba_compiler::ModuleUnit>) 
     }
 }
 
-fn contains_value(snapshot: &[RuntimeValue], expected: RuntimeValue) {
+fn contains_value(snapshot: &[Variant], expected: Variant) {
     assert!(
         snapshot.contains(&expected),
         "expected snapshot to contain {:?}, got {:?}",
@@ -58,9 +58,9 @@ End Sub
     );
 
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("edge array project should execute");
-    contains_value(&snapshot, RuntimeValue::I32(26));
+    contains_value(&snapshot, Variant::from_i32(26));
 }
 
 #[test]
@@ -98,17 +98,17 @@ End Sub
     });
 
     let vm_snapshot = vm
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("vm execution should succeed");
     let jit_snapshot = jit
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("jit execution should succeed");
 
     assert_eq!(
         vm_snapshot, jit_snapshot,
         "vm/jit snapshots diverged on dynamic multidimensional runtime arrays"
     );
-    contains_value(&vm_snapshot, RuntimeValue::I32(26));
+    contains_value(&vm_snapshot, Variant::from_i32(26));
 }
 
 #[test]
@@ -137,9 +137,9 @@ End Sub
     );
 
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("policy denial path should execute");
-    contains_value(&snapshot, RuntimeValue::I32(91));
+    contains_value(&snapshot, Variant::from_i32(91));
 }
 
 #[test]
@@ -162,10 +162,10 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
     });
 
     let vm_snapshot = vm
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("vm execution should succeed");
     let jit_snapshot = jit
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("jit execution should succeed");
 
     assert_eq!(
@@ -174,7 +174,7 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
     );
     assert_eq!(
         vm_snapshot.first(),
-        Some(&RuntimeValue::I32(iterations as i32)),
+        Some(&Variant::from_i32(iterations as i32)),
         "linear pressure case should converge to increment count"
     );
 }
@@ -215,9 +215,9 @@ fn e2e_scaling_pressure_cross_project_many_modules() {
     };
 
     let snapshot = Engine::new(HostConfig::default())
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("cross-project scaling case should execute");
-    contains_value(&snapshot, RuntimeValue::I32(expected_marker));
+    contains_value(&snapshot, Variant::from_i32(expected_marker));
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn e2e_scaling_pressure_many_branches_with_select_case() {
 
     let manifest = source_project("ScaleSelectCase", vec![proc_module("MainModule", &source)]);
     let snapshot = Engine::new(HostConfig::default())
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("branch-heavy scaling case should execute");
-    contains_value(&snapshot, RuntimeValue::I32(1746));
+    contains_value(&snapshot, Variant::from_i32(1746));
 }

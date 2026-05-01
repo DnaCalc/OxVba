@@ -1,7 +1,7 @@
 use oxvba_compiler::{OxBundle, compile_project};
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj_from_str;
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_runtime::Variant;
 
 fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -59,10 +59,10 @@ fn compile_and_prepare_session_does_not_run_loaded_entry_shim() {
         .compile_and_prepare_session(&loaded.manifest)
         .expect("session prep should succeed");
     let result = engine
-        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
         .expect("manual invoke should succeed");
 
-    assert_eq!(result, RuntimeValue::I32(1));
+    assert_eq!(result, Variant::from_i32(1));
 }
 
 #[test]
@@ -86,8 +86,8 @@ fn compile_and_prepare_session_from_bundle_does_not_run_loaded_entry_shim() {
         .compile_and_prepare_session_from_bundle(&bundle)
         .expect("bundle session prep should succeed");
     let result = engine
-        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .invoke_procedure_with_variants(&mut session, "Main", "Main", &[])
         .expect("manual invoke should succeed");
 
-    assert_eq!(result, RuntimeValue::I32(1));
+    assert_eq!(result, Variant::from_i32(1));
 }
