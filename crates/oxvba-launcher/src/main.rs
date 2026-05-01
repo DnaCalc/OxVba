@@ -12,7 +12,7 @@ use oxvba_hal::{
 };
 use oxvba_host::{RunnerBootstrapOptions, resolve_runner_bootstrap};
 use oxvba_jit::JitEngine;
-use oxvba_runtime::compat::RuntimeValue;
+use oxvba_runtime::Variant;
 
 #[derive(Debug, Clone)]
 struct LauncherArgs {
@@ -57,19 +57,20 @@ fn main() {
         .policy(resolved.policy.clone())
         .build();
 
-    let result: Result<Vec<RuntimeValue>, String> = if args.use_jit {
+    let result: Result<Vec<Variant>, String> = if args.use_jit {
         let jit = JitEngine;
-        oxvba_jit::compat::execute_and_snapshot_with_host(&jit, &bundle.bytecode, host_services)
+        jit.execute_and_snapshot_variants_with_host(&bundle.bytecode, host_services)
             .map_err(|e| e.to_string())
     } else {
-        oxvba_vm::compat::execute_and_snapshot_with_host(&bundle.bytecode, host_services)
+        oxvba_vm::execute_and_snapshot_variants_with_host(&bundle.bytecode, host_services)
     };
 
     match result {
         Ok(values) => {
-            if !values.is_empty() {
-                for (i, val) in values.iter().enumerate() {
-                    eprintln!("  slot[{i}] = {val:?}");
+            let snapshot = project_launcher_snapshot(&values);
+            if !snapshot.is_empty() {
+                for value in snapshot {
+                    eprintln!("  slot[{}] = {}", value.slot_index, value.display_text);
                 }
             }
         }
@@ -78,6 +79,23 @@ fn main() {
             process::exit(1);
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LauncherSnapshotValue {
+    slot_index: usize,
+    display_text: String,
+}
+
+fn project_launcher_snapshot(values: &[Variant]) -> Vec<LauncherSnapshotValue> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(slot_index, value)| LauncherSnapshotValue {
+            slot_index,
+            display_text: format!("{value:?}"),
+        })
+        .collect()
 }
 
 fn parse_args(args: Vec<String>) -> Option<LauncherArgs> {
@@ -214,7 +232,19 @@ fn parse_wasm_runtime_class(raw: &str) -> Option<WasmRuntimeClass> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_args;
+    use super::{LauncherSnapshotValue, parse_args, project_launcher_snapshot};
+    use oxvba_runtime::Variant;
+
+    #[test]
+    fn launcher_snapshot_projection_uses_presentation_dto() {
+        assert_eq!(
+            project_launcher_snapshot(&[Variant::from_i32(42)]),
+            vec![LauncherSnapshotValue {
+                slot_index: 0,
+                display_text: format!("{:?}", Variant::from_i32(42)),
+            }]
+        );
+    }
 
     #[test]
     fn parse_launcher_args_supports_bootstrap_flags() {

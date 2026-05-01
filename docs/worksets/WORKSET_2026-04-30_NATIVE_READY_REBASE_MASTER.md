@@ -40,9 +40,10 @@ The JIT snapshot/context/slot-ABI migration has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
 The HAL/COM/runtime boundary migration has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
-The remaining presentation delivery migration and final RuntimeValue search gate
-remain open. The value/numeric/UDT cleanup, stress corpus, and
-runner/performance scaffold remain open follow-on work.
+The presentation DTO split has landed with evidence in
+[`../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md).
+The final RuntimeValue search gate remains open. The value/numeric/UDT cleanup,
+stress corpus, and runner/performance scaffold remain open follow-on work.
 
 ## Child Worksets
 

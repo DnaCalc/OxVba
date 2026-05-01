@@ -64,6 +64,8 @@ The JIT surface migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
 The HAL/COM/runtime boundary migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
+The presentation DTO split evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md).
 
 The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
 occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
@@ -103,7 +105,10 @@ compatibility module or approved residual note before the search gate can close.
   runtime root, runtime helper wrappers are under explicit `compat` modules,
   portable COM dispatch is retained-`Variant`, and remaining HAL/COM/runtime
   bridge residuals have a documented `cleanout-007` removal path.
-- `cleanout-005`: split launcher/web/language-service presentation DTOs.
+- `cleanout-005`: split launcher/web/language-service presentation DTOs. Done
+  2026-05-01; presentation crates have no active `RuntimeValue` matches, the
+  launcher projects retained `Variant` snapshots into `LauncherSnapshotValue`,
+  and language-service embedded tests use variant invocation/results.
 - `cleanout-006`: verify completed IR scaffold removal. Done 2026-05-01.
 - `cleanout-007`: run `RuntimeValue` and fake IR search gates and document any
   approved residuals or blockers.

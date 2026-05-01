@@ -691,8 +691,8 @@ impl Eq for Variant {}
 #[cfg(test)]
 mod tests {
     use crate::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, bstr::BStr,
-        runtime_value::RuntimeValue, safe_array::SafeArray,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, bstr::BStr, runtime_value::RuntimeValue,
+        safe_array::SafeArray,
     };
 
     use super::{VarType, Variant, VariantCore, VariantData};

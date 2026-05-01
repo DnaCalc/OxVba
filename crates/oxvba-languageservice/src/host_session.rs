@@ -352,11 +352,11 @@ mod tests {
     use oxvba_compiler::{ModuleKind, module_unit_from_source};
     use oxvba_host::{
         EmbeddedBuildRequest, EmbeddedBuildRunHost, EmbeddedBuildStatus,
-        EmbeddedExecutionSourcePolicy, EmbeddedInvokeProcedureRequest, EmbeddedProcedureTarget,
-        EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedWorkspaceInput,
-        Engine, HostConfig,
+        EmbeddedExecutionSourcePolicy, EmbeddedInvokeProcedureVariantRequest,
+        EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
+        EmbeddedWorkspaceInput, Engine, HostConfig,
     };
-    use oxvba_runtime::compat::RuntimeValue;
+    use oxvba_runtime::Variant;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -635,12 +635,12 @@ mod tests {
             .run_project(&EmbeddedRunRequest::new(disk_snapshot))
             .expect("disk run");
         let disk_value = disk_run
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "GetValue"),
                 Vec::new(),
             ))
             .expect("disk invoke");
-        assert_eq!(disk_value.return_value, Some(RuntimeValue::I32(1)));
+        assert_eq!(disk_value.return_value, Some(Variant::from_i32(1)));
 
         host_session
             .set_document_text(
@@ -662,12 +662,12 @@ mod tests {
             .run_project(&EmbeddedRunRequest::new(overlay_snapshot))
             .expect("overlay run");
         let overlay_value = overlay_run
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "GetValue"),
                 Vec::new(),
             ))
             .expect("overlay invoke");
-        assert_eq!(overlay_value.return_value, Some(RuntimeValue::I32(2)));
+        assert_eq!(overlay_value.return_value, Some(Variant::from_i32(2)));
 
         let _ = fs::remove_dir_all(&temp_root);
     }
@@ -724,19 +724,19 @@ mod tests {
             .run_project(&EmbeddedRunRequest::new(valid_snapshot.clone()))
             .expect("run session");
         let first = run_session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("first invoke");
         let second = run_session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("second invoke");
-        assert_eq!(first.return_value, Some(RuntimeValue::I32(1)));
-        assert_eq!(second.return_value, Some(RuntimeValue::I32(2)));
+        assert_eq!(first.return_value, Some(Variant::from_i32(1)));
+        assert_eq!(second.return_value, Some(Variant::from_i32(2)));
 
         let reset = run_session
             .reset_runtime(&EmbeddedResetRequest::new(
@@ -746,12 +746,12 @@ mod tests {
             .expect("reset");
         assert_eq!(reset.kind, EmbeddedResetKind::ClearSessionState);
         let after_reset = run_session
-            .invoke_procedure(&EmbeddedInvokeProcedureRequest::new(
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
                 EmbeddedProcedureTarget::new("Module1", "IncrementCounter"),
                 Vec::new(),
             ))
             .expect("after reset");
-        assert_eq!(after_reset.return_value, Some(RuntimeValue::I32(1)));
+        assert_eq!(after_reset.return_value, Some(Variant::from_i32(1)));
 
         let _ = fs::remove_dir_all(&temp_root);
     }
