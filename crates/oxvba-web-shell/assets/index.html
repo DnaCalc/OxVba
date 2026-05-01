@@ -3,146 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OxIde Web Shell</title>
+  <title>OxVba Web Shell</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="ide-shell" data-app="oxide-frankentui">
-    <header class="topbar">
-      <div class="brand-block">
-        <span class="product-mark" aria-hidden="true">OX</span>
-        <div>
-          <p class="app-kicker">OxIde</p>
-          <h1>Debug shell</h1>
-        </div>
-      </div>
-      <nav class="screen-tabs" aria-label="Screen views">
-        <button class="screen-tab is-active" type="button" data-screen-target="workspace">Workspace</button>
-        <button class="screen-tab" type="button" data-screen-target="editor">Editor</button>
-        <button class="screen-tab" type="button" data-screen-target="diagnostics">Diagnostics</button>
-        <button class="screen-tab" type="button" data-screen-target="immediate">Immediate</button>
-        <button class="screen-tab" type="button" data-screen-target="debugger">Debugger</button>
-      </nav>
-      <div class="run-controls" aria-label="Run controls">
-        <button type="button" class="icon-button" title="Open workspace" aria-label="Open workspace" data-command="open">O</button>
-        <button type="button" class="icon-button primary" title="Run project" aria-label="Run project" data-command="run">&gt;</button>
-        <button type="button" class="icon-button" title="Reset runtime" aria-label="Reset runtime" data-command="reset">R</button>
-      </div>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">OxVba Desktop-First Web Shell</p>
+      <h1>Typed bridge first, UI wiring next.</h1>
+      <p class="lede">
+        This baseline scaffold embeds the first frontend asset set that will sit over the
+        explicit OxVba web host bridge contract.
+      </p>
     </header>
-
-    <section class="status-strip" aria-label="Session status">
-      <div><span class="status-label">Workspace</span><strong>C:\Work\Samples\LedgerShell</strong></div>
-      <div><span class="status-label">Runtime</span><strong data-run-state>Idle</strong></div>
-      <div><span class="status-label">Bridge</span><strong>v1 typed</strong></div>
-      <div><span class="status-label">Diagnostics</span><strong>2 warnings</strong></div>
-    </section>
-
-    <section class="screen is-active" data-screen="workspace" aria-label="Workspace screen">
-      <aside class="project-rail">
-        <div class="rail-heading">Project</div>
-        <button class="file-row is-selected" type="button"><span>Module</span>Main.bas</button>
-        <button class="file-row" type="button"><span>Class</span>Ledger.cls</button>
-        <button class="file-row" type="button"><span>Host</span>Application</button>
-        <button class="file-row" type="button"><span>Generated</span>TypeLib projections</button>
-      </aside>
-      <article class="workspace-overview">
-        <div class="section-heading">
-          <span>Workspace load</span>
-          <strong>Ready</strong>
-        </div>
-        <div class="metrics-grid">
-          <div class="metric"><span>Documents</span><strong>3</strong></div>
-          <div class="metric"><span>Entry point</span><strong>Main.Main</strong></div>
-          <div class="metric"><span>Session</span><strong>Fresh</strong></div>
-          <div class="metric"><span>Source</span><strong>.basproj</strong></div>
-        </div>
-        <div class="event-list" aria-label="Workspace events">
-          <div class="event-row success"><span></span>WorkspaceLoaded emitted with 3 documents</div>
-          <div class="event-row success"><span></span>DiagnosticsUpdated routed for Main.bas</div>
-          <div class="event-row neutral"><span></span>RunStateChanged set to Idle</div>
-        </div>
+    <section class="panels">
+      <article class="panel">
+        <h2>Workspace</h2>
+        <p>Project load, document roster, diagnostics, and run/reset actions will bind here.</p>
       </article>
-    </section>
-
-    <section class="screen" data-screen="editor" aria-label="Editor screen">
-      <aside class="outline-panel">
-        <div class="rail-heading">Symbols</div>
-        <button class="symbol-row is-selected" type="button">Sub Main</button>
-        <button class="symbol-row" type="button">Function Total</button>
-        <button class="symbol-row" type="button">Dim counter</button>
-      </aside>
-      <article class="editor-panel">
-        <div class="editor-title">
-          <span>Main.bas</span>
-          <strong>snapshot 42</strong>
-        </div>
-        <pre class="code-surface" aria-label="Code editor"><code><span>Attribute VB_Name = "Main"</span>
-<span>Public Sub Main()</span>
-<span>    Print Ledger.Total()</span>
-<span>End Sub</span></code></pre>
-      </article>
-    </section>
-
-    <section class="screen" data-screen="diagnostics" aria-label="Diagnostics screen">
-      <article class="diagnostics-panel">
-        <div class="section-heading">
-          <span>Diagnostics</span>
-          <strong>current document</strong>
-        </div>
-        <div class="diagnostic-row warning">
-          <span>Warning</span>
-          <p>Implicit Variant result in Ledger.Total can hide numeric coercion.</p>
-          <strong>Main.bas:3</strong>
-        </div>
-        <div class="diagnostic-row warning">
-          <span>Warning</span>
-          <p>Imported type library projection is read-only in this shell.</p>
-          <strong>TypeLib projections</strong>
-        </div>
-      </article>
-      <aside class="output-panel">
-        <div class="rail-heading">Output</div>
-        <p>project run completed with 4 user slots</p>
-        <p>42</p>
-      </aside>
-    </section>
-
-    <section class="screen" data-screen="immediate" aria-label="Immediate screen">
-      <article class="immediate-panel">
-        <div class="section-heading">
-          <span>Immediate</span>
-          <strong>Main module</strong>
-        </div>
-        <div class="console-log">
-          <p><span>?</span> Ledger.Total()</p>
-          <p><span>=</span> 42</p>
-          <p><span>?</span> counter + 1</p>
-          <p><span>=</span> 2</p>
-        </div>
-        <label class="command-line">
-          <span>Command</span>
-          <input value="? IncrementCounter()" aria-label="Immediate command">
-        </label>
-      </article>
-    </section>
-
-    <section class="screen" data-screen="debugger" aria-label="Debugger screen">
-      <article class="debugger-panel">
-        <div class="section-heading">
-          <span>Debugger</span>
-          <strong>paused on step</strong>
-        </div>
-        <div class="debug-grid">
-          <div class="stack-list">
-            <button class="stack-frame is-selected" type="button">Main.Main - line 3</button>
-            <button class="stack-frame" type="button">Ledger.Total - line 8</button>
-          </div>
-          <div class="locals-table" role="table" aria-label="Locals">
-            <div role="row"><strong role="cell">Name</strong><strong role="cell">Value</strong></div>
-            <div role="row"><span role="cell">counter</span><span role="cell">1</span></div>
-            <div role="row"><span role="cell">runningTotal</span><span role="cell">42</span></div>
-          </div>
-        </div>
+      <article class="panel">
+        <h2>Immediate</h2>
+        <p>Immediate and debug-style command routing will arrive through the same bridge.</p>
       </article>
     </section>
   </main>
