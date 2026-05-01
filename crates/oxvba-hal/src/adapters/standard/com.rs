@@ -222,7 +222,7 @@ impl ComHal for StandardHostServices {
                     message,
                 )
             })?;
-            return Ok(Variant::from_object_ref(object));
+            Ok(Variant::from_object_ref(object))
         }
         #[cfg(not(target_os = "windows"))]
         {
