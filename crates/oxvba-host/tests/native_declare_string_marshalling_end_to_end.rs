@@ -352,7 +352,7 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.contains(&Variant::from_i32(123)),
+                snapshot.contains(&Variant::from_i16(123)),
                 "VarI2FromI4 should populate ByRef Integer output for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }

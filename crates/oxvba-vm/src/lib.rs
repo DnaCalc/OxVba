@@ -79,130 +79,14 @@ fn default_host_services() -> Arc<dyn HostServices> {
         .build()
 }
 
-pub mod compat {
-    //! Explicit compatibility adapters for legacy `RuntimeValue` snapshots.
-    //!
-    //! Core VM execution APIs expose retained `Variant` snapshots. Callers that
-    //! still need semantic `RuntimeValue` projections must opt into this module
-    //! so the compatibility boundary is visible at the call site.
-
-    use std::sync::Arc;
-
-    use oxvba_compiler::Bytecode;
-    use oxvba_hal::traits::HostServices;
-    use oxvba_runtime::{Variant, compat::RuntimeValue};
-
-    fn project_snapshot_variants_to_values(
-        values: Vec<Variant>,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        values
-            .into_iter()
-            .map(|value| value.to_runtime_value())
-            .collect()
-    }
-
-    pub trait RuntimeValueCompatVmExt {
-        fn invoke_procedure_with_values(
-            &mut self,
-            bytecode: &Bytecode,
-            entry_pc: usize,
-            arg_slots: &[usize],
-            args: &[RuntimeValue],
-        ) -> Result<(), String>;
-    }
-
-    impl RuntimeValueCompatVmExt for super::Vm {
-        fn invoke_procedure_with_values(
-            &mut self,
-            bytecode: &Bytecode,
-            entry_pc: usize,
-            arg_slots: &[usize],
-            args: &[RuntimeValue],
-        ) -> Result<(), String> {
-            let variants = args
-                .iter()
-                .map(RuntimeValue::to_variant)
-                .collect::<Result<Vec<_>, _>>()?;
-            self.invoke_procedure_with_variants(bytecode, entry_pc, arg_slots, &variants)
-        }
-    }
-
-    pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-        execute_and_snapshot_values(bytecode)
-    }
-
-    pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-        project_snapshot_variants_to_values(super::execute_and_snapshot_variants(bytecode)?)
-    }
-
-    pub fn execute_and_snapshot_with_typed_fastpaths(
-        bytecode: &Bytecode,
-        typed_fastpaths: bool,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        execute_and_snapshot_values_with_typed_fastpaths(bytecode, typed_fastpaths)
-    }
-
-    pub fn execute_and_snapshot_values_with_typed_fastpaths(
-        bytecode: &Bytecode,
-        typed_fastpaths: bool,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        project_snapshot_variants_to_values(
-            super::execute_and_snapshot_variants_with_typed_fastpaths(bytecode, typed_fastpaths)?,
-        )
-    }
-
-    pub fn execute_and_snapshot_with_host(
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        execute_and_snapshot_values_with_host(bytecode, host_services)
-    }
-
-    pub fn execute_and_snapshot_values_with_host(
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        project_snapshot_variants_to_values(super::execute_and_snapshot_variants_with_host(
-            bytecode,
-            host_services,
-        )?)
-    }
-
-    pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-        typed_fastpaths: bool,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        execute_and_snapshot_values_with_host_and_typed_fastpaths(
-            bytecode,
-            host_services,
-            typed_fastpaths,
-        )
-    }
-
-    pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-        typed_fastpaths: bool,
-    ) -> Result<Vec<RuntimeValue>, String> {
-        project_snapshot_variants_to_values(
-            super::execute_and_snapshot_variants_with_host_and_typed_fastpaths(
-                bytecode,
-                host_services,
-                typed_fastpaths,
-            )?,
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use oxvba_compiler::compile;
-    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{Variant, bstr::BStr};
 
     use oxvba_hal::model::native_host_profile;
 
-    use super::{compat, default_host_services, execute_and_snapshot_variants};
+    use super::{default_host_services, execute_and_snapshot_variants};
 
     #[test]
     fn default_host_services_follow_native_host_profile() {
@@ -211,21 +95,13 @@ mod tests {
     }
 
     #[test]
-    fn compat_snapshot_api_projects_variant_snapshot_results() {
+    fn snapshot_api_returns_variant_snapshot_results() {
         let bytecode =
             compile("Sub Main()\nDim x\nx = \"ABC\"\nEnd Sub").expect("compile should succeed");
 
         let variants = execute_and_snapshot_variants(&bytecode).expect("variant snapshot");
-        let compat = compat::execute_and_snapshot_values(&bytecode).expect("compat snapshot");
 
         assert_eq!(variants.len(), 1);
-        assert_eq!(compat, vec![RuntimeValue::String(BStr::from("ABC"))]);
-        assert_eq!(
-            compat,
-            variants
-                .into_iter()
-                .map(|value| value.to_runtime_value().expect("variant projection"))
-                .collect::<Vec<_>>()
-        );
+        assert_eq!(variants, vec![Variant::from_string(BStr::from("ABC"))]);
     }
 }

@@ -1,6 +1,5 @@
 //! oxvba-host: engine orchestration and host integration scaffolding.
 
-pub mod compat;
 pub mod debugger;
 pub mod embedded;
 pub mod engine;

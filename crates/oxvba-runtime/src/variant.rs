@@ -2,7 +2,6 @@ use crate::{
     Decimal96,
     bstr::{BStr, OwnedBStrCore},
     object_ref::{ObjectRef, RawRuntimeIUnknown},
-    runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
     safe_array::SafeArray,
 };
 
@@ -483,110 +482,6 @@ impl Variant {
         }
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
-
-    /// Compatibility bridge from the legacy semantic [`RuntimeValue`] carrier
-    /// into the retained runtime `Variant`.
-    ///
-    /// New value-model code should construct `Variant` values directly.
-    pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
-        Ok(match value {
-            RuntimeValue::Empty => Self::empty(),
-            RuntimeValue::Null => Self::null(),
-            RuntimeValue::ErrorCode(code) => Self::from_error_code(*code),
-            RuntimeValue::I32(value) => Self::from_i32(*value),
-            RuntimeValue::I64(value) => Self::from_i64(*value),
-            RuntimeValue::F64(value) => match value.subtype() {
-                F64Subtype::Single => Self::from_f32(value.as_f64() as f32),
-                F64Subtype::Double => Self::from_f64(value.as_f64()),
-                F64Subtype::Date => Self::from_date_f64(value.as_f64()),
-            },
-            RuntimeValue::Decimal(value) => Self::from_decimal96(*value),
-            RuntimeValue::Currency(value) => Self::from_currency_scaled_i64(value.scaled_i64()),
-            RuntimeValue::Bool(value) => Self::from_bool(*value),
-            RuntimeValue::String(value) => Self::from_string(value.clone()),
-            RuntimeValue::Object(object) => Self::from_object_ref(object.clone()),
-            RuntimeValue::ArrayIntent(array) => Self::from_safearray(array.clone()),
-            RuntimeValue::BindingHandle(handle) => {
-                return Err(format!(
-                    "binding handle {} is an internal non-VBA token and is intentionally excluded from the canonical Variant carrier",
-                    handle.raw()
-                ));
-            }
-        })
-    }
-
-    /// Panicking compatibility bridge from [`RuntimeValue`] into `Variant`.
-    ///
-    /// New value-model code should construct `Variant` values directly.
-    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        Self::try_from_runtime_value(value)
-            .expect("runtime Variant bridge should only be used for supported exact carriers")
-    }
-
-    /// Compatibility projection from the retained runtime `Variant` into the
-    /// legacy semantic [`RuntimeValue`] carrier.
-    pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
-        match self.vtype() {
-            VarType::Empty => Ok(RuntimeValue::Empty),
-            VarType::Null => Ok(RuntimeValue::Null),
-            VarType::Integer => self
-                .as_i16()
-                .map(|value| RuntimeValue::I32(value as i32))
-                .ok_or_else(|| "invalid Integer variant payload".to_string()),
-            VarType::Long => self
-                .as_i32()
-                .map(RuntimeValue::I32)
-                .ok_or_else(|| "invalid Long variant payload".to_string()),
-            VarType::LongLong => self
-                .as_i64()
-                .map(RuntimeValue::I64)
-                .ok_or_else(|| "invalid LongLong variant payload".to_string()),
-            VarType::Byte => self
-                .as_u8()
-                .map(|value| RuntimeValue::I32(i32::from(value)))
-                .ok_or_else(|| "invalid Byte variant payload".to_string()),
-            VarType::Single => self
-                .as_f32()
-                .map(|value| RuntimeValue::F64(F64Value::from_single_f64(value as f64)))
-                .ok_or_else(|| "invalid Single variant payload".to_string()),
-            VarType::Double => self
-                .as_f64()
-                .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
-                .ok_or_else(|| "invalid Double variant payload".to_string()),
-            VarType::Decimal => self
-                .as_decimal96()
-                .map(RuntimeValue::Decimal)
-                .ok_or_else(|| "invalid Decimal variant payload".to_string()),
-            VarType::Currency => self
-                .as_currency_scaled_i64()
-                .map(|value| RuntimeValue::Currency(CurrencyValue::from_scaled_i64(value)))
-                .ok_or_else(|| "invalid Currency variant payload".to_string()),
-            VarType::Date => self
-                .as_date_f64()
-                .map(|value| RuntimeValue::F64(F64Value::from_date_f64(value)))
-                .ok_or_else(|| "invalid Date variant payload".to_string()),
-            VarType::String => self
-                .as_bstr()
-                .map(RuntimeValue::String)
-                .ok_or_else(|| "invalid String variant payload".to_string()),
-            VarType::Boolean => self
-                .as_bool()
-                .map(RuntimeValue::Bool)
-                .ok_or_else(|| "invalid Boolean variant payload".to_string()),
-            VarType::Error => self
-                .as_error_code()
-                .map(RuntimeValue::ErrorCode)
-                .ok_or_else(|| "invalid Error variant payload".to_string()),
-            VarType::Object => self
-                .as_object_ref()
-                .map(RuntimeValue::Object)
-                .ok_or_else(|| "invalid Object variant payload".to_string()),
-            VarType::ArrayVariant => self
-                .as_safearray()
-                .map(RuntimeValue::ArrayIntent)
-                .ok_or_else(|| "invalid SAFEARRAY variant payload".to_string()),
-        }
-    }
 }
 
 impl Clone for Variant {
@@ -690,10 +585,7 @@ impl Eq for Variant {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, bstr::BStr, runtime_value::RuntimeValue,
-        safe_array::SafeArray,
-    };
+    use crate::{Decimal96, bstr::BStr};
 
     use super::{VarType, Variant, VariantCore, VariantData};
 
@@ -790,144 +682,6 @@ mod tests {
         assert_eq!(
             roundtrip.as_decimal96(),
             Some(Decimal96::from_parts(123_450, 7, 0x0002_0001, 3, true))
-        );
-    }
-
-    #[test]
-    fn single_variant_bridges_to_runtime_f64_lane() {
-        let single_variant = Variant::from_f32(12.5);
-        assert_eq!(single_variant.vtype(), VarType::Single);
-        assert_eq!(
-            single_variant
-                .to_runtime_value()
-                .expect("single Variant should bridge into RuntimeValue::F64"),
-            RuntimeValue::F64(F64Value::from_single_f64(12.5))
-        );
-    }
-
-    #[test]
-    fn date_variant_bridges_to_runtime_f64_lane() {
-        let date_variant = Variant::from_date_f64(45200.25);
-        assert_eq!(date_variant.vtype(), VarType::Date);
-        assert_eq!(
-            date_variant
-                .to_runtime_value()
-                .expect("date Variant should bridge into RuntimeValue::F64"),
-            RuntimeValue::F64(F64Value::from_date_f64(45200.25))
-        );
-    }
-
-    #[test]
-    fn currency_variant_bridges_to_runtime_currency_lane() {
-        let currency_variant = Variant::from_currency_scaled_i64(125_000);
-        assert_eq!(currency_variant.vtype(), VarType::Currency);
-        assert_eq!(
-            currency_variant
-                .to_runtime_value()
-                .expect("currency Variant should bridge into RuntimeValue::Currency"),
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000))
-        );
-    }
-
-    #[test]
-    fn decimal_variant_bridges_to_runtime_decimal_lane() {
-        let decimal_variant =
-            Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, true));
-        assert_eq!(decimal_variant.vtype(), VarType::Decimal);
-        assert_eq!(
-            decimal_variant
-                .to_runtime_value()
-                .expect("decimal Variant should bridge into RuntimeValue::Decimal"),
-            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
-        );
-    }
-
-    #[test]
-    fn variant_runtime_value_bridge_roundtrips_supported_exact_subset() {
-        let bool_variant = Variant::try_from_runtime_value(&RuntimeValue::Bool(true))
-            .expect("bool bridge should be supported");
-        assert_eq!(
-            bool_variant
-                .to_runtime_value()
-                .expect("bool Variant should bridge back"),
-            RuntimeValue::Bool(true)
-        );
-
-        let i64_variant = Variant::try_from_runtime_value(&RuntimeValue::I64(5_000_000_000))
-            .expect("i64 bridge should be supported");
-        assert_eq!(
-            i64_variant
-                .to_runtime_value()
-                .expect("i64 Variant should bridge back"),
-            RuntimeValue::I64(5_000_000_000)
-        );
-
-        let string_variant =
-            Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("hello")))
-                .expect("string bridge should be supported");
-        assert_eq!(
-            string_variant
-                .to_runtime_value()
-                .expect("string Variant should bridge back"),
-            RuntimeValue::String(BStr::from("hello"))
-        );
-
-        let object_variant = Variant::try_from_runtime_value(&RuntimeValue::Object(
-            ObjectRef::from_compat_identity(42),
-        ))
-        .expect("object bridge should be supported");
-        assert_eq!(object_variant.vtype() as u16, 0x000D);
-        let object_ref = object_variant
-            .as_object_ref()
-            .expect("object ref should be retained");
-        assert_eq!(object_ref.raw(), 42);
-        drop(object_ref);
-        let roundtripped = object_variant
-            .to_runtime_value()
-            .expect("object Variant should bridge back");
-        let RuntimeValue::Object(object_ref) = roundtripped else {
-            panic!("expected object-ref runtime carrier");
-        };
-        assert_eq!(object_ref.raw(), 42);
-
-        let array_value = RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-            RuntimeValue::I32(4),
-            RuntimeValue::String(BStr::from("payload")),
-        ]));
-        let array_variant = Variant::try_from_runtime_value(&array_value)
-            .expect("array bridge should be supported");
-        assert_eq!(array_variant.vtype(), VarType::ArrayVariant);
-        assert_ne!(u64::from_le_bytes(array_variant.data_bytes()), 0);
-        assert_eq!(
-            array_variant
-                .to_runtime_value()
-                .expect("array Variant should bridge back"),
-            array_value
-        );
-    }
-
-    #[test]
-    fn variant_runtime_value_bridge_excludes_binding_tokens() {
-        let binding = Variant::try_from_runtime_value(&RuntimeValue::BindingHandle(7.into()));
-        assert_eq!(
-            binding.expect_err("binding handles remain outside canonical Variant"),
-            "binding handle 7 is an internal non-VBA token and is intentionally excluded from the canonical Variant carrier"
-        );
-    }
-
-    #[test]
-    fn variant_runtime_projection_rejects_malformed_pointer_payloads() {
-        assert_eq!(
-            Variant::zeroed(VarType::Object)
-                .to_runtime_value()
-                .expect_err("zero object pointer should be rejected"),
-            "invalid Object variant payload"
-        );
-        assert_eq!(
-            Variant::zeroed(VarType::ArrayVariant)
-                .to_runtime_value()
-                .expect_err("zero SAFEARRAY pointer should be rejected"),
-            "invalid SAFEARRAY variant payload"
         );
     }
 }

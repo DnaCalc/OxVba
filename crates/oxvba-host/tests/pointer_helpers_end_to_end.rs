@@ -304,15 +304,15 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(90)),
+                snapshot.iter().any(|value| value.as_u8() == Some(90)),
                 "direct dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(91)),
+                snapshot.iter().any(|value| value.as_u8() == Some(91)),
                 "direct dynamic-array index 1 should be 91 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(92)),
+                snapshot.iter().any(|value| value.as_u8() == Some(92)),
                 "direct dynamic-array index 2 should be 92 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }
@@ -391,15 +391,15 @@ End Sub
         for enable_jit in [false, true] {
             let snapshot = run_windows_host_backed(source, enable_jit);
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(90)),
+                snapshot.iter().any(|value| value.as_u8() == Some(90)),
                 "returned dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(91)),
+                snapshot.iter().any(|value| value.as_u8() == Some(91)),
                 "returned dynamic-array index 1 should be 91 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
             assert!(
-                snapshot.iter().any(|value| value.as_i32() == Some(92)),
+                snapshot.iter().any(|value| value.as_u8() == Some(92)),
                 "returned dynamic-array index 2 should be 92 for enable_jit={enable_jit}; snapshot={snapshot:?}"
             );
         }

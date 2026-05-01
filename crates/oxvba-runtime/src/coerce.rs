@@ -97,11 +97,8 @@ pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
         (VarType::Empty, VarType::Double) => Ok(Variant::from_f64(0.0)),
         (VarType::Empty, VarType::Boolean) => Ok(Variant::from_bool(false)),
 
-        // ── String coercion is represented by `variant_to_vba_string`, which
-        //    returns the retained BSTR carrier. ──
-        (_, VarType::String) => {
-            Err("coercion to String is handled by variant_to_vba_string".to_string())
-        }
+        // ── String coercion retains a BSTR-backed Variant carrier. ──
+        (_, VarType::String) => variant_to_vba_string(value).map(Variant::from_string),
         _ => Err(format!(
             "unsupported coercion from {:?} to {:?}",
             value.vtype(),

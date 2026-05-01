@@ -4,7 +4,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use crate::{Variant, bstr::BStr, runtime_value::RuntimeValue};
+use crate::{Variant, bstr::BStr};
 
 #[cfg(target_os = "windows")]
 use windows_sys::{
@@ -387,15 +387,9 @@ impl PointerEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum ObjectIdentityKey {
-    Binding(i32),
-}
-
 #[derive(Debug, Default)]
 struct PointerRegistry {
     entries: HashMap<usize, PointerEntry>,
-    object_identities: HashMap<ObjectIdentityKey, usize>,
 }
 
 impl PointerRegistry {
@@ -403,15 +397,6 @@ impl PointerRegistry {
         let addr = entry.as_ptr() as usize;
         self.entries.insert(addr, entry);
         addr as i64
-    }
-
-    fn insert_object_identity(&mut self, key: ObjectIdentityKey, raw: i64) -> i64 {
-        if let Some(existing) = self.object_identities.get(&key) {
-            return *existing as i64;
-        }
-        let pointer = self.insert(PointerEntry::ObjectIdentity(Box::new(raw)));
-        self.object_identities.insert(key, pointer as usize);
-        pointer
     }
 
     fn read_back_string_payload_variant(&self, pointer: i64) -> Result<Variant, String> {
@@ -454,12 +439,6 @@ impl PointerRegistry {
         }
     }
 
-    /// Project a retained string payload readback to the legacy semantic API.
-    fn read_back_string_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
-        self.read_back_string_payload_variant(pointer)?
-            .to_runtime_value()
-    }
-
     fn read_back_byte_array_payload_variant(&self, pointer: i64) -> Result<Variant, String> {
         if pointer == 0 {
             return Ok(Variant::from_safearray(
@@ -484,12 +463,6 @@ impl PointerRegistry {
                 "pointer helper entry {other:?} cannot be read back as a byte-array payload"
             )),
         }
-    }
-
-    /// Project a retained byte-array payload readback to the legacy semantic API.
-    fn read_back_byte_array_payload(&self, pointer: i64) -> Result<RuntimeValue, String> {
-        self.read_back_byte_array_payload_variant(pointer)?
-            .to_runtime_value()
     }
 }
 
@@ -639,56 +612,6 @@ fn byte_array_variant_pointer_entry(
     Ok(PointerEntry::Bytes(bytes.into_boxed_slice()))
 }
 
-/// Compatibility wrapper for legacy `RuntimeValue` array intents.
-///
-/// The payload reader stays on retained `Variant` SAFEARRAY elements.
-fn byte_array_pointer_entry(array: &crate::safe_array::SafeArray) -> Result<PointerEntry, String> {
-    byte_array_variant_pointer_entry(array)
-}
-
-/// Historical pointer materialization that operates directly on `RuntimeValue`.
-///
-/// This remains only for legacy compatibility APIs whose behavior included
-/// semantic-value-specific projections such as `BindingHandle` object identity.
-fn legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
-    let entry = match value {
-        RuntimeValue::Empty | RuntimeValue::Null => return Ok(0),
-        RuntimeValue::I32(value) => PointerEntry::I32(Box::new(*value)),
-        RuntimeValue::I64(value) => PointerEntry::I64(Box::new(*value)),
-        RuntimeValue::F64(value) => PointerEntry::F64(Box::new(value.as_f64())),
-        RuntimeValue::Currency(value) => PointerEntry::I64(Box::new(value.scaled_i64())),
-        RuntimeValue::Bool(value) => PointerEntry::Bool(Box::new(if *value { -1 } else { 0 })),
-        RuntimeValue::String(value) => {
-            #[cfg(target_os = "windows")]
-            {
-                PointerEntry::Bstr(OwnedBstr::from_bstr(value)?)
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let core = value.owned_core();
-                let data: Box<[u16]> = core.payload_units_with_nul().to_vec().into_boxed_slice();
-                PointerEntry::Utf16(data)
-            }
-        }
-        RuntimeValue::ArrayIntent(array) => byte_array_pointer_entry(array)?,
-        RuntimeValue::Object(handle) => {
-            PointerEntry::ObjectIdentity(Box::new(handle.raw_iunknown() as usize as i64))
-        }
-        RuntimeValue::BindingHandle(handle) => {
-            PointerEntry::ObjectIdentity(Box::new(i64::from(handle.raw())))
-        }
-        RuntimeValue::ErrorCode(value) => PointerEntry::I32(Box::new(*value)),
-        RuntimeValue::Decimal(_) => {
-            return Err("VarPtr/ObjPtr over Decimal is not yet supported".to_string());
-        }
-    };
-
-    let mut guard = registry()
-        .lock()
-        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-    Ok(guard.insert(entry))
-}
-
 pub fn register_string_variant_pointer(value: &Variant) -> Result<i64, String> {
     #[cfg(target_os = "windows")]
     {
@@ -743,169 +666,8 @@ pub fn register_object_variant_pointer(value: &Variant) -> Result<i64, String> {
     }
 }
 
-/// Legacy semantic-value pointer helpers.
-///
-/// Normal pointer helper entry points operate on retained [`Variant`] carriers.
-/// Callers that still need historical `RuntimeValue` projection semantics must
-/// enter through this compatibility module explicitly.
-pub mod compat {
-    use super::*;
-
-    /// Register a pointer for callers that still provide the legacy semantic value.
-    ///
-    /// The retained path is `register_variant_pointer`; this wrapper projects the
-    /// input into a `Variant` before materializing helper storage.
-    pub fn register_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        let variant = Variant::try_from_runtime_value(value)?;
-        register_variant_pointer(&variant)
-    }
-
-    /// Register a string variable pointer from the legacy semantic value API.
-    ///
-    /// Prefer `register_string_variant_pointer` for retained `Variant` callers.
-    pub fn register_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        let variant = Variant::try_from_runtime_value(value)?;
-        register_string_variant_pointer(&variant)
-    }
-
-    /// Register a Variant variable pointer from the legacy semantic value API.
-    ///
-    /// Prefer `register_variant_var_variant_pointer` for retained `Variant` callers.
-    pub fn register_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        let variant = Variant::try_from_runtime_value(value)?;
-        register_variant_var_variant_pointer(&variant)
-    }
-
-    /// Register an object pointer from the legacy semantic value API.
-    ///
-    /// Prefer `register_object_variant_pointer` for retained `Variant` callers.
-    /// `BindingHandle` remains a compatibility-only side lane because it is not a
-    /// VBA/COM value.
-    pub fn register_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        match Variant::try_from_runtime_value(value) {
-            Ok(variant) => register_object_variant_pointer(&variant),
-            Err(_) => match value {
-                RuntimeValue::BindingHandle(handle) => {
-                    let mut guard = registry()
-                        .lock()
-                        .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-                    Ok(guard.insert_object_identity(
-                        ObjectIdentityKey::Binding(handle.raw()),
-                        i64::from(handle.raw()),
-                    ))
-                }
-                _ => Err("ObjPtr requires an object reference".to_string()),
-            },
-        }
-    }
-
-    /// Register a pointer using the historical direct `RuntimeValue` projection.
-    ///
-    /// This is intentionally separate from the retained `Variant` path.
-    pub fn register_legacy_runtime_value_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        legacy_runtime_value_pointer(value)
-    }
-
-    pub fn register_array_payload_pointer(
-        array: &crate::safe_array::SafeArray,
-    ) -> Result<i64, String> {
-        let entry = byte_array_pointer_entry(array)?;
-        let mut guard = registry()
-            .lock()
-            .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        Ok(guard.insert(entry))
-    }
-
-    /// Register a legacy string variable pointer from the semantic value API.
-    ///
-    /// This preserves the old direct-projection behavior for compatibility callers.
-    pub fn register_legacy_string_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        #[cfg(target_os = "windows")]
-        {
-            let entry = match value {
-                RuntimeValue::String(text) => {
-                    PointerEntry::BstrCell(OwnedBstrCell::from_bstr(text)?)
-                }
-                RuntimeValue::Empty | RuntimeValue::Null => return Ok(0),
-                _ => return Err("VarPtr over String requires a string variable".to_string()),
-            };
-
-            let mut guard = registry()
-                .lock()
-                .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-            Ok(guard.insert(entry))
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            legacy_runtime_value_pointer(value)
-        }
-    }
-
-    /// Register a legacy Variant variable pointer from the semantic value API.
-    ///
-    /// This preserves the old direct-projection behavior for compatibility callers.
-    pub fn register_legacy_variant_var_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        #[cfg(target_os = "windows")]
-        {
-            let variant = Variant::try_from_runtime_value(value)?;
-            let entry = PointerEntry::VariantCell(OwnedVariant::from_variant(&variant)?);
-            let mut guard = registry()
-                .lock()
-                .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-            Ok(guard.insert(entry))
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            legacy_runtime_value_pointer(value)
-        }
-    }
-
-    /// Register a legacy object pointer from the semantic value API.
-    ///
-    /// This preserves the old direct-projection behavior for compatibility callers.
-    pub fn register_legacy_object_pointer(value: &RuntimeValue) -> Result<i64, String> {
-        match value {
-            RuntimeValue::Empty | RuntimeValue::Null => Ok(0),
-            RuntimeValue::Object(handle) if handle.raw() == 0 => Ok(0),
-            RuntimeValue::Object(handle) => Ok(handle.raw_iunknown() as usize as i64),
-            RuntimeValue::BindingHandle(handle) => {
-                let mut guard = registry()
-                    .lock()
-                    .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-                Ok(guard.insert_object_identity(
-                    ObjectIdentityKey::Binding(handle.raw()),
-                    i64::from(handle.raw()),
-                ))
-            }
-            _ => Err("ObjPtr requires an object reference".to_string()),
-        }
-    }
-
-    /// Read back a string payload through the legacy semantic value API.
-    ///
-    /// Prefer `read_back_string_payload_variant` for retained `Variant` callers.
-    pub fn read_back_string_payload(pointer: i64) -> Result<RuntimeValue, String> {
-        let guard = registry()
-            .lock()
-            .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        guard.read_back_string_payload(pointer)
-    }
-
-    /// Read back a byte-array payload through the legacy semantic value API.
-    ///
-    /// Prefer `read_back_byte_array_payload_variant` for retained `Variant` callers.
-    pub fn read_back_byte_array_payload(pointer: i64) -> Result<RuntimeValue, String> {
-        let guard = registry()
-            .lock()
-            .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
-        guard.read_back_byte_array_payload(pointer)
-    }
-}
-
 pub fn register_array_payload_pointer(array: &crate::safe_array::SafeArray) -> Result<i64, String> {
-    let entry = byte_array_pointer_entry(array)?;
+    let entry = byte_array_variant_pointer_entry(array)?;
     let mut guard = registry()
         .lock()
         .map_err(|_| "pointer helper registry lock poisoned".to_string())?;
@@ -944,18 +706,11 @@ pub fn register_byte_buffer(bytes: Vec<u8>) -> Result<i64, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::compat::{
-        register_object_pointer, register_runtime_value_pointer, register_string_var_pointer,
-        register_variant_var_pointer,
-    };
     use super::{
-        lookup_pointer, register_string_variant_pointer, register_utf16_string,
-        register_variant_pointer, register_variant_var_variant_pointer,
+        lookup_pointer, register_object_variant_pointer, register_string_variant_pointer,
+        register_utf16_string, register_variant_pointer, register_variant_var_variant_pointer,
     };
-    use crate::{
-        BindingHandle, Decimal96, ObjectRef, VarType, Variant, bstr::BStr,
-        runtime_value::RuntimeValue,
-    };
+    use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use windows_sys::{
         Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen},
@@ -985,16 +740,6 @@ mod tests {
         assert!(!raw.is_null());
         let len = unsafe { SysStringLen(raw.cast()) };
         assert_eq!(len, 3);
-    }
-
-    #[test]
-    fn runtime_value_pointer_handles_scalars_and_strings() {
-        let string_ptr = register_runtime_value_pointer(&RuntimeValue::String(BStr::from("xyz")))
-            .expect("register string runtime value");
-        assert_ne!(string_ptr, 0);
-        let scalar_ptr =
-            register_runtime_value_pointer(&RuntimeValue::I64(42)).expect("register i64");
-        assert_ne!(scalar_ptr, 0);
     }
 
     #[test]
@@ -1035,22 +780,6 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn string_var_pointer_exposes_bstr_cell_not_payload() {
-        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr::from("abc")))
-            .expect("register string var");
-        assert_ne!(ptr, 0);
-        let raw = lookup_pointer(ptr)
-            .expect("lookup string var")
-            .cast::<usize>();
-        assert!(!raw.is_null());
-        let payload = unsafe { *raw as *const u16 };
-        assert!(!payload.is_null());
-        let len = unsafe { SysStringLen(payload.cast_mut()) };
-        assert_eq!(len, 3);
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
     fn string_variant_pointer_exposes_bstr_cell_not_payload() {
         let ptr = register_string_variant_pointer(&Variant::from_string(BStr::from("abc")))
             .expect("register string variant var");
@@ -1068,7 +797,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn string_var_pointer_readback_tracks_updated_bstr_cell() {
-        let ptr = register_string_var_pointer(&RuntimeValue::String(BStr::from("abc")))
+        let ptr = register_string_variant_pointer(&Variant::from_string(BStr::from("abc")))
             .expect("register string var");
         let raw = lookup_pointer(ptr)
             .expect("lookup string var")
@@ -1083,9 +812,6 @@ mod tests {
         unsafe {
             *raw = SysAllocStringLen(replacement.payload_ptr(), replacement_len);
         }
-        let value =
-            super::compat::read_back_string_payload(ptr).expect("read back updated string var");
-        assert_eq!(value, RuntimeValue::String(BStr::from("alpha")));
         let variant =
             super::read_back_string_payload_variant(ptr).expect("read back updated string var");
         assert_eq!(variant, Variant::from_string(BStr::from("alpha")));
@@ -1094,8 +820,8 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn string_var_pointer_preserves_embedded_nul_bstr_payload() {
-        let original = RuntimeValue::String(BStr::from("abc"));
-        let ptr = register_string_var_pointer(&original).expect("register string var");
+        let original = Variant::from_string(BStr::from("abc"));
+        let ptr = register_string_variant_pointer(&original).expect("register string var");
         let raw = lookup_pointer(ptr)
             .expect("lookup string var")
             .cast::<BSTR>();
@@ -1112,9 +838,6 @@ mod tests {
         let payload = unsafe { *raw };
         let len = unsafe { SysStringLen(payload) };
         assert_eq!(len, 4);
-        let value =
-            super::compat::read_back_string_payload(ptr).expect("read back embedded nul string");
-        assert_eq!(value, RuntimeValue::String(BStr::from("a\0bc")));
         let variant =
             super::read_back_string_payload_variant(ptr).expect("read back embedded nul string");
         assert_eq!(variant, Variant::from_string(BStr::from("a\0bc")));
@@ -1139,15 +862,15 @@ mod tests {
             ]
         );
         assert_eq!(
-            super::compat::read_back_byte_array_payload(ptr).expect("runtime read back"),
-            RuntimeValue::ArrayIntent(crate::safe_array::SafeArray::from_variants(elements))
+            Variant::from_safearray(crate::safe_array::SafeArray::from_variants(elements)),
+            variant
         );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn variant_var_pointer_materializes_variant_container() {
-        let ptr = register_variant_var_pointer(&RuntimeValue::String(BStr::from("abc")))
+        let ptr = register_variant_var_variant_pointer(&Variant::from_string(BStr::from("abc")))
             .expect("register variant");
         assert_ne!(ptr, 0);
         let raw = lookup_pointer(ptr)
@@ -1160,8 +883,8 @@ mod tests {
         let len = unsafe { SysStringLen(payload) };
         assert_eq!(len, 3);
 
-        let int_ptr =
-            register_variant_var_pointer(&RuntimeValue::I32(42)).expect("register i32 variant");
+        let int_ptr = register_variant_var_variant_pointer(&Variant::from_i32(42))
+            .expect("register i32 variant");
         let int_raw = lookup_pointer(int_ptr)
             .expect("lookup i32 variant")
             .cast::<VARIANT>();
@@ -1184,7 +907,7 @@ mod tests {
             42.25
         );
 
-        let decimal_ptr = register_variant_var_pointer(&RuntimeValue::Decimal(
+        let decimal_ptr = register_variant_var_variant_pointer(&Variant::from_decimal96(
             Decimal96::from_parts(123_450, 0, 0, 3, false),
         ))
         .expect("register decimal variant");
@@ -1222,55 +945,29 @@ mod tests {
     #[test]
     fn object_pointer_requires_object_like_value() {
         assert_eq!(
-            register_object_pointer(&RuntimeValue::Object(ObjectRef::from_compat_identity(0)))
-                .expect("nothing"),
+            register_object_variant_pointer(&Variant::from_object_ref(
+                ObjectRef::from_compat_identity(0)
+            ))
+            .expect("nothing"),
             0
         );
-        assert!(register_object_pointer(&RuntimeValue::I32(5)).is_err());
-    }
-
-    #[test]
-    fn object_pointer_distinguishes_fresh_runtime_objects_from_binding_tokens() {
-        let object = ObjectRef::from_compat_identity(42);
-        let same_identity_value = RuntimeValue::Object(ObjectRef::from_compat_identity(42));
-        let object_ptr = register_object_pointer(&RuntimeValue::Object(object.clone()))
-            .expect("object identity");
-        let same_object_ptr =
-            register_object_pointer(&same_identity_value).expect("same object identity");
-        let binding_ptr =
-            register_object_pointer(&RuntimeValue::BindingHandle(BindingHandle::new(42)))
-                .expect("binding identity");
-        assert_ne!(object_ptr, same_object_ptr);
-        assert_ne!(object_ptr, binding_ptr);
+        assert!(register_object_variant_pointer(&Variant::from_i32(5)).is_err());
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn object_pointer_returns_raw_iunknown_address() {
         let object = ObjectRef::from_compat_identity(42);
-        let pointer =
-            register_object_pointer(&RuntimeValue::Object(object.clone())).expect("object pointer");
+        let pointer = register_object_variant_pointer(&Variant::from_object_ref(object.clone()))
+            .expect("object pointer");
         assert_eq!(pointer, object.raw_iunknown() as usize as i64);
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn runtime_value_pointer_over_object_exposes_interface_pointer_cell() {
-        let object = ObjectRef::from_compat_identity(42);
-        let pointer = register_runtime_value_pointer(&RuntimeValue::Object(object.clone()))
-            .expect("runtime value object pointer");
-        let raw = lookup_pointer(pointer)
-            .expect("lookup object cell")
-            .cast::<i64>();
-        assert!(!raw.is_null());
-        assert_eq!(unsafe { *raw }, object.raw_iunknown() as usize as i64);
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn variant_var_pointer_supports_object_payload() {
         let object = ObjectRef::from_compat_identity(42);
-        let ptr = register_variant_var_pointer(&RuntimeValue::Object(object.clone()))
+        let ptr = register_variant_var_variant_pointer(&Variant::from_object_ref(object.clone()))
             .expect("register object-valued variant");
         let raw = lookup_pointer(ptr)
             .expect("lookup variant var")
@@ -1287,10 +984,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn variant_var_pointer_supports_array_payload() {
-        let ptr = register_variant_var_pointer(&RuntimeValue::ArrayIntent(
-            crate::safe_array::SafeArray::from_values(vec![
-                RuntimeValue::I32(4),
-                RuntimeValue::String(BStr::from("abc")),
+        let ptr = register_variant_var_variant_pointer(&Variant::from_safearray(
+            crate::safe_array::SafeArray::from_variants(vec![
+                Variant::from_i32(4),
+                Variant::from_string(BStr::from("abc")),
             ]),
         ))
         .expect("register array-valued variant");

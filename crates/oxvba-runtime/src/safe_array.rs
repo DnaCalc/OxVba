@@ -2,7 +2,6 @@ use crate::{
     Decimal96, VarType, Variant,
     bstr::BStr,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
-    runtime_value::RuntimeValue,
 };
 use core::ptr::NonNull;
 
@@ -634,22 +633,6 @@ impl SafeArray {
         Ok(Self(header))
     }
 
-    fn from_bounds_and_runtime_values(
-        bounds: Vec<SafeArrayBound>,
-        element_vt: u16,
-        values: Option<Vec<RuntimeValue>>,
-    ) -> Result<Self, String> {
-        let values = values
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| Variant::try_from_runtime_value(&value))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        Self::from_bounds_and_variants(bounds, element_vt, values)
-    }
-
     pub fn vector(len: usize) -> Self {
         Self::from_bounds_and_variants(
             default_bounds_for_len(len).expect("vector bounds should fit SAFEARRAY capacity"),
@@ -659,67 +642,12 @@ impl SafeArray {
         .expect("shape-only SAFEARRAY allocation should succeed")
     }
 
-    /// Compatibility constructor that projects [`RuntimeValue`] inputs into
-    /// retained `Variant` payload elements.
-    ///
-    /// New value-model call sites should prefer [`Self::from_variants`].
-    pub fn from_values(values: Vec<RuntimeValue>) -> Self {
-        let len = values.len();
-        Self::from_bounds_and_runtime_values(
-            default_bounds_for_len(len).expect("value bounds should fit SAFEARRAY capacity"),
-            VT_VARIANT_VALUE,
-            Some(values),
-        )
-        .expect("SAFEARRAY payload allocation should succeed for supported canonical values")
-    }
-
-    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
-    /// retained multi-dimensional `Variant` payload.
-    ///
-    /// New value-model call sites should prefer [`Self::from_variants_nd`].
-    pub fn from_values_nd(bounds: Vec<SafeArrayBound>, values: Vec<RuntimeValue>) -> Self {
-        Self::from_bounds_and_runtime_values(bounds, VT_VARIANT_VALUE, Some(values))
-            .expect("SAFEARRAY nd payload allocation should succeed for supported canonical values")
-    }
-
-    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
-    /// retained typed SAFEARRAY payload.
-    ///
-    /// New value-model call sites should prefer [`Self::from_typed_variants`].
-    pub fn from_typed_values(element_vt: u16, values: Vec<RuntimeValue>) -> Result<Self, String> {
-        let len = values.len();
-        Self::from_bounds_and_runtime_values(default_bounds_for_len(len)?, element_vt, Some(values))
-    }
-
-    /// Compatibility constructor that projects [`RuntimeValue`] inputs into a
-    /// retained multi-dimensional typed SAFEARRAY payload.
-    ///
-    /// New value-model call sites should prefer [`Self::from_typed_variants_nd`].
-    pub fn from_typed_values_nd(
-        bounds: Vec<SafeArrayBound>,
-        element_vt: u16,
-        values: Vec<RuntimeValue>,
-    ) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(bounds, element_vt, Some(values))
-    }
-
     pub fn from_shape(bounds: Vec<SafeArrayBound>) -> Result<Self, String> {
         Self::from_bounds_and_variants(bounds, VT_VARIANT_VALUE, None)
     }
 
     pub fn from_shape_typed(bounds: Vec<SafeArrayBound>, element_vt: u16) -> Result<Self, String> {
         Self::from_bounds_and_variants(bounds, element_vt, None)
-    }
-
-    /// Compatibility constructor that projects [`RuntimeValue`] inputs into an
-    /// explicitly shaped retained `Variant` payload.
-    ///
-    /// New value-model call sites should prefer [`Self::from_shape_and_variants`].
-    pub fn from_shape_and_values(
-        bounds: Vec<SafeArrayBound>,
-        values: Vec<RuntimeValue>,
-    ) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(bounds, VT_VARIANT_VALUE, Some(values))
     }
 
     pub fn from_variants(values: Vec<Variant>) -> Self {
@@ -812,23 +740,6 @@ impl SafeArray {
             .unwrap_or_else(|| default_bounds_for_len(self.len()).unwrap_or_default())
     }
 
-    /// Compatibility accessor that projects retained `Variant` elements into
-    /// [`RuntimeValue`] values for legacy callers.
-    ///
-    /// New value-model call sites should prefer [`Self::variant_elements`].
-    pub fn elements(&self) -> Option<Vec<RuntimeValue>> {
-        self.variant_elements().map(|values| {
-            values
-                .into_iter()
-                .map(|value| {
-                    value
-                        .to_runtime_value()
-                        .expect("SAFEARRAY Variant element should project to RuntimeValue")
-                })
-                .collect()
-        })
-    }
-
     pub fn variant_elements(&self) -> Option<Vec<Variant>> {
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
@@ -845,19 +756,6 @@ impl SafeArray {
             index += 1;
         }
         Some(values)
-    }
-
-    /// Compatibility replacement API that projects [`RuntimeValue`] inputs into
-    /// retained payload elements while preserving the current shape and element
-    /// vartype.
-    ///
-    /// New value-model call sites should prefer [`Self::replace_variant_elements`].
-    pub fn replace_elements(&self, values: Vec<RuntimeValue>) -> Result<Self, String> {
-        Self::from_bounds_and_runtime_values(
-            self.bounds_for_shape(),
-            self.element_vartype(),
-            Some(values),
-        )
     }
 
     pub fn replace_variant_elements(&self, values: Vec<Variant>) -> Result<Self, String> {
@@ -1015,7 +913,7 @@ mod tests {
         array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
         safe_array_from_tag,
     };
-    use crate::{Decimal96, ObjectRef, Variant, bstr::BStr, runtime_value::RuntimeValue};
+    use crate::{Decimal96, ObjectRef, Variant, bstr::BStr};
 
     #[test]
     fn safe_array_tag_roundtrip_for_vector_shape() {
@@ -1036,14 +934,14 @@ mod tests {
 
     #[test]
     fn safe_array_from_values_preserves_owned_payload_shape() {
-        let array = SafeArray::from_values(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)]);
+        let array = SafeArray::from_variants(vec![Variant::from_i32(4), Variant::from_i32(9)]);
         assert_eq!(array.dimensions(), 1);
         assert_eq!(array.len(), 2);
         assert_eq!(array.effective_len(), 2);
         assert_eq!(array.element_vartype(), VT_VARIANT_VALUE);
         assert_eq!(
-            array.elements(),
-            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+            array.variant_elements(),
+            Some(vec![Variant::from_i32(4), Variant::from_i32(9)])
         );
         assert_eq!(array_tag_from_safe_array(&array), Some(ARRAY_TAG_BASE + 2));
     }
@@ -1051,33 +949,25 @@ mod tests {
     #[test]
     fn safe_array_variant_api_preserves_canonical_payload_shape() {
         let array = SafeArray::from_variants(vec![
-            Variant::try_from_runtime_value(&RuntimeValue::I32(4)).expect("variant"),
-            Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("A")))
-                .expect("variant"),
+            Variant::from_i32(4),
+            Variant::from_string(BStr::from("A")),
         ]);
         let elements = array
             .variant_elements()
             .expect("variant SAFEARRAY should expose variants");
-        assert_eq!(
-            elements[0].to_runtime_value().unwrap(),
-            RuntimeValue::I32(4)
-        );
-        assert_eq!(
-            elements[1].to_runtime_value().unwrap(),
-            RuntimeValue::String(BStr::from("A"))
-        );
+        assert_eq!(elements[0], Variant::from_i32(4));
+        assert_eq!(elements[1], Variant::from_string(BStr::from("A")));
         let replaced = array
             .replace_variant_elements(vec![
-                Variant::try_from_runtime_value(&RuntimeValue::I32(9)).expect("variant"),
-                Variant::try_from_runtime_value(&RuntimeValue::String(BStr::from("B")))
-                    .expect("variant"),
+                Variant::from_i32(9),
+                Variant::from_string(BStr::from("B")),
             ])
             .expect("replace variant elements");
         assert_eq!(
-            replaced.elements(),
+            replaced.variant_elements(),
             Some(vec![
-                RuntimeValue::I32(9),
-                RuntimeValue::String(BStr::from("B"))
+                Variant::from_i32(9),
+                Variant::from_string(BStr::from("B"))
             ])
         );
     }
@@ -1120,19 +1010,19 @@ mod tests {
             SafeArrayBound { lower: 1, count: 2 },
         ];
         let values = vec![
-            RuntimeValue::I32(1),
-            RuntimeValue::I32(2),
-            RuntimeValue::I32(3),
-            RuntimeValue::I32(4),
-            RuntimeValue::I32(5),
-            RuntimeValue::I32(6),
+            Variant::from_i32(1),
+            Variant::from_i32(2),
+            Variant::from_i32(3),
+            Variant::from_i32(4),
+            Variant::from_i32(5),
+            Variant::from_i32(6),
         ];
-        let array = SafeArray::from_values_nd(bounds.clone(), values.clone());
+        let array = SafeArray::from_variants_nd(bounds.clone(), values.clone());
         assert_eq!(array.dimensions(), 2);
         assert_eq!(array.len(), 6);
         assert_eq!(array.effective_len(), 6);
         assert_eq!(array.bounds().as_ref(), Some(&bounds));
-        assert_eq!(array.elements().as_ref(), Some(&values));
+        assert_eq!(array.variant_elements().as_ref(), Some(&values));
     }
 
     #[test]
@@ -1143,7 +1033,7 @@ mod tests {
             array.bounds(),
             Some(vec![SafeArrayBound { lower: 0, count: 5 }])
         );
-        assert_eq!(array.elements(), None);
+        assert_eq!(array.variant_elements(), None);
     }
 
     #[test]
@@ -1154,15 +1044,15 @@ mod tests {
         ])
         .expect("shape");
         let replaced = shape
-            .replace_elements(vec![
-                RuntimeValue::I32(1),
-                RuntimeValue::I32(2),
-                RuntimeValue::I32(3),
-                RuntimeValue::I32(4),
+            .replace_variant_elements(vec![
+                Variant::from_i32(1),
+                Variant::from_i32(2),
+                Variant::from_i32(3),
+                Variant::from_i32(4),
             ])
             .expect("replace");
         assert_eq!(replaced.bounds(), shape.bounds());
-        assert_eq!(replaced.elements().expect("elements").len(), 4);
+        assert_eq!(replaced.variant_elements().expect("elements").len(), 4);
     }
 
     #[test]
@@ -1175,8 +1065,8 @@ mod tests {
         assert_eq!(array.element_vartype(), VT_I2_VALUE);
         assert_eq!(array.feature_flags(), FADF_HAVEVARTYPE_VALUE);
         assert_eq!(
-            array.elements(),
-            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
+            array.variant_elements(),
+            Some(vec![Variant::from_i16(4), Variant::from_i16(9)])
         );
     }
 
@@ -1229,10 +1119,6 @@ mod tests {
             array.variant_elements().expect("variant elements"),
             vec![Variant::from_i16(4), Variant::from_i16(9)]
         );
-        assert_eq!(
-            array.elements(),
-            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
-        );
     }
 
     #[test]
@@ -1247,10 +1133,6 @@ mod tests {
         assert_eq!(
             array.variant_elements().expect("variant elements"),
             vec![Variant::from_i16(4), Variant::from_i16(9)]
-        );
-        assert_eq!(
-            array.elements(),
-            Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
         );
     }
 
@@ -1305,10 +1187,10 @@ mod tests {
         .expect("typed bstr array");
         assert_eq!(array.element_vartype(), VT_BSTR_VALUE);
         assert_eq!(
-            array.elements(),
+            array.variant_elements(),
             Some(vec![
-                RuntimeValue::String(BStr::from("Alpha")),
-                RuntimeValue::String(BStr::from("Beta")),
+                Variant::from_string(BStr::from("Alpha")),
+                Variant::from_string(BStr::from("Beta")),
             ])
         );
     }
@@ -1322,9 +1204,9 @@ mod tests {
         )
         .expect("typed dispatch array");
         assert_eq!(array.element_vartype(), VT_DISPATCH_VALUE);
-        let elements = array.elements().expect("typed dispatch elements");
+        let elements = array.variant_elements().expect("typed dispatch elements");
         assert_eq!(elements.len(), 1);
-        assert_eq!(elements[0], RuntimeValue::Object(object));
+        assert_eq!(elements[0], Variant::from_object_ref(object));
     }
 
     #[test]
@@ -1336,9 +1218,9 @@ mod tests {
         )
         .expect("typed unknown array");
         assert_eq!(array.element_vartype(), VT_UNKNOWN_VALUE);
-        let elements = array.elements().expect("typed unknown elements");
+        let elements = array.variant_elements().expect("typed unknown elements");
         assert_eq!(elements.len(), 1);
-        assert_eq!(elements[0], RuntimeValue::Object(object));
+        assert_eq!(elements[0], Variant::from_object_ref(object));
     }
 }
 
