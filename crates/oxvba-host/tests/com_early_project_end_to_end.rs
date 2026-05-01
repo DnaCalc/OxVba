@@ -9,47 +9,40 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
-use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
-use oxvba_runtime::{ObjectRef, compat::RuntimeValue};
+use oxvba_runtime::{ObjectRef, Variant};
 
 fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
     static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
     CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn canonicalize_runtime_value(value: RuntimeValue) -> RuntimeValue {
-    match value {
-        RuntimeValue::Object(object) => {
-            let raw = object.raw();
-            let canonical = canonical_snapshot_objects()
-                .lock()
-                .expect("canonical object snapshot map should not be poisoned")
-                .entry(raw)
-                .or_insert_with(|| ObjectRef::from_compat_identity(raw))
-                .clone();
-            RuntimeValue::Object(canonical)
-        }
-        RuntimeValue::ArrayIntent(array) => {
-            let array = match array.elements() {
-                Some(elements) => array
-                    .replace_elements(
-                        elements
-                            .into_iter()
-                            .map(canonicalize_runtime_value)
-                            .collect(),
-                    )
-                    .expect("canonical snapshot array rewrite should preserve SAFEARRAY shape"),
-                None => array,
-            };
-            RuntimeValue::ArrayIntent(array)
-        }
-        other => other,
+fn canonicalize_variant(value: Variant) -> Variant {
+    if let Some(object) = value.as_object_ref() {
+        let raw = object.raw();
+        let canonical = canonical_snapshot_objects()
+            .lock()
+            .expect("canonical object snapshot map should not be poisoned")
+            .entry(raw)
+            .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+            .clone();
+        return Variant::from_object_ref(canonical);
     }
+    if let Some(array) = value.as_safearray() {
+        let array = match array.variant_elements() {
+            Some(elements) => array
+                .replace_variant_elements(elements.into_iter().map(canonicalize_variant).collect())
+                .expect("canonical snapshot array rewrite should preserve SAFEARRAY shape"),
+            None => array,
+        };
+        return Variant::from_safearray(array);
+    }
+    value
 }
 
-fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    values.into_iter().map(canonicalize_runtime_value).collect()
+fn canonicalize_snapshot(values: Vec<Variant>) -> Vec<Variant> {
+    values.into_iter().map(canonicalize_variant).collect()
 }
 
 fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
@@ -73,7 +66,7 @@ fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
 }
 
 #[cfg(target_os = "windows")]
-fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> Vec<RuntimeValue> {
+fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> Vec<Variant> {
     run_project_windows_hosted_with_policy(manifest, enable_jit, HostPolicy::interactive_dev())
 }
 
@@ -82,7 +75,7 @@ fn run_project_windows_hosted_with_policy(
     manifest: &ProjectManifest,
     enable_jit: bool,
     policy: HostPolicy,
-) -> Vec<RuntimeValue> {
+) -> Vec<Variant> {
     let mut engine = Engine::new(HostConfig {
         enable_jit,
         root_object_name: None,
@@ -90,7 +83,7 @@ fn run_project_windows_hosted_with_policy(
     engine.set_host_policy(policy);
     canonicalize_snapshot(
         engine
-            .execute_project_with_snapshot_phased(manifest)
+            .execute_project_with_variant_snapshot_phased(manifest)
             .expect("project should execute"),
     )
 }
@@ -103,19 +96,18 @@ fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
-        .execute_project_with_snapshot_phased(manifest)
+        .execute_project_with_variant_snapshot_phased(manifest)
         .expect_err("project should fail deterministically");
     format!("{:?}: {}", err.phase(), err.message())
 }
 
-fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
-    match value {
-        RuntimeValue::Object(handle) => handle.clone(),
-        other => panic!("expected object handle, got {:?}", other),
-    }
+fn expect_object_handle(value: &Variant) -> ObjectRef {
+    value
+        .as_object_ref()
+        .unwrap_or_else(|| panic!("expected object handle, got {:?}", value))
 }
 
-fn assert_same_object_identity(values: &[RuntimeValue], indices: &[usize], context: &str) {
+fn assert_same_object_identity(values: &[Variant], indices: &[usize], context: &str) {
     let first = expect_object_handle(&values[indices[0]]);
     for index in indices.iter().copied().skip(1) {
         let next = expect_object_handle(&values[index]);
@@ -319,22 +311,22 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "Count should map through early-bind rewrite lane"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::Bool(true),
+        Variant::from_bool(true),
         "Exists(42) should map through early-bind rewrite lane"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(1_042),
+        Variant::from_i32(1_042),
         "Lookup(42) should map through metadata-backed property-get lane"
     );
     assert_eq!(
         out[4],
-        RuntimeValue::I32(42),
+        Variant::from_i32(42),
         "obj(42) should map through metadata-backed default-member lane"
     );
 }
@@ -360,7 +352,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("41,42,")),
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("41,42,")),
         "imported COM NewEnum VT_UNKNOWN/IEnumVARIANT transport should materialize through the runtime For Each lane"
     );
 }
@@ -410,7 +402,7 @@ End Sub
 
     let out = run_project_windows_hosted(&manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(0));
+    assert_eq!(out[1], Variant::from_i32(0));
 }
 
 #[cfg(target_os = "windows")]
@@ -436,8 +428,8 @@ End Sub
 
     let out = run_project_windows_hosted(&manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(1));
-    assert_eq!(out[2], RuntimeValue::Bool(true));
+    assert_eq!(out[1], Variant::from_i32(1));
+    assert_eq!(out[2], Variant::from_bool(true));
 }
 
 #[cfg(target_os = "windows")]
@@ -464,11 +456,11 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("txt"))
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("txt"))
     );
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("demo"))
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("demo"))
     );
 }
 
@@ -500,8 +492,8 @@ End Sub
     let vtable = run_project_windows_hosted_with_policy(&manifest, false, policy);
     assert_eq!(dispatch, vtable);
     assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
-    assert_eq!(vtable[1], RuntimeValue::I32(1));
-    assert_eq!(vtable[2], RuntimeValue::Bool(true));
+    assert_eq!(vtable[1], Variant::from_i32(1));
+    assert_eq!(vtable[2], Variant::from_bool(true));
 }
 
 #[cfg(target_os = "windows")]
@@ -530,7 +522,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::String(oxvba_runtime::bstr::BStr::from("41,42,")),
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("41,42,")),
         "registered OxVba.TestDispatch For Each transport should materialize through the runtime lane"
     );
 }
@@ -584,7 +576,7 @@ End Sub
 
     let out = run_project_windows_hosted(&manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(42));
+    assert_eq!(out[1], Variant::from_i32(42));
 }
 
 #[cfg(target_os = "windows")]
@@ -610,7 +602,7 @@ End Sub
     let vtable = run_project_windows_hosted_with_policy(&manifest, false, policy);
     assert_eq!(dispatch, vtable);
     assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
-    assert_eq!(vtable[1], RuntimeValue::I32(42));
+    assert_eq!(vtable[1], Variant::from_i32(42));
 }
 
 #[cfg(target_os = "windows")]
@@ -1751,7 +1743,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(19),
+        Variant::from_i32(19),
         "Call-form imported positional method/property/default-member invokes should execute without degrading the metadata-backed subset"
     );
 }
@@ -1804,7 +1796,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(29),
+        Variant::from_i32(29),
         "Call-form imported named-argument method/property/default-member invokes should execute without degrading metadata-backed canonicalization"
     );
 }
@@ -1856,7 +1848,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(43),
+        Variant::from_i32(43),
         "no-paren Call-form imported positional method/property/default-member invokes should execute on the metadata-backed subset"
     );
 }
@@ -1909,7 +1901,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(47),
+        Variant::from_i32(47),
         "no-paren Call-form imported named-argument method/property/default-member invokes should execute on the metadata-backed subset"
     );
 }
@@ -1961,7 +1953,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(31),
+        Variant::from_i32(31),
         "statement-context imported positional method/property/default-member invokes should execute without degrading the metadata-backed subset"
     );
 }
@@ -2014,7 +2006,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(37),
+        Variant::from_i32(37),
         "statement-context imported named-argument method/property/default-member invokes should execute without degrading metadata-backed canonicalization"
     );
 }
@@ -2064,7 +2056,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(53),
+        Variant::from_i32(53),
         "no-paren statement-context imported positional method/property/default-member invokes should execute on the metadata-backed subset"
     );
 }
@@ -2115,7 +2107,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(59),
+        Variant::from_i32(59),
         "no-paren statement-context imported named-argument method/property/default-member invokes should execute on the metadata-backed subset"
     );
 }
@@ -2288,7 +2280,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("unsupported member shape should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -2321,12 +2313,12 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(9),
+        Variant::from_i32(9),
         "imported property-put assignment should lower into the deterministic setter lane"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(307_011),
+        Variant::from_i32(307_011),
         "imported indexed property-put assignment should preserve index and value"
     );
 }
@@ -2376,7 +2368,7 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(307_011),
+        Variant::from_i32(307_011),
         "imported named-argument property-put assignment should preserve metadata-backed parameter naming"
     );
 }
@@ -2430,12 +2422,12 @@ End Sub
     assert!(expect_object_handle(&out[1]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "controlled property-putref object lane should interrogate the bound object deterministically"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(408_007),
+        Variant::from_i32(408_007),
         "named-argument property-putref assignment should preserve index and bounded object-derived token"
     );
 }
@@ -2487,12 +2479,12 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(9),
+        Variant::from_i32(9),
         "imported zero-arg property-get read-assignment should lower through metadata-backed getter syntax"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(9),
+        Variant::from_i32(9),
         "explicit Let should preserve imported zero-arg property-get read-assignment syntax"
     );
 }
@@ -2517,12 +2509,12 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(123),
+        Variant::from_i32(123),
         "imported zero-arg method read-assignment should lower through metadata-backed invoke syntax"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(123),
+        Variant::from_i32(123),
         "explicit Let should preserve imported zero-arg method read-assignment syntax"
     );
 }
@@ -2597,12 +2589,12 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(9),
+        Variant::from_i32(9),
         "imported parenthesized zero-arg property-get read-assignment should lower through metadata-backed getter syntax"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(9),
+        Variant::from_i32(9),
         "explicit Let should preserve imported parenthesized zero-arg property-get read-assignment syntax"
     );
 }
@@ -2669,22 +2661,22 @@ End Sub
     assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
         out[5],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "direct imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
     );
     assert_eq!(
         out[6],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "direct imported object-valued property-get should preserve VT_UNKNOWN rebinding on Object targets"
     );
     assert_eq!(
         out[7],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "direct imported object-valued property-get should preserve VT_DISPATCH rebinding on Variant targets"
     );
     assert_eq!(
         out[8],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "direct imported object-valued property-get should preserve VT_UNKNOWN rebinding on explicit-Let Variant targets"
     );
 }
@@ -2761,22 +2753,22 @@ End Sub
     assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
         out[5],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "parenthesized imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
     );
     assert_eq!(
         out[6],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on Object targets"
     );
     assert_eq!(
         out[7],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "parenthesized imported object-valued property-get should preserve VT_DISPATCH rebinding on Variant targets"
     );
     assert_eq!(
         out[8],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on explicit-Let Variant targets"
     );
 }
@@ -2843,12 +2835,12 @@ End Sub
     assert!(expect_object_handle(&out[2]).raw() >= 20_001);
     assert_eq!(
         out[3],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "VT_DISPATCH imported member result should rebind into an invokable object handle"
     );
     assert_eq!(
         out[4],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "VT_UNKNOWN imported member result should rebind through IDispatch into an invokable object handle"
     );
 }
@@ -2909,17 +2901,17 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(3_014),
+        Variant::from_i32(3_014),
         "imported method call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(205_009),
+        Variant::from_i32(205_009),
         "imported property-get call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(41),
+        Variant::from_i32(41),
         "imported default-member call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
 }
@@ -2972,17 +2964,17 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(3_014),
+        Variant::from_i32(3_014),
         "explicit Let imported method call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::I32(205_009),
+        Variant::from_i32(205_009),
         "explicit Let imported property-get call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(41),
+        Variant::from_i32(41),
         "explicit Let imported default-member call should preserve named-argument canonicalization through metadata-backed dispatch"
     );
 }
@@ -3037,22 +3029,22 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
         out[1],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Let imported zero-arg call should preserve metadata-backed lowering"
     );
     assert_eq!(
         out[2],
-        RuntimeValue::Bool(true),
+        Variant::from_bool(true),
         "explicit Let imported method call should preserve metadata-backed lowering"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(1_042),
+        Variant::from_i32(1_042),
         "explicit Let imported property-get call should preserve metadata-backed lowering"
     );
     assert_eq!(
         out[4],
-        RuntimeValue::I32(42),
+        Variant::from_i32(42),
         "explicit Let imported default-member call should preserve metadata-backed lowering"
     );
 }
@@ -3149,22 +3141,22 @@ End Sub
     assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
         out[5],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Set should preserve VT_DISPATCH object-result rebinding on Object targets"
     );
     assert_eq!(
         out[6],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Set should preserve VT_UNKNOWN object-result rebinding on Object targets"
     );
     assert_eq!(
         out[7],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "implicit Variant-target assignment should preserve VT_DISPATCH object-result rebinding"
     );
     assert_eq!(
         out[8],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Let Variant-target assignment should preserve VT_UNKNOWN object-result rebinding"
     );
 }
@@ -3206,22 +3198,22 @@ End Sub
     assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
         out[5],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Set should preserve VT_DISPATCH zero-arg method rebinding on Object targets without parentheses"
     );
     assert_eq!(
         out[6],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Set should preserve VT_UNKNOWN zero-arg method rebinding on Object targets without parentheses"
     );
     assert_eq!(
         out[7],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "implicit Variant-target assignment should preserve VT_DISPATCH zero-arg method rebinding without parentheses"
     );
     assert_eq!(
         out[8],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "explicit Let Variant-target assignment should preserve VT_UNKNOWN zero-arg method rebinding without parentheses"
     );
 }
@@ -3317,7 +3309,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3353,12 +3345,12 @@ End Sub
     assert!(expect_object_handle(&out[1]).raw() >= 20_001);
     assert_eq!(
         out[2],
-        RuntimeValue::I32(7),
+        Variant::from_i32(7),
         "controlled property-putref object lane should interrogate the bound object deterministically"
     );
     assert_eq!(
         out[3],
-        RuntimeValue::I32(100_007),
+        Variant::from_i32(100_007),
         "property-putref assignment should preserve bounded object-derived token on the deterministic setter lane"
     );
 }
@@ -3406,7 +3398,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong property-put arity should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3435,7 +3427,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong-arity member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3464,7 +3456,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong default-member arity should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3515,7 +3507,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3559,7 +3551,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3579,7 +3571,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3599,7 +3591,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3633,7 +3625,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3666,7 +3658,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3700,7 +3692,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3734,7 +3726,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3766,7 +3758,7 @@ Public Event Changed(ByVal value As OxVba.TestDispatch)
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3798,7 +3790,7 @@ Public Event Changed(ByVal value As TestDispatch)
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3831,7 +3823,7 @@ End Function
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3865,7 +3857,7 @@ End Sub
         root_object_name: None,
     });
     engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
 }
 
@@ -3887,7 +3879,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing default member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3915,7 +3907,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous default member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3943,7 +3935,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong zero-arg no-paren Call default-member arity should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3971,7 +3963,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong zero-arg no-paren statement default-member arity should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -3999,7 +3991,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing no-paren Call default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4026,7 +4018,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing no-paren statement default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4054,7 +4046,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous no-paren Call default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4081,7 +4073,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous no-paren statement default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4109,7 +4101,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong parenthesized Call default-member arity should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4138,7 +4130,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong parenthesized statement default-member arity should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4167,7 +4159,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing parenthesized Call default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4194,7 +4186,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing parenthesized statement default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4222,7 +4214,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous parenthesized Call default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4250,7 +4242,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous parenthesized statement default member should fail");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -4278,6 +4270,6 @@ End Sub
 
     let out = run_project_windows_hosted(&manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(7));
-    assert_eq!(out[2], RuntimeValue::Bool(true));
+    assert_eq!(out[1], Variant::from_i32(7));
+    assert_eq!(out[2], Variant::from_bool(true));
 }

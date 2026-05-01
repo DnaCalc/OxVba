@@ -6,11 +6,10 @@ mod windows_com_e2e {
     };
 
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
+    use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef,
+        Decimal96, ObjectRef, Variant,
         bstr::BStr,
-        compat::RuntimeValue,
         safe_array::{
             SafeArray, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
             VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_INT_VALUE,
@@ -24,41 +23,36 @@ mod windows_com_e2e {
         CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
-    fn canonicalize_runtime_value(value: RuntimeValue) -> RuntimeValue {
-        match value {
-            RuntimeValue::Object(object) => {
-                let raw = object.raw();
-                let canonical = canonical_snapshot_objects()
-                    .lock()
-                    .expect("canonical object snapshot map should not be poisoned")
-                    .entry(raw)
-                    .or_insert_with(|| ObjectRef::from_compat_identity(raw))
-                    .clone();
-                RuntimeValue::Object(canonical)
-            }
-            RuntimeValue::ArrayIntent(array) => {
-                let array = match array.elements() {
-                    Some(elements) => array
-                        .replace_elements(
-                            elements
-                                .into_iter()
-                                .map(canonicalize_runtime_value)
-                                .collect(),
-                        )
-                        .expect("canonical snapshot array rewrite should preserve SAFEARRAY shape"),
-                    None => array,
-                };
-                RuntimeValue::ArrayIntent(array)
-            }
-            other => other,
+    fn canonicalize_variant(value: Variant) -> Variant {
+        if let Some(object) = value.as_object_ref() {
+            let raw = object.raw();
+            let canonical = canonical_snapshot_objects()
+                .lock()
+                .expect("canonical object snapshot map should not be poisoned")
+                .entry(raw)
+                .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+                .clone();
+            return Variant::from_object_ref(canonical);
         }
+        if let Some(array) = value.as_safearray() {
+            let array = match array.variant_elements() {
+                Some(elements) => array
+                    .replace_variant_elements(
+                        elements.into_iter().map(canonicalize_variant).collect(),
+                    )
+                    .expect("canonical snapshot array rewrite should preserve SAFEARRAY shape"),
+                None => array,
+            };
+            return Variant::from_safearray(array);
+        }
+        value
     }
 
-    fn canonicalize_snapshot(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-        values.into_iter().map(canonicalize_runtime_value).collect()
+    fn canonicalize_snapshot(values: Vec<Variant>) -> Vec<Variant> {
+        values.into_iter().map(canonicalize_variant).collect()
     }
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
         let mut engine = Engine::new(HostConfig {
             enable_jit,
             root_object_name: None,
@@ -66,7 +60,7 @@ mod windows_com_e2e {
         engine.set_host_policy(HostPolicy::interactive_dev());
         canonicalize_snapshot(
             engine
-                .execute_source_with_snapshot_phased(source)
+                .execute_source_with_variant_snapshot_phased(source)
                 .expect("windows host-backed COM lane should execute"),
         )
     }
@@ -78,27 +72,26 @@ mod windows_com_e2e {
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_variant_snapshot_phased(source)
             .expect_err("windows host-backed COM lane should fail deterministically")
             .message()
             .to_string()
     }
 
-    fn expect_object_handle(value: &RuntimeValue) -> ObjectRef {
-        match value {
-            RuntimeValue::Object(handle) => handle.clone(),
-            other => panic!("expected object handle, got {:?}", other),
-        }
+    fn expect_object_handle(value: &Variant) -> ObjectRef {
+        value
+            .as_object_ref()
+            .unwrap_or_else(|| panic!("expected object handle, got {:?}", value))
     }
 
-    fn runtime_values_equivalent(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
-        match (lhs, rhs) {
-            (RuntimeValue::Object(lhs), RuntimeValue::Object(rhs)) => lhs.raw() == rhs.raw(),
+    fn variants_equivalent(lhs: &Variant, rhs: &Variant) -> bool {
+        match (lhs.as_object_ref(), rhs.as_object_ref()) {
+            (Some(lhs), Some(rhs)) => lhs.raw() == rhs.raw(),
             _ => lhs == rhs,
         }
     }
 
-    fn assert_snapshots_equivalent(vm: &[RuntimeValue], jit: &[RuntimeValue], context: &str) {
+    fn assert_snapshots_equivalent(vm: &[Variant], jit: &[Variant], context: &str) {
         assert_eq!(
             vm.len(),
             jit.len(),
@@ -106,13 +99,13 @@ mod windows_com_e2e {
         );
         for (index, (lhs, rhs)) in vm.iter().zip(jit.iter()).enumerate() {
             assert!(
-                runtime_values_equivalent(lhs, rhs),
+                variants_equivalent(lhs, rhs),
                 "VM/JIT snapshots diverged on {context} at index {index}: vm={vm:?} jit={jit:?}"
             );
         }
     }
 
-    fn assert_same_object_identity(values: &[RuntimeValue], indices: &[usize], context: &str) {
+    fn assert_same_object_identity(values: &[Variant], indices: &[usize], context: &str) {
         let first = expect_object_handle(&values[indices[0]]);
         for index in indices.iter().copied().skip(1) {
             let next = expect_object_handle(&values[index]);
@@ -142,12 +135,12 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::I32(7),
+            Variant::from_i32(7),
             "controlled COM Count contract mismatch"
         );
         assert_eq!(
             out[2],
-            RuntimeValue::Bool(true),
+            Variant::from_bool(true),
             "controlled COM Exists(42) contract mismatch"
         );
     }
@@ -178,22 +171,22 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "SetValue should store direct value"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "Value getter should reflect SetValue result"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(100_012),
+            Variant::from_i32(100_012),
             "SetValueRef should take deterministic putref route"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(100_012),
+            Variant::from_i32(100_012),
             "Value getter should reflect SetValueRef result"
         );
     }
@@ -228,32 +221,32 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(3_014),
+            Variant::from_i32(3_014),
             "SumPair should preserve both arguments"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(205_009),
+            Variant::from_i32(205_009),
             "LookupPair should preserve both arguments"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "SetIndexedValue should route through multi-arg property put"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "Value getter should reflect multi-arg property put result"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "SetIndexedValueRef should route through multi-arg property putref"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "Value getter should reflect multi-arg property putref result"
         );
     }
@@ -284,22 +277,22 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "SetIndexedValue should accept fully named indexed property put arguments"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "Value getter should reflect named indexed property put result"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "SetIndexedValueRef should accept fully named indexed property putref arguments"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "Value getter should reflect named indexed property putref result"
         );
     }
@@ -326,12 +319,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ErrorCode(17),
+            Variant::from_error_code(17),
             "CVErr(17) should roundtrip as an error tag"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::Null,
+            Variant::null(),
             "Null should roundtrip as the stable null tag"
         );
     }
@@ -356,7 +349,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "natural named default-member invoke should route to EchoVariant"
         );
     }
@@ -381,7 +374,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "natural positional default-member invoke should route to EchoVariant"
         );
     }
@@ -406,7 +399,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "named default-member invoke should route to EchoVariant"
         );
     }
@@ -431,7 +424,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "positional default-member invoke should route to EchoVariant"
         );
     }
@@ -474,52 +467,52 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(321),
+            Variant::from_i32(321),
             "VT_I2 result should coerce into the i32 token lane"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(65_000),
+            Variant::from_i32(65_000),
             "VT_UI2 result should coerce into the i32 token lane"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(255),
+            Variant::from_i32(255),
             "VT_UI1 result should coerce into the i32 token lane"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(-5),
+            Variant::from_i32(-5),
             "VT_I1 result should coerce into the i32 token lane"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(-70_000),
+            Variant::from_i32(-70_000),
             "VT_INT result should preserve the current i32 carrier lane"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(70_000),
+            Variant::from_i32(70_000),
             "VT_UINT result should preserve the current i32 carrier lane when the value fits"
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::I32(-70_000),
+            Variant::from_i32(-70_000),
             "VT_I8 result should preserve the current i32 carrier lane when the value fits"
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::I32(70_000),
+            Variant::from_i32(70_000),
             "VT_UI8 result should preserve the current i32 carrier lane when the value fits"
         );
         assert_eq!(
             vm[9],
-            RuntimeValue::I32(70_000),
+            Variant::from_i32(70_000),
             "VT_I4 result should preserve the current i32 carrier lane"
         );
         assert_eq!(
             vm[10],
-            RuntimeValue::I32(70_000),
+            Variant::from_i32(70_000),
             "VT_UI4 result should preserve the current i32 carrier lane when the value fits"
         );
     }
@@ -564,13 +557,13 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_I2_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(-4),
-                        RuntimeValue::I32(321),
+                        Variant::from_i32(12),
+                        Variant::from_i32(-4),
+                        Variant::from_i32(321),
                     ],
                 )
                 .expect("typed i2 array"),
@@ -579,13 +572,13 @@ End Sub
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_UI1_VALUE,
                     vec![
-                        RuntimeValue::I32(0),
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(255),
+                        Variant::from_i32(0),
+                        Variant::from_i32(12),
+                        Variant::from_i32(255),
                     ],
                 )
                 .expect("typed ui1 array"),
@@ -594,13 +587,13 @@ End Sub
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_I1_VALUE,
                     vec![
-                        RuntimeValue::I32(-5),
-                        RuntimeValue::I32(0),
-                        RuntimeValue::I32(120),
+                        Variant::from_i32(-5),
+                        Variant::from_i32(0),
+                        Variant::from_i32(120),
                     ],
                 )
                 .expect("typed i1 array"),
@@ -609,13 +602,13 @@ End Sub
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_INT_VALUE,
                     vec![
-                        RuntimeValue::I32(-70_000),
-                        RuntimeValue::I32(0),
-                        RuntimeValue::I32(12),
+                        Variant::from_i32(-70_000),
+                        Variant::from_i32(0),
+                        Variant::from_i32(12),
                     ],
                 )
                 .expect("typed int array"),
@@ -624,13 +617,13 @@ End Sub
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_UINT_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(4_096),
-                        RuntimeValue::I32(70_000),
+                        Variant::from_i32(12),
+                        Variant::from_i32(4_096),
+                        Variant::from_i32(70_000),
                     ],
                 )
                 .expect("typed uint array"),
@@ -639,13 +632,13 @@ End Sub
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_I8_VALUE,
                     vec![
-                        RuntimeValue::I32(-70_000),
-                        RuntimeValue::I32(0),
-                        RuntimeValue::I32(12),
+                        Variant::from_i32(-70_000),
+                        Variant::from_i32(0),
+                        Variant::from_i32(12),
                     ],
                 )
                 .expect("typed i8 array"),
@@ -654,13 +647,13 @@ End Sub
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_UI8_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(4_096),
-                        RuntimeValue::I32(70_000),
+                        Variant::from_i32(12),
+                        Variant::from_i32(4_096),
+                        Variant::from_i32(70_000),
                     ],
                 )
                 .expect("typed ui8 array"),
@@ -669,13 +662,13 @@ End Sub
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_I4_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(-4),
-                        RuntimeValue::I32(70_000),
+                        Variant::from_i32(12),
+                        Variant::from_i32(-4),
+                        Variant::from_i32(70_000),
                     ],
                 )
                 .expect("typed i4 array"),
@@ -684,13 +677,13 @@ End Sub
         );
         assert_eq!(
             vm[9],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_UI4_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(4_096),
-                        RuntimeValue::I32(70_000),
+                        Variant::from_i32(12),
+                        Variant::from_i32(4_096),
+                        Variant::from_i32(70_000),
                     ],
                 )
                 .expect("typed ui4 array"),
@@ -699,13 +692,13 @@ End Sub
         );
         assert_eq!(
             vm[10],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_BOOL_VALUE,
                     vec![
-                        RuntimeValue::Bool(true),
-                        RuntimeValue::Bool(false),
-                        RuntimeValue::Bool(true),
+                        Variant::from_bool(true),
+                        Variant::from_bool(false),
+                        Variant::from_bool(true),
                     ],
                 )
                 .expect("typed bool array"),
@@ -714,12 +707,12 @@ End Sub
         );
         assert_eq!(
             vm[11],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_BSTR_VALUE,
                     vec![
-                        RuntimeValue::String(BStr::from("Alpha")),
-                        RuntimeValue::String(BStr::from("Beta")),
+                        Variant::from_string(BStr::from("Alpha")),
+                        Variant::from_string(BStr::from("Beta")),
                     ],
                 )
                 .expect("typed bstr array"),
@@ -750,12 +743,12 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::Bool(true),
+            Variant::from_bool(true),
             "VT_BOOL result should preserve the semantic bool carrier"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("Scalar BSTR")),
+            Variant::from_string(BStr::from("Scalar BSTR")),
             "VT_BSTR result should preserve the semantic string carrier"
         );
     }
@@ -784,17 +777,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::Empty,
+            Variant::empty(),
             "VT_EMPTY result should preserve the semantic empty carrier"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::Null,
+            Variant::null(),
             "VT_NULL result should preserve the semantic null carrier"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::ErrorCode(17),
+            Variant::from_error_code(17),
             "VT_ERROR result should preserve the semantic error-code carrier"
         );
     }
@@ -823,17 +816,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::F64(F64Value::from_f64(12.5)),
+            Variant::from_f64(12.5),
             "VT_R8 result should preserve the semantic f64 carrier"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+            Variant::from_f32(12.5),
             "VT_R4 result should preserve the semantic f64 carrier with Single subtype"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+            Variant::from_date_f64(45200.25),
             "VT_DATE result should preserve the automation date payload with Date subtype"
         );
     }
@@ -862,13 +855,13 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_R8_VALUE,
                     vec![
-                        RuntimeValue::F64(F64Value::from_f64(12.5)),
-                        RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                        RuntimeValue::F64(F64Value::from_f64(321.0)),
+                        Variant::from_f64(12.5),
+                        Variant::from_f64(-4.25),
+                        Variant::from_f64(321.0),
                     ],
                 )
                 .expect("typed r8 array"),
@@ -877,13 +870,13 @@ End Sub
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_R4_VALUE,
                     vec![
-                        RuntimeValue::F64(F64Value::from_single_f64(12.5)),
-                        RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
-                        RuntimeValue::F64(F64Value::from_single_f64(321.0)),
+                        Variant::from_f32(12.5),
+                        Variant::from_f32(-4.25),
+                        Variant::from_f32(321.0),
                     ],
                 )
                 .expect("typed r4 array"),
@@ -892,13 +885,13 @@ End Sub
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_DATE_VALUE,
                     vec![
-                        RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
-                        RuntimeValue::F64(F64Value::from_date_f64(12.5)),
-                        RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
+                        Variant::from_date_f64(45200.25),
+                        Variant::from_date_f64(12.5),
+                        Variant::from_date_f64(-4.25),
                     ],
                 )
                 .expect("typed date array"),
@@ -927,7 +920,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+            Variant::from_currency_scaled_i64(125_000),
             "VT_CY result should preserve the exact scaled currency carrier"
         );
     }
@@ -952,13 +945,13 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_CY_VALUE,
                     vec![
-                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
-                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
-                        RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+                        Variant::from_currency_scaled_i64(125_000),
+                        Variant::from_currency_scaled_i64(-42_500),
+                        Variant::from_currency_scaled_i64(3_210_000),
                     ],
                 )
                 .expect("typed currency array"),
@@ -987,7 +980,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true)),
+            Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, true)),
             "VT_DECIMAL result should preserve the exact decimal carrier"
         );
     }
@@ -1012,13 +1005,13 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_DECIMAL_VALUE,
                     vec![
-                        RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
-                        RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
-                        RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
+                        Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+                        Variant::from_decimal96(Decimal96::from_parts(42_500, 0, 0, 4, true)),
+                        Variant::from_decimal96(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
                     ],
                 )
                 .expect("typed decimal array"),
@@ -1052,12 +1045,12 @@ End Sub
         assert!(expect_object_handle(&vm[2]).raw() >= 20_001);
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(7),
+            Variant::from_i32(7),
             "VT_DISPATCH result should rebind into an invokable object handle"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(7),
+            Variant::from_i32(7),
             "VT_UNKNOWN result exposing IDispatch should rebind into an invokable object handle"
         );
     }
@@ -1124,27 +1117,27 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(11),
+            Variant::from_i32(11),
             "True should marshal as VT_BOOL"
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::I32(8),
+            Variant::from_i32(8),
             "string argument should marshal as VT_BSTR"
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::I32(0),
+            Variant::from_i32(0),
             "uninitialized Variant should marshal as VT_EMPTY"
         );
         assert_eq!(
             vm[9],
-            RuntimeValue::I32(1),
+            Variant::from_i32(1),
             "Null should marshal as VT_NULL"
         );
         assert_eq!(
             vm[10],
-            RuntimeValue::I32(10),
+            Variant::from_i32(10),
             "CVErr(...) should marshal as VT_ERROR"
         );
     }
@@ -1187,27 +1180,27 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(5),
+            Variant::from_i32(5),
             "Double should marshal as VT_R8"
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::I32(4),
+            Variant::from_i32(4),
             "Single should now preserve VT_R4 on the outward COM boundary"
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::I32(7),
+            Variant::from_i32(7),
             "Date should now preserve VT_DATE on the outward COM boundary"
         );
         assert_eq!(
             vm[9],
-            RuntimeValue::I32(6),
+            Variant::from_i32(6),
             "Currency should preserve VT_CY on the exact currency carrier"
         );
         assert_eq!(
             vm[10],
-            RuntimeValue::I32(14),
+            Variant::from_i32(14),
             "Decimal should preserve VT_DECIMAL on the exact decimal carrier"
         );
     }
@@ -1232,7 +1225,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(9),
+            Variant::from_i32(9),
             "object argument should marshal as VT_DISPATCH"
         );
     }
@@ -1258,7 +1251,7 @@ End Sub
         );
         assert_eq!(
             vm[0],
-            RuntimeValue::I32(8204),
+            Variant::from_i32(8204),
             "ParamArray forwarding should marshal as VT_ARRAY | VT_VARIANT"
         );
     }
@@ -1283,7 +1276,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(8204),
+            Variant::from_i32(8204),
             "array argument should marshal as VT_ARRAY | VT_VARIANT"
         );
     }
@@ -1308,7 +1301,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(9),
+            Variant::from_i32(9),
             "object element inside VT_ARRAY | VT_VARIANT should marshal as VT_DISPATCH"
         );
     }
@@ -1331,19 +1324,14 @@ End Sub
             "VM/JIT snapshots diverged on dispatch-array result path: vm={vm:?} jit={jit:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
-        let RuntimeValue::ArrayIntent(array) = &vm[1] else {
-            panic!("expected SAFEARRAY result, got {:?}", vm[1]);
-        };
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY result, got {:?}", vm[1]));
         let elements = array
-            .elements()
+            .variant_elements()
             .expect("dispatch-array result should preserve owned elements");
         assert_eq!(elements.len(), 1, "dispatch-array result length mismatch");
-        let RuntimeValue::Object(handle) = &elements[0] else {
-            panic!(
-                "expected first dispatch-array element to be an object handle, got {:?}",
-                elements[0]
-            );
-        };
+        let handle = expect_object_handle(&elements[0]);
         assert!(
             handle.raw() >= 20_001,
             "dispatch-array result should preserve nested dispatch object handles"
@@ -1368,24 +1356,19 @@ End Sub
             "VM/JIT snapshots diverged on typed dispatch-array result path: vm={vm:?} jit={jit:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
-        let RuntimeValue::ArrayIntent(array) = &vm[1] else {
-            panic!("expected SAFEARRAY result, got {:?}", vm[1]);
-        };
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY result, got {:?}", vm[1]));
         assert_eq!(array.element_vartype(), VT_DISPATCH_VALUE);
         let elements = array
-            .elements()
+            .variant_elements()
             .expect("typed dispatch-array result should preserve owned elements");
         assert_eq!(
             elements.len(),
             1,
             "typed dispatch-array result length mismatch"
         );
-        let RuntimeValue::Object(handle) = &elements[0] else {
-            panic!(
-                "expected first typed dispatch-array element to be an object handle, got {:?}",
-                elements[0]
-            );
-        };
+        let handle = expect_object_handle(&elements[0]);
         assert!(
             handle.raw() >= 20_001,
             "typed dispatch-array result should preserve nested dispatch object handles"
@@ -1410,24 +1393,19 @@ End Sub
             "VM/JIT snapshots diverged on typed unknown-array result path: vm={vm:?} jit={jit:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
-        let RuntimeValue::ArrayIntent(array) = &vm[1] else {
-            panic!("expected SAFEARRAY result, got {:?}", vm[1]);
-        };
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY result, got {:?}", vm[1]));
         assert_eq!(array.element_vartype(), VT_UNKNOWN_VALUE);
         let elements = array
-            .elements()
+            .variant_elements()
             .expect("typed unknown-array result should preserve owned elements");
         assert_eq!(
             elements.len(),
             1,
             "typed unknown-array result length mismatch"
         );
-        let RuntimeValue::Object(handle) = &elements[0] else {
-            panic!(
-                "expected first typed unknown-array element to be an object handle, got {:?}",
-                elements[0]
-            );
-        };
+        let handle = expect_object_handle(&elements[0]);
         assert!(
             handle.raw() >= 20_001,
             "typed unknown-array result should preserve nested unknown-exposed dispatch object handles"
@@ -1451,14 +1429,12 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on multidim typed array path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                assert_eq!(array.dimensions(), 2, "expected rank-2 array");
-                assert_eq!(array.len(), 4, "expected 2x2=4 elements");
-                assert!(array.bounds().is_some(), "expected per-dimension bounds");
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        assert_eq!(array.dimensions(), 2, "expected rank-2 array");
+        assert_eq!(array.len(), 4, "expected 2x2=4 elements");
+        assert!(array.bounds().is_some(), "expected per-dimension bounds");
     }
 
     #[test]
@@ -1478,14 +1454,12 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on multidim variant array path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                assert_eq!(array.dimensions(), 2, "expected rank-2 array");
-                assert_eq!(array.len(), 4, "expected 2x2=4 elements");
-                assert!(array.bounds().is_some(), "expected per-dimension bounds");
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        assert_eq!(array.dimensions(), 2, "expected rank-2 array");
+        assert_eq!(array.len(), 4, "expected 2x2=4 elements");
+        assert!(array.bounds().is_some(), "expected per-dimension bounds");
     }
 
     #[test]
@@ -1694,22 +1668,22 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("Ping")),
+            Variant::from_string(BStr::from("Ping")),
             "method selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("Lookup")),
+            Variant::from_string(BStr::from("Lookup")),
             "indexed-property selector should remain a runtime string"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(123),
+            Variant::from_i32(123),
             "runtime string zero-arg method should fall through to method dispatch"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(1_042),
+            Variant::from_i32(1_042),
             "runtime string indexed property-get should fall through to property-get dispatch"
         );
     }
@@ -1740,22 +1714,22 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("SumPair")),
+            Variant::from_string(BStr::from("SumPair")),
             "named-method selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("LookupPair")),
+            Variant::from_string(BStr::from("LookupPair")),
             "named-property selector should remain a runtime string"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(12_034),
+            Variant::from_i32(12_034),
             "runtime string named method should preserve named-argument packing"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(205_009),
+            Variant::from_i32(205_009),
             "runtime string named property-get should preserve named-argument packing"
         );
     }
@@ -1790,32 +1764,32 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("SetValue")),
+            Variant::from_string(BStr::from("SetValue")),
             "property-put selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("SetValueRef")),
+            Variant::from_string(BStr::from("SetValueRef")),
             "property-putref selector should remain a runtime string"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "runtime string property put should take deterministic put route"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "Value getter should reflect runtime string property put result"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(100_012),
+            Variant::from_i32(100_012),
             "runtime string property putref should take deterministic putref route"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(100_012),
+            Variant::from_i32(100_012),
             "Value getter should reflect runtime string property putref result"
         );
     }
@@ -1850,32 +1824,32 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("SetIndexedValue")),
+            Variant::from_string(BStr::from("SetIndexedValue")),
             "indexed property-put selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("SetIndexedValueRef")),
+            Variant::from_string(BStr::from("SetIndexedValueRef")),
             "indexed property-putref selector should remain a runtime string"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "runtime string indexed property put should take deterministic put route"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(307_011),
+            Variant::from_i32(307_011),
             "Value getter should reflect runtime string indexed property put result"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "runtime string indexed property putref should take deterministic putref route"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(408_013),
+            Variant::from_i32(408_013),
             "Value getter should reflect runtime string indexed property putref result"
         );
     }
@@ -1910,32 +1884,32 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("Value")),
+            Variant::from_string(BStr::from("Value")),
             "value selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::String(BStr::from("EchoVariant")),
+            Variant::from_string(BStr::from("EchoVariant")),
             "default-member selector should remain a runtime string"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "setup property put should remain deterministic"
         );
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(12),
+            Variant::from_i32(12),
             "runtime string zero-arg property-get should observe bound object state"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "runtime string default-member name should execute metadata-backed named dispatch"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(19),
+            Variant::from_i32(19),
             "runtime string default-member name should also execute metadata-backed positional dispatch"
         );
     }
@@ -1966,17 +1940,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("EchoVariant")),
+            Variant::from_string(BStr::from("EchoVariant")),
             "call-form runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(0),
+            Variant::from_i32(0),
             "call-form runtime string default-member dispatch should not raise a runtime error"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "runtime string default-member selector should remain usable after a discarded Call invocation"
         );
     }
@@ -2007,17 +1981,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("EchoVariant")),
+            Variant::from_string(BStr::from("EchoVariant")),
             "named call-form runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(0),
+            Variant::from_i32(0),
             "named call-form runtime string default-member dispatch should not raise a runtime error"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "runtime string default-member selector should remain usable after a discarded named Call invocation"
         );
     }
@@ -2048,17 +2022,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("EchoVariant")),
+            Variant::from_string(BStr::from("EchoVariant")),
             "statement-context named runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(0),
+            Variant::from_i32(0),
             "statement-context named runtime string default-member dispatch should not raise a runtime error"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "runtime string default-member selector should remain usable after a discarded named statement-context invocation"
         );
     }
@@ -2089,17 +2063,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::String(BStr::from("EchoVariant")),
+            Variant::from_string(BStr::from("EchoVariant")),
             "statement-context positional runtime string default-member selector should remain a runtime string"
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::I32(0),
+            Variant::from_i32(0),
             "statement-context positional runtime string default-member dispatch should not raise a runtime error"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "runtime string default-member selector should remain usable after a discarded positional statement-context invocation"
         );
     }
@@ -2229,7 +2203,7 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            RuntimeValue::I64(4_000_000_000),
+            Variant::from_i64(4_000_000_000),
             "expected VT_UI4 value preserved on I64 carrier"
         );
     }
@@ -2251,16 +2225,16 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UI4 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements().expect("array should have elements");
-                assert!(
-                    values.contains(&RuntimeValue::I64(4_000_000_000)),
-                    "expected VT_UI4 array element preserved on I64 carrier, got {values:?}"
-                );
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        let values = array
+            .variant_elements()
+            .expect("array should have elements");
+        assert!(
+            values.contains(&Variant::from_i64(4_000_000_000)),
+            "expected VT_UI4 array element preserved on I64 carrier, got {values:?}"
+        );
     }
 
     #[test]
@@ -2282,7 +2256,7 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            RuntimeValue::I64(4_000_000_000),
+            Variant::from_i64(4_000_000_000),
             "expected VT_UINT value preserved on I64 carrier"
         );
     }
@@ -2304,16 +2278,16 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UINT array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements().expect("array should have elements");
-                assert!(
-                    values.contains(&RuntimeValue::I64(4_000_000_000)),
-                    "expected VT_UINT array element preserved on I64 carrier, got {values:?}"
-                );
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        let values = array
+            .variant_elements()
+            .expect("array should have elements");
+        assert!(
+            values.contains(&Variant::from_i64(4_000_000_000)),
+            "expected VT_UINT array element preserved on I64 carrier, got {values:?}"
+        );
     }
 
     #[test]
@@ -2335,7 +2309,7 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            RuntimeValue::I64(5_000_000_000),
+            Variant::from_i64(5_000_000_000),
             "expected VT_I8 value preserved on I64 carrier"
         );
     }
@@ -2357,16 +2331,16 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_I8 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements().expect("array should have elements");
-                assert!(
-                    values.contains(&RuntimeValue::I64(5_000_000_000)),
-                    "expected VT_I8 array element preserved on I64 carrier, got {values:?}"
-                );
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        let values = array
+            .variant_elements()
+            .expect("array should have elements");
+        assert!(
+            values.contains(&Variant::from_i64(5_000_000_000)),
+            "expected VT_I8 array element preserved on I64 carrier, got {values:?}"
+        );
     }
 
     #[test]
@@ -2388,7 +2362,7 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            RuntimeValue::I64(5_000_000_000),
+            Variant::from_i64(5_000_000_000),
             "expected VT_UI8 value preserved on I64 carrier"
         );
     }
@@ -2410,16 +2384,16 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UI8 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        match &vm[1] {
-            RuntimeValue::ArrayIntent(array) => {
-                let values = array.elements().expect("array should have elements");
-                assert!(
-                    values.contains(&RuntimeValue::I64(5_000_000_000)),
-                    "expected VT_UI8 array element preserved on I64 carrier, got {values:?}"
-                );
-            }
-            other => panic!("expected ArrayIntent, got {other:?}"),
-        }
+        let array = vm[1]
+            .as_safearray()
+            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
+        let values = array
+            .variant_elements()
+            .expect("array should have elements");
+        assert!(
+            values.contains(&Variant::from_i64(5_000_000_000)),
+            "expected VT_UI8 array element preserved on I64 carrier, got {values:?}"
+        );
     }
 
     #[test]
@@ -2452,17 +2426,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_UI4 carrier should normalize to VT_I8 at the outward COM boundary"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_I8 carrier should remain VT_I8 at the outward COM boundary"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_UI8 carrier should normalize to VT_I8 at the outward COM boundary"
         );
     }
@@ -2497,17 +2471,17 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[4],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_UI4 variant-array elements should normalize to VT_I8 at the outward COM boundary"
         );
         assert_eq!(
             vm[5],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_I8 variant-array elements should remain VT_I8 at the outward COM boundary"
         );
         assert_eq!(
             vm[6],
-            RuntimeValue::I32(20),
+            Variant::from_i32(20),
             "wide VT_UI8 variant-array elements should normalize to VT_I8 at the outward COM boundary"
         );
     }
@@ -2534,11 +2508,11 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::Bool(true),
+            Variant::from_bool(true),
             "pre-error call should have succeeded"
         );
         assert!(
-            !matches!(out[3], RuntimeValue::I32(0)),
+            out[3].as_i32() != Some(0),
             "missing-argument COM invoke should set Err.Number, got {:?}",
             out
         );
@@ -2564,7 +2538,7 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::I32(321),
+            Variant::from_i32(321),
             "BYREF Long results should be transparently dereferenced to the VT_I4 carrier value"
         );
     }
@@ -2589,13 +2563,13 @@ End Sub
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
             vm[1],
-            RuntimeValue::ArrayIntent(
-                SafeArray::from_typed_values(
+            Variant::from_safearray(
+                SafeArray::from_typed_variants(
                     VT_I4_VALUE,
                     vec![
-                        RuntimeValue::I32(12),
-                        RuntimeValue::I32(-4),
-                        RuntimeValue::I32(321),
+                        Variant::from_i32(12),
+                        Variant::from_i32(-4),
+                        Variant::from_i32(321),
                     ],
                 )
                 .expect("typed i4 array"),
@@ -2625,11 +2599,11 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::Bool(true),
+            Variant::from_bool(true),
             "pre-exception call should have succeeded"
         );
         assert!(
-            !matches!(out[2], RuntimeValue::I32(0)),
+            out[2].as_i32() != Some(0),
             "exception COM invoke should set Err.Number, got {:?}",
             out
         );
@@ -2698,7 +2672,7 @@ End Sub
             "VM/JIT snapshots diverged on rich exception resume path"
         );
         assert!(
-            !matches!(vm_resume[2], RuntimeValue::I32(0)),
+            vm_resume[2].as_i32() != Some(0),
             "rich exception should set Err.Number, got {:?}",
             vm_resume
         );
@@ -2720,7 +2694,7 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::Bool(true),
+            Variant::from_bool(true),
             "final Exists(42) result should remain stable after repeated dispatch"
         );
     }
