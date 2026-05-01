@@ -9,9 +9,9 @@ use crate::{
     activate_runtime_dispatch, activate_runtime_object_binding_shared,
     bind_host_dispatch_object_shared, bind_native_dispatch_result_shared,
     binding_from_typelib_metadata, build_typelib_metadata, callback_arg, callback_arity,
-    callback_subscription_token, execute_bound_runtime_value_with_shared_state,
+    callback_subscription_token, execute_bound_variant_with_shared_state,
     host_dispatch_object_for_prog_id_shared, insert_bound_object_binding_at_handle_shared,
-    invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
+    invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_variant_with_shared_state,
     legacy_runtime_arg_values, member_spec_from_typelib_metadata,
     member_token_and_spec_from_typelib_metadata_name, query_unknown_from_dispatch,
     queue_projection_event_callbacks_shared, release_callback, release_object_binding_shared,
@@ -393,7 +393,7 @@ impl WindowsComBridge {
             self.known_member_spec_for_prog_id_name(&binding.prog_id_name, token)
         };
         let early = unsafe {
-            execute_bound_runtime_value_with_shared_state(
+            execute_bound_variant_with_shared_state(
                 &self.state,
                 request,
                 &mut try_vtable_invoke,
@@ -402,10 +402,7 @@ impl WindowsComBridge {
         }
         .map_err(WindowsComBridgeDispatchError::Message)?;
         if let Some(value) = early {
-            return value
-                .to_variant()
-                .map(Some)
-                .map_err(WindowsComBridgeDispatchError::Message);
+            return Ok(Some(value));
         }
 
         let binding = {
@@ -565,7 +562,7 @@ impl WindowsComBridge {
             let mut invoke_result = None;
             for (index, (flags, label)) in attempt_order.into_iter().enumerate() {
                 match unsafe {
-                    invoke_dispatch_runtime_value_with_shared_state(
+                    invoke_dispatch_variant_with_shared_state(
                         dispatch.cast(),
                         dispid,
                         flags,
@@ -596,9 +593,7 @@ impl WindowsComBridge {
                 .expect("dynamic-name COM invoke should attempt at least one dispatch flag")
         };
         invoke_result
-            .map_err(WindowsComBridgeDispatchError::InvokeFailure)?
-            .to_variant()
             .map(Some)
-            .map_err(WindowsComBridgeDispatchError::Message)
+            .map_err(WindowsComBridgeDispatchError::InvokeFailure)
     }
 }

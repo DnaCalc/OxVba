@@ -96,13 +96,13 @@ pub use windows_connection_point::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
-    ComInvokeExceptionInfo, ComInvokeFailure, execute_bound_runtime_value,
-    execute_bound_runtime_value_with_shared_state, invoke_bound_dispatch_legacy_i32_result,
-    invoke_bound_dispatch_runtime_value_with_shared_state, invoke_direct_dispid_runtime_value,
-    invoke_direct_dispid_runtime_value_with_shared_state, invoke_dispatch_legacy_i32_result,
-    invoke_dispatch_legacy_i32_result_positional, invoke_dispatch_runtime_value,
-    invoke_dispatch_runtime_value_with_shared_state, invoke_member_spec_legacy_i32_result,
-    invoke_member_spec_runtime_value, invoke_member_spec_runtime_value_with_shared_state,
+    ComInvokeExceptionInfo, ComInvokeFailure, execute_bound_variant,
+    execute_bound_variant_with_shared_state, invoke_bound_dispatch_legacy_i32_result,
+    invoke_bound_dispatch_variant_with_shared_state, invoke_direct_dispid_variant,
+    invoke_direct_dispid_variant_with_shared_state, invoke_dispatch_legacy_i32_result,
+    invoke_dispatch_legacy_i32_result_positional, invoke_dispatch_variant,
+    invoke_dispatch_variant_with_shared_state, invoke_member_spec_legacy_i32_result,
+    invoke_member_spec_variant, invoke_member_spec_variant_with_shared_state,
     map_com_hresult_label, take_excepinfo,
 };
 #[cfg(target_os = "windows")]
@@ -140,6 +140,6 @@ pub use windows_test_dispatch::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_variant::{
-    VariantResultValue, set_variant_from_com_value, take_variant_result_runtime_value,
-    take_variant_result_value, variant_to_com_value, variant_to_runtime_value,
+    VariantResultValue, set_variant_from_com_value, take_variant_result_value,
+    take_variant_result_variant, variant_to_com_value, variant_to_variant_value,
 };

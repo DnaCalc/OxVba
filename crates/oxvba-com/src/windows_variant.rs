@@ -1349,7 +1349,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
                 let dispatch = *variant.Anonymous.Anonymous.Anonymous.ppdispVal;
                 return Err(format!(
                     "VT_BYREF|VT_DISPATCH dereferences to raw dispatch {dispatch:?}; \
-                     use variant_to_runtime_value for object binding"
+                     use variant_to_variant_value for object binding"
                 ));
             }
             _ => {
@@ -1526,59 +1526,20 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
-pub unsafe fn variant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
-    variant: &VARIANT,
-    query_dispatch_from_unknown: &mut FQueryDispatch,
-    add_ref_dispatch: &mut FAddRefDispatch,
-    bind_dispatch_result: &mut FBindDispatch,
-    prog_id_hint: &str,
-    op: &'static str,
-) -> Result<oxvba_runtime::compat::RuntimeValue, String>
-where
-    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
-    FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch: FnMut(
-        *mut c_void,
-        &str,
-        &'static str,
-    ) -> Result<oxvba_runtime::compat::RuntimeValue, String>,
-{
-    let mut bind_variant =
-        |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
-            let value = bind_dispatch_result(dispatch, prog_id_hint, op)?;
-            Variant::try_from_runtime_value(&value)
-        };
-    variant_to_variant_value(
-        variant,
-        query_dispatch_from_unknown,
-        add_ref_dispatch,
-        &mut bind_variant,
-        prog_id_hint,
-        op,
-    )?
-    .to_runtime_value()
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
-pub unsafe fn take_variant_result_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+pub unsafe fn take_variant_result_variant<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     result: &mut VARIANT,
     query_dispatch_from_unknown: &mut FQueryDispatch,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
     prog_id_hint: &str,
     op: &'static str,
-) -> Result<oxvba_runtime::compat::RuntimeValue, String>
+) -> Result<Variant, String>
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch: FnMut(
-        *mut c_void,
-        &str,
-        &'static str,
-    ) -> Result<oxvba_runtime::compat::RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut c_void, &str, &'static str) -> Result<Variant, String>,
 {
-    let value = variant_to_runtime_value(
+    let value = variant_to_variant_value(
         result,
         query_dispatch_from_unknown,
         add_ref_dispatch,
@@ -1722,14 +1683,13 @@ mod tests {
     use super::{
         VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
         decimal96_to_windows, set_variant_from_com_value, take_variant_result_value,
-        variant_to_com_value, variant_to_runtime_value,
+        variant_to_com_value, variant_to_variant_value,
     };
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, Variant,
         bstr::BStr,
-        compat::RuntimeValue,
         safe_array::{
             SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_I2_VALUE,
             VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,
@@ -2417,14 +2377,14 @@ mod tests {
     }
 
     #[test]
-    fn unknown_enumvariant_result_materializes_to_runtime_array() {
+    fn unknown_enumvariant_result_materializes_to_variant_array() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         unsafe {
             variant.Anonymous.Anonymous.vt = VT_UNKNOWN;
             variant.Anonymous.Anonymous.Anonymous.punkVal = create_oxvba_test_enum_unknown().cast();
-            let value = variant_to_runtime_value(
+            let value = variant_to_variant_value(
                 &variant,
-                &mut |unknown| {
+                &mut |unknown: *mut std::ffi::c_void| {
                     crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
                         .map(|dispatch| dispatch.cast())
                 },
@@ -2435,12 +2395,12 @@ mod tests {
                 "OxVba.TestDispatch",
                 "dispatch_invoke",
             )
-            .expect("IEnumVARIANT should materialize into an array-backed runtime value");
+            .expect("IEnumVARIANT should materialize into an array-backed variant value");
             assert_eq!(
                 value,
-                RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::I32(41),
-                    RuntimeValue::I32(42),
+                Variant::from_safearray(SafeArray::from_variants(vec![
+                    Variant::from_i32(41),
+                    Variant::from_i32(42),
                 ]))
             );
             let _ = VariantClear(&mut variant);

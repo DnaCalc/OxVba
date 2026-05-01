@@ -2,9 +2,9 @@
 
 use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
-    take_variant_result_runtime_value, take_variant_result_value,
+    take_variant_result_value, take_variant_result_variant,
 };
-use oxvba_runtime::{ObjectRef, compat::RuntimeValue};
+use oxvba_runtime::{ObjectRef, Variant};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
@@ -404,8 +404,8 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Compatibility Windows `IDispatch::Invoke` call that projects the result
-/// into the legacy runtime-facing value shape, delegating any dispatch-backed
+/// Windows `IDispatch::Invoke` call that projects the result
+/// into the retained Variant value shape, delegating any dispatch-backed
 /// result rebinding to the caller.
 ///
 /// New value-model call sites that do not need dispatch-backed rebinding
@@ -415,7 +415,7 @@ where
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
 /// The callback closures must uphold COM ownership and runtime identity guarantees for any object
 /// handles or returned interface pointers they touch.
-pub unsafe fn invoke_dispatch_runtime_value<
+pub unsafe fn invoke_dispatch_variant<
     FResolveObject,
     FQueryUnknown,
     FAddRefDispatch,
@@ -432,13 +432,12 @@ pub unsafe fn invoke_dispatch_runtime_value<
     query_dispatch_from_unknown: &mut FQueryUnknown,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
-) -> Result<RuntimeValue, ComInvokeFailure>
+) -> Result<Variant, ComInvokeFailure>
 where
     FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
-    FBindDispatch:
-        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<Variant, String>,
 {
     let mut result = std::mem::zeroed();
     let mut excep = std::mem::zeroed();
@@ -495,7 +494,7 @@ where
             detail: None,
         });
     }
-    take_variant_result_runtime_value(
+    take_variant_result_variant(
         &mut result,
         query_dispatch_from_unknown,
         add_ref_dispatch,
@@ -898,15 +897,15 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Compatibility member-metadata-backed Windows `IDispatch::Invoke` call.
+/// Member-metadata-backed Windows `IDispatch::Invoke` call.
 ///
 /// Arguments are marshalled from retained `ComInvokeValue`/`Variant` payloads,
-/// then the result is projected into [`RuntimeValue`] for legacy callers.
+/// then the result is returned as retained [`Variant`] values.
 ///
 /// # Safety
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
 /// The callback closures must uphold COM ownership and runtime identity guarantees for any object handles or returned interface pointers they touch.
-pub unsafe fn invoke_member_spec_runtime_value<
+pub unsafe fn invoke_member_spec_variant<
     FResolveNamedArgDispids,
     FResolveObject,
     FQueryUnknown,
@@ -923,14 +922,13 @@ pub unsafe fn invoke_member_spec_runtime_value<
     query_dispatch_from_unknown: &mut FQueryUnknown,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
-) -> Result<RuntimeValue, ComInvokeFailure>
+) -> Result<Variant, ComInvokeFailure>
 where
     FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
     FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
-    FBindDispatch:
-        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<Variant, String>,
 {
     let canonical_args;
     let args = match spec.invoke_kind {
@@ -951,7 +949,7 @@ where
     }
     if !spec.requires_argument {
         return match spec.invoke_kind {
-            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_PROPERTYGET,
@@ -964,7 +962,7 @@ where
                 add_ref_dispatch,
                 bind_dispatch_result,
             ),
-            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_METHOD,
@@ -989,7 +987,7 @@ where
         crate::TypeLibMemberInvokeKind::PropertyGet => {
             let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
                 .map_err(|detail| validation_failure("property-get", dispid, detail))?;
-            invoke_dispatch_runtime_value(
+            invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_PROPERTYGET,
@@ -1006,7 +1004,7 @@ where
         crate::TypeLibMemberInvokeKind::Method => {
             let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
                 .map_err(|detail| validation_failure("method", dispid, detail))?;
-            invoke_dispatch_runtime_value(
+            invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_METHOD,
@@ -1026,7 +1024,7 @@ where
                     .map_err(|detail| validation_failure("property-put", dispid, detail))?;
             let mut all_named = named_arg_dispids;
             all_named.push(crate::COM_DISPID_PROPERTYPUT);
-            invoke_dispatch_runtime_value(
+            invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_PROPERTYPUT,
@@ -1046,7 +1044,7 @@ where
                     .map_err(|detail| validation_failure("property-putref", dispid, detail))?;
             let mut all_named = named_arg_dispids;
             all_named.push(crate::COM_DISPID_PROPERTYPUT);
-            invoke_dispatch_runtime_value(
+            invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_PROPERTYPUTREF,
@@ -1066,15 +1064,15 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-/// Compatibility direct-DISPID Windows `IDispatch::Invoke` call.
+/// Direct-DISPID Windows `IDispatch::Invoke` call.
 ///
 /// Arguments are marshalled from retained `ComInvokeValue`/`Variant` payloads,
-/// then the result is projected into [`RuntimeValue`] for legacy callers.
+/// then the result is returned as retained [`Variant`] values.
 ///
 /// # Safety
 /// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
 /// The callback closures must uphold COM ownership and runtime identity guarantees for any object handles or returned interface pointers they touch.
-pub unsafe fn invoke_direct_dispid_runtime_value<
+pub unsafe fn invoke_direct_dispid_variant<
     FResolveObject,
     FQueryUnknown,
     FAddRefDispatch,
@@ -1090,13 +1088,12 @@ pub unsafe fn invoke_direct_dispid_runtime_value<
     query_dispatch_from_unknown: &mut FQueryUnknown,
     add_ref_dispatch: &mut FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
-) -> Result<RuntimeValue, ComInvokeFailure>
+) -> Result<Variant, ComInvokeFailure>
 where
     FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
     FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
     FAddRefDispatch: FnMut(*mut core::ffi::c_void),
-    FBindDispatch:
-        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+    FBindDispatch: FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<Variant, String>,
 {
     if requires_argument && args.iter().all(|arg| arg.value.is_none()) {
         return Err(validation_failure(
@@ -1107,7 +1104,7 @@ where
     }
     if !requires_argument {
         return match invoke_kind {
-            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_PROPERTYGET,
@@ -1120,7 +1117,7 @@ where
                 add_ref_dispatch,
                 bind_dispatch_result,
             ),
-            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_variant(
                 dispatch,
                 dispid,
                 DISPATCH_METHOD,
@@ -1149,7 +1146,7 @@ where
         ));
     }
     match invoke_kind {
-        crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+        crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_variant(
             dispatch,
             dispid,
             DISPATCH_PROPERTYGET,
@@ -1162,7 +1159,7 @@ where
             add_ref_dispatch,
             bind_dispatch_result,
         ),
-        crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+        crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_variant(
             dispatch,
             dispid,
             DISPATCH_METHOD,
@@ -1175,7 +1172,7 @@ where
             add_ref_dispatch,
             bind_dispatch_result,
         ),
-        crate::TypeLibMemberInvokeKind::PropertyPut => invoke_dispatch_runtime_value(
+        crate::TypeLibMemberInvokeKind::PropertyPut => invoke_dispatch_variant(
             dispatch,
             dispid,
             DISPATCH_PROPERTYPUT,
@@ -1188,7 +1185,7 @@ where
             add_ref_dispatch,
             bind_dispatch_result,
         ),
-        crate::TypeLibMemberInvokeKind::PropertyPutRef => invoke_dispatch_runtime_value(
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => invoke_dispatch_variant(
             dispatch,
             dispid,
             DISPATCH_PROPERTYPUTREF,
@@ -1260,7 +1257,7 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(clippy::too_many_arguments)]
-pub fn execute_bound_runtime_value<
+pub fn execute_bound_variant<
     FTryVtable,
     FResolveMember,
     FInvokeMember,
@@ -1275,20 +1272,20 @@ pub fn execute_bound_runtime_value<
     invoke_member_spec: &mut FInvokeMember,
     invoke_direct_dispid: &mut FInvokeDirect,
     invoke_bound_dispatch: &mut FInvokeBound,
-) -> Result<RuntimeValue, String>
+) -> Result<Variant, String>
 where
     FTryVtable: FnMut(i32, &[i32]) -> Result<Option<i32>, String>,
     FResolveMember: FnMut(i32, Option<i32>) -> Result<Option<(i32, crate::ComMemberSpec)>, String>,
     FInvokeMember:
-        FnMut(i32, &crate::ComMemberSpec, &[ComInvokeArg], &str) -> Result<RuntimeValue, String>,
+        FnMut(i32, &crate::ComMemberSpec, &[ComInvokeArg], &str) -> Result<Variant, String>,
     FInvokeDirect: FnMut(
         i32,
         crate::TypeLibMemberInvokeKind,
         bool,
         &[ComInvokeArg],
         &str,
-    ) -> Result<RuntimeValue, String>,
-    FInvokeBound: FnMut(i32, &[ComInvokeArg], &str) -> Result<RuntimeValue, String>,
+    ) -> Result<Variant, String>,
+    FInvokeBound: FnMut(i32, &[ComInvokeArg], &str) -> Result<Variant, String>,
 {
     let plan = crate::plan_bound_runtime_invoke(binding, request, cached_dispid)?;
     let effective_member = plan.effective_member;
@@ -1301,7 +1298,7 @@ where
     if let Some(positional_values) = legacy_vtable_candidate_args.as_ref()
         && let Some(value) = try_vtable_invoke(effective_member.raw(), positional_values)?
     {
-        return Ok(RuntimeValue::I32(value));
+        return Ok(Variant::from_i32(value));
     }
 
     if let Some((token, spec)) = named_default_member_spec {
@@ -1334,15 +1331,15 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
-pub unsafe fn invoke_member_spec_runtime_value_with_shared_state(
+pub unsafe fn invoke_member_spec_variant_with_shared_state(
     dispatch: *mut core::ffi::c_void,
     dispid: i32,
     spec: &crate::ComMemberSpec,
     args: &[ComInvokeArg],
     prog_id_hint: &str,
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
-) -> Result<RuntimeValue, ComInvokeFailure> {
-    invoke_member_spec_runtime_value(
+) -> Result<Variant, ComInvokeFailure> {
+    invoke_member_spec_variant(
         dispatch,
         dispid,
         spec,
@@ -1372,14 +1369,14 @@ pub unsafe fn invoke_member_spec_runtime_value_with_shared_state(
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
             )
-            .map(RuntimeValue::Object)
+            .map(Variant::from_object_ref)
         },
     )
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
-pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
+pub unsafe fn invoke_direct_dispid_variant_with_shared_state(
     dispatch: *mut core::ffi::c_void,
     dispid: i32,
     invoke_kind: crate::TypeLibMemberInvokeKind,
@@ -1387,8 +1384,8 @@ pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
     args: &[ComInvokeArg],
     prog_id_hint: &str,
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
-) -> Result<RuntimeValue, ComInvokeFailure> {
-    invoke_direct_dispid_runtime_value(
+) -> Result<Variant, ComInvokeFailure> {
+    invoke_direct_dispid_variant(
         dispatch,
         dispid,
         invoke_kind,
@@ -1412,7 +1409,7 @@ pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
             )
-            .map(RuntimeValue::Object)
+            .map(Variant::from_object_ref)
         },
     )
 }
@@ -1423,7 +1420,7 @@ pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
     clippy::missing_safety_doc,
     clippy::too_many_arguments
 )]
-pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
+pub unsafe fn invoke_dispatch_variant_with_shared_state(
     dispatch: *mut core::ffi::c_void,
     dispid: i32,
     flags: u16,
@@ -1432,8 +1429,8 @@ pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
     label: &'static str,
     prog_id_hint: &str,
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
-) -> Result<RuntimeValue, ComInvokeFailure> {
-    invoke_dispatch_runtime_value(
+) -> Result<Variant, ComInvokeFailure> {
+    invoke_dispatch_variant(
         dispatch,
         dispid,
         flags,
@@ -1458,21 +1455,21 @@ pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
                 dispatch.cast::<crate::RawIDispatch>(),
                 prog_id_hint,
             )
-            .map(RuntimeValue::Object)
+            .map(Variant::from_object_ref)
         },
     )
 }
 
 #[cfg(target_os = "windows")]
 #[allow(clippy::missing_safety_doc)]
-pub unsafe fn invoke_bound_dispatch_runtime_value_with_shared_state<FKnownSpec>(
+pub unsafe fn invoke_bound_dispatch_variant_with_shared_state<FKnownSpec>(
     dispatch: *mut crate::RawIDispatch,
     prog_id: &str,
     member: crate::ComMemberToken,
     args: &[ComInvokeArg],
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
     known_member_spec: &mut FKnownSpec,
-) -> Result<RuntimeValue, String>
+) -> Result<Variant, String>
 where
     FKnownSpec:
         FnMut(&ComBinding, crate::ComMemberToken) -> Result<Option<crate::ComMemberSpec>, String>,
@@ -1489,7 +1486,7 @@ where
         crate::UnboundRuntimeInvokePlan::MemberSpec(spec) => {
             let dispid = unsafe { crate::get_dispid_by_name(dispatch, &spec.name) }?;
             unsafe {
-                invoke_member_spec_runtime_value_with_shared_state(
+                invoke_member_spec_variant_with_shared_state(
                     dispatch.cast(),
                     dispid,
                     &spec,
@@ -1501,7 +1498,7 @@ where
             .map_err(|failure| render_invoke_fault_message(&failure))
         }
         crate::UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => unsafe {
-            invoke_dispatch_runtime_value_with_shared_state(
+            invoke_dispatch_variant_with_shared_state(
                 dispatch.cast(),
                 dispid.raw(),
                 windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
@@ -1518,12 +1515,12 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(clippy::too_many_arguments, clippy::missing_safety_doc)]
-pub unsafe fn execute_bound_runtime_value_with_shared_state<FTryVtable, FKnownSpec>(
+pub unsafe fn execute_bound_variant_with_shared_state<FTryVtable, FKnownSpec>(
     com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
     request: &ComInvokeRequest,
     try_vtable_invoke: &mut FTryVtable,
     known_member_spec: &mut FKnownSpec,
-) -> Result<Option<RuntimeValue>, String>
+) -> Result<Option<Variant>, String>
 where
     FTryVtable:
         FnMut(*mut crate::RawIDispatch, &ComBinding, i32, &[i32]) -> Result<Option<i32>, String>,
@@ -1568,7 +1565,7 @@ where
     let mut invoke_member_spec =
         |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
             unsafe {
-                invoke_member_spec_runtime_value_with_shared_state(
+                invoke_member_spec_variant_with_shared_state(
                     dispatch.cast(),
                     dispid,
                     spec,
@@ -1585,7 +1582,7 @@ where
                                     invoke_args: &[ComInvokeArg],
                                     prog_id: &str| {
         unsafe {
-            invoke_direct_dispid_runtime_value_with_shared_state(
+            invoke_direct_dispid_variant_with_shared_state(
                 dispatch.cast(),
                 member,
                 invoke_kind,
@@ -1598,7 +1595,7 @@ where
         .map_err(|failure| render_invoke_fault_message(&failure))
     };
     let mut invoke_bound_dispatch = |member: i32, invoke_args: &[ComInvokeArg], prog_id: &str| unsafe {
-        invoke_bound_dispatch_runtime_value_with_shared_state(
+        invoke_bound_dispatch_variant_with_shared_state(
             dispatch,
             prog_id,
             crate::ComMemberToken::new(member),
@@ -1609,7 +1606,7 @@ where
     };
     let mut try_vtable =
         |member: i32, positional: &[i32]| try_vtable_invoke(dispatch, &binding, member, positional);
-    let value = execute_bound_runtime_value(
+    let value = execute_bound_variant(
         &binding,
         request,
         cached_dispid,
