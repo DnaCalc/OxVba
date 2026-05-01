@@ -1,6 +1,6 @@
 # Value Substrate, Numeric, And UDT Cleanup Workset
 
-Status: `planned`
+Status: `in-progress`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -48,11 +48,23 @@ Out of scope:
 
 ## First Beads
 
-- `value-clean-001`: convert remaining numeric helper families to `Variant`.
-- `value-clean-002`: write mixed numeric result matrix and tests.
-- `value-clean-003`: pin `Currency`/`Decimal` exactness expectations.
-- `value-clean-004`: design descriptor-backed UDT semantic model.
-- `value-clean-005`: classify UDT/native ABI residuals.
+Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
+
+- `bd-9xmu.3.1` / `value-clean-000`: roll out this executable bead path.
+- `bd-9xmu.3.2` / `value-clean-001`: retire residual `RuntimeValue`
+  bridge methods or record an explicit public-API blocker.
+- `bd-9xmu.3.3` / `value-clean-002`: lock value substrate spec
+  boundaries against the post-phase-2 baseline.
+- `bd-9xmu.3.4` / `value-clean-003`: migrate remaining numeric helper
+  families to retained `Variant` carriers on the normal path.
+- `bd-9xmu.3.5` / `value-clean-004`: expand mixed numeric result matrix
+  and tests.
+- `bd-9xmu.3.6` / `value-clean-005`: pin exact `Currency`, `Decimal`,
+  `Date`, and Boolean carrier expectations.
+- `bd-9xmu.3.7` / `value-clean-006`: design descriptor-backed UDT semantic
+  model.
+- `bd-9xmu.3.8` / `value-clean-007`: classify native ABI UDT materialization
+  residuals.
 
 ## Terminal Gate
 
