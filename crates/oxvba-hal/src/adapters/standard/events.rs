@@ -1,27 +1,12 @@
 #[cfg(target_os = "windows")]
 use crate::error::HalError;
 use crate::{error::HalResult, model::CapabilityId, traits::EventPumpHal};
-use oxvba_runtime::{Variant, compat::RuntimeValue};
+use oxvba_runtime::Variant;
 use std::thread;
 
 use super::StandardHostServices;
 
 impl EventPumpHal for StandardHostServices {
-    // Legacy event-pump path. Retained VM/JIT callers should use
-    // `do_events_variant`, which returns a Variant status carrier directly.
-    fn do_events(&self) -> HalResult<RuntimeValue> {
-        self.do_events_variant()?
-            .to_runtime_value()
-            .map_err(|detail| {
-                crate::error::HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::EventPump,
-                    "do_events",
-                    detail,
-                )
-            })
-    }
-
     fn do_events_variant(&self) -> HalResult<Variant> {
         let capability = CapabilityId::EventPump;
         if !self.supports(capability) {

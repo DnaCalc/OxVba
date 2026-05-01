@@ -1,11 +1,10 @@
 use super::filesystem::{expand_host_wildcard_paths, path_contains_wildcards};
 use crate::{
-    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::ProcessEnvHal,
 };
-use oxvba_runtime::{VarType, Variant, bstr::BStr, compat::RuntimeValue};
+use oxvba_runtime::{VarType, Variant, bstr::BStr};
 use std::path::{Path, PathBuf};
 
 use super::StandardHostServices;
@@ -16,43 +15,6 @@ pub(super) struct DirSearchState {
 }
 
 impl ProcessEnvHal for StandardHostServices {
-    // Legacy compatibility wrapper. The retained value-model entry point for
-    // VM/JIT callers is `shell_variant`; this method preserves the historical
-    // `RuntimeValue` contract, including compatibility slot-token projection.
-    fn shell(&self, command: RuntimeValue, _window_style: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ProcessEnv;
-        let command = compat::runtime_value_to_variant(
-            self.profile,
-            capability,
-            "shell",
-            "command",
-            command,
-        )?;
-        let result = self.shell_variant(command, Variant::empty())?;
-        compat::variant_to_runtime_value(self.profile, capability, "shell", result)
-    }
-
-    // Legacy compatibility wrapper. The retained value-model entry point for
-    // VM/JIT callers is `environ_variant`; this method preserves the historical
-    // `RuntimeValue` contract, including compatibility slot-token projection.
-    fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ProcessEnv;
-        let key =
-            compat::runtime_value_to_variant(self.profile, capability, "environ", "key", key)?;
-        let result = self.environ_variant(key)?;
-        compat::variant_to_runtime_value(self.profile, capability, "environ", result)
-    }
-
-    // Legacy compatibility wrapper. The retained value-model entry point for
-    // VM/JIT callers is `dir_variant`; this method preserves the historical
-    // `RuntimeValue` contract, including compatibility slot-token projection.
-    fn dir(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ProcessEnv;
-        let path = compat::runtime_value_to_variant(self.profile, capability, "dir", "path", path)?;
-        let result = self.dir_variant(path, Variant::empty())?;
-        compat::variant_to_runtime_value(self.profile, capability, "dir", result)
-    }
-
     fn shell_variant(&self, command: Variant, _window_style: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {

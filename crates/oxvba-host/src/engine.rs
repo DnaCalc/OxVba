@@ -552,7 +552,7 @@ impl Engine {
     ) -> Result<bool, PhaseDiagnostic> {
         self.host_services
             .com()
-            .unsubscribe_event(subscription_token)
+            .unsubscribe_event_variant(subscription_token)
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
         let removed = self
             .com_subscription_handlers
@@ -609,7 +609,7 @@ impl Engine {
         let _ = self
             .host_services
             .events()
-            .do_events()
+            .do_events_variant()
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
         let bridge =
             HalComDynamicBridge::new(self.host_services.profile(), self.host_services.com());
@@ -1298,7 +1298,7 @@ mod tests {
             ProjectDescriptorKind, ProjectReferenceDescriptor, ProjectReferenceKind,
         },
     };
-    use oxvba_runtime::{F64Value, ObjectRef, VarType, bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{F64Value, ObjectRef, VarType, Variant, bstr::BStr, compat::RuntimeValue};
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
@@ -1442,11 +1442,12 @@ End Sub";
         match engine
             .host_services
             .com()
-            .create_object(RuntimeValue::String(BStr::from("OxVba.TestDispatch")))
+            .create_object_variant(Variant::from_string(BStr::from("OxVba.TestDispatch")))
             .expect("create_object should return controlled COM object")
+            .as_object_ref()
         {
-            RuntimeValue::Object(handle) => handle,
-            other => panic!("expected object handle from create_object, got {:?}", other),
+            Some(handle) => handle,
+            None => panic!("expected object handle from create_object"),
         }
     }
 
@@ -1504,7 +1505,7 @@ End Sub";
         object: ObjectRef,
         member: i32,
         arg: i32,
-    ) -> RuntimeValue {
+    ) -> Variant {
         let request = ComInvokeRequest::new(
             object,
             member.into(),
@@ -1517,7 +1518,7 @@ End Sub";
         engine
             .host_services
             .com()
-            .dispatch_invoke_runtime_value_v2(&request)
+            .dispatch_invoke_variant(&request)
             .expect("dispatch_invoke should succeed")
     }
 
@@ -18988,7 +18989,10 @@ End Sub";
                 .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING")
         );
 
-        let _ = engine.host_services.com().unsubscribe_event(subscription);
+        let _ = engine
+            .host_services
+            .com()
+            .unsubscribe_event_variant(subscription);
     }
 
     #[cfg(target_os = "windows")]

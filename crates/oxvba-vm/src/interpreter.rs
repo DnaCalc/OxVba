@@ -3968,7 +3968,10 @@ impl Vm {
             .copied()
             .collect::<Vec<_>>()
         {
-            let _ = self.host_services.com().unsubscribe_event(subscription);
+            let _ = self
+                .host_services
+                .com()
+                .unsubscribe_event_variant(subscription);
         }
         self.com_withevents_subscriptions.clear();
         self.com_withevents_binding_subscriptions.clear();
@@ -3983,7 +3986,7 @@ impl Vm {
             self.com_withevents_subscriptions.remove(&subscription);
             self.host_services
                 .com()
-                .unsubscribe_event(subscription)
+                .unsubscribe_event_variant(subscription)
                 .map_err(|err| err.to_string())?;
         }
         Ok(())
@@ -4155,7 +4158,10 @@ impl Vm {
                     bound.route.handler_symbol.clone()
                 }
                 _ => {
-                    let _ = self.host_services.com().release_event_callback(callback);
+                    let _ = self
+                        .host_services
+                        .com()
+                        .release_event_callback_variant(callback);
                     return Err(format!(
                         "project COM WithEvents handler `{}` supports at most 1 callback argument, got {}",
                         bound.route.event_name, callback_arity
@@ -4171,7 +4177,7 @@ impl Vm {
             let release_result = self
                 .host_services
                 .com()
-                .release_event_callback(callback)
+                .release_event_callback_variant(callback)
                 .map_err(|err| err.to_string());
             invoke_result?;
             release_result?;

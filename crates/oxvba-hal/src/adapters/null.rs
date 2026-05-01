@@ -12,26 +12,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{
-    BindingHandle, DynLinkSymbol, F64Value, ObjectRef, Variant, compat::RuntimeValue,
-};
-
-fn runtime_value_i32(value: &RuntimeValue) -> i32 {
-    match value {
-        RuntimeValue::Empty | RuntimeValue::Null => 0,
-        RuntimeValue::ErrorCode(code) => *code,
-        RuntimeValue::Bool(value) => i32::from(*value),
-        RuntimeValue::I32(value) => *value,
-        RuntimeValue::I64(value) => i32::try_from(*value).unwrap_or(0),
-        RuntimeValue::F64(value) => value.as_f64() as i32,
-        RuntimeValue::Decimal(value) => value.to_string().parse::<i32>().unwrap_or(0),
-        RuntimeValue::Currency(value) => (value.scaled_i64() / 10_000) as i32,
-        RuntimeValue::String(value) => value.as_str().trim().parse::<i32>().unwrap_or(0),
-        RuntimeValue::Object(value) => value.raw(),
-        RuntimeValue::ArrayIntent(value) => value.len().min(i32::MAX as usize) as i32,
-        RuntimeValue::BindingHandle(value) => value.raw(),
-    }
-}
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant};
 
 fn variant_i32(value: &Variant) -> i32 {
     value
@@ -49,9 +30,8 @@ fn variant_i32(value: &Variant) -> i32 {
         .unwrap_or(0)
 }
 
-// Null adapter keeps the complete legacy `RuntimeValue` trait surface for
-// compatibility callers. The `_variant` methods below are the retained
-// value-model entry points for slot-facing VM/JIT code.
+// Null adapter keeps retained Variant methods as the value-model entry points
+// for slot-facing VM/JIT code.
 #[derive(Debug, Clone)]
 pub struct NullHostServices {
     descriptor: HalDescriptor,
@@ -119,24 +99,12 @@ impl HostServices for NullHostServices {
 }
 
 impl ConsoleHal for NullHostServices {
-    fn print_line(&self, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
-    }
-
     fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
     }
 
-    fn input_fields(&self, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
-    }
-
     fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
-    }
-
-    fn line_input(&self) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
@@ -145,20 +113,8 @@ impl ConsoleHal for NullHostServices {
 }
 
 impl UiInteractionHal for NullHostServices {
-    fn msg_box(&self, _prompt: RuntimeValue, _style: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
-    }
-
     fn msg_box_variant(&self, _prompt: Variant, _style: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
-    }
-
-    fn input_box(
-        &self,
-        _prompt: RuntimeValue,
-        _default_value: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
 
     fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
@@ -167,110 +123,58 @@ impl UiInteractionHal for NullHostServices {
 }
 
 impl EventPumpHal for NullHostServices {
-    fn do_events(&self) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::EventPump, "do_events"))
-    }
-
     fn do_events_variant(&self) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::EventPump, "do_events"))
     }
 }
 
 impl FileSystemHal for NullHostServices {
-    fn open(&self, _path: RuntimeValue, _mode: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
-    }
-
     fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
-    }
-
-    fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
     }
 
     fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
     }
 
-    fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
-    }
-
     fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "kill"))
     }
 
-    fn seek(&self, _handle: RuntimeValue, _position: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "seek"))
-    }
-
-    fn eof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
     }
 
     fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
     }
 
-    fn lof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
-    }
-
     fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
-    }
-
-    fn free_file(&self, _range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
 
     fn free_file_variant(&self, _range_selector: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
 
-    fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
-    }
-
     fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
-    }
-
-    fn write_bytes(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
 
     fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
 
-    fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
-    }
-
     fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
-    }
-
-    fn input_fields(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 
     fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 
-    fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
-    }
-
     fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
-    }
-
-    fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
     }
 
     fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
@@ -279,28 +183,12 @@ impl FileSystemHal for NullHostServices {
 }
 
 impl ProcessEnvHal for NullHostServices {
-    fn shell(
-        &self,
-        _command: RuntimeValue,
-        _window_style: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
-    }
-
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
-    fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
-    }
-
     fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
-    }
-
-    fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
 
     fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
@@ -309,34 +197,16 @@ impl ProcessEnvHal for NullHostServices {
 }
 
 impl ComHal for NullHostServices {
-    fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
-    }
-
     fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
-    fn release_object(&self, _object: ObjectRef) -> HalResult<RuntimeValue> {
+    fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
     fn describe_object(&self, _object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
-    }
-
-    fn dispatch_invoke_runtime_value_v2(
-        &self,
-        _request: &oxvba_com::ComInvokeRequest,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
-    }
-
-    fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self,
-        _request: &oxvba_com::DynamicCallRequest,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
 
     fn subscribe_event(
@@ -347,7 +217,7 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
 
-    fn unsubscribe_event(&self, _subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event_variant(&self, _subscription: ComSubscriptionToken) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
 
@@ -369,15 +239,15 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
     }
 
-    fn event_callback_arg(
+    fn event_callback_variant(
         &self,
         _callback: ComCallbackToken,
         _index: usize,
-    ) -> HalResult<RuntimeValue> {
+    ) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
 
-    fn release_event_callback(&self, _callback: ComCallbackToken) -> HalResult<RuntimeValue> {
+    fn release_event_callback_variant(&self, _callback: ComCallbackToken) -> HalResult<Variant> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "release_event_callback",
@@ -404,7 +274,7 @@ impl ComHal for NullHostServices {
         &self,
         _scope: TypeLibCacheScope,
         _reference_name: Option<&str>,
-    ) -> HalResult<RuntimeValue> {
+    ) -> HalResult<Variant> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "invalidate_typelib_cache",
@@ -413,26 +283,12 @@ impl ComHal for NullHostServices {
 }
 
 impl TimeLocaleHal for NullHostServices {
-    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
-        Ok(RuntimeValue::F64(F64Value::from_date_f64(46_082.0)))
-    }
-
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
         Ok(Variant::from_date_f64(46_082.0))
     }
 
-    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
-        Ok(RuntimeValue::F64(F64Value::from_date_f64(
-            45_296.0 / 86_400.0,
-        )))
-    }
-
     fn time_serial_now_variant(&self) -> HalResult<Variant> {
         Ok(Variant::from_date_f64(45_296.0 / 86_400.0))
-    }
-
-    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
-        Ok(RuntimeValue::F64(F64Value::from_single_f64(45_296.0)))
     }
 
     fn timer_ticks_variant(&self) -> HalResult<Variant> {
@@ -441,23 +297,11 @@ impl TimeLocaleHal for NullHostServices {
 }
 
 impl DynamicLinkHal for NullHostServices {
-    fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
-
     fn invoke_bound_variants(
         &self,
         _binding: BindingHandle,
         _args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
-
-    fn invoke_descriptor(
-        &self,
-        _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
-        _arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
@@ -469,26 +313,12 @@ impl DynamicLinkHal for NullHostServices {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
-
     fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
 
 impl DiagnosticsHal for NullHostServices {
-    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
-        let code = runtime_value_i32(&code);
-        let payload = runtime_value_i32(&payload);
-        Ok(RuntimeValue::I32(code.saturating_add(payload)))
-    }
-
-    fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
-        Ok(RuntimeValue::I32(0))
-    }
-
     fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
         let code = variant_i32(&code);
         let payload = variant_i32(&payload);
@@ -509,7 +339,7 @@ mod tests {
             TimeLocaleHal, UiInteractionHal,
         },
     };
-    use oxvba_runtime::{F64Value, ObjectRef, Variant, compat::RuntimeValue};
+    use oxvba_runtime::{ObjectRef, Variant};
 
     use super::NullHostServices;
 
@@ -517,21 +347,21 @@ mod tests {
     fn null_backend_exposes_deterministic_floor() {
         let host = NullHostServices::new(crate::HostPolicy::default());
         assert_eq!(
-            host.date_serial_now().expect("date"),
-            RuntimeValue::F64(F64Value::from_date_f64(46_082.0))
+            host.date_serial_now_variant().expect("date"),
+            Variant::from_date_f64(46_082.0)
         );
         assert_eq!(
-            host.time_serial_now().expect("time"),
-            RuntimeValue::F64(F64Value::from_date_f64(45_296.0 / 86_400.0))
+            host.time_serial_now_variant().expect("time"),
+            Variant::from_date_f64(45_296.0 / 86_400.0)
         );
         assert_eq!(
-            host.timer_ticks().expect("timer"),
-            RuntimeValue::F64(F64Value::from_single_f64(45_296.0))
+            host.timer_ticks_variant().expect("timer"),
+            Variant::from_f32(45_296.0)
         );
         assert_eq!(
-            host.emit(RuntimeValue::I32(10), RuntimeValue::I32(3))
+            host.emit_variant(Variant::from_i32(10), Variant::from_i32(3))
                 .expect("emit"),
-            RuntimeValue::I32(13)
+            Variant::from_i32(13)
         );
     }
 
@@ -539,13 +369,13 @@ mod tests {
     fn null_backend_rejects_host_sensitive_domains() {
         let host = NullHostServices::new(crate::HostPolicy::interactive_dev());
         assert_eq!(
-            host.msg_box(RuntimeValue::I32(1), RuntimeValue::I32(1))
+            host.msg_box_variant(Variant::from_i32(1), Variant::from_i32(1))
                 .expect_err("msg_box")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+            host.shell_variant(Variant::from_i32(1), Variant::from_i32(0))
                 .expect_err("shell")
                 .kind,
             HalErrorKind::CapabilityUnavailable
@@ -557,7 +387,7 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.unsubscribe_event(1.into())
+            host.unsubscribe_event_variant(1.into())
                 .expect_err("unsubscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
@@ -575,13 +405,13 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_arg(1.into(), 0)
+            host.event_callback_variant(1.into(), 0)
                 .expect_err("event_callback_arg")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.release_event_callback(1.into())
+            host.release_event_callback_variant(1.into())
                 .expect_err("release_event_callback")
                 .kind,
             HalErrorKind::CapabilityUnavailable

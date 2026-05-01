@@ -17,9 +17,7 @@ use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComSubscriptionToken, DynamicCallRequest,
 };
-use oxvba_runtime::{
-    BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, VarType, Variant, compat::RuntimeValue,
-};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, VarType, Variant};
 
 pub struct RecordingHostServices {
     inner: Arc<dyn HostServices>,
@@ -49,25 +47,6 @@ impl RecordingHostServices {
         let mut seq = self.sequence.lock().expect("sequence lock not poisoned");
         *seq += 1;
         *seq
-    }
-
-    fn encode_runtime_value(rv: &RuntimeValue) -> Option<serde_json::Value> {
-        match rv {
-            RuntimeValue::I32(value) => Some(serde_json::json!({
-                "kind": "i32",
-                "value": value
-            })),
-            RuntimeValue::F64(value) => Some(serde_json::json!({
-                "kind": "f64",
-                "value": value.as_f64(),
-                "subtype": match value.subtype() {
-                    F64Subtype::Single => "single",
-                    F64Subtype::Double => "double",
-                    F64Subtype::Date => "date",
-                }
-            })),
-            _ => None,
-        }
     }
 
     fn encode_variant(value: &Variant) -> Option<serde_json::Value> {
@@ -101,73 +80,6 @@ impl RecordingHostServices {
             })),
             VarType::String => Some(serde_json::json!(value.as_bstr()?.as_str())),
             _ => None,
-        }
-    }
-
-    fn record_i32(
-        &self,
-        capability: &str,
-        operation: &str,
-        family: &str,
-        result: &HalResult<RuntimeValue>,
-    ) {
-        if let Ok(rv) = result {
-            let i = match rv {
-                RuntimeValue::I32(v) => *v,
-                _ => return,
-            };
-            let seq = self.next_sequence();
-            let entry =
-                HalJournalEntry::new(seq, capability, operation, family, serde_json::json!(i));
-            self.journal
-                .lock()
-                .expect("journal lock not poisoned")
-                .entries
-                .push(entry);
-        }
-    }
-
-    fn record_string(
-        &self,
-        capability: &str,
-        operation: &str,
-        family: &str,
-        result: &HalResult<RuntimeValue>,
-    ) {
-        if let Ok(RuntimeValue::String(s)) = result {
-            let seq = self.next_sequence();
-            let entry = HalJournalEntry::new(
-                seq,
-                capability,
-                operation,
-                family,
-                serde_json::json!(s.as_str()),
-            );
-            self.journal
-                .lock()
-                .expect("journal lock not poisoned")
-                .entries
-                .push(entry);
-        }
-    }
-
-    fn record_runtime_value(
-        &self,
-        capability: &str,
-        operation: &str,
-        family: &str,
-        result: &HalResult<RuntimeValue>,
-    ) {
-        if let Ok(rv) = result
-            && let Some(payload) = Self::encode_runtime_value(rv)
-        {
-            let seq = self.next_sequence();
-            let entry = HalJournalEntry::new(seq, capability, operation, family, payload);
-            self.journal
-                .lock()
-                .expect("journal lock not poisoned")
-                .entries
-                .push(entry);
         }
     }
 
@@ -247,24 +159,12 @@ impl HostServices for RecordingHostServices {
 }
 
 impl ConsoleHal for RecordingHostServices {
-    fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.inner.console().print_line(data)
-    }
-
     fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
         self.inner.console().print_line_variant(data)
     }
 
-    fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.inner.console().input_fields(count)
-    }
-
     fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
         self.inner.console().input_fields_variant(count)
-    }
-
-    fn line_input(&self) -> HalResult<RuntimeValue> {
-        self.inner.console().line_input()
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
@@ -273,25 +173,9 @@ impl ConsoleHal for RecordingHostServices {
 }
 
 impl UiInteractionHal for RecordingHostServices {
-    fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.ui().msg_box(prompt, style);
-        self.record_i32("ui", "msg_box", "ui.msgbox", &result);
-        result
-    }
-
     fn msg_box_variant(&self, prompt: Variant, style: Variant) -> HalResult<Variant> {
         let result = self.inner.ui().msg_box_variant(prompt, style);
         self.record_variant("ui", "msg_box", "ui.msgbox", &result);
-        result
-    }
-
-    fn input_box(
-        &self,
-        prompt: RuntimeValue,
-        default_value: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let result = self.inner.ui().input_box(prompt, default_value);
-        self.record_string("ui", "input_box", "ui.inputbox", &result);
         result
     }
 
@@ -303,12 +187,6 @@ impl UiInteractionHal for RecordingHostServices {
 }
 
 impl EventPumpHal for RecordingHostServices {
-    fn do_events(&self) -> HalResult<RuntimeValue> {
-        let result = self.inner.events().do_events();
-        self.record_i32("events", "do_events", "events.pump", &result);
-        result
-    }
-
     fn do_events_variant(&self) -> HalResult<Variant> {
         let result = self.inner.events().do_events_variant();
         self.record_variant("events", "do_events", "events.pump", &result);
@@ -317,21 +195,9 @@ impl EventPumpHal for RecordingHostServices {
 }
 
 impl FileSystemHal for RecordingHostServices {
-    fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().open(path, mode);
-        self.record_i32("fs", "open", "fs.open", &result);
-        result
-    }
-
     fn open_variant(&self, path: Variant, mode: Variant) -> HalResult<Variant> {
         let result = self.inner.fs().open_variant(path, mode);
         self.record_variant("fs", "open", "fs.open", &result);
-        result
-    }
-
-    fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().close(handle);
-        self.record_i32("fs", "close", "fs.close", &result);
         result
     }
 
@@ -341,27 +207,15 @@ impl FileSystemHal for RecordingHostServices {
         result
     }
 
-    fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().kill(path);
-        self.record_i32("fs", "kill", "fs.kill", &result);
-        result
-    }
-
     fn kill_variant(&self, path: Variant) -> HalResult<Variant> {
         let result = self.inner.fs().kill_variant(path);
         self.record_variant("fs", "kill", "fs.kill", &result);
         result
     }
 
-    fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().seek(handle, position);
-        self.record_i32("fs", "seek", "fs.seek", &result);
-        result
-    }
-
-    fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().eof(handle);
-        self.record_i32("fs", "eof", "fs.eof", &result);
+    fn seek_variant(&self, handle: Variant, position: Variant) -> HalResult<Variant> {
+        let result = self.inner.fs().seek_variant(handle, position);
+        self.record_variant("fs", "seek", "fs.seek", &result);
         result
     }
 
@@ -371,21 +225,9 @@ impl FileSystemHal for RecordingHostServices {
         result
     }
 
-    fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().lof(handle);
-        self.record_i32("fs", "lof", "fs.lof", &result);
-        result
-    }
-
     fn lof_variant(&self, handle: Variant) -> HalResult<Variant> {
         let result = self.inner.fs().lof_variant(handle);
         self.record_variant("fs", "lof", "fs.lof", &result);
-        result
-    }
-
-    fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().free_file(range_selector);
-        self.record_i32("fs", "free_file", "fs.freefile", &result);
         result
     }
 
@@ -395,19 +237,9 @@ impl FileSystemHal for RecordingHostServices {
         result
     }
 
-    fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Complex byte data — delegate without recording.
-        self.inner.fs().read_bytes(handle, count)
-    }
-
     fn read_bytes_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
         // Complex byte data - delegate without recording.
         self.inner.fs().read_bytes_variant(handle, count)
-    }
-
-    fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Complex byte data — delegate without recording.
-        self.inner.fs().write_bytes(handle, data)
     }
 
     fn write_bytes_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
@@ -415,19 +247,9 @@ impl FileSystemHal for RecordingHostServices {
         self.inner.fs().write_bytes_variant(handle, data)
     }
 
-    fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Complex text data — delegate without recording.
-        self.inner.fs().print_line(handle, data)
-    }
-
     fn print_line_variant(&self, handle: Variant, data: Variant) -> HalResult<Variant> {
         // Complex text data - delegate without recording.
         self.inner.fs().print_line_variant(handle, data)
-    }
-
-    fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Complex field data — delegate without recording.
-        self.inner.fs().input_fields(handle, count)
     }
 
     fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
@@ -435,20 +257,9 @@ impl FileSystemHal for RecordingHostServices {
         self.inner.fs().input_fields_variant(handle, count)
     }
 
-    fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Complex text data — delegate without recording.
-        self.inner.fs().line_input(handle)
-    }
-
     fn line_input_variant(&self, handle: Variant) -> HalResult<Variant> {
         // Complex text data - delegate without recording.
         self.inner.fs().line_input_variant(handle)
-    }
-
-    fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.fs().loc(handle);
-        self.record_i32("fs", "loc", "fs.loc", &result);
-        result
     }
 
     fn loc_variant(&self, handle: Variant) -> HalResult<Variant> {
@@ -459,33 +270,15 @@ impl FileSystemHal for RecordingHostServices {
 }
 
 impl ProcessEnvHal for RecordingHostServices {
-    fn shell(&self, command: RuntimeValue, window_style: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.process().shell(command, window_style);
-        self.record_i32("process", "shell", "process.shell", &result);
-        result
-    }
-
     fn shell_variant(&self, command: Variant, window_style: Variant) -> HalResult<Variant> {
         let result = self.inner.process().shell_variant(command, window_style);
         self.record_variant("process", "shell", "process.shell", &result);
         result
     }
 
-    fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.process().environ(key);
-        self.record_i32("process", "environ", "process.environ", &result);
-        result
-    }
-
     fn environ_variant(&self, key: Variant) -> HalResult<Variant> {
         let result = self.inner.process().environ_variant(key);
         self.record_variant("process", "environ", "process.environ", &result);
-        result
-    }
-
-    fn dir(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.process().dir(path, attrs);
-        self.record_i32("process", "dir", "process.dir", &result);
         result
     }
 
@@ -497,18 +290,9 @@ impl ProcessEnvHal for RecordingHostServices {
 }
 
 impl ComHal for RecordingHostServices {
-    fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Delegate to inner; COM objects are opaque handles, not trivially recorded.
-        self.inner.com().create_object(prog_id)
-    }
-
     fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
         // Delegate to inner; COM objects are opaque handles, not trivially recorded.
         self.inner.com().create_object_variant(prog_id)
-    }
-
-    fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue> {
-        self.inner.com().release_object(object)
     }
 
     fn release_object_variant(&self, object: ObjectRef) -> HalResult<Variant> {
@@ -519,24 +303,8 @@ impl ComHal for RecordingHostServices {
         self.inner.com().describe_object(object)
     }
 
-    fn dispatch_invoke_runtime_value_v2(
-        &self,
-        request: &ComInvokeRequest,
-    ) -> HalResult<RuntimeValue> {
-        self.inner.com().dispatch_invoke_runtime_value_v2(request)
-    }
-
     fn dispatch_invoke_variant(&self, request: &ComInvokeRequest) -> HalResult<Variant> {
         self.inner.com().dispatch_invoke_variant(request)
-    }
-
-    fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self,
-        request: &DynamicCallRequest,
-    ) -> HalResult<RuntimeValue> {
-        self.inner
-            .com()
-            .dispatch_invoke_dynamic_runtime_value_v2(request)
     }
 
     fn dispatch_invoke_dynamic_variant(&self, request: &DynamicCallRequest) -> HalResult<Variant> {
@@ -549,10 +317,6 @@ impl ComHal for RecordingHostServices {
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken> {
         self.inner.com().subscribe_event(object, event)
-    }
-
-    fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
-        self.inner.com().unsubscribe_event(subscription)
     }
 
     fn unsubscribe_event_variant(&self, subscription: ComSubscriptionToken) -> HalResult<Variant> {
@@ -574,24 +338,12 @@ impl ComHal for RecordingHostServices {
         self.inner.com().event_callback_arity(callback)
     }
 
-    fn event_callback_arg(
-        &self,
-        callback: ComCallbackToken,
-        index: usize,
-    ) -> HalResult<RuntimeValue> {
-        self.inner.com().event_callback_arg(callback, index)
-    }
-
     fn event_callback_variant(
         &self,
         callback: ComCallbackToken,
         index: usize,
     ) -> HalResult<Variant> {
         self.inner.com().event_callback_variant(callback, index)
-    }
-
-    fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
-        self.inner.com().release_event_callback(callback)
     }
 
     fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
@@ -616,7 +368,7 @@ impl ComHal for RecordingHostServices {
         &self,
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
-    ) -> HalResult<RuntimeValue> {
+    ) -> HalResult<Variant> {
         self.inner
             .com()
             .invalidate_typelib_cache(scope, reference_name)
@@ -624,33 +376,15 @@ impl ComHal for RecordingHostServices {
 }
 
 impl TimeLocaleHal for RecordingHostServices {
-    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
-        let result = self.inner.time_locale().date_serial_now();
-        self.record_runtime_value("time", "date_serial_now", "time.date", &result);
-        result
-    }
-
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
         let result = self.inner.time_locale().date_serial_now_variant();
         self.record_variant("time", "date_serial_now", "time.date", &result);
         result
     }
 
-    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
-        let result = self.inner.time_locale().time_serial_now();
-        self.record_runtime_value("time", "time_serial_now", "time.time", &result);
-        result
-    }
-
     fn time_serial_now_variant(&self) -> HalResult<Variant> {
         let result = self.inner.time_locale().time_serial_now_variant();
         self.record_variant("time", "time_serial_now", "time.time", &result);
-        result
-    }
-
-    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
-        let result = self.inner.time_locale().timer_ticks();
-        self.record_runtime_value("time", "timer_ticks", "time.timer", &result);
         result
     }
 
@@ -662,24 +396,12 @@ impl TimeLocaleHal for RecordingHostServices {
 }
 
 impl DynamicLinkHal for RecordingHostServices {
-    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.inner.dynlink().invoke_bound(binding, arg)
-    }
-
     fn invoke_bound_variants(
         &self,
         binding: BindingHandle,
         args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
         self.inner.dynlink().invoke_bound_variants(binding, args)
-    }
-
-    fn invoke_descriptor(
-        &self,
-        descriptor: &crate::traits::DynLinkDescriptorView<'_>,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        self.inner.dynlink().invoke_descriptor(descriptor, arg)
     }
 
     fn invoke_descriptor_variants(
@@ -692,30 +414,16 @@ impl DynamicLinkHal for RecordingHostServices {
             .invoke_descriptor_variants(descriptor, args)
     }
 
-    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.inner.dynlink().invoke_symbol(symbol, arg)
-    }
-
     fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
         self.inner.dynlink().invoke_symbol_variant(symbol, arg)
     }
 }
 
 impl DiagnosticsHal for RecordingHostServices {
-    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
-        let result = self.inner.diag().emit(code, payload);
-        self.record_i32("diagnostics", "emit", "diagnostics.emit", &result);
-        result
-    }
-
     fn emit_variant(&self, code: Variant, payload: Variant) -> HalResult<Variant> {
         let result = self.inner.diag().emit_variant(code, payload);
         self.record_variant("diagnostics", "emit", "diagnostics.emit", &result);
         result
-    }
-
-    fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.inner.diag().debug_print(text)
     }
 
     fn debug_print_variant(&self, text: Variant) -> HalResult<Variant> {
@@ -733,9 +441,9 @@ mod tests {
         let null = NullHostServices::boxed(HostPolicy::default());
         let recorder = RecordingHostServices::new(null);
 
-        // Make a time call through the recorder.
-        let _ = recorder.time_locale().timer_ticks();
-        let _ = recorder.time_locale().date_serial_now();
+        // Make time calls through the recorder.
+        let _ = recorder.time_locale().timer_ticks_variant();
+        let _ = recorder.time_locale().date_serial_now_variant();
 
         let journal = recorder.take_journal();
         assert_eq!(journal.entries.len(), 2);
@@ -772,7 +480,7 @@ mod tests {
         let null = NullHostServices::boxed(HostPolicy::default());
         let recorder = RecordingHostServices::new(null);
 
-        let _ = recorder.time_locale().timer_ticks();
+        let _ = recorder.time_locale().timer_ticks_variant();
 
         let journal = recorder.take_journal();
         let json = journal.to_json().expect("serialize");

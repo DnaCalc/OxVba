@@ -1,10 +1,9 @@
 use crate::{
-    compat,
     error::{HalError, HalResult},
     model::{CapabilityId, HalProfileId},
     traits::{DynLinkDescriptorView, DynamicLinkHal},
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, Variant, compat::RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, Variant};
 use std::collections::BTreeMap;
 
 use super::StandardHostServices;
@@ -242,25 +241,6 @@ impl DynamicLinkHal for StandardHostServices {
         Ok(binding)
     }
 
-    fn prepare_invoke(
-        &self,
-        _binding: BindingHandle,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        // Legacy semantic-value hook retained for compatibility callers. The
-        // standard adapter's retained VM/JIT path is `invoke_*_variants`.
-        Ok(arg)
-    }
-
-    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        // Legacy single-argument dynamic-link path. Retained callers should use
-        // `invoke_bound_variants`/`invoke_descriptor_variants`.
-        let capability = CapabilityId::DynamicLinking;
-        let arg = runtime_value_to_dynlink_variant(self.profile, capability, "invoke_bound", arg)?;
-        let (ret, _) = self.invoke_bound_variants(binding, &[arg])?;
-        variant_to_dynlink_runtime_value(self.profile, capability, "invoke_bound", ret)
-    }
-
     fn invoke_bound_variants(
         &self,
         binding: BindingHandle,
@@ -326,74 +306,6 @@ impl DynamicLinkHal for StandardHostServices {
         ))
     }
 
-    fn invoke_descriptor(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        // Legacy descriptor path retained for compatibility callers.
-        let arg = runtime_value_to_dynlink_variant(
-            self.profile,
-            CapabilityId::DynamicLinking,
-            "invoke_descriptor",
-            arg,
-        )?;
-        let (ret, _) = self.invoke_descriptor_variants(descriptor, &[arg])?;
-        variant_to_dynlink_runtime_value(
-            self.profile,
-            CapabilityId::DynamicLinking,
-            "invoke_descriptor",
-            ret,
-        )
-    }
-
-    fn invoke_descriptor_multi(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        args: &[RuntimeValue],
-    ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
-        // Legacy multi-argument descriptor path retained for compatibility
-        // callers. Retained descriptor execution uses `invoke_descriptor_variants`.
-        if descriptor.marshal_lane == "m1-native-ffi" && self.native_mode_enabled() {
-            let capability = CapabilityId::DynamicLinking;
-            let args = args
-                .iter()
-                .cloned()
-                .map(|arg| {
-                    runtime_value_to_dynlink_variant(
-                        self.profile,
-                        capability,
-                        "invoke_descriptor_multi",
-                        arg,
-                    )
-                })
-                .collect::<HalResult<Vec<_>>>()?;
-            let (ret, writebacks) = self.invoke_descriptor_variants(descriptor, &args)?;
-            let ret = variant_to_dynlink_runtime_value(
-                self.profile,
-                capability,
-                "invoke_descriptor_multi",
-                ret,
-            )?;
-            let writebacks = writebacks
-                .into_iter()
-                .map(|value| {
-                    variant_to_dynlink_runtime_value(
-                        self.profile,
-                        capability,
-                        "invoke_descriptor_multi",
-                        value,
-                    )
-                })
-                .collect::<HalResult<Vec<_>>>()?;
-            return Ok((ret, writebacks));
-        }
-        // Fall back to m0 deterministic (single-arg)
-        let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
-        self.invoke_descriptor(descriptor, arg)
-            .map(|rv| (rv, Vec::new()))
-    }
-
     fn invoke_descriptor_variants(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
@@ -436,22 +348,6 @@ impl DynamicLinkHal for StandardHostServices {
         invoke_m1_native_variants(self, descriptor, args)
     }
 
-    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        let arg = runtime_value_to_dynlink_variant(
-            self.profile,
-            CapabilityId::DynamicLinking,
-            "invoke_symbol",
-            arg,
-        )?;
-        let ret = self.invoke_symbol_variant(symbol, &arg)?;
-        variant_to_dynlink_runtime_value(
-            self.profile,
-            CapabilityId::DynamicLinking,
-            "invoke_symbol",
-            ret,
-        )
-    }
-
     fn invoke_symbol_variant(&self, symbol: DynLinkSymbol, arg: &Variant) -> HalResult<Variant> {
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
@@ -481,24 +377,6 @@ impl DynamicLinkHal for StandardHostServices {
         }
         Ok(Variant::from_i32(symbol.raw().saturating_add(arg)))
     }
-}
-
-fn runtime_value_to_dynlink_variant(
-    profile: HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    compat::runtime_value_to_variant(profile, capability, operation, "argument", value)
-}
-
-fn variant_to_dynlink_runtime_value(
-    profile: HalProfileId,
-    capability: CapabilityId,
-    operation: &'static str,
-    value: Variant,
-) -> HalResult<RuntimeValue> {
-    compat::variant_to_runtime_value(profile, capability, operation, value)
 }
 
 // ── m1-native-ffi invocation ──

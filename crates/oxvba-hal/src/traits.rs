@@ -25,7 +25,7 @@ pub use oxvba_com::{
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
     TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant, compat::RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,12 +82,10 @@ impl DynLinkDescriptorView<'_> {
 
 /// Root HAL service registry.
 ///
-/// HAL traits below expose a value-model boundary: methods that accept or
-/// return [`RuntimeValue`] are retained compatibility projection contracts for
-/// older adapters, while `_variant` companions are the retained value-model
-/// entry points used by VM/JIT callers. Implementations must override retained
-/// companions directly; trait defaults fault rather than silently projecting
-/// through compatibility `RuntimeValue` methods.
+/// HAL traits below expose a value-model boundary: methods accept and return
+/// direct [`Variant`] carriers at VM/JIT call sites. Implementations should
+/// override retained companions directly; trait defaults fault rather than
+/// silently projecting through compatibility methods.
 pub trait HostServices: Send + Sync {
     fn profile(&self) -> HalProfileId;
     fn descriptor(&self) -> HalDescriptor;
@@ -127,17 +125,14 @@ fn variant_companion_not_overridden<T>(
 
 pub trait ConsoleHal: Send + Sync {
     /// Console text output with line semantics for stdio-style hosts.
-    fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue>;
     fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ConsoleIo, "print_line_variant")
     }
     /// Delimited field parsing from stdin-like input (BASIC `Input`).
-    fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue>;
     fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ConsoleIo, "input_fields_variant")
     }
     /// Line-oriented read from stdin-like input (BASIC `Line Input`).
-    fn line_input(&self) -> HalResult<RuntimeValue>;
     fn line_input_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ConsoleIo, "line_input_variant")
     }
@@ -145,16 +140,10 @@ pub trait ConsoleHal: Send + Sync {
 
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
-    fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
     fn msg_box_variant(&self, _prompt: Variant, _style: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::UiInteraction, "msg_box_variant")
     }
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
-    fn input_box(
-        &self,
-        prompt: RuntimeValue,
-        default_value: RuntimeValue,
-    ) -> HalResult<RuntimeValue>;
     fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::UiInteraction, "input_box_variant")
     }
@@ -162,90 +151,72 @@ pub trait UiInteractionHal: Send + Sync {
 
 pub trait EventPumpHal: Send + Sync {
     /// Deterministically pumps host events, or reports unsupported behavior.
-    fn do_events(&self) -> HalResult<RuntimeValue>;
     fn do_events_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::EventPump, "do_events_variant")
     }
 }
 
 pub trait FileSystemHal: Send + Sync {
-    fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
     fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "open_variant")
     }
-    fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "close_variant")
     }
-    fn kill(&self, path: RuntimeValue) -> HalResult<RuntimeValue>;
     fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "kill_variant")
     }
-    fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
     fn seek_variant(&self, _handle: Variant, _position: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "seek_variant")
     }
-    fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "eof_variant")
     }
-    fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "lof_variant")
     }
-    fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
     fn free_file_variant(&self, _range_selector: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "free_file_variant")
     }
     /// Binary read: reads `count` bytes from the current position (VBA `Get #`).
-    fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
     fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "read_bytes_variant")
     }
     /// Formatted write output with delimiter semantics (current VBA `Write #` lane).
-    fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
     fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "write_bytes_variant")
     }
     /// Formatted text output with delimiter semantics (VBA `Print #`).
-    fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
     fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "print_line_variant")
     }
     /// Delimited field parsing from stream (VBA `Input #`).
-    fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
     fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "input_fields_variant")
     }
     /// Line-oriented read until newline or EOF (VBA `Line Input #`).
-    fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "line_input_variant")
     }
     /// Returns current byte position in the file (VBA `Loc()`).
-    fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "loc_variant")
     }
 }
 
 pub trait ProcessEnvHal: Send + Sync {
-    fn shell(&self, command: RuntimeValue, window_style: RuntimeValue) -> HalResult<RuntimeValue>;
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "shell_variant")
     }
-    fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
     fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "environ_variant")
     }
-    fn dir(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
     fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "dir_variant")
     }
 }
 
 pub trait ComHal: Send + Sync {
-    fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
     fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,
@@ -270,7 +241,6 @@ pub trait ComHal: Send + Sync {
             "bind_native_dispatch_object_variant",
         )
     }
-    fn release_object(&self, object: ObjectRef) -> HalResult<RuntimeValue>;
     fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,
@@ -278,16 +248,6 @@ pub trait ComHal: Send + Sync {
         )
     }
     fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>>;
-    /// Compatibility COM invoke seam. Implementations may override the
-    /// Variant-native methods below to avoid this semantic projection.
-    fn dispatch_invoke_runtime_value_v2(
-        &self,
-        request: &ComInvokeRequest,
-    ) -> HalResult<RuntimeValue>;
-    fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self,
-        request: &DynamicCallRequest,
-    ) -> HalResult<RuntimeValue>;
     fn dispatch_invoke_variant(&self, _request: &ComInvokeRequest) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,
@@ -305,7 +265,6 @@ pub trait ComHal: Send + Sync {
         object: ObjectRef,
         event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken>;
-    fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue>;
     fn unsubscribe_event_variant(&self, _subscription: ComSubscriptionToken) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,
@@ -318,11 +277,6 @@ pub trait ComHal: Send + Sync {
         callback: ComCallbackToken,
     ) -> HalResult<ComSubscriptionToken>;
     fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize>;
-    fn event_callback_arg(
-        &self,
-        callback: ComCallbackToken,
-        index: usize,
-    ) -> HalResult<RuntimeValue>;
     fn event_callback_variant(
         &self,
         _callback: ComCallbackToken,
@@ -333,7 +287,6 @@ pub trait ComHal: Send + Sync {
             "event_callback_variant",
         )
     }
-    fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue>;
     fn release_event_callback_variant(&self, _callback: ComCallbackToken) -> HalResult<Variant> {
         variant_companion_not_overridden(
             CapabilityId::ComActivationDispatch,
@@ -352,19 +305,16 @@ pub trait ComHal: Send + Sync {
         &self,
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
-    ) -> HalResult<RuntimeValue>;
+    ) -> HalResult<Variant>;
 }
 
 pub trait TimeLocaleHal: Send + Sync {
-    fn date_serial_now(&self) -> HalResult<RuntimeValue>;
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::TimeLocale, "date_serial_now_variant")
     }
-    fn time_serial_now(&self) -> HalResult<RuntimeValue>;
     fn time_serial_now_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::TimeLocale, "time_serial_now_variant")
     }
-    fn timer_ticks(&self) -> HalResult<RuntimeValue>;
     fn timer_ticks_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::TimeLocale, "timer_ticks_variant")
     }
@@ -376,76 +326,13 @@ pub trait DynamicLinkHal: Send + Sync {
         Ok(descriptor.symbol.raw().into())
     }
 
-    /// Compatibility projection for callers that still model binding tokens as
-    /// `RuntimeValue`.
-    fn bind_descriptor_value(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-    ) -> HalResult<RuntimeValue> {
-        self.bind_descriptor(descriptor)
-            .map(RuntimeValue::BindingHandle)
-    }
-
-    /// Optional legacy argument normalization/writeback preparation hook.
-    ///
-    /// Variant-native invoke paths should avoid this unless they are adapting
-    /// an older HAL implementation.
-    fn prepare_invoke(
-        &self,
-        _binding: BindingHandle,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        Ok(arg)
-    }
-
-    /// Invokes a previously bound symbol token (single-arg legacy path).
-    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue>;
-
-    /// Invokes a previously bound symbol with multiple arguments.
-    /// Returns `(return_value, writeback_values)` where writeback_values contains
-    /// modified ByRef argument values to write back to caller slots.
-    ///
-    /// This remains the legacy semantic-value transport. Prefer
-    /// `invoke_bound_variants` for retained VM/JIT slot values.
-    fn invoke_bound_multi(
-        &self,
-        binding: BindingHandle,
-        args: &[RuntimeValue],
-    ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
-        let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
-        self.invoke_bound(binding, arg).map(|rv| (rv, Vec::new()))
-    }
-
     /// Variant-native multi-argument invoke path.
-    ///
-    /// This is the canonical transport for VM/JIT slots. The `RuntimeValue`
-    /// multi-call remains as a compatibility projection for older HAL adapters.
     fn invoke_bound_variants(
         &self,
         _binding: BindingHandle,
         _args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
         variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_bound_variants")
-    }
-
-    /// Legacy descriptor-driven invoke path used by compatibility integrations.
-    fn invoke_descriptor(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue>;
-
-    /// Legacy descriptor-driven multi-arg invoke path.
-    ///
-    /// Prefer `invoke_descriptor_variants` for retained VM/JIT slot values.
-    fn invoke_descriptor_multi(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        args: &[RuntimeValue],
-    ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
-        let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
-        self.invoke_descriptor(descriptor, arg)
-            .map(|rv| (rv, Vec::new()))
     }
 
     /// Descriptor-driven Variant-native multi-arg invoke path.
@@ -457,9 +344,6 @@ pub trait DynamicLinkHal: Send + Sync {
         variant_companion_not_overridden(CapabilityId::DynamicLinking, "invoke_descriptor_variants")
     }
 
-    /// Legacy symbol-token invoke path retained for backward compatibility.
-    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue>;
-
     /// Variant-native symbol-token invoke path retained for no-descriptor
     /// VM/JIT external call sites.
     fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
@@ -468,11 +352,9 @@ pub trait DynamicLinkHal: Send + Sync {
 }
 
 pub trait DiagnosticsHal: Send + Sync {
-    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
     fn emit_variant(&self, _code: Variant, _payload: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::DiagnosticsTelemetry, "emit_variant")
     }
-    fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue>;
     fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::DiagnosticsTelemetry, "debug_print_variant")
     }

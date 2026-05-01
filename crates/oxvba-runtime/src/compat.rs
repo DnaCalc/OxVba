@@ -5,5 +5,4 @@
 //! imports from this module explicitly so broad execution contracts do not
 //! accidentally depend on `RuntimeValue` through root re-exports.
 
-pub use crate::coerce::compat::{runtime_value_to_vba_str, runtime_value_to_vba_string};
 pub use crate::runtime_value::RuntimeValue;

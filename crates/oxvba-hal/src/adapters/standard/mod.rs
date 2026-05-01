@@ -1409,7 +1409,7 @@ mod tests {
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{F64Value, Variant, bstr::BStr, compat::RuntimeValue};
+    use oxvba_runtime::{Variant, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -1437,25 +1437,25 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    fn expect_i32(value: RuntimeValue) -> i32 {
-        let RuntimeValue::I32(value) = value else {
-            panic!("expected RuntimeValue::I32, got {value:?}");
-        };
+    fn expect_i32(value: Variant) -> i32 {
         value
+            .as_i32()
+            .or_else(|| value.as_bool().map(i32::from))
+            .unwrap_or_else(|| panic!("expected scalar i32-compatible Variant, got {value:?}"))
     }
 
-    fn expect_f64(value: RuntimeValue) -> f64 {
-        let RuntimeValue::F64(value) = value else {
-            panic!("expected RuntimeValue::F64, got {value:?}");
-        };
-        value.as_f64()
+    fn expect_f64(value: Variant) -> f64 {
+        value
+            .as_f64()
+            .or_else(|| value.as_f32().map(f64::from))
+            .or_else(|| value.as_date_f64())
+            .unwrap_or_else(|| panic!("expected f64-compatible Variant, got {value:?}"))
     }
 
-    fn expect_object_handle(value: RuntimeValue) -> oxvba_runtime::ObjectRef {
-        match value {
-            RuntimeValue::Object(object_ref) => object_ref,
-            other => panic!("expected object runtime value, got {other:?}"),
-        }
+    fn expect_object_handle(value: Variant) -> oxvba_runtime::ObjectRef {
+        value
+            .as_object_ref()
+            .unwrap_or_else(|| panic!("expected object Variant, got {value:?}"))
     }
 
     const TEST_DISPATCH_PROG_ID_NAME: &str = "OxVba.TestDispatch";
@@ -1484,8 +1484,8 @@ mod tests {
         host: &StandardHostServices,
         prog_id_name: &str,
     ) -> crate::error::HalResult<oxvba_runtime::ObjectRef> {
-        let prog_id = RuntimeValue::String(oxvba_runtime::bstr::BStr::from(prog_id_name));
-        host.create_object(prog_id).map(expect_object_handle)
+        let prog_id = Variant::from_string(oxvba_runtime::bstr::BStr::from(prog_id_name));
+        create_object_variant_test(host, prog_id)
     }
 
     fn create_object_variant_test(
@@ -1503,7 +1503,7 @@ mod tests {
         host: &StandardHostServices,
         object: oxvba_runtime::ObjectRef,
     ) -> crate::error::HalResult<i32> {
-        host.release_object(object).map(expect_i32)
+        host.release_object_variant(object).map(expect_i32)
     }
 
     fn release_object_variant_test(
@@ -1530,11 +1530,7 @@ mod tests {
         host: &StandardHostServices,
         request: &ComInvokeRequest,
     ) -> crate::error::HalResult<i32> {
-        Ok(match host.dispatch_invoke_runtime_value_v2(request)? {
-            RuntimeValue::I32(value) => value,
-            RuntimeValue::Bool(value) => i32::from(value),
-            other => panic!("expected scalar dispatch result, got {other:?}"),
-        })
+        Ok(expect_i32(host.dispatch_invoke_variant(request)?))
     }
 
     fn bound_member_token_by_name(
@@ -1647,8 +1643,8 @@ mod tests {
         }
     }
 
-    fn rv(value: i32) -> RuntimeValue {
-        RuntimeValue::I32(value)
+    fn rv(value: i32) -> Variant {
+        Variant::from_i32(value)
     }
 
     fn current_native_profile() -> Option<HalProfileId> {
@@ -1703,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn console_variant_companions_do_not_require_runtime_value_projection() {
+    fn console_variant_companions_use_direct_variant_projection() {
         let callbacks = Arc::new(ConsoleProbe::with_lines(["42, alpha", "line text"]));
         let host = StandardHostServices::new(
             HalProfileId::Windows,
@@ -1833,7 +1829,9 @@ mod tests {
             .expect("variant freefile");
         assert_eq!(free, Variant::from_i32(1));
 
-        let handle = host.open(rv(123), rv(0)).expect("open deterministic file");
+        let handle = host
+            .open_variant(rv(123), rv(0))
+            .expect("open deterministic file");
         let handle_variant = Variant::from_i32(expect_i32(handle));
 
         let loc = crate::traits::FileSystemHal::loc_variant(&host, handle_variant.clone())
@@ -1921,7 +1919,7 @@ mod tests {
         )
         .expect("variant write");
         assert!(written.as_i32().unwrap_or_default() > 0);
-        host.seek(RuntimeValue::I32(handle.as_i32().unwrap()), rv(0))
+        host.seek_variant(Variant::from_i32(handle.as_i32().unwrap()), rv(0))
             .expect("seek back");
         let read = crate::traits::FileSystemHal::read_bytes_variant(&host, handle.clone(), written)
             .expect("variant read");
@@ -1940,7 +1938,7 @@ mod tests {
             Variant::from_string("world"),
         )
         .expect("variant print line");
-        host.seek(RuntimeValue::I32(line_handle.as_i32().unwrap()), rv(0))
+        host.seek_variant(Variant::from_i32(line_handle.as_i32().unwrap()), rv(0))
             .expect("seek line");
         let line = crate::traits::FileSystemHal::line_input_variant(&host, line_handle.clone())
             .expect("variant line input");
@@ -1959,7 +1957,7 @@ mod tests {
             Variant::from_i32(42),
         )
         .expect("variant write input");
-        host.seek(RuntimeValue::I32(input_handle.as_i32().unwrap()), rv(0))
+        host.seek_variant(Variant::from_i32(input_handle.as_i32().unwrap()), rv(0))
             .expect("seek input");
         let field = crate::traits::FileSystemHal::input_fields_variant(
             &host,
@@ -2003,47 +2001,59 @@ mod tests {
     #[test]
     fn file_open_seek_eof_lof_close_roundtrip() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let handle = host.open(rv(77), rv(0)).expect("open should succeed");
+        let handle = host
+            .open_variant(rv(77), rv(0))
+            .expect("open should succeed");
         assert_eq!(handle, rv(1));
-        assert_eq!(host.eof(handle.clone()).expect("eof should work"), rv(0));
-        let len = expect_i32(host.lof(handle.clone()).expect("lof should work"));
+        assert_eq!(
+            host.eof_variant(handle.clone()).expect("eof should work"),
+            rv(0)
+        );
+        let len = expect_i32(host.lof_variant(handle.clone()).expect("lof should work"));
         assert!(len > 0);
-        host.seek(handle.clone(), rv(len))
+        host.seek_variant(handle.clone(), rv(len))
             .expect("seek to end should work");
-        assert_eq!(host.eof(handle.clone()).expect("eof should work"), rv(1));
-        assert_eq!(host.close(handle).expect("close should work"), rv(1));
+        assert_eq!(
+            host.eof_variant(handle.clone()).expect("eof should work"),
+            rv(1)
+        );
+        assert_eq!(
+            host.close_variant(handle).expect("close should work"),
+            rv(1)
+        );
     }
 
     #[test]
-    fn file_open_accepts_runtime_string_paths() {
+    fn file_open_accepts_variant_string_paths() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let handle = host
-            .open(
-                RuntimeValue::String(BStr::from("runtime-fs-value-path.txt")),
-                RuntimeValue::I32(0),
+            .open_variant(
+                Variant::from_string(BStr::from("runtime-fs-value-path.txt")),
+                Variant::from_i32(0),
             )
             .expect("open should succeed");
-        let RuntimeValue::I32(handle) = handle else {
-            panic!("open should return file handle");
-        };
+        let handle = expect_i32(handle);
         assert_eq!(
-            host.lof(RuntimeValue::I32(handle))
+            host.lof_variant(Variant::from_i32(handle))
                 .expect("lof should succeed"),
-            RuntimeValue::I32(1)
+            Variant::from_i32(1)
         );
         assert_eq!(
-            host.close(RuntimeValue::I32(handle))
+            host.close_variant(Variant::from_i32(handle))
                 .expect("close should succeed"),
-            RuntimeValue::I32(1)
+            Variant::from_i32(1)
         );
     }
 
     #[test]
     fn free_file_respects_low_and_high_ranges() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.free_file(rv(0)).expect("default free file"), rv(1));
         assert_eq!(
-            host.free_file(rv(1)).expect("high-range free file"),
+            host.free_file_variant(rv(0)).expect("default free file"),
+            rv(1)
+        );
+        assert_eq!(
+            host.free_file_variant(rv(1)).expect("high-range free file"),
             rv(256)
         );
     }
@@ -2051,11 +2061,13 @@ mod tests {
     #[test]
     fn close_releases_handle_for_reuse() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let first = host.open(rv(10), rv(0)).expect("open should succeed");
+        let first = host
+            .open_variant(rv(10), rv(0))
+            .expect("open should succeed");
         assert_eq!(first, rv(1));
-        host.close(first).expect("close should succeed");
+        host.close_variant(first).expect("close should succeed");
         let second = host
-            .open(rv(11), rv(0))
+            .open_variant(rv(11), rv(0))
             .expect("second open should succeed");
         assert_eq!(second, rv(1), "closed handles must be reusable");
     }
@@ -2066,10 +2078,14 @@ mod tests {
         let mut handles = Vec::new();
         for expected in 1..=8 {
             assert_eq!(
-                host.free_file(rv(0)).expect("free_file should succeed"),
+                host.free_file_variant(rv(0))
+                    .expect("free_file should succeed"),
                 rv(expected)
             );
-            handles.push(host.open(rv(expected), rv(0)).expect("open should succeed"));
+            handles.push(
+                host.open_variant(rv(expected), rv(0))
+                    .expect("open should succeed"),
+            );
         }
         assert_eq!(handles, (1..=8).map(rv).collect::<Vec<_>>());
     }
@@ -2077,9 +2093,11 @@ mod tests {
     #[test]
     fn seek_negative_returns_adapter_fault() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let handle = host.open(rv(42), rv(0)).expect("open should succeed");
+        let handle = host
+            .open_variant(rv(42), rv(0))
+            .expect("open should succeed");
         let err = host
-            .seek(handle, rv(-1))
+            .seek_variant(handle, rv(-1))
             .expect_err("negative seek should return error");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
     }
@@ -2092,8 +2110,14 @@ mod tests {
             ..HostPolicy::default()
         };
         let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
-        assert_eq!(host.msg_box(rv(100), rv(3)).expect("msg_box"), rv(3));
-        assert_eq!(host.input_box(rv(100), rv(7)).expect("input_box"), rv(7));
+        assert_eq!(
+            host.msg_box_variant(rv(100), rv(3)).expect("msg_box"),
+            rv(3)
+        );
+        assert_eq!(
+            host.input_box_variant(rv(100), rv(7)).expect("input_box"),
+            rv(7)
+        );
 
         let host_disabled = StandardHostServices::new(
             HalProfileId::Windows,
@@ -2103,17 +2127,21 @@ mod tests {
             },
         );
         assert_eq!(
-            host_disabled.msg_box(rv(100), rv(3)).expect("msg_box"),
+            host_disabled
+                .msg_box_variant(rv(100), rv(3))
+                .expect("msg_box"),
             rv(100)
         );
         assert_eq!(
-            host_disabled.input_box(rv(100), rv(7)).expect("input_box"),
+            host_disabled
+                .input_box_variant(rv(100), rv(7))
+                .expect("input_box"),
             rv(100)
         );
     }
 
     #[test]
-    fn ui_runtime_value_lanes_preserve_string_inputs() {
+    fn ui_variant_lanes_preserve_string_inputs() {
         let policy = HostPolicy {
             allow_interaction: true,
             ui_virtualization: crate::model::UiVirtualizationMode::ScriptedResponses,
@@ -2121,20 +2149,20 @@ mod tests {
         };
         let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
         assert_eq!(
-            host.msg_box(
-                RuntimeValue::String(BStr::from("Prompt")),
-                RuntimeValue::I32(3),
+            host.msg_box_variant(
+                Variant::from_string(BStr::from("Prompt")),
+                Variant::from_i32(3)
             )
             .expect("msg_box"),
-            RuntimeValue::I32(3)
+            Variant::from_i32(3)
         );
         assert_eq!(
-            host.input_box(
-                RuntimeValue::String(BStr::from("Prompt")),
-                RuntimeValue::String(BStr::from("Default")),
+            host.input_box_variant(
+                Variant::from_string(BStr::from("Prompt")),
+                Variant::from_string(BStr::from("Default")),
             )
             .expect("input_box"),
-            RuntimeValue::String(BStr::from("Default"))
+            Variant::from_string(BStr::from("Default"))
         );
     }
 
@@ -2149,11 +2177,11 @@ mod tests {
             },
         );
         let err = host
-            .msg_box(rv(9), rv(1))
+            .msg_box_variant(rv(9), rv(1))
             .expect_err("msg_box should be denied");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
         let err = host
-            .input_box(rv(9), rv(1))
+            .input_box_variant(rv(9), rv(1))
             .expect_err("input_box should be denied");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
     }
@@ -2171,7 +2199,9 @@ mod tests {
         );
 
         assert_eq!(
-            host.shell(rv(1), rv(0)).expect_err("shell deny").kind,
+            host.shell_variant(rv(1), rv(0))
+                .expect_err("shell deny")
+                .kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
@@ -2181,7 +2211,7 @@ mod tests {
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            host.invoke_symbol(1.into(), rv(2))
+            host.invoke_symbol_variant(1.into(), &rv(2))
                 .expect_err("dynlink deny")
                 .kind,
             HalErrorKind::PolicyDenied
@@ -2189,7 +2219,7 @@ mod tests {
     }
 
     #[test]
-    fn create_object_variant_accepts_prog_id_without_runtime_value_projection() {
+    fn create_object_variant_accepts_prog_id_without_compat_projection() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let object =
             create_object_variant_test(&host, Variant::from_string(TEST_DISPATCH_PROG_ID_NAME))
@@ -2202,28 +2232,28 @@ mod tests {
     }
 
     #[test]
-    fn process_runtime_value_lanes_accept_string_inputs_in_deterministic_mode() {
+    fn process_variant_lanes_accept_string_inputs_in_deterministic_mode() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.shell(
-                RuntimeValue::String(BStr::from("echo hi")),
-                RuntimeValue::I32(0),
+            host.shell_variant(
+                Variant::from_string(BStr::from("echo hi")),
+                Variant::from_i32(0),
             )
             .expect("shell"),
-            RuntimeValue::I32(1)
+            Variant::from_i32(1)
         );
         assert_eq!(
-            host.environ(RuntimeValue::String(BStr::from("PATH")))
+            host.environ_variant(Variant::from_string(BStr::from("PATH")))
                 .expect("environ"),
-            RuntimeValue::I32(4)
+            Variant::from_i32(4)
         );
         assert_eq!(
-            host.dir(
-                RuntimeValue::String(BStr::from("folder")),
-                RuntimeValue::I32(0),
+            host.dir_variant(
+                Variant::from_string(BStr::from("folder")),
+                Variant::from_i32(0),
             )
             .expect("dir"),
-            RuntimeValue::I32(1)
+            Variant::from_i32(1)
         );
     }
 
@@ -2338,7 +2368,9 @@ mod tests {
         }
         .expect("classify dispatch result");
         let value = match classified {
-            VariantResultValue::Value(value) => value.to_runtime_value(),
+            VariantResultValue::Value(value) => value
+                .to_variant()
+                .expect("COM result should convert to Variant"),
             VariantResultValue::Dispatch(dispatch) => host
                 .bind_native_dispatch_result(
                     dispatch.cast::<RawIDispatch>(),
@@ -2378,7 +2410,9 @@ mod tests {
         }
         .expect("classify unknown result");
         let value = match classified {
-            VariantResultValue::Value(value) => value.to_runtime_value(),
+            VariantResultValue::Value(value) => value
+                .to_variant()
+                .expect("COM result should convert to Variant"),
             VariantResultValue::Dispatch(dispatch) => host
                 .bind_native_dispatch_result(
                     dispatch.cast::<RawIDispatch>(),
@@ -2610,39 +2644,39 @@ mod tests {
     fn time_locale_contract_values_are_stable() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.date_serial_now().expect("date"),
-            RuntimeValue::F64(F64Value::from_date_f64(46_082.0))
+            host.date_serial_now_variant().expect("date"),
+            Variant::from_date_f64(46_082.0)
         );
         assert_eq!(
-            host.time_serial_now().expect("time"),
-            RuntimeValue::F64(F64Value::from_date_f64(45_296.0 / 86_400.0))
+            host.time_serial_now_variant().expect("time"),
+            Variant::from_date_f64(45_296.0 / 86_400.0)
         );
         assert_eq!(
-            host.timer_ticks().expect("timer"),
-            RuntimeValue::F64(F64Value::from_single_f64(45_296.0))
+            host.timer_ticks_variant().expect("timer"),
+            Variant::from_f32(45_296.0)
         );
     }
 
     #[test]
     fn process_env_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.environ(rv(88)).expect("environ"), rv(88));
-        assert_eq!(host.dir(rv(0), rv(0)).expect("dir"), rv(0));
-        assert_eq!(host.dir(rv(5), rv(0)).expect("dir"), rv(1));
+        assert_eq!(host.environ_variant(rv(88)).expect("environ"), rv(88));
+        assert_eq!(host.dir_variant(rv(0), rv(0)).expect("dir"), rv(0));
+        assert_eq!(host.dir_variant(rv(5), rv(0)).expect("dir"), rv(1));
     }
 
     #[test]
     fn dispatch_invoke_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            host.dispatch_invoke_variant(&ComInvokeRequest {
                 object: ObjectRef::from_compat_identity(10),
                 member: 20.into(),
                 args: vec![ComInvokeArg::positional(30)],
                 invoke_kind_hint: None,
             })
             .expect("dispatch"),
-            RuntimeValue::I32(60)
+            Variant::from_i32(60)
         );
     }
 
@@ -2653,7 +2687,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return deterministic projection handle");
         let dispatch = host
-            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            .dispatch_invoke_variant(&ComInvokeRequest {
                 object: object.clone(),
                 member: 23.into(),
                 args: Vec::new(),
@@ -2661,7 +2695,7 @@ mod tests {
             })
             .expect("ReturnSelfDispatch projection should succeed");
         let unknown = host
-            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            .dispatch_invoke_variant(&ComInvokeRequest {
                 object: object.clone(),
                 member: 24.into(),
                 args: Vec::new(),
@@ -2685,7 +2719,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return deterministic projection handle");
         let err = host
-            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            .dispatch_invoke_variant(&ComInvokeRequest {
                 object: object.clone(),
                 member: super::TEST_DISPID_RAISE_EXCEPTION.into(),
                 args: Vec::new(),
@@ -2729,34 +2763,34 @@ mod tests {
     fn dispatch_invoke_missing_arg_token_projects_as_zero() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            host.dispatch_invoke_variant(&ComInvokeRequest {
                 object: ObjectRef::from_compat_identity(10),
                 member: 20.into(),
                 args: Vec::new(),
                 invoke_kind_hint: None,
             })
             .expect("dispatch"),
-            RuntimeValue::I32(30)
+            Variant::from_i32(30)
         );
     }
 
     #[test]
     fn diagnostics_emit_contract_is_deterministic() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.emit(rv(4), rv(5)).expect("emit"), rv(9));
+        assert_eq!(host.emit_variant(rv(4), rv(5)).expect("emit"), rv(9));
     }
 
     #[test]
     fn event_pump_supported_and_unsupported_paths() {
         let windows = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            windows.do_events().expect("windows do_events"),
-            RuntimeValue::I32(0)
+            windows.do_events_variant().expect("windows do_events"),
+            Variant::from_i32(0)
         );
 
         let null = StandardHostServices::new(HalProfileId::Null, HostPolicy::default());
         let err = null
-            .do_events()
+            .do_events_variant()
             .expect_err("null do_events should be unsupported");
         assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
     }
@@ -2771,15 +2805,16 @@ mod tests {
             },
         );
         assert_eq!(
-            host.free_file(rv(0)).expect("first free should be 1"),
+            host.free_file_variant(rv(0))
+                .expect("first free should be 1"),
             rv(1)
         );
         let err = host
-            .open(rv(10), rv(1))
+            .open_variant(rv(10), rv(1))
             .expect_err("mutation open should be denied by policy");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
         assert_eq!(
-            host.free_file(rv(0))
+            host.free_file_variant(rv(0))
                 .expect("free file should remain unchanged"),
             rv(1)
         );
@@ -2788,12 +2823,16 @@ mod tests {
     #[test]
     fn invalid_close_does_not_mutate_handle_state() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let first = host.open(rv(10), rv(0)).expect("open should succeed");
+        let first = host
+            .open_variant(rv(10), rv(0))
+            .expect("open should succeed");
         assert_eq!(first, rv(1));
-        let err = host.close(rv(99)).expect_err("invalid close should fail");
+        let err = host
+            .close_variant(rv(99))
+            .expect_err("invalid close should fail");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert_eq!(
-            host.free_file(rv(0))
+            host.free_file_variant(rv(0))
                 .expect("free file should still skip handle 1"),
             rv(2)
         );
@@ -2803,7 +2842,7 @@ mod tests {
     fn ui_msg_box_enforces_policy_and_capability_failures() {
         let denied_host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let err = denied_host
-            .msg_box(rv(1), rv(1))
+            .msg_box_variant(rv(1), rv(1))
             .expect_err("interaction is denied by default policy");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
 
@@ -2815,7 +2854,7 @@ mod tests {
             },
         );
         let err = null_host
-            .msg_box(rv(1), rv(1))
+            .msg_box_variant(rv(1), rv(1))
             .expect_err("null profile should report unsupported capability");
         assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
     }
@@ -2847,14 +2886,14 @@ mod tests {
         let linux = StandardHostServices::new(HalProfileId::Linux, policy);
         assert_eq!(
             windows
-                .shell(rv(1), rv(0))
+                .shell_variant(rv(1), rv(0))
                 .expect_err("windows shell denial")
                 .kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
             linux
-                .shell(rv(1), rv(0))
+                .shell_variant(rv(1), rv(0))
                 .expect_err("linux shell denial")
                 .kind,
             HalErrorKind::PolicyDenied
@@ -2868,15 +2907,15 @@ mod tests {
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
         let shell = expect_i32(
-            host.shell(rv(1), rv(0))
+            host.shell_variant(rv(1), rv(0))
                 .expect("native shell should succeed"),
         );
         assert!(shell >= 1);
         let environ = host
-            .environ(RuntimeValue::String(BStr::from("PATH")))
+            .environ_variant(Variant::from_string(BStr::from("PATH")))
             .expect("native environ should succeed");
         assert!(
-            matches!(environ, RuntimeValue::String(_)),
+            environ.as_bstr().is_some(),
             "native environ should return a string value, got {environ:?}"
         );
         let temp_dir = std::env::current_dir()
@@ -2887,12 +2926,12 @@ mod tests {
         let temp_file = temp_dir.join("probe-file.txt");
         std::fs::write(&temp_file, "probe").expect("write temp file");
         let dir = host
-            .dir(
-                RuntimeValue::String(BStr::from(temp_file.to_string_lossy().to_string())),
+            .dir_variant(
+                Variant::from_string(BStr::from(temp_file.to_string_lossy().to_string())),
                 rv(0),
             )
             .expect("native dir should succeed");
-        assert_eq!(dir, RuntimeValue::String(BStr::from("probe-file.txt")));
+        assert_eq!(dir, Variant::from_string(BStr::from("probe-file.txt")));
     }
 
     #[test]
@@ -2905,13 +2944,13 @@ mod tests {
             std::env::set_var("OXVBA_NATIVE_PROCESS_ENV_TEST", "native-process-env-value");
         }
         let out = host
-            .environ(RuntimeValue::String(BStr::from(
+            .environ_variant(Variant::from_string(BStr::from(
                 "OXVBA_NATIVE_PROCESS_ENV_TEST",
             )))
             .expect("native environ should succeed");
         assert_eq!(
             out,
-            RuntimeValue::String(BStr::from("native-process-env-value"))
+            Variant::from_string(BStr::from("native-process-env-value"))
         );
     }
 
@@ -2929,26 +2968,27 @@ mod tests {
             .join("native-file-io");
         std::fs::create_dir_all(&temp_dir).expect("create temp dir");
         let temp_file = temp_dir.join("roundtrip.txt");
-        let path = RuntimeValue::String(BStr::from(temp_file.to_string_lossy().to_string()));
+        let path = Variant::from_string(BStr::from(temp_file.to_string_lossy().to_string()));
 
-        let write_handle = host.open(path.clone(), rv(1)).expect("open output");
-        host.print_line(
+        let write_handle = host.open_variant(path.clone(), rv(1)).expect("open output");
+        host.print_line_variant(
             write_handle.clone(),
-            RuntimeValue::String(BStr::from("world")),
+            Variant::from_string(BStr::from("world")),
         )
         .expect("print_line");
-        host.close(write_handle).expect("close output");
+        host.close_variant(write_handle).expect("close output");
         assert_eq!(
             std::fs::read_to_string(&temp_file).expect("read flushed file"),
             "world\r\n"
         );
 
-        let read_handle = host.open(path, rv(0)).expect("open input");
+        let read_handle = host.open_variant(path, rv(0)).expect("open input");
         assert_eq!(
-            host.line_input(read_handle.clone()).expect("line_input"),
-            RuntimeValue::String(BStr::from("world"))
+            host.line_input_variant(read_handle.clone())
+                .expect("line_input"),
+            Variant::from_string(BStr::from("world"))
         );
-        host.close(read_handle).expect("close input");
+        host.close_variant(read_handle).expect("close input");
     }
 
     #[test]
@@ -2958,16 +2998,20 @@ mod tests {
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
         let handle = host
-            .open(rv(31415), rv(1))
+            .open_variant(rv(31415), rv(1))
             .expect("native open should succeed");
-        host.seek(handle.clone(), rv(64))
+        host.seek_variant(handle.clone(), rv(64))
             .expect("native seek should succeed");
         assert!(
-            expect_i32(host.lof(handle.clone()).expect("native lof should succeed")) >= 64,
+            expect_i32(
+                host.lof_variant(handle.clone())
+                    .expect("native lof should succeed")
+            ) >= 64,
             "native seek in mutation mode should extend logical length"
         );
         assert_eq!(
-            host.close(handle).expect("native close should succeed"),
+            host.close_variant(handle)
+                .expect("native close should succeed"),
             rv(1)
         );
     }
@@ -2978,9 +3022,9 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        assert!(expect_f64(host.date_serial_now().expect("date")) >= 0.0);
-        assert!(expect_f64(host.time_serial_now().expect("time")) >= 0.0);
-        assert!(expect_f64(host.timer_ticks().expect("ticks")) >= 0.0);
+        assert!(expect_f64(host.date_serial_now_variant().expect("date")) >= 0.0);
+        assert!(expect_f64(host.time_serial_now_variant().expect("time")) >= 0.0);
+        assert!(expect_f64(host.timer_ticks_variant().expect("ticks")) >= 0.0);
     }
 
     #[test]
@@ -2994,7 +3038,7 @@ mod tests {
         assert!(subscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
 
         let unsubscribe = host
-            .unsubscribe_event(1.into())
+            .unsubscribe_event_variant(1.into())
             .expect_err("unsubscribe_event should require native mode");
         assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(unsubscribe.operation, "unsubscribe_event");
@@ -3012,13 +3056,13 @@ mod tests {
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.event_callback_arg(60_001.into(), 0)
+            host.event_callback_variant(60_001.into(), 0)
                 .expect_err("event_callback_arg should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.release_event_callback(60_001.into())
+            host.release_event_callback_variant(60_001.into())
                 .expect_err("release_event_callback should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
@@ -3065,7 +3109,7 @@ mod tests {
             77
         );
         let callback = host
-            .do_events()
+            .do_events_variant()
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
         assert!(callback >= 60_001);
@@ -3075,7 +3119,7 @@ mod tests {
             subscription
         );
         assert_eq!(
-            host.event_callback_arg(callback.into(), 0)
+            host.event_callback_variant(callback.into(), 0)
                 .expect("callback arg lookup should succeed"),
             rv(77)
         );
@@ -3085,18 +3129,19 @@ mod tests {
             1
         );
         assert_eq!(
-            host.release_event_callback(callback.into())
+            host.release_event_callback_variant(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.do_events().expect("callback queue should be drained"),
-            RuntimeValue::I32(0),
+            host.do_events_variant()
+                .expect("callback queue should be drained"),
+            Variant::from_i32(0),
             "native callback lane should not enqueue duplicate projection callbacks"
         );
 
         assert_eq!(
-            host.unsubscribe_event(subscription)
+            host.unsubscribe_event_variant(subscription)
                 .expect("unsubscribe_event should succeed"),
             rv(1)
         );
@@ -3104,9 +3149,9 @@ mod tests {
             .dispatch_invoke_named(object.raw(), "FireChanged", &[88])
             .expect("FireChanged should remain invokable after unsubscribe");
         assert_eq!(
-            host.do_events()
+            host.do_events_variant()
                 .expect("callback queue should remain empty after unsubscribe"),
-            RuntimeValue::I32(0)
+            Variant::from_i32(0)
         );
         let callback_still_present = {
             let state = host
@@ -3139,7 +3184,7 @@ mod tests {
             91
         );
         let callback = host
-            .do_events()
+            .do_events_variant()
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
         assert!(callback >= 60_001);
@@ -3154,17 +3199,17 @@ mod tests {
             2
         );
         assert_eq!(
-            host.event_callback_arg(callback.into(), 0)
+            host.event_callback_variant(callback.into(), 0)
                 .expect("callback arg0 lookup should succeed"),
             rv(90)
         );
         assert_eq!(
-            host.event_callback_arg(callback.into(), 1)
+            host.event_callback_variant(callback.into(), 1)
                 .expect("callback arg1 lookup should succeed"),
             rv(91)
         );
         let err = host
-            .event_callback_arg(callback.into(), 2)
+            .event_callback_variant(callback.into(), 2)
             .expect_err("index beyond callback arity should fail");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -3172,12 +3217,12 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
         assert_eq!(
-            host.release_event_callback(callback.into())
+            host.release_event_callback_variant(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(subscription)
+            host.unsubscribe_event_variant(subscription)
                 .expect("unsubscribe_event should succeed"),
             rv(1)
         );
@@ -3200,7 +3245,7 @@ mod tests {
             91
         );
         let callback = host
-            .do_events()
+            .do_events_variant()
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
         let payload = host
@@ -3239,7 +3284,7 @@ mod tests {
         host.dispatch_invoke_named(object.raw(), "FireChanged", &[77])
             .expect("FireChanged should succeed");
         let callback = host
-            .do_events()
+            .do_events_variant()
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
 
@@ -3253,7 +3298,7 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-MISSING")
         );
         let subscription_err = host
-            .unsubscribe_event(subscription)
+            .unsubscribe_event_variant(subscription)
             .expect_err("released object subscription should be gone");
         assert!(
             subscription_err
@@ -3299,7 +3344,7 @@ mod tests {
             77
         );
         let callback = host
-            .do_events()
+            .do_events_variant()
             .expect("do_events should pump pending source-interface callback");
         let callback = expect_i32(callback);
         assert_eq!(
@@ -3313,17 +3358,17 @@ mod tests {
             1
         );
         assert!(
-            host.event_callback_arg(callback.into(), 0)
+            host.event_callback_variant(callback.into(), 0)
                 .expect("callback arg0 lookup should succeed")
                 == rv(77)
         );
         assert_eq!(
-            host.release_event_callback(callback.into())
+            host.release_event_callback_variant(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(subscription)
+            host.unsubscribe_event_variant(subscription)
                 .expect("unsubscribe should succeed"),
             rv(1)
         );
@@ -3334,7 +3379,7 @@ mod tests {
     fn windows_native_com_event_unsubscribe_rejects_unknown_subscription() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let err = host
-            .unsubscribe_event(40_999.into())
+            .unsubscribe_event_variant(40_999.into())
             .expect_err("unknown subscription should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-ADVISE-FAILED"));
@@ -3369,10 +3414,10 @@ mod tests {
         let _ = host
             .dispatch_invoke_named(object.raw(), "FireChanged", &[77])
             .expect("FireChanged should succeed");
-        let callback = host.do_events().expect("callback token");
+        let callback = host.do_events_variant().expect("callback token");
         let callback = expect_i32(callback);
         let err = host
-            .event_callback_arg(callback.into(), 1)
+            .event_callback_variant(callback.into(), 1)
             .expect_err("only callback arg index 0 should be supported");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -3380,12 +3425,12 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
         assert_eq!(
-            host.release_event_callback(callback.into())
+            host.release_event_callback_variant(callback.into())
                 .expect("release callback should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(subscription)
+            host.unsubscribe_event_variant(subscription)
                 .expect("unsubscribe should succeed"),
             rv(1)
         );
@@ -3400,12 +3445,13 @@ mod tests {
         let _ = std::fs::remove_file(&host_path);
 
         let handle = host
-            .open(rv(token), rv(1))
+            .open_variant(rv(token), rv(1))
             .expect("native open should succeed");
-        host.seek(handle.clone(), rv(160))
+        host.seek_variant(handle.clone(), rv(160))
             .expect("native seek should succeed");
         assert_eq!(
-            host.close(handle).expect("native close should succeed"),
+            host.close_variant(handle)
+                .expect("native close should succeed"),
             rv(1)
         );
 
@@ -3504,7 +3550,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_method_args_runtime_value_v2() {
+    fn windows_native_controlled_test_dispatch_supports_named_method_args_variant_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
@@ -3520,7 +3566,7 @@ mod tests {
         };
         assert_eq!(
             expect_i32(
-                host.dispatch_invoke_runtime_value_v2(&request)
+                host.dispatch_invoke_variant(&request)
                     .expect("named-argument SumPair invoke should succeed")
             ),
             3_014
@@ -3549,15 +3595,15 @@ mod tests {
             call_kind_hint: Some(oxvba_com::DynamicCallKind::Method),
         };
         assert_eq!(
-            host.dispatch_invoke_dynamic_runtime_value_v2(&request)
+            host.dispatch_invoke_dynamic_variant(&request)
                 .expect("dynamic name selector should resolve on deterministic projection"),
-            RuntimeValue::I32(5_033)
+            Variant::from_i32(5_033)
         );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_property_get_args_runtime_value_v2() {
+    fn windows_native_controlled_test_dispatch_supports_named_property_get_args_variant_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
@@ -3573,7 +3619,7 @@ mod tests {
         };
         assert_eq!(
             expect_i32(
-                host.dispatch_invoke_runtime_value_v2(&request)
+                host.dispatch_invoke_variant(&request)
                     .expect("named property-get invoke should succeed")
             ),
             203_014
@@ -3582,8 +3628,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_default_member_args_runtime_value_v2()
-    {
+    fn windows_native_controlled_test_dispatch_supports_named_default_member_args_variant_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
@@ -3596,7 +3641,7 @@ mod tests {
         };
         assert_eq!(
             expect_i32(
-                host.dispatch_invoke_runtime_value_v2(&request)
+                host.dispatch_invoke_variant(&request)
                     .expect("named default-member invoke should succeed")
             ),
             19
@@ -3620,7 +3665,7 @@ mod tests {
         // Named args on default-member dispatch without metadata now pass through to the
         // COM invoke layer for runtime resolution via GetIDsOfNames. The Dictionary COM
         // server will either resolve the name or return a deterministic COM error.
-        let _ = host.dispatch_invoke_runtime_value_v2(&request);
+        let _ = host.dispatch_invoke_variant(&request);
     }
 
     #[cfg(target_os = "windows")]
@@ -3637,7 +3682,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         let err = host
-            .dispatch_invoke_runtime_value_v2(&request)
+            .dispatch_invoke_variant(&request)
             .expect_err("omitted required argument should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("member requires argument"));
@@ -3658,7 +3703,7 @@ mod tests {
         };
         assert_eq!(
             expect_i32(
-                host.dispatch_invoke_runtime_value_v2(&request)
+                host.dispatch_invoke_variant(&request)
                     .expect("named value argument should still route through property-put lane")
             ),
             307_009
@@ -3673,22 +3718,22 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let expected =
-            RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
-                RuntimeValue::I32(4),
-                RuntimeValue::Bool(true),
-                RuntimeValue::String(BStr::from("Hello")),
-                RuntimeValue::Null,
+            Variant::from_safearray(oxvba_runtime::safe_array::SafeArray::from_variants(vec![
+                Variant::from_i32(4),
+                Variant::from_bool(true),
+                Variant::from_string(BStr::from("Hello")),
+                Variant::null(),
             ]));
         let request = ComInvokeRequest {
             object: object.clone(),
             member: super::TEST_DISPID_ECHO_VARIANT.into(),
             args: vec![ComInvokeArg::positional_value(
-                ComValue::from_runtime_value(&expected),
+                ComValue::from_variant(&expected).expect("expected SAFEARRAY Variant to project"),
             )],
             invoke_kind_hint: Some(oxvba_com::ComInvokeKind::Method),
         };
         assert_eq!(
-            host.dispatch_invoke_runtime_value_v2(&request)
+            host.dispatch_invoke_variant(&request)
                 .expect("semantic SAFEARRAY invoke should succeed"),
             expected
         );
@@ -3712,7 +3757,7 @@ mod tests {
         };
         assert_eq!(
             expect_i32(
-                host.dispatch_invoke_runtime_value_v2(&request).expect(
+                host.dispatch_invoke_variant(&request).expect(
                     "fully named indexed property-put should canonicalize deterministically"
                 )
             ),
@@ -3743,7 +3788,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            expect_i32(host.dispatch_invoke_runtime_value_v2(&request).expect(
+            expect_i32(host.dispatch_invoke_variant(&request).expect(
                 "fully named indexed property-putref should canonicalize deterministically"
             )),
             408_013
@@ -3763,7 +3808,7 @@ mod tests {
             .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
             .expect("create_object should return a token");
         let err = host
-            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+            .dispatch_invoke_variant(&ComInvokeRequest {
                 object: object.clone(),
                 member: super::TEST_DISPID_LOOKUP.into(),
                 args: Vec::new(),
@@ -4719,7 +4764,7 @@ mod tests {
         );
 
         let err = host
-            .unsubscribe_event(subscription)
+            .unsubscribe_event_variant(subscription)
             .expect_err("released object subscription should already be removed");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
     }
@@ -4730,20 +4775,20 @@ mod tests {
             let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
             for idx in 0..open_count {
                 let path = path_seed.saturating_add(idx as i32);
-                let _ = host.open(rv(path), rv(0)).expect("open should succeed");
+                let _ = host.open_variant(rv(path), rv(0)).expect("open should succeed");
             }
             let expected = 1 + open_count as i32;
-            let free = host.free_file(rv(0)).expect("free_file should succeed");
+            let free = host.free_file_variant(rv(0)).expect("free_file should succeed");
             prop_assert_eq!(free, rv(expected));
         }
 
         #[test]
         fn prop_seek_eof_boundary(path_token in 1i32..10_000, offset in 0i32..6000) {
             let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-            let handle = host.open(rv(path_token), rv(0)).expect("open should succeed");
-            let len = expect_i32(host.lof(handle.clone()).expect("lof should succeed"));
-            host.seek(handle.clone(), rv(offset)).expect("seek should succeed");
-            let eof = host.eof(handle).expect("eof should succeed");
+            let handle = host.open_variant(rv(path_token), rv(0)).expect("open should succeed");
+            let len = expect_i32(host.lof_variant(handle.clone()).expect("lof should succeed"));
+            host.seek_variant(handle.clone(), rv(offset)).expect("seek should succeed");
+            let eof = host.eof_variant(handle).expect("eof should succeed");
             let expected = if offset >= len { 1 } else { 0 };
             prop_assert_eq!(eof, rv(expected));
         }
@@ -4759,12 +4804,12 @@ mod tests {
                 },
             );
             prop_assert_eq!(
-                scripted.msg_box(rv(prompt), rv(style)).expect("scripted msg_box"),
+                scripted.msg_box_variant(rv(prompt), rv(style)).expect("scripted msg_box"),
                 rv(style.max(1))
             );
             prop_assert_eq!(
                 scripted
-                    .input_box(rv(prompt), rv(default_value))
+                    .input_box_variant(rv(prompt), rv(default_value))
                     .expect("scripted input_box"),
                 rv(default_value)
             );
@@ -4778,12 +4823,12 @@ mod tests {
                 },
             );
             prop_assert_eq!(
-                disabled.msg_box(rv(prompt), rv(style)).expect("disabled msg_box"),
+                disabled.msg_box_variant(rv(prompt), rv(style)).expect("disabled msg_box"),
                 rv(prompt.max(1))
             );
             prop_assert_eq!(
                 disabled
-                    .input_box(rv(prompt), rv(default_value))
+                    .input_box_variant(rv(prompt), rv(default_value))
                     .expect("disabled input_box"),
                 rv(prompt)
             );
@@ -4808,11 +4853,11 @@ mod tests {
             );
 
             prop_assert_eq!(
-                host.msg_box(rv(1), rv(1)).expect_err("msg_box denied").kind,
+                host.msg_box_variant(rv(1), rv(1)).expect_err("msg_box denied").kind,
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.shell(rv(shell_cmd), rv(0))
+                host.shell_variant(rv(shell_cmd), rv(0))
                     .expect_err("shell denied")
                     .kind,
                 HalErrorKind::PolicyDenied
@@ -4822,7 +4867,7 @@ mod tests {
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol.into(), rv(arg))
+                host.invoke_symbol_variant(symbol.into(), &rv(arg))
                     .expect_err("invoke_symbol denied")
                     .kind,
                 HalErrorKind::PolicyDenied
@@ -4851,8 +4896,8 @@ mod tests {
 
             let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
             prop_assert_eq!(
-                host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
-                RuntimeValue::I32(shell_expected)
+                host.shell_variant(rv(shell_cmd), rv(0)).expect("shell should succeed"),
+                Variant::from_i32(shell_expected)
             );
             let first_object = host.create_object_test(&create_object_prop_test_prog_id_name(prog_id))
                 .expect("create_object should succeed");
@@ -4861,7 +4906,7 @@ mod tests {
             prop_assert_eq!(first_object.compat_identity(), second_object.compat_identity());
             let request = ComInvokeRequest::legacy(object, member, arg);
             let semantic = host
-                .dispatch_invoke_runtime_value_v2(&request)
+                .dispatch_invoke_variant(&request)
                 .expect("semantic dispatch_invoke should succeed");
             prop_assert_eq!(
                 host.dispatch_invoke_legacy_v2(&request)
@@ -4869,9 +4914,9 @@ mod tests {
                 expect_i32(semantic)
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol.into(), rv(arg))
+                host.invoke_symbol_variant(symbol.into(), &rv(arg))
                     .expect("invoke_symbol should succeed"),
-                RuntimeValue::I32(symbol.saturating_add(arg))
+                Variant::from_i32(symbol.saturating_add(arg))
             );
         }
     }
@@ -4886,7 +4931,7 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id_hint: &str,
         op: &'static str,
-    ) -> HalResult<oxvba_runtime::compat::RuntimeValue> {
+    ) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
         let handle = unsafe {
             self.com_bridge
@@ -4911,7 +4956,7 @@ impl StandardHostServices {
                     ),
                 )
             })?;
-        Ok(oxvba_runtime::compat::RuntimeValue::Object(object_ref))
+        Ok(Variant::from_object_ref(object_ref))
     }
 
     // Test-only extension seam intentionally left empty after the callback

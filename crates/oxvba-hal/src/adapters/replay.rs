@@ -13,12 +13,11 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant, compat::RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant};
 
 use super::standard::descriptor_for_profile;
 
-// Replay adapter decodes legacy journal entries into `RuntimeValue` for
-// compatibility lanes. The `_variant` methods are retained value-model
+// Replay adapter decodes journal entries through retained Variant value-model
 // companions and should avoid trait fallback projection where implemented.
 pub struct ReplayHostServices {
     journal: HalJournal,
@@ -79,27 +78,6 @@ impl ReplayHostServices {
         }
         *cursor += 1;
         Ok(entry)
-    }
-
-    fn replay_i32(&self, op: &'static str) -> HalResult<RuntimeValue> {
-        let entry = self.next_entry(op)?;
-        let value = entry.result.as_i64().unwrap_or(0) as i32;
-        Ok(RuntimeValue::I32(value))
-    }
-
-    // Compatibility journal parser for legacy RuntimeValue APIs.
-    fn replay_runtime_value(&self, op: &'static str) -> HalResult<RuntimeValue> {
-        let entry = self.next_entry(op)?;
-        self.decode_variant(op, entry)?
-            .to_runtime_value()
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    HalProfileId::Null,
-                    CapabilityId::DiagnosticsTelemetry,
-                    op,
-                    detail,
-                )
-            })
     }
 
     // Retained companion projection over the same journal data for Variant callers.
@@ -206,24 +184,12 @@ impl HostServices for ReplayHostServices {
 }
 
 impl ConsoleHal for ReplayHostServices {
-    fn print_line(&self, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
-    }
-
     fn print_line_variant(&self, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
     }
 
-    fn input_fields(&self, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
-    }
-
     fn input_fields_variant(&self, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
-    }
-
-    fn line_input(&self) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
@@ -232,18 +198,8 @@ impl ConsoleHal for ReplayHostServices {
 }
 
 impl UiInteractionHal for ReplayHostServices {
-    fn msg_box(&self, _prompt: RuntimeValue, _style: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("msg_box")
-    }
-
     fn msg_box_variant(&self, _prompt: Variant, _style: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("msg_box")
-    }
-
-    fn input_box(&self, _prompt: RuntimeValue, _default: RuntimeValue) -> HalResult<RuntimeValue> {
-        let entry = self.next_entry("input_box")?;
-        let text = entry.result.as_str().unwrap_or("").to_string();
-        Ok(RuntimeValue::String(oxvba_runtime::bstr::BStr::from(text)))
     }
 
     fn input_box_variant(&self, _prompt: Variant, _default: Variant) -> HalResult<Variant> {
@@ -254,87 +210,47 @@ impl UiInteractionHal for ReplayHostServices {
 }
 
 impl EventPumpHal for ReplayHostServices {
-    fn do_events(&self) -> HalResult<RuntimeValue> {
-        self.replay_i32("do_events")
-    }
-
     fn do_events_variant(&self) -> HalResult<Variant> {
         self.replay_i32_variant("do_events")
     }
 }
 
 impl FileSystemHal for ReplayHostServices {
-    fn open(&self, _path: RuntimeValue, _mode: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("open")
-    }
     fn open_variant(&self, _path: Variant, _mode: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("open")
-    }
-    fn close(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("close")
     }
     fn close_variant(&self, _handle: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("close")
     }
-    fn kill(&self, _path: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("kill")
-    }
     fn kill_variant(&self, _path: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("kill")
     }
-    fn seek(&self, _handle: RuntimeValue, _pos: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("seek")
-    }
-    fn eof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("eof")
+    fn seek_variant(&self, _handle: Variant, _pos: Variant) -> HalResult<Variant> {
+        self.replay_i32_variant("seek")
     }
     fn eof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("eof")
     }
-    fn lof(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("lof")
-    }
     fn lof_variant(&self, _handle: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("lof")
-    }
-    fn free_file(&self, _range: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("free_file")
     }
     fn free_file_variant(&self, _range: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("free_file")
     }
-    fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
-    }
     fn read_bytes_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
-    }
-    fn write_bytes(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
     fn write_bytes_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
     }
-    fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
-    }
     fn print_line_variant(&self, _handle: Variant, _data: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
-    }
-    fn input_fields(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
     fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
-    fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
-    }
     fn line_input_variant(&self, _handle: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
-    }
-    fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("loc")
     }
     fn loc_variant(&self, _handle: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("loc")
@@ -342,20 +258,11 @@ impl FileSystemHal for ReplayHostServices {
 }
 
 impl ProcessEnvHal for ReplayHostServices {
-    fn shell(&self, _cmd: RuntimeValue, _style: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("shell")
-    }
     fn shell_variant(&self, _cmd: Variant, _style: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("shell")
     }
-    fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("environ")
-    }
     fn environ_variant(&self, _key: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("environ")
-    }
-    fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("dir")
     }
     fn dir_variant(&self, _path: Variant, _attrs: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("dir")
@@ -363,29 +270,14 @@ impl ProcessEnvHal for ReplayHostServices {
 }
 
 impl ComHal for ReplayHostServices {
-    fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
-    }
     fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
-    fn release_object(&self, _object: ObjectRef) -> HalResult<RuntimeValue> {
+    fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
     fn describe_object(&self, _object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
-    }
-    fn dispatch_invoke_runtime_value_v2(
-        &self,
-        _request: &oxvba_com::ComInvokeRequest,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
-    }
-    fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self,
-        _request: &oxvba_com::DynamicCallRequest,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
     fn subscribe_event(
         &self,
@@ -394,7 +286,7 @@ impl ComHal for ReplayHostServices {
     ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
-    fn unsubscribe_event(&self, _sub: ComSubscriptionToken) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event_variant(&self, _sub: ComSubscriptionToken) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
     fn poll_event_callback(&self) -> HalResult<Option<oxvba_com::ComCallbackPayload>> {
@@ -412,10 +304,10 @@ impl ComHal for ReplayHostServices {
     fn event_callback_arity(&self, _cb: ComCallbackToken) -> HalResult<usize> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
     }
-    fn event_callback_arg(&self, _cb: ComCallbackToken, _idx: usize) -> HalResult<RuntimeValue> {
+    fn event_callback_variant(&self, _cb: ComCallbackToken, _idx: usize) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
-    fn release_event_callback(&self, _cb: ComCallbackToken) -> HalResult<RuntimeValue> {
+    fn release_event_callback_variant(&self, _cb: ComCallbackToken) -> HalResult<Variant> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "release_event_callback",
@@ -440,7 +332,7 @@ impl ComHal for ReplayHostServices {
         &self,
         _scope: TypeLibCacheScope,
         _ref_name: Option<&str>,
-    ) -> HalResult<RuntimeValue> {
+    ) -> HalResult<Variant> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "invalidate_typelib_cache",
@@ -449,20 +341,11 @@ impl ComHal for ReplayHostServices {
 }
 
 impl TimeLocaleHal for ReplayHostServices {
-    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.replay_runtime_value("date_serial_now")
-    }
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
         self.replay_variant("date_serial_now")
     }
-    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.replay_runtime_value("time_serial_now")
-    }
     fn time_serial_now_variant(&self) -> HalResult<Variant> {
         self.replay_variant("time_serial_now")
-    }
-    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
-        self.replay_runtime_value("timer_ticks")
     }
     fn timer_ticks_variant(&self) -> HalResult<Variant> {
         self.replay_variant("timer_ticks")
@@ -470,21 +353,11 @@ impl TimeLocaleHal for ReplayHostServices {
 }
 
 impl DynamicLinkHal for ReplayHostServices {
-    fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
     fn invoke_bound_variants(
         &self,
         _binding: BindingHandle,
         _args: &[Variant],
     ) -> HalResult<(Variant, Vec<Variant>)> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
-    fn invoke_descriptor(
-        &self,
-        _desc: &crate::traits::DynLinkDescriptorView<'_>,
-        _arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
     fn invoke_descriptor_variants(
@@ -494,25 +367,14 @@ impl DynamicLinkHal for ReplayHostServices {
     ) -> HalResult<(Variant, Vec<Variant>)> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
-    fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
-    }
     fn invoke_symbol_variant(&self, _symbol: DynLinkSymbol, _arg: &Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
 
 impl DiagnosticsHal for ReplayHostServices {
-    fn emit(&self, _code: RuntimeValue, _payload: RuntimeValue) -> HalResult<RuntimeValue> {
-        self.replay_i32("emit")
-    }
-
     fn emit_variant(&self, _code: Variant, _payload: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("emit")
-    }
-
-    fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
-        Ok(RuntimeValue::I32(0))
     }
 
     fn debug_print_variant(&self, _text: Variant) -> HalResult<Variant> {

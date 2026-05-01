@@ -1,5 +1,5 @@
 use crate::{error::HalResult, model::CapabilityId, traits::TimeLocaleHal};
-use oxvba_runtime::{Variant, compat::RuntimeValue};
+use oxvba_runtime::Variant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::StandardHostServices;
@@ -26,30 +26,6 @@ fn system_time_components() -> std::time::Duration {
 }
 
 impl TimeLocaleHal for StandardHostServices {
-    // Legacy time path. Retained VM/JIT callers should use
-    // `date_serial_now_variant`, which returns a Variant Date carrier directly.
-    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.date_serial_now_variant()?
-            .to_runtime_value()
-            .map_err(|detail| self.time_adapter_fault("date_serial_now", detail))
-    }
-
-    // Legacy time path. Retained VM/JIT callers should use
-    // `time_serial_now_variant`, which returns a Variant Date carrier directly.
-    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
-        self.time_serial_now_variant()?
-            .to_runtime_value()
-            .map_err(|detail| self.time_adapter_fault("time_serial_now", detail))
-    }
-
-    // Legacy time path. Retained VM/JIT callers should use
-    // `timer_ticks_variant`, which returns a Variant Single carrier directly.
-    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
-        self.timer_ticks_variant()?
-            .to_runtime_value()
-            .map_err(|detail| self.time_adapter_fault("timer_ticks", detail))
-    }
-
     fn date_serial_now_variant(&self) -> HalResult<Variant> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
@@ -89,20 +65,5 @@ impl TimeLocaleHal for StandardHostServices {
             return Ok(Variant::from_f32(secs_today as f32));
         }
         Ok(deterministic_timer_variant())
-    }
-}
-
-impl StandardHostServices {
-    fn time_adapter_fault(
-        &self,
-        operation: &'static str,
-        detail: String,
-    ) -> crate::error::HalError {
-        crate::error::HalError::adapter_fault(
-            self.profile,
-            CapabilityId::TimeLocale,
-            operation,
-            detail,
-        )
     }
 }

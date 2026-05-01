@@ -1,6 +1,6 @@
 //! HAL conformance probes and report model.
 
-use oxvba_runtime::{F64Subtype, bstr::BStr, compat::RuntimeValue, variant::Variant};
+use oxvba_runtime::{VarType, bstr::BStr, variant::Variant};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -18,18 +18,15 @@ const CLAUSE_CATALOG_CSV_V1: &str =
 const CLAUSE_CATALOG_MD_V1: &str =
     include_str!("../../../docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md");
 
-fn runtime_i32(value: &RuntimeValue) -> Option<i32> {
-    match value {
-        RuntimeValue::I32(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn runtime_numeric_f64(value: &RuntimeValue) -> Option<f64> {
-    match value {
-        RuntimeValue::I32(value) => Some(f64::from(*value)),
-        RuntimeValue::I64(value) => Some(*value as f64),
-        RuntimeValue::F64(value) => Some(value.as_f64()),
+fn variant_numeric_f64(value: &Variant) -> Option<f64> {
+    match value.vtype() {
+        VarType::Integer => value.as_i16().map(f64::from),
+        VarType::Long => value.as_i32().map(f64::from),
+        VarType::LongLong => value.as_i64().map(|value| value as f64),
+        VarType::Byte => value.as_u8().map(f64::from),
+        VarType::Single => value.as_f32().map(f64::from),
+        VarType::Double => value.as_f64(),
+        VarType::Date => value.as_date_f64(),
         _ => None,
     }
 }
@@ -320,31 +317,33 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.ui()
-            .msg_box(RuntimeValue::I32(7), RuntimeValue::I32(1))
+            .msg_box_variant(Variant::from_i32(7), Variant::from_i32(1))
             .map(|_| ()),
     );
     probe(
         CapabilityId::EventPump,
         "events.do_events",
         &["HAL-EVT-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
-        host.events().do_events().map(|_| ()),
+        host.events().do_events_variant().map(|_| ()),
     );
     probe(
         CapabilityId::FileSystemIo,
         "fs.free_file",
         &["HAL-FS-006", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
-        host.fs().free_file(RuntimeValue::I32(0)).map(|_| ()),
+        host.fs()
+            .free_file_variant(Variant::from_i32(0))
+            .map(|_| ()),
     );
     // Data-transfer probes: open a handle first, probe each method, close.
     // If open fails (unsupported/denied), downstream probes inherit that status.
     let fs_data_probe_handle = host
         .fs()
-        .open(RuntimeValue::I32(99_990), RuntimeValue::I32(0));
+        .open_variant(Variant::from_i32(99_990), Variant::from_i32(0));
     let fs_probe_h = match &fs_data_probe_handle {
         Ok(h) => Some(h.clone()),
         Err(_) => None,
     };
-    let fs_probe_handle_val = fs_probe_h.unwrap_or(RuntimeValue::I32(0));
+    let fs_probe_handle_val = fs_probe_h.unwrap_or_else(|| Variant::from_i32(0));
     let fs_open_ok = fs_data_probe_handle.is_ok();
 
     probe(
@@ -353,7 +352,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-007", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
             host.fs()
-                .read_bytes(fs_probe_handle_val.clone(), RuntimeValue::I32(0))
+                .read_bytes_variant(fs_probe_handle_val.clone(), Variant::from_i32(0))
                 .map(|_| ())
         } else {
             fs_data_probe_handle.clone().map(|_| ())
@@ -365,9 +364,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-008", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
             host.fs()
-                .write_bytes(
+                .write_bytes_variant(
                     fs_probe_handle_val.clone(),
-                    RuntimeValue::String(oxvba_runtime::bstr::BStr::empty()),
+                    Variant::from_string(BStr::empty()),
                 )
                 .map(|_| ())
         } else {
@@ -380,9 +379,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-009", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
             host.fs()
-                .print_line(
+                .print_line_variant(
                     fs_probe_handle_val.clone(),
-                    RuntimeValue::String(oxvba_runtime::bstr::BStr::empty()),
+                    Variant::from_string(BStr::empty()),
                 )
                 .map(|_| ())
         } else {
@@ -395,7 +394,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-010", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
             host.fs()
-                .input_fields(fs_probe_handle_val.clone(), RuntimeValue::I32(1))
+                .input_fields_variant(fs_probe_handle_val.clone(), Variant::from_i32(1))
                 .map(|_| ())
         } else {
             fs_data_probe_handle.clone().map(|_| ())
@@ -407,7 +406,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-011", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
             host.fs()
-                .line_input(fs_probe_handle_val.clone())
+                .line_input_variant(fs_probe_handle_val.clone())
                 .map(|_| ())
         } else {
             fs_data_probe_handle.clone().map(|_| ())
@@ -418,14 +417,16 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         "fs.loc",
         &["HAL-FS-012", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
-            host.fs().loc(fs_probe_handle_val.clone()).map(|_| ())
+            host.fs()
+                .loc_variant(fs_probe_handle_val.clone())
+                .map(|_| ())
         } else {
             fs_data_probe_handle.clone().map(|_| ())
         },
     );
     // Close the probe handle.
     if fs_open_ok {
-        let _ = host.fs().close(fs_probe_handle_val);
+        let _ = host.fs().close_variant(fs_probe_handle_val);
     }
     probe(
         CapabilityId::ProcessEnv,
@@ -438,7 +439,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.process()
-            .shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+            .shell_variant(Variant::from_i32(1), Variant::from_i32(0))
             .map(|_| ()),
     );
     probe(
@@ -453,7 +454,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.com()
-            .create_object(RuntimeValue::String(BStr::from("OxVba.TestDispatch")))
+            .create_object_variant(Variant::from_string(BStr::from("OxVba.TestDispatch")))
             .map(|_| ()),
     );
     probe(
@@ -482,7 +483,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         CapabilityId::TimeLocale,
         "time.timer_ticks",
         &["HAL-TIME-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
-        host.time_locale().timer_ticks().map(|_| ()),
+        host.time_locale().timer_ticks_variant().map(|_| ()),
     );
     probe(
         CapabilityId::DynamicLinking,
@@ -495,7 +496,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.dynlink()
-            .invoke_symbol(1.into(), RuntimeValue::I32(2))
+            .invoke_symbol_variant(1.into(), &Variant::from_i32(2))
             .map(|_| ()),
     );
     let dynlink_descriptor = DynLinkDescriptorView {
@@ -528,7 +529,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.dynlink()
-            .invoke_descriptor(&dynlink_descriptor, RuntimeValue::I32(2))
+            .invoke_descriptor_variants(&dynlink_descriptor, &[Variant::from_i32(2)])
             .map(|_| ()),
     );
     probe(
@@ -536,7 +537,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         "diag.emit",
         &["HAL-DIAG-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         host.diag()
-            .emit(RuntimeValue::I32(1), RuntimeValue::I32(2))
+            .emit_variant(Variant::from_i32(1), Variant::from_i32(2))
             .map(|_| ()),
     );
     evaluate_host_backed_contract_paths(
@@ -652,15 +653,14 @@ fn evaluate_host_backed_contract_paths(
 
 /// Lane C: Marshaling contract conformance probes.
 ///
-/// Verifies that the value carrier model (RuntimeValue/ComValue) correctly
+/// Verifies that the value carrier model (Variant/ComValue) correctly
 /// handles the VARIANT/SAFEARRAY marshaling shapes required by HAL-DYN-005..008.
 fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut Vec<String>) {
-    use oxvba_runtime::{CurrencyValue, Decimal96, F64Value, safe_array::SafeArrayBound};
+    use oxvba_runtime::{Decimal96, safe_array::SafeArrayBound};
 
     // HAL-DYN-005: VARIANT byref discriminant legality — I64 carrier preserves large integer values.
     let i64_roundtrip_ok = {
-        let value = RuntimeValue::I64(5_000_000_000i64);
-        let variant = value.to_variant().expect("I64 RuntimeValue should project");
+        let variant = Variant::from_i64(5_000_000_000i64);
         let com_value =
             oxvba_com::ComValue::from_variant(&variant).expect("I64 Variant should project");
         com_value == oxvba_com::ComValue::I64(5_000_000_000i64)
@@ -726,18 +726,17 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
 
     // HAL-DYN-005 continued: semantic carrier fidelity for F64/Currency/Decimal subtypes.
     let semantic_carrier_ok = {
-        let single = RuntimeValue::F64(F64Value::from_single_f64(3.5));
-        let date = RuntimeValue::F64(F64Value::from_date_f64(45200.25));
-        let currency = RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000));
-        let decimal = RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false));
-        [single, date, currency, decimal].into_iter().all(|value| {
-            let variant = value
-                .to_variant()
-                .expect("semantic RuntimeValue should project");
-            oxvba_com::ComValue::from_variant(&variant)
-                .and_then(|value| value.to_variant())
-                .is_ok_and(|roundtrip| roundtrip == variant)
-        })
+        let single = Variant::from_f32(3.5);
+        let date = Variant::from_date_f64(45200.25);
+        let currency = Variant::from_currency_scaled_i64(125_000);
+        let decimal = Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, false));
+        [single, date, currency, decimal]
+            .into_iter()
+            .all(|variant| {
+                oxvba_com::ComValue::from_variant(&variant)
+                    .and_then(|value| value.to_variant())
+                    .is_ok_and(|roundtrip| roundtrip == variant)
+            })
     };
     if !semantic_carrier_ok {
         failures
@@ -833,10 +832,10 @@ fn evaluate_dynlink_contract_paths(
     let mut byref_writeback_lane_ok = true;
     match host
         .dynlink()
-        .invoke_descriptor(&descriptor_ping, RuntimeValue::I32(4))
+        .invoke_descriptor_variants(&descriptor_ping, &[Variant::from_i32(4)])
     {
-        Ok(value) => {
-            let value = runtime_i32(&value).unwrap_or_default();
+        Ok((value, _)) => {
+            let value = variant_numeric_f64(&value).unwrap_or_default() as i32;
             if host_backed_active
                 && descriptor.profile == crate::model::HalProfileId::Windows
                 && value != 5
@@ -888,7 +887,7 @@ fn evaluate_dynlink_contract_paths(
     };
     match host
         .dynlink()
-        .invoke_descriptor(&pointer_descriptor, RuntimeValue::I32(4))
+        .invoke_descriptor_variants(&pointer_descriptor, &[Variant::from_i32(4)])
     {
         Err(err)
             if err.kind == HalErrorKind::AdapterFault
@@ -925,7 +924,7 @@ fn evaluate_dynlink_contract_paths(
     };
     match host
         .dynlink()
-        .invoke_descriptor(&byref_writeback_descriptor, RuntimeValue::I32(4))
+        .invoke_descriptor_variants(&byref_writeback_descriptor, &[Variant::from_i32(4)])
     {
         Err(err)
             if err.kind == HalErrorKind::AdapterFault
@@ -1011,7 +1010,10 @@ fn verify_fs_host_backed_contract(
     }
 
     let mut ok = true;
-    let handle = match host.fs().open(RuntimeValue::I32(901), RuntimeValue::I32(0)) {
+    let handle = match host
+        .fs()
+        .open_variant(Variant::from_i32(901), Variant::from_i32(0))
+    {
         Ok(handle) => handle,
         Err(err) => {
             failures.push(format!(
@@ -1021,14 +1023,17 @@ fn verify_fs_host_backed_contract(
             return false;
         }
     };
-    let _ = host.fs().close(handle.clone());
+    let _ = host.fs().close_variant(handle.clone());
 
     if host.policy().allow_filesystem_mutation {
-        match host.fs().open(RuntimeValue::I32(902), RuntimeValue::I32(1)) {
+        match host
+            .fs()
+            .open_variant(Variant::from_i32(902), Variant::from_i32(1))
+        {
             Ok(mutable_handle) => {
                 if let Err(err) = host
                     .fs()
-                    .seek(mutable_handle.clone(), RuntimeValue::I32(96))
+                    .seek_variant(mutable_handle.clone(), Variant::from_i32(96))
                 {
                     ok = false;
                     failures.push(format!(
@@ -1036,9 +1041,9 @@ fn verify_fs_host_backed_contract(
                         err.stable_code, err.message
                     ));
                 } else {
-                    match host.fs().lof(mutable_handle.clone()) {
+                    match host.fs().lof_variant(mutable_handle.clone()) {
                         Ok(len) => {
-                            let len = runtime_i32(&len).unwrap_or_default();
+                            let len = len.as_i32().unwrap_or_default();
                             if len < 96 {
                                 ok = false;
                                 failures.push(format!(
@@ -1056,7 +1061,7 @@ fn verify_fs_host_backed_contract(
                         }
                     }
                 }
-                let _ = host.fs().close(mutable_handle);
+                let _ = host.fs().close_variant(mutable_handle);
             }
             Err(err) => {
                 ok = false;
@@ -1066,7 +1071,10 @@ fn verify_fs_host_backed_contract(
                 ));
             }
         }
-    } else if let Err(err) = host.fs().open(RuntimeValue::I32(903), RuntimeValue::I32(1)) {
+    } else if let Err(err) = host
+        .fs()
+        .open_variant(Variant::from_i32(903), Variant::from_i32(1))
+    {
         if err.kind != HalErrorKind::PolicyDenied {
             ok = false;
             failures.push(format!(
@@ -1084,13 +1092,16 @@ fn verify_fs_host_backed_contract(
     if host_backed_active && descriptor.profile == crate::model::HalProfileId::Windows {
         // Windows-native realization check: mutation lane should not collapse to the deterministic
         // constant-size path.
-        match host.fs().open(RuntimeValue::I32(904), RuntimeValue::I32(1)) {
+        match host
+            .fs()
+            .open_variant(Variant::from_i32(904), Variant::from_i32(1))
+        {
             Ok(h) => {
-                let _ = host.fs().seek(h.clone(), RuntimeValue::I32(128));
-                match host.fs().lof(h.clone()) {
-                    Ok(len) if runtime_i32(&len).unwrap_or_default() >= 128 => {}
+                let _ = host.fs().seek_variant(h.clone(), Variant::from_i32(128));
+                match host.fs().lof_variant(h.clone()) {
+                    Ok(len) if len.as_i32().unwrap_or_default() >= 128 => {}
                     Ok(len) => {
-                        let len = runtime_i32(&len).unwrap_or_default();
+                        let len = len.as_i32().unwrap_or_default();
                         ok = false;
                         failures.push(format!(
                             "windows host-backed fs expected len >= 128, observed {}",
@@ -1105,7 +1116,7 @@ fn verify_fs_host_backed_contract(
                         ));
                     }
                 }
-                let _ = host.fs().close(h);
+                let _ = host.fs().close_variant(h);
             }
             Err(err) => {
                 ok = false;
@@ -1136,10 +1147,10 @@ fn verify_process_host_backed_contract(
     let mut ok = true;
     match host
         .process()
-        .shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+        .shell_variant(Variant::from_i32(1), Variant::from_i32(0))
     {
         Ok(token) => {
-            let token = runtime_i32(&token).unwrap_or_default();
+            let token = token.as_i32().unwrap_or_default();
             if host_backed_active && token <= 1 {
                 ok = false;
                 failures.push(format!(
@@ -1157,7 +1168,7 @@ fn verify_process_host_backed_contract(
         }
     }
 
-    if let Err(err) = host.process().environ(RuntimeValue::I32(1)) {
+    if let Err(err) = host.process().environ_variant(Variant::from_i32(1)) {
         ok = false;
         failures.push(format!(
             "process.environ host-backed contract probe failed: {} ({})",
@@ -1166,7 +1177,7 @@ fn verify_process_host_backed_contract(
     }
     if let Err(err) = host
         .process()
-        .dir(RuntimeValue::I32(0), RuntimeValue::I32(0))
+        .dir_variant(Variant::from_i32(0), Variant::from_i32(0))
     {
         ok = false;
         failures.push(format!(
@@ -1188,7 +1199,7 @@ fn verify_time_host_backed_contract(
     }
 
     let mut ok = true;
-    let date = match host.time_locale().date_serial_now() {
+    let date = match host.time_locale().date_serial_now_variant() {
         Ok(value) => value,
         Err(err) => {
             failures.push(format!(
@@ -1198,7 +1209,7 @@ fn verify_time_host_backed_contract(
             return false;
         }
     };
-    let time = match host.time_locale().time_serial_now() {
+    let time = match host.time_locale().time_serial_now_variant() {
         Ok(value) => value,
         Err(err) => {
             failures.push(format!(
@@ -1208,7 +1219,7 @@ fn verify_time_host_backed_contract(
             return false;
         }
     };
-    let ticks = match host.time_locale().timer_ticks() {
+    let ticks = match host.time_locale().timer_ticks_variant() {
         Ok(value) => value,
         Err(err) => {
             failures.push(format!(
@@ -1219,36 +1230,30 @@ fn verify_time_host_backed_contract(
         }
     };
 
-    let Some(date_serial) = runtime_numeric_f64(&date) else {
+    let Some(date_serial) = variant_numeric_f64(&date) else {
         ok = false;
         failures.push(format!(
-            "time.date_serial_now probe returned non-numeric runtime value: {date:?}"
+            "time.date_serial_now probe returned non-numeric Variant value: {date:?}"
         ));
         return ok;
     };
-    let Some(time_serial) = runtime_numeric_f64(&time) else {
+    let Some(time_serial) = variant_numeric_f64(&time) else {
         ok = false;
         failures.push(format!(
-            "time.time_serial_now probe returned non-numeric runtime value: {time:?}"
+            "time.time_serial_now probe returned non-numeric Variant value: {time:?}"
         ));
         return ok;
     };
-    let Some(timer_value) = runtime_numeric_f64(&ticks) else {
+    let Some(timer_value) = variant_numeric_f64(&ticks) else {
         ok = false;
         failures.push(format!(
-            "time.timer_ticks probe returned non-numeric runtime value: {ticks:?}"
+            "time.timer_ticks probe returned non-numeric Variant value: {ticks:?}"
         ));
         return ok;
     };
 
-    let date_is_date = matches!(
-        date,
-        RuntimeValue::F64(value) if value.subtype() == F64Subtype::Date
-    );
-    let time_is_date = matches!(
-        time,
-        RuntimeValue::F64(value) if value.subtype() == F64Subtype::Date
-    );
+    let date_is_date = date.vtype() == VarType::Date;
+    let time_is_date = time.vtype() == VarType::Date;
 
     if host_backed_active {
         if !date_is_date || !time_is_date {
@@ -1266,36 +1271,23 @@ fn verify_time_host_backed_contract(
                 ),
             );
         }
-        if matches!(
-            (&date, &time, &ticks),
-            (
-                RuntimeValue::F64(date),
-                RuntimeValue::F64(time),
-                RuntimeValue::F64(ticks)
-            ) if date.subtype() == F64Subtype::Date
-                && time.subtype() == F64Subtype::Date
-                && (date.as_f64() - 46_082.0).abs() < f64::EPSILON
-                && (time.as_f64() - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
-                && (ticks.as_f64() - 45_296.0).abs() < f64::EPSILON
-        ) {
+        if date.vtype() == VarType::Date
+            && time.vtype() == VarType::Date
+            && (date_serial - 46_082.0).abs() < f64::EPSILON
+            && (time_serial - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
+            && (timer_value - 45_296.0).abs() < f64::EPSILON
+        {
             ok = false;
             failures.push(
                 "host-backed time probe observed deterministic constants; expected system-time-derived values".to_string(),
             );
         }
     } else if host.policy().deterministic_mode
-        && !matches!(
-            (&date, &time, &ticks),
-            (
-                RuntimeValue::F64(date),
-                RuntimeValue::F64(time),
-                RuntimeValue::F64(ticks)
-            ) if date.subtype() == F64Subtype::Date
-                && time.subtype() == F64Subtype::Date
-                && (date.as_f64() - 46_082.0).abs() < f64::EPSILON
-                && (time.as_f64() - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
-                && (ticks.as_f64() - 45_296.0).abs() < f64::EPSILON
-        )
+        && !(date.vtype() == VarType::Date
+            && time.vtype() == VarType::Date
+            && (date_serial - 46_082.0).abs() < f64::EPSILON
+            && (time_serial - (45_296.0 / 86_400.0)).abs() < f64::EPSILON
+            && (timer_value - 45_296.0).abs() < f64::EPSILON)
     {
         ok = false;
         failures.push(format!(

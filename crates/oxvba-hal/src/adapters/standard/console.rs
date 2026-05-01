@@ -5,12 +5,11 @@ use std::{
 };
 
 use crate::{
-    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::ConsoleHal,
 };
-use oxvba_runtime::{Variant, compat::RuntimeValue};
+use oxvba_runtime::Variant;
 
 use super::StandardHostServices;
 
@@ -86,16 +85,6 @@ impl StandardHostServices {
 }
 
 impl ConsoleHal for StandardHostServices {
-    // Legacy console path. Retained VM/JIT callers should use
-    // `print_line_variant`.
-    fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ConsoleIo;
-        let data =
-            compat::runtime_value_to_variant(self.profile, capability, "print_line", "data", data)?;
-        let result = self.print_line_variant(data)?;
-        compat::variant_to_runtime_value(self.profile, capability, "print_line", result)
-    }
-
     fn print_line_variant(&self, data: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ConsoleIo;
         if !self.supports(capability) {
@@ -130,21 +119,6 @@ impl ConsoleHal for StandardHostServices {
         Ok(Variant::from_i32(0))
     }
 
-    // Legacy console path. Retained VM/JIT callers should use
-    // `input_fields_variant`.
-    fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ConsoleIo;
-        let count = compat::runtime_value_to_variant(
-            self.profile,
-            capability,
-            "input_fields",
-            "count",
-            count,
-        )?;
-        let result = self.input_fields_variant(count)?;
-        compat::variant_to_runtime_value(self.profile, capability, "input_fields", result)
-    }
-
     fn input_fields_variant(&self, count: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ConsoleIo;
         if !self.supports(capability) {
@@ -167,14 +141,6 @@ impl ConsoleHal for StandardHostServices {
             ));
         }
         Ok(Variant::from_string(fields.join(",")))
-    }
-
-    // Legacy console path. Retained VM/JIT callers should use
-    // `line_input_variant`.
-    fn line_input(&self) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ConsoleIo;
-        let result = self.line_input_variant()?;
-        compat::variant_to_runtime_value(self.profile, capability, "line_input", result)
     }
 
     fn line_input_variant(&self) -> HalResult<Variant> {
