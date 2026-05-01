@@ -1,6 +1,6 @@
 # Reference Runners And Performance Scaffold Workset
 
-Status: `planned`
+Status: `in-progress`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -45,11 +45,14 @@ Out of scope:
 
 ## First Beads
 
-- `runner-001`: implement/validate schema writer for VM/JIT rows.
-- `runner-002`: add explicit JIT fallback field.
-- `runner-003`: add wrapper EXE/library smoke result rows.
-- `runner-004`: add artifact size and timing fields.
-- `runner-005`: publish first benchmark corpus under the shared schema.
+Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
+
+- `bd-9xmu.5.1` / `runner-000`: roll out this executable bead path.
+- `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path.
+- `bd-9xmu.5.3` / `runner-002`: normalize VM/JIT rows with fallback status.
+- `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows.
+- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields.
+- `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared schema.
 
 ## Terminal Gate
 
