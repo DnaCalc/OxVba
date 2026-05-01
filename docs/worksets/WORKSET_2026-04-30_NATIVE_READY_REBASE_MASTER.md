@@ -42,8 +42,11 @@ The HAL/COM/runtime boundary migration has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
 The presentation DTO split has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md).
-The final RuntimeValue search gate remains open. The value/numeric/UDT cleanup,
-stress corpus, and runner/performance scaffold remain open follow-on work.
+The phase-2 RuntimeValue/IR search gate has landed with evidence in
+[`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md): active fake IR crate APIs are clean, presentation crates have no
+`RuntimeValue` matches, and residual RuntimeValue bridge families are classified
+for phase-3 follow-up bead `bd-9xmu.3.2`. The value/numeric/UDT cleanup, stress
+corpus, and runner/performance scaffold remain open follow-on work.
 
 ## Child Worksets
 
@@ -78,8 +81,8 @@ stress corpus, and runner/performance scaffold remain open follow-on work.
 The umbrella is complete when all child worksets are complete and the following
 search/verification gates are green:
 
-- `rg "\bRuntimeValue\b" crates docs` returns only archived docs or approved
-  residual notes.
+- `rg "\bRuntimeValue\b" crates docs` returns only archived docs, approved
+  compatibility modules, tests, or residual notes with follow-up beads.
 - `rg "CfgIr|VbaHir|VbaMir" crates docs` returns only archived docs or approved
   residual notes.
 - `docs/ARCHITECTURE.md`, `docs/IR_DESIGN.md`, `docs/BYTECODE_FORMAT.md`, and

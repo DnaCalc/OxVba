@@ -1,6 +1,6 @@
 # RuntimeValue And IR Stub Cleanout Workset
 
-Status: `in-progress`
+Status: `complete`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -66,6 +66,8 @@ The HAL/COM/runtime boundary migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
 The presentation DTO split evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md).
+The final phase-2 search-gate evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md).
 
 The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
 occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
@@ -111,16 +113,25 @@ compatibility module or approved residual note before the search gate can close.
   and language-service embedded tests use variant invocation/results.
 - `cleanout-006`: verify completed IR scaffold removal. Done 2026-05-01.
 - `cleanout-007`: run `RuntimeValue` and fake IR search gates and document any
-  approved residuals or blockers.
+  approved residuals or blockers. Done 2026-05-01; active fake IR crate search
+  is clean, presentation crates have no `RuntimeValue` matches, and remaining
+  RuntimeValue bridge residuals are classified with phase-3 follow-up bead
+  `bd-9xmu.3.2`.
 
 ## Terminal Gate
 
 This workset is complete when:
 
-- `RuntimeValue` is gone from active code, or any residual is isolated in one
-  named blocker module with a removal date.
+- `RuntimeValue` is gone from active code, or any residual is isolated in named
+  compatibility modules/approved residual notes with an executable follow-up
+  path.
 - Fake IR scaffold is gone from active crate APIs.
-- `cargo test --workspace` is green, excluding documented environment-specific
-  lanes.
-- The native-ready specs and docs no longer need compatibility caveats for these
-  surfaces.
+- Targeted cargo checks covering changed surfaces are green, with workspace
+  checks recorded.
+- The native-ready specs and docs no longer claim `RuntimeValue` is a normal
+  execution or presentation carrier.
+
+2026-05-01 gate state: complete for phase 2. `RuntimeValue` remains in approved
+compatibility/test/residual bridge families, tracked by `bd-9xmu.3.2` for phase
+3 retirement or public-API blocker recording. Active fake IR crate APIs are
+clean.

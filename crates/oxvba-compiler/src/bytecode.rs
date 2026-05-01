@@ -653,7 +653,7 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
-    /// Typed VarType: returns standard VBA type codes from RuntimeValue.
+    /// Typed VarType: returns standard VBA type codes from the retained value slot.
     IntrinsicVarType {
         dst: usize,
         src: usize,
@@ -666,12 +666,12 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
-    /// Typed IsNumeric: checks whether a RuntimeValue is numeric.
+    /// Typed IsNumeric: checks whether the retained value slot is numeric.
     IntrinsicIsNumeric {
         dst: usize,
         src: usize,
     },
-    /// Typed IsError: checks whether a RuntimeValue is an error value.
+    /// Typed IsError: checks whether the retained value slot is an error value.
     IntrinsicIsError {
         dst: usize,
         src: usize,
@@ -851,8 +851,8 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
-    /// Loads `RuntimeValue::Null` into a slot — distinct from `LoadConstI32 { value: -1 }`
-    /// which produces `RuntimeValue::I32(-1)`.
+    /// Loads a retained Null value into a slot — distinct from `LoadConstI32 { value: -1 }`
+    /// which produces an integer -1 carrier.
     LoadNull {
         slot: usize,
     },
