@@ -1,6 +1,6 @@
 # Reference Runners And Performance Scaffold Workset
 
-Status: `in-progress`
+Status: `complete`
 Date: 2026-04-30
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -35,6 +35,8 @@ Out of scope:
   [`../evidence/native_ready/WRAPPER_RUNNER_ROWS_2026-05-01.md`](../evidence/native_ready/WRAPPER_RUNNER_ROWS_2026-05-01.md)
 - Runner artifact size and timing fields:
   [`../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md`](../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md)
+- Benchmark corpus under shared schema:
+  [`../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md`](../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md)
 
 ## Execution Epics
 
@@ -71,7 +73,10 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
 - `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Done
   2026-05-01; sample benchmark rows populate byte sizes, iterations, warmups,
   elapsed milliseconds, result digests, and trend-only claim boundaries.
-- `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared schema.
+- `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared
+  schema. Done 2026-05-01; benchmark seed rows reuse `NR-NUM-002`,
+  `NR-COERCE-001`, and `NR-UDT-001` with backend, status, timing/size,
+  fallback classification, digest, and claim-boundary fields.
 
 ## Terminal Gate
 
