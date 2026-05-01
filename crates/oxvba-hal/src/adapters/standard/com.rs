@@ -3,7 +3,6 @@
 #[cfg(target_os = "windows")]
 use crate::model::ComInvocationStrategy;
 use crate::{
-    compat,
     error::{HalError, HalResult},
     model::CapabilityId,
     traits::{
@@ -21,7 +20,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue, variant_to_vba_string};
+use oxvba_runtime::{ObjectRef, Variant, variant_to_vba_string};
 
 use super::StandardHostServices;
 
@@ -74,19 +73,6 @@ fn projection_prog_id_name(
     let capability = CapabilityId::ComActivationDispatch;
     let state = host.projection_lock(capability, "describe_object")?;
     Ok(state.prog_ids_by_handle.get(&object.raw()).cloned())
-}
-
-fn runtime_value_to_com_variant(
-    host: &StandardHostServices,
-    value: RuntimeValue,
-) -> HalResult<Variant> {
-    compat::runtime_value_to_variant(
-        host.profile,
-        CapabilityId::ComActivationDispatch,
-        "com_compat_projection",
-        "value",
-        value,
-    )
 }
 
 #[cfg(target_os = "windows")]
@@ -322,12 +308,12 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
-            match self.com_bridge.dispatch_invoke_runtime_value(
+            match self.com_bridge.dispatch_invoke_variant(
                 request,
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
                 Ok(Some(value)) => {
-                    return runtime_value_to_com_variant(self, value);
+                    return Ok(value);
                 }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
@@ -384,12 +370,12 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
-            match self.com_bridge.dispatch_invoke_dynamic_runtime_value(
+            match self.com_bridge.dispatch_invoke_dynamic_variant(
                 request,
                 self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
             ) {
                 Ok(Some(value)) => {
-                    return runtime_value_to_com_variant(self, value);
+                    return Ok(value);
                 }
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {

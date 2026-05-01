@@ -47,6 +47,16 @@ Results:
 - Legacy HAL method signature search: no matches.
 - Deleted runtime string coercion helper search: no matches.
 
+## Follow-up HAL source clean gate
+
+A follow-up cleanup routed Standard COM through `WindowsComBridge::dispatch_invoke_variant` / `dispatch_invoke_dynamic_variant` and deleted `oxvba-hal::compat`. The HAL crate source is now clean for both `RuntimeValue` and `runtime_value` mentions:
+
+```text
+rg -n "RuntimeValue|runtime_value" crates/oxvba-hal/src --glob '*.rs'
+```
+
+Result: no matches.
+
 ## Residuals
 
-This checkpoint does not claim full `RuntimeValue` eradication. Remaining known residuals are outside the removed HAL trait method lanes, including the HAL compatibility helper module and COM bridge internals that still project Windows dispatch results through `RuntimeValue`.
+This checkpoint does not claim full `RuntimeValue` eradication. Remaining known residuals are outside HAL, including COM bridge internals that still project some Windows dispatch results through `RuntimeValue` before converting to retained `Variant`.

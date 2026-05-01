@@ -370,6 +370,23 @@ impl WindowsComBridge {
     /// The retained invocation payloads flow through `ComInvokeValue` /
     /// `Variant`; callers that need exact value-model results should use the
     /// Variant/ComValue surfaces before this projection.
+    pub fn dispatch_invoke_variant(
+        &self,
+        request: &ComInvokeRequest,
+        prefer_vtable: bool,
+    ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
+        self.dispatch_invoke_runtime_value(request, prefer_vtable)
+            .and_then(|value| {
+                value
+                    .map(|value| {
+                        value
+                            .to_variant()
+                            .map_err(WindowsComBridgeDispatchError::Message)
+                    })
+                    .transpose()
+            })
+    }
+
     pub fn dispatch_invoke_runtime_value(
         &self,
         request: &ComInvokeRequest,
@@ -482,6 +499,23 @@ impl WindowsComBridge {
 
     /// Compatibility dynamic-dispatch path that projects successful invoke
     /// results into [`RuntimeValue`] for legacy bridge callers.
+    pub fn dispatch_invoke_dynamic_variant(
+        &self,
+        request: &DynamicCallRequest,
+        prefer_vtable: bool,
+    ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
+        self.dispatch_invoke_dynamic_runtime_value(request, prefer_vtable)
+            .and_then(|value| {
+                value
+                    .map(|value| {
+                        value
+                            .to_variant()
+                            .map_err(WindowsComBridgeDispatchError::Message)
+                    })
+                    .transpose()
+            })
+    }
+
     pub fn dispatch_invoke_dynamic_runtime_value(
         &self,
         request: &DynamicCallRequest,
