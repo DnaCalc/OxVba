@@ -9,8 +9,6 @@ use std::sync::Arc;
 
 use oxvba_compiler::bytecode::ExternalCallDescriptor;
 use oxvba_hal::traits::HostServices;
-#[cfg(test)]
-use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::{BindingHandle, ObjectRef, Variant};
 
 use crate::slot_abi::RtSlot;
@@ -155,22 +153,6 @@ impl JitContextOwned {
         }
     }
 
-    /// Compatibility extraction of user-visible slots as `RuntimeValue`
-    /// projections.
-    ///
-    /// New value-model call sites should prefer [`Self::extract_user_variants`].
-    #[cfg(test)]
-    pub fn extract_user_values(&self) -> Vec<RuntimeValue> {
-        self.extract_user_variants()
-            .into_iter()
-            .map(|value| {
-                value
-                    .to_runtime_value()
-                    .expect("JIT user VARIANT slot should project to RuntimeValue")
-            })
-            .collect()
-    }
-
     /// Extract the exact user-visible VARIANT slot carriers.
     pub fn extract_user_variants(&self) -> Vec<Variant> {
         let user_count = self.context.user_slot_count as usize;
@@ -197,22 +179,6 @@ impl Drop for JitContextOwned {
 // ── Helper access functions (called from runtime helpers) ─────────────
 
 impl JitContext {
-    /// Compatibility read that projects a retained slot `Variant` into
-    /// `RuntimeValue`.
-    ///
-    /// New value-model call sites should prefer [`Self::read_variant_slot`].
-    ///
-    /// # Safety
-    /// The slot index must be within bounds, and slots_ptr must be valid.
-    #[cfg(test)]
-    pub unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
-        unsafe {
-            self.read_variant_slot(slot)
-                .to_runtime_value()
-                .expect("JIT VARIANT slot should project to RuntimeValue")
-        }
-    }
-
     /// Read the exact VARIANT carrier from a slot.
     ///
     /// # Safety
@@ -249,22 +215,6 @@ impl JitContext {
         );
         let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
         rt_slot.variant_cell_pointer()
-    }
-
-    /// Compatibility write that projects `RuntimeValue` into a retained slot
-    /// `Variant`.
-    ///
-    /// New value-model call sites should prefer [`Self::write_variant_slot`].
-    ///
-    /// # Safety
-    /// The slot index must be within bounds, and slots_ptr must be valid.
-    #[cfg(test)]
-    pub unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
-        let variant = match value {
-            RuntimeValue::BindingHandle(handle) => Variant::from_i32(handle.raw()),
-            value => Variant::from_runtime_value(&value),
-        };
-        unsafe { self.write_variant_slot(slot, variant) };
     }
 
     /// Write an exact VARIANT carrier to a slot.
@@ -321,5 +271,57 @@ impl JitContext {
             "JitContext::host_state_mut: null host_state_ptr"
         );
         unsafe { &mut *(self.host_state_ptr as *mut JitHostState) }
+    }
+}
+
+pub mod compat {
+    //! Explicit compatibility adapters for legacy `RuntimeValue` JIT context
+    //! tests/callers.
+
+    use oxvba_runtime::{RuntimeValue, Variant};
+
+    use super::{JitContext, JitContextOwned};
+
+    pub trait RuntimeValueCompatJitContextOwnedExt {
+        fn extract_user_values(&self) -> Vec<RuntimeValue>;
+    }
+
+    impl RuntimeValueCompatJitContextOwnedExt for JitContextOwned {
+        fn extract_user_values(&self) -> Vec<RuntimeValue> {
+            self.extract_user_variants()
+                .into_iter()
+                .map(|value| {
+                    value
+                        .to_runtime_value()
+                        .expect("JIT user VARIANT slot should project to RuntimeValue")
+                })
+                .collect()
+        }
+    }
+
+    pub trait RuntimeValueCompatJitContextExt {
+        /// # Safety
+        /// The slot index must be within bounds, and slots_ptr must be valid.
+        unsafe fn read_slot(&self, slot: u32) -> RuntimeValue;
+
+        /// # Safety
+        /// The slot index must be within bounds, and slots_ptr must be valid.
+        unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue);
+    }
+
+    impl RuntimeValueCompatJitContextExt for JitContext {
+        unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
+            unsafe { self.read_variant_slot(slot) }
+                .to_runtime_value()
+                .expect("JIT VARIANT slot should project to RuntimeValue")
+        }
+
+        unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
+            let variant = match value {
+                RuntimeValue::BindingHandle(handle) => Variant::from_i32(handle.raw()),
+                value => Variant::from_runtime_value(&value),
+            };
+            unsafe { self.write_variant_slot(slot, variant) };
+        }
     }
 }

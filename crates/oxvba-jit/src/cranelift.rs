@@ -12,8 +12,6 @@ use cranelift_module::{Linkage, Module};
 use oxvba_compiler::bytecode::StringCompareMode;
 use oxvba_compiler::{Bytecode, Instruction};
 use oxvba_hal::traits::HostServices;
-#[cfg(test)]
-use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::Variant;
 
 use crate::jit_context::JitContextOwned;
@@ -547,38 +545,11 @@ pub fn supports_bytecode_rtslot(bytecode: &Bytecode) -> bool {
     supports_rtslot(&inlined)
 }
 
-/// Compatibility execution API for the narrow 4-byte integer slot path.
-///
-/// New value-model call sites should prefer [`execute_bytecode_variants`].
-#[cfg(test)]
-pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
-    execute_bytecode_variants(bytecode)?
-        .into_iter()
-        .map(|value| value.to_runtime_value())
-        .collect()
-}
-
 /// Execute bytecode through the narrow 4-byte integer slot path and project
 /// results directly to exact Long `Variant` carriers.
 pub fn execute_bytecode_variants(bytecode: &Bytecode) -> Result<Vec<Variant>, String> {
     execute_bytecode_legacy(bytecode)
         .map(|values| values.into_iter().map(Variant::from_i32).collect())
-}
-
-/// Compatibility execution API for the RtSlot path that projects retained
-/// `Variant` slots into `RuntimeValue` results.
-///
-/// New value-model call sites should prefer
-/// [`execute_bytecode_rtslot_variants`].
-#[cfg(test)]
-pub fn execute_bytecode_rtslot(
-    bytecode: &Bytecode,
-    host_services: Arc<dyn HostServices>,
-) -> Result<Vec<RuntimeValue>, String> {
-    execute_bytecode_rtslot_variants(bytecode, host_services)?
-        .into_iter()
-        .map(|value| value.to_runtime_value())
-        .collect()
 }
 
 /// Execute bytecode through the RtSlot path. Returns exact VARIANT carriers.

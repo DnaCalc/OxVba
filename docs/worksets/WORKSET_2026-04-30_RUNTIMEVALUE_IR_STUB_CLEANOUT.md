@@ -60,6 +60,8 @@ Detailed evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md).
 The VM/host surface migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
+The JIT surface migration evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
 
 The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
 occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
@@ -90,6 +92,10 @@ compatibility module or approved residual note before the search gate can close.
   legacy RuntimeValue access now requires explicit `oxvba_vm::compat` or
   `oxvba_host::compat` boundaries.
 - `cleanout-003`: migrate JIT compatibility snapshot and slot ABI surfaces.
+  Done 2026-05-01; normal JIT snapshots, Cranelift wrappers, JIT context, and
+  `RtSlot` APIs are retained-`Variant`, with RuntimeValue access behind
+  explicit `oxvba_jit::compat`, `jit_context::compat`, or `slot_abi::compat`
+  boundaries.
 - `cleanout-004`: migrate HAL, COM, runtime helper, and compatibility adapter
   boundaries.
 - `cleanout-005`: split launcher/web/language-service presentation DTOs.

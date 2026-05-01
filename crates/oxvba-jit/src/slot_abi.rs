@@ -4,7 +4,7 @@
 //! VARIANT-shaped for efficient boundary materialization: `VARTYPE` at offset 0,
 //! reserved words at offsets 2/4/6, and the 8-byte union payload at offset 8.
 
-use oxvba_runtime::{RuntimeValue, VarType, Variant};
+use oxvba_runtime::{VarType, Variant};
 
 pub const VT_EMPTY: u16 = VarType::Empty as u16;
 pub const VT_NULL: u16 = VarType::Null as u16;
@@ -48,41 +48,6 @@ impl RtSlot {
         }
     }
 
-    /// Build an ABI slot from the legacy semantic value API.
-    ///
-    /// The retained JIT carrier is still `Variant`; this accepts
-    /// `RuntimeValue` only for compatibility callers that have not migrated to
-    /// `from_variant`.
-    #[cfg(test)]
-    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
-        match value {
-            RuntimeValue::BindingHandle(handle) => Self::from_i32(handle.raw()),
-            value => Self {
-                variant: Variant::from_runtime_value(value),
-            },
-        }
-    }
-
-    /// Project the retained ABI slot back to the legacy semantic value API.
-    ///
-    /// New value-model call sites should use `variant` instead.
-    pub fn try_to_runtime_value(&self) -> Result<RuntimeValue, String> {
-        self.variant.to_runtime_value().map_err(|detail| {
-            format!(
-                "malformed JIT Variant slot for {:?}: {detail}",
-                self.variant.vtype()
-            )
-        })
-    }
-
-    /// Panicking compatibility bridge retained for tests that assert supported
-    /// shapes. Boundary hardening paths should use `try_to_runtime_value`.
-    #[cfg(test)]
-    pub fn to_runtime_value(&self) -> RuntimeValue {
-        self.try_to_runtime_value()
-            .expect("JIT Variant slot should carry a runtime-supported value")
-    }
-
     pub fn variant(&self) -> &Variant {
         &self.variant
     }
@@ -104,21 +69,63 @@ impl RtSlot {
     }
 }
 
-/// Convert a legacy semantic value to a retained-Variant JIT slot.
-///
-/// `BindingHandle` is an internal non-VBA token, so it is projected to the same
-/// Long carrier accepted by the WithEvents semantics bridge instead of becoming
-/// a custom JIT storage tag. This is a compatibility wrapper around the retained
-/// `RtSlot`/`Variant` carrier.
-#[cfg(test)]
-pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
-    RtSlot::from_runtime_value(value)
+pub mod compat {
+    //! Explicit compatibility adapters for legacy `RuntimeValue` JIT slot ABI
+    //! tests/callers.
+
+    use oxvba_runtime::{RuntimeValue, Variant};
+
+    use super::RtSlot;
+
+    pub trait RuntimeValueCompatRtSlotExt {
+        fn from_runtime_value(value: &RuntimeValue) -> Self
+        where
+            Self: Sized;
+        fn try_to_runtime_value(&self) -> Result<RuntimeValue, String>;
+        fn to_runtime_value(&self) -> RuntimeValue;
+    }
+
+    impl RuntimeValueCompatRtSlotExt for RtSlot {
+        fn from_runtime_value(value: &RuntimeValue) -> Self {
+            match value {
+                RuntimeValue::BindingHandle(handle) => Self::from_i32(handle.raw()),
+                value => Self {
+                    variant: Variant::from_runtime_value(value),
+                },
+            }
+        }
+
+        fn try_to_runtime_value(&self) -> Result<RuntimeValue, String> {
+            self.variant().to_runtime_value().map_err(|detail| {
+                format!(
+                    "malformed JIT Variant slot for {:?}: {detail}",
+                    self.variant().vtype()
+                )
+            })
+        }
+
+        fn to_runtime_value(&self) -> RuntimeValue {
+            self.try_to_runtime_value()
+                .expect("JIT Variant slot should carry a runtime-supported value")
+        }
+    }
+
+    /// Convert a legacy semantic value to a retained-Variant JIT slot.
+    ///
+    /// `BindingHandle` is an internal non-VBA token, so it is projected to the
+    /// same Long carrier accepted by the WithEvents semantics bridge instead of
+    /// becoming a custom JIT storage tag. This is a compatibility wrapper around
+    /// the retained `RtSlot`/`Variant` carrier.
+    pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
+        RtSlot::from_runtime_value(value)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::compat::{RuntimeValueCompatRtSlotExt, rtslot_from_runtime_value};
     use super::*;
-    use oxvba_runtime::{CurrencyValue, F64Value, bstr::BStr};
+    use oxvba_runtime::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr};
 
     #[test]
     fn rtslot_layout_is_windows_variant_layout() {
