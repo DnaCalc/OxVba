@@ -32,6 +32,8 @@ Out of scope:
 
 - Spec lock baseline:
   [`../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md`](../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md)
+- RuntimeValue bridge public-API blocker register:
+  [`../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md)
 - Phase-2 RuntimeValue/IR search gate feeding this workset:
   [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
 
@@ -59,7 +61,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
 
 - `bd-9xmu.3.1` / `value-clean-000`: roll out this executable bead path.
 - `bd-9xmu.3.2` / `value-clean-001`: retire residual `RuntimeValue`
-  bridge methods or record an explicit public-API blocker.
+  bridge methods or record an explicit public-API blocker. Done 2026-05-01;
+  residual bridge methods are registered as `RV-BRIDGE-*` blockers with owners,
+  removal targets, and unblocking steps.
 - `bd-9xmu.3.3` / `value-clean-002`: lock value substrate spec
   boundaries against the post-phase-2 baseline. Done 2026-05-01; the spec
   names `Variant` as canonical, limits `RuntimeValue` to approved residuals,

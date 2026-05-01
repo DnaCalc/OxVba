@@ -108,8 +108,10 @@ public-API-blocker candidates:
   behavior.
 
 No native-facing planning may depend on these residuals as normal value
-semantics. Bead `bd-9xmu.3.2` owns retiring them to explicit compat extension
-traits/modules or recording a public API blocker with owner/removal date.
+semantics. Bead `bd-9xmu.3.2` recorded the public-API blocker register in
+[`../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md);
+those blockers must be retired or carried into `CURRENT_BLOCKERS.md` before the
+umbrella terminal gate can close.
 
 ### Native/UDT residuals
 
