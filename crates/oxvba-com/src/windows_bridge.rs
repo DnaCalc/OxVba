@@ -20,7 +20,7 @@ use crate::{
     resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
     take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
-use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
+use oxvba_runtime::{ObjectRef, Variant};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
@@ -318,22 +318,6 @@ impl WindowsComBridge {
         callback_arity(&state, callback)
     }
 
-    /// Compatibility callback argument accessor that projects the retained
-    /// callback `Variant` into [`RuntimeValue`].
-    ///
-    /// New value-model call sites should prefer [`Self::event_callback_variant`].
-    pub fn event_callback_arg(
-        &self,
-        callback: ComCallbackToken,
-        index: usize,
-    ) -> Result<RuntimeValue, String> {
-        let state = self.lock_state("event_callback_arg")?;
-        callback_arg(&state, callback, index).and_then(|value| {
-            crate::compat::variant_to_runtime_value(value.variant())
-                .map_err(|detail| format!("COM-E-EVENT-CALLBACK-VARIANT: {detail}"))
-        })
-    }
-
     /// Retained value-model callback argument accessor.
     pub fn event_callback_variant(
         &self,
@@ -364,34 +348,11 @@ impl WindowsComBridge {
         Ok(state.mark_next_callback_pumped())
     }
 
-    /// Compatibility dispatch path that projects successful invoke results into
-    /// [`RuntimeValue`] for legacy bridge callers.
-    ///
-    /// The retained invocation payloads flow through `ComInvokeValue` /
-    /// `Variant`; callers that need exact value-model results should use the
-    /// Variant/ComValue surfaces before this projection.
     pub fn dispatch_invoke_variant(
         &self,
         request: &ComInvokeRequest,
         prefer_vtable: bool,
     ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
-        self.dispatch_invoke_runtime_value(request, prefer_vtable)
-            .and_then(|value| {
-                value
-                    .map(|value| {
-                        value
-                            .to_variant()
-                            .map_err(WindowsComBridgeDispatchError::Message)
-                    })
-                    .transpose()
-            })
-    }
-
-    pub fn dispatch_invoke_runtime_value(
-        &self,
-        request: &ComInvokeRequest,
-        prefer_vtable: bool,
-    ) -> Result<Option<RuntimeValue>, WindowsComBridgeDispatchError> {
         let positional_values = legacy_runtime_arg_values(request.args.as_slice());
         validate_named_arg_order(request.args.as_slice())
             .map_err(WindowsComBridgeDispatchError::Message)?;
@@ -440,8 +401,11 @@ impl WindowsComBridge {
             )
         }
         .map_err(WindowsComBridgeDispatchError::Message)?;
-        if early.is_some() {
-            return Ok(early);
+        if let Some(value) = early {
+            return value
+                .to_variant()
+                .map(Some)
+                .map_err(WindowsComBridgeDispatchError::Message);
         }
 
         let binding = {
@@ -494,37 +458,18 @@ impl WindowsComBridge {
             request.args.as_slice(),
         )
         .map_err(WindowsComBridgeDispatchError::Message)?;
-        Ok(Some(RuntimeValue::I32(value)))
+        Ok(Some(Variant::from_i32(value)))
     }
 
-    /// Compatibility dynamic-dispatch path that projects successful invoke
-    /// results into [`RuntimeValue`] for legacy bridge callers.
     pub fn dispatch_invoke_dynamic_variant(
         &self,
         request: &DynamicCallRequest,
         prefer_vtable: bool,
     ) -> Result<Option<Variant>, WindowsComBridgeDispatchError> {
-        self.dispatch_invoke_dynamic_runtime_value(request, prefer_vtable)
-            .and_then(|value| {
-                value
-                    .map(|value| {
-                        value
-                            .to_variant()
-                            .map_err(WindowsComBridgeDispatchError::Message)
-                    })
-                    .transpose()
-            })
-    }
-
-    pub fn dispatch_invoke_dynamic_runtime_value(
-        &self,
-        request: &DynamicCallRequest,
-        prefer_vtable: bool,
-    ) -> Result<Option<RuntimeValue>, WindowsComBridgeDispatchError> {
         let _ = prefer_vtable;
         match &request.member {
             DynamicMemberSelector::Token(value) => {
-                return self.dispatch_invoke_runtime_value(
+                return self.dispatch_invoke_variant(
                     &ComInvokeRequest {
                         object: request.object.clone(),
                         member: ComMemberToken::new(*value),
@@ -535,7 +480,7 @@ impl WindowsComBridge {
                 );
             }
             DynamicMemberSelector::DefaultMember => {
-                return self.dispatch_invoke_runtime_value(
+                return self.dispatch_invoke_variant(
                     &ComInvokeRequest {
                         object: request.object.clone(),
                         member: ComMemberToken::new(0),
@@ -578,7 +523,7 @@ impl WindowsComBridge {
             .known_member_spec_for_prog_id_name_by_name(&binding.prog_id_name, member_name)
             .map_err(WindowsComBridgeDispatchError::Message)?
         {
-            return self.dispatch_invoke_runtime_value(
+            return self.dispatch_invoke_variant(
                 &ComInvokeRequest {
                     object: request.object.clone(),
                     member: member_token,
@@ -651,7 +596,9 @@ impl WindowsComBridge {
                 .expect("dynamic-name COM invoke should attempt at least one dispatch flag")
         };
         invoke_result
+            .map_err(WindowsComBridgeDispatchError::InvokeFailure)?
+            .to_variant()
             .map(Some)
-            .map_err(WindowsComBridgeDispatchError::InvokeFailure)
+            .map_err(WindowsComBridgeDispatchError::Message)
     }
 }
