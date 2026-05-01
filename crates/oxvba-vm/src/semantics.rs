@@ -2941,6 +2941,57 @@ mod tests {
     }
 
     #[test]
+    fn numeric_stress_rounding_overflow_truncation_edges() {
+        assert_eq!(
+            super::runtime_round_variant_bounded(
+                &Variant::from_i32(19),
+                Some(&Variant::from_i32(-1))
+            )
+            .expect("round tens")
+            .as_i32(),
+            Some(20)
+        );
+        assert_eq!(
+            super::variant_mul_values(&Variant::from_i32(50_000), &Variant::from_i32(50_000))
+                .expect("current Long overflow behavior is a tripwire")
+                .as_i32(),
+            Some(-1_794_967_296)
+        );
+        assert_eq!(
+            super::variant_intdiv_values(&Variant::from_i32(7), &Variant::from_i32(2))
+                .expect("int division")
+                .expect("no divide by zero")
+                .as_i32(),
+            Some(3)
+        );
+        assert_eq!(
+            super::variant_mod_values(&Variant::from_i32(7), &Variant::from_i32(2))
+                .expect("mod")
+                .expect("no divide by zero")
+                .as_i32(),
+            Some(1)
+        );
+        assert_eq!(
+            super::variant_pow_values(&Variant::from_i32(2), &Variant::from_i32(10))
+                .expect("pow")
+                .as_f64(),
+            Some(1024.0)
+        );
+        assert_eq!(
+            super::variant_neg_value(&Variant::null())
+                .expect("neg Null")
+                .vtype(),
+            VarType::Null
+        );
+        assert_eq!(
+            super::variant_add_const_value(&Variant::from_f32(1.5), 2, "stress add const")
+                .expect("single add const")
+                .as_f64(),
+            Some(3.5)
+        );
+    }
+
+    #[test]
     fn comparison_variant_helpers_read_retained_carriers() {
         assert!(
             super::typed_compare_variants(
