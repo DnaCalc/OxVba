@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 use crate::error::HalError;
 use crate::{error::HalResult, model::CapabilityId, traits::EventPumpHal};
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 use std::thread;
 
 use super::StandardHostServices;

@@ -20,7 +20,7 @@ use crate::{
     resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
     take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]

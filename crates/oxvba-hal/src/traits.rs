@@ -25,7 +25,7 @@ pub use oxvba_com::{
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
     TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant, compat::RuntimeValue};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

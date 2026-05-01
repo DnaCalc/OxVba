@@ -1409,7 +1409,7 @@ mod tests {
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
+    use oxvba_runtime::{F64Value, Variant, bstr::BStr, compat::RuntimeValue};
     use proptest::prelude::*;
 
     use crate::{
@@ -4886,7 +4886,7 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id_hint: &str,
         op: &'static str,
-    ) -> HalResult<oxvba_runtime::RuntimeValue> {
+    ) -> HalResult<oxvba_runtime::compat::RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         let handle = unsafe {
             self.com_bridge
@@ -4911,7 +4911,7 @@ impl StandardHostServices {
                     ),
                 )
             })?;
-        Ok(oxvba_runtime::RuntimeValue::Object(object_ref))
+        Ok(oxvba_runtime::compat::RuntimeValue::Object(object_ref))
     }
 
     // Test-only extension seam intentionally left empty after the callback

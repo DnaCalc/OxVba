@@ -2,7 +2,7 @@
 mod windows_host_sensitive_oracle_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
     use std::fs;
 
     fn run_host_backed_source(source: &str) -> Vec<RuntimeValue> {

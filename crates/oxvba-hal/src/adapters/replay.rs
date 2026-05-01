@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectRef, Variant, compat::RuntimeValue};
 
 use super::standard::descriptor_for_profile;
 

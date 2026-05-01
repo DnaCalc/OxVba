@@ -278,7 +278,7 @@ pub mod compat {
     //! Explicit compatibility adapters for legacy `RuntimeValue` JIT context
     //! tests/callers.
 
-    use oxvba_runtime::{RuntimeValue, Variant};
+    use oxvba_runtime::{Variant, compat::RuntimeValue};
 
     use super::{JitContext, JitContextOwned};
 

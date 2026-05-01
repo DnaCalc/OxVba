@@ -24,7 +24,7 @@ use oxvba_hal::{
 };
 use oxvba_jit::JitEngine;
 #[cfg(test)]
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 use oxvba_runtime::{ObjectRef, Variant};
 use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
@@ -1298,7 +1298,7 @@ mod tests {
             ProjectDescriptorKind, ProjectReferenceDescriptor, ProjectReferenceKind,
         },
     };
-    use oxvba_runtime::{F64Value, ObjectRef, RuntimeValue, VarType, bstr::BStr};
+    use oxvba_runtime::{F64Value, ObjectRef, VarType, bstr::BStr, compat::RuntimeValue};
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};

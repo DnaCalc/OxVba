@@ -38,9 +38,11 @@ snapshot/invoke/observation surface migration has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
 The JIT snapshot/context/slot-ABI migration has landed with evidence in
 [`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
-The HAL/COM/runtime and remaining presentation delivery migrations remain open.
-The value/numeric/UDT cleanup, stress corpus, and runner/performance scaffold
-remain open follow-on work.
+The HAL/COM/runtime boundary migration has landed with evidence in
+[`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
+The remaining presentation delivery migration and final RuntimeValue search gate
+remain open. The value/numeric/UDT cleanup, stress corpus, and
+runner/performance scaffold remain open follow-on work.
 
 ## Child Worksets
 

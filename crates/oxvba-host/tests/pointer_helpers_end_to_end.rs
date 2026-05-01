@@ -2,7 +2,7 @@
 mod windows_pointer_helper_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-    use oxvba_runtime::{Decimal96, RuntimeValue};
+    use oxvba_runtime::{Decimal96, compat::RuntimeValue};
     use windows_sys::Win32::Foundation::SysStringLen;
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {

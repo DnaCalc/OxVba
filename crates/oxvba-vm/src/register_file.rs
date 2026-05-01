@@ -1,5 +1,5 @@
 #[cfg(test)]
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 use oxvba_runtime::{BindingHandle, VarType, Variant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

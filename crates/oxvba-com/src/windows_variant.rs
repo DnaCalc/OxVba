@@ -1533,12 +1533,15 @@ pub unsafe fn variant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDis
     bind_dispatch_result: &mut FBindDispatch,
     prog_id_hint: &str,
     op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
+) -> Result<oxvba_runtime::compat::RuntimeValue, String>
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+    FBindDispatch: FnMut(
+        *mut c_void,
+        &str,
+        &'static str,
+    ) -> Result<oxvba_runtime::compat::RuntimeValue, String>,
 {
     let mut bind_variant =
         |dispatch: *mut c_void, prog_id_hint: &str, op: &'static str| -> Result<Variant, String> {
@@ -1565,12 +1568,15 @@ pub unsafe fn take_variant_result_runtime_value<FQueryDispatch, FAddRefDispatch,
     bind_dispatch_result: &mut FBindDispatch,
     prog_id_hint: &str,
     op: &'static str,
-) -> Result<oxvba_runtime::RuntimeValue, String>
+) -> Result<oxvba_runtime::compat::RuntimeValue, String>
 where
     FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
     FAddRefDispatch: FnMut(*mut c_void),
-    FBindDispatch:
-        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+    FBindDispatch: FnMut(
+        *mut c_void,
+        &str,
+        &'static str,
+    ) -> Result<oxvba_runtime::compat::RuntimeValue, String>,
 {
     let value = variant_to_runtime_value(
         result,
@@ -1721,8 +1727,9 @@ mod tests {
     use crate::ComValue;
     use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, RuntimeValue, Variant,
+        CurrencyValue, Decimal96, F64Value, Variant,
         bstr::BStr,
+        compat::RuntimeValue,
         safe_array::{
             SafeArray, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE, VT_I2_VALUE,
             VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI8_VALUE,

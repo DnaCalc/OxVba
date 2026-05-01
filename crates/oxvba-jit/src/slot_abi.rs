@@ -73,7 +73,7 @@ pub mod compat {
     //! Explicit compatibility adapters for legacy `RuntimeValue` JIT slot ABI
     //! tests/callers.
 
-    use oxvba_runtime::{RuntimeValue, Variant};
+    use oxvba_runtime::{Variant, compat::RuntimeValue};
 
     use super::RtSlot;
 
@@ -125,7 +125,7 @@ pub mod compat {
 mod tests {
     use super::compat::{RuntimeValueCompatRtSlotExt, rtslot_from_runtime_value};
     use super::*;
-    use oxvba_runtime::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{CurrencyValue, F64Value, bstr::BStr, compat::RuntimeValue};
 
     #[test]
     fn rtslot_layout_is_windows_variant_layout() {

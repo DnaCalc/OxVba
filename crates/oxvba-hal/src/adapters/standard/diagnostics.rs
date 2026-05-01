@@ -1,5 +1,5 @@
 use crate::{compat, error::HalResult, model::CapabilityId, traits::DiagnosticsHal};
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 
 use super::StandardHostServices;
 

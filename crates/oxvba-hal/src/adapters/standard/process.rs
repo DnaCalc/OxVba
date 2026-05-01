@@ -5,7 +5,7 @@ use crate::{
     model::CapabilityId,
     traits::ProcessEnvHal,
 };
-use oxvba_runtime::{RuntimeValue, VarType, Variant, bstr::BStr};
+use oxvba_runtime::{VarType, Variant, bstr::BStr, compat::RuntimeValue};
 use std::path::{Path, PathBuf};
 
 use super::StandardHostServices;

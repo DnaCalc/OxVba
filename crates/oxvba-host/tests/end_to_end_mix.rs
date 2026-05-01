@@ -6,7 +6,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 
 fn proc_module(name: &str, source: &str) -> oxvba_compiler::ModuleUnit {
     module_unit_from_source(name, ModuleKind::Procedural, source).expect("module should parse")

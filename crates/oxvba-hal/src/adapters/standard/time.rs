@@ -1,5 +1,5 @@
 use crate::{error::HalResult, model::CapabilityId, traits::TimeLocaleHal};
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::StandardHostServices;

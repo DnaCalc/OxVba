@@ -25,7 +25,7 @@ use oxvba_hal::{
     traits::{DynLinkDescriptorView, HostServices},
 };
 #[cfg(test)]
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 use oxvba_runtime::safe_array::{
     SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
@@ -4625,8 +4625,9 @@ mod tests {
         model::CapabilityId,
     };
     use oxvba_runtime::{
-        F64Value, ObjectRef, RuntimeValue, VarType, Variant,
+        F64Value, ObjectRef, VarType, Variant,
         bstr::BStr,
+        compat::RuntimeValue,
         safe_array::{SafeArray, SafeArrayBound},
     };
     use std::collections::BTreeMap;

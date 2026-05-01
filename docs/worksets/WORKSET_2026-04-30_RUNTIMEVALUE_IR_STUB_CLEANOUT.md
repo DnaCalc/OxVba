@@ -62,6 +62,8 @@ The VM/host surface migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
 The JIT surface migration evidence is recorded in
 [`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
+The HAL/COM/runtime boundary migration evidence is recorded in
+[`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
 
 The 2026-05-01 scan found `RuntimeValue` in 63 crate files / 3066 crate
 occurrences and 270 non-archived doc files / 1068 non-archived doc occurrences
@@ -97,7 +99,10 @@ compatibility module or approved residual note before the search gate can close.
   explicit `oxvba_jit::compat`, `jit_context::compat`, or `slot_abi::compat`
   boundaries.
 - `cleanout-004`: migrate HAL, COM, runtime helper, and compatibility adapter
-  boundaries.
+  boundaries. Done 2026-05-01; `RuntimeValue` is no longer re-exported from the
+  runtime root, runtime helper wrappers are under explicit `compat` modules,
+  portable COM dispatch is retained-`Variant`, and remaining HAL/COM/runtime
+  bridge residuals have a documented `cleanout-007` removal path.
 - `cleanout-005`: split launcher/web/language-service presentation DTOs.
 - `cleanout-006`: verify completed IR scaffold removal. Done 2026-05-01.
 - `cleanout-007`: run `RuntimeValue` and fake IR search gates and document any

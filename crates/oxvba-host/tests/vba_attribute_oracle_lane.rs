@@ -2,7 +2,7 @@
 mod windows_vba_attribute_oracle_lane {
     use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_project::load_basproj_from_str;
-    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -18,7 +18,7 @@ mod windows_vba_attribute_oracle_lane {
     fn run_project_with_widget(
         main_source: &str,
         widget_source: &str,
-    ) -> Result<oxvba_runtime::RuntimeValue, String> {
+    ) -> Result<oxvba_runtime::compat::RuntimeValue, String> {
         let temp_root = unique_temp_dir("oxvba_vba_attribute_oracle");
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         std::fs::write(temp_root.join("Main.bas"), main_source).expect("write main module");

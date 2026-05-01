@@ -2,7 +2,7 @@
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
 use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 
 #[test]
 fn bound_native_host_object_is_consumed_by_project_createobject() {

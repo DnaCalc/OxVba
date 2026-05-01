@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use oxvba_hal::callbacks::HostCallbacks;
 use oxvba_host::{Engine, HostConfig, RuntimeProfileId, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 
 #[derive(Default)]
 struct ConsoleCallbacks {

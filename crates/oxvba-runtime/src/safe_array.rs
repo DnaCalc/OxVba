@@ -1,7 +1,8 @@
 use crate::{
-    Decimal96, RuntimeValue, VarType, Variant,
+    Decimal96, VarType, Variant,
     bstr::BStr,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
+    runtime_value::RuntimeValue,
 };
 use core::ptr::NonNull;
 
@@ -1013,7 +1014,7 @@ mod tests {
         array_tag_from_safe_array, header_prefix_ptr, marshal_dispatch_argument,
         safe_array_from_tag,
     };
-    use crate::{ObjectRef, RuntimeValue, Variant, bstr::BStr};
+    use crate::{ObjectRef, Variant, bstr::BStr, runtime_value::RuntimeValue};
 
     #[test]
     fn safe_array_tag_roundtrip_for_vector_shape() {

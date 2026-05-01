@@ -21,7 +21,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant, variant_to_vba_string};
+use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue, variant_to_vba_string};
 
 use super::StandardHostServices;
 

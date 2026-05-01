@@ -90,7 +90,7 @@ pub mod compat {
 
     use oxvba_compiler::Bytecode;
     use oxvba_hal::traits::HostServices;
-    use oxvba_runtime::{RuntimeValue, Variant};
+    use oxvba_runtime::{Variant, compat::RuntimeValue};
 
     fn project_snapshot_variants_to_values(
         values: Vec<Variant>,
@@ -198,7 +198,7 @@ pub mod compat {
 #[cfg(test)]
 mod tests {
     use oxvba_compiler::compile;
-    use oxvba_runtime::{RuntimeValue, bstr::BStr};
+    use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
 
     use oxvba_hal::model::native_host_profile;
 

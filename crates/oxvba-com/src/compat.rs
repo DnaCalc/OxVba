@@ -3,7 +3,7 @@
 //! COM transport should prefer retained `Variant` and `ComValue` carriers.
 //! This module contains legacy `RuntimeValue` and slot-token projections.
 
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 
 use crate::ComValue;
 

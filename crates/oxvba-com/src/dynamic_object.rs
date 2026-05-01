@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComSubscriptionToken, ComValue,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {

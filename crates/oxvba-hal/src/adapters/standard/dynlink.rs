@@ -4,7 +4,7 @@ use crate::{
     model::{CapabilityId, HalProfileId},
     traits::{DynLinkDescriptorView, DynamicLinkHal},
 };
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, RuntimeValue, Variant};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, Variant, compat::RuntimeValue};
 use std::collections::BTreeMap;
 
 use super::StandardHostServices;

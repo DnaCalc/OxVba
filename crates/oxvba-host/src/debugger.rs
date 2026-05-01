@@ -329,7 +329,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{RuntimeValue, VarType};
+    use oxvba_runtime::{VarType, compat::RuntimeValue};
     use oxvba_vm::DebugStopReason;
 
     use super::{DebugEvaluationRequest, DebugFrameValueKind, HostDebugVariantRunResult};

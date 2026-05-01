@@ -8,7 +8,7 @@ use oxvba_compiler::{
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::{RuntimeValue, VarType, Variant, bstr::BStr};
+use oxvba_runtime::{VarType, Variant, bstr::BStr, compat::RuntimeValue};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
     ProjectManifest {

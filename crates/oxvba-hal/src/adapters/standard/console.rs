@@ -10,7 +10,7 @@ use crate::{
     model::CapabilityId,
     traits::ConsoleHal,
 };
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 
 use super::StandardHostServices;
 

@@ -4,7 +4,7 @@ use crate::{
     model::{CapabilityId, HalProfileId, HalRuntimeClass, UiVirtualizationMode},
     traits::UiInteractionHal,
 };
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 
 use super::StandardHostServices;
 

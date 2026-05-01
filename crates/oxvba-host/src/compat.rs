@@ -7,7 +7,7 @@
 
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_compiler::{OxBundle, ProjectManifest};
-use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
 use oxvba_vm::DebugStop;
 
 use crate::debugger::{

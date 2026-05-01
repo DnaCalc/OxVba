@@ -4,7 +4,7 @@ mod windows_native_declare_string_e2e {
     use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
     use oxvba_runtime::CurrencyValue;
     use oxvba_runtime::F64Value;
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::compat::RuntimeValue;
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {

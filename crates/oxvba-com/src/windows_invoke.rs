@@ -4,7 +4,7 @@ use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
     take_variant_result_runtime_value, take_variant_result_value,
 };
-use oxvba_runtime::{ObjectRef, RuntimeValue};
+use oxvba_runtime::{ObjectRef, compat::RuntimeValue};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]

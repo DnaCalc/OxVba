@@ -4,7 +4,7 @@ use crate::{
     model::CapabilityId,
     traits::FileSystemHal,
 };
-use oxvba_runtime::{RuntimeValue, VarType, Variant, bstr::BStr};
+use oxvba_runtime::{VarType, Variant, bstr::BStr, compat::RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};

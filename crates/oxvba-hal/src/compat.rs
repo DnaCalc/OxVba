@@ -4,7 +4,7 @@
 //! module contains the deliberate projections needed by legacy `RuntimeValue`
 //! trait methods.
 
-use oxvba_runtime::{RuntimeValue, Variant};
+use oxvba_runtime::{Variant, compat::RuntimeValue};
 
 use crate::{
     error::{HalError, HalResult},

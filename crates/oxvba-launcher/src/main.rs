@@ -12,7 +12,7 @@ use oxvba_hal::{
 };
 use oxvba_host::{RunnerBootstrapOptions, resolve_runner_bootstrap};
 use oxvba_jit::JitEngine;
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 
 #[derive(Debug, Clone)]
 struct LauncherArgs {

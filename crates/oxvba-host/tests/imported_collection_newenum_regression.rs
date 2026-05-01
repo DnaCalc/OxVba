@@ -1,7 +1,7 @@
 use oxvba_compiler::{OxBundle, compile_project};
 use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
 use oxvba_project::load_basproj_from_str;
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use oxvba_runtime::{bstr::BStr, compat::RuntimeValue};
 
 struct TempLoadedProject {
     loaded: oxvba_project::LoadedProject,

@@ -1,6 +1,6 @@
 //! HAL conformance probes and report model.
 
-use oxvba_runtime::{F64Subtype, RuntimeValue, bstr::BStr, variant::Variant};
+use oxvba_runtime::{F64Subtype, bstr::BStr, compat::RuntimeValue, variant::Variant};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{

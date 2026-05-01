@@ -1,5 +1,5 @@
 use oxvba_host::{Engine, HostConfig, compat::RuntimeValueCompatEngineExt};
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::compat::RuntimeValue;
 
 #[test]
 fn loaded_basproj_configured_entry_point_bypasses_default_main_startup_path() {

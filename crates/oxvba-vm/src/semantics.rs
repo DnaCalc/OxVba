@@ -16,8 +16,8 @@ use oxvba_compiler::bytecode::{
 };
 use oxvba_runtime::runtime_value::validate_date_range;
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, RuntimeValue, VarType, Variant,
-    bstr::BStr,
+    BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectRef, VarType, Variant, bstr::BStr,
+    compat::RuntimeValue,
 };
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -2418,7 +2418,7 @@ mod tests {
         typed_compare_values,
     };
     use oxvba_compiler::bytecode::StringCompareMode;
-    use oxvba_runtime::{F64Value, RuntimeValue, Variant, bstr::BStr};
+    use oxvba_runtime::{F64Value, Variant, bstr::BStr, compat::RuntimeValue};
 
     #[test]
     fn string_equals_empty_coerces_without_legacy_token_failure() {

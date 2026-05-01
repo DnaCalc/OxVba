@@ -1,8 +1,9 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, Variant,
+    CurrencyValue, Decimal96, F64Value, ObjectRef, Variant,
     bstr::BStr,
+    compat::RuntimeValue,
     safe_array::{SafeArray, array_tag_from_safe_array, marshal_dispatch_argument},
 };
 
@@ -430,8 +431,8 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComCallbackValue, ComInvokeArg, ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, Decimal96, F64Value, ObjectRef, RuntimeValue, VarType, Variant, bstr::BStr,
-        safe_array::SafeArray,
+        CurrencyValue, Decimal96, F64Value, ObjectRef, VarType, Variant, bstr::BStr,
+        compat::RuntimeValue, safe_array::SafeArray,
     };
 
     #[test]

@@ -73,7 +73,7 @@ pub mod compat {
 
     use oxvba_compiler::Bytecode;
     use oxvba_hal::traits::HostServices;
-    use oxvba_runtime::{RuntimeValue, Variant};
+    use oxvba_runtime::{Variant, compat::RuntimeValue};
 
     use super::{JitEngine, JitError};
 
@@ -212,8 +212,9 @@ mod tests {
         model::{HalProfileId, HostPolicy},
     };
     use oxvba_runtime::{
-        F64Value, RuntimeValue, VarType, Variant,
+        F64Value, VarType, Variant,
         bstr::BStr,
+        compat::RuntimeValue,
         safe_array::{SafeArray, SafeArrayBound, VT_UI1_VALUE},
     };
 

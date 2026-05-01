@@ -416,7 +416,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{RuntimeValue, VarType, bstr::BStr};
+    use oxvba_runtime::{VarType, bstr::BStr, compat::RuntimeValue};
 
     use super::{
         ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateSession,

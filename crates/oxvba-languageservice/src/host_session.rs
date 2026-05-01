@@ -356,7 +356,7 @@ mod tests {
         EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedWorkspaceInput,
         Engine, HostConfig,
     };
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::compat::RuntimeValue;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};

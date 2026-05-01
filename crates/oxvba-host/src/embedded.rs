@@ -488,7 +488,7 @@ mod tests {
     };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-    use oxvba_runtime::{RuntimeValue, VarType, Variant};
+    use oxvba_runtime::{VarType, Variant, compat::RuntimeValue};
 
     fn make_manifest(source: &str) -> ProjectManifest {
         ProjectManifest {

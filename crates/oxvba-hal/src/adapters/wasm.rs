@@ -13,7 +13,9 @@ use crate::{
     },
 };
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
-use oxvba_runtime::{BindingHandle, DynLinkSymbol, F64Value, ObjectRef, RuntimeValue, Variant};
+use oxvba_runtime::{
+    BindingHandle, DynLinkSymbol, F64Value, ObjectRef, Variant, compat::RuntimeValue,
+};
 
 fn runtime_value_i32(value: &RuntimeValue) -> i32 {
     match value {
@@ -626,7 +628,7 @@ mod tests {
             HostServices, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
         },
     };
-    use oxvba_runtime::{ObjectRef, RuntimeValue, Variant};
+    use oxvba_runtime::{ObjectRef, Variant, compat::RuntimeValue};
 
     use super::WasmHostServices;
 

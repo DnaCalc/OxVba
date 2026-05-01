@@ -18,7 +18,7 @@ use oxvba_com::{
     ComSubscriptionToken, DynamicCallRequest,
 };
 use oxvba_runtime::{
-    BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, RuntimeValue, VarType, Variant,
+    BindingHandle, DynLinkSymbol, F64Subtype, ObjectRef, VarType, Variant, compat::RuntimeValue,
 };
 
 pub struct RecordingHostServices {
