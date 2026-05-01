@@ -2417,7 +2417,9 @@ mod tests {
         runtime_value_to_timevalue, runtime_variant_is_date, runtime_variant_to_text,
         typed_compare_values,
     };
-    use oxvba_compiler::bytecode::StringCompareMode;
+    use oxvba_compiler::bytecode::{
+        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+    };
     use oxvba_runtime::{Decimal96, F64Value, VarType, Variant, bstr::BStr, compat::RuntimeValue};
 
     #[test]
@@ -2988,6 +2990,55 @@ mod tests {
                 .expect("single add const")
                 .as_f64(),
             Some(3.5)
+        );
+    }
+
+    #[test]
+    fn coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing() {
+        assert_eq!(
+            super::variant_add_values(
+                &Variant::from_string(BStr::from("   ")),
+                &Variant::from_i32(5),
+            )
+            .expect("blank numeric text coerces to zero")
+            .as_i32(),
+            Some(5)
+        );
+        assert_eq!(
+            super::variant_add_values(&Variant::empty(), &Variant::from_i32(5))
+                .expect("Empty coerces to zero")
+                .as_i32(),
+            Some(5)
+        );
+        assert_eq!(
+            super::variant_div_values(&Variant::null(), &Variant::from_i32(5))
+                .expect("Null division classification")
+                .expect("Null division should not raise")
+                .vtype(),
+            VarType::Null
+        );
+        assert!(
+            super::variant_add_values(&Variant::from_error_code(13), &Variant::from_i32(1))
+                .is_err()
+        );
+        assert!(
+            !super::typed_compare_variants(
+                &Variant::null(),
+                &Variant::from_i32(0),
+                StringCompareMode::Binary,
+                |ord| ord == std::cmp::Ordering::Equal,
+            )
+            .expect("Null comparison should be deterministic")
+        );
+        assert!(
+            super::validate_runtime_assignment_variant(
+                &Variant::from_i32(7),
+                RuntimeAssignmentIntent::Let,
+                RuntimeAssignmentTargetKind::Object,
+                "obj",
+                "Object",
+            )
+            .is_err()
         );
     }
 
