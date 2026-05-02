@@ -1,7 +1,7 @@
 # RuntimeValue And IR Stub Cleanout Workset
 
-Status: `complete`
-Date: 2026-04-30
+Status: `complete` (recovered true after `bd-0w46`)
+Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
 ## Purpose
@@ -10,9 +10,10 @@ Remove stale implementation surfaces that obscure the native-ready architecture:
 the legacy `RuntimeValue` carrier and the fake HIR/MIR/CFG scaffold.
 
 Initial 2026-04-30 state: the fake HIR/MIR/CFG scaffold and compiler
-`lower_to_hir` no-op have been removed from active code. `RuntimeValue` remains
-a broad migration spanning runtime, HAL, COM, host, JIT, launcher, web, and
-tests.
+`lower_to_hir` no-op had been removed from active code while `RuntimeValue`
+remained a broad migration. Recovery update 2026-05-02: `bd-0w46` removed the
+`RuntimeValue` carrier, bridge helpers, compatibility shims, and active Rust
+source references.
 
 ## Scope
 
@@ -85,38 +86,31 @@ are not a single-file rename; they are grouped as:
 - launcher/web/language-service presentation surfaces;
 - tests, stale compiler comments, and historical non-archived evidence/docs.
 
-The migration must proceed by boundary family, not by global search/replace.
-If any residual survives the delivery beads, it must be isolated in one named
-compatibility module or approved residual note before the search gate can close.
+The migration proceeded by boundary family and then by deleting the compatibility
+carrier itself. Historical evidence above records the initial inventory; the
+current active Rust source search gate is clean.
 
 ## First Beads
 
 - `cleanout-000`: roll out the phase-2 executable bead path. Done 2026-05-01.
 - `cleanout-001`: produce `RuntimeValue` active-use inventory. Done 2026-05-01.
 - `cleanout-002`: migrate VM and host snapshot/invoke/observation surfaces,
-  including immediate/debugger/embedded host-side value DTOs. Done 2026-05-01;
-  legacy RuntimeValue access now requires explicit `oxvba_vm::compat` or
-  `oxvba_host::compat` boundaries.
+  including immediate/debugger/embedded host-side value DTOs. Superseded by
+  `bd-0w46`: legacy VM/host RuntimeValue compatibility access was deleted.
 - `cleanout-003`: migrate JIT compatibility snapshot and slot ABI surfaces.
-  Done 2026-05-01; normal JIT snapshots, Cranelift wrappers, JIT context, and
-  `RtSlot` APIs are retained-`Variant`, with RuntimeValue access behind
-  explicit `oxvba_jit::compat`, `jit_context::compat`, or `slot_abi::compat`
-  boundaries.
+  Superseded by `bd-0w46`: legacy JIT RuntimeValue compatibility access was
+  deleted.
 - `cleanout-004`: migrate HAL, COM, runtime helper, and compatibility adapter
-  boundaries. Done 2026-05-01; `RuntimeValue` is no longer re-exported from the
-  runtime root, runtime helper wrappers are under explicit `compat` modules,
-  portable COM dispatch is retained-`Variant`, and remaining HAL/COM/runtime
-  bridge residuals have a documented `cleanout-007` removal path.
+  boundaries. Superseded by `bd-0w46`: runtime/host compat modules, bridge
+  helpers, and active Rust RuntimeValue references were deleted.
 - `cleanout-005`: split launcher/web/language-service presentation DTOs. Done
   2026-05-01; presentation crates have no active `RuntimeValue` matches, the
   launcher projects retained `Variant` snapshots into `LauncherSnapshotValue`,
   and language-service embedded tests use variant invocation/results.
 - `cleanout-006`: verify completed IR scaffold removal. Done 2026-05-01.
-- `cleanout-007`: run `RuntimeValue` and fake IR search gates and document any
-  approved residuals or blockers. Done 2026-05-01; active fake IR crate search
-  is clean, presentation crates have no `RuntimeValue` matches, and remaining
-  RuntimeValue bridge residuals are classified with phase-3 follow-up bead
-  `bd-9xmu.3.2`.
+- `cleanout-007`: run `RuntimeValue` and fake IR search gates. Recovery update
+  2026-05-02: the final active Rust source gate is now zero RuntimeValue matches
+  after `bd-0w46`; fake IR crate search remains clean.
 
 ## Terminal Gate
 
@@ -131,7 +125,9 @@ This workset is complete when:
 - The native-ready specs and docs no longer claim `RuntimeValue` is a normal
   execution or presentation carrier.
 
-2026-05-01 gate state: complete for phase 2. `RuntimeValue` remains in approved
-compatibility/test/residual bridge families, tracked by `bd-9xmu.3.2` for phase
-3 retirement or public-API blocker recording. Active fake IR crate APIs are
-clean.
+2026-05-02 recovery gate state: complete for phase 2. `RuntimeValue` is absent
+from active Rust source (`rg -n "RuntimeValue|runtime_value" crates --glob
+'*.rs'` returns no matches), and active fake IR crate APIs remain clean. Evidence:
+[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md)
+and
+[`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).

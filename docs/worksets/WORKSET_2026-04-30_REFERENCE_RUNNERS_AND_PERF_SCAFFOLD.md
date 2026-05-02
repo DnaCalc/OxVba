@@ -1,7 +1,7 @@
 # Reference Runners And Performance Scaffold Workset
 
-Status: `complete`
-Date: 2026-04-30
+Status: `in-progress` (recovery audit reopened)
+Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
 ## Purpose
@@ -61,26 +61,36 @@ Out of scope:
 Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
 
 - `bd-9xmu.5.1` / `runner-000`: roll out this executable bead path.
-- `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path. Done
-  2026-05-01; the schema is locked, canonical header sample exists, and writer
-  validation rules are recorded.
+- `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path.
+  Reopened for recovery audit; current evidence proves schema/sample CSV shape,
+  but no active Rust schema writer/producer was found.
 - `bd-9xmu.5.3` / `runner-002`: normalize VM/JIT rows with fallback status.
-  Done 2026-05-01; sample rows cover VM, JIT without fallback, and JIT with VM
-  fallback under the shared schema.
-- `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Done
-  2026-05-01; sample rows cover `wrapper-exe` and `wrapper-library` artifact
-  identities under the shared schema.
-- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Done
-  2026-05-01; sample benchmark rows populate byte sizes, iterations, warmups,
-  elapsed milliseconds, result digests, and trend-only claim boundaries.
+  Reopened for recovery audit; current evidence is sample rows only unless an
+  executable producer is implemented or the terminal gate is explicitly reduced.
+- `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Reopened
+  for recovery audit; current evidence is sample rows only.
+- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Reopened
+  for recovery audit; current evidence is sample rows only.
 - `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared
-  schema. Done 2026-05-01; benchmark seed rows reuse `NR-NUM-002`,
-  `NR-COERCE-001`, and `NR-UDT-001` with backend, status, timing/size,
-  fallback classification, digest, and claim-boundary fields.
+  schema. Reopened for recovery audit; benchmark seed rows refer to stress tests
+  that currently filter to zero tests.
+- `bd-9xmu.5.7` / recovery: decide and implement the runner evidence producer
+  gate after discovering current evidence is schema/sample-only. Open
+  2026-05-02; this is now the active terminal recovery bead for phase 5.
 
 ## Terminal Gate
 
-This workset is complete when direct native work can use existing reference
-runners for both correctness and performance comparison without inventing a new
-evidence format.
+This workset returns to complete when direct native work can use existing
+reference runners for both correctness and performance comparison without
+inventing a new evidence format. The recovery decision must choose one of two
+truthful gates:
+
+1. implement an executable producer that emits the shared schema for VM/JIT and
+   wrapper lanes; or
+2. explicitly reduce the workset claim to schema/sample scaffolding and create a
+   follow-up delivery bead for real producer implementation.
+
+Recovery blocker: the 2026-05-02 audit found docs/spec/sample CSV evidence but
+no active Rust Native-Ready runner schema producer. Evidence:
+[`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
 

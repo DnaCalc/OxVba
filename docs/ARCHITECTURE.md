@@ -40,9 +40,9 @@ corpus, runner schema, and real native-facing IR decision.
 ## Current Value Truth
 
 `Variant` is the canonical execution and snapshot carrier for VM/JIT/host
-coordination. Public or internal APIs that still expose `RuntimeValue` are
-residual compatibility or presentation surfaces and are cleanup targets, not
-future runtime architecture.
+coordination. `RuntimeValue` has been removed from active Rust source; any
+remaining mentions are historical docs/evidence or recovery notes, not active
+runtime architecture.
 
 Important boundaries:
 - retained `Variant` values are the semantic runtime substrate;
@@ -119,7 +119,7 @@ The current native-ready execution authority is
 
 Near-term architectural work is intentionally ordered before direct native AOT:
 - rebase docs around implementation truth and archive historical plans;
-- remove residual `RuntimeValue` and fake IR scaffolds from active APIs;
+- keep active APIs free of `RuntimeValue` and fake IR scaffolds;
 - make numeric helpers and UDT planning `Variant`-native and descriptor-backed,
   while keeping native UDT ABI materialization as a separate future layer;
 - build a correctness corpus that exposes numeric, coercion, error-state, array,

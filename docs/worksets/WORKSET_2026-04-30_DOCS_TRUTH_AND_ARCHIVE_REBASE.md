@@ -1,7 +1,7 @@
 # Docs Truth And Archive Rebase Workset
 
-Status: `complete`
-Date: 2026-04-30
+Status: `complete` (reconfirmed in recovery audit)
+Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
 ## Purpose
@@ -64,7 +64,8 @@ This workset is complete when active docs clearly say:
   IR must be a real native-readiness IR.
 - Direct native PE/ELF is future work, while wrapper artifacts and Cranelift JIT
   subset support are current truth.
-- `RuntimeValue` is a residual cleanup target, not the future value substrate.
+- `RuntimeValue` is no longer present in active Rust source; retained `Variant`
+  and SAFEARRAY `Variant` carriers are the active value substrate.
 
 ## Completion State
 
@@ -77,4 +78,7 @@ Completed in the native-ready modernization cleanup:
   describe bytecode, retained `Variant`, VM/JIT, wrapper, and future native
   boundaries without claiming an active HIR/MIR/CFG pipeline;
 - `docs/README.md`, `docs/archive/README.md`, and `docs/spec/README.md` point
-  at the native-ready rebase worksets and specs.
+  at the native-ready rebase worksets and specs;
+- the 2026-05-02 recovery audit supersedes older RuntimeValue residual language:
+  active Rust source is clean, while child worksets 3-5 remain under recovery
+  re-audit for executable value/corpus/runner evidence.

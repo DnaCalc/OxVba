@@ -1,5 +1,11 @@
 # Exact Carrier Expectations Evidence
 
+> Recovery note 2026-05-02: the runtime SAFEARRAY carrier coverage still exists,
+> but the cited VM/JIT filters `mixed_numeric_matrix_current_variant_results` and
+> `runtime_math_helpers_read_variant_carriers` are not accepted until recovery
+> beads re-run or replace them with nonzero tests. Reopened recovery bead:
+> `bd-9xmu.3.9`.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.3.6` / `value-clean-005`
 Workset: `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md`

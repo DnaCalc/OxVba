@@ -1,5 +1,12 @@
 # Native-Ready Umbrella Completion Audit
 
+> Superseded for current planning truth by
+> [`NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
+> This file remains historical evidence of the earlier terminal audit. The
+> recovery audit reopened phases 3-5 because cited stress tests now filter to
+> zero tests and runner evidence is schema/sample-only after `bd-0w46` removed
+> RuntimeValue from active Rust source.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.6` / terminal audit search gate
 Umbrella: `bd-9xmu`

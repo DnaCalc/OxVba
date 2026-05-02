@@ -1,5 +1,10 @@
 # Variant-Native Numeric Helper Evidence
 
+> Recovery note 2026-05-02: the carrier-direction search remains useful, but
+> the verification filters cited below are broad/ambiguous after RuntimeValue
+> test deletion. Recovery bead `bd-9xmu.3.9` must reprove this with explicit
+> nonzero tests.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.3.4` / `value-clean-003`
 Workset: `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md`

@@ -1,5 +1,9 @@
 # UDT Semantic And Layout Non-Claim Stress Evidence
 
+> Recovery note 2026-05-02: this evidence is not currently accepted as an
+> executable gate. The cited `nested_udt` host test filter currently runs zero
+> tests. Reopened recovery bead: `bd-9xmu.4.7`.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.4.5` / `stress-004`
 Workset: `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md`

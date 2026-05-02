@@ -1,7 +1,7 @@
 # Native-Ready Rebase Master Workset
 
-Status: `complete`
-Date: 2026-04-30
+Status: `in-progress` (recovery audit reopened phases 3-5)
+Date: 2026-04-30; recovery update 2026-05-02
 Scope owner: OxVBA architecture/runtime/native-readiness
 
 ## Purpose
@@ -23,59 +23,42 @@ telemetry are coherent enough for the later native compiler/linker workset.
 - `oxvba-build` emits wrapper artifacts over canonical `.oxb` bundles.
 - The former `oxvba-ir` HIR/MIR/CFG scaffold and compiler `lower_to_hir` no-op
   lowering have been removed from active code.
-- `RuntimeValue` remains in active code today as a compatibility/projection
-  carrier and must be removed or explicitly quarantined before native-facing
-  APIs are considered clean.
+- `RuntimeValue` has been removed from active Rust source by `bd-0w46`
+  (`8d5fdfc0`); retained `Variant` and SAFEARRAY `Variant` carriers are now the
+  active runtime/API value surface.
 - UDT support is a bounded flattened-field semantic subset, not native struct
   layout or unconstrained UDT-byref ABI parity.
 
 ## Current Execution State
 
-The umbrella is active. The docs-truth and IR-scaffold-removal slices have
-landed. Phase 2 has an active `RuntimeValue` family inventory in
-[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_USE_INVENTORY_2026-05-01.md). The VM/host
-snapshot/invoke/observation surface migration has landed with evidence in
-[`../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_VM_HOST_SURFACE_MIGRATION_2026-05-01.md).
-The JIT snapshot/context/slot-ABI migration has landed with evidence in
-[`../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_JIT_SURFACE_MIGRATION_2026-05-01.md).
-The HAL/COM/runtime boundary migration has landed with evidence in
-[`../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_HAL_COM_RUNTIME_BOUNDARY_MIGRATION_2026-05-01.md).
-The presentation DTO split has landed with evidence in
-[`../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_PRESENTATION_DTO_SPLIT_2026-05-01.md).
-The phase-2 RuntimeValue/IR search gate has landed with evidence in
-[`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md): active fake IR crate APIs are clean, presentation crates have no
-`RuntimeValue` matches, and residual RuntimeValue bridge families are classified
-for phase-3 follow-up bead `bd-9xmu.3.2`.
+The umbrella is active again for recovery tracking. Child workset 1 remains
+materially complete for docs truth/direct-native non-claims. Child workset 2 is
+now recovered complete after `bd-0w46`; active Rust source has zero
+`RuntimeValue|runtime_value` matches and fake IR crate APIs remain absent.
 
-The value/numeric/UDT cleanup has landed with evidence across:
-[`VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md`](../evidence/native_ready/VALUE_SUBSTRATE_SPEC_LOCK_2026-05-01.md),
-[`VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md`](../evidence/native_ready/VARIANT_NATIVE_NUMERIC_HELPERS_2026-05-01.md),
-[`MIXED_NUMERIC_MATRIX_2026-05-01.md`](../evidence/native_ready/MIXED_NUMERIC_MATRIX_2026-05-01.md),
-[`EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md),
-[`UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md), and
-[`UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md`](../evidence/native_ready/UDT_NATIVE_ABI_RESIDUAL_CLASSIFICATION_2026-05-01.md).
+The previous value/numeric/UDT, correctness corpus, and runner/performance
+closure claims are not accepted as current truth until they are re-proved against
+the post-`RuntimeValue` codebase. The cited phase-3/phase-4 stress test filters
+currently run zero tests, and the phase-5 runner evidence is schema/sample CSV
+only unless a producer is implemented or the claim is explicitly reduced.
 
-The correctness corpus/oracle stress slice has landed with matrix, numeric,
-coercion/error, UDT/layout, and oracle packet evidence rooted at
-[`CORRECTNESS_CORPUS_MATRIX_2026-05-01.md`](../evidence/native_ready/CORRECTNESS_CORPUS_MATRIX_2026-05-01.md).
-
-The runner/performance scaffold has landed with locked schema, VM/JIT rows,
-wrapper rows, size/timing rows, and benchmark corpus evidence rooted at
-[`RUNNER_SCHEMA_LOCK_2026-05-01.md`](../evidence/native_ready/RUNNER_SCHEMA_LOCK_2026-05-01.md) and
-[`BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md`](../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md).
-
-The umbrella terminal audit/search/check gate passed with evidence in
-[`NATIVE_READY_UMBRELLA_COMPLETION_AUDIT_2026-05-01.md`](../evidence/native_ready/NATIVE_READY_UMBRELLA_COMPLETION_AUDIT_2026-05-01.md).
+Recovery audit 2026-05-02 supersedes the earlier umbrella completion claim for
+current planning truth:
+[`NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
+The earlier terminal audit remains historical evidence, but child worksets 3, 4,
+and 5 are reopened for executable re-proof because their cited stress tests no
+longer exist after RuntimeValue compatibility test removal and the runner lane is
+only sample/schema-backed.
 
 ## Child Worksets
 
 | Order | Workset | Purpose | Terminal gate |
 |---|---|---|---|
 | 1 | `WORKSET_2026-04-30_DOCS_TRUTH_AND_ARCHIVE_REBASE.md` | Demote historical plans and make active docs implementation-accurate. | No authoritative doc claims active HIR/MIR/CFG or direct native AOT beyond current wrapper/JIT truth. |
-| 2 | `WORKSET_2026-04-30_RUNTIMEVALUE_IR_STUB_CLEANOUT.md` | Remove `RuntimeValue` and fake IR scaffold from active code/API surfaces. | Fake IR code is removed; `RuntimeValue` migration remains inventoried until search gates are clean outside archived docs or approved blocker notes. |
-| 3 | `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md` | Make value/type semantics native-ready. | Native-facing code can rely on one retained-`Variant` value substrate and explicit UDT boundary model. |
-| 4 | `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md` | Build stress tests likely to expose hidden numeric/type bugs. | Stress corpus is runnable across VM/JIT/reference lanes with oracle/spec classification. |
-| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | Shared runner schema emits comparable result and performance artifacts. |
+| 2 | `WORKSET_2026-04-30_RUNTIMEVALUE_IR_STUB_CLEANOUT.md` | Remove `RuntimeValue` and fake IR scaffold from active code/API surfaces. | **Recovered complete:** fake IR code is removed and active Rust source has zero `RuntimeValue|runtime_value` matches. |
+| 3 | `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md` | Make value/type semantics native-ready. | **Reopened/recovery:** re-prove post-`RuntimeValue` Variant-native numeric/coercion/UDT gates with executing tests. |
+| 4 | `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md` | Build stress tests likely to expose hidden numeric/type bugs. | **Reopened/recovery:** restore corpus tests; previous cited filters now run 0 tests. |
+| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | **Reopened/recovery:** decide and implement either an actual schema-emitting runner producer or a reduced schema/sample-only claim. |
 
 ## Required Specs
 
@@ -90,19 +73,18 @@ The umbrella terminal audit/search/check gate passed with evidence in
    names that obscure current truth.
 3. Preserve historical documents for provenance, but remove their authority over
    current execution planning.
-4. Any remaining `RuntimeValue`, fake IR, or UDT/native-layout residual must be
-   named as a blocker or explicit compatibility exception.
+4. Any reintroduced `RuntimeValue`, fake IR, or UDT/native-layout residual must
+   be named as a blocker or explicit compatibility exception.
 5. Every child workset must update both documentation and verification evidence
    before being marked complete.
 
 ## Umbrella Terminal Gate
 
-The umbrella is complete when all child worksets are complete and the following
-search/verification gates are green:
+The umbrella returns to complete only when all child worksets are complete under
+the recovery audit and the following search/verification gates are green:
 
-- `rg "\bRuntimeValue\b" crates docs` returns only archived docs, approved
-  compatibility modules, tests, historical evidence/logs, or residual notes in
-  `CURRENT_BLOCKERS.md` / native-ready evidence.
+- `rg -n "RuntimeValue|runtime_value" crates --glob '*.rs'` returns zero active
+  Rust source matches.
 - `rg "CfgIr|VbaHir|VbaMir" crates docs` returns zero active crate matches and
   only current explanatory or residual-note docs.
 - `docs/ARCHITECTURE.md`, `docs/IR_DESIGN.md`, `docs/BYTECODE_FORMAT.md`, and

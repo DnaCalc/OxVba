@@ -1,5 +1,10 @@
 # RuntimeValue Bridge Public-API Blockers
 
+> Superseded by `bd-0w46` / commit `8d5fdfc0` and
+> [`RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md`](RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md).
+> This file remains historical evidence of the pre-removal blocker register; the
+> current active Rust source gate has zero `RuntimeValue|runtime_value` matches.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.3.2` / `value-clean-001`
 Workset: `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md`

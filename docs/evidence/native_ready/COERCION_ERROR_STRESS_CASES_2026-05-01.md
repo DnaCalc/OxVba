@@ -1,5 +1,10 @@
 # Coercion And Error-State Stress Cases Evidence
 
+> Recovery note 2026-05-02: this evidence is not currently accepted as an
+> executable gate. After RuntimeValue compatibility test deletion, the cited
+> filter `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing`
+> runs zero tests. Reopened recovery bead: `bd-9xmu.4.7`.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.4.4` / `stress-003`
 Workset: `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md`

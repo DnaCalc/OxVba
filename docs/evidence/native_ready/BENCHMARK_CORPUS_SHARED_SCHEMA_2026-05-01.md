@@ -1,5 +1,10 @@
 # Benchmark Corpus Shared Schema Evidence
 
+> Recovery note 2026-05-02: this file proves benchmark corpus seed rows under
+> the schema, but several referenced stress workloads currently filter to zero
+> tests and no active Rust runner producer was found. Reopened recovery beads:
+> `bd-9xmu.4.7` and `bd-9xmu.5.7`.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.5.6` / `runner-005`
 Workset: `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md`

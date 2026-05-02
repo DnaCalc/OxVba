@@ -1,5 +1,12 @@
 # Correctness Corpus Matrix And Fixture Naming
 
+> Recovery note 2026-05-02: row IDs and naming remain useful, but rows that cite
+> `mixed_numeric_matrix_current_variant_results`,
+> `numeric_stress_rounding_overflow_truncation_edges`,
+> `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing`, or
+> `nested_udt` are not accepted as executable evidence until `bd-9xmu.4.7`
+> restores/replaces tests that run nonzero.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.4.2` / `stress-001`
 Workset: `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md`

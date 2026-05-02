@@ -1,5 +1,10 @@
 # Numeric Stress Cases Evidence
 
+> Recovery note 2026-05-02: this evidence is not currently accepted as an
+> executable gate. After RuntimeValue compatibility test deletion, the cited
+> filter `numeric_stress_rounding_overflow_truncation_edges` runs zero tests.
+> Reopened recovery bead: `bd-9xmu.4.7`.
+
 Date: 2026-05-01
 Bead: `bd-9xmu.4.3` / `stress-002`
 Workset: `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md`

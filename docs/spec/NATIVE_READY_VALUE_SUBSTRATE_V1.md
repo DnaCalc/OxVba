@@ -1,7 +1,7 @@
 # Native-Ready Value Substrate v1
 
-Status: `locked-baseline`
-Date: 2026-04-30
+Status: `recovery-baseline` (phases 3-5 reopened for executable proof)
+Date: 2026-04-30; recovery update 2026-05-02
 Scope owner: OxVBA runtime/compiler/native-readiness
 
 ## Purpose
@@ -33,24 +33,25 @@ Required retained carriers:
 - `ObjectRef`
 - `SafeArray`
 
-`RuntimeValue` is not a future-facing semantic substrate. It is not re-exported
-from the runtime root and must not be introduced into new execution, snapshot,
-or presentation APIs. Existing uses are only allowed in the residual boundaries
-listed below and must be retired or explicitly public-API-blocked by the phase-3
-bridge-retirement bead.
+`RuntimeValue` is not a future-facing semantic substrate. It has been removed
+from active Rust source and must not be reintroduced into execution, snapshot,
+or presentation APIs.
 
 ## Phase-2 Baseline
 
-The 2026-05-01 phase-2 search gate established this baseline:
+The 2026-05-02 recovery gate establishes this baseline:
 
 - active fake HIR/MIR/CFG crate APIs are gone;
-- launcher/web/language-service presentation crates have no `RuntimeValue`
-  matches;
+- active Rust source has zero `RuntimeValue|runtime_value` matches;
 - normal VM, JIT, and host snapshot/invoke/debug/immediate/embedded surfaces use
   retained `Variant` or named DTOs;
-- remaining `RuntimeValue` occurrences are compatibility, tests, evidence, or
-  bridge residuals tracked by
-  [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md).
+- historical RuntimeValue evidence remains in docs only and is not an approved
+  active API residual.
+
+Evidence:
+[`../evidence/native_ready/RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md)
+and
+[`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
 
 ## Numeric Semantics Direction
 
@@ -113,25 +114,16 @@ Detailed model path:
 
 ## Residual Boundaries
 
-### RuntimeValue compatibility residuals
+### Historical RuntimeValue residuals
 
-The following `RuntimeValue` residuals are approved only as compatibility or
-public-API-blocker candidates:
+The old RuntimeValue compatibility residual register is historical after
+`bd-0w46`; no active Rust RuntimeValue API residual is approved for future
+native-facing planning. If a future compatibility surface is intentionally
+reintroduced, it must be created as a new explicit blocker with semver and
+native-readiness impact.
 
-- `oxvba_runtime::compat` and subordinate compatibility helper modules such as
-  `coerce::compat` and `pointer_helpers::compat`;
-- legacy VM/JIT/host extension traits and DTOs under explicit `compat` modules;
-- HAL legacy trait methods that still pair with retained `_variant` companions;
-- COM projection helpers under `oxvba_com::compat` plus current COM
-  model/dynamic-object bridge methods until bridge retirement resolves them;
-- tests and evidence documents that assert or classify legacy projection
-  behavior.
-
-No native-facing planning may depend on these residuals as normal value
-semantics. Bead `bd-9xmu.3.2` recorded the public-API blocker register in
-[`../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md);
-those blockers must be retired or carried into `CURRENT_BLOCKERS.md` before the
-umbrella terminal gate can close.
+Historical register:
+[`../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_BRIDGE_PUBLIC_API_BLOCKERS_2026-05-01.md).
 
 ### Native/UDT residuals
 
@@ -149,10 +141,12 @@ Classification evidence:
 
 ## Acceptance Gates
 
-- Active runtime APIs use `Variant` or explicit DTOs; any `RuntimeValue`
-  residual is explicit compatibility/public-API-blocker work.
-- Numeric helper families are `Variant`-native (`bd-9xmu.3.4`).
-- Mixed numeric result behavior is matrixed and tested (`bd-9xmu.3.5`).
+- Active runtime APIs use `Variant` or explicit DTOs, with zero active Rust
+  `RuntimeValue|runtime_value` matches.
+- Numeric helper families are `Variant`-native and backed by executing tests
+  (`bd-9xmu.3.4` recovery).
+- Mixed numeric result behavior is matrixed and backed by executing tests
+  (`bd-9xmu.3.5` recovery).
 - Exact `Currency`, `Decimal`, `Date`, and Boolean carrier behavior is pinned
   (`bd-9xmu.3.6`).
 - UDT semantics are descriptor-backed or explicitly blocked (`bd-9xmu.3.7`).
