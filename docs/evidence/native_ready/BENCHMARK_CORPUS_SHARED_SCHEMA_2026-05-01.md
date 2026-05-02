@@ -3,8 +3,8 @@
 > Recovery note 2026-05-02: this historical file proves benchmark corpus seed
 > rows under the schema. The referenced stress filters and VM/JIT producer have
 > since been restored by `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`
-> and `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper producer work remains in
-> `bd-9xmu.5.8`.
+> and `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper library producer work
+> remains in `bd-9xmu.5.9`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.6` / `runner-005`

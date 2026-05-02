@@ -1,6 +1,6 @@
 # Native-Ready Rebase Master Workset
 
-Status: `in-progress` (phases 3-4 recovered; phase 5 wrapper producer follow-up open)
+Status: `complete` (recovered 2026-05-02; wrapper library follow-up non-blocking)
 Date: 2026-04-30; recovery update 2026-05-02
 Scope owner: OxVBA architecture/runtime/native-readiness
 
@@ -38,15 +38,17 @@ now recovered complete after `bd-0w46`; active Rust source has zero
 
 The previous value/numeric/UDT and correctness corpus claims have now been
 recovered with nonzero executable tests. The runner/performance lane has an
-active VM/JIT schema producer and CLI path, while real wrapper EXE/library row
-production remains a follow-up (`bd-9xmu.5.8`).
+active VM/JIT schema producer and CLI path plus wrapper EXE row production;
+wrapper library row production remains an explicit non-blocking follow-up
+(`bd-9xmu.5.9`).
 
 Recovery audit 2026-05-02 supersedes the earlier umbrella completion claim for
 current planning truth:
 [`NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
 The earlier terminal audit remains historical evidence. Child worksets 3 and 4
-were recovered on 2026-05-02; child workset 5 is partially recovered for VM/JIT
-producer evidence and remains open for wrapper artifact producer work.
+were recovered on 2026-05-02; child workset 5 is recovered under a reduced
+claim with VM/JIT and wrapper EXE producer evidence, while wrapper library
+artifact producer work is left as non-blocking successor bead `bd-9xmu.5.9`.
 
 ## Child Worksets
 
@@ -56,7 +58,7 @@ producer evidence and remains open for wrapper artifact producer work.
 | 2 | `WORKSET_2026-04-30_RUNTIMEVALUE_IR_STUB_CLEANOUT.md` | Remove `RuntimeValue` and fake IR scaffold from active code/API surfaces. | **Recovered complete:** fake IR code is removed and active Rust source has zero `RuntimeValue|runtime_value` matches. |
 | 3 | `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md` | Make value/type semantics native-ready. | **Recovered complete:** post-`RuntimeValue` Variant-native numeric/coercion/UDT gates have executing tests. |
 | 4 | `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md` | Build stress tests likely to expose hidden numeric/type bugs. | **Recovered complete:** `NR-NUM-001/002`, `NR-COERCE-001`, and `NR-UDT-001` run nonzero tests. |
-| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | **In progress:** VM/JIT schema producer recovered; wrapper artifact producer deferred to `bd-9xmu.5.8`. |
+| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | **Recovered complete:** VM/JIT and wrapper EXE schema producers recovered; wrapper library producer deferred to non-blocking `bd-9xmu.5.9`. |
 
 ## Required Specs
 
@@ -87,7 +89,8 @@ the recovery audit and the following search/verification gates are green:
   only current explanatory or residual-note docs.
 - `docs/ARCHITECTURE.md`, `docs/IR_DESIGN.md`, `docs/BYTECODE_FORMAT.md`, and
   `docs/README.md` describe current implementation truth.
-- VM/JIT reference runners use the shared result schema; wrapper reference
-  runner rows remain sample-only until `bd-9xmu.5.8` completes.
+- VM/JIT and wrapper EXE reference runners use the shared result schema;
+  wrapper library rows remain sample-only under non-blocking successor
+  `bd-9xmu.5.9`.
 - Numeric/UDT stress corpus runs in the expected backend matrix.
 - Native compiler/linker work has a clean prerequisite checklist.

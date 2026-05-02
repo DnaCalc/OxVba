@@ -79,9 +79,11 @@ evidence.
 ## Producer Status
 
 Active VM/JIT row production exists through `oxvba_host::emit_native_ready_vm_jit_csv`
-and the `oxvba native-ready-runner` CLI command. Wrapper EXE/library rows remain
-sample/schema-only until `bd-9xmu.5.8` implements real wrapper artifact
-execution and digest capture.
+and the `oxvba native-ready-runner` CLI command. Wrapper EXE row production is
+available through `oxvba native-ready-runner --wrapper-exe`, which builds and
+executes a wrapper artifact and emits artifact size/timing/exit/digest fields.
+Wrapper library rows remain sample/schema-only until `bd-9xmu.5.9` implements
+real wrapper-library artifact execution and digest capture.
 
 ## Native Placeholder Policy
 

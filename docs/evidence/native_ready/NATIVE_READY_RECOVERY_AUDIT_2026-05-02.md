@@ -79,9 +79,12 @@ Later on 2026-05-02 the recovery beads restored the missing executable evidence:
   `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
 - `bd-9xmu.5.7`: VM/JIT runner row production now has an active Rust producer
   and CLI path; see `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`.
+- `bd-9xmu.5.8`: wrapper EXE row production now builds and executes a real
+  wrapper artifact through the CLI path; see
+  `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`.
 
 ## Non-Claims
 
 This audit does not claim direct native PE/ELF compilation exists. Wrapper
-EXE/library schema production remains deferred to `bd-9xmu.5.8` unless and until
-that bead adds a real wrapper artifact runner.
+library schema production remains deferred to `bd-9xmu.5.9` unless and until
+that bead adds a real wrapper library artifact runner.

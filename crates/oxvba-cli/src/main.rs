@@ -5,9 +5,10 @@ use oxvba_hal::model::{
 };
 use oxvba_host::{
     Engine, HostConfig, ImmediateEvaluationRequest, ImmediateSession,
-    ImmediateVariantEvaluationOutput, NativeReadyRunnerConfig, RunnerBootstrapFallbacks,
-    RunnerBootstrapOptions, TypeLibraryCatalogEntry, emit_native_ready_vm_jit_csv,
-    resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+    ImmediateVariantEvaluationOutput, NativeReadyRunnerConfig, NativeReadyRunnerRow,
+    RunnerBootstrapFallbacks, RunnerBootstrapOptions, TypeLibraryCatalogEntry,
+    emit_native_ready_vm_jit_csv, resolve_runner_bootstrap,
+    resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{VarType, Variant};
 use std::io::{self, BufRead, Write};
@@ -280,7 +281,7 @@ fn run_project(args: Vec<String>) {
 fn run_native_ready_runner(args: Vec<String>) {
     let parsed = parse_native_ready_runner_args_from(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba native-ready-runner [path] --run-id-prefix <id> --timestamp-utc <ts> --workload-id <id> --workload-name <name> [--source-path <path>] [--iterations <n>] [--warmup <n>] [--out <csv>]"
+            "usage: oxvba native-ready-runner [path] --run-id-prefix <id> --timestamp-utc <ts> --workload-id <id> --workload-name <name> [--source-path <path>] [--iterations <n>] [--warmup <n>] [--out <csv>] [--wrapper-exe] [--wrapper-out <exe>]"
         );
         std::process::exit(2);
     });
@@ -307,10 +308,21 @@ fn run_native_ready_runner(args: Vec<String>) {
     config.iterations = parsed.iterations;
     config.warmup_iterations = parsed.warmup_iterations;
 
-    let csv = emit_native_ready_vm_jit_csv(&loaded.manifest, &config).unwrap_or_else(|err| {
+    let mut csv = emit_native_ready_vm_jit_csv(&loaded.manifest, &config).unwrap_or_else(|err| {
         eprintln!("oxvba native-ready-runner: {err}");
         std::process::exit(1);
     });
+
+    if parsed.include_wrapper_exe {
+        let wrapper_row =
+            produce_wrapper_exe_runner_row(&loaded, &config, parsed.wrapper_output_path.as_deref())
+                .unwrap_or_else(|err| {
+                    eprintln!("oxvba native-ready-runner: {err}");
+                    std::process::exit(1);
+                });
+        csv.push_str(&wrapper_row.to_csv_record());
+        csv.push('\n');
+    }
 
     if let Some(output_path) = parsed.output_path {
         fs::write(&output_path, csv).unwrap_or_else(|err| {
@@ -336,6 +348,8 @@ struct NativeReadyRunnerArgs {
     source_path: Option<String>,
     iterations: u32,
     warmup_iterations: u32,
+    include_wrapper_exe: bool,
+    wrapper_output_path: Option<PathBuf>,
 }
 
 fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyRunnerArgs> {
@@ -355,6 +369,8 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
     let mut source_path: Option<String> = None;
     let mut iterations = 1u32;
     let mut warmup_iterations = 0u32;
+    let mut include_wrapper_exe = false;
+    let mut wrapper_output_path: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < collected.len() {
@@ -391,6 +407,14 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
                 i += 1;
                 warmup_iterations = collected.get(i)?.parse().ok()?;
             }
+            "--wrapper-exe" => {
+                include_wrapper_exe = true;
+            }
+            "--wrapper-out" => {
+                i += 1;
+                include_wrapper_exe = true;
+                wrapper_output_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
             }
@@ -409,7 +433,171 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
         source_path,
         iterations: iterations.max(1),
         warmup_iterations,
+        include_wrapper_exe,
+        wrapper_output_path,
     })
+}
+
+fn produce_wrapper_exe_runner_row(
+    loaded: &oxvba_project::LoadedProject,
+    config: &NativeReadyRunnerConfig,
+    wrapper_output_path: Option<&Path>,
+) -> Result<NativeReadyRunnerRow, String> {
+    let wrapper_path = wrapper_output_path
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_native_ready_wrapper_path(&config.run_id_prefix));
+    if let Some(parent) = wrapper_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "cannot create wrapper output directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let compiled = oxvba_compiler::compile_project(&loaded.manifest)
+        .map_err(|err| format!("wrapper compile failed: {err}"))?;
+    let bundle =
+        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+    let bytes = bundle
+        .serialize_to_bytes()
+        .map_err(|err| format!("wrapper bundle serialization failed: {err}"))?;
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "oxvba_native_ready_wrapper_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    fs::create_dir_all(&temp_dir).map_err(|err| {
+        format!(
+            "cannot create wrapper staging dir {}: {err}",
+            temp_dir.display()
+        )
+    })?;
+    let oxb_path = temp_dir.join("bundle.oxb");
+    fs::write(&oxb_path, bytes)
+        .map_err(|err| format!("cannot stage wrapper bundle {}: {err}", oxb_path.display()))?;
+
+    let bundle_literal = oxb_path.to_string_lossy().replace('\\', "/");
+    let source = oxvba_build::exe::generate_exe_shim(loaded, &bundle_literal);
+    let compile_result = oxvba_build::compile::compile_shim(
+        &source,
+        &wrapper_path,
+        oxvba_build::compile::ShimOutputType::Exe,
+    );
+    let _ = fs::remove_dir_all(&temp_dir);
+    compile_result.map_err(|err| format!("wrapper EXE build failed: {err}"))?;
+
+    let artifact_size_bytes = fs::metadata(&wrapper_path)
+        .map(|metadata| metadata.len())
+        .map_err(|err| {
+            format!(
+                "cannot stat wrapper artifact {}: {err}",
+                wrapper_path.display()
+            )
+        })?;
+
+    for _ in 0..config.warmup_iterations {
+        let output = std::process::Command::new(&wrapper_path)
+            .output()
+            .map_err(|err| format!("wrapper warmup execution failed: {err}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "wrapper warmup exited with status {}",
+                output.status.code().unwrap_or(-1)
+            ));
+        }
+    }
+
+    let iterations = config.iterations.max(1);
+    let mut timings = Vec::with_capacity(iterations as usize);
+    let mut last_output = None;
+    for _ in 0..iterations {
+        let started = std::time::Instant::now();
+        let output = std::process::Command::new(&wrapper_path)
+            .output()
+            .map_err(|err| format!("wrapper execution failed: {err}"))?;
+        timings.push(started.elapsed().as_secs_f64() * 1000.0);
+        last_output = Some(output);
+    }
+    let output = last_output.expect("at least one wrapper iteration");
+    let exit_status = output.status.code().unwrap_or(-1);
+    if !output.status.success() {
+        return Err(format!("wrapper exited with status {exit_status}"));
+    }
+
+    let mean_ms = timings.iter().copied().sum::<f64>() / timings.len() as f64;
+    let min_ms = timings.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_ms = timings.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let digest = digest_process_observation(exit_status, &output.stdout, &output.stderr);
+
+    Ok(NativeReadyRunnerRow {
+        run_id: format!("{}-wrapper-exe", config.run_id_prefix),
+        timestamp_utc: config.timestamp_utc.clone(),
+        host_os: config.host_os.clone(),
+        target_arch: config.target_arch.clone(),
+        workload_id: config.workload_id.clone(),
+        workload_name: config.workload_name.clone(),
+        source_path: config.source_path.clone(),
+        backend: "wrapper-exe".to_string(),
+        artifact_kind: "wrapper-exe".to_string(),
+        artifact_path: wrapper_path.display().to_string(),
+        artifact_size_bytes,
+        mode: config.mode.clone(),
+        iterations,
+        warmup_iterations: config.warmup_iterations,
+        mean_ms,
+        min_ms,
+        max_ms,
+        exit_status,
+        diagnostic_code: String::new(),
+        fallback_used: false,
+        fallback_reason: "not-applicable".to_string(),
+        result_kind: "stdout-stderr-exit".to_string(),
+        result_digest: digest,
+        claim_boundary: "Wrapper EXE artifact built and executed by native-ready runner; wrapper host over OXB, not direct native PE/ELF evidence".to_string(),
+    })
+}
+
+fn default_native_ready_wrapper_path(run_id_prefix: &str) -> PathBuf {
+    let sanitized = run_id_prefix
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    PathBuf::from("target")
+        .join("native-ready")
+        .join("wrapper")
+        .join(format!("{}{}", sanitized, cli_exe_suffix()))
+}
+
+fn cli_exe_suffix() -> &'static str {
+    if cfg!(windows) { ".exe" } else { "" }
+}
+
+fn digest_process_observation(exit_status: i32, stdout: &[u8], stderr: &[u8]) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    update_fnv1a64(&mut hash, exit_status.to_string().as_bytes());
+    update_fnv1a64(&mut hash, b"\0stdout\0");
+    update_fnv1a64(&mut hash, stdout);
+    update_fnv1a64(&mut hash, b"\0stderr\0");
+    update_fnv1a64(&mut hash, stderr);
+    format!("fnv1a64:{hash:016x}")
+}
+
+fn update_fnv1a64(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
 }
 
 fn run_immediate(args: Vec<String>) {
@@ -2482,8 +2670,9 @@ mod tests {
     use super::{
         apply_cli_reference_overrides, default_build_output_path, load_run_project_target,
         parse_cli_com_reference, parse_com_ref_args, parse_immediate_args_from,
-        parse_init_args_from, parse_run_args_from, parse_run_project_args_from,
-        resolve_project_runner_bootstrap, run_build, run_immediate_shell, run_init,
+        parse_init_args_from, parse_native_ready_runner_args_from, parse_run_args_from,
+        parse_run_project_args_from, resolve_project_runner_bootstrap, run_build,
+        run_immediate_shell, run_init,
     };
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
     use oxvba_hal::model::{HostPolicyPreset, UnsupportedFeatureMode};
@@ -2626,6 +2815,44 @@ mod tests {
                 library_name: "Scripting".to_string(),
                 importlib: Some("scrrun.dll".to_string())
             }
+        );
+    }
+
+    #[test]
+    fn parse_native_ready_runner_args_supports_wrapper_exe() {
+        let args = vec![
+            "native-ready-runner".to_string(),
+            "examples/smoke".to_string(),
+            "--run-id-prefix".to_string(),
+            "nr-smoke".to_string(),
+            "--timestamp-utc".to_string(),
+            "2026-05-02T00:00:00Z".to_string(),
+            "--workload-id".to_string(),
+            "NR-RUNNER-001".to_string(),
+            "--workload-name".to_string(),
+            "Runner smoke".to_string(),
+            "--source-path".to_string(),
+            "examples/smoke/Main.bas".to_string(),
+            "--iterations".to_string(),
+            "3".to_string(),
+            "--warmup".to_string(),
+            "1".to_string(),
+            "--wrapper-out".to_string(),
+            "target/native-ready/wrapper/nr-smoke.exe".to_string(),
+        ];
+
+        let parsed = parse_native_ready_runner_args_from(args).expect("args should parse");
+        assert_eq!(
+            parsed.input_path.as_deref(),
+            Some(Path::new("examples/smoke"))
+        );
+        assert_eq!(parsed.run_id_prefix, "nr-smoke");
+        assert_eq!(parsed.iterations, 3);
+        assert_eq!(parsed.warmup_iterations, 1);
+        assert!(parsed.include_wrapper_exe);
+        assert_eq!(
+            parsed.wrapper_output_path.as_deref(),
+            Some(Path::new("target/native-ready/wrapper/nr-smoke.exe"))
         );
     }
 

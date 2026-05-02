@@ -1,9 +1,9 @@
 # Wrapper Runner Smoke Row Evidence
 
-> Recovery note 2026-05-02: this file remains wrapper sample row shape only.
-> Active VM/JIT schema production was restored in
-> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; real wrapper artifact row production
-> is deferred to `bd-9xmu.5.8`.
+> Recovery note 2026-05-02: this historical file remains wrapper sample row
+> shape only. Active VM/JIT and wrapper EXE production was restored in
+> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; real wrapper library row production
+> is deferred to `bd-9xmu.5.9`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.4` / `runner-003`

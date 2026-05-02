@@ -30,7 +30,7 @@ fn main() {{
     let engine = Engine::new(config);
 
     // Execute the bundle
-    let result = engine.execute_bundle_with_snapshot(&bundle);
+    let result = engine.execute_bundle_with_variant_snapshot(&bundle);
 
     match result {{
         Ok(_) => {{}},
@@ -59,7 +59,7 @@ fn main() {{
     let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
         .expect("failed to deserialize embedded bundle");
     let engine = Engine::new(HostConfig::default());
-    engine.execute_bundle_with_snapshot(&bundle).unwrap();
+    engine.execute_bundle_with_variant_snapshot(&bundle).unwrap();
 }}
 "#
     )

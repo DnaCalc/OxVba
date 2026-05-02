@@ -1,9 +1,9 @@
 # Runner Size And Timing Field Evidence
 
 > Recovery note 2026-05-02: this historical file proves sample field shape
-> only. Active VM/JIT size/timing fields are now emitted by the Rust producer in
-> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper artifact timing remains
-> deferred to `bd-9xmu.5.8`.
+> only. Active VM/JIT and wrapper EXE size/timing fields are now emitted by the
+> Rust/CLI producer in `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper library
+> artifact timing remains deferred to `bd-9xmu.5.9`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.5` / `runner-004`

@@ -65,29 +65,30 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Native-Ready phase-3/phase-4 recovery has executable proof again:
     `VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md` and
     `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
-  - Native-Ready runner proof is recovered for VM/JIT only; wrapper artifact
-    row production remains open as follow-up bead `bd-9xmu.5.8`.
+  - Native-Ready runner proof is recovered for VM/JIT and wrapper EXE; wrapper
+    library row production remains open as non-blocking follow-up bead `bd-9xmu.5.9`.
 - Evidence:
   - `docs/evidence/native_ready/RUNTIMEVALUE_ACTIVE_RUST_SOURCE_REMOVAL_2026-05-01.md`
   - `docs/evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`
   - `docs/evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`
 
 
-### NR-RUNNER-WRAPPER-001: wrapper artifact schema producer deferred
-- Status: open follow-up, not blocking VM/JIT runner recovery.
+### NR-RUNNER-WRAPPER-LIB-001: wrapper library schema producer follow-up
+- Status: open non-blocking follow-up.
 - Impact:
-  - Keeps the Native-Ready phase-5 runner/perf scaffold workset in-progress for
-    real wrapper EXE/library row production.
-  - Does not block recovered VM/JIT schema producer evidence.
+  - Blocks only future claims of real wrapper-library row production.
+  - Does not block recovered Native-Ready VM/JIT or wrapper EXE schema producer evidence.
 - Current state:
   - `bd-9xmu.5.7` added active VM/JIT row production through
     `oxvba_host::emit_native_ready_vm_jit_csv` and the
     `oxvba native-ready-runner` CLI command.
-  - Wrapper EXE/library rows remain sample/schema-only.
-  - Follow-up delivery bead: `bd-9xmu.5.8`.
+  - `bd-9xmu.5.8` added `oxvba native-ready-runner --wrapper-exe`, which
+    builds and executes a real wrapper EXE artifact row.
+  - Wrapper library rows remain sample/schema-only.
+  - Follow-up delivery bead: `bd-9xmu.5.9`.
 - Exact unblocking steps:
-  - implement wrapper EXE/library artifact execution under the shared schema,
-  - capture `artifact_path`, `artifact_size_bytes`, exit/output or return digest,
+  - implement wrapper library artifact execution under the shared schema,
+  - capture `artifact_path`, `artifact_size_bytes`, exported-call result digest,
     elapsed timing fields, and claim boundary,
   - add executable tests/evidence and update phase-5 docs.
 - Evidence:
