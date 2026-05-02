@@ -5,8 +5,9 @@ use oxvba_hal::model::{
 };
 use oxvba_host::{
     Engine, HostConfig, ImmediateEvaluationRequest, ImmediateSession,
-    ImmediateVariantEvaluationOutput, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
-    TypeLibraryCatalogEntry, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+    ImmediateVariantEvaluationOutput, NativeReadyRunnerConfig, RunnerBootstrapFallbacks,
+    RunnerBootstrapOptions, TypeLibraryCatalogEntry, emit_native_ready_vm_jit_csv,
+    resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{VarType, Variant};
 use std::io::{self, BufRead, Write};
@@ -23,6 +24,7 @@ fn main() {
         Some("com-ref") => run_com_ref(cli_args),
         Some("repl") | Some("immediate") => run_immediate(cli_args),
         Some("run-project") => run_project(cli_args),
+        Some("native-ready-runner") => run_native_ready_runner(cli_args),
         Some("explain") | Some("host-check") => run_explain(cli_args),
         Some("init") => run_init(cli_args),
         Some("import-vbp") => run_import_vbp(cli_args),
@@ -269,6 +271,145 @@ fn run_project(args: Vec<String>) {
             std::process::exit(1);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// native-ready-runner subcommand
+// ---------------------------------------------------------------------------
+
+fn run_native_ready_runner(args: Vec<String>) {
+    let parsed = parse_native_ready_runner_args_from(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba native-ready-runner [path] --run-id-prefix <id> --timestamp-utc <ts> --workload-id <id> --workload-name <name> [--source-path <path>] [--iterations <n>] [--warmup <n>] [--out <csv>]"
+        );
+        std::process::exit(2);
+    });
+
+    let loaded = load_run_project_target(parsed.input_path.clone()).unwrap_or_else(|err| {
+        eprintln!("oxvba native-ready-runner: {err}");
+        std::process::exit(1);
+    });
+
+    let source_path = parsed.source_path.unwrap_or_else(|| {
+        parsed
+            .input_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| ".".to_string())
+    });
+    let mut config = NativeReadyRunnerConfig::correctness(
+        parsed.run_id_prefix,
+        parsed.timestamp_utc,
+        parsed.workload_id,
+        parsed.workload_name,
+        source_path,
+    );
+    config.iterations = parsed.iterations;
+    config.warmup_iterations = parsed.warmup_iterations;
+
+    let csv = emit_native_ready_vm_jit_csv(&loaded.manifest, &config).unwrap_or_else(|err| {
+        eprintln!("oxvba native-ready-runner: {err}");
+        std::process::exit(1);
+    });
+
+    if let Some(output_path) = parsed.output_path {
+        fs::write(&output_path, csv).unwrap_or_else(|err| {
+            eprintln!(
+                "oxvba native-ready-runner: cannot write {}: {err}",
+                output_path.display()
+            );
+            std::process::exit(1);
+        });
+    } else {
+        print!("{csv}");
+    }
+}
+
+#[derive(Debug, Clone)]
+struct NativeReadyRunnerArgs {
+    input_path: Option<PathBuf>,
+    output_path: Option<PathBuf>,
+    run_id_prefix: String,
+    timestamp_utc: String,
+    workload_id: String,
+    workload_name: String,
+    source_path: Option<String>,
+    iterations: u32,
+    warmup_iterations: u32,
+}
+
+fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyRunnerArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "native-ready-runner" {
+        return None;
+    }
+
+    let collected: Vec<String> = iter.collect();
+    let mut input_path: Option<PathBuf> = None;
+    let mut output_path: Option<PathBuf> = None;
+    let mut run_id_prefix: Option<String> = None;
+    let mut timestamp_utc: Option<String> = None;
+    let mut workload_id: Option<String> = None;
+    let mut workload_name: Option<String> = None;
+    let mut source_path: Option<String> = None;
+    let mut iterations = 1u32;
+    let mut warmup_iterations = 0u32;
+
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--out" => {
+                i += 1;
+                output_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--run-id-prefix" => {
+                i += 1;
+                run_id_prefix = Some(collected.get(i)?.clone());
+            }
+            "--timestamp-utc" => {
+                i += 1;
+                timestamp_utc = Some(collected.get(i)?.clone());
+            }
+            "--workload-id" => {
+                i += 1;
+                workload_id = Some(collected.get(i)?.clone());
+            }
+            "--workload-name" => {
+                i += 1;
+                workload_name = Some(collected.get(i)?.clone());
+            }
+            "--source-path" => {
+                i += 1;
+                source_path = Some(collected.get(i)?.clone());
+            }
+            "--iterations" => {
+                i += 1;
+                iterations = collected.get(i)?.parse().ok()?;
+            }
+            "--warmup" | "--warmup-iterations" => {
+                i += 1;
+                warmup_iterations = collected.get(i)?.parse().ok()?;
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(NativeReadyRunnerArgs {
+        input_path,
+        output_path,
+        run_id_prefix: run_id_prefix?,
+        timestamp_utc: timestamp_utc?,
+        workload_id: workload_id?,
+        workload_name: workload_name?,
+        source_path,
+        iterations: iterations.max(1),
+        warmup_iterations,
+    })
 }
 
 fn run_immediate(args: Vec<String>) {

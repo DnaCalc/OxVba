@@ -1,8 +1,8 @@
 # VM/JIT Runner Row Normalization Evidence
 
-> Recovery note 2026-05-02: this file proves sample CSV shape only. No active
-> Rust Native-Ready runner schema producer was found in the recovery audit.
-> Reopened recovery bead: `bd-9xmu.5.7`.
+> Recovery note 2026-05-02: this historical file proves the original sample CSV
+> shape only. Active VM/JIT schema production has since been restored in
+> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md` via `bd-9xmu.5.7`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.3` / `runner-002`

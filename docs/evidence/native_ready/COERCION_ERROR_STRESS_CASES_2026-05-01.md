@@ -1,9 +1,8 @@
 # Coercion And Error-State Stress Cases Evidence
 
-> Recovery note 2026-05-02: this evidence is not currently accepted as an
-> executable gate. After RuntimeValue compatibility test deletion, the cited
-> filter `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing`
-> runs zero tests. Reopened recovery bead: `bd-9xmu.4.7`.
+> Recovery note 2026-05-02: this evidence is current again after
+> `bd-9xmu.4.7`; the cited filter now runs one executable test and passes. See
+> `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.4.4` / `stress-003`

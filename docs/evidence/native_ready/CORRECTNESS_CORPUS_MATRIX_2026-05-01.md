@@ -1,11 +1,8 @@
 # Correctness Corpus Matrix And Fixture Naming
 
-> Recovery note 2026-05-02: row IDs and naming remain useful, but rows that cite
-> `mixed_numeric_matrix_current_variant_results`,
-> `numeric_stress_rounding_overflow_truncation_edges`,
-> `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing`, or
-> `nested_udt` are not accepted as executable evidence until `bd-9xmu.4.7`
-> restores/replaces tests that run nonzero.
+> Recovery note 2026-05-02: row IDs and naming are current again after
+> `bd-9xmu.4.7`. The cited numeric/coercion/UDT filters now run nonzero and pass;
+> see `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.4.2` / `stress-001`

@@ -1,7 +1,7 @@
 # Native-Ready Runner And Benchmark Schema v1
 
 Status: `locked-baseline`
-Date: 2026-04-30
+Date: 2026-04-30; producer recovery update 2026-05-02
 Scope owner: OxVBA validation/performance/native-readiness
 
 ## Purpose
@@ -12,7 +12,8 @@ correctness/performance runs.
 ## CSV Columns
 
 Required columns (canonical header also stored at
-`docs/evidence/native_ready/runner_samples/native_ready_runner_schema_header_v1.csv`):
+`docs/evidence/native_ready/runner_samples/native_ready_runner_schema_header_v1.csv`
+and exposed in active Rust as `oxvba_host::NATIVE_READY_RUNNER_SCHEMA_HEADER`):
 
 ```text
 run_id,timestamp_utc,host_os,target_arch,workload_id,workload_name,source_path,backend,artifact_kind,artifact_path,artifact_size_bytes,mode,iterations,warmup_iterations,mean_ms,min_ms,max_ms,exit_status,diagnostic_code,fallback_used,fallback_reason,result_kind,result_digest,claim_boundary
@@ -53,7 +54,9 @@ digest and claim boundary.
 
 JIT rows must report whether Cranelift executed or the VM fallback path was
 used. A JIT row with fallback is valid reference evidence, but it is not native
-execution evidence.
+execution evidence. Current project-level VM/JIT producer rows mark JIT project
+snapshot fallback as `fallback_used=true` with
+`fallback_reason=project-visible-snapshot-vm-fallback`.
 
 ## Performance Policy
 
@@ -72,6 +75,13 @@ Performance rows are trend evidence only unless a claim explicitly names:
 
 Skipped oracle/native rows are valid boundary evidence, not parity or speed
 evidence.
+
+## Producer Status
+
+Active VM/JIT row production exists through `oxvba_host::emit_native_ready_vm_jit_csv`
+and the `oxvba native-ready-runner` CLI command. Wrapper EXE/library rows remain
+sample/schema-only until `bd-9xmu.5.8` implements real wrapper artifact
+execution and digest capture.
 
 ## Native Placeholder Policy
 

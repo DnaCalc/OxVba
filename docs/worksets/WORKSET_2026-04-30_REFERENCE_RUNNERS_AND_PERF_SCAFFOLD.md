@@ -1,6 +1,6 @@
 # Reference Runners And Performance Scaffold Workset
 
-Status: `in-progress` (recovery audit reopened)
+Status: `in-progress` (VM/JIT producer recovered; wrapper producer follow-up open)
 Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -37,6 +37,8 @@ Out of scope:
   [`../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md`](../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md)
 - Benchmark corpus under shared schema:
   [`../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md`](../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md)
+- Active VM/JIT producer recovery:
+  [`../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`](../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md)
 
 ## Execution Epics
 
@@ -62,35 +64,34 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
 
 - `bd-9xmu.5.1` / `runner-000`: roll out this executable bead path.
 - `bd-9xmu.5.2` / `runner-001`: lock shared runner schema writer path.
-  Reopened for recovery audit; current evidence proves schema/sample CSV shape,
-  but no active Rust schema writer/producer was found.
+  Recovered for VM/JIT in `bd-9xmu.5.7` via active Rust producer and CLI path.
 - `bd-9xmu.5.3` / `runner-002`: normalize VM/JIT rows with fallback status.
-  Reopened for recovery audit; current evidence is sample rows only unless an
-  executable producer is implemented or the terminal gate is explicitly reduced.
-- `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Reopened
-  for recovery audit; current evidence is sample rows only.
-- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Reopened
-  for recovery audit; current evidence is sample rows only.
+  Recovered 2026-05-02; `native_ready_runner_rows` emits VM/JIT rows and marks
+  project JIT fallback explicitly.
+- `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Still
+  sample-only for real wrapper artifact execution; follow-up delivery bead
+  `bd-9xmu.5.8` owns the real wrapper producer.
+- `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Recovered
+  for VM/JIT rows; wrapper artifact size/timing remains part of `bd-9xmu.5.8`.
 - `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared
-  schema. Reopened for recovery audit; benchmark seed rows refer to stress tests
-  that currently filter to zero tests.
+  schema. Stress workload references are recovered by `bd-9xmu.4.7`; active
+  VM/JIT producer exists for new rows.
 - `bd-9xmu.5.7` / recovery: decide and implement the runner evidence producer
-  gate after discovering current evidence is schema/sample-only. Open
-  2026-05-02; this is now the active terminal recovery bead for phase 5.
+  gate after discovering current evidence is schema/sample-only. Recovered
+  2026-05-02 for VM/JIT producer; wrapper producer explicitly deferred to
+  `bd-9xmu.5.8`.
+- `bd-9xmu.5.8` / follow-up: implement wrapper artifact schema producer.
+  Open; required before claiming real wrapper EXE/library row production.
 
 ## Terminal Gate
 
 This workset returns to complete when direct native work can use existing
 reference runners for both correctness and performance comparison without
-inventing a new evidence format. The recovery decision must choose one of two
-truthful gates:
+inventing a new evidence format.
 
-1. implement an executable producer that emits the shared schema for VM/JIT and
-   wrapper lanes; or
-2. explicitly reduce the workset claim to schema/sample scaffolding and create a
-   follow-up delivery bead for real producer implementation.
-
-Recovery blocker: the 2026-05-02 audit found docs/spec/sample CSV evidence but
-no active Rust Native-Ready runner schema producer. Evidence:
-[`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
+Recovery decision: `bd-9xmu.5.7` restored the active VM/JIT schema producer and
+CLI path, but explicitly reduced the wrapper claim to sample/schema scaffolding
+until `bd-9xmu.5.8` implements a real wrapper EXE/library artifact runner.
+Current evidence:
+[`../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`](../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md).
 

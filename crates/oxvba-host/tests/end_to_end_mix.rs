@@ -5,7 +5,7 @@ use oxvba_compiler::{
     ReferencedProjectManifest, module_unit_from_source,
 };
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, engine::DiagnosticPhase};
 use oxvba_runtime::Variant;
 
 fn proc_module(name: &str, source: &str) -> oxvba_compiler::ModuleUnit {
@@ -29,6 +29,117 @@ fn contains_value(snapshot: &[Variant], expected: Variant) {
         "expected snapshot to contain {:?}, got {:?}",
         expected,
         snapshot
+    );
+}
+
+fn assert_vm_jit_contains(manifest: &ProjectManifest, expected: Variant) {
+    for enable_jit in [false, true] {
+        let engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        let snapshot = engine
+            .execute_project_with_variant_snapshot_phased(manifest)
+            .unwrap_or_else(|err| {
+                panic!("execution should succeed for enable_jit={enable_jit}: {err}")
+            });
+        contains_value(&snapshot, expected.clone());
+    }
+}
+
+#[test]
+fn nested_udt_field_access_integration() {
+    let manifest = source_project(
+        "NestedUdtFieldAccess",
+        vec![proc_module(
+            "MainModule",
+            r#"
+Option Explicit
+Type Point
+    X As Integer
+    Y As Integer
+End Type
+Type Rect
+    TopLeft As Point
+    BottomRight As Point
+End Type
+Public Sub Main()
+    Dim r As Rect
+    Dim signature As Long
+    r.TopLeft_X = 1
+    r.TopLeft_Y = 2
+    r.BottomRight_X = 3
+    r.BottomRight_Y = 4
+    signature = r.TopLeft_X + (r.TopLeft_Y * 10) + (r.BottomRight_X * 100) + (r.BottomRight_Y * 1000)
+End Sub
+"#,
+        )],
+    );
+
+    assert_vm_jit_contains(&manifest, Variant::from_i32(4_321));
+}
+
+#[test]
+fn nested_udt_whole_assignment_copies_declared_field_slots() {
+    let manifest = source_project(
+        "NestedUdtWholeCopy",
+        vec![proc_module(
+            "MainModule",
+            r#"
+Option Explicit
+Type Point
+    X As Integer
+    Y As Integer
+End Type
+Public Sub Main()
+    Dim a As Point
+    Dim b As Point
+    Dim signature As Long
+    a.X = 7
+    a.Y = 9
+    b = a
+    signature = b.X + (b.Y * 10)
+End Sub
+"#,
+        )],
+    );
+
+    assert_vm_jit_contains(&manifest, Variant::from_i32(97));
+}
+
+#[test]
+fn nested_udt_cross_type_rejection() {
+    let manifest = source_project(
+        "NestedUdtCrossTypeRejection",
+        vec![proc_module(
+            "MainModule",
+            r#"
+Option Explicit
+Type PairA
+    X As Integer
+    Y As Integer
+End Type
+Type PairB
+    X As Integer
+    Y As Integer
+End Type
+Public Sub Main()
+    Dim a As PairA
+    Dim b As PairB
+    b = a
+End Sub
+"#,
+        )],
+    );
+
+    let err = Engine::new(HostConfig::default())
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect_err("same-shape cross-type UDT assignment should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().to_ascii_lowercase().contains("udt")
+            || err.message().to_ascii_lowercase().contains("type"),
+        "unexpected diagnostic: {err}"
     );
 }
 

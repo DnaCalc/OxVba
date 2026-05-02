@@ -1,8 +1,9 @@
 # Runner Size And Timing Field Evidence
 
-> Recovery note 2026-05-02: this file proves sample field shape only. No active
-> Rust Native-Ready runner schema producer was found in the recovery audit.
-> Reopened recovery bead: `bd-9xmu.5.7`.
+> Recovery note 2026-05-02: this historical file proves sample field shape
+> only. Active VM/JIT size/timing fields are now emitted by the Rust producer in
+> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper artifact timing remains
+> deferred to `bd-9xmu.5.8`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.5` / `runner-004`

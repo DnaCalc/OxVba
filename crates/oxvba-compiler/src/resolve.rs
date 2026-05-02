@@ -11,6 +11,7 @@ struct UdtFieldDef {
     array_bounds: Option<Vec<(i32, i32)>>,
 }
 type UdtDefMap = HashMap<String, Vec<UdtFieldDef>>;
+const UDT_TYPE_MARKER_PREFIX: &str = "__oxvba_udt_type__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithOp {
@@ -634,6 +635,7 @@ fn build_mainline_procedure_from_lines(
     );
     body.splice(0..0, build_const_prelude(module_constants));
     let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+    remove_udt_type_markers(&mut declaration_types);
     Some(BoundProcedure {
         name: "main".to_string(),
         source_line_start,
@@ -1562,6 +1564,7 @@ fn parse_procedures(
         );
         body.splice(0..0, build_const_prelude(module_constants));
         let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+        remove_udt_type_markers(&mut declaration_types);
         let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term)
         {
             index + 1
@@ -2502,6 +2505,7 @@ fn parse_block(
                 out.push(parse_single_line_if_stmt(
                     line,
                     declarations,
+                    declaration_types,
                     array_bounds,
                     property_write_routes,
                     property_read_routes,
@@ -2952,6 +2956,7 @@ fn parse_block(
         out.push(parse_assign_or_unsupported(
             line,
             declarations,
+            declaration_types,
             array_bounds,
             property_write_routes,
             property_read_routes,
@@ -3035,6 +3040,7 @@ fn parse_if_stmt(
 fn parse_single_line_if_stmt(
     line: &str,
     declarations: &[String],
+    declaration_types: &HashMap<String, BoundType>,
     array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
@@ -3060,6 +3066,7 @@ fn parse_single_line_if_stmt(
     let then_stmt = parse_inline_stmt_or_unsupported(
         then_tail,
         declarations,
+        declaration_types,
         array_bounds,
         property_write_routes,
         property_read_routes,
@@ -3075,6 +3082,7 @@ fn parse_single_line_if_stmt(
         let else_stmt = parse_inline_stmt_or_unsupported(
             else_tail,
             declarations,
+            declaration_types,
             array_bounds,
             property_write_routes,
             property_read_routes,
@@ -3100,6 +3108,7 @@ fn parse_single_line_if_stmt(
 fn parse_inline_stmt_or_unsupported(
     line: &str,
     declarations: &[String],
+    declaration_types: &HashMap<String, BoundType>,
     array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
@@ -3131,6 +3140,7 @@ fn parse_inline_stmt_or_unsupported(
     parse_assign_or_unsupported(
         line.trim(),
         declarations,
+        declaration_types,
         array_bounds,
         property_write_routes,
         property_read_routes,
@@ -3323,6 +3333,7 @@ fn parse_while_wend_stmt(
 fn parse_assign_or_unsupported(
     line: &str,
     declarations: &[String],
+    declaration_types: &HashMap<String, BoundType>,
     array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
@@ -3401,15 +3412,33 @@ fn parse_assign_or_unsupported(
         }
 
         if let Some(expr) = runtime_array_read.or_else(|| parse_expr(rhs_raw, array_bounds)) {
-            if let BoundExpr::Var(source) = &expr
-                && let Some(fields) =
-                    shared_udt_fields_for_assignment(&target, source, declarations, udt_defs)
-            {
-                return BoundStmt::UdtAssign {
-                    target,
-                    source: source.clone(),
-                    fields,
-                };
+            if let BoundExpr::Var(source) = &expr {
+                match resolve_udt_assignment(
+                    &target,
+                    source,
+                    declarations,
+                    declaration_types,
+                    udt_defs,
+                ) {
+                    UdtAssignmentResolution::Copy(fields) => {
+                        return BoundStmt::UdtAssign {
+                            target,
+                            source: source.clone(),
+                            fields,
+                        };
+                    }
+                    UdtAssignmentResolution::CrossType {
+                        target_type,
+                        source_type,
+                    } => {
+                        return BoundStmt::Unsupported {
+                            line: format!(
+                                "cross-type UDT assignment from {source_type} to {target_type}"
+                            ),
+                        };
+                    }
+                    UdtAssignmentResolution::NoMatch => {}
+                }
             }
             if let Some(route_proc) = property_write_routes.get(&target)
                 && !declarations
@@ -3497,29 +3526,80 @@ fn split_assignment_once_top_level(line: &str) -> Option<(&str, &str)> {
     None
 }
 
-fn shared_udt_fields_for_assignment(
+enum UdtAssignmentResolution {
+    Copy(Vec<String>),
+    CrossType {
+        target_type: String,
+        source_type: String,
+    },
+    NoMatch,
+}
+
+fn resolve_udt_assignment(
     target: &str,
     source: &str,
     declarations: &[String],
+    declaration_types: &HashMap<String, BoundType>,
     udt_defs: &UdtDefMap,
-) -> Option<Vec<String>> {
+) -> UdtAssignmentResolution {
     let target_fields = collect_udt_field_suffixes(target, declarations);
     if target_fields.is_empty() {
-        return None;
+        return UdtAssignmentResolution::NoMatch;
     }
     let source_fields = collect_udt_field_suffixes(source, declarations);
     if source_fields.is_empty() || source_fields != target_fields {
-        return None;
+        return UdtAssignmentResolution::NoMatch;
     }
-    // Infer UDT type names from definitions and reject cross-type assignments.
-    let target_type = infer_udt_type_from_fields(&target_fields, udt_defs);
-    let source_type = infer_udt_type_from_fields(&source_fields, udt_defs);
-    if let (Some(ref tt), Some(ref st)) = (target_type, source_type)
+
+    let target_type = declared_udt_type_for_variable(target, declaration_types)
+        .or_else(|| infer_udt_type_from_fields(&target_fields, udt_defs));
+    let source_type = declared_udt_type_for_variable(source, declaration_types)
+        .or_else(|| infer_udt_type_from_fields(&source_fields, udt_defs));
+    if let (Some(tt), Some(st)) = (&target_type, &source_type)
         && !tt.eq_ignore_ascii_case(st)
     {
-        return None;
+        return UdtAssignmentResolution::CrossType {
+            target_type: tt.clone(),
+            source_type: st.clone(),
+        };
     }
-    Some(target_fields)
+    UdtAssignmentResolution::Copy(target_fields)
+}
+
+fn udt_type_marker_key(variable_name: &str, udt_name: &str) -> String {
+    format!(
+        "{UDT_TYPE_MARKER_PREFIX}{}::{}",
+        variable_name.to_ascii_lowercase(),
+        udt_name.to_ascii_lowercase()
+    )
+}
+
+fn insert_udt_type_marker(
+    declaration_types: &mut HashMap<String, BoundType>,
+    variable_name: &str,
+    udt_name: &str,
+) {
+    declaration_types.insert(
+        udt_type_marker_key(variable_name, udt_name),
+        BoundType::Variant,
+    );
+}
+
+fn declared_udt_type_for_variable(
+    variable_name: &str,
+    declaration_types: &HashMap<String, BoundType>,
+) -> Option<String> {
+    let prefix = format!(
+        "{UDT_TYPE_MARKER_PREFIX}{}::",
+        variable_name.to_ascii_lowercase()
+    );
+    declaration_types
+        .keys()
+        .find_map(|key| key.strip_prefix(&prefix).map(ToString::to_string))
+}
+
+fn remove_udt_type_markers(declaration_types: &mut HashMap<String, BoundType>) {
+    declaration_types.retain(|name, _| !name.starts_with(UDT_TYPE_MARKER_PREFIX));
 }
 
 /// Infer which UDT type a variable belongs to by matching its field suffixes
@@ -5504,6 +5584,10 @@ fn parse_declaration_remainder(
         declaration_types.insert(name.clone(), declared_ty);
         declarations.push(name.clone());
 
+        if let Some(udt_name) = explicit_udt_name.as_deref() {
+            insert_udt_type_marker(declaration_types, &name, udt_name);
+        }
+
         if let Some(udt_name) = explicit_udt_name
             && let Some(fields) = udt_defs.get(&udt_name)
         {
@@ -6232,7 +6316,7 @@ fn strip_proc_scope_prefixes_ci(mut text: &str) -> &str {
 mod tests {
     use super::{
         ArithOp, BoundCompareMode, BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface,
-        intrinsic_surface, resolve_symbols,
+        UDT_TYPE_MARKER_PREFIX, intrinsic_surface, resolve_symbols,
     };
 
     #[test]
@@ -7197,6 +7281,25 @@ mod tests {
                 } if target == "b" && source == "a" && fields == &vec!["x".to_string(), "y".to_string()]
             )
         }));
+    }
+
+    #[test]
+    fn resolve_udt_cross_type_whole_assignment_is_unsupported() {
+        let source = "Type PairA\nX As Integer\nY As Integer\nEnd Type\nType PairB\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim a As PairA\nDim b As PairB\nb = a\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                BoundStmt::Unsupported { line }
+                    if line.contains("cross-type UDT assignment")
+            )
+        }));
+        assert!(
+            module
+                .declaration_types
+                .keys()
+                .all(|name| !name.starts_with(UDT_TYPE_MARKER_PREFIX))
+        );
     }
 
     #[test]

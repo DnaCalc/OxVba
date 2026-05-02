@@ -1754,3 +1754,180 @@ pub fn variant_to_withevents_owner_handle(
         value.vtype()
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxvba_compiler::bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind};
+    use oxvba_runtime::{Decimal96, VarType, Variant};
+
+    fn assert_double(value: &Variant, expected: f64) {
+        assert_eq!(value.vtype(), VarType::Double, "value={value:?}");
+        let actual = value.as_f64().expect("Double payload");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual} from {value:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_numeric_matrix_current_variant_results() {
+        let integer_long = variant_add_values(&Variant::from_i16(2), &Variant::from_i32(3))
+            .expect("Integer + Long");
+        assert_eq!(integer_long.vtype(), VarType::Long);
+        assert_eq!(integer_long.as_i32(), Some(5));
+
+        let long_double = variant_add_values(&Variant::from_i32(3), &Variant::from_f64(0.5))
+            .expect("Long + Double");
+        assert_double(&long_double, 3.5);
+
+        let currency_long = variant_add_values(
+            &Variant::from_currency_scaled_i64(12_500),
+            &Variant::from_i32(2),
+        )
+        .expect("Currency + Long");
+        assert_double(&currency_long, 3.25);
+
+        let decimal_long = variant_add_values(
+            &Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+            &Variant::from_i16(1),
+        )
+        .expect("Decimal + Integer");
+        assert_double(&decimal_long, 124.45);
+
+        let date_long = variant_add_values(&Variant::from_date_f64(10.0), &Variant::from_i32(2))
+            .expect("Date + Long");
+        assert_double(&date_long, 12.0);
+
+        let boolean_long = variant_add_values(&Variant::from_bool(true), &Variant::from_i32(2))
+            .expect("Boolean + Long");
+        assert_eq!(boolean_long.vtype(), VarType::Long);
+        assert_eq!(boolean_long.as_i32(), Some(1));
+
+        let string_long = variant_add_values(&Variant::from_string("7"), &Variant::from_i32(5))
+            .expect("numeric String + Long");
+        assert_eq!(string_long.vtype(), VarType::Long);
+        assert_eq!(string_long.as_i32(), Some(12));
+
+        let null_result =
+            variant_add_values(&Variant::null(), &Variant::from_i32(5)).expect("Null + Long");
+        assert_eq!(null_result.vtype(), VarType::Null);
+
+        let error_result = variant_add_values(&Variant::from_error_code(13), &Variant::from_i32(5));
+        assert!(
+            error_result
+                .expect_err("CVErr arithmetic should fail")
+                .contains("CVErr")
+        );
+
+        let quotient = variant_div_values(&Variant::from_i32(7), &Variant::from_i32(2))
+            .expect("division should evaluate")
+            .expect("division should not fault");
+        assert_double(&quotient, 3.5);
+
+        let divide_by_zero = variant_div_values(&Variant::from_i32(7), &Variant::from_i32(0))
+            .expect("division should classify runtime fault");
+        assert_eq!(divide_by_zero, Err(11));
+    }
+
+    #[test]
+    fn exact_scalar_carrier_expectations_preserve_variant_tags() {
+        let currency = Variant::from_currency_scaled_i64(-42_500);
+        assert_eq!(currency.vtype(), VarType::Currency);
+        assert_eq!(currency.as_currency_scaled_i64(), Some(-42_500));
+
+        let decimal = Decimal96::from_parts(0x5566_7788, 0x1122_3344, 0x99AA_BBCC, 4, true);
+        let decimal_variant = Variant::from_decimal96(decimal);
+        assert_eq!(decimal_variant.vtype(), VarType::Decimal);
+        assert_eq!(decimal_variant.as_decimal96(), Some(decimal));
+
+        let date = Variant::from_date_f64(46_081.25);
+        assert_eq!(date.vtype(), VarType::Date);
+        assert_eq!(date.as_date_f64(), Some(46_081.25));
+
+        let boolean = Variant::from_bool(true);
+        assert_eq!(boolean.vtype(), VarType::Boolean);
+        assert_eq!(boolean.as_bool(), Some(true));
+        assert_eq!(runtime_variant_to_i32_compat(&boolean, "Boolean"), Ok(-1));
+    }
+
+    #[test]
+    fn numeric_stress_rounding_overflow_truncation_edges() {
+        let rounded =
+            runtime_round_variant_bounded(&Variant::from_i32(19), Some(&Variant::from_i32(-1)))
+                .expect("Round should succeed");
+        assert_eq!(rounded.as_i32(), Some(20));
+
+        let overflow = variant_mul_values(&Variant::from_i32(50_000), &Variant::from_i32(50_000))
+            .expect("Long multiplication wraps current i32 compatibility result");
+        assert_eq!(overflow.vtype(), VarType::Long);
+        assert_eq!(overflow.as_i32(), Some(-1_794_967_296));
+
+        let intdiv = variant_intdiv_values(&Variant::from_i32(7), &Variant::from_i32(2))
+            .expect("integer division evaluates")
+            .expect("integer division should not fault");
+        assert_eq!(intdiv.as_i32(), Some(3));
+
+        let modulo = variant_mod_values(&Variant::from_i32(7), &Variant::from_i32(2))
+            .expect("mod evaluates")
+            .expect("mod should not fault");
+        assert_eq!(modulo.as_i32(), Some(1));
+
+        let exponent = variant_pow_values(&Variant::from_i32(2), &Variant::from_i32(10))
+            .expect("power evaluates");
+        assert_double(&exponent, 1024.0);
+
+        let null_neg = variant_neg_value(&Variant::null()).expect("Null negation propagates");
+        assert_eq!(null_neg.vtype(), VarType::Null);
+
+        let single_add = variant_add_const_value(&Variant::from_f32(1.5), 2, "Single add const")
+            .expect("Single add const");
+        assert_double(&single_add, 3.5);
+    }
+
+    #[test]
+    fn coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing() {
+        assert_eq!(
+            runtime_variant_to_numeric_compat(&Variant::from_string("   "), "blank numeric"),
+            Ok(0.0)
+        );
+
+        let empty_add =
+            variant_add_values(&Variant::empty(), &Variant::from_i32(5)).expect("Empty + Long");
+        assert_eq!(empty_add.as_i32(), Some(5));
+
+        let null_div = variant_div_values(&Variant::null(), &Variant::from_i32(0))
+            .expect("Null division should evaluate before divide-by-zero fault")
+            .expect("Null division should propagate Null");
+        assert_eq!(null_div.vtype(), VarType::Null);
+
+        let cverr_add = variant_add_values(&Variant::from_error_code(13), &Variant::from_i32(1));
+        assert!(
+            cverr_add
+                .expect_err("CVErr arithmetic should report type mismatch")
+                .contains("CVErr")
+        );
+
+        let null_eq = typed_compare_variants(
+            &Variant::null(),
+            &Variant::null(),
+            StringCompareMode::Binary,
+            |ord| ord == std::cmp::Ordering::Equal,
+        )
+        .expect("Null comparison should be deterministic");
+        assert!(!null_eq);
+
+        let let_object = validate_runtime_assignment_variant(
+            &Variant::from_i32(1),
+            RuntimeAssignmentIntent::Let,
+            RuntimeAssignmentTargetKind::Object,
+            "target",
+            "Object",
+        );
+        assert!(
+            let_object
+                .expect_err("Let assignment into Object should fail")
+                .contains("Let cannot assign to Object")
+        );
+    }
+}

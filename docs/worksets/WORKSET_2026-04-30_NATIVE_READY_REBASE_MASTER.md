@@ -1,6 +1,6 @@
 # Native-Ready Rebase Master Workset
 
-Status: `in-progress` (recovery audit reopened phases 3-5)
+Status: `in-progress` (phases 3-4 recovered; phase 5 wrapper producer follow-up open)
 Date: 2026-04-30; recovery update 2026-05-02
 Scope owner: OxVBA architecture/runtime/native-readiness
 
@@ -36,19 +36,17 @@ materially complete for docs truth/direct-native non-claims. Child workset 2 is
 now recovered complete after `bd-0w46`; active Rust source has zero
 `RuntimeValue|runtime_value` matches and fake IR crate APIs remain absent.
 
-The previous value/numeric/UDT, correctness corpus, and runner/performance
-closure claims are not accepted as current truth until they are re-proved against
-the post-`RuntimeValue` codebase. The cited phase-3/phase-4 stress test filters
-currently run zero tests, and the phase-5 runner evidence is schema/sample CSV
-only unless a producer is implemented or the claim is explicitly reduced.
+The previous value/numeric/UDT and correctness corpus claims have now been
+recovered with nonzero executable tests. The runner/performance lane has an
+active VM/JIT schema producer and CLI path, while real wrapper EXE/library row
+production remains a follow-up (`bd-9xmu.5.8`).
 
 Recovery audit 2026-05-02 supersedes the earlier umbrella completion claim for
 current planning truth:
 [`NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
-The earlier terminal audit remains historical evidence, but child worksets 3, 4,
-and 5 are reopened for executable re-proof because their cited stress tests no
-longer exist after RuntimeValue compatibility test removal and the runner lane is
-only sample/schema-backed.
+The earlier terminal audit remains historical evidence. Child worksets 3 and 4
+were recovered on 2026-05-02; child workset 5 is partially recovered for VM/JIT
+producer evidence and remains open for wrapper artifact producer work.
 
 ## Child Worksets
 
@@ -56,9 +54,9 @@ only sample/schema-backed.
 |---|---|---|---|
 | 1 | `WORKSET_2026-04-30_DOCS_TRUTH_AND_ARCHIVE_REBASE.md` | Demote historical plans and make active docs implementation-accurate. | No authoritative doc claims active HIR/MIR/CFG or direct native AOT beyond current wrapper/JIT truth. |
 | 2 | `WORKSET_2026-04-30_RUNTIMEVALUE_IR_STUB_CLEANOUT.md` | Remove `RuntimeValue` and fake IR scaffold from active code/API surfaces. | **Recovered complete:** fake IR code is removed and active Rust source has zero `RuntimeValue|runtime_value` matches. |
-| 3 | `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md` | Make value/type semantics native-ready. | **Reopened/recovery:** re-prove post-`RuntimeValue` Variant-native numeric/coercion/UDT gates with executing tests. |
-| 4 | `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md` | Build stress tests likely to expose hidden numeric/type bugs. | **Reopened/recovery:** restore corpus tests; previous cited filters now run 0 tests. |
-| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | **Reopened/recovery:** decide and implement either an actual schema-emitting runner producer or a reduced schema/sample-only claim. |
+| 3 | `WORKSET_2026-04-30_VALUE_SUBSTRATE_NUMERIC_UDT_CLEANUP.md` | Make value/type semantics native-ready. | **Recovered complete:** post-`RuntimeValue` Variant-native numeric/coercion/UDT gates have executing tests. |
+| 4 | `WORKSET_2026-04-30_CORRECTNESS_CORPUS_AND_ORACLE_STRESS.md` | Build stress tests likely to expose hidden numeric/type bugs. | **Recovered complete:** `NR-NUM-001/002`, `NR-COERCE-001`, and `NR-UDT-001` run nonzero tests. |
+| 5 | `WORKSET_2026-04-30_REFERENCE_RUNNERS_AND_PERF_SCAFFOLD.md` | Standardize correctness/perf evidence for VM/JIT/wrappers/future native. | **In progress:** VM/JIT schema producer recovered; wrapper artifact producer deferred to `bd-9xmu.5.8`. |
 
 ## Required Specs
 
@@ -89,6 +87,7 @@ the recovery audit and the following search/verification gates are green:
   only current explanatory or residual-note docs.
 - `docs/ARCHITECTURE.md`, `docs/IR_DESIGN.md`, `docs/BYTECODE_FORMAT.md`, and
   `docs/README.md` describe current implementation truth.
-- VM/JIT/wrapper reference runners use the shared result schema.
+- VM/JIT reference runners use the shared result schema; wrapper reference
+  runner rows remain sample-only until `bd-9xmu.5.8` completes.
 - Numeric/UDT stress corpus runs in the expected backend matrix.
 - Native compiler/linker work has a clean prerequisite checklist.

@@ -1,8 +1,8 @@
 # UDT Semantic And Layout Non-Claim Stress Evidence
 
-> Recovery note 2026-05-02: this evidence is not currently accepted as an
-> executable gate. The cited `nested_udt` host test filter currently runs zero
-> tests. Reopened recovery bead: `bd-9xmu.4.7`.
+> Recovery note 2026-05-02: this evidence is current again after
+> `bd-9xmu.4.7`; the cited `nested_udt` host filter now runs three executable
+> tests and passes. See `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.4.5` / `stress-004`

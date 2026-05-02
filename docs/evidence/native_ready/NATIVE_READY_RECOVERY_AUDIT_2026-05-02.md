@@ -1,6 +1,6 @@
 # Native-Ready Recovery Audit (2026-05-02)
 
-Status: recovery truth audit after `bd-0w46` / commit `8d5fdfc0`.
+Status: recovery truth audit after `bd-0w46` / commit `8d5fdfc0`; updated with recovery execution evidence later on 2026-05-02.
 
 ## Outcome
 
@@ -68,8 +68,20 @@ Results:
    - phase 5: real runner producer or an explicitly reduced schema/sample-only
      terminal gate.
 
+## Recovery Update
+
+Later on 2026-05-02 the recovery beads restored the missing executable evidence:
+
+- `bd-9xmu.3.9`: phase-3 value/numeric/UDT gates now have nonzero tests; see
+  `VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md`.
+- `bd-9xmu.4.7`: `NR-NUM-001/002`, `NR-COERCE-001`, and `NR-UDT-001` now have
+  nonzero tests; see
+  `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`.
+- `bd-9xmu.5.7`: VM/JIT runner row production now has an active Rust producer
+  and CLI path; see `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`.
+
 ## Non-Claims
 
-This audit does not claim direct native PE/ELF compilation exists. It also does
-not claim numeric/coercion/UDT stress coverage or runner production is complete
-until the recovery beads close with executable evidence.
+This audit does not claim direct native PE/ELF compilation exists. Wrapper
+EXE/library schema production remains deferred to `bd-9xmu.5.8` unless and until
+that bead adds a real wrapper artifact runner.

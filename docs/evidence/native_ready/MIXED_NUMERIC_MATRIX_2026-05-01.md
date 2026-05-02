@@ -1,9 +1,8 @@
 # Mixed Numeric Matrix Evidence
 
-> Recovery note 2026-05-02: this matrix remains useful as historical expected
-> behavior, but its cited regression filter
-> `mixed_numeric_matrix_current_variant_results` currently runs zero tests.
-> Reopened recovery beads: `bd-9xmu.3.9` and `bd-9xmu.4.7`.
+> Recovery note 2026-05-02: this matrix is current again after
+> `bd-9xmu.3.9`/`bd-9xmu.4.7`; the cited filter now runs one executable test
+> and passes. See `VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.3.5` / `value-clean-004`

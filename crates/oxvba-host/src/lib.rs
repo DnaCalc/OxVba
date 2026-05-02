@@ -5,6 +5,7 @@ pub mod embedded;
 pub mod engine;
 pub mod events;
 pub mod immediate;
+pub mod native_ready_runner;
 pub mod project;
 pub mod runner;
 
@@ -30,6 +31,10 @@ pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,
     ImmediateSession, ImmediateSessionError, ImmediateVariantEvaluationOutput,
     ImmediateVariantEvaluationResult, ImmediateVariantValueProjection,
+};
+pub use native_ready_runner::{
+    NATIVE_READY_RUNNER_SCHEMA_HEADER, NativeReadyRunnerConfig, NativeReadyRunnerRow,
+    emit_native_ready_vm_jit_csv, produce_native_ready_vm_jit_rows,
 };
 pub use project::{
     GraphPublicSymbolResolution, HostExportKind, HostProcedureExport, ModuleAttributes, ModuleKind,

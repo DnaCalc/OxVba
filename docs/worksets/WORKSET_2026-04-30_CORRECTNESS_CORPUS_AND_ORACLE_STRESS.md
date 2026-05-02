@@ -1,6 +1,6 @@
 # Correctness Corpus And Oracle Stress Workset
 
-Status: `in-progress` (recovery audit reopened)
+Status: `complete` (recovered 2026-05-02)
 Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -42,6 +42,8 @@ Out of scope:
   [`../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md`](../evidence/native_ready/UDT_LAYOUT_STRESS_CASES_2026-05-01.md)
 - Oracle foldback packet:
   [`../evidence/native_ready/ORACLE_FOLDBACK_PACKET_2026-05-01.md`](../evidence/native_ready/ORACLE_FOLDBACK_PACKET_2026-05-01.md)
+- Executable recovery proof:
+  [`../evidence/native_ready/CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`](../evidence/native_ready/CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md)
 
 ## Execution Epics
 
@@ -69,20 +71,20 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.4`:
   convention. Done 2026-05-01; the matrix schema, fixture naming convention,
   and initial row IDs are recorded.
 - `bd-9xmu.4.3` / `stress-002`: add numeric rounding/overflow/truncation
-  cases. Reopened for recovery audit; `numeric_stress_rounding_overflow_truncation_edges`
-  currently filters to zero tests and must be restored or replaced.
+  cases. Recovered 2026-05-02; `numeric_stress_rounding_overflow_truncation_edges`
+  now runs one test and passes.
 - `bd-9xmu.4.4` / `stress-003`: add string-number/Null/Empty/Error coercion
-  cases. Reopened for recovery audit; `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing`
-  currently filters to zero tests and must be restored or replaced.
-- `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases. Reopened
-  for recovery audit; `nested_udt` currently filters to zero host tests and must
-  be restored or replaced.
+  cases. Recovered 2026-05-02;
+  `coercion_error_stress_rows_cover_empty_null_cverr_and_assignment_timing` now
+  runs one test and passes.
+- `bd-9xmu.4.5` / `stress-004`: add UDT semantic and non-claim cases.
+  Recovered 2026-05-02; `nested_udt` now runs three host tests and passes.
 - `bd-9xmu.4.6` / `stress-005`: add Office/VBA oracle capture packet for
   selected rows. Done 2026-05-01; `NR-ORACLE-001` has VBA source,
   instructions, output schema, and headless-CI skip rationale.
 - `bd-9xmu.4.7` / recovery: restore executable correctness corpus stress tests
-  after RuntimeValue-heavy test deletion. Open 2026-05-02; this is now the
-  active terminal recovery bead for phase 4.
+  after RuntimeValue-heavy test deletion. Recovered 2026-05-02 with nonzero
+  `NR-NUM-001/002`, `NR-COERCE-001`, and `NR-UDT-001` tests.
 
 ## Terminal Gate
 
@@ -91,8 +93,7 @@ tripwire: it must be broad enough that hidden numeric/coercion/UDT skeletons are
 likely to fail before native code generation begins, and every cited row must be
 backed by an executing test or an explicit non-executing oracle packet.
 
-Recovery blocker: the 2026-05-02 audit found that the previously cited numeric,
-coercion, mixed numeric, and UDT test filters run zero tests after RuntimeValue
-compatibility test deletion. Evidence:
-[`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md).
+Recovery result: the previously zero-test numeric, coercion, mixed numeric, and
+UDT filters now run nonzero and pass. Evidence:
+[`../evidence/native_ready/CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`](../evidence/native_ready/CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md).
 

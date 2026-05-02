@@ -1,6 +1,6 @@
 # Value Substrate, Numeric, And UDT Cleanup Workset
 
-Status: `in-progress` (recovery audit reopened)
+Status: `complete` (recovered 2026-05-02)
 Date: 2026-04-30; recovery update 2026-05-02
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
@@ -50,6 +50,8 @@ Out of scope:
   [`../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md`](../evidence/native_ready/RUNTIMEVALUE_IR_SEARCH_GATE_2026-05-01.md)
 - Recovery audit:
   [`../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md`](../evidence/native_ready/NATIVE_READY_RECOVERY_AUDIT_2026-05-02.md)
+- Executable recovery proof:
+  [`../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md`](../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md)
 
 ## Execution Epics
 
@@ -83,15 +85,15 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
   the spec now names `Variant` as canonical and active Rust `RuntimeValue`
   residuals as removed, while phase-3 executable proof remains open.
 - `bd-9xmu.3.4` / `value-clean-003`: migrate remaining numeric helper
-  families to retained `Variant` carriers on the normal path. Reopened for
-  recovery audit; the post-`bd-0w46` code must prove Variant-native numeric
-  helper behavior with executing tests.
+  families to retained `Variant` carriers on the normal path. Recovered
+  2026-05-02 by `bd-9xmu.3.9`; explicit nonzero Variant-native numeric helper
+  tests now pass.
 - `bd-9xmu.3.5` / `value-clean-004`: expand mixed numeric result matrix
-  and tests. Reopened for recovery audit; `mixed_numeric_matrix_current_variant_results`
-  currently filters to zero tests and must be restored or replaced.
+  and tests. Recovered 2026-05-02; `mixed_numeric_matrix_current_variant_results`
+  now runs one test and passes.
 - `bd-9xmu.3.6` / `value-clean-005`: pin exact `Currency`, `Decimal`,
-  `Date`, and Boolean carrier expectations. Done 2026-05-01; expectations are
-  recorded and typed SAFEARRAY exact-carrier regression coverage was added.
+  `Date`, and Boolean carrier expectations. Done 2026-05-01 and recovered
+  2026-05-02 through `exact_scalar_carrier_expectations_preserve_variant_tags`.
 - `bd-9xmu.3.7` / `value-clean-006`: design descriptor-backed UDT semantic
   model. Done 2026-05-01; `UdtTypeId`/`UdtFieldId`, descriptor contents,
   retained-Variant field-slot storage, copy/init rules, and implementation path
@@ -101,8 +103,8 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.3`:
   separated from future native ABI materialization, with accepted/deferred/
   blocked rows recorded.
 - `bd-9xmu.3.9` / recovery: reprove Variant-native value/numeric/UDT gates
-  after RuntimeValue removal. Open 2026-05-02; this is now the active terminal
-  recovery bead for phase 3.
+  after RuntimeValue removal. Recovered 2026-05-02 with nonzero VM/host tests
+  and UDT cross-type rejection.
 
 ## Terminal Gate
 
@@ -116,7 +118,7 @@ can rely on:
   executing tests/evidence,
 - native ABI layout as a separate materialization layer.
 
-Recovery blocker: previous completion evidence cited tests that now filter to
-zero after the RuntimeValue compatibility deletion. Reopened beads must restore
-or replace that coverage before this workset can be called complete again.
+Recovery result: previous zero-test filters have been restored/replaced with
+nonzero tests. The workset is complete for the Native-Ready prerequisite scope;
+native ABI layout remains a separate future materialization layer.
 

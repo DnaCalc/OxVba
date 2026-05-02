@@ -1,8 +1,9 @@
 # Wrapper Runner Smoke Row Evidence
 
-> Recovery note 2026-05-02: this file proves wrapper sample row shape only. No
-> active Rust Native-Ready runner schema producer was found in the recovery
-> audit. Reopened recovery bead: `bd-9xmu.5.7`.
+> Recovery note 2026-05-02: this file remains wrapper sample row shape only.
+> Active VM/JIT schema production was restored in
+> `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; real wrapper artifact row production
+> is deferred to `bd-9xmu.5.8`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.4` / `runner-003`

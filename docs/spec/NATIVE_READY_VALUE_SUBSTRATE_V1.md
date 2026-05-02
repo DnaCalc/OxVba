@@ -1,6 +1,6 @@
 # Native-Ready Value Substrate v1
 
-Status: `recovery-baseline` (phases 3-5 reopened for executable proof)
+Status: `recovered-baseline` (phase-3 executable proof restored)
 Date: 2026-04-30; recovery update 2026-05-02
 Scope owner: OxVBA runtime/compiler/native-readiness
 
@@ -82,7 +82,9 @@ the specialization is equivalent to the retained-`Variant` helper path.
   (`True = -1`, `False = 0`).
 
 Detailed regression evidence is in
-[`../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md).
+[`../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md`](../evidence/native_ready/EXACT_CARRIER_EXPECTATIONS_2026-05-01.md)
+and the recovery proof
+[`../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md`](../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md).
 
 ## UDT Direction
 
@@ -111,6 +113,9 @@ that materialization is not the canonical internal value model.
 
 Detailed model path:
 [`../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md`](../evidence/native_ready/UDT_DESCRIPTOR_MODEL_PATH_2026-05-01.md).
+Executable recovery coverage for nested field access, same-type whole copy, and
+same-shape cross-type rejection is recorded in
+[`../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md`](../evidence/native_ready/VALUE_NUMERIC_UDT_RECOVERY_EXECUTABLE_TESTS_2026-05-02.md).
 
 ## Residual Boundaries
 
