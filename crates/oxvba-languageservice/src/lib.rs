@@ -22,7 +22,10 @@ pub mod span;
 pub mod workspace;
 
 pub use document::{Document, DocumentId};
-pub use host_session::{HostSessionError, HostWorkspaceDocument, HostWorkspaceSession};
+pub use host_session::{
+    HostSessionError, HostWorkspaceDocument, HostWorkspaceModuleRosterEntry, HostWorkspaceRoster,
+    HostWorkspaceSession,
+};
 pub use semantic::{
     SemanticSnapshot, SymbolTable, build_semantic_snapshot, build_semantic_snapshot_with_provenance,
 };

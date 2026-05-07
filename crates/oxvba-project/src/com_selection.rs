@@ -16,7 +16,10 @@ use oxvba_com::{
     build_typelib_metadata, resolve_known_typelib_identity,
     resolve_typelib_identity_for_prog_id_name,
 };
-use oxvba_host::TypeLibraryCatalogEntry;
+use oxvba_host::{
+    DirectHostCapability, DirectHostCapabilityKind, DirectHostCommandStatus, DirectHostIssue,
+    DirectHostIssueKind, DirectHostRetryability, TypeLibraryCatalogEntry,
+};
 use thiserror::Error;
 
 use crate::{
@@ -146,6 +149,55 @@ pub struct HostComProjectSelectionSurface {
     pub project_name: String,
     pub active_references: Vec<BasProjComReference>,
     pub selections: Vec<ComProjectSelection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComHostPlatform {
+    Windows,
+    NonWindows,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComRuntimeInvocationAvailability {
+    pub platform: ComHostPlatform,
+    pub command_status: DirectHostCommandStatus,
+    pub requires_windows: bool,
+    pub required_apartment: Option<String>,
+    pub bitness_requirement: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComCapabilityProfile {
+    pub platform: ComHostPlatform,
+    pub reference_discovery: DirectHostCapability,
+    pub reference_editing: DirectHostCapability,
+    pub runtime_invocation: DirectHostCapability,
+    pub native_service: DirectHostCapability,
+    pub runtime_availability: ComRuntimeInvocationAvailability,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComReferenceReorderIssueKind {
+    DuplicateReference,
+    MissingReference,
+    OmittedReference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComReferenceReorderIssue {
+    pub kind: ComReferenceReorderIssueKind,
+    pub include: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComReferenceReorderPlan {
+    pub active_references: Vec<BasProjComReference>,
+    pub requested_order: Vec<String>,
+    pub resulting_references: Vec<BasProjComReference>,
+    pub edits: Vec<HostProjectEdit>,
+    pub can_apply: bool,
+    pub issues: Vec<ComReferenceReorderIssue>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -497,7 +549,198 @@ pub fn plan_repair_project_selection(
     }
 }
 
+pub fn com_runtime_invocation_availability() -> ComRuntimeInvocationAvailability {
+    let platform = current_com_host_platform();
+    let command_status = if platform == ComHostPlatform::Windows {
+        DirectHostCommandStatus::available()
+    } else {
+        DirectHostCommandStatus::disabled(non_windows_com_issue(
+            DirectHostIssueKind::ComRuntimeUnavailable,
+            "COM runtime invocation requires a Windows native COM host",
+        ))
+    };
+
+    ComRuntimeInvocationAvailability {
+        platform,
+        command_status,
+        requires_windows: true,
+        required_apartment: Some("STA or host-managed COM apartment".to_string()),
+        bitness_requirement: Some(
+            "host process bitness must match the target COM server".to_string(),
+        ),
+    }
+}
+
+pub fn com_capability_profile() -> ComCapabilityProfile {
+    let platform = current_com_host_platform();
+    let reference_discovery = if platform == ComHostPlatform::Windows {
+        DirectHostCapability::available(DirectHostCapabilityKind::ComReferenceDiscovery)
+    } else {
+        DirectHostCapability::degraded(
+            DirectHostCapabilityKind::ComReferenceDiscovery,
+            non_windows_com_issue(
+                DirectHostIssueKind::ComDiscoveryUnavailable,
+                "known/catalog COM identity matching is available, but live registry and file-backed discovery require Windows",
+            ),
+        )
+    };
+    let reference_editing =
+        DirectHostCapability::available(DirectHostCapabilityKind::ProjectAuthoring);
+    let runtime_availability = com_runtime_invocation_availability();
+    let runtime_invocation = match &runtime_availability.command_status {
+        DirectHostCommandStatus::Available => {
+            DirectHostCapability::available(DirectHostCapabilityKind::ComRuntimeInvocation)
+        }
+        DirectHostCommandStatus::Disabled { reason } => DirectHostCapability::unavailable(
+            DirectHostCapabilityKind::ComRuntimeInvocation,
+            reason.clone(),
+        ),
+    };
+    let native_service = if platform == ComHostPlatform::Windows {
+        DirectHostCapability::available(DirectHostCapabilityKind::NativeService)
+    } else {
+        DirectHostCapability::unavailable(
+            DirectHostCapabilityKind::NativeService,
+            non_windows_com_issue(
+                DirectHostIssueKind::NonWindowsUnsupported,
+                "native COM service boundary is only available on Windows",
+            ),
+        )
+    };
+
+    ComCapabilityProfile {
+        platform,
+        reference_discovery,
+        reference_editing,
+        runtime_invocation,
+        native_service,
+        runtime_availability,
+    }
+}
+
+pub fn plan_reorder_com_references(
+    active_references: &[BasProjComReference],
+    ordered_includes: &[String],
+) -> ComReferenceReorderPlan {
+    let mut issues = Vec::new();
+    let mut seen = Vec::<String>::new();
+    for include in ordered_includes {
+        let key = normalize_com_include_key(include);
+        if seen.iter().any(|existing| existing == &key) {
+            issues.push(ComReferenceReorderIssue {
+                kind: ComReferenceReorderIssueKind::DuplicateReference,
+                include: include.clone(),
+                message: format!(
+                    "COM reference `{include}` appears more than once in reorder request"
+                ),
+            });
+        } else {
+            seen.push(key);
+        }
+    }
+
+    for include in ordered_includes {
+        if !active_references
+            .iter()
+            .any(|reference| reference.include.eq_ignore_ascii_case(include))
+        {
+            issues.push(ComReferenceReorderIssue {
+                kind: ComReferenceReorderIssueKind::MissingReference,
+                include: include.clone(),
+                message: format!("COM reference `{include}` is not active in the project"),
+            });
+        }
+    }
+
+    for reference in active_references {
+        if !ordered_includes
+            .iter()
+            .any(|include| include.eq_ignore_ascii_case(&reference.include))
+        {
+            issues.push(ComReferenceReorderIssue {
+                kind: ComReferenceReorderIssueKind::OmittedReference,
+                include: reference.include.clone(),
+                message: format!(
+                    "COM reference `{}` is active but missing from reorder request",
+                    reference.include
+                ),
+            });
+        }
+    }
+
+    let can_apply = issues.is_empty();
+    let resulting_references = if can_apply {
+        ordered_includes
+            .iter()
+            .filter_map(|include| {
+                active_references
+                    .iter()
+                    .find(|reference| reference.include.eq_ignore_ascii_case(include))
+                    .cloned()
+            })
+            .collect::<Vec<_>>()
+    } else {
+        active_references.to_vec()
+    };
+
+    let edits = if can_apply {
+        active_references
+            .iter()
+            .map(|reference| HostProjectEdit::RemoveComReference {
+                include: reference.include.clone(),
+            })
+            .chain(
+                resulting_references
+                    .iter()
+                    .cloned()
+                    .map(HostProjectEdit::AddComReference),
+            )
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    ComReferenceReorderPlan {
+        active_references: active_references.to_vec(),
+        requested_order: ordered_includes.to_vec(),
+        resulting_references,
+        edits,
+        can_apply,
+        issues,
+    }
+}
+
+fn current_com_host_platform() -> ComHostPlatform {
+    if cfg!(target_os = "windows") {
+        ComHostPlatform::Windows
+    } else {
+        ComHostPlatform::NonWindows
+    }
+}
+
+fn non_windows_com_issue(kind: DirectHostIssueKind, detail: impl Into<String>) -> DirectHostIssue {
+    DirectHostIssue::new(kind)
+        .with_technical_detail(detail)
+        .with_retryability(DirectHostRetryability::NotRetryable)
+}
+
 impl ComSelectionService {
+    pub fn capability_profile(&self) -> ComCapabilityProfile {
+        com_capability_profile()
+    }
+
+    pub fn runtime_invocation_availability(&self) -> ComRuntimeInvocationAvailability {
+        com_runtime_invocation_availability()
+    }
+
+    pub fn plan_reorder_references(
+        &self,
+        active_references: &[BasProjComReference],
+        ordered_includes: &[String],
+    ) -> ComReferenceReorderPlan {
+        plan_reorder_com_references(active_references, ordered_includes)
+    }
+
     pub fn discover_registered_candidates(
         &self,
         query: &RegisteredComSelectionQuery,
@@ -584,6 +827,10 @@ pub fn inspect_workspace_com_project_state(
         active_references,
         selections,
     })
+}
+
+fn normalize_com_include_key(include: &str) -> String {
+    include.trim().to_ascii_lowercase()
 }
 
 fn selection_status_for_reference(
@@ -801,20 +1048,149 @@ fn sort_candidates_deterministically(candidates: &mut [ComSelectionCandidate]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
-        ComSelectionCarrierKind, ComSelectionConfidence, ComSelectionService,
-        ComSelectionSourceKind, FileBackedComSelectionQuery, RegisteredComSelectionQuery,
-        assess_project_com_selections, basproj_reference_from_candidate,
-        candidate_from_catalog_entry, candidate_from_project_reference,
-        discover_file_backed_com_candidates, discover_prog_id_com_candidates,
-        discover_registered_com_candidates, inspect_workspace_com_project_state,
-        plan_add_com_candidate, plan_repair_project_selection, plan_replace_com_reference,
+        ComHostPlatform, ComProjectEditPlanKind, ComProjectSelection, ComProjectSelectionStatus,
+        ComReferenceReorderIssueKind, ComSelectionCarrierKind, ComSelectionConfidence,
+        ComSelectionService, ComSelectionSourceKind, FileBackedComSelectionQuery,
+        RegisteredComSelectionQuery, assess_project_com_selections,
+        basproj_reference_from_candidate, candidate_from_catalog_entry,
+        candidate_from_project_reference, com_capability_profile,
+        com_runtime_invocation_availability, discover_file_backed_com_candidates,
+        discover_prog_id_com_candidates, discover_registered_com_candidates,
+        inspect_workspace_com_project_state, plan_add_com_candidate, plan_reorder_com_references,
+        plan_repair_project_selection, plan_replace_com_reference,
     };
     use crate::{BasProjComReference, HostProjectEdit};
-    use oxvba_host::TypeLibraryCatalogEntry;
+    use oxvba_host::{
+        DirectHostCapabilityKind, DirectHostCapabilityStatus, DirectHostCommandStatus,
+        TypeLibraryCatalogEntry,
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn com_capability_profile_reports_platform_specific_runtime_availability() {
+        let availability = com_runtime_invocation_availability();
+        let profile = com_capability_profile();
+        assert_eq!(profile.runtime_availability, availability);
+        assert_eq!(
+            profile.reference_editing.kind,
+            DirectHostCapabilityKind::ProjectAuthoring
+        );
+        assert_eq!(
+            profile.reference_discovery.kind,
+            DirectHostCapabilityKind::ComReferenceDiscovery
+        );
+        assert_eq!(
+            profile.runtime_invocation.kind,
+            DirectHostCapabilityKind::ComRuntimeInvocation
+        );
+
+        if cfg!(target_os = "windows") {
+            assert_eq!(availability.platform, ComHostPlatform::Windows);
+            assert!(matches!(
+                availability.command_status,
+                DirectHostCommandStatus::Available
+            ));
+            assert!(matches!(
+                profile.runtime_invocation.status,
+                DirectHostCapabilityStatus::Available
+            ));
+        } else {
+            assert_eq!(availability.platform, ComHostPlatform::NonWindows);
+            assert!(matches!(
+                &availability.command_status,
+                DirectHostCommandStatus::Disabled { reason }
+                    if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+            ));
+            assert!(matches!(
+                &profile.reference_discovery.status,
+                DirectHostCapabilityStatus::Degraded { reason }
+                    if reason.stable_code == "DH-COM-DISCOVERY-UNAVAILABLE"
+            ));
+            assert!(matches!(
+                &profile.runtime_invocation.status,
+                DirectHostCapabilityStatus::Unavailable { reason }
+                    if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+            ));
+        }
+    }
+
+    #[test]
+    fn plan_reorder_com_references_rewrites_only_valid_complete_orders() {
+        let active = vec![
+            BasProjComReference {
+                include: "A".to_string(),
+                guid: Some("{A}".to_string()),
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: Some(0),
+                import_lib: Some("a.dll".to_string()),
+            },
+            BasProjComReference {
+                include: "B".to_string(),
+                guid: Some("{B}".to_string()),
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: Some(0),
+                import_lib: Some("b.dll".to_string()),
+            },
+            BasProjComReference {
+                include: "C".to_string(),
+                guid: Some("{C}".to_string()),
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: Some(0),
+                import_lib: Some("c.dll".to_string()),
+            },
+        ];
+
+        let order = vec!["C".to_string(), "A".to_string(), "B".to_string()];
+        let plan = plan_reorder_com_references(&active, &order);
+        assert!(plan.can_apply);
+        assert!(plan.issues.is_empty());
+        assert_eq!(
+            plan.resulting_references
+                .iter()
+                .map(|reference| reference.include.as_str())
+                .collect::<Vec<_>>(),
+            vec!["C", "A", "B"]
+        );
+        assert_eq!(plan.edits.len(), 6);
+        assert!(matches!(
+            &plan.edits[0],
+            HostProjectEdit::RemoveComReference { include } if include == "A"
+        ));
+        assert!(matches!(
+            &plan.edits[3],
+            HostProjectEdit::AddComReference(reference) if reference.include == "C"
+        ));
+
+        let invalid = plan_reorder_com_references(
+            &active,
+            &["B".to_string(), "B".to_string(), "D".to_string()],
+        );
+        assert!(!invalid.can_apply);
+        assert!(invalid.edits.is_empty());
+        assert!(
+            invalid
+                .issues
+                .iter()
+                .any(|issue| issue.kind == ComReferenceReorderIssueKind::DuplicateReference)
+        );
+        assert!(
+            invalid
+                .issues
+                .iter()
+                .any(|issue| issue.kind == ComReferenceReorderIssueKind::MissingReference)
+        );
+        assert!(
+            invalid
+                .issues
+                .iter()
+                .any(|issue| issue.kind == ComReferenceReorderIssueKind::OmittedReference)
+        );
+    }
 
     #[test]
     fn candidate_from_catalog_entry_preserves_typelib_identity_and_carrier() {

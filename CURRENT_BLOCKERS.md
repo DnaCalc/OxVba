@@ -128,6 +128,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-OXIDE-DIRECT-CONSUMPTION-001: Direct Immediate/debug consumption not yet evidenced
 - Impact:
   - Blocks closure of `bd-oxi1.6.2`, `bd-oxi1.6`, and the `bd-oxi1` parent.
+  - Blocks any cross-repo claim that DnaOxIde/OxIde has consumed the new OxVba
+    Immediate/debug/watch/breakpoint DTOs directly in UI wiring.
   - The OxIde-side direct workspace/project-helper/runtime evidence is now
     captured, but the bead explicitly also requires direct Immediate Window and
     debug-seam consumption evidence.
@@ -143,6 +145,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `cargo test project_actions --quiet`
   - OxIde Immediate/debug docs still describe planned or future
     OxVba-contract-dependent surfaces rather than proved direct consumption.
+  - OxVba-side direct APIs and fixture evidence for the DnaOxIde handoff are now
+    available under `bd-avdu`:
+    - `EmbeddedRunSession::into_immediate_session`
+    - `EmbeddedRunSession::into_debug_session`
+    - stable Immediate/debug/runtime/frame/watch/breakpoint IDs
+    - debugger-owned watch registry and breakpoint binding DTOs
+    - `ComCapabilityProfile`, `ComRuntimeInvocationAvailability`, and
+      `ComReferenceReorderPlan`
+    - `crates/oxvba-languageservice/tests/dnaoxide_thin_slice_hello.rs`
+    - `docs/evidence/DNAOXIDE_THIN_SLICE_HELLO_FIXTURE_2026-05-07.md`
 - Exact unblocking steps:
   - land or identify OxIde code that routes Immediate Window evaluation through
     the direct OxVba immediate/debug/session APIs,
@@ -150,8 +162,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     direct OxVba debugger seam,
   - add or run focused OxIde tests proving those paths do not use CLI or LSP
     fallbacks,
-  - update the evidence file and then close `bd-oxi1.6.2`, `bd-oxi1.6`, and
-    the parent if no other child blockers remain.
+  - update the OxIde evidence file to cite the new OxVba direct APIs/fixture
+    evidence and then close `bd-oxi1.6.2`, `bd-oxi1.6`, and the parent if no
+    other child blockers remain.
 
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
 - Impact:

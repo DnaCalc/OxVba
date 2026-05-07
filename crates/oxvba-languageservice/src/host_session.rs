@@ -3,9 +3,13 @@ use std::path::{Path, PathBuf};
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_host::{
-    EmbeddedExecutionSourcePolicy, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+    DirectHostDocumentId, DirectHostIssue, DirectHostIssueKind, DirectHostModuleId,
+    DirectHostProjectId, DirectHostWorkspaceId, EmbeddedExecutionSourcePolicy,
+    EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
-use oxvba_project::load_workspace_target;
+use oxvba_project::{
+    HostProjectModuleInfo, HostWorkspaceTargetKind, inspect_workspace_target, load_workspace_target,
+};
 
 use crate::document::DocumentId;
 use crate::service::{
@@ -26,6 +30,37 @@ pub struct HostWorkspaceDocument {
     pub id: DocumentId,
     pub project_name: Option<String>,
     pub provenance_kind: SymbolProvenanceKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostWorkspaceRoster {
+    pub workspace_id: DirectHostWorkspaceId,
+    pub project_id: DirectHostProjectId,
+    pub workspace_target: PathBuf,
+    pub workspace_kind: HostWorkspaceTargetKind,
+    pub project_file: Option<PathBuf>,
+    pub project_name: String,
+    pub source_policy: EmbeddedExecutionSourcePolicy,
+    pub snapshot_revision: u64,
+    pub modules: Vec<HostWorkspaceModuleRosterEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostWorkspaceModuleRosterEntry {
+    pub module_id: DirectHostModuleId,
+    pub document_id: DocumentId,
+    pub direct_document_id: DirectHostDocumentId,
+    pub project_id: DirectHostProjectId,
+    pub kind: oxvba_project::BasProjModuleKind,
+    pub include: String,
+    pub source_path: PathBuf,
+    pub file_stem: String,
+    pub declared_vb_name: Option<String>,
+    pub logical_module_name: String,
+    pub attribute_required: bool,
+    pub attribute_redundant: bool,
+    pub document_version: u64,
+    pub has_workspace_overlay: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +107,34 @@ impl std::fmt::Display for HostSessionError {
 }
 
 impl std::error::Error for HostSessionError {}
+
+impl HostSessionError {
+    pub fn direct_host_issue(&self) -> DirectHostIssue {
+        match self {
+            HostSessionError::WorkspaceLoad { path, .. } => {
+                DirectHostIssue::new(DirectHostIssueKind::WorkspaceInvalid)
+                    .with_technical_detail(self.to_string())
+                    .with_path(path.clone())
+            }
+            HostSessionError::DocumentNotFound { document } => {
+                DirectHostIssue::new(DirectHostIssueKind::DocumentNotFound)
+                    .with_technical_detail(self.to_string())
+                    .with_document_id(document.0.clone())
+            }
+            HostSessionError::ProjectSnapshotUnavailable { path } => {
+                DirectHostIssue::new(DirectHostIssueKind::ProjectInvalid)
+                    .with_technical_detail(self.to_string())
+                    .with_path(path.clone())
+            }
+            HostSessionError::WorkspaceTargetMismatch { requested, loaded } => {
+                DirectHostIssue::new(DirectHostIssueKind::WorkspaceInvalid)
+                    .with_technical_detail(self.to_string())
+                    .with_path(requested.clone())
+                    .with_workspace_id(loaded.display().to_string())
+            }
+        }
+    }
+}
 
 /// Direct host-facing workspace/document session over the real OxVba project model.
 ///
@@ -147,6 +210,37 @@ impl HostWorkspaceSession {
 
     pub fn workspace_stats(&self) -> WorkspaceStats {
         self.service.workspace.stats()
+    }
+
+    pub fn workspace_roster(
+        &self,
+        source_policy: EmbeddedExecutionSourcePolicy,
+    ) -> Result<HostWorkspaceRoster, HostSessionError> {
+        let surface = inspect_workspace_target(&self.workspace_target).map_err(|err| {
+            HostSessionError::WorkspaceLoad {
+                path: self.workspace_target.clone(),
+                message: err.to_string(),
+            }
+        })?;
+        let workspace_id = workspace_id_for_path(self.workspace_target());
+        let project_id = project_id_for_workspace(&workspace_id, &surface.project_name);
+        let modules = surface
+            .modules
+            .iter()
+            .map(|module| self.module_roster_entry(&project_id, module))
+            .collect::<Vec<_>>();
+
+        Ok(HostWorkspaceRoster {
+            workspace_id,
+            project_id,
+            workspace_target: surface.workspace_target,
+            workspace_kind: surface.workspace_kind,
+            project_file: surface.project_file,
+            project_name: surface.project_name,
+            source_policy,
+            snapshot_revision: self.workspace_snapshot_revision(),
+            modules,
+        })
     }
 
     pub fn documents(&self) -> Vec<HostWorkspaceDocument> {
@@ -284,6 +378,52 @@ impl HostWorkspaceSession {
             })
         }
     }
+
+    fn module_roster_entry(
+        &self,
+        project_id: &DirectHostProjectId,
+        module: &HostProjectModuleInfo,
+    ) -> HostWorkspaceModuleRosterEntry {
+        let logical_module_name = module.identity.effective_name.clone();
+        let document_id = DocumentId::new(logical_module_name.clone());
+        let document = self.service.workspace.document(&document_id);
+        let document_version = document.map(|doc| doc.version).unwrap_or(0);
+        let has_workspace_overlay = document
+            .and_then(|doc| {
+                self.baseline_documents
+                    .get(&doc.id)
+                    .map(|baseline| baseline.source != doc.source.as_ref())
+            })
+            .unwrap_or(false);
+        let module_id =
+            DirectHostModuleId::new(format!("{}::{}", project_id.as_str(), logical_module_name));
+
+        HostWorkspaceModuleRosterEntry {
+            module_id,
+            document_id,
+            direct_document_id: DirectHostDocumentId::new(logical_module_name.clone()),
+            project_id: project_id.clone(),
+            kind: module.kind,
+            include: module.include.clone(),
+            source_path: module.source_path.clone(),
+            file_stem: module.identity.file_stem.clone(),
+            declared_vb_name: module.identity.declared_vb_name.clone(),
+            logical_module_name,
+            attribute_required: module.identity.attribute_required,
+            attribute_redundant: module.identity.attribute_redundant,
+            document_version,
+            has_workspace_overlay,
+        }
+    }
+
+    fn workspace_snapshot_revision(&self) -> u64 {
+        self.service
+            .workspace
+            .document_ids()
+            .filter_map(|id| self.service.workspace.document(id))
+            .map(|document| document.version)
+            .sum()
+    }
 }
 
 fn collect_baseline_documents(service: &LanguageService) -> HashMap<DocumentId, BaselineDocument> {
@@ -331,6 +471,17 @@ fn apply_workspace_sources_to_manifest(service: &LanguageService, manifest: &mut
 
 fn same_workspace_target_path(left: &Path, right: &Path) -> bool {
     normalize_workspace_target_path(left) == normalize_workspace_target_path(right)
+}
+
+fn workspace_id_for_path(path: &Path) -> DirectHostWorkspaceId {
+    DirectHostWorkspaceId::new(normalize_workspace_target_path(path).display().to_string())
+}
+
+fn project_id_for_workspace(
+    workspace_id: &DirectHostWorkspaceId,
+    project_name: &str,
+) -> DirectHostProjectId {
+    DirectHostProjectId::new(format!("{}::{}", workspace_id.as_str(), project_name))
 }
 
 fn normalize_workspace_target_path(path: &Path) -> PathBuf {
@@ -518,6 +669,71 @@ mod tests {
             .find(|module| module.module_name == "Module1")
             .expect("Module1 manifest");
         assert_eq!(module.source, "Sub Main()\n    Print 42\nEnd Sub\n");
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn host_session_workspace_roster_reports_identity_and_overlay_revision() {
+        let temp_root = unique_temp_dir("oxvba_host_session_roster");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("Physical.bas"),
+            "Attribute VB_Name = \"LogicalModule\"\nPublic Sub Main()\nEnd Sub\nPublic Function GetValue() As Integer\n    GetValue = 1\nEnd Function\n",
+        )
+        .expect("module");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Physical.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let mut session = HostWorkspaceSession::load_workspace_path(&temp_root).expect("session");
+        let disk_roster = session
+            .workspace_roster(EmbeddedExecutionSourcePolicy::DiskOnly)
+            .expect("disk roster");
+        assert_eq!(disk_roster.project_name, "App");
+        assert_eq!(
+            disk_roster.source_policy,
+            EmbeddedExecutionSourcePolicy::DiskOnly
+        );
+        assert!(
+            disk_roster
+                .workspace_id
+                .as_str()
+                .contains("oxvba_host_session_roster")
+        );
+        assert_eq!(disk_roster.modules.len(), 1);
+        let module = &disk_roster.modules[0];
+        assert_eq!(module.include, "Physical.bas");
+        assert_eq!(module.file_stem, "Physical");
+        assert_eq!(module.declared_vb_name.as_deref(), Some("LogicalModule"));
+        assert_eq!(module.logical_module_name, "LogicalModule");
+        assert!(module.attribute_required);
+        assert_eq!(module.document_id, DocumentId::new("LogicalModule"));
+        assert_eq!(module.direct_document_id.as_str(), "LogicalModule");
+        assert!(module.module_id.as_str().ends_with("::LogicalModule"));
+        assert_eq!(module.document_version, 1);
+        assert!(!module.has_workspace_overlay);
+        let baseline_revision = disk_roster.snapshot_revision;
+
+        session
+            .set_document_text(
+                &DocumentId::new("LogicalModule"),
+                "Attribute VB_Name = \"LogicalModule\"\nPublic Sub Main()\nEnd Sub\nPublic Function GetValue() As Integer\n    GetValue = 2\nEnd Function\n",
+            )
+            .expect("overlay");
+        let overlay_roster = session
+            .workspace_roster(EmbeddedExecutionSourcePolicy::WorkspaceOverlay)
+            .expect("overlay roster");
+        assert_eq!(
+            overlay_roster.source_policy,
+            EmbeddedExecutionSourcePolicy::WorkspaceOverlay
+        );
+        assert!(overlay_roster.snapshot_revision > baseline_revision);
+        let overlay_module = &overlay_roster.modules[0];
+        assert_eq!(overlay_module.document_version, 2);
+        assert!(overlay_module.has_workspace_overlay);
 
         let _ = fs::remove_dir_all(&temp_root);
     }

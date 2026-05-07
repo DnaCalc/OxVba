@@ -19,6 +19,10 @@ Recommended ownership:
 - `ProjectSession` owns the current `ImmediateSession`
 - the Immediate Window pane submits typed requests into that session
 - OxIde renders `ImmediateEvaluationResult` into transcript/UI form
+- when the session comes from embedded run, use
+  `EmbeddedRunSession::into_immediate_session(...)` and preserve
+  `ImmediateSession::runtime_session_id()` / `immediate_session_id()` for UI
+  correlation
 
 ## Current Request Flow
 
@@ -56,17 +60,25 @@ When OxIde later enters break mode, it should not switch to a different evaluato
 
 Instead:
 - `DebugSession` owns the paused runtime truth
+- when the session comes from embedded run, use
+  `EmbeddedRunSession::into_debug_session(...)` and preserve
+  `DebugSession::runtime_session_id()` / `debug_session_id()` for UI
+  correlation
 - OxIde should use `DebugSession` for:
-  - breakpoints
+  - stable breakpoint records (`DebugBreakpointRecord`) and bind/unresolved state
+  - stable watch records (`DebugWatchRecord`) and watch evaluation statuses
   - continue
   - step into / over / out
   - pause state
-  - frame/value inspection
+  - stable frame IDs plus frame/value inspection
 - the Immediate Window UI should then layer on the paused debug session
 
 Current bounded paused evaluation:
 - `DebugSession::evaluate(...)` supports current-frame identifier lookup
-- this is enough for first watch/evaluate and locals-pane style interactions
+- `DebugSession::add_watch`, `update_watch`, `remove_watch`, `watches`, and
+  `evaluate_watches` provide a debugger-owned watch registry for IDE panes
+- watch evaluation returns typed `Value`, `Unavailable`, or `Error` states rather
+  than fabricated values
 - broader paused-context expression evaluation remains a later debugger/evaluator slice
 
 ## Recommended OxIde Split
@@ -74,10 +86,14 @@ Current bounded paused evaluation:
 OxVba should own:
 - `ImmediateSession`
 - `DebugSession`
+- session IDs and runtime-session correlation IDs
 - request/result types
 - runtime resets
 - pause state
-- frame/value projection
+- command availability
+- breakpoint binding/unresolved DTOs
+- watch registry and watch evaluation status DTOs
+- stable frame IDs and frame/value projection
 
 OxIde should own:
 - Immediate Window pane
@@ -92,8 +108,9 @@ OxIde should own:
 2. Active-module targeting from the current editor document
 3. Explicit reset/reload UX
 4. Debug panes over `DebugSession`
-5. Paused-context Immediate Window routing over `DebugSession::evaluate(...)`
-6. Later richer paused-context expression support as OxVba grows
+5. Breakpoint and watch panes over `DebugBreakpointRecord` / `DebugWatchRecord`
+6. Paused-context Immediate Window routing over `DebugSession::evaluate(...)`
+7. Later richer paused-context expression support as OxVba grows
 
 ## Rule Of Thumb
 

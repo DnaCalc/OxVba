@@ -182,6 +182,8 @@ This workset remains the parent policy and ownership document for editor-facing 
   - `docs/worksets/WORKSET_2026-04-02_VSCODE_EXTENSION_AND_LSP_FEATURE_LADDER_EXECUTION.md`
 - shared OxVba-code debugging is split into:
   - `docs/worksets/WORKSET_2026-04-02_OXVBA_DEBUGGING_SERVICE_AND_HOST_INTEGRATION.md`
+- the DNA OxIde full-scope desktop-IDE handoff follow-on is tracked in:
+  - `docs/worksets/WORKSET_2026-05-07_DNAOXIDE_FULL_SCOPE_HOST_INTEGRATION_SUPPORT.md`
 
 That split reflects the intended architecture:
 - OxIde consumes direct Rust host APIs.

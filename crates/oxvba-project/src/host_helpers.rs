@@ -1,11 +1,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use oxvba_host::{
+    DirectHostCommandStatus, DirectHostIssue, DirectHostIssueKind, DirectHostRetryability,
+};
+
+use crate::model::parse_define_constants;
 use crate::vbp::VbpReference;
 use crate::{
     BasProj, BasProjComReference, BasProjError, BasProjModule, BasProjModuleKind,
-    BasProjProjectReference, BasProjProjectReferenceKind, OutputType, discover_project_file_in_dir,
-    infer_project_name_from_path, parse_basproj_xml, parse_vbp, serialize_basproj_xml,
+    BasProjProjectReference, BasProjProjectReferenceKind, BuildTarget, OutputType, RuntimeFlavor,
+    discover_project_file_in_dir, infer_project_name_from_path, load_workspace_target,
+    parse_basproj_xml, parse_vbp, serialize_basproj_xml,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +96,121 @@ pub struct HostProjectSurface {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectCompileOptionsSurface {
+    pub workspace_kind: HostWorkspaceTargetKind,
+    pub workspace_target: PathBuf,
+    pub project_file: Option<PathBuf>,
+    pub project_name: String,
+    pub output_type: OutputType,
+    pub build_target: Option<BuildTarget>,
+    pub runtime_flavor: Option<RuntimeFlavor>,
+    pub entry_point: Option<String>,
+    pub default_runtime_profile: Option<String>,
+    pub default_policy_preset: Option<String>,
+    pub default_root_object: Option<String>,
+    pub define_constants_raw: Option<String>,
+    pub conditional_constants: Vec<HostProjectConditionalConstant>,
+    pub build_profiles: Vec<HostProjectBuildProfile>,
+    pub source_policies: Vec<HostProjectSourcePolicyOption>,
+    pub run_targets: Vec<HostProjectRunTarget>,
+    pub build_check_status: DirectHostCommandStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectConditionalConstant {
+    pub name: String,
+    pub value: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectBuildProfile {
+    pub name: String,
+    pub display_name: String,
+    pub command_status: DirectHostCommandStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostProjectSourcePolicyKind {
+    DiskOnly,
+    WorkspaceOverlay,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectSourcePolicyOption {
+    pub kind: HostProjectSourcePolicyKind,
+    pub display_name: String,
+    pub command_status: DirectHostCommandStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostProjectRunTargetKind {
+    ConfiguredOrDiscoveredEntryPoint,
+    MissingOrInvalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectRunTarget {
+    pub id: String,
+    pub display_name: String,
+    pub kind: HostProjectRunTargetKind,
+    pub module_name: Option<String>,
+    pub procedure_name: Option<String>,
+    pub command_status: DirectHostCommandStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostProjectSettingsEdit {
+    SetProjectName(String),
+    SetEntryPoint(Option<String>),
+    SetDefineConstants(Option<String>),
+    SetBuildTarget(Option<BuildTarget>),
+    SetRuntimeFlavor(Option<RuntimeFlavor>),
+    SetDefaultRuntimeProfile(Option<String>),
+    SetDefaultPolicyPreset(Option<String>),
+    SetDefaultRootObject(Option<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectSettingsEditPlan {
+    pub workspace_target: PathBuf,
+    pub project_file: PathBuf,
+    pub project_name: String,
+    pub edits: Vec<HostProjectSettingsEdit>,
+    pub validation: HostProjectSettingsEditValidation,
+    pub preview: Option<HostProjectCompileOptionsSurface>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectSettingsEditValidation {
+    pub can_apply: bool,
+    pub issues: Vec<HostProjectSettingsEditIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostProjectSettingsEditIssueKind {
+    UnsupportedWorkspace,
+    InvalidValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectSettingsEditIssue {
+    pub edit_index: usize,
+    pub kind: HostProjectSettingsEditIssueKind,
+    pub field: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProjectSettingsEditApplication {
+    pub workspace_target: PathBuf,
+    pub project_file: PathBuf,
+    pub project_name: String,
+    pub applied_edits: usize,
+    pub basproj: BasProj,
+    pub surface: HostProjectCompileOptionsSurface,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostProjectEdit {
     AddModule(BasProjModule),
     RemoveModule { include: String },
@@ -155,6 +276,242 @@ pub fn inspect_workspace_target(path: &Path) -> Result<HostProjectSurface, BasPr
             path: path.display().to_string(),
             extension: other.to_string(),
         }),
+    }
+}
+
+pub fn inspect_workspace_compile_options(
+    path: &Path,
+) -> Result<HostProjectCompileOptionsSurface, BasProjError> {
+    let surface = inspect_workspace_target(path)?;
+    let properties = surface
+        .project_file
+        .as_deref()
+        .filter(|project_file| {
+            project_file
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("basproj"))
+                .unwrap_or(false)
+        })
+        .map(read_basproj_properties)
+        .transpose()?
+        .unwrap_or_default();
+    let load_result = load_workspace_target(path);
+    let loaded = load_result.as_ref().ok();
+    let load_error = load_result.as_ref().err();
+
+    let entry_point = loaded
+        .and_then(|loaded| loaded.entry_point.clone())
+        .or_else(|| properties.entry_point.clone());
+    let conditional_constants = loaded
+        .map(|loaded| loaded.manifest.conditional_constants.clone())
+        .unwrap_or_else(|| {
+            properties
+                .define_constants
+                .as_deref()
+                .map(parse_define_constants)
+                .unwrap_or_default()
+        });
+
+    Ok(HostProjectCompileOptionsSurface {
+        workspace_kind: surface.workspace_kind,
+        workspace_target: surface.workspace_target,
+        project_file: surface.project_file,
+        project_name: loaded
+            .map(|loaded| loaded.manifest.project_name.clone())
+            .unwrap_or(surface.project_name),
+        output_type: surface.output_type,
+        build_target: loaded
+            .map(|loaded| loaded.build_target)
+            .or(properties.build_target),
+        runtime_flavor: loaded
+            .map(|loaded| loaded.runtime_flavor)
+            .or(properties.runtime_flavor),
+        entry_point: entry_point.clone(),
+        default_runtime_profile: loaded
+            .and_then(|loaded| loaded.default_runtime_profile.clone())
+            .or(properties.default_runtime_profile),
+        default_policy_preset: loaded
+            .and_then(|loaded| loaded.default_policy_preset.clone())
+            .or(properties.default_policy_preset),
+        default_root_object: loaded
+            .map(|loaded| loaded.default_root_object.clone())
+            .or(properties.default_root_object),
+        define_constants_raw: properties.define_constants,
+        conditional_constants: conditional_constants
+            .into_iter()
+            .map(|(name, value)| HostProjectConditionalConstant { name, value })
+            .collect(),
+        build_profiles: default_build_profiles(),
+        source_policies: default_source_policy_options(),
+        run_targets: run_targets_for_entry_point(entry_point.as_deref(), load_error),
+        build_check_status: build_check_status(load_error),
+    })
+}
+
+pub fn prepare_host_project_settings_edit_plan(
+    workspace_path: &Path,
+    edits: &[HostProjectSettingsEdit],
+) -> Result<HostProjectSettingsEditPlan, BasProjError> {
+    let surface = inspect_workspace_target(workspace_path)?;
+    let project_file = surface.project_file.clone().ok_or_else(|| {
+        BasProjError::HostProjectEditUnsupportedWorkspace {
+            path: workspace_path.display().to_string(),
+            workspace_kind: host_workspace_kind_name(surface.workspace_kind).to_string(),
+        }
+    })?;
+    if surface.workspace_kind != HostWorkspaceTargetKind::BasProj {
+        return Err(BasProjError::HostProjectEditUnsupportedWorkspace {
+            path: workspace_path.display().to_string(),
+            workspace_kind: host_workspace_kind_name(surface.workspace_kind).to_string(),
+        });
+    }
+
+    let xml = fs::read_to_string(&project_file).map_err(|source| BasProjError::Io {
+        path: project_file.display().to_string(),
+        source,
+    })?;
+    let mut basproj = parse_basproj_xml(&xml)?;
+    let validation = validate_host_project_settings_edits(edits);
+    let preview = if validation.can_apply {
+        apply_host_project_settings_edits_to_basproj(&mut basproj, edits);
+        Some(compile_options_surface_from_basproj(
+            workspace_path,
+            &surface,
+            basproj,
+        )?)
+    } else {
+        None
+    };
+
+    Ok(HostProjectSettingsEditPlan {
+        workspace_target: workspace_path.to_path_buf(),
+        project_file,
+        project_name: surface.project_name,
+        edits: edits.to_vec(),
+        validation,
+        preview,
+    })
+}
+
+pub fn validate_host_project_settings_edits(
+    edits: &[HostProjectSettingsEdit],
+) -> HostProjectSettingsEditValidation {
+    let mut issues = Vec::new();
+    for (edit_index, edit) in edits.iter().enumerate() {
+        match edit {
+            HostProjectSettingsEdit::SetProjectName(value) if value.trim().is_empty() => {
+                issues.push(settings_issue(
+                    edit_index,
+                    "ProjectName",
+                    "project name cannot be empty",
+                ));
+            }
+            HostProjectSettingsEdit::SetEntryPoint(Some(value))
+                if parse_entry_point_parts(value).is_none() =>
+            {
+                issues.push(settings_issue(
+                    edit_index,
+                    "EntryPoint",
+                    "entry point must use Module.Procedure form",
+                ));
+            }
+            HostProjectSettingsEdit::SetDefineConstants(Some(value)) => {
+                for part in value
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                {
+                    if let Some((key, raw_value)) = part.split_once('=') {
+                        if key.trim().is_empty() || raw_value.trim().parse::<i32>().is_err() {
+                            issues.push(settings_issue(
+                                edit_index,
+                                "DefineConstants",
+                                "define constants must use Name or Name=<integer> entries separated by semicolons",
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    HostProjectSettingsEditValidation {
+        can_apply: issues.is_empty(),
+        issues,
+    }
+}
+
+pub fn apply_host_project_settings_edit_plan(
+    plan: &HostProjectSettingsEditPlan,
+) -> Result<HostProjectSettingsEditApplication, BasProjError> {
+    if !plan.validation.can_apply {
+        let summary = plan
+            .validation
+            .issues
+            .iter()
+            .map(|issue| issue.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(BasProjError::HostProjectEditPlanInvalid(summary));
+    }
+
+    let xml = fs::read_to_string(&plan.project_file).map_err(|source| BasProjError::Io {
+        path: plan.project_file.display().to_string(),
+        source,
+    })?;
+    let mut basproj = parse_basproj_xml(&xml)?;
+    apply_host_project_settings_edits_to_basproj(&mut basproj, &plan.edits);
+    fs::write(&plan.project_file, serialize_basproj_xml(&basproj)).map_err(|source| {
+        BasProjError::Io {
+            path: plan.project_file.display().to_string(),
+            source,
+        }
+    })?;
+    let surface = inspect_workspace_compile_options(&plan.workspace_target)?;
+    Ok(HostProjectSettingsEditApplication {
+        workspace_target: plan.workspace_target.clone(),
+        project_file: plan.project_file.clone(),
+        project_name: plan.project_name.clone(),
+        applied_edits: plan.edits.len(),
+        basproj,
+        surface,
+    })
+}
+
+pub fn apply_host_project_settings_edits_to_basproj(
+    basproj: &mut BasProj,
+    edits: &[HostProjectSettingsEdit],
+) {
+    for edit in edits {
+        match edit {
+            HostProjectSettingsEdit::SetProjectName(value) => {
+                basproj.properties.project_name = Some(value.trim().to_string());
+            }
+            HostProjectSettingsEdit::SetEntryPoint(value) => {
+                basproj.properties.entry_point = non_empty_owned(value.as_deref());
+            }
+            HostProjectSettingsEdit::SetDefineConstants(value) => {
+                basproj.properties.define_constants = non_empty_owned(value.as_deref());
+            }
+            HostProjectSettingsEdit::SetBuildTarget(value) => {
+                basproj.properties.build_target = *value;
+            }
+            HostProjectSettingsEdit::SetRuntimeFlavor(value) => {
+                basproj.properties.runtime_flavor = *value;
+            }
+            HostProjectSettingsEdit::SetDefaultRuntimeProfile(value) => {
+                basproj.properties.default_runtime_profile = non_empty_owned(value.as_deref());
+            }
+            HostProjectSettingsEdit::SetDefaultPolicyPreset(value) => {
+                basproj.properties.default_policy_preset = non_empty_owned(value.as_deref());
+            }
+            HostProjectSettingsEdit::SetDefaultRootObject(value) => {
+                basproj.properties.default_root_object = non_empty_owned(value.as_deref());
+            }
+        }
     }
 }
 
@@ -545,6 +902,160 @@ pub fn apply_host_project_edit_plan(
     })
 }
 
+fn read_basproj_properties(project_file: &Path) -> Result<crate::BasProjProperties, BasProjError> {
+    let xml = fs::read_to_string(project_file).map_err(|source| BasProjError::Io {
+        path: project_file.display().to_string(),
+        source,
+    })?;
+    Ok(parse_basproj_xml(&xml)?.properties)
+}
+
+fn compile_options_surface_from_basproj(
+    workspace_path: &Path,
+    surface: &HostProjectSurface,
+    basproj: BasProj,
+) -> Result<HostProjectCompileOptionsSurface, BasProjError> {
+    let conditional_constants = basproj
+        .properties
+        .define_constants
+        .as_deref()
+        .map(parse_define_constants)
+        .unwrap_or_default();
+    let entry_point = basproj.properties.entry_point.clone();
+    Ok(HostProjectCompileOptionsSurface {
+        workspace_kind: surface.workspace_kind,
+        workspace_target: workspace_path.to_path_buf(),
+        project_file: surface.project_file.clone(),
+        project_name: basproj
+            .properties
+            .project_name
+            .clone()
+            .unwrap_or_else(|| surface.project_name.clone()),
+        output_type: basproj
+            .properties
+            .output_type
+            .unwrap_or(surface.output_type),
+        build_target: basproj.properties.build_target,
+        runtime_flavor: basproj.properties.runtime_flavor,
+        entry_point: entry_point.clone(),
+        default_runtime_profile: basproj.properties.default_runtime_profile,
+        default_policy_preset: basproj.properties.default_policy_preset,
+        default_root_object: basproj.properties.default_root_object,
+        define_constants_raw: basproj.properties.define_constants,
+        conditional_constants: conditional_constants
+            .into_iter()
+            .map(|(name, value)| HostProjectConditionalConstant { name, value })
+            .collect(),
+        build_profiles: default_build_profiles(),
+        source_policies: default_source_policy_options(),
+        run_targets: run_targets_for_entry_point(entry_point.as_deref(), None),
+        build_check_status: DirectHostCommandStatus::available(),
+    })
+}
+
+fn default_build_profiles() -> Vec<HostProjectBuildProfile> {
+    vec![HostProjectBuildProfile {
+        name: "default".to_string(),
+        display_name: "Default".to_string(),
+        command_status: DirectHostCommandStatus::available(),
+    }]
+}
+
+fn default_source_policy_options() -> Vec<HostProjectSourcePolicyOption> {
+    vec![
+        HostProjectSourcePolicyOption {
+            kind: HostProjectSourcePolicyKind::DiskOnly,
+            display_name: "Disk only".to_string(),
+            command_status: DirectHostCommandStatus::available(),
+        },
+        HostProjectSourcePolicyOption {
+            kind: HostProjectSourcePolicyKind::WorkspaceOverlay,
+            display_name: "Workspace overlay".to_string(),
+            command_status: DirectHostCommandStatus::available(),
+        },
+    ]
+}
+
+fn run_targets_for_entry_point(
+    entry_point: Option<&str>,
+    load_error: Option<&BasProjError>,
+) -> Vec<HostProjectRunTarget> {
+    if let Some(entry_point) = entry_point {
+        let (module_name, procedure_name) = parse_entry_point_parts(entry_point)
+            .unwrap_or_else(|| (entry_point.to_string(), String::new()));
+        return vec![HostProjectRunTarget {
+            id: entry_point.to_string(),
+            display_name: entry_point.to_string(),
+            kind: HostProjectRunTargetKind::ConfiguredOrDiscoveredEntryPoint,
+            module_name: Some(module_name),
+            procedure_name: Some(procedure_name),
+            command_status: DirectHostCommandStatus::available(),
+        }];
+    }
+
+    let reason = load_error
+        .map(run_target_issue_for_load_error)
+        .unwrap_or_else(|| DirectHostIssue::new(DirectHostIssueKind::RunTargetMissing));
+    vec![HostProjectRunTarget {
+        id: "<missing>".to_string(),
+        display_name: "No run target".to_string(),
+        kind: HostProjectRunTargetKind::MissingOrInvalid,
+        module_name: None,
+        procedure_name: None,
+        command_status: DirectHostCommandStatus::disabled(reason),
+    }]
+}
+
+fn build_check_status(load_error: Option<&BasProjError>) -> DirectHostCommandStatus {
+    match load_error {
+        Some(error) => DirectHostCommandStatus::disabled(
+            DirectHostIssue::new(DirectHostIssueKind::ProjectInvalid)
+                .with_technical_detail(error.to_string())
+                .with_retryability(DirectHostRetryability::NotRetryable),
+        ),
+        None => DirectHostCommandStatus::available(),
+    }
+}
+
+fn run_target_issue_for_load_error(error: &BasProjError) -> DirectHostIssue {
+    let kind = match error {
+        BasProjError::EntryPointRequired(_)
+        | BasProjError::EntryPointInvalid(_)
+        | BasProjError::EntryPointNotFound(_)
+        | BasProjError::EntryPointAmbiguous(_) => DirectHostIssueKind::RunTargetMissing,
+        _ => DirectHostIssueKind::ProjectInvalid,
+    };
+    DirectHostIssue::new(kind)
+        .with_technical_detail(error.to_string())
+        .with_retryability(DirectHostRetryability::NotRetryable)
+}
+
+fn parse_entry_point_parts(entry_point: &str) -> Option<(String, String)> {
+    let (module, procedure) = entry_point.trim().split_once('.')?;
+    let module = module.trim();
+    let procedure = procedure.trim();
+    if module.is_empty() || procedure.is_empty() {
+        return None;
+    }
+    Some((module.to_string(), procedure.to_string()))
+}
+
+fn settings_issue(edit_index: usize, field: &str, message: &str) -> HostProjectSettingsEditIssue {
+    HostProjectSettingsEditIssue {
+        edit_index,
+        kind: HostProjectSettingsEditIssueKind::InvalidValue,
+        field: field.to_string(),
+        message: message.to_string(),
+    }
+}
+
+fn non_empty_owned(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 fn inspect_basproj_surface(project_file: &Path) -> Result<HostProjectSurface, BasProjError> {
     let xml = fs::read_to_string(project_file).map_err(|source| BasProjError::Io {
         path: project_file.display().to_string(),
@@ -914,14 +1425,17 @@ fn vb_name_attribute_line_index(source: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        HostProjectEditIssueKind, HostProjectReferenceKind, HostWorkspaceTargetKind,
+        HostProjectEditIssueKind, HostProjectReferenceKind, HostProjectRunTargetKind,
+        HostProjectSettingsEdit, HostProjectSettingsEditIssueKind, HostWorkspaceTargetKind,
         VbNameAttributeAction, add_com_reference_edit, add_project_reference_edit,
         apply_host_project_edit_plan, apply_host_project_edits_to_basproj,
-        apply_host_project_edits_to_basproj_path, inspect_module_identity,
-        inspect_workspace_target, plan_new_module, prepare_host_project_edit_plan,
+        apply_host_project_edits_to_basproj_path, apply_host_project_settings_edit_plan,
+        inspect_module_identity, inspect_workspace_compile_options, inspect_workspace_target,
+        plan_new_module, prepare_host_project_edit_plan, prepare_host_project_settings_edit_plan,
         reconcile_module_identity, validate_host_project_edits,
+        validate_host_project_settings_edits,
     };
-    use crate::{BasProjModuleKind, parse_basproj_xml};
+    use crate::{BasProjModuleKind, BuildTarget, RuntimeFlavor, parse_basproj_xml};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1103,6 +1617,120 @@ mod tests {
                 && module.kind == BasProjModuleKind::Module
                 && module.identity.effective_name == "Widget"
         }));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn inspect_workspace_compile_options_reports_run_target_and_settings() {
+        let temp_root = unique_temp_dir("oxvba_project_compile_options");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("Main.bas"),
+            "Public Sub Main()\nEnd Sub\nPublic Sub Boot()\nEnd Sub\n",
+        )
+        .expect("main");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <BuildTarget>WrapperExe</BuildTarget>\n    <ProjectName>App</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n    <RuntimeFlavor>Jit</RuntimeFlavor>\n    <DefaultRuntimeProfile>windows-native</DefaultRuntimeProfile>\n    <DefaultPolicyPreset>standard</DefaultPolicyPreset>\n    <DefaultRootObject>Application</DefaultRootObject>\n    <DefineConstants>Win64=1;Debug</DefineConstants>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let surface = inspect_workspace_compile_options(&temp_root).expect("compile options");
+        assert_eq!(surface.project_name, "App");
+        assert_eq!(surface.build_target, Some(BuildTarget::WrapperExe));
+        assert_eq!(surface.runtime_flavor, Some(RuntimeFlavor::Jit));
+        assert_eq!(surface.entry_point.as_deref(), Some("Main.Main"));
+        assert_eq!(
+            surface.default_runtime_profile.as_deref(),
+            Some("windows-native")
+        );
+        assert_eq!(surface.default_policy_preset.as_deref(), Some("standard"));
+        assert_eq!(surface.default_root_object.as_deref(), Some("Application"));
+        assert!(surface.build_check_status.is_available());
+        assert_eq!(surface.build_profiles[0].name, "default");
+        assert_eq!(surface.source_policies.len(), 2);
+        assert!(
+            surface
+                .conditional_constants
+                .iter()
+                .any(|constant| { constant.name == "Win64" && constant.value == 1 })
+        );
+        assert!(
+            surface
+                .conditional_constants
+                .iter()
+                .any(|constant| { constant.name == "Debug" && constant.value == 1 })
+        );
+        assert_eq!(surface.run_targets.len(), 1);
+        assert_eq!(
+            surface.run_targets[0].kind,
+            HostProjectRunTargetKind::ConfiguredOrDiscoveredEntryPoint
+        );
+        assert_eq!(surface.run_targets[0].module_name.as_deref(), Some("Main"));
+        assert_eq!(
+            surface.run_targets[0].procedure_name.as_deref(),
+            Some("Main")
+        );
+        assert!(surface.run_targets[0].command_status.is_available());
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn project_settings_edit_plan_validates_previews_and_applies_compile_options() {
+        let temp_root = unique_temp_dir("oxvba_project_settings_plan");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(
+            temp_root.join("Main.bas"),
+            "Public Sub Main()\nEnd Sub\nPublic Sub Boot()\nEnd Sub\n",
+        )
+        .expect("main");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let invalid =
+            validate_host_project_settings_edits(&[HostProjectSettingsEdit::SetEntryPoint(Some(
+                "Main".to_string(),
+            ))]);
+        assert!(!invalid.can_apply);
+        assert_eq!(
+            invalid.issues[0].kind,
+            HostProjectSettingsEditIssueKind::InvalidValue
+        );
+
+        let plan = prepare_host_project_settings_edit_plan(
+            &temp_root,
+            &[
+                HostProjectSettingsEdit::SetProjectName("RenamedApp".to_string()),
+                HostProjectSettingsEdit::SetEntryPoint(Some("Main.Boot".to_string())),
+                HostProjectSettingsEdit::SetDefineConstants(Some("Trace=1".to_string())),
+                HostProjectSettingsEdit::SetRuntimeFlavor(Some(RuntimeFlavor::Lite)),
+                HostProjectSettingsEdit::SetBuildTarget(Some(BuildTarget::Bundle)),
+            ],
+        )
+        .expect("settings plan");
+        assert!(plan.validation.can_apply);
+        let preview = plan.preview.as_ref().expect("preview");
+        assert_eq!(preview.project_name, "RenamedApp");
+        assert_eq!(preview.entry_point.as_deref(), Some("Main.Boot"));
+        assert_eq!(preview.runtime_flavor, Some(RuntimeFlavor::Lite));
+        assert_eq!(preview.build_target, Some(BuildTarget::Bundle));
+
+        let application = apply_host_project_settings_edit_plan(&plan).expect("apply plan");
+        assert_eq!(application.applied_edits, 5);
+        assert_eq!(application.surface.project_name, "RenamedApp");
+        assert_eq!(
+            application.surface.entry_point.as_deref(),
+            Some("Main.Boot")
+        );
+        let written = fs::read_to_string(temp_root.join("App.basproj")).expect("read basproj");
+        assert!(written.contains("<ProjectName>RenamedApp</ProjectName>"));
+        assert!(written.contains("<EntryPoint>Main.Boot</EntryPoint>"));
+        assert!(written.contains("<DefineConstants>Trace=1</DefineConstants>"));
 
         let _ = fs::remove_dir_all(&temp_root);
     }

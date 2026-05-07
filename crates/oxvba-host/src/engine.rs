@@ -27,6 +27,7 @@ use oxvba_runtime::{ObjectRef, Variant};
 use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
 use crate::{
+    direct_host::{DirectHostIssue, DirectHostIssueKind},
     events::{EventDispatcher, EventSourceKey},
     runner::RuntimeProfileId,
 };
@@ -64,6 +65,17 @@ impl PhaseDiagnostic {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn direct_host_issue_kind(&self) -> DirectHostIssueKind {
+        match self.phase {
+            DiagnosticPhase::CompileTime => DirectHostIssueKind::BuildFailed,
+            DiagnosticPhase::Runtime => DirectHostIssueKind::RuntimeStartupFailed,
+        }
+    }
+
+    pub fn direct_host_issue(&self) -> DirectHostIssue {
+        DirectHostIssue::new(self.direct_host_issue_kind()).with_technical_detail(self.to_string())
     }
 }
 

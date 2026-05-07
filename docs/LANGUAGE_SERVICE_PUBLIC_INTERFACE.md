@@ -62,6 +62,7 @@ This is the right crate for:
 This crate currently exports the direct runtime/session ladder:
 - `Engine`
 - `ProjectRuntimeSession`
+- shared direct-host identity, capability, command-status, source-span, and issue DTOs via the `DirectHost*` type family
 - the first bounded immediate-session contract via `ImmediateSession`
 - typed immediate request/result/output shapes for future CLI and OxIde consumption
 - the first non-debug live-session evaluator core for bounded procedure invocation and reset/reload
@@ -116,7 +117,7 @@ Status:
 2. A broader direct project-authoring surface
 - inspect project/module rosters,
 - create/add/remove modules and classes,
-- list/add/remove project and COM references,
+- list/add/remove/reorder project and COM references,
 - reconcile file path, logical module name, and `Attribute VB_Name` deterministically.
 
 Status:
@@ -124,10 +125,13 @@ Status:
 - typed COM candidate and active-selection models now exist via `oxvba_project::com_selection`
 - registered-library and ProgID candidate discovery now exist via `discover_registered_com_candidates` and `discover_prog_id_com_candidates`
 - file-backed candidate discovery now exists via `discover_file_backed_com_candidates`
-- typed active-selection repair planning now exists via `assess_project_com_selections` and `plan_*_com_*` helpers
-- a direct OxIde-facing COM helper surface now exists via `ComSelectionService` and `inspect_workspace_com_project_state`
+- typed active-selection repair and reorder planning now exists via `assess_project_com_selections`, `plan_*_com_*` helpers, and `plan_reorder_com_references`
+- COM capability profile and runtime availability DTOs now exist via `com_capability_profile` and `com_runtime_invocation_availability`
+- a direct OxIde-facing COM helper surface now exists via `ComSelectionService`, `inspect_workspace_com_project_state`, `capability_profile`, `runtime_invocation_availability`, and `plan_reorder_references`
+- direct project compile/options DTOs now exist via `inspect_workspace_compile_options` and `HostProjectCompileOptionsSurface`
 - canonical `.basproj` mutation/apply flows now exist via `apply_host_project_edits_to_basproj` and `apply_host_project_edits_to_basproj_path`
-- validated edit planning and apply flow now exists via `prepare_host_project_edit_plan`, `validate_host_project_edits`, and `apply_host_project_edit_plan`
+- validated project roster/reference edit planning and apply flow now exists via `prepare_host_project_edit_plan`, `validate_host_project_edits`, and `apply_host_project_edit_plan`
+- validated scalar project/compile settings planning and apply flow now exists via `prepare_host_project_settings_edit_plan`, `validate_host_project_settings_edits`, and `apply_host_project_settings_edit_plan`
 
 3. Typed build/run integration
 - keep CLI as an end-user tool,
@@ -162,6 +166,9 @@ Use:
 - `oxvba_project::inspect_workspace_target`
 - `oxvba_project::prepare_host_project_edit_plan`
 - `oxvba_project::apply_host_project_edit_plan`
+- `oxvba_project::inspect_workspace_compile_options`
+- `oxvba_project::prepare_host_project_settings_edit_plan`
+- `oxvba_project::apply_host_project_settings_edit_plan`
 - `oxvba_project::assess_project_com_selections`
 - `oxvba_host::Engine`
 - `oxvba_host::EmbeddedBuildRunHost`
@@ -230,6 +237,8 @@ Unsupported in V0.2:
 The next execution lane should:
 - keep the documented direct host surface around OxIde aligned with executable
   evidence,
+- execute the DNA OxIde full-scope host integration support workset in
+  `docs/worksets/WORKSET_2026-05-07_DNAOXIDE_FULL_SCOPE_HOST_INTEGRATION_SUPPORT.md`,
 - capture real OxIde-side consumption evidence when that repo adopts the direct
   stack,
 - and treat VS Code as an alternate integration lane over the same semantics

@@ -17,10 +17,12 @@ OxIde should treat these OxVba types as the execution boundary:
 - `EmbeddedBuildRunHost`
 - `EmbeddedBuildRequest`
 - `EmbeddedRunRequest`
+- `EmbeddedBuildRunHostCommandStatus`
 - `EmbeddedResetRequest`
 - `EmbeddedInvokeEntryPointRequest`
 - `EmbeddedInvokeProcedureRequest`
 - `EmbeddedRunSession`
+- `EmbeddedRunSessionCommandStatus`
 
 Current source policy is explicit:
 - `DiskOnly`
@@ -56,11 +58,14 @@ For build:
 3. Call `HostWorkspaceSession::prepare_embedded_workspace_snapshot(...)`.
 4. Submit that snapshot through `EmbeddedBuildRunHost::build_workspace(...)`.
 5. Render `EmbeddedBuildResult` directly into build output and diagnostics UI.
+6. Use `build_workspace_with_events(...)` when the host wants typed
+   ID-bearing build lifecycle events instead of only the terminal result.
 
 For run:
 1. Prepare the same workspace snapshot using the same source policy.
-2. Call `EmbeddedBuildRunHost::run_project(...)`.
-3. Keep the returned `EmbeddedRunSession` alive as the current project runtime owner.
+2. Call `EmbeddedBuildRunHost::run_project(...)` or
+   `run_project_with_events(...)` if lifecycle events are needed.
+3. Keep the returned `EmbeddedRunSession` alive as the current project runtime owner and use its `runtime_session_id()` for UI correlation.
 4. Route reset/reinvoke requests through that same session instead of recreating ad hoc runtime state.
 
 For procedure invocation:
@@ -115,6 +120,8 @@ That means OxIde can now consume:
 - a typed build result
 - a typed live runtime session
 - typed reset and invoke operations
+- request IDs, runtime session IDs, command availability DTOs, and ID-bearing
+  build/run lifecycle events
 
 without falling back to CLI parsing.
 

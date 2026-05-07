@@ -181,5 +181,6 @@ This workset is complete only when:
 Status evidence:
 - typed COM selection and active-selection models landed in `oxvba-project::com_selection`
 - direct host-facing `ComSelectionService` and workspace/project COM state inspection landed
+- OxIde-facing COM capability profile, runtime invocation availability, and reference reorder DTOs landed via `ComCapabilityProfile`, `ComRuntimeInvocationAvailability`, and `ComReferenceReorderPlan`
 - canonical `.basproj` apply helpers landed via `apply_host_project_edits_to_basproj*`
 - CLI `oxvba com-ref list|add|repair` landed over the shared service

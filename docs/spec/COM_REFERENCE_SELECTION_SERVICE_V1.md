@@ -79,6 +79,10 @@ Current implementation anchor:
   - `ComProjectSelectionStatus`
   - `ComProjectEditPlan`
   - `ComProjectEditPlanKind`
+  - `ComCapabilityProfile`
+  - `ComRuntimeInvocationAvailability`
+  - `ComReferenceReorderPlan`
+  - `ComReferenceReorderIssue`
   - `HostComProjectSelectionSurface`
   - `ComSelectionService`
   - `FileBackedComSelectionQuery`
@@ -94,6 +98,9 @@ Current implementation anchor:
   - `plan_replace_com_reference`
   - `plan_repair_project_selection`
   - `plan_remove_com_reference`
+  - `plan_reorder_com_references`
+  - `com_capability_profile`
+  - `com_runtime_invocation_availability`
 
 ## Project Selection State
 
@@ -119,7 +126,12 @@ Current matching rule:
 The service should be able to produce:
 - candidate lists for search dialogs and CLI listing
 - active selection state for the current project
-- typed edit/apply plans for `.basproj` mutation
+- COM capability profile DTOs for reference discovery, reference editing,
+  runtime invocation, and native-service availability
+- runtime invocation availability DTOs with typed disabled reasons for
+  unsupported platforms instead of fake availability
+- typed add/replace/repair/remove/reorder edit/apply plans for `.basproj`
+  mutation
 
 ## Immediate Follow-On Implementation Lanes
 
@@ -149,6 +161,12 @@ Status:
 - project-edit apply now exists in bounded form:
   - `apply_host_project_edits_to_basproj`
   - `apply_host_project_edits_to_basproj_path`
+- OxIde capability/unavailable-state DTOs now exist in bounded form:
+  - `ComSelectionService::capability_profile`
+  - `ComSelectionService::runtime_invocation_availability`
+  - `ComSelectionService::plan_reorder_references`
+  - non-Windows live COM discovery/runtime paths report typed
+    `DH-COM-*`/`DH-NONWINDOWS-UNSUPPORTED` disabled or degraded states
 
 ## CLI Notes
 
@@ -162,11 +180,14 @@ The CLI surface is intentionally bounded:
 
 Current evidence for the shipped surface includes:
 - `cargo test -p oxvba-project -- --nocapture`
+- `cargo test -p oxvba-project com_capability_profile_reports_platform_specific_runtime_availability --quiet`
+- `cargo test -p oxvba-project plan_reorder_com_references_rewrites_only_valid_complete_orders --quiet`
 - `cargo test -p oxvba-cli -- --nocapture`
 - `cargo check -p oxvba-cli -p oxvba-project -p oxvba-com`
 
 Notable regression coverage includes:
 - project-active selection assessment
-- deterministic add/replace/repair planning
+- deterministic add/replace/repair/reorder planning
+- platform-specific COM capability and runtime availability DTOs
 - `.basproj` apply/round-trip for COM edits
 - CLI parsing for `com-ref add` and `com-ref repair`

@@ -2,6 +2,10 @@ use oxvba_compiler::ProjectManifest;
 use oxvba_runtime::{VarType, Variant, variant_to_vba_string};
 use thiserror::Error;
 
+use crate::direct_host::{
+    DirectHostCommandStatus, DirectHostImmediateSessionId, DirectHostIssue, DirectHostIssueKind,
+    DirectHostRuntimeSessionId,
+};
 use crate::engine::PhaseDiagnostic;
 use crate::{Engine, ProjectRuntimeSession};
 
@@ -101,8 +105,32 @@ pub enum ImmediateSessionError {
     UnknownTargetModule { module: String },
 }
 
+impl ImmediateSessionError {
+    pub fn direct_host_issue(&self) -> DirectHostIssue {
+        match self {
+            ImmediateSessionError::Phase(diagnostic) => {
+                DirectHostIssue::new(DirectHostIssueKind::ImmediateEvaluationFailed)
+                    .with_technical_detail(diagnostic.to_string())
+            }
+            ImmediateSessionError::UnknownTargetModule { module } => {
+                DirectHostIssue::new(DirectHostIssueKind::ImmediateEvaluationFailed)
+                    .with_technical_detail(self.to_string())
+                    .with_document_id(module.clone())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImmediateSessionCommandStatus {
+    pub evaluate: DirectHostCommandStatus,
+    pub reset: DirectHostCommandStatus,
+}
+
 pub struct ImmediateSession<'engine> {
     engine: &'engine Engine,
+    immediate_session_id: DirectHostImmediateSessionId,
+    runtime_session_id: Option<DirectHostRuntimeSessionId>,
     manifest: ProjectManifest,
     runtime: ProjectRuntimeSession,
     default_target_module: Option<String>,
@@ -114,12 +142,50 @@ impl<'engine> ImmediateSession<'engine> {
         manifest: ProjectManifest,
         runtime: ProjectRuntimeSession,
     ) -> Self {
+        let immediate_session_id = default_immediate_session_id(&manifest, None);
+        Self::new_with_ids(engine, manifest, runtime, immediate_session_id, None)
+    }
+
+    pub fn new_with_ids(
+        engine: &'engine Engine,
+        manifest: ProjectManifest,
+        runtime: ProjectRuntimeSession,
+        immediate_session_id: impl Into<DirectHostImmediateSessionId>,
+        runtime_session_id: Option<DirectHostRuntimeSessionId>,
+    ) -> Self {
         Self {
             engine,
+            immediate_session_id: immediate_session_id.into(),
+            runtime_session_id,
             manifest,
             runtime,
             default_target_module: None,
         }
+    }
+
+    pub fn from_embedded_runtime_session(
+        engine: &'engine Engine,
+        manifest: ProjectManifest,
+        runtime: ProjectRuntimeSession,
+        runtime_session_id: DirectHostRuntimeSessionId,
+    ) -> Self {
+        let immediate_session_id =
+            default_immediate_session_id(&manifest, Some(&runtime_session_id));
+        Self::new_with_ids(
+            engine,
+            manifest,
+            runtime,
+            immediate_session_id,
+            Some(runtime_session_id),
+        )
+    }
+
+    pub fn immediate_session_id(&self) -> &DirectHostImmediateSessionId {
+        &self.immediate_session_id
+    }
+
+    pub fn runtime_session_id(&self) -> Option<&DirectHostRuntimeSessionId> {
+        self.runtime_session_id.as_ref()
     }
 
     pub fn engine(&self) -> &'engine Engine {
@@ -140,6 +206,13 @@ impl<'engine> ImmediateSession<'engine> {
 
     pub fn default_target_module(&self) -> Option<&str> {
         self.default_target_module.as_deref()
+    }
+
+    pub fn command_status(&self) -> ImmediateSessionCommandStatus {
+        ImmediateSessionCommandStatus {
+            evaluate: DirectHostCommandStatus::available(),
+            reset: DirectHostCommandStatus::available(),
+        }
     }
 
     pub fn set_default_target_module(&mut self, module: Option<impl Into<String>>) {
@@ -238,6 +311,16 @@ impl<'engine> ImmediateSession<'engine> {
             diagnostics: Vec::new(),
         })
     }
+}
+
+fn default_immediate_session_id(
+    manifest: &ProjectManifest,
+    runtime_session_id: Option<&DirectHostRuntimeSessionId>,
+) -> DirectHostImmediateSessionId {
+    let suffix = runtime_session_id
+        .map(|id| id.as_str().to_string())
+        .unwrap_or_else(|| manifest.project_name.clone());
+    DirectHostImmediateSessionId::new(format!("immediate:{suffix}"))
 }
 
 impl Engine {

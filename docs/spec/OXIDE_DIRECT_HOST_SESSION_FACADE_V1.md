@@ -44,6 +44,7 @@ OxIde owns:
 - `HostWorkspaceSession::reload_workspace`
 - `HostWorkspaceSession::workspace_target`
 - `HostWorkspaceSession::workspace_stats`
+- `HostWorkspaceSession::workspace_roster`
 - `HostWorkspaceSession::documents`
 
 ### Document lifetime
@@ -57,6 +58,15 @@ Current close semantics are deliberate:
 - the facade does not fabricate detached documents outside the loaded workspace.
 
 ### Query surface
+
+The current V1 roster surface includes:
+- stable direct-host workspace/project/module/document ID DTOs
+- selected source policy
+- snapshot revision
+- module include/source paths
+- logical module names
+- `Attribute VB_Name` reconciliation state
+- document versions and overlay flags
 
 The current V1 query surface includes:
 - diagnostics

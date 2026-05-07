@@ -5,6 +5,10 @@ use oxvba_runtime::Variant;
 use thiserror::Error;
 
 use crate::Engine;
+use crate::direct_host::{
+    DirectHostBuildRequestId, DirectHostCommandStatus, DirectHostIssue, DirectHostIssueKind,
+    DirectHostRetryability, DirectHostRunRequestId, DirectHostRuntimeSessionId,
+};
 use crate::engine::PhaseDiagnostic;
 
 /// Explicit source-of-truth selection for direct embedded build/run.
@@ -60,12 +64,27 @@ impl EmbeddedWorkspaceSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedBuildRequest {
+    pub request_id: DirectHostBuildRequestId,
     pub workspace: EmbeddedWorkspaceSnapshot,
 }
 
 impl EmbeddedBuildRequest {
     pub fn new(workspace: EmbeddedWorkspaceSnapshot) -> Self {
-        Self { workspace }
+        let request_id = build_request_id_for_workspace(&workspace);
+        Self {
+            request_id,
+            workspace,
+        }
+    }
+
+    pub fn with_request_id(
+        workspace: EmbeddedWorkspaceSnapshot,
+        request_id: impl Into<DirectHostBuildRequestId>,
+    ) -> Self {
+        Self {
+            request_id: request_id.into(),
+            workspace,
+        }
     }
 }
 
@@ -77,22 +96,32 @@ pub enum EmbeddedBuildStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedBuildResult {
+    pub request_id: DirectHostBuildRequestId,
     pub workspace: EmbeddedWorkspaceSnapshot,
     pub status: EmbeddedBuildStatus,
     pub diagnostics: Vec<PhaseDiagnostic>,
 }
 
 impl EmbeddedBuildResult {
-    pub fn succeeded(workspace: EmbeddedWorkspaceSnapshot) -> Self {
+    pub fn succeeded(
+        request_id: DirectHostBuildRequestId,
+        workspace: EmbeddedWorkspaceSnapshot,
+    ) -> Self {
         Self {
+            request_id,
             workspace,
             status: EmbeddedBuildStatus::Succeeded,
             diagnostics: Vec::new(),
         }
     }
 
-    pub fn failed(workspace: EmbeddedWorkspaceSnapshot, diagnostics: Vec<PhaseDiagnostic>) -> Self {
+    pub fn failed(
+        request_id: DirectHostBuildRequestId,
+        workspace: EmbeddedWorkspaceSnapshot,
+        diagnostics: Vec<PhaseDiagnostic>,
+    ) -> Self {
         Self {
+            request_id,
             workspace,
             status: EmbeddedBuildStatus::Failed,
             diagnostics,
@@ -102,12 +131,27 @@ impl EmbeddedBuildResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedRunRequest {
+    pub request_id: DirectHostRunRequestId,
     pub workspace: EmbeddedWorkspaceSnapshot,
 }
 
 impl EmbeddedRunRequest {
     pub fn new(workspace: EmbeddedWorkspaceSnapshot) -> Self {
-        Self { workspace }
+        let request_id = run_request_id_for_workspace(&workspace);
+        Self {
+            request_id,
+            workspace,
+        }
+    }
+
+    pub fn with_request_id(
+        workspace: EmbeddedWorkspaceSnapshot,
+        request_id: impl Into<DirectHostRunRequestId>,
+    ) -> Self {
+        Self {
+            request_id: request_id.into(),
+            workspace,
+        }
     }
 }
 
@@ -119,22 +163,36 @@ pub enum EmbeddedRunStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedRunResult {
+    pub request_id: DirectHostRunRequestId,
+    pub runtime_session_id: Option<DirectHostRuntimeSessionId>,
     pub workspace: EmbeddedWorkspaceSnapshot,
     pub status: EmbeddedRunStatus,
     pub diagnostics: Vec<PhaseDiagnostic>,
 }
 
 impl EmbeddedRunResult {
-    pub fn session_ready(workspace: EmbeddedWorkspaceSnapshot) -> Self {
+    pub fn session_ready(
+        request_id: DirectHostRunRequestId,
+        runtime_session_id: DirectHostRuntimeSessionId,
+        workspace: EmbeddedWorkspaceSnapshot,
+    ) -> Self {
         Self {
+            request_id,
+            runtime_session_id: Some(runtime_session_id),
             workspace,
             status: EmbeddedRunStatus::SessionReady,
             diagnostics: Vec::new(),
         }
     }
 
-    pub fn failed(workspace: EmbeddedWorkspaceSnapshot, diagnostics: Vec<PhaseDiagnostic>) -> Self {
+    pub fn failed(
+        request_id: DirectHostRunRequestId,
+        workspace: EmbeddedWorkspaceSnapshot,
+        diagnostics: Vec<PhaseDiagnostic>,
+    ) -> Self {
         Self {
+            request_id,
+            runtime_session_id: None,
             workspace,
             status: EmbeddedRunStatus::Failed,
             diagnostics,
@@ -287,17 +345,43 @@ impl EmbeddedOutputLine {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedBuildStartedEvent {
+    pub request_id: DirectHostBuildRequestId,
+    pub workspace: EmbeddedWorkspaceSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedRunStartedEvent {
+    pub request_id: DirectHostRunRequestId,
+    pub workspace: EmbeddedWorkspaceSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbeddedBuildRunEvent {
-    BuildStarted(EmbeddedWorkspaceSnapshot),
+    BuildStarted(EmbeddedBuildStartedEvent),
     BuildCompleted(EmbeddedBuildResult),
     BuildFailed(EmbeddedBuildResult),
-    RunStarted(EmbeddedWorkspaceSnapshot),
+    RunStarted(EmbeddedRunStartedEvent),
     SessionReady(EmbeddedRunResult),
     RunFailed(EmbeddedRunResult),
     RuntimeReset(EmbeddedResetResult),
     InvokeCompleted(EmbeddedInvokeVariantResult),
     InvokeFailed(EmbeddedInvokeVariantResult),
     OutputLine(EmbeddedOutputLine),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedBuildRunHostCommandStatus {
+    pub build_workspace: DirectHostCommandStatus,
+    pub run_project: DirectHostCommandStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedRunSessionCommandStatus {
+    pub reset_runtime: DirectHostCommandStatus,
+    pub invoke_entry_point: DirectHostCommandStatus,
+    pub invoke_procedure: DirectHostCommandStatus,
+    pub stop_cancel: DirectHostCommandStatus,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -308,6 +392,20 @@ pub enum EmbeddedRunSessionError {
         "embedded runtime session target `{requested}` does not match active workspace `{active}`"
     )]
     WorkspaceTargetMismatch { requested: PathBuf, active: PathBuf },
+}
+
+impl EmbeddedRunSessionError {
+    pub fn direct_host_issue(&self) -> DirectHostIssue {
+        match self {
+            EmbeddedRunSessionError::Phase(diagnostic) => diagnostic.direct_host_issue(),
+            EmbeddedRunSessionError::WorkspaceTargetMismatch { requested, active } => {
+                DirectHostIssue::new(DirectHostIssueKind::WorkspaceInvalid)
+                    .with_technical_detail(self.to_string())
+                    .with_path(requested.clone())
+                    .with_workspace_id(active.display().to_string())
+            }
+        }
+    }
 }
 
 /// Future direct-host facade for embedded build/run orchestration.
@@ -327,14 +425,41 @@ impl<'engine> EmbeddedBuildRunHost<'engine> {
         self.engine
     }
 
+    pub fn command_status(&self) -> EmbeddedBuildRunHostCommandStatus {
+        EmbeddedBuildRunHostCommandStatus {
+            build_workspace: DirectHostCommandStatus::available(),
+            run_project: DirectHostCommandStatus::available(),
+        }
+    }
+
     pub fn build_workspace(&self, request: &EmbeddedBuildRequest) -> EmbeddedBuildResult {
         match compile_project(&request.workspace.manifest) {
-            Ok(_) => EmbeddedBuildResult::succeeded(request.workspace.clone()),
+            Ok(_) => EmbeddedBuildResult::succeeded(
+                request.request_id.clone(),
+                request.workspace.clone(),
+            ),
             Err(err) => EmbeddedBuildResult::failed(
+                request.request_id.clone(),
                 request.workspace.clone(),
                 vec![PhaseDiagnostic::compile(err.to_string())],
             ),
         }
+    }
+
+    pub fn build_workspace_with_events(
+        &self,
+        request: &EmbeddedBuildRequest,
+    ) -> (EmbeddedBuildResult, Vec<EmbeddedBuildRunEvent>) {
+        let started = EmbeddedBuildRunEvent::BuildStarted(EmbeddedBuildStartedEvent {
+            request_id: request.request_id.clone(),
+            workspace: request.workspace.clone(),
+        });
+        let result = self.build_workspace(request);
+        let completed = match result.status {
+            EmbeddedBuildStatus::Succeeded => EmbeddedBuildRunEvent::BuildCompleted(result.clone()),
+            EmbeddedBuildStatus::Failed => EmbeddedBuildRunEvent::BuildFailed(result.clone()),
+        };
+        (result, vec![started, completed])
     }
 
     #[allow(clippy::result_large_err)]
@@ -342,32 +467,68 @@ impl<'engine> EmbeddedBuildRunHost<'engine> {
         &self,
         request: &EmbeddedRunRequest,
     ) -> Result<EmbeddedRunSession<'engine>, EmbeddedRunResult> {
+        let runtime_session_id = runtime_session_id_for_request(&request.request_id);
         match self
             .engine
             .compile_and_prepare_session(&request.workspace.manifest)
         {
             Ok(runtime) => Ok(EmbeddedRunSession {
                 engine: self.engine,
+                runtime_session_id: runtime_session_id.clone(),
                 workspace: request.workspace.clone(),
                 runtime,
-                run_result: EmbeddedRunResult::session_ready(request.workspace.clone()),
+                run_result: EmbeddedRunResult::session_ready(
+                    request.request_id.clone(),
+                    runtime_session_id,
+                    request.workspace.clone(),
+                ),
             }),
             Err(err) => Err(EmbeddedRunResult::failed(
+                request.request_id.clone(),
                 request.workspace.clone(),
                 vec![err],
             )),
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn run_project_with_events(
+        &self,
+        request: &EmbeddedRunRequest,
+    ) -> Result<
+        (EmbeddedRunSession<'engine>, Vec<EmbeddedBuildRunEvent>),
+        (EmbeddedRunResult, Vec<EmbeddedBuildRunEvent>),
+    > {
+        let started = EmbeddedBuildRunEvent::RunStarted(EmbeddedRunStartedEvent {
+            request_id: request.request_id.clone(),
+            workspace: request.workspace.clone(),
+        });
+        match self.run_project(request) {
+            Ok(session) => {
+                let ready = EmbeddedBuildRunEvent::SessionReady(session.run_result().clone());
+                Ok((session, vec![started, ready]))
+            }
+            Err(result) => {
+                let failed = EmbeddedBuildRunEvent::RunFailed(result.clone());
+                Err((result, vec![started, failed]))
+            }
         }
     }
 }
 
 pub struct EmbeddedRunSession<'engine> {
     engine: &'engine Engine,
+    runtime_session_id: DirectHostRuntimeSessionId,
     workspace: EmbeddedWorkspaceSnapshot,
     runtime: crate::ProjectRuntimeSession,
     run_result: EmbeddedRunResult,
 }
 
 impl<'engine> EmbeddedRunSession<'engine> {
+    pub fn runtime_session_id(&self) -> &DirectHostRuntimeSessionId {
+        &self.runtime_session_id
+    }
+
     pub fn workspace(&self) -> &EmbeddedWorkspaceSnapshot {
         &self.workspace
     }
@@ -388,6 +549,52 @@ impl<'engine> EmbeddedRunSession<'engine> {
         &mut self.runtime
     }
 
+    pub fn command_status(&self) -> EmbeddedRunSessionCommandStatus {
+        EmbeddedRunSessionCommandStatus {
+            reset_runtime: DirectHostCommandStatus::available(),
+            invoke_entry_point: DirectHostCommandStatus::available(),
+            invoke_procedure: DirectHostCommandStatus::available(),
+            stop_cancel: DirectHostCommandStatus::disabled(
+                DirectHostIssue::new(DirectHostIssueKind::RuntimeSessionUnavailable)
+                    .with_summary("Stop/cancel is not supported by this embedded runtime session")
+                    .with_retryability(DirectHostRetryability::NotRetryable)
+                    .with_runtime_session_id(self.runtime_session_id.clone()),
+            ),
+        }
+    }
+
+    pub fn into_immediate_session(self) -> crate::ImmediateSession<'engine> {
+        let Self {
+            engine,
+            runtime_session_id,
+            workspace,
+            runtime,
+            ..
+        } = self;
+        crate::ImmediateSession::from_embedded_runtime_session(
+            engine,
+            workspace.manifest,
+            runtime,
+            runtime_session_id,
+        )
+    }
+
+    pub fn into_debug_session(self) -> crate::DebugSession<'engine> {
+        let Self {
+            engine,
+            runtime_session_id,
+            workspace,
+            runtime,
+            ..
+        } = self;
+        crate::DebugSession::from_embedded_runtime_session(
+            engine,
+            workspace.manifest,
+            runtime,
+            runtime_session_id,
+        )
+    }
+
     pub fn reset_runtime(
         &mut self,
         request: &EmbeddedResetRequest,
@@ -399,6 +606,7 @@ impl<'engine> EmbeddedRunSession<'engine> {
             .map_err(EmbeddedRunSessionError::Phase)?;
         self.workspace = request.workspace.clone();
         self.run_result.workspace = request.workspace.clone();
+        self.run_result.runtime_session_id = Some(self.runtime_session_id.clone());
         self.runtime = runtime;
         Ok(EmbeddedResetResult::reset(
             request.workspace.clone(),
@@ -417,6 +625,7 @@ impl<'engine> EmbeddedRunSession<'engine> {
             .map_err(EmbeddedRunSessionError::Phase)?;
         self.workspace = request.workspace.clone();
         self.run_result.workspace = request.workspace.clone();
+        self.run_result.runtime_session_id = Some(self.runtime_session_id.clone());
         self.runtime = runtime;
         Ok(EmbeddedInvokeVariantResult::completed(
             EmbeddedInvocationTarget::EntryPoint(request.workspace.clone()),
@@ -458,6 +667,32 @@ impl<'engine> EmbeddedRunSession<'engine> {
     }
 }
 
+fn build_request_id_for_workspace(
+    workspace: &EmbeddedWorkspaceSnapshot,
+) -> DirectHostBuildRequestId {
+    DirectHostBuildRequestId::new(format!(
+        "build:{}:{:?}:{}",
+        normalize_workspace_target_path(workspace.workspace.path()).display(),
+        workspace.workspace.source_policy,
+        workspace.manifest.project_name
+    ))
+}
+
+fn run_request_id_for_workspace(workspace: &EmbeddedWorkspaceSnapshot) -> DirectHostRunRequestId {
+    DirectHostRunRequestId::new(format!(
+        "run:{}:{:?}:{}",
+        normalize_workspace_target_path(workspace.workspace.path()).display(),
+        workspace.workspace.source_policy,
+        workspace.manifest.project_name
+    ))
+}
+
+fn runtime_session_id_for_request(
+    request_id: &DirectHostRunRequestId,
+) -> DirectHostRuntimeSessionId {
+    DirectHostRuntimeSessionId::new(format!("runtime:{}", request_id.as_str()))
+}
+
 fn same_workspace_target_path(left: &Path, right: &Path) -> bool {
     normalize_workspace_target_path(left) == normalize_workspace_target_path(right)
 }
@@ -476,8 +711,9 @@ fn normalize_workspace_target_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        EmbeddedBuildRequest, EmbeddedBuildRunEvent, EmbeddedBuildRunHost, EmbeddedBuildStatus,
-        EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
+        EmbeddedBuildRequest, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
+        EmbeddedBuildStartedEvent, EmbeddedBuildStatus, EmbeddedExecutionSourcePolicy,
+        EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
         EmbeddedInvokeProcedureVariantRequest, EmbeddedOutputChannel, EmbeddedOutputLine,
         EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
         EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
@@ -563,10 +799,17 @@ mod tests {
             EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
             make_manifest("Sub Main()\nEnd Sub\n"),
         );
-        let event = EmbeddedBuildRunEvent::BuildStarted(workspace.clone());
+        let build = EmbeddedBuildRequest::new(workspace.clone());
+        let event = EmbeddedBuildRunEvent::BuildStarted(EmbeddedBuildStartedEvent {
+            request_id: build.request_id.clone(),
+            workspace: workspace.clone(),
+        });
         assert_eq!(
             event,
-            EmbeddedBuildRunEvent::BuildStarted(workspace.clone())
+            EmbeddedBuildRunEvent::BuildStarted(EmbeddedBuildStartedEvent {
+                request_id: build.request_id.clone(),
+                workspace: workspace.clone(),
+            })
         );
 
         let invoke_target =
@@ -587,11 +830,120 @@ mod tests {
             EmbeddedInvocationTarget::Procedure(EmbeddedProcedureTarget::new("Module1", "Main"))
         );
 
-        let build = EmbeddedBuildRequest::new(workspace);
+        assert!(build.request_id.as_str().starts_with("build:"));
         assert_eq!(
             build.workspace.workspace.source_policy,
             EmbeddedExecutionSourcePolicy::WorkspaceOverlay
         );
+    }
+
+    #[test]
+    fn embedded_build_run_ids_events_and_command_status_are_correlated() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let workspace = EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
+            make_manifest("Public Sub Main()\nEnd Sub\n"),
+        );
+        let build_request =
+            EmbeddedBuildRequest::with_request_id(workspace.clone(), "build-request:thin-slice");
+        let (build_result, build_events) = host.build_workspace_with_events(&build_request);
+        assert_eq!(build_result.request_id.as_str(), "build-request:thin-slice");
+        assert_eq!(build_result.status, EmbeddedBuildStatus::Succeeded);
+        assert_eq!(build_events.len(), 2);
+        assert!(matches!(
+            &build_events[0],
+            EmbeddedBuildRunEvent::BuildStarted(started)
+                if started.request_id.as_str() == "build-request:thin-slice"
+        ));
+        assert!(matches!(
+            &build_events[1],
+            EmbeddedBuildRunEvent::BuildCompleted(completed)
+                if completed.request_id.as_str() == "build-request:thin-slice"
+        ));
+
+        let run_request = EmbeddedRunRequest::with_request_id(workspace, "run-request:thin-slice");
+        let (run_session, run_events) = host
+            .run_project_with_events(&run_request)
+            .expect("run session");
+        assert_eq!(
+            run_session.runtime_session_id().as_str(),
+            "runtime:run-request:thin-slice"
+        );
+        assert_eq!(
+            run_session
+                .run_result()
+                .runtime_session_id
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "runtime:run-request:thin-slice"
+        );
+        assert_eq!(run_events.len(), 2);
+        assert!(matches!(
+            &run_events[0],
+            EmbeddedBuildRunEvent::RunStarted(started)
+                if started.request_id.as_str() == "run-request:thin-slice"
+        ));
+        assert!(matches!(
+            &run_events[1],
+            EmbeddedBuildRunEvent::SessionReady(result)
+                if result.request_id.as_str() == "run-request:thin-slice"
+        ));
+
+        let host_status = host.command_status();
+        assert!(host_status.build_workspace.is_available());
+        assert!(host_status.run_project.is_available());
+        let session_status = run_session.command_status();
+        assert!(session_status.reset_runtime.is_available());
+        assert!(session_status.invoke_procedure.is_available());
+        assert!(!session_status.stop_cancel.is_available());
+        assert_eq!(
+            session_status
+                .stop_cancel
+                .disabled_reason()
+                .expect("disabled reason")
+                .stable_code,
+            "DH-RUNTIME-SESSION-UNAVAILABLE"
+        );
+    }
+
+    #[test]
+    fn embedded_run_session_attaches_immediate_and_debug_with_stable_ids() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let workspace = EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
+            make_manifest(
+                "Public Sub Main()\nCall Foo(1)\nEnd Sub\nPublic Sub Foo(ByVal value As Long)\nEnd Sub\n",
+            ),
+        );
+
+        let immediate_run = host
+            .run_project(&EmbeddedRunRequest::with_request_id(
+                workspace.clone(),
+                "run:immediate",
+            ))
+            .expect("immediate run");
+        let runtime_id = immediate_run.runtime_session_id().clone();
+        let immediate = immediate_run.into_immediate_session();
+        assert_eq!(immediate.runtime_session_id(), Some(&runtime_id));
+        assert_eq!(
+            immediate.immediate_session_id().as_str(),
+            "immediate:runtime:run:immediate"
+        );
+        assert!(immediate.command_status().evaluate.is_available());
+
+        let debug_run = host
+            .run_project(&EmbeddedRunRequest::with_request_id(workspace, "run:debug"))
+            .expect("debug run");
+        let runtime_id = debug_run.runtime_session_id().clone();
+        let mut debug = debug_run.into_debug_session();
+        assert_eq!(debug.runtime_session_id(), Some(&runtime_id));
+        assert_eq!(debug.debug_session_id().as_str(), "debug:runtime:run:debug");
+        assert!(!debug.command_status().evaluate.is_available());
+        let _ = debug.start_variants().expect("debug start");
+        assert!(debug.command_status().evaluate.is_available());
     }
 
     #[test]
