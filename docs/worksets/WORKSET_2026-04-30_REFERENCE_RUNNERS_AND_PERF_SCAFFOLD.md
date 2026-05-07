@@ -1,7 +1,7 @@
 # Reference Runners And Performance Scaffold Workset
 
-Status: `complete` (recovered 2026-05-02; wrapper library follow-up non-blocking)
-Date: 2026-04-30; recovery update 2026-05-02
+Status: `complete` (recovered 2026-05-02; wrapper library producer delivered 2026-05-07)
+Date: 2026-04-30; recovery update 2026-05-02; wrapper-library update 2026-05-07
 Parent: `WORKSET_2026-04-30_NATIVE_READY_REBASE_MASTER.md`
 
 ## Purpose
@@ -37,8 +37,10 @@ Out of scope:
   [`../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md`](../evidence/native_ready/RUNNER_SIZE_TIMING_FIELDS_2026-05-01.md)
 - Benchmark corpus under shared schema:
   [`../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md`](../evidence/native_ready/BENCHMARK_CORPUS_SHARED_SCHEMA_2026-05-01.md)
-- Active VM/JIT producer recovery:
+- Active VM/JIT/wrapper producer recovery:
   [`../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`](../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md)
+- Wrapper library producer follow-up:
+  [`../evidence/native_ready/WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md`](../evidence/native_ready/WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md)
 
 ## Execution Epics
 
@@ -70,10 +72,9 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
   project JIT fallback explicitly.
 - `bd-9xmu.5.4` / `runner-003`: add wrapper EXE/library smoke rows. Recovered
   for wrapper EXE real artifact execution by `bd-9xmu.5.8`; wrapper library
-  remains sample-only until `bd-9xmu.5.9`.
+  real artifact/exported-call row production was delivered by `bd-9xmu.5.9`.
 - `bd-9xmu.5.5` / `runner-004`: add artifact size and timing fields. Recovered
-  for VM/JIT and wrapper EXE rows; wrapper library artifact size/timing remains
-  part of `bd-9xmu.5.9`.
+  for VM/JIT, wrapper EXE, and wrapper library rows.
 - `bd-9xmu.5.6` / `runner-005`: publish first benchmark corpus under shared
   schema. Stress workload references are recovered by `bd-9xmu.4.7`; active
   VM/JIT producer exists for new rows.
@@ -85,18 +86,17 @@ Rolled out on 2026-05-01 under bead epic `bd-9xmu.5`:
   Recovered 2026-05-02; `oxvba native-ready-runner --wrapper-exe` builds and
   executes a wrapper EXE and emits a `wrapper-exe` row.
 - `bd-9xmu.5.9` / follow-up: implement wrapper library artifact schema
-  producer. Open as a non-blocking successor bead; required before claiming real
-  wrapper-library row production.
+  producer. Delivered 2026-05-07; `oxvba native-ready-runner --wrapper-library`
+  builds a wrapper library, invokes a supported exported `NativeExport`, and
+  emits a `wrapper-library` row.
 
 ## Terminal Gate
 
 This workset is complete under the recovery decision: direct-native follow-on
-work can use the shared schema plus executable VM/JIT and wrapper EXE reference
-rows without inventing a new evidence format.
+work can use the shared schema plus executable VM/JIT, wrapper EXE, and wrapper
+library reference rows without inventing a new evidence format.
 
-Reduced claim: wrapper library rows remain sample/schema-only and are explicitly
-non-blocking future work under `bd-9xmu.5.9`; no real wrapper-library row should
-be cited until that bead implements artifact execution and exported-call digest
-capture. Current evidence:
-[`../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`](../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md).
+Current evidence:
+- [`../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md`](../evidence/native_ready/RUNNER_PRODUCER_RECOVERY_2026-05-02.md)
+- [`../evidence/native_ready/WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md`](../evidence/native_ready/WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md)
 

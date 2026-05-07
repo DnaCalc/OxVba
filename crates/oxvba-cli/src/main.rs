@@ -1,5 +1,7 @@
 use oxvba_com::{TypeLibResolveRequest, resolve_known_typelib_identity};
-use oxvba_compiler::{ProjectReference, ReferenceKind, ReferencedProjectManifest};
+use oxvba_compiler::{
+    DeclareParamType, ProjectReference, ReferenceKind, ReferencedProjectManifest,
+};
 use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
@@ -281,7 +283,7 @@ fn run_project(args: Vec<String>) {
 fn run_native_ready_runner(args: Vec<String>) {
     let parsed = parse_native_ready_runner_args_from(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba native-ready-runner [path] --run-id-prefix <id> --timestamp-utc <ts> --workload-id <id> --workload-name <name> [--source-path <path>] [--iterations <n>] [--warmup <n>] [--out <csv>] [--wrapper-exe] [--wrapper-out <exe>]"
+            "usage: oxvba native-ready-runner [path] --run-id-prefix <id> --timestamp-utc <ts> --workload-id <id> --workload-name <name> [--source-path <path>] [--iterations <n>] [--warmup <n>] [--out <csv>] [--wrapper-exe] [--wrapper-out <exe>] [--wrapper-library] [--wrapper-library-out <dll|so|dylib>]"
         );
         std::process::exit(2);
     });
@@ -324,6 +326,20 @@ fn run_native_ready_runner(args: Vec<String>) {
         csv.push('\n');
     }
 
+    if parsed.include_wrapper_library {
+        let wrapper_row = produce_wrapper_library_runner_row(
+            &loaded,
+            &config,
+            parsed.wrapper_library_output_path.as_deref(),
+        )
+        .unwrap_or_else(|err| {
+            eprintln!("oxvba native-ready-runner: {err}");
+            std::process::exit(1);
+        });
+        csv.push_str(&wrapper_row.to_csv_record());
+        csv.push('\n');
+    }
+
     if let Some(output_path) = parsed.output_path {
         fs::write(&output_path, csv).unwrap_or_else(|err| {
             eprintln!(
@@ -350,6 +366,8 @@ struct NativeReadyRunnerArgs {
     warmup_iterations: u32,
     include_wrapper_exe: bool,
     wrapper_output_path: Option<PathBuf>,
+    include_wrapper_library: bool,
+    wrapper_library_output_path: Option<PathBuf>,
 }
 
 fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyRunnerArgs> {
@@ -371,6 +389,8 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
     let mut warmup_iterations = 0u32;
     let mut include_wrapper_exe = false;
     let mut wrapper_output_path: Option<PathBuf> = None;
+    let mut include_wrapper_library = false;
+    let mut wrapper_library_output_path: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < collected.len() {
@@ -415,6 +435,14 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
                 include_wrapper_exe = true;
                 wrapper_output_path = Some(PathBuf::from(collected.get(i)?.as_str()));
             }
+            "--wrapper-library" | "--wrapper-lib" => {
+                include_wrapper_library = true;
+            }
+            "--wrapper-library-out" | "--wrapper-lib-out" => {
+                i += 1;
+                include_wrapper_library = true;
+                wrapper_library_output_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
             }
@@ -435,6 +463,8 @@ fn parse_native_ready_runner_args_from(args: Vec<String>) -> Option<NativeReadyR
         warmup_iterations,
         include_wrapper_exe,
         wrapper_output_path,
+        include_wrapper_library,
+        wrapper_library_output_path,
     })
 }
 
@@ -562,8 +592,308 @@ fn produce_wrapper_exe_runner_row(
     })
 }
 
+fn produce_wrapper_library_runner_row(
+    loaded: &oxvba_project::LoadedProject,
+    config: &NativeReadyRunnerConfig,
+    wrapper_output_path: Option<&Path>,
+) -> Result<NativeReadyRunnerRow, String> {
+    let wrapper_path = wrapper_output_path
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_native_ready_wrapper_library_path(&config.run_id_prefix));
+    if let Some(parent) = wrapper_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "cannot create wrapper library output directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    if loaded.native_exports.is_empty() {
+        return Err(
+            "wrapper library runner requires at least one <NativeExport> in the project"
+                .to_string(),
+        );
+    }
+
+    let compiled = oxvba_compiler::compile_project(&loaded.manifest)
+        .map_err(|err| format!("wrapper library compile failed: {err}"))?;
+    let mut exports = loaded.native_exports.clone();
+    oxvba_project::validate::validate_native_exports(&mut exports, &compiled)
+        .map_err(|err| format!("wrapper library export validation failed: {err}"))?;
+    let call_spec = exports
+        .iter()
+        .find_map(|export| wrapper_export_call_spec(export).ok())
+        .ok_or_else(|| {
+            "wrapper library runner could not find a supported NativeExport signature for exported-call smoke evidence".to_string()
+        })?;
+
+    let bundle =
+        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+    let bytes = bundle
+        .serialize_to_bytes()
+        .map_err(|err| format!("wrapper library bundle serialization failed: {err}"))?;
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "oxvba_native_ready_wrapper_library_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    fs::create_dir_all(&temp_dir).map_err(|err| {
+        format!(
+            "cannot create wrapper library staging dir {}: {err}",
+            temp_dir.display()
+        )
+    })?;
+    let oxb_path = temp_dir.join("bundle.oxb");
+    fs::write(&oxb_path, bytes).map_err(|err| {
+        format!(
+            "cannot stage wrapper library bundle {}: {err}",
+            oxb_path.display()
+        )
+    })?;
+
+    let bundle_literal = oxb_path.to_string_lossy().replace('\\', "/");
+    let source = oxvba_build::dll::generate_dll_shim(
+        &loaded.manifest.project_name,
+        &bundle_literal,
+        &exports,
+    );
+    let compile_result = oxvba_build::compile::compile_shim(
+        &source,
+        &wrapper_path,
+        oxvba_build::compile::ShimOutputType::Dll,
+    );
+    let _ = fs::remove_dir_all(&temp_dir);
+    compile_result.map_err(|err| format!("wrapper library build failed: {err}"))?;
+
+    let artifact_size_bytes = fs::metadata(&wrapper_path)
+        .map(|metadata| metadata.len())
+        .map_err(|err| {
+            format!(
+                "cannot stat wrapper library artifact {}: {err}",
+                wrapper_path.display()
+            )
+        })?;
+
+    for _ in 0..config.warmup_iterations {
+        let _ = call_wrapper_library_export(&wrapper_path, &call_spec)
+            .map_err(|err| format!("wrapper library warmup exported-call failed: {err}"))?;
+    }
+
+    let iterations = config.iterations.max(1);
+    let mut timings = Vec::with_capacity(iterations as usize);
+    let mut last_observation = None;
+    for _ in 0..iterations {
+        let started = std::time::Instant::now();
+        let observation = call_wrapper_library_export(&wrapper_path, &call_spec)
+            .map_err(|err| format!("wrapper library exported-call failed: {err}"))?;
+        timings.push(started.elapsed().as_secs_f64() * 1000.0);
+        last_observation = Some(observation);
+    }
+    let observation = last_observation.expect("at least one wrapper library iteration");
+    let mean_ms = timings.iter().copied().sum::<f64>() / timings.len() as f64;
+    let min_ms = timings.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_ms = timings.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let digest = digest_exported_call_observation(&observation);
+
+    Ok(NativeReadyRunnerRow {
+        run_id: format!("{}-wrapper-library", config.run_id_prefix),
+        timestamp_utc: config.timestamp_utc.clone(),
+        host_os: config.host_os.clone(),
+        target_arch: config.target_arch.clone(),
+        workload_id: config.workload_id.clone(),
+        workload_name: config.workload_name.clone(),
+        source_path: config.source_path.clone(),
+        backend: "wrapper-library".to_string(),
+        artifact_kind: "wrapper-library".to_string(),
+        artifact_path: wrapper_path.display().to_string(),
+        artifact_size_bytes,
+        mode: config.mode.clone(),
+        iterations,
+        warmup_iterations: config.warmup_iterations,
+        mean_ms,
+        min_ms,
+        max_ms,
+        exit_status: 0,
+        diagnostic_code: String::new(),
+        fallback_used: false,
+        fallback_reason: "not-applicable".to_string(),
+        result_kind: "exported-call".to_string(),
+        result_digest: digest,
+        claim_boundary: "Wrapper library artifact built and invoked by native-ready runner via exported NativeExport call; wrapper host over OXB, not direct native PE/ELF evidence".to_string(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct WrapperExportCallSpec {
+    export_name: String,
+    args: Vec<oxvba_com::windows_ffi_bridge::FfiArg>,
+    arg_payloads: Vec<String>,
+    return_type: oxvba_com::windows_ffi_bridge::FfiReturnType,
+    return_type_label: String,
+}
+
+#[derive(Debug, Clone)]
+struct WrapperExportObservation {
+    export_name: String,
+    arg_payloads: Vec<String>,
+    return_type_label: String,
+    raw_return: i64,
+    display_return: String,
+}
+
+fn wrapper_export_call_spec(
+    export: &oxvba_project::NativeExportDescriptor,
+) -> Result<WrapperExportCallSpec, String> {
+    let param_types = export.param_types.as_deref().ok_or_else(|| {
+        format!(
+            "NativeExport `{}` has no validated parameter metadata",
+            export.exported_name
+        )
+    })?;
+    let return_type = export.return_type.ok_or_else(|| {
+        format!(
+            "NativeExport `{}` has no validated return metadata",
+            export.exported_name
+        )
+    })?;
+
+    let mut args = Vec::with_capacity(param_types.len());
+    let mut arg_payloads = Vec::with_capacity(param_types.len());
+    for (index, ty) in param_types.iter().enumerate() {
+        let (arg, payload) = wrapper_export_arg_for_type(*ty, index)?;
+        args.push(arg);
+        arg_payloads.push(payload);
+    }
+
+    let (return_type, return_type_label) = wrapper_export_return_type(return_type)?;
+
+    Ok(WrapperExportCallSpec {
+        export_name: export.exported_name.clone(),
+        args,
+        arg_payloads,
+        return_type,
+        return_type_label,
+    })
+}
+
+fn wrapper_export_arg_for_type(
+    ty: DeclareParamType,
+    index: usize,
+) -> Result<(oxvba_com::windows_ffi_bridge::FfiArg, String), String> {
+    use oxvba_com::windows_ffi_bridge::FfiArg;
+
+    let ordinal = index as i32 + 1;
+    let arg = match ty {
+        DeclareParamType::Long => FfiArg::Long(40 + ordinal),
+        DeclareParamType::Integer => FfiArg::Integer((10 + ordinal) as i16),
+        DeclareParamType::Byte => FfiArg::Byte((ordinal as u8).saturating_add(1)),
+        DeclareParamType::Boolean => FfiArg::Boolean(-1),
+        DeclareParamType::Double => FfiArg::Double(12.5 + f64::from(ordinal)),
+        DeclareParamType::Single => FfiArg::Single(3.5 + ordinal as f32),
+        DeclareParamType::Currency => FfiArg::LongLong(123_450 + i64::from(ordinal)),
+        DeclareParamType::Date => FfiArg::Double(45_000.0 + f64::from(ordinal)),
+        DeclareParamType::LongLong => FfiArg::LongLong(9_000 + i64::from(ordinal)),
+        DeclareParamType::LongPtr => FfiArg::LongLong(7_000 + i64::from(ordinal)),
+        DeclareParamType::String => {
+            let mut text = format!("NativeReady{ordinal}")
+                .encode_utf16()
+                .collect::<Vec<_>>();
+            text.push(0);
+            FfiArg::String(text)
+        }
+        DeclareParamType::Variant | DeclareParamType::Any => FfiArg::Pointer(std::ptr::null_mut()),
+    };
+    let payload = format!("{ty:?}:{arg:?}");
+    Ok((arg, payload))
+}
+
+fn wrapper_export_return_type(
+    ty: Option<DeclareParamType>,
+) -> Result<(oxvba_com::windows_ffi_bridge::FfiReturnType, String), String> {
+    use oxvba_com::windows_ffi_bridge::FfiReturnType;
+
+    let Some(ty) = ty else {
+        return Ok((FfiReturnType::Void, "Void".to_string()));
+    };
+    let ffi = match ty {
+        DeclareParamType::Long => FfiReturnType::Long,
+        DeclareParamType::Integer => FfiReturnType::Integer,
+        DeclareParamType::Boolean => FfiReturnType::Boolean,
+        DeclareParamType::Byte => FfiReturnType::Byte,
+        DeclareParamType::Double | DeclareParamType::Date => FfiReturnType::Double,
+        DeclareParamType::Single => FfiReturnType::Single,
+        DeclareParamType::Currency | DeclareParamType::LongLong => FfiReturnType::LongLong,
+        DeclareParamType::LongPtr => FfiReturnType::LongPtr,
+        DeclareParamType::String | DeclareParamType::Variant | DeclareParamType::Any => {
+            return Err(format!(
+                "unsupported wrapper library exported-call return type `{ty:?}`"
+            ));
+        }
+    };
+    Ok((ffi, format!("{ty:?}")))
+}
+
+fn call_wrapper_library_export(
+    wrapper_path: &Path,
+    spec: &WrapperExportCallSpec,
+) -> Result<WrapperExportObservation, String> {
+    let module = oxvba_com::windows_ffi_bridge::load_library(&wrapper_path.display().to_string())?;
+    let proc_addr = oxvba_com::windows_ffi_bridge::get_proc_address(module, &spec.export_name)?;
+    let raw_return =
+        oxvba_com::windows_ffi_bridge::invoke_stdcall(proc_addr, &spec.args, spec.return_type)?;
+    Ok(WrapperExportObservation {
+        export_name: spec.export_name.clone(),
+        arg_payloads: spec.arg_payloads.clone(),
+        return_type_label: spec.return_type_label.clone(),
+        raw_return,
+        display_return: display_ffi_return(spec.return_type, raw_return),
+    })
+}
+
+fn display_ffi_return(
+    return_type: oxvba_com::windows_ffi_bridge::FfiReturnType,
+    raw_return: i64,
+) -> String {
+    use oxvba_com::windows_ffi_bridge::FfiReturnType;
+
+    match return_type {
+        FfiReturnType::Void => "void".to_string(),
+        FfiReturnType::Double => f64::from_bits(raw_return as u64).to_string(),
+        FfiReturnType::Single => f32::from_bits(raw_return as u32).to_string(),
+        FfiReturnType::Boolean => (raw_return != 0).to_string(),
+        _ => raw_return.to_string(),
+    }
+}
+
 fn default_native_ready_wrapper_path(run_id_prefix: &str) -> PathBuf {
-    let sanitized = run_id_prefix
+    PathBuf::from("target")
+        .join("native-ready")
+        .join("wrapper")
+        .join(format!(
+            "{}{}",
+            sanitize_run_id_for_path(run_id_prefix),
+            cli_exe_suffix()
+        ))
+}
+
+fn default_native_ready_wrapper_library_path(run_id_prefix: &str) -> PathBuf {
+    PathBuf::from("target")
+        .join("native-ready")
+        .join("wrapper")
+        .join(format!(
+            "{}{}",
+            sanitize_run_id_for_path(run_id_prefix),
+            cli_dylib_suffix()
+        ))
+}
+
+fn sanitize_run_id_for_path(run_id_prefix: &str) -> String {
+    run_id_prefix
         .chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
@@ -572,15 +902,38 @@ fn default_native_ready_wrapper_path(run_id_prefix: &str) -> PathBuf {
                 '_'
             }
         })
-        .collect::<String>();
-    PathBuf::from("target")
-        .join("native-ready")
-        .join("wrapper")
-        .join(format!("{}{}", sanitized, cli_exe_suffix()))
+        .collect::<String>()
 }
 
 fn cli_exe_suffix() -> &'static str {
     if cfg!(windows) { ".exe" } else { "" }
+}
+
+fn cli_dylib_suffix() -> &'static str {
+    if cfg!(windows) {
+        ".dll"
+    } else if cfg!(target_os = "macos") {
+        ".dylib"
+    } else {
+        ".so"
+    }
+}
+
+fn digest_exported_call_observation(observation: &WrapperExportObservation) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    update_fnv1a64(&mut hash, observation.export_name.as_bytes());
+    update_fnv1a64(&mut hash, b"\0args\0");
+    for arg in &observation.arg_payloads {
+        update_fnv1a64(&mut hash, arg.as_bytes());
+        update_fnv1a64(&mut hash, b"\0");
+    }
+    update_fnv1a64(&mut hash, b"\0return-type\0");
+    update_fnv1a64(&mut hash, observation.return_type_label.as_bytes());
+    update_fnv1a64(&mut hash, b"\0raw-return\0");
+    update_fnv1a64(&mut hash, observation.raw_return.to_string().as_bytes());
+    update_fnv1a64(&mut hash, b"\0display-return\0");
+    update_fnv1a64(&mut hash, observation.display_return.as_bytes());
+    format!("fnv1a64:{hash:016x}")
 }
 
 fn digest_process_observation(exit_status: i32, stdout: &[u8], stderr: &[u8]) -> String {
@@ -2853,6 +3206,37 @@ mod tests {
         assert_eq!(
             parsed.wrapper_output_path.as_deref(),
             Some(Path::new("target/native-ready/wrapper/nr-smoke.exe"))
+        );
+    }
+
+    #[test]
+    fn parse_native_ready_runner_args_supports_wrapper_library() {
+        let args = vec![
+            "native-ready-runner".to_string(),
+            "examples/library".to_string(),
+            "--run-id-prefix".to_string(),
+            "nr-lib".to_string(),
+            "--timestamp-utc".to_string(),
+            "2026-05-02T00:00:00Z".to_string(),
+            "--workload-id".to_string(),
+            "NR-RUNNER-LIB-001".to_string(),
+            "--workload-name".to_string(),
+            "Runner library smoke".to_string(),
+            "--wrapper-library-out".to_string(),
+            "target/native-ready/wrapper/nr-lib.dll".to_string(),
+        ];
+
+        let parsed = parse_native_ready_runner_args_from(args).expect("args should parse");
+        assert_eq!(
+            parsed.input_path.as_deref(),
+            Some(Path::new("examples/library"))
+        );
+        assert_eq!(parsed.run_id_prefix, "nr-lib");
+        assert!(!parsed.include_wrapper_exe);
+        assert!(parsed.include_wrapper_library);
+        assert_eq!(
+            parsed.wrapper_library_output_path.as_deref(),
+            Some(Path::new("target/native-ready/wrapper/nr-lib.dll"))
         );
     }
 

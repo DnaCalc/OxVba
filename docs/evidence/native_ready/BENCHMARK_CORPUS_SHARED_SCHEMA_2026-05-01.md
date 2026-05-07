@@ -4,7 +4,7 @@
 > rows under the schema. The referenced stress filters and VM/JIT producer have
 > since been restored by `CORRECTNESS_CORPUS_RECOVERY_EXECUTABLE_STRESS_2026-05-02.md`
 > and `RUNNER_PRODUCER_RECOVERY_2026-05-02.md`; wrapper library producer work
-> remains in `bd-9xmu.5.9`.
+> was delivered in `WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md`.
 
 Date: 2026-05-01
 Bead: `bd-9xmu.5.6` / `runner-005`

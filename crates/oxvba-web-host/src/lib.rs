@@ -365,7 +365,7 @@ impl From<SemanticProvenance> for WebSemanticProvenance {
 mod tests {
     use oxvba_host::{
         DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
-        ImmediateVariantEvaluationOutput,
+        DirectHostStackFrameId, ImmediateVariantEvaluationOutput,
     };
     use oxvba_languageservice::{
         DiagnosticSeverity, DocumentId, HostWorkspaceDocument, SpannedDiagnostic, TextSpan,
@@ -448,6 +448,7 @@ mod tests {
                 call_stack_depth: 1,
             },
             frames: vec![DebugFrameVariant {
+                frame_id: DirectHostStackFrameId::new("debug:test:frame:1"),
                 module_name: "Module1".to_string(),
                 procedure_name: "Main".to_string(),
                 entry_pc: 4,

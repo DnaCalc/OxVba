@@ -1,7 +1,7 @@
 # Native-Ready Runner And Benchmark Schema v1
 
 Status: `locked-baseline`
-Date: 2026-04-30; producer recovery update 2026-05-02
+Date: 2026-04-30; producer recovery update 2026-05-02; wrapper-library producer update 2026-05-07
 Scope owner: OxVBA validation/performance/native-readiness
 
 ## Purpose
@@ -82,8 +82,10 @@ Active VM/JIT row production exists through `oxvba_host::emit_native_ready_vm_ji
 and the `oxvba native-ready-runner` CLI command. Wrapper EXE row production is
 available through `oxvba native-ready-runner --wrapper-exe`, which builds and
 executes a wrapper artifact and emits artifact size/timing/exit/digest fields.
-Wrapper library rows remain sample/schema-only until `bd-9xmu.5.9` implements
-real wrapper-library artifact execution and digest capture.
+Wrapper library row production is available through
+`oxvba native-ready-runner --wrapper-library`, which builds a wrapper
+DLL/shared-library artifact, invokes a supported exported `NativeExport`, and
+emits artifact size/timing/exported-call digest fields.
 
 ## Native Placeholder Policy
 

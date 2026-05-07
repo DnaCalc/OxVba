@@ -2,15 +2,16 @@
 
 Date: 2026-05-02
 Bead: `bd-9xmu.5.7`
-Status: VM/JIT and wrapper EXE schema producers restored; wrapper library producer deferred to `bd-9xmu.5.9`
+Status: VM/JIT and wrapper EXE schema producers restored; wrapper library producer later delivered by `bd-9xmu.5.9`
 
 ## Scope
 
 The recovery audit found that phase-5 runner evidence was schema/sample CSV only.
 This pass adds an active Rust producer for VM/JIT rows under
 `NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1` and a CLI entry point that emits
-that schema for loaded projects. A follow-up pass added wrapper EXE artifact
-build/execute rows through the same CLI command.
+that schema for loaded projects. Follow-up passes added wrapper EXE artifact
+build/execute rows and wrapper library exported-call rows through the same CLI
+command.
 
 ## Active producer paths
 
@@ -24,6 +25,10 @@ build/execute rows through the same CLI command.
   - `--wrapper-exe` / `--wrapper-out <exe>` builds a wrapper EXE artifact,
     executes it, and appends a `backend=wrapper-exe` row with artifact size,
     elapsed timing, exit status, and stdout/stderr digest.
+  - `--wrapper-library` / `--wrapper-library-out <dll|so|dylib>` builds a
+    wrapper library artifact, invokes a supported exported `NativeExport`, and
+    appends a `backend=wrapper-library` row with artifact size, elapsed timing,
+    and exported-call digest.
 - `crates/oxvba-build/src/exe.rs`
   - generated EXE shims now call `execute_bundle_with_variant_snapshot`.
 - `crates/oxvba-host/tests/native_ready_runner_rows.rs`
@@ -78,10 +83,15 @@ Output includes a real wrapper row:
 nr-cli-wrapper-smoke-001-wrapper-exe,...,wrapper-exe,wrapper-exe,target/native-ready/wrapper/nr-cli-wrapper-smoke-001.exe,1993728,correctness,1,0,...,0,,false,not-applicable,stdout-stderr-exit,fnv1a64:...,Wrapper EXE artifact built and executed by native-ready runner; wrapper host over OXB, not direct native PE/ELF evidence
 ```
 
+Wrapper library follow-up evidence:
+
+- `docs/evidence/native_ready/WRAPPER_LIBRARY_RUNNER_PRODUCER_2026-05-07.md`
+
 Additional validation:
 
 ```text
 cargo test -p oxvba-cli parse_native_ready_runner_args_supports_wrapper_exe
+cargo test -p oxvba-cli parse_native_ready_runner_args_supports_wrapper_library
 cargo test -p oxvba-build exe_shim_contains_project_name
 cargo check -p oxvba-cli
 cargo check -p oxvba-build
@@ -95,12 +105,13 @@ cargo check -p oxvba-build
 - Covered: executable wrapper EXE row production with real wrapper artifact path,
   artifact size, elapsed timing, exit status, stdout/stderr/exit digest, and
   wrapper-specific claim boundary.
+- Covered: executable wrapper library row production with real wrapper artifact
+  path, artifact size, elapsed timing, exported `NativeExport` call digest, and
+  wrapper-library-specific claim boundary.
 - JIT boundary: project execution currently performs JIT preflight and then uses
   VM fallback for project-visible snapshot filtering; rows mark
   `fallback_used=true` and are reference evidence, not direct JIT/native
   execution evidence.
-- Wrapper boundary: wrapper EXE rows prove generated wrapper execution over an
-  embedded OXB bundle; they are not direct native PE/ELF codegen evidence.
-- Deferred: wrapper library rows remain schema/sample-backed until
-  `bd-9xmu.5.9` implements a real wrapper library artifact runner with exported
-  call/result digest capture.
+- Wrapper boundary: wrapper EXE and wrapper library rows prove generated wrapper
+  execution/invocation over an embedded OXB bundle; they are not direct native
+  PE/ELF codegen evidence.
