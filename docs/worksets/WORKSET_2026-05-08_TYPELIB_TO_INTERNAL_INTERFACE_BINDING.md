@@ -136,6 +136,14 @@ Additional descriptor projection progress:
 - Validation after early-bound bytecode metadata: `cargo test -p oxvba-compiler --quiet` -> 818 passed; `cargo test -p oxvba-vm --quiet` -> 7 passed; `cargo test -p oxvba-jit --quiet` -> 8 passed; strict Access/JET host test -> 1 passed.
 - Additional Access/JET ambiguity validation: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture` -> 1 passed, with strict source covering both `Set bangFieldName = rs!Name` and `bangNameValue = rs!Name`.
 
+## Current vtable-vs-dispatch policy
+
+- Imported typelib metadata is the authority for known receiver/member shape. The compiler-generated path is marked `early_bound: true` in bytecode when the call was produced from typed imported source rather than user-authored `DispatchInvoke`.
+- Native COM invocation still defaults to descriptor-backed `IDispatch` for general registered COM libraries because this is the safe ABI-compatible path across arbitrary typelibs and Office/ADO servers.
+- `ComInvocationStrategy::PreferVtable` is an opt-in runtime policy. It may use vtable invocation only where the runtime has a safe implementation for the concrete server/member shape; otherwise it falls back to descriptor-backed dispatch. Existing registered `OxVba.TestDispatch` tests compare PreferVtable and dispatch results for supported fixture lanes.
+- `FUNCDESC::oVft` is preserved in descriptors as evidence and future call-plan input, but presence of a vtable slot alone is not treated as permission to blindly call an arbitrary native COM vtable. Full arbitrary native vtable ABI marshalling remains a later expansion.
+- Pure OxVba objects do not route through native COM `IDispatch`; they use OxVba-owned descriptor lookup/cache and project dynamic invocation.
+
 ## Scope
 
 ### In scope

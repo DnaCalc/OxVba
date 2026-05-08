@@ -134,6 +134,12 @@ First implementation slice:
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 - `pure_oxvba_class_object_exposes_runtime_descriptor_metadata` proves a real compiled `Dim widget As New Widget` project dynamic object can be registered into the VM and queried for descriptor-backed default-member metadata while the project still executes correctly.
 
+## Current COM-compatible ABI boundary policy
+
+- The internal ABI is COM-shaped at the identity/descriptor layer: objects expose class descriptors, interface descriptors, member dispatch IDs, vtable slot metadata where known, default-member flags, call kind, arity, parameter descriptors, and return descriptors.
+- It is not a blanket commitment to implement all internal dispatch by calling native `IDispatch`; pure OxVba dynamic dispatch remains OxVba-owned and cache-backed for portability and optimization.
+- Native COM publication/registration remains out of scope for this workset, but the descriptor shape is intentionally compatible with future dual-interface export work.
+
 Validation:
 
 ```powershell
