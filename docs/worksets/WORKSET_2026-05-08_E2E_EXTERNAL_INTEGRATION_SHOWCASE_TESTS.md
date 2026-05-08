@@ -1,7 +1,7 @@
 # Workset — E2E External Integration Showcase Tests
 
 Date: 2026-05-08
-Status: evidence-backed showcase pass complete for bounded mixed/late-bound scenarios; strict natural early-bound Access/JET test is red and tracked
+Status: evidence-backed showcase pass complete for bounded mixed/late-bound scenarios and strict natural early-bound Access/JET slice
 
 ## Objective
 

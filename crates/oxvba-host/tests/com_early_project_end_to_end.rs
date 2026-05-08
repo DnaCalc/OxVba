@@ -7,7 +7,10 @@ use oxvba_compiler::{
     ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind, compile_project,
     module_unit_from_source,
 };
-use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
+use oxvba_hal::{
+    adapters::builder::HostBuilder,
+    model::{ComInvocationStrategy, HostPolicy, native_host_profile},
+};
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
@@ -116,6 +119,77 @@ fn assert_same_object_identity(values: &[Variant], indices: &[usize], context: &
             "{context}: expected identical retained ObjectRef identity at indices {indices:?}, got values={values:?}"
         );
     }
+}
+
+#[test]
+fn pure_oxvba_class_object_exposes_runtime_descriptor_metadata() {
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim widget As New Widget
+Dim valueOut
+valueOut = widget.Value
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Property Get Value()
+Value = 41
+End Property
+Attribute Value.VB_UserMemId = 0
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let compiled = compile_project(&manifest).expect("project should compile");
+    let mut vm = oxvba_vm::Vm::new(
+        HostBuilder::new()
+            .profile(native_host_profile())
+            .policy(HostPolicy::deterministic_runtime())
+            .build(),
+    );
+    vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+    let widget = vm
+        .project_dynamic_object_ref(1)
+        .expect("compiled New Widget should register a project dynamic object");
+    let descriptor = widget.class_descriptor();
+    assert_eq!(descriptor.name, "projecta.widget");
+    let dispatch = widget
+        .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+        .expect("pure OxVba class object should expose descriptor-backed dispatch metadata");
+    assert!(dispatch.dual_dispatch);
+    let value = dispatch
+        .members
+        .iter()
+        .find(|member| member.name.eq_ignore_ascii_case("Value"))
+        .expect("Value member should be represented in descriptor metadata");
+    assert_eq!(value.dispatch_id, 0);
+    assert!(value.is_default_member);
+    assert_eq!(value.arity, 0);
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert_eq!(out[1], Variant::from_i32(41));
 }
 
 #[cfg(target_os = "windows")]
