@@ -273,15 +273,15 @@ if ($comPreflightOk) {
     $adodbTypelib = Find-AdoTypelib 'msado15.dll'
     $adoxTypelib = Find-AdoTypelib 'msadox.dll'
     if (-not $adodbTypelib -or -not $adoxTypelib) {
-        Add-Result -Name 'access_jet_early_bound_create_insert_query' -Category 'access-jet-com' -Status 'blocked' -ExitCode 1 -StdoutPath $null -StderrPath $null -Notes 'ADO/ADOX typelib files were not found, so the early-bound Access/JET pass could not be run.'
+        Add-Result -Name 'access_jet_mixed_imported_com_create_insert_query' -Category 'access-jet-com' -Status 'blocked' -ExitCode 1 -StdoutPath $null -StderrPath $null -Notes 'ADO/ADOX typelib files were not found, so the mixed imported-COM Access/JET pass could not be run.'
     } else {
-        $earlyProj = Join-Path $srcDir 'access_jet_early_bound_project'
+        $earlyProj = Join-Path $srcDir 'access_jet_mixed_imported_com_project'
         New-Item -ItemType Directory -Force -Path $earlyProj | Out-Null
-        $earlyDbPath = Join-Path $artifactDir 'ShowcaseJetEarlyBound.accdb'
+        $earlyDbPath = Join-Path $artifactDir 'ShowcaseJetMixedImported.accdb'
         $earlyConnectionLiteral = "Provider=$provider;Data Source=$earlyDbPath".Replace('\','\\')
         $adodbImportLiteral = $adodbTypelib.Replace('\','\\')
         $adoxImportLiteral = $adoxTypelib.Replace('\','\\')
-        Write-Utf8NoBom (Join-Path $earlyProj 'AccessJetEarlyMain.bas') @"
+        Write-Utf8NoBom (Join-Path $earlyProj 'AccessJetMixedMain.bas') @"
 Public Sub Main()
 Dim catalog As New ADOX.Catalog
 Dim cn As New ADODB.Connection
@@ -302,16 +302,16 @@ nameValue = DispatchInvoke(fieldName, "Value")
 scoreValue = DispatchInvoke(fieldScore, "Value")
 End Sub
 "@
-        $earlyBasproj = Join-Path $earlyProj 'AccessJetEarlyBoundShowcase.basproj'
+        $earlyBasproj = Join-Path $earlyProj 'AccessJetMixedImportedShowcase.basproj'
         Write-Utf8NoBom $earlyBasproj @"
 <Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <ProjectName>AccessJetEarlyBoundShowcase</ProjectName>
-    <EntryPoint>AccessJetEarlyMain.Main</EntryPoint>
+    <ProjectName>AccessJetMixedImportedShowcase</ProjectName>
+    <EntryPoint>AccessJetMixedMain.Main</EntryPoint>
   </PropertyGroup>
   <ItemGroup>
-    <Module Include="AccessJetEarlyMain.bas" />
+    <Module Include="AccessJetMixedMain.bas" />
     <COMReference Include="ADODB">
       <ImportLib>$adodbImportLiteral</ImportLib>
     </COMReference>
@@ -322,7 +322,7 @@ End Sub
 </Project>
 "@
         if (Test-Path $earlyDbPath) { Remove-Item -Force $earlyDbPath }
-        Invoke-Captured -Name 'access_jet_early_bound_create_insert_query' -Category 'access-jet-com' -Exe $cli -ArgList @('run-project',$earlyBasproj,'--dump-values','--runtime-class','windows-stdio','--allow-com-activation','true','--allow-filesystem-mutation','true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $earlyDbPath); databaseBytes = if (Test-Path $earlyDbPath) { (Get-Item $earlyDbPath).Length } else { 0 } } } -Notes 'Early-bound ADO/ADOX project imports real typelib files, declares ADOX.Catalog and ADODB.Connection with As New, invokes ADODB Open/Execute through metadata-backed member calls, creates an Access/ACE .accdb, inserts rows, and queries Grace / 99 back.'
+        Invoke-Captured -Name 'access_jet_mixed_imported_com_create_insert_query' -Category 'access-jet-com' -Exe $cli -ArgList @('run-project',$earlyBasproj,'--dump-values','--runtime-class','windows-stdio','--allow-com-activation','true','--allow-filesystem-mutation','true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $earlyDbPath); databaseBytes = if (Test-Path $earlyDbPath) { (Get-Item $earlyDbPath).Length } else { 0 } } } -Notes 'Mixed imported-COM ADO/ADOX project imports real typelib files, declares ADOX.Catalog and ADODB.Connection with As New, invokes ADODB Open/Execute through metadata-backed calls, still uses DispatchInvoke for unsupported Catalog/Recordset/Field pieces, creates an Access/ACE .accdb, inserts rows, and queries Grace / 99 back.'
     }
 }
 
@@ -401,11 +401,11 @@ body{font-family:Segoe UI,Arial,sans-serif;margin:28px;line-height:1.35;color:#1
 <li><b>Project model:</b> a fresh two-file project proved module roster loading, qualified cross-module calls, local procedure calls, string coercion/concatenation, VM target execution, JIT-enabled execution, and build serialization.</li>
 <li><b>Diagnostics:</b> deliberate editing mistakes were preserved as non-zero external command failures with compiler/runtime diagnostics in stderr logs.</li>
 <li><b>Access/Jet COM:</b> where ADOX/ADODB are installed, OxVba activated real COM objects, created an Access/ACE <code>.accdb</code>, created a table, inserted records, selected a row, traversed recordset fields through <code>DispatchInvoke</code>, and surfaced <code>Grace / 99</code> in the runtime snapshot. This is a live environment-dependent integration, not a mock.</li>
-<li><b>Access/Jet early binding:</b> a second database pass imports real ADO/ADOX type libraries, declares <code>Dim catalog As New ADOX.Catalog</code> and <code>Dim cn As New ADODB.Connection</code>, and drives <code>ADODB.Connection.Open/Execute</code> through metadata-backed early-bound member calls before checking the same queried result.</li>
+<li><b>Access/Jet mixed imported COM:</b> a second database pass imports real ADO/ADOX type libraries, declares <code>Dim catalog As New ADOX.Catalog</code> and <code>Dim cn As New ADODB.Connection</code>, drives <code>ADODB.Connection.Open/Execute</code> through metadata-backed calls, and explicitly remains mixed because unsupported pieces still use <code>DispatchInvoke</code>.</li>
 <li><b>Immediate interface:</b> the bounded REPL evaluated project procedures, switched default modules, reset the live runtime session, and emitted a transcript suitable for IDE embedding discussions.</li>
 </ul>
 <h2>Truth boundaries for Q&amp;A</h2>
-<p>This showcase does not claim full native AOT compilation or full Office/VBA COM parity. Current executable truth is bytecode plus VM/JIT/fallback behavior; COM traffic here uses the supported late-bound <code>CreateObject</code>/<code>DispatchInvoke</code> bridge plus the supported metadata-backed early-bound subset for imported ADO/ADOX members. Access/ACE availability is machine-dependent and recorded as blocked rather than fabricated if missing.</p>
+<p>This showcase does not claim full native AOT compilation or full Office/VBA COM parity. Current executable truth is bytecode plus VM/JIT/fallback behavior; COM traffic here uses the supported late-bound <code>CreateObject</code>/<code>DispatchInvoke</code> bridge plus a mixed imported-COM subset for ADO/ADOX member calls. This showcase does not claim true end-to-end natural early-bound VBA COM for Access/JET; that is tracked by an ignored red Rust test. Access/ACE availability is machine-dependent and recorded as blocked rather than fabricated if missing.</p>
 <h2>Result matrix and log excerpts</h2>
 <table><thead><tr><th>Area</th><th>Pass</th><th>Status</th><th>Exit</th><th>Evidence</th></tr></thead><tbody>
 $($rows -join "`n")

@@ -520,13 +520,13 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_executes_registered_access_jet_ado_database_subset() {
+fn mixed_bound_project_executes_registered_access_jet_ado_database_subset() {
     let Some((adodb_importlib, adox_importlib)) = registered_access_jet_ado_available() else {
         return;
     };
 
     let unique = format!(
-        "access-jet-early-bound-{}-{}",
+        "access-jet-mixed-bound-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -538,7 +538,7 @@ fn early_bound_project_executes_registered_access_jet_ado_database_subset() {
         .join("temp")
         .join(unique);
     std::fs::create_dir_all(&temp_root).expect("create temp root");
-    let db_path = temp_root.join("ShowcaseJetEarly.accdb");
+    let db_path = temp_root.join("ShowcaseJetMixed.accdb");
     let connection = format!(
         "Provider=Microsoft.ACE.OLEDB.12.0;Data Source={}",
         db_path.to_string_lossy()
@@ -572,7 +572,7 @@ End Sub
     );
 
     let loaded = load_typelib_basproj_with_ref_specs(
-        "basproj-access-jet-early-bound",
+        "basproj-access-jet-mixed-bound",
         &main_source,
         &[
             BasprojComRefSpec {
@@ -604,7 +604,101 @@ End Sub
     assert_eq!(out[6], Variant::from_i32(99));
     assert!(
         db_path.exists(),
-        "early-bound Access/Jet database should be created"
+        "mixed-bound Access/Jet database should be created"
+    );
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "red strict early-bound Access/JET test: current implementation does not yet support the natural Fields(\"Name\").Value path"]
+fn strict_early_bound_project_executes_registered_access_jet_ado_database_subset() {
+    let Some((adodb_importlib, adox_importlib)) = registered_access_jet_ado_available() else {
+        return;
+    };
+
+    let unique = format!(
+        "access-jet-strict-early-bound-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join(unique);
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+    let db_path = temp_root.join("ShowcaseJetStrictEarly.accdb");
+    let connection = format!(
+        "Provider=Microsoft.ACE.OLEDB.12.0;Data Source={}",
+        db_path.to_string_lossy()
+    );
+    let escaped_connection = connection.replace('"', "\"\"");
+
+    let main_source = format!(
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim catalog As New ADOX.Catalog
+Dim cn As New ADODB.Connection
+Dim rs As ADODB.Recordset
+Dim fieldName As ADODB.Field
+Dim fieldScore As ADODB.Field
+Dim nameValue
+Dim scoreValue
+Call catalog.Create("{connection}")
+Call cn.Open("{connection}", "", "", 0)
+Call cn.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 0, 0)
+Set rs = cn.Execute("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 0, 0)
+Set fieldName = rs.Fields("Name")
+Set fieldScore = rs.Fields("Score")
+nameValue = fieldName.Value
+scoreValue = fieldScore.Value
+End Sub
+"#,
+        connection = escaped_connection
+    );
+
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-access-jet-strict-early-bound",
+        &main_source,
+        &[
+            BasprojComRefSpec {
+                include: "ADODB",
+                guid: None,
+                major: None,
+                minor: None,
+                lcid: None,
+                importlib: Some(adodb_importlib.as_str()),
+            },
+            BasprojComRefSpec {
+                include: "ADOX",
+                guid: None,
+                major: None,
+                minor: None,
+                lcid: None,
+                importlib: Some(adox_importlib.as_str()),
+            },
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[5],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[6], Variant::from_i32(99));
+    assert!(
+        db_path.exists(),
+        "strict early-bound Access/Jet database should be created"
     );
 
     let _ = std::fs::remove_dir_all(&temp_root);

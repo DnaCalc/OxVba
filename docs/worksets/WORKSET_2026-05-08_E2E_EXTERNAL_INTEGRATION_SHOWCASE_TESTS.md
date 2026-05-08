@@ -1,7 +1,7 @@
 # Workset — E2E External Integration Showcase Tests
 
 Date: 2026-05-08
-Status: evidence-backed showcase pass complete for the bounded scenarios below
+Status: evidence-backed showcase pass complete for bounded mixed/late-bound scenarios; strict natural early-bound Access/JET test is red and tracked
 
 ## Objective
 
@@ -15,9 +15,10 @@ This workset covers a bounded live showcase, not a full parity closure claim:
 2. Create a new two-file `.basproj` project with modules referencing each other, run it through VM and JIT-enabled targets, build a bundle, run the bundle, and verify output.
 3. Introduce deliberate editing errors and verify diagnostics and non-zero command results.
 4. Create a new Access/ACE/Jet database integration project with COM reference metadata for ADO/ADOX, activate real Windows COM providers, create an `.accdb`, insert records, query them back, and show returned scalar results.
-5. Create an early-bound Access/ACE/Jet database integration project that imports real ADO/ADOX type libraries, declares `ADOX.Catalog` and `ADODB.Connection` with `As New`, drives supported metadata-backed `ADODB.Connection.Open/Execute` member calls, and checks the queried values.
-6. Exercise the bounded Immediate Window interface over the project and capture the transcript.
-7. Generate a single-page HTML report with truthful technical explanation, boundaries, logs, and artifact links.
+5. Create a mixed imported-COM Access/ACE/Jet database integration project that imports real ADO/ADOX type libraries, declares `ADOX.Catalog` and `ADODB.Connection` with `As New`, drives supported metadata-backed `ADODB.Connection.Open/Execute` member calls, still uses `DispatchInvoke` for unsupported pieces, and checks the queried values.
+6. Add a strict natural early-bound Access/ACE/Jet test using only typed imported COM declarations/member calls for the database flow. This is currently a red ignored test and is the implementation target for the real early-bound lane.
+7. Exercise the bounded Immediate Window interface over the project and capture the transcript.
+8. Generate a single-page HTML report with truthful technical explanation, boundaries, logs, and artifact links.
 
 ## Reproducible Command
 
@@ -37,14 +38,15 @@ Latest successful run:
 - Logs: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/logs/`
 - Output artifacts: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/artifacts/`
 
-Run result: 13/13 pass.
+Run result: 13/13 pass for the showcase runner. Separate strict early-bound Rust test is currently red by design.
 
 ## Truth Boundaries
 
 - This workset does not claim direct native AOT compilation. Current executable truth remains bytecode plus VM/JIT/fallback behavior and serialized OxBundle execution.
 - The Access/Jet lane is environment-dependent. It requires installed Windows COM providers for ADOX/ADODB and Microsoft ACE OLE DB. The runner records this as blocked if providers are absent rather than fabricating success.
 - The late-bound COM database lane uses the currently supported `CreateObject` / `DispatchInvoke` bridge plus `.basproj` COM reference metadata. It does not claim full Office/VBA COM parity.
-- The early-bound COM database lane uses imported ADO/ADOX typelib metadata for activation and supported member calls. It still uses `DispatchInvoke` for the ADOX `Catalog.Create` and returned-recordset field/value traversal pieces that are outside the bounded early-bound member subset used by this showcase.
+- The mixed imported-COM database lane uses imported ADO/ADOX typelib metadata for activation and supported member calls. It still uses `DispatchInvoke` for the ADOX `Catalog.Create` and returned-recordset field/value traversal pieces. It is not a true early-bound VBA COM end-to-end test.
+- The strict early-bound Access/JET test is `strict_early_bound_project_executes_registered_access_jet_ado_database_subset` in `crates/oxvba-host/tests/com_early_project_end_to_end.rs`. It is ignored by default and currently fails when explicitly run because `ADODB.Recordset.Fields("Name")` is not yet supported as a natural typed COM indexed/default member call.
 - The Immediate Window pass covers the bounded V1 interface: procedure invocation/value printing, module retargeting, reset, and transcript behavior.
 
 ## Completion Evidence
@@ -58,5 +60,6 @@ The latest evidence run proves:
 - Project bundle build created `ShowcaseTwoModule.oxb` and the launcher accepted it.
 - Broken assignment and missing module reference both produced non-zero process exits with captured diagnostics.
 - Access/ACE/Jet late-bound COM project created `ShowcaseJet.accdb` (184,320 bytes in the latest run), inserted Ada/Grace rows, queried Grace back, and surfaced `string:"Grace"|i32:99`.
-- Access/ACE/Jet early-bound COM project created `ShowcaseJetEarlyBound.accdb` (184,320 bytes in the latest run), imported `msado15.dll` and `msadox.dll`, declared `ADOX.Catalog` / `ADODB.Connection` with `As New`, executed `ADODB.Connection.Open/Execute` through metadata-backed early-bound calls, and surfaced `string:"Grace"|i32:99`.
+- Access/ACE/Jet mixed imported-COM project created `ShowcaseJetEarlyBound.accdb` (184,320 bytes in the latest run), imported `msado15.dll` and `msadox.dll`, declared `ADOX.Catalog` / `ADODB.Connection` with `As New`, executed `ADODB.Connection.Open/Execute` through metadata-backed calls, used `DispatchInvoke` for unsupported pieces, and surfaced `string:"Grace"|i32:99`.
+- Strict natural early-bound command currently fails as intended for the red target: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --ignored --nocapture` reports `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` for `adodb.recordset.Fields` with one argument.
 - Immediate Window transcript showed module query, `? MathHelpers.Add(5, 7)`, `? Scale(9)`, retargeting to `MathHelpers`, `? Add(100, 23)`, and `reset`.
