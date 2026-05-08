@@ -447,6 +447,35 @@ impl Vm {
     }
 
     #[cfg(test)]
+    pub fn resolve_project_dynamic_unhinted_dispatch_plan_for_test(
+        &mut self,
+        raw: i32,
+        member_name: &str,
+        arity: usize,
+    ) -> Option<oxvba_runtime::RuntimeDispatchPlan> {
+        let object = self.project_dynamic_objects.get(&raw)?.object.clone();
+        let interface = object.query_interface_descriptor(RuntimeInterfaceId::IDispatch)?;
+        self.project_dynamic_dispatch_caches
+            .entry(raw)
+            .or_default()
+            .resolve_member_unhinted(interface, member_name, arity)
+    }
+
+    #[cfg(test)]
+    pub fn resolve_project_dynamic_unhinted_default_dispatch_plan_for_test(
+        &mut self,
+        raw: i32,
+        arity: usize,
+    ) -> Option<oxvba_runtime::RuntimeDispatchPlan> {
+        let object = self.project_dynamic_objects.get(&raw)?.object.clone();
+        let interface = object.query_interface_descriptor(RuntimeInterfaceId::IDispatch)?;
+        self.project_dynamic_dispatch_caches
+            .entry(raw)
+            .or_default()
+            .resolve_default_member_unhinted(interface, arity)
+    }
+
+    #[cfg(test)]
     pub fn project_dynamic_dispatch_cache_len_for_test(&self, raw: i32) -> usize {
         self.project_dynamic_dispatch_caches
             .get(&raw)
@@ -3815,6 +3844,15 @@ impl Vm {
                         )
                 })
                 .and_then(|plan| route.members.get(plan.member_index).cloned()),
+            (DynamicMemberSelector::Name(name), None) => object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .and_then(|interface| {
+                    self.project_dynamic_dispatch_caches
+                        .entry(object.raw())
+                        .or_default()
+                        .resolve_member_unhinted(interface, name, request.args.len())
+                })
+                .and_then(|plan| route.members.get(plan.member_index).cloned()),
             (DynamicMemberSelector::DefaultMember, Some(hint)) => object
                 .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
                 .and_then(|interface| {
@@ -3826,6 +3864,15 @@ impl Vm {
                             runtime_invoke_kind_for_dynamic_call_hint(hint),
                             request.args.len(),
                         )
+                })
+                .and_then(|plan| route.members.get(plan.member_index).cloned()),
+            (DynamicMemberSelector::DefaultMember, None) => object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .and_then(|interface| {
+                    self.project_dynamic_dispatch_caches
+                        .entry(object.raw())
+                        .or_default()
+                        .resolve_default_member_unhinted(interface, request.args.len())
                 })
                 .and_then(|plan| route.members.get(plan.member_index).cloned()),
             _ => None,

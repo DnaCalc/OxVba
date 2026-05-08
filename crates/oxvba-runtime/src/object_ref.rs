@@ -164,6 +164,66 @@ impl RuntimeDispatchPlanCache {
         })
     }
 
+    pub fn resolve_member_unhinted(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        member_name: &str,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        let normalized_member_name = normalize_runtime_member_name(member_name);
+        self.resolve_unhinted_with_name(
+            interface,
+            normalized_member_name,
+            arity,
+            |candidate, name| normalize_runtime_member_name(candidate.name) == *name,
+        )
+    }
+
+    pub fn resolve_default_member_unhinted(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        self.resolve_unhinted_with_name(
+            interface,
+            "<default>".to_string(),
+            arity,
+            |candidate, _| candidate.is_default_member,
+        )
+    }
+
+    fn resolve_unhinted_with_name(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        normalized_member_name: String,
+        arity: usize,
+        matches_name: impl Fn(&RuntimeMemberDescriptor, &String) -> bool,
+    ) -> Option<RuntimeDispatchPlan> {
+        let mut matches = interface
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| {
+                matches_name(candidate, &normalized_member_name) && candidate.arity == arity
+            });
+        let (member_index, member) = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let key = RuntimeDispatchCacheKey {
+            interface_id: interface.id,
+            normalized_member_name,
+            invoke_kind: member.invoke_kind,
+            arity,
+        };
+        self.resolve_with_key(interface, key, |candidate, key| {
+            candidate.invoke_kind == key.invoke_kind
+                && candidate.arity == key.arity
+                && candidate.name == interface.members[member_index].name
+                && candidate.dispatch_id == interface.members[member_index].dispatch_id
+        })
+    }
+
     fn resolve_with_key(
         &mut self,
         interface: &RuntimeInterfaceDescriptor,
@@ -582,6 +642,109 @@ mod tests {
             .expect("cached default property get should resolve");
         assert_eq!(default_get, default_get_again);
         assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup() {
+        static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(3),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static PUT_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(4),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyLet,
+            arity: 1,
+            params: &[RuntimeParamDescriptor {
+                name: "value",
+                value_type: RuntimeValueType::Variant,
+                by_ref: false,
+                optional: false,
+                param_array: false,
+            }],
+            return_type: None,
+            is_default_member: true,
+        };
+        static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "ITestDual",
+            members: &[VALUE_MEMBER, PUT_VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+
+        let mut cache = RuntimeDispatchPlanCache::new();
+        let get = cache
+            .resolve_member_unhinted(&INTERFACE, " value ", 0)
+            .expect("unique unhinted get should resolve and cache");
+        assert_eq!(get.member_index, 0);
+        assert_eq!(get.invoke_kind, RuntimeMemberInvokeKind::PropertyGet);
+        assert_eq!(cache.len(), 1);
+        let default_get = cache
+            .resolve_default_member_unhinted(&INTERFACE, 0)
+            .expect("unique unhinted default get should resolve and cache separately");
+        assert_eq!(default_get.member_index, 0);
+        assert_eq!(cache.len(), 2);
+        assert!(
+            cache
+                .resolve_member_unhinted(&INTERFACE, "Value", 1)
+                .is_some(),
+            "different arity can resolve to the put member"
+        );
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup() {
+        static GET_VALUE: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(3),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static METHOD_VALUE: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 1,
+            vtable_slot: Some(4),
+            invoke_kind: RuntimeMemberInvokeKind::Method,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: false,
+        };
+        static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "IAmbiguous",
+            members: &[GET_VALUE, METHOD_VALUE],
+            dual_dispatch: true,
+        };
+
+        let mut cache = RuntimeDispatchPlanCache::new();
+        assert!(
+            cache
+                .resolve_member_unhinted(&INTERFACE, "Value", 0)
+                .is_none()
+        );
+        assert!(
+            cache
+                .resolve_default_member_unhinted(&INTERFACE, 0)
+                .is_some()
+        );
+        assert_eq!(
+            cache.len(),
+            1,
+            "only the unambiguous default lookup should cache"
+        );
     }
 
     #[test]

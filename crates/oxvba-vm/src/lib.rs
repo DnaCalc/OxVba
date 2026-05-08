@@ -233,5 +233,21 @@ mod tests {
             .is_none(),
             "call kind participates in VM project-object descriptor cache resolution"
         );
+
+        let unhinted = vm
+            .resolve_project_dynamic_unhinted_dispatch_plan_for_test(42, "refresh", 1)
+            .expect("unhinted descriptor lookup should cache a unique member/arity plan");
+        assert_eq!(unhinted.member_index, 1);
+        assert_eq!(unhinted.invoke_kind, RuntimeMemberInvokeKind::Method);
+        assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 3);
+        let unhinted_default = vm
+            .resolve_project_dynamic_unhinted_default_dispatch_plan_for_test(42, 0)
+            .expect("unhinted default descriptor lookup should cache a unique default plan");
+        assert_eq!(unhinted_default.member_index, 0);
+        assert_eq!(
+            unhinted_default.invoke_kind,
+            RuntimeMemberInvokeKind::PropertyGet
+        );
+        assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 3);
     }
 }
