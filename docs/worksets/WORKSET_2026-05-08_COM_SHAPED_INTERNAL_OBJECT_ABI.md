@@ -121,18 +121,21 @@ First implementation slice:
 - `RuntimeDispatchPlanCache` provides the first optimized internal late-bound plan cache keyed by normalized member name, interface id, call kind, and arity; runtime member descriptors now carry arity so cached plans do not conflate indexed/default call shapes.
 - `Vm::set_project_dynamic_objects(...)` now constructs descriptor-backed `ObjectRef` identities for pure OxVba project dynamic/class objects, with dual-dispatch metadata derived from `ProjectDynamicObjectRoute`/`ProjectDynamicMemberRoute`, including parameter descriptors and return type descriptors.
 - VM project-object name and default-member dispatch now consult a per-object descriptor-backed `RuntimeDispatchPlanCache` before falling back to the existing route scan, preserving the optimized late-bound dispatch direction without routing through native `IDispatch` and without caching ambiguous default metadata. Unhinted dynamic calls, including explicit `DispatchInvoke(...)` traffic without a property/method hint, now cache descriptor plans when the member/default lookup is unique for the supplied arity and continue to reject ambiguous shapes.
+- `Instruction::CallProc` now carries optional `ProjectMemberCallDescriptor` metadata for compiler-lowered pure OxVba project member calls (`Method`, `PropertyGet`, `PropertyLet`, `PropertySet`). This preserves the existing direct-call execution path while making known receiver calls explicit typed project-member calls in bytecode rather than opaque ordinary procedure calls.
 - Validation after descriptor-cache integration:
   - `cargo test -p oxvba-runtime --quiet` -> 78 passed.
   - `cargo test -p oxvba-vm --quiet` -> 7 passed.
+  - `cargo test -p oxvba-jit --quiet` -> 8 passed.
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
   - `cargo test -p oxvba-host --test com_early_project_end_to_end pure_oxvba -- --nocapture` -> 2 passed after pure OxVba descriptor-cache indexed/property coverage.
-  - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 121 passed after default-member descriptor-cache integration.
+  - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 123 passed after project-member call descriptor metadata and pure OxVba descriptor-cache indexed/property coverage.
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.
+- `compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table` proves known pure OxVba receiver calls carry `ProjectMemberCallDescriptor` bytecode metadata while route metadata remains free of transitional dispatch tokens.
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 - `pure_oxvba_class_object_exposes_runtime_descriptor_metadata` proves a real compiled `Dim widget As New Widget` project dynamic object can be registered into the VM and queried for descriptor-backed default-member metadata while the project still executes correctly.
 - `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed property get, property let, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values.

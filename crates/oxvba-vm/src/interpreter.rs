@@ -3278,7 +3278,7 @@ impl Vm {
                 Instruction::Jump { target_pc } => {
                     pc = Self::next_pc_for_jump(*target_pc, len)?;
                 }
-                Instruction::CallProc { target_pc } => {
+                Instruction::CallProc { target_pc, .. } => {
                     if *target_pc >= bytecode.instructions.len() {
                         return Err(format!("call target out of range: {target_pc}"));
                     }

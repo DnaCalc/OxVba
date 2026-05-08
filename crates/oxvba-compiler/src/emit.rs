@@ -8,8 +8,9 @@ use oxvba_runtime::DynLinkSymbol;
 use crate::{
     bytecode::{
         Bytecode, DeclareParamType, DispatchInvokeArg, ExternalCallDescriptor,
-        ExternalCallWriteback, ExternalCallWritebackKind, Instruction, RuntimeArrayElementType,
-        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+        ExternalCallWriteback, ExternalCallWritebackKind, Instruction, ProjectMemberCallDescriptor,
+        ProjectMemberCallKind, RuntimeArrayElementType, RuntimeAssignmentIntent,
+        RuntimeAssignmentTargetKind, StringCompareMode,
     },
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
@@ -49,6 +50,23 @@ fn insert_casefold_key<V: Clone>(map: &mut HashMap<String, V>, name: &str, value
 fn lookup_casefold_key<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Option<&'a V> {
     map.get(name)
         .or_else(|| map.get(&normalize_runtime_name_key(name)))
+}
+
+fn project_member_call_descriptor_for_proc_name(
+    proc_name: &str,
+) -> Option<ProjectMemberCallDescriptor> {
+    let (kind, lowered_name) = if let Some(rest) = proc_name.strip_prefix("property_get_pmr_") {
+        (ProjectMemberCallKind::PropertyGet, format!("pmr_{rest}"))
+    } else if let Some(rest) = proc_name.strip_prefix("property_let_pmr_") {
+        (ProjectMemberCallKind::PropertyLet, format!("pmr_{rest}"))
+    } else if let Some(rest) = proc_name.strip_prefix("property_set_pmr_") {
+        (ProjectMemberCallKind::PropertySet, format!("pmr_{rest}"))
+    } else if proc_name.starts_with("pmr_") {
+        (ProjectMemberCallKind::Method, proc_name.to_string())
+    } else {
+        return None;
+    };
+    Some(ProjectMemberCallDescriptor { lowered_name, kind })
 }
 
 thread_local! {
@@ -252,7 +270,10 @@ pub fn emit_bytecode_with_runtime_metadata(
 
     if let Some(name) = class_init_proc {
         let patch_idx = instructions.len();
-        instructions.push(Instruction::CallProc { target_pc: 0 });
+        instructions.push(Instruction::CallProc {
+            target_pc: 0,
+            project_member: None,
+        });
         call_patches.push((patch_idx, name));
     }
     let mut entry_statement_entry_pcs = Vec::new();
@@ -280,7 +301,10 @@ pub fn emit_bytecode_with_runtime_metadata(
     });
     if let Some(name) = class_terminate_proc {
         let patch_idx = instructions.len();
-        instructions.push(Instruction::CallProc { target_pc: 0 });
+        instructions.push(Instruction::CallProc {
+            target_pc: 0,
+            project_member: None,
+        });
         call_patches.push((patch_idx, name));
     }
     let entry_exit_target = instructions.len();
@@ -422,9 +446,13 @@ pub fn emit_bytecode_with_runtime_metadata(
 
     for (patch_idx, proc_name) in call_patches {
         if let Some(target) = lookup_casefold_key(&proc_labels, &proc_name).copied()
-            && let Instruction::CallProc { target_pc } = &mut instructions[patch_idx]
+            && let Instruction::CallProc {
+                target_pc,
+                project_member,
+            } = &mut instructions[patch_idx]
         {
             *target_pc = target;
+            *project_member = project_member_call_descriptor_for_proc_name(&proc_name);
         }
     }
 
@@ -1404,7 +1432,10 @@ fn emit_stmt(
         }
         BoundStmt::GoSub { label } => {
             let patch_idx = instructions.len();
-            instructions.push(Instruction::CallProc { target_pc: 0 });
+            instructions.push(Instruction::CallProc {
+                target_pc: 0,
+                project_member: None,
+            });
             call_patches.push((patch_idx, format!("__label::{current_proc_name}::{label}")));
         }
         BoundStmt::Return => {
@@ -2183,7 +2214,10 @@ fn emit_early_call(
     }
 
     let patch_idx = instructions.len();
-    instructions.push(Instruction::CallProc { target_pc: 0 });
+    instructions.push(Instruction::CallProc {
+        target_pc: 0,
+        project_member: None,
+    });
     call_patches.push((patch_idx, name.to_string()));
 
     for (dst_slot, src_slot) in byref_copyback {

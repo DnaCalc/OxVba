@@ -8417,7 +8417,7 @@ mod tests {
         project_imported_typelib_reference, projected_typelib_reference_provenance,
         validate_compiled_project_contract, withevents_binding_token,
     };
-    use crate::Instruction;
+    use crate::{Instruction, bytecode::ProjectMemberCallKind};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn base_manifest() -> ProjectManifest {
@@ -15948,7 +15948,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget.Value\nEnd Sub",
         )
         .expect("main module parses");
         let widget = module_unit_from_source(
@@ -15966,6 +15966,19 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
         let compiled = compile_project(&manifest).expect("native internal route should compile");
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::CallProc {
+                        project_member: Some(descriptor),
+                        ..
+                    } if descriptor.kind == ProjectMemberCallKind::PropertyGet
+                        && descriptor.lowered_name.ends_with("_widget_value")
+                )
+            }),
+            "known pure OxVba receiver calls should carry typed project-member call metadata"
+        );
         assert!(
             compiled.project_dynamic_objects[0]
                 .members

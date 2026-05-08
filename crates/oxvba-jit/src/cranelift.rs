@@ -423,7 +423,7 @@ fn inline_segment(
         }
 
         match inst {
-            Instruction::CallProc { target_pc } => {
+            Instruction::CallProc { target_pc, .. } => {
                 let proc_end = find_first_return(instructions, *target_pc).ok_or_else(|| {
                     format!("cannot locate callee return for call target {target_pc}")
                 })?;

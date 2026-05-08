@@ -62,6 +62,20 @@ pub struct DispatchInvokeArg {
 }
 
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectMemberCallKind {
+    Method,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectMemberCallDescriptor {
+    pub lowered_name: String,
+    pub kind: ProjectMemberCallKind,
+}
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RuntimeAssignmentIntent {
     Implicit,
     Let,
@@ -891,6 +905,7 @@ pub enum Instruction {
     ClearErr,
     CallProc {
         target_pc: usize,
+        project_member: Option<ProjectMemberCallDescriptor>,
     },
     Return,
     JumpIfZero {
