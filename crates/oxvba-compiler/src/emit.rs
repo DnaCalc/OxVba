@@ -7,10 +7,11 @@ use oxvba_runtime::DynLinkSymbol;
 
 use crate::{
     bytecode::{
-        Bytecode, DeclareParamType, DispatchInvokeArg, ExternalCallDescriptor,
-        ExternalCallWriteback, ExternalCallWritebackKind, Instruction, ProjectMemberCallDescriptor,
-        ProjectMemberCallKind, RuntimeArrayElementType, RuntimeAssignmentIntent,
-        RuntimeAssignmentTargetKind, StringCompareMode,
+        Bytecode, ComMemberCallDescriptor, ComMemberSelectorDescriptor, DeclareParamType,
+        DispatchInvokeArg, ExternalCallDescriptor, ExternalCallWriteback,
+        ExternalCallWritebackKind, Instruction, ProjectMemberCallDescriptor, ProjectMemberCallKind,
+        RuntimeArrayElementType, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind,
+        StringCompareMode,
     },
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
@@ -50,6 +51,22 @@ fn insert_casefold_key<V: Clone>(map: &mut HashMap<String, V>, name: &str, value
 fn lookup_casefold_key<'a, V>(map: &'a HashMap<String, V>, name: &str) -> Option<&'a V> {
     map.get(name)
         .or_else(|| map.get(&normalize_runtime_name_key(name)))
+}
+
+fn com_member_call_descriptor_for_dispatch_intrinsic(
+    member: &BoundExpr,
+    arity: usize,
+    early_bound: bool,
+) -> Option<ComMemberCallDescriptor> {
+    if !early_bound {
+        return None;
+    }
+    let selector = match member {
+        BoundExpr::IntConst(dispatch_id) => ComMemberSelectorDescriptor::DispatchId(*dispatch_id),
+        BoundExpr::StringConst(name) => ComMemberSelectorDescriptor::Name(name.clone()),
+        _ => return None,
+    };
+    Some(ComMemberCallDescriptor { selector, arity })
 }
 
 fn project_member_call_descriptor_for_proc_name(
@@ -2299,12 +2316,18 @@ fn emit_dispatch_invoke_call(
         });
     }
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
+    let com_member = com_member_call_descriptor_for_dispatch_intrinsic(
+        &member.expr,
+        bytecode_args.len(),
+        early_bound,
+    );
     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
         dst,
         object: object_slot,
         member: member_slot,
         args: bytecode_args,
         early_bound,
+        com_member,
     });
     true
 }
@@ -2534,6 +2557,7 @@ fn emit_late_bound_default_member_call(
         member: member_slot,
         args: invoke_args,
         early_bound: false,
+        com_member: None,
     });
     true
 }
@@ -3790,6 +3814,7 @@ fn emit_expr_into(
                             })
                             .collect(),
                         early_bound: name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
+                        com_member: None,
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {

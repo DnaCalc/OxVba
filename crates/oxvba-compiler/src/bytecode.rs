@@ -75,6 +75,18 @@ pub struct ProjectMemberCallDescriptor {
     pub kind: ProjectMemberCallKind,
 }
 
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ComMemberSelectorDescriptor {
+    DispatchId(i32),
+    Name(String),
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ComMemberCallDescriptor {
+    pub selector: ComMemberSelectorDescriptor,
+    pub arity: usize,
+}
+
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RuntimeAssignmentIntent {
     Implicit,
@@ -751,6 +763,7 @@ pub enum Instruction {
         member: usize,
         args: Vec<DispatchInvokeArg>,
         early_bound: bool,
+        com_member: Option<ComMemberCallDescriptor>,
     },
     IntrinsicComSubscribeEventHost {
         dst: usize,

@@ -8417,7 +8417,10 @@ mod tests {
         project_imported_typelib_reference, projected_typelib_reference_provenance,
         validate_compiled_project_contract, withevents_binding_token,
     };
-    use crate::{Instruction, bytecode::ProjectMemberCallKind};
+    use crate::{
+        Instruction,
+        bytecode::{ComMemberSelectorDescriptor, ProjectMemberCallKind},
+    };
     use std::collections::{BTreeMap, BTreeSet};
 
     fn base_manifest() -> ProjectManifest {
@@ -15865,8 +15868,12 @@ mod tests {
                     instruction,
                     Instruction::IntrinsicDispatchInvokeHost {
                         early_bound: true,
+                        com_member: Some(com_member),
                         ..
-                    }
+                    } if matches!(
+                        com_member.selector,
+                        ComMemberSelectorDescriptor::DispatchId(1)
+                    ) && com_member.arity == 0
                 )
             }),
             "compiler-generated imported COM calls should carry early-bound bytecode metadata"

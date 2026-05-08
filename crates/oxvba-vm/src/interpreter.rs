@@ -2539,6 +2539,7 @@ impl Vm {
                     member,
                     args,
                     early_bound,
+                    ..
                 } => {
                     let invoke_label = if *early_bound {
                         "early_bound_com_invoke"

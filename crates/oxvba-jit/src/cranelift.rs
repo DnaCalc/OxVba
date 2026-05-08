@@ -3082,6 +3082,7 @@ pub fn execute_bytecode_rtslot_variants(
                 member,
                 args,
                 early_bound: _,
+                ..
             } => {
                 let func_ref = module
                     .declare_func_in_func(helpers.extra("oxrt_host_dispatch_invoke"), builder.func);
