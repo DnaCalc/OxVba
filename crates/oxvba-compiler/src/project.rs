@@ -15956,6 +15956,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_user_authored_dispatchinvoke_as_late_bound_metadata() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\")\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("explicit DispatchInvoke should compile");
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        early_bound: false,
+                        com_member: None,
+                        ..
+                    }
+                )
+            }),
+            "user-authored DispatchInvoke must remain late/mixed-bound metadata"
+        );
+    }
+
+    #[test]
     fn known_typelib_member_token_reads_external_member_metadata() {
         assert_eq!(
             super::known_typelib_member_token("OxVba.TestDispatch", "Count"),
