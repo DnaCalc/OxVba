@@ -114,7 +114,15 @@ Current status:
 cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture
 ```
 
-passes on the Windows machine used for this run, including `rs.Fields("Name").Value` and `rs!Name` / `rs!Score` value-context shorthand. The implementation currently lowers natural source syntax into the existing COM dispatch bridge internally while preserving strict source shape (no `DispatchInvoke` in the test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
+passes on the Windows machine used for this run, including `rs.Fields("Name").Value` and `rs!Name` / `rs!Score` value-context shorthand. The broader early-bound host binary also passed:
+
+```powershell
+cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1
+```
+
+Result: 121 passed, 0 failed.
+
+The implementation currently lowers natural source syntax into the existing COM dispatch bridge internally while preserving strict source shape (no `DispatchInvoke` in the test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
 
 ## Scope
 
