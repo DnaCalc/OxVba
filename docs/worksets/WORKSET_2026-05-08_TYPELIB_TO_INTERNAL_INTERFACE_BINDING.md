@@ -122,7 +122,7 @@ cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1
 
 Result: 121 passed, 0 failed.
 
-The implementation currently lowers natural source syntax into the existing COM dispatch bridge internally while preserving strict source shape (no `DispatchInvoke` in the test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
+The implementation now marks compiler-generated imported COM calls with early-bound bytecode metadata while preserving the public lowered-source compatibility surface. Strict source shape remains natural (no user-authored `DispatchInvoke` in the strict Access/JET test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
 
 Additional descriptor projection progress:
 
@@ -130,8 +130,10 @@ Additional descriptor projection progress:
 - The projection preserves dispatch ids, invoke kind, default-member flag, arity, named/optional parameter descriptors, return type descriptors, and optional vtable slot metadata. `dual_dispatch` is only asserted when the metadata carries an explicit vtable slot.
 - Live Windows typelib loading now captures `FUNCDESC::oVft` into `TypeLibMemberMetadata::vtable_slot` and preserves optional parameter flags from `FUNCDESC::cParamsOpt` / `PARAMFLAG_FOPT`; fixture/catalog metadata remains test-scoped behind `cfg(test)` / `fixture-typelibs`, with no hardcoded ADODB/ADOX/Scripting/Excel member catalog in production paths.
 - `ComBinding` now retains the projected runtime class descriptor for typelib-backed native COM bindings, retained runtime `ObjectRef` identities use that descriptor when created, and binding-level descriptor plan lookup/cache supports normalized member names and default members. Host snapshot canonicalization now preserves the first observed descriptor-bearing `ObjectRef` for a handle instead of replacing it with a descriptorless compatibility identity.
+- Compiler-generated imported COM rewrites use an internal `__OxVbaEarlyInvoke(...)` marker during backend compilation and emit `Instruction::IntrinsicDispatchInvokeHost { early_bound: true, ... }`; explicit user `DispatchInvoke(...)` remains `early_bound: false` mixed/late-bound traffic.
 - `typelib_metadata_projects_to_runtime_dispatch_descriptor` covers the standalone projection; `binding_from_typelib_metadata_carries_runtime_descriptor_projection` covers the binding-level connection and descriptor plan cache; `early_bound_project_executes_registered_scripting_dictionary_member_subset` now asserts the runtime `ObjectRef` for a real registered `Scripting.Dictionary` carries `IDispatch` descriptor metadata for `Count` and `Exists`.
 - Validation: `cargo test -p oxvba-com --quiet` -> 94 passed.
+- Validation after early-bound bytecode metadata: `cargo test -p oxvba-compiler --quiet` -> 818 passed; `cargo test -p oxvba-vm --quiet` -> 7 passed; `cargo test -p oxvba-jit --quiet` -> 8 passed; strict Access/JET host test -> 1 passed.
 - Additional Access/JET ambiguity validation: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture` -> 1 passed, with strict source covering both `Set bangFieldName = rs!Name` and `bangNameValue = rs!Name`.
 
 ## Scope

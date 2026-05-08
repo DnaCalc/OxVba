@@ -736,6 +736,7 @@ pub enum Instruction {
         object: usize,
         member: usize,
         args: Vec<DispatchInvokeArg>,
+        early_bound: bool,
     },
     IntrinsicComSubscribeEventHost {
         dst: usize,

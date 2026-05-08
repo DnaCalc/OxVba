@@ -3726,7 +3726,7 @@ fn parse_dispatch_invoke_call_invocation(
         return None;
     }
     let name = normalize_ident(text[..open].trim())?;
-    if name != "dispatchinvoke" {
+    if name != "dispatchinvoke" && name != "__oxvbaearlyinvoke" {
         return None;
     }
     let args_raw = text[open + 1..close].trim();
@@ -5118,7 +5118,9 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "__oxvba_array_append" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
         "shell" | "environ" | "createobject" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "dir" => Some(IntrinsicSpec::range(0, 1, HostSensitive)),
-        "dispatchinvoke" => Some(IntrinsicSpec::range(2, usize::MAX, HostSensitive)),
+        "dispatchinvoke" | "__oxvbaearlyinvoke" => {
+            Some(IntrinsicSpec::range(2, usize::MAX, HostSensitive))
+        }
         "__oxvba_com_subscribe_event" => Some(IntrinsicSpec::fixed(2, HostSensitive)),
         "__oxvba_com_unsubscribe_event" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "__oxvba_com_callback_subscription" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
@@ -5160,7 +5162,9 @@ fn parse_stdlib_intrinsic_call_expr(
             .iter()
             .map(|arg| parse_varptr_arg(arg, array_bounds))
             .collect::<Option<Vec<_>>>()?,
-        "dispatchinvoke" => parse_dispatch_invoke_args(&args_text, array_bounds)?,
+        "dispatchinvoke" | "__oxvbaearlyinvoke" => {
+            parse_dispatch_invoke_args(&args_text, array_bounds)?
+        }
         _ => args_text
             .iter()
             .map(|arg| parse_expr(arg, array_bounds))

@@ -2512,7 +2512,13 @@ impl Vm {
                     object,
                     member,
                     args,
+                    early_bound,
                 } => {
+                    let invoke_label = if *early_bound {
+                        "early_bound_com_invoke"
+                    } else {
+                        "dispatch_invoke"
+                    };
                     let object_value = self.read_variant_slot(*object)?;
                     // VBA error 91: Object variable or With block variable not set.
                     if matches!(object_value.vtype(), oxvba_runtime::VarType::Empty) {
@@ -2543,7 +2549,7 @@ impl Vm {
                             let err = HalError::adapter_fault(
                                 self.host_services.profile(),
                                 CapabilityId::ComActivationDispatch,
-                                "dispatch_invoke",
+                                invoke_label,
                                 detail,
                             );
                             pc = self.route_host_error(pc, err)?;
@@ -2562,7 +2568,7 @@ impl Vm {
                                 let err = HalError::adapter_fault(
                                     self.host_services.profile(),
                                     CapabilityId::ComActivationDispatch,
-                                    "dispatch_invoke",
+                                    invoke_label,
                                     detail,
                                 );
                                 pc = self.route_host_error(pc, err)?;
@@ -2593,7 +2599,7 @@ impl Vm {
                             let err = HalError::adapter_fault(
                                 self.host_services.profile(),
                                 CapabilityId::ComActivationDispatch,
-                                "dispatch_invoke",
+                                invoke_label,
                                 detail,
                             );
                             pc = self.route_host_error(pc, err)?;

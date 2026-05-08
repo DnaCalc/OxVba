@@ -669,10 +669,13 @@ fn compile_project_with_strategy(
         .map_err(|message| ProjectCompileError::BackendCompile {
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
         })?;
+    let public_rewritten_source = rewritten_source
+        .replace("__OxVbaEarlyInvoke", "DispatchInvoke")
+        .replace("__oxvbaearlyinvoke", "dispatchinvoke");
     Ok(CompiledProject {
         bytecode,
         procedure_runtime_metadata,
-        rewritten_source,
+        rewritten_source: public_rewritten_source,
         host_exports,
         reference_visible_exports,
         event_dispatch_bindings,
@@ -3407,10 +3410,10 @@ fn rewrite_early_bound_member_dispatch(
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "DispatchInvoke(DispatchInvoke({var_name}, {member_selector}), \"Item\", {rendered_args})"
+                "__OxVbaEarlyInvoke(__OxVbaEarlyInvoke({var_name}, {member_selector}), \"Item\", {rendered_args})"
             )
         } else if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
-            format!("DispatchInvoke({var_name}, {member_selector})")
+            format!("__OxVbaEarlyInvoke({var_name}, {member_selector})")
         } else {
             let rendered_args = args
                 .iter()
@@ -3418,7 +3421,7 @@ fn rewrite_early_bound_member_dispatch(
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("DispatchInvoke({var_name}, {member_selector}, {rendered_args})")
+            format!("__OxVbaEarlyInvoke({var_name}, {member_selector}, {rendered_args})")
         };
         replacements.push((name_start, close + 1, replacement));
         cursor = close + 1;
@@ -3549,7 +3552,7 @@ fn validate_early_bound_invoke_shape(
 
 fn render_dispatch_invoke(var_name: &str, member_token: i32, args: &[String]) -> String {
     if args.is_empty() {
-        format!("DispatchInvoke({var_name}, {member_token})")
+        format!("__OxVbaEarlyInvoke({var_name}, {member_token})")
     } else {
         let rendered_args = args
             .iter()
@@ -3557,7 +3560,7 @@ fn render_dispatch_invoke(var_name: &str, member_token: i32, args: &[String]) ->
             .filter(|arg| !arg.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-        format!("DispatchInvoke({var_name}, {member_token}, {rendered_args})")
+        format!("__OxVbaEarlyInvoke({var_name}, {member_token}, {rendered_args})")
     }
 }
 
@@ -3778,7 +3781,7 @@ fn rewrite_early_bound_property_assignment(
         .collect::<Vec<_>>()
         .join(", ");
     Ok(format!(
-        "{}Call DispatchInvoke({}, {}, {})",
+        "{}Call __OxVbaEarlyInvoke({}, {}, {})",
         &line[..leading],
         var_name,
         member_token,
@@ -3859,7 +3862,7 @@ fn rewrite_early_bound_property_read_assignment(
         return Ok(line.to_string());
     }
     Ok(format!(
-        "{}{}{} = DispatchInvoke({}, {})",
+        "{}{}{} = __OxVbaEarlyInvoke({}, {})",
         &line[..leading],
         if explicit_set {
             "Set "
@@ -3941,7 +3944,7 @@ fn rewrite_early_bound_bang_member_assignment(
         }
     };
     let field_lookup = format!(
-        "DispatchInvoke(DispatchInvoke({var_name}, {fields_token}), \"Item\", \"{member_name}\")"
+        "__OxVbaEarlyInvoke(__OxVbaEarlyInvoke({var_name}, {fields_token}), \"Item\", \"{member_name}\")"
     );
     if explicit_set {
         Ok(format!(
@@ -3952,7 +3955,7 @@ fn rewrite_early_bound_bang_member_assignment(
         ))
     } else {
         Ok(format!(
-            "{}{}{} = DispatchInvoke({}, \"Value\")",
+            "{}{}{} = __OxVbaEarlyInvoke({}, \"Value\")",
             &line[..leading],
             if explicit_let { "Let " } else { "" },
             lhs,
@@ -8414,6 +8417,7 @@ mod tests {
         project_imported_typelib_reference, projected_typelib_reference_provenance,
         validate_compiled_project_contract, withevents_binding_token,
     };
+    use crate::Instruction;
     use std::collections::{BTreeMap, BTreeSet};
 
     fn base_manifest() -> ProjectManifest {
@@ -15855,6 +15859,18 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dim obj as object"));
         assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
+        assert!(
+            compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::IntrinsicDispatchInvokeHost {
+                        early_bound: true,
+                        ..
+                    }
+                )
+            }),
+            "compiler-generated imported COM calls should carry early-bound bytecode metadata"
+        );
     }
 
     #[test]

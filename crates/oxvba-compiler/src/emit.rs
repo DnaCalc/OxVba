@@ -2022,6 +2022,7 @@ fn call_bound_type(
         return BoundType::Object;
     }
     if name.eq_ignore_ascii_case("dispatchinvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
         || external_decls.contains_key(&name.to_ascii_lowercase())
     {
         return BoundType::Variant;
@@ -2065,7 +2066,9 @@ fn emit_early_call(
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
-    if name.eq_ignore_ascii_case("dispatchinvoke") {
+    if name.eq_ignore_ascii_case("dispatchinvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
+    {
         return emit_dispatch_invoke_call(
             args,
             compare_mode,
@@ -2076,6 +2079,7 @@ fn emit_early_call(
             proc_meta,
             external_decls,
             assign_target,
+            name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
         );
     }
 
@@ -2212,6 +2216,7 @@ fn emit_dispatch_invoke_call(
     proc_meta: &HashMap<String, EmitProcMeta>,
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
+    early_bound: bool,
 ) -> bool {
     let [object, member, invoke_args @ ..] = args else {
         return false;
@@ -2265,6 +2270,7 @@ fn emit_dispatch_invoke_call(
         object: object_slot,
         member: member_slot,
         args: bytecode_args,
+        early_bound,
     });
     true
 }
@@ -2493,6 +2499,7 @@ fn emit_late_bound_default_member_call(
         object: object_slot,
         member: member_slot,
         args: invoke_args,
+        early_bound: false,
     });
     true
 }
@@ -3736,7 +3743,7 @@ fn emit_expr_into(
                         prog_id: *prog_id,
                     })
                 }
-                ("dispatchinvoke", [object, member, args @ ..]) => {
+                ("dispatchinvoke" | "__oxvbaearlyinvoke", [object, member, args @ ..]) => {
                     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
                         dst,
                         object: *object,
@@ -3748,6 +3755,7 @@ fn emit_expr_into(
                                 name: None,
                             })
                             .collect(),
+                        early_bound: name.eq_ignore_ascii_case("__OxVbaEarlyInvoke"),
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {

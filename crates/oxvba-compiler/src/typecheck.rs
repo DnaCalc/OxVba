@@ -799,7 +799,9 @@ fn validate_call_site(
     declaration_types: &mut HashMap<String, BoundType>,
     proc_context: &TypecheckProcContext<'_>,
 ) -> Result<BoundType, String> {
-    if name.eq_ignore_ascii_case("dispatchinvoke") {
+    if name.eq_ignore_ascii_case("dispatchinvoke")
+        || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
+    {
         return validate_dispatch_invoke_call_site(
             args,
             option_explicit,
