@@ -1,0 +1,8 @@
+OxVba Immediate Window (bounded v1). Use .help for commands, .quit to exit.
+immediate> module: Main
+immediate> 12
+immediate> 18
+immediate> module: MathHelpers
+immediate> 123
+immediate> reset
+immediate> 
