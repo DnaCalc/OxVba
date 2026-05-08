@@ -121,6 +121,11 @@ First implementation slice:
 - `RuntimeDispatchPlanCache` provides the first optimized internal late-bound plan cache keyed by normalized member name, interface id, call kind, and arity; runtime member descriptors now carry arity so cached plans do not conflate indexed/default call shapes.
 - `Vm::set_project_dynamic_objects(...)` now constructs descriptor-backed `ObjectRef` identities for pure OxVba project dynamic/class objects, with dual-dispatch metadata derived from `ProjectDynamicObjectRoute`/`ProjectDynamicMemberRoute`.
 - VM project-object name dispatch now consults a per-object descriptor-backed `RuntimeDispatchPlanCache` before falling back to the existing route scan, preserving the optimized late-bound dispatch direction without routing through native `IDispatch`.
+- Validation after descriptor-cache integration:
+  - `cargo test -p oxvba-runtime --quiet` -> 75 passed.
+  - `cargo test -p oxvba-vm --quiet` -> 7 passed.
+  - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
+  - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching and distinct call-kind/arity plans.
