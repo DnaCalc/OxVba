@@ -204,11 +204,13 @@ Public Sub Main()
 Dim widget As New Widget
 Dim child As New Child
 Dim indexedOut
+Dim defaultOut
 Dim ignored
 Dim ignoredSet
 Dim afterLet
 Dim afterSet
 indexedOut = DispatchInvoke(widget, "Value", 5)
+defaultOut = widget(5)
 ignored = DispatchInvoke(widget, "Stored", 46)
 afterLet = DispatchInvoke(widget, "Observe")
 ignoredSet = DispatchInvoke(widget, "Kid", child)
@@ -229,6 +231,7 @@ End Sub
 Public Property Get Value(ByVal index)
 Value = stored + index
 End Property
+Attribute Value.VB_UserMemId = 0
 Public Property Let Stored(ByVal n)
 stored = n
 End Property
