@@ -32,11 +32,11 @@ The script builds the CLI and launcher, creates fresh sources under a timestampe
 
 Latest successful run:
 
-- Summary JSON: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/summary.json`
-- Single-page HTML showcase: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/showcase.html`
-- Sources: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/sources/`
-- Logs: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/logs/`
-- Output artifacts: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/artifacts/`
+- Summary JSON: `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/summary.json`
+- Single-page HTML showcase: `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/showcase.html`
+- Sources: `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/sources/`
+- Logs: `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/logs/`
+- Output artifacts: `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/artifacts/`
 
 Run result: 14/14 pass for the showcase runner, including the strict natural-source Access/JET early-bound slice.
 
@@ -62,4 +62,5 @@ The latest evidence run proves:
 - Access/ACE/Jet late-bound COM project created `ShowcaseJet.accdb` (184,320 bytes in the latest run), inserted Ada/Grace rows, queried Grace back, and surfaced `string:"Grace"|i32:99`.
 - Access/ACE/Jet mixed imported-COM project created `ShowcaseJetEarlyBound.accdb` (184,320 bytes in the latest run), imported `msado15.dll` and `msadox.dll`, declared `ADOX.Catalog` / `ADODB.Connection` with `As New`, executed `ADODB.Connection.Open/Execute` through metadata-backed calls, used `DispatchInvoke` for unsupported pieces, and surfaced `string:"Grace"|i32:99`.
 - Strict natural early-bound command now passes: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture`.
+- Fresh showcase rerun after COM-shaped ABI and typelib binding completion: `scripts/run-e2e-showcase.ps1` -> all 14 showcase entries passed in `docs/evidence/showcase/e2e_external_interfaces_20260508T200437/summary.json`, including the strict natural Access/JET early-bound lane.
 - Immediate Window transcript showed module query, `? MathHelpers.Add(5, 7)`, `? Scale(9)`, retargeting to `MathHelpers`, `? Add(100, 23)`, and `reset`.
