@@ -323,6 +323,58 @@ End Sub
 "@
         if (Test-Path $earlyDbPath) { Remove-Item -Force $earlyDbPath }
         Invoke-Captured -Name 'access_jet_mixed_imported_com_create_insert_query' -Category 'access-jet-com' -Exe $cli -ArgList @('run-project',$earlyBasproj,'--dump-values','--runtime-class','windows-stdio','--allow-com-activation','true','--allow-filesystem-mutation','true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $earlyDbPath); databaseBytes = if (Test-Path $earlyDbPath) { (Get-Item $earlyDbPath).Length } else { 0 } } } -Notes 'Mixed imported-COM ADO/ADOX project imports real typelib files, declares ADOX.Catalog and ADODB.Connection with As New, invokes ADODB Open/Execute through metadata-backed calls, still uses DispatchInvoke for unsupported Catalog/Recordset/Field pieces, creates an Access/ACE .accdb, inserts rows, and queries Grace / 99 back.'
+
+
+        $strictProj = Join-Path $srcDir 'access_jet_strict_early_bound_project'
+        New-Item -ItemType Directory -Force -Path $strictProj | Out-Null
+        $strictDbPath = Join-Path $artifactDir 'ShowcaseJetStrictEarlyBound.accdb'
+        $strictConnectionLiteral = "Provider=$provider;Data Source=$strictDbPath".Replace('\','\')
+        Write-Utf8NoBom (Join-Path $strictProj 'AccessJetStrictEarlyMain.bas') @"
+Public Sub Main()
+Dim catalog As New ADOX.Catalog
+Dim cn As New ADODB.Connection
+Dim rs As ADODB.Recordset
+Dim fieldName As ADODB.Field
+Dim fieldScore As ADODB.Field
+Dim nameValue
+Dim scoreValue
+Dim bangNameValue
+Dim bangScoreValue
+Call catalog.Create("$strictConnectionLiteral")
+Call cn.Open("$strictConnectionLiteral", "", "", 0)
+Call cn.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 0, 0)
+Set rs = cn.Execute("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 0, 0)
+Set fieldName = rs.Fields("Name")
+Set fieldScore = rs.Fields("Score")
+nameValue = fieldName.Value
+scoreValue = fieldScore.Value
+bangNameValue = rs!Name
+bangScoreValue = rs!Score
+End Sub
+"@
+        $strictBasproj = Join-Path $strictProj 'AccessJetStrictEarlyBoundShowcase.basproj'
+        Write-Utf8NoBom $strictBasproj @"
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>AccessJetStrictEarlyBoundShowcase</ProjectName>
+    <EntryPoint>AccessJetStrictEarlyMain.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="AccessJetStrictEarlyMain.bas" />
+    <COMReference Include="ADODB">
+      <ImportLib>$adodbImportLiteral</ImportLib>
+    </COMReference>
+    <COMReference Include="ADOX">
+      <ImportLib>$adoxImportLiteral</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>
+"@
+        if (Test-Path $strictDbPath) { Remove-Item -Force $strictDbPath }
+        Invoke-Captured -Name 'access_jet_strict_early_bound_create_insert_query' -Category 'access-jet-com' -Exe $cli -ArgList @('run-project',$strictBasproj,'--dump-values','--runtime-class','windows-stdio','--allow-com-activation','true','--allow-filesystem-mutation','true') -ExpectStdoutContains 'string:"Grace"|i32:99|string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $strictDbPath); databaseBytes = if (Test-Path $strictDbPath) { (Get-Item $strictDbPath).Length } else { 0 } } } -Notes 'Strict natural-source Access/JET COM pass: no DispatchInvoke appears in the VBA source; ADOX.Catalog, ADODB.Connection, ADODB.Recordset, and ADODB.Field are imported types, Fields("Name").Value and rs!Name/rs!Score are exercised, and the compiler lowers the natural source into the current COM bridge internally.'
     }
 }
 
@@ -402,10 +454,11 @@ body{font-family:Segoe UI,Arial,sans-serif;margin:28px;line-height:1.35;color:#1
 <li><b>Diagnostics:</b> deliberate editing mistakes were preserved as non-zero external command failures with compiler/runtime diagnostics in stderr logs.</li>
 <li><b>Access/Jet COM:</b> where ADOX/ADODB are installed, OxVba activated real COM objects, created an Access/ACE <code>.accdb</code>, created a table, inserted records, selected a row, traversed recordset fields through <code>DispatchInvoke</code>, and surfaced <code>Grace / 99</code> in the runtime snapshot. This is a live environment-dependent integration, not a mock.</li>
 <li><b>Access/Jet mixed imported COM:</b> a second database pass imports real ADO/ADOX type libraries, declares <code>Dim catalog As New ADOX.Catalog</code> and <code>Dim cn As New ADODB.Connection</code>, drives <code>ADODB.Connection.Open/Execute</code> through metadata-backed calls, and explicitly remains mixed because unsupported pieces still use <code>DispatchInvoke</code>.</li>
+<li><b>Access/Jet strict natural early binding:</b> a third pass uses no <code>DispatchInvoke</code> in the VBA source: it declares <code>ADOX.Catalog</code>, <code>ADODB.Connection</code>, <code>ADODB.Recordset</code>, and <code>ADODB.Field</code>, then exercises <code>rs.Fields("Name").Value</code> plus <code>rs!Name</code>/<code>rs!Score</code>.</li>
 <li><b>Immediate interface:</b> the bounded REPL evaluated project procedures, switched default modules, reset the live runtime session, and emitted a transcript suitable for IDE embedding discussions.</li>
 </ul>
 <h2>Truth boundaries for Q&amp;A</h2>
-<p>This showcase does not claim full native AOT compilation or full Office/VBA COM parity. Current executable truth is bytecode plus VM/JIT/fallback behavior; COM traffic here uses the supported late-bound <code>CreateObject</code>/<code>DispatchInvoke</code> bridge plus a mixed imported-COM subset for ADO/ADOX member calls. This showcase does not claim true end-to-end natural early-bound VBA COM for Access/JET; that is tracked by an ignored red Rust test. Access/ACE availability is machine-dependent and recorded as blocked rather than fabricated if missing.</p>
+<p>This showcase does not claim full native AOT compilation or full Office/VBA COM parity. Current executable truth is bytecode plus VM/JIT/fallback behavior; COM traffic here uses the supported late-bound <code>CreateObject</code>/<code>DispatchInvoke</code> bridge plus a mixed imported-COM subset for ADO/ADOX member calls. The strict Access/JET pass now proves natural source syntax for the bounded ADO/ADOX slice, while broader descriptor-backed ABI unification remains in progress. Access/ACE availability is machine-dependent and recorded as blocked rather than fabricated if missing.</p>
 <h2>Result matrix and log excerpts</h2>
 <table><thead><tr><th>Area</th><th>Pass</th><th>Status</th><th>Exit</th><th>Evidence</th></tr></thead><tbody>
 $($rows -join "`n")

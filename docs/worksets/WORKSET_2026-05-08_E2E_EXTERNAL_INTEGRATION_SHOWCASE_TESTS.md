@@ -32,13 +32,13 @@ The script builds the CLI and launcher, creates fresh sources under a timestampe
 
 Latest successful run:
 
-- Summary JSON: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/summary.json`
-- Single-page HTML showcase: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/showcase.html`
-- Sources: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/sources/`
-- Logs: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/logs/`
-- Output artifacts: `docs/evidence/showcase/e2e_external_interfaces_20260508T143510/artifacts/`
+- Summary JSON: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/summary.json`
+- Single-page HTML showcase: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/showcase.html`
+- Sources: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/sources/`
+- Logs: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/logs/`
+- Output artifacts: `docs/evidence/showcase/e2e_external_interfaces_20260508T174518/artifacts/`
 
-Run result: 13/13 pass for the showcase runner. Separate strict early-bound Rust test is currently red by design.
+Run result: 14/14 pass for the showcase runner, including the strict natural-source Access/JET early-bound slice.
 
 ## Truth Boundaries
 
@@ -46,7 +46,7 @@ Run result: 13/13 pass for the showcase runner. Separate strict early-bound Rust
 - The Access/Jet lane is environment-dependent. It requires installed Windows COM providers for ADOX/ADODB and Microsoft ACE OLE DB. The runner records this as blocked if providers are absent rather than fabricating success.
 - The late-bound COM database lane uses the currently supported `CreateObject` / `DispatchInvoke` bridge plus `.basproj` COM reference metadata. It does not claim full Office/VBA COM parity.
 - The mixed imported-COM database lane uses imported ADO/ADOX typelib metadata for activation and supported member calls. It still uses `DispatchInvoke` for the ADOX `Catalog.Create` and returned-recordset field/value traversal pieces. It is not a true early-bound VBA COM end-to-end test.
-- The strict early-bound Access/JET test is `strict_early_bound_project_executes_registered_access_jet_ado_database_subset` in `crates/oxvba-host/tests/com_early_project_end_to_end.rs`. It is ignored by default and currently fails when explicitly run because `ADODB.Recordset.Fields("Name")` is not yet supported as a natural typed COM indexed/default member call.
+- The strict early-bound Access/JET test is `strict_early_bound_project_executes_registered_access_jet_ado_database_subset` in `crates/oxvba-host/tests/com_early_project_end_to_end.rs`. It now runs by default on Windows and passes on the current machine for the bounded natural-source ADO/ADOX slice, including `ADODB.Recordset.Fields("Name")`, `ADODB.Field.Value`, and `rs!Name`/`rs!Score` value-context shorthand.
 - The Immediate Window pass covers the bounded V1 interface: procedure invocation/value printing, module retargeting, reset, and transcript behavior.
 
 ## Completion Evidence
@@ -61,5 +61,5 @@ The latest evidence run proves:
 - Broken assignment and missing module reference both produced non-zero process exits with captured diagnostics.
 - Access/ACE/Jet late-bound COM project created `ShowcaseJet.accdb` (184,320 bytes in the latest run), inserted Ada/Grace rows, queried Grace back, and surfaced `string:"Grace"|i32:99`.
 - Access/ACE/Jet mixed imported-COM project created `ShowcaseJetEarlyBound.accdb` (184,320 bytes in the latest run), imported `msado15.dll` and `msadox.dll`, declared `ADOX.Catalog` / `ADODB.Connection` with `As New`, executed `ADODB.Connection.Open/Execute` through metadata-backed calls, used `DispatchInvoke` for unsupported pieces, and surfaced `string:"Grace"|i32:99`.
-- Strict natural early-bound command currently fails as intended for the red target: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --ignored --nocapture` reports `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` for `adodb.recordset.Fields` with one argument.
+- Strict natural early-bound command now passes: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture`.
 - Immediate Window transcript showed module query, `? MathHelpers.Add(5, 7)`, `? Scale(9)`, retargeting to `MathHelpers`, `? Add(100, 23)`, and `reset`.
