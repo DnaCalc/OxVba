@@ -128,7 +128,7 @@ First implementation slice:
   - `cargo test -p oxvba-jit --quiet` -> 8 passed.
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
-  - `cargo test -p oxvba-host --test com_early_project_end_to_end pure_oxvba -- --nocapture` -> 2 passed after pure OxVba descriptor-cache indexed/property coverage.
+  - `cargo test -p oxvba-host --test com_early_project_end_to_end pure_oxvba -- --nocapture` -> 3 passed after pure OxVba descriptor-cache indexed/property coverage and interface receiver execution coverage.
   - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 123 passed after project-member call descriptor metadata and pure OxVba descriptor-cache indexed/property coverage.
   - Serialization/broader host validation after `CallProc` metadata change: `cargo test -p oxvba-compiler bundle --quiet` -> 10 passed; `cargo test -p oxvba-host --quiet` -> all host test binaries passed (with existing ignored lanes unchanged).
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
@@ -140,6 +140,7 @@ First implementation slice:
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 - `pure_oxvba_class_object_exposes_runtime_descriptor_metadata` proves a real compiled `Dim widget As New Widget` project dynamic object can be registered into the VM and queried for descriptor-backed default-member metadata while the project still executes correctly.
 - `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed property get, property let, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values.
+- `pure_oxvba_interface_receiver_executes_through_project_descriptor_shape` covers the required pure OxVba interface receiver path (`Dim iface As IWidget`, `Set iface = widget`, `iface.Value(5)`) and validates dispatch to the implementing `IWidget_Value` member.
 
 ## Current COM-compatible ABI boundary policy
 

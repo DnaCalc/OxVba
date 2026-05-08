@@ -294,6 +294,67 @@ End Property
     );
 }
 
+#[test]
+fn pure_oxvba_interface_receiver_executes_through_project_descriptor_shape() {
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim widget As New Widget
+Dim iface As IWidget
+Dim valueOut
+Set iface = widget
+valueOut = iface.Value(5)
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let interface_module = module_unit_from_source(
+        "IWidget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "IWidget"
+Public Property Get Value(ByVal index)
+End Property
+"#,
+    )
+    .expect("interface module should parse");
+    let widget_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Implements IWidget
+Private Property Get IWidget_Value(ByVal index)
+IWidget_Value = index + 7
+End Property
+"#,
+    )
+    .expect("widget module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, interface_module, widget_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("pure OxVba interface receiver project should execute");
+    assert!(
+        out.contains(&Variant::from_i32(12)),
+        "interface receiver call should return implementation result; out={out:?}"
+    );
+}
+
 #[cfg(target_os = "windows")]
 fn registered_scripting_dictionary_available() -> bool {
     let manifest = manifest_with_reference(

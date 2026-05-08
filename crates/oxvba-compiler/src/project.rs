@@ -2557,6 +2557,7 @@ struct InternalClassBinding {
     project_name: String,
     module_name: String,
     generated_instance_id: Option<i32>,
+    interface_module_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2642,7 +2643,7 @@ fn lower_module_source_module_aware(
                 current_project,
                 &current_module,
                 procedures,
-                &internal_class_bindings,
+                &mut internal_class_bindings,
                 &shadowed_identifiers,
                 &withevents_bindings,
             )?;
@@ -2869,6 +2870,7 @@ fn expand_bound_source_line(
                 project_name: target_project.clone(),
                 module_name: target_module.clone(),
                 generated_instance_id: dim_decl.as_new.then_some(*next_internal_instance_id),
+                interface_module_name: None,
             },
         );
         let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
@@ -2940,6 +2942,7 @@ fn expand_bound_source_line(
                     project_name: target_project,
                     module_name: target_module,
                     generated_instance_id: None,
+                    interface_module_name: None,
                 },
             );
             withevents_bindings.insert(normalize_identifier(&withevents_var));
@@ -4330,6 +4333,27 @@ fn resolve_internal_class_member_target_of_kinds(
         return Ok(None);
     };
 
+    let implemented_member_for_interface_receiver =
+        normalize_identifier(&format!("{target_module}_{member}"));
+    let mut interface_implementation_candidates = procedures
+        .iter()
+        .filter(|decl| {
+            decl.project_name == target_project
+                && decl.module_name != target_module
+                && decl.procedure_name == implemented_member_for_interface_receiver
+                && (allowed_kinds.is_empty() || allowed_kinds.contains(&decl.kind))
+        })
+        .collect::<Vec<_>>();
+    if interface_implementation_candidates.len() == 1 {
+        return Ok(Some((
+            interface_implementation_candidates
+                .remove(0)
+                .lowered_name
+                .clone(),
+            instance_arg,
+        )));
+    }
+
     let mut candidates = procedures
         .iter()
         .filter(|decl| {
@@ -4345,6 +4369,21 @@ fn resolve_internal_class_member_target_of_kinds(
                 )
         })
         .collect::<Vec<_>>();
+    if candidates.is_empty()
+        && let Some(binding) = internal_class_bindings.get(receiver)
+        && let Some(interface_module) = binding.interface_module_name.as_deref()
+    {
+        let implemented_member = normalize_identifier(&format!("{interface_module}_{member}"));
+        candidates = procedures
+            .iter()
+            .filter(|decl| {
+                decl.project_name == target_project
+                    && decl.module_name == target_module
+                    && decl.procedure_name == implemented_member
+                    && (allowed_kinds.is_empty() || allowed_kinds.contains(&decl.kind))
+            })
+            .collect::<Vec<_>>();
+    }
     if candidates.is_empty() {
         return if allowed_kinds.is_empty() {
             Err(ProjectCompileError::NameResolutionNotFound {
@@ -4728,7 +4767,7 @@ fn rewrite_internal_class_set_assignment(
     current_project: &str,
     current_module: &str,
     procedures: &[ProcedureDecl],
-    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    internal_class_bindings: &mut BTreeMap<String, InternalClassBinding>,
     shadowed_identifiers: &BTreeSet<String>,
     withevents_bindings: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
@@ -4745,6 +4784,13 @@ fn rewrite_internal_class_set_assignment(
     let lhs = payload[..eq_idx].trim();
     let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() {
+        return Ok(line.to_string());
+    }
+    if !lhs.contains('.')
+        && !lhs.contains('(')
+        && internal_class_bindings.contains_key(&normalize_identifier(lhs))
+        && internal_class_bindings.contains_key(&normalize_identifier(rhs))
+    {
         return Ok(line.to_string());
     }
     if let Some(dot_idx) = lhs.find('.') {
@@ -4843,6 +4889,28 @@ fn rewrite_internal_class_set_assignment(
         .is_none()
     {
         return Ok(line.to_string());
+    }
+    if indexed_args.is_empty()
+        && internal_class_bindings.contains_key(&normalized_lhs)
+        && internal_class_bindings.contains_key(&normalize_identifier(rhs))
+    {
+        if let (Some(lhs_binding), Some(rhs_binding)) = (
+            internal_class_bindings.get(&normalized_lhs).cloned(),
+            internal_class_bindings
+                .get(&normalize_identifier(rhs))
+                .cloned(),
+        ) {
+            internal_class_bindings.insert(
+                normalized_lhs.clone(),
+                InternalClassBinding {
+                    project_name: rhs_binding.project_name,
+                    module_name: rhs_binding.module_name,
+                    generated_instance_id: rhs_binding.generated_instance_id,
+                    interface_module_name: Some(lhs_binding.module_name),
+                },
+            );
+        }
+        return Ok(format!("{}{} = {}", &line[..leading], lhs, rhs));
     }
     if indexed_args.is_empty()
         && internal_class_bindings.contains_key(&normalized_lhs)
@@ -5102,6 +5170,13 @@ fn rewrite_internal_class_default_member_read_assignment(
     let lhs = payload[..eq_idx].trim();
     let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') || rhs.contains('.') {
+        return Ok(line.to_string());
+    }
+    if !lhs.contains('(')
+        && !rhs.contains('(')
+        && internal_class_bindings.contains_key(&normalize_identifier(lhs))
+        && internal_class_bindings.contains_key(&normalize_identifier(rhs))
+    {
         return Ok(line.to_string());
     }
     let normalized_lhs = normalize_identifier(lhs);
@@ -7407,7 +7482,7 @@ fn rewrite_module_source(
                 current_project,
                 &current_module,
                 procedures,
-                &internal_class_bindings,
+                &mut internal_class_bindings,
                 &shadowed_identifiers,
                 &withevents_bindings,
             )?;
