@@ -29,7 +29,10 @@ use oxvba_runtime::safe_array::{
     VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE,
     VT_VARIANT_VALUE,
 };
-use oxvba_runtime::{BindingHandle, ObjectRef, Variant, bstr::BStr};
+use oxvba_runtime::{
+    BindingHandle, ObjectRef, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
+    RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, Variant, bstr::BStr,
+};
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
 
@@ -131,6 +134,23 @@ struct DebugRuntimeState {
     skip_pause_once_at_pc: Option<usize>,
     step_mode: Option<DebugStepMode>,
     last_pause: Option<DebugStop>,
+}
+
+fn runtime_invoke_kind_for_project_dynamic_member(
+    kind: ProjectDynamicMemberKind,
+) -> RuntimeMemberInvokeKind {
+    match kind {
+        ProjectDynamicMemberKind::Method | ProjectDynamicMemberKind::Function => {
+            RuntimeMemberInvokeKind::Method
+        }
+        ProjectDynamicMemberKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
+        ProjectDynamicMemberKind::PropertyLet => RuntimeMemberInvokeKind::PropertyLet,
+        ProjectDynamicMemberKind::PropertySet => RuntimeMemberInvokeKind::PropertySet,
+    }
+}
+
+fn leak_runtime_descriptor_str(value: String) -> &'static str {
+    Box::leak(value.into_boxed_str())
 }
 
 pub struct Vm {
@@ -299,15 +319,56 @@ impl Vm {
             .into_iter()
             .map(|route| {
                 let raw = route.object_handle;
+                let descriptor = Self::leak_project_dynamic_class_descriptor(&route);
                 (
                     raw,
                     ProjectDynamicObjectState {
-                        object: ObjectRef::from_compat_identity(raw),
+                        object: ObjectRef::from_compat_identity_with_descriptor(raw, descriptor),
                         route,
                     },
                 )
             })
             .collect();
+    }
+
+    fn leak_project_dynamic_class_descriptor(
+        route: &ProjectDynamicObjectRoute,
+    ) -> &'static RuntimeClassDescriptor {
+        let members = route
+            .members
+            .iter()
+            .enumerate()
+            .map(|(index, member)| RuntimeMemberDescriptor {
+                name: leak_runtime_descriptor_str(member.member_name.clone()),
+                dispatch_id: member
+                    .dispatch_id
+                    .or(member.known_dispatch_token)
+                    .unwrap_or_else(|| (index as i32) + 1),
+                vtable_slot: Some((7 + index) as u16),
+                invoke_kind: runtime_invoke_kind_for_project_dynamic_member(member.kind),
+                is_default_member: member.is_default_member,
+            })
+            .collect::<Vec<_>>();
+        let interface_name = leak_runtime_descriptor_str(format!(
+            "{}.{}._Default",
+            route.project_name, route.module_name
+        ));
+        let class_name =
+            leak_runtime_descriptor_str(format!("{}.{}", route.project_name, route.module_name));
+        let members = Box::leak(members.into_boxed_slice());
+        let interfaces = Box::leak(
+            vec![RuntimeInterfaceDescriptor {
+                id: RuntimeInterfaceId::IDispatch,
+                name: interface_name,
+                members,
+                dual_dispatch: true,
+            }]
+            .into_boxed_slice(),
+        );
+        Box::leak(Box::new(RuntimeClassDescriptor {
+            name: class_name,
+            interfaces,
+        }))
     }
 
     pub fn project_dynamic_object_ref(&self, raw: i32) -> Option<ObjectRef> {

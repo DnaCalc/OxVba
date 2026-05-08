@@ -81,12 +81,14 @@ fn default_host_services() -> Arc<dyn HostServices> {
 
 #[cfg(test)]
 mod tests {
-    use oxvba_compiler::compile;
-    use oxvba_runtime::{Variant, bstr::BStr};
+    use oxvba_compiler::{
+        ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, compile,
+    };
+    use oxvba_runtime::{RuntimeInterfaceId, RuntimeMemberInvokeKind, Variant, bstr::BStr};
 
     use oxvba_hal::model::native_host_profile;
 
-    use super::{default_host_services, execute_and_snapshot_variants};
+    use super::{Vm, default_host_services, execute_and_snapshot_variants};
 
     #[test]
     fn default_host_services_follow_native_host_profile() {
@@ -103,5 +105,73 @@ mod tests {
 
         assert_eq!(variants.len(), 1);
         assert_eq!(variants, vec![Variant::from_string(BStr::from("ABC"))]);
+    }
+
+    #[test]
+    fn project_dynamic_objects_advertise_dual_dispatch_descriptors() {
+        let mut vm = Vm::new(default_host_services());
+        vm.set_project_dynamic_objects(vec![ProjectDynamicObjectRoute {
+            object_handle: 42,
+            project_name: "Project".to_string(),
+            module_name: "Widget".to_string(),
+            implements_interfaces: Vec::new(),
+            members: vec![
+                ProjectDynamicMemberRoute {
+                    member_name: "Value".to_string(),
+                    lowered_name: "project_widget_property_get_value".to_string(),
+                    known_dispatch_token: None,
+                    dispatch_id: Some(0),
+                    member_flags: None,
+                    is_default_member: true,
+                    kind: ProjectDynamicMemberKind::PropertyGet,
+                    visible_param_count: 0,
+                    params: Vec::new(),
+                    entry_pc: 10,
+                    param_slots: vec![0],
+                    return_slot: Some(1),
+                },
+                ProjectDynamicMemberRoute {
+                    member_name: "Refresh".to_string(),
+                    lowered_name: "project_widget_refresh".to_string(),
+                    known_dispatch_token: Some(5),
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
+                    kind: ProjectDynamicMemberKind::Method,
+                    visible_param_count: 0,
+                    params: Vec::new(),
+                    entry_pc: 20,
+                    param_slots: vec![0],
+                    return_slot: None,
+                },
+            ],
+        }]);
+
+        let object = vm
+            .project_dynamic_object_ref(42)
+            .expect("dynamic object should be registered");
+        let class_descriptor = object.class_descriptor();
+        assert_eq!(class_descriptor.name, "Project.Widget");
+        let dispatch = object
+            .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+            .expect("project dynamic objects should advertise IDispatch descriptor metadata");
+        assert!(dispatch.dual_dispatch);
+        assert_eq!(dispatch.name, "Project.Widget._Default");
+        assert_eq!(dispatch.members.len(), 2);
+        assert_eq!(dispatch.members[0].name, "Value");
+        assert_eq!(dispatch.members[0].dispatch_id, 0);
+        assert_eq!(dispatch.members[0].vtable_slot, Some(7));
+        assert_eq!(
+            dispatch.members[0].invoke_kind,
+            RuntimeMemberInvokeKind::PropertyGet
+        );
+        assert!(dispatch.members[0].is_default_member);
+        assert_eq!(dispatch.members[1].name, "Refresh");
+        assert_eq!(dispatch.members[1].dispatch_id, 5);
+        assert_eq!(dispatch.members[1].vtable_slot, Some(8));
+        assert_eq!(
+            dispatch.members[1].invoke_kind,
+            RuntimeMemberInvokeKind::Method
+        );
     }
 }
