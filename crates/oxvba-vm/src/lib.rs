@@ -85,7 +85,9 @@ mod tests {
     use oxvba_compiler::{
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, compile,
     };
-    use oxvba_runtime::{RuntimeInterfaceId, RuntimeMemberInvokeKind, Variant, bstr::BStr};
+    use oxvba_runtime::{
+        RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
+    };
 
     use oxvba_hal::model::native_host_profile;
 
@@ -139,10 +141,15 @@ mod tests {
                     member_flags: None,
                     is_default_member: false,
                     kind: ProjectDynamicMemberKind::Method,
-                    visible_param_count: 0,
-                    params: Vec::new(),
+                    visible_param_count: 1,
+                    params: vec![oxvba_compiler::ProjectDynamicParamRoute {
+                        name: "force".to_string(),
+                        optional: true,
+                        param_array: false,
+                        default_value: Some(0),
+                    }],
                     entry_pc: 20,
-                    param_slots: vec![0],
+                    param_slots: vec![0, 2],
                     return_slot: None,
                 },
             ],
@@ -175,7 +182,16 @@ mod tests {
             dispatch.members[1].invoke_kind,
             RuntimeMemberInvokeKind::Method
         );
-        assert_eq!(dispatch.members[1].arity, 0);
+        assert_eq!(dispatch.members[1].arity, 1);
+        assert_eq!(dispatch.members[1].params.len(), 1);
+        assert_eq!(dispatch.members[1].params[0].name, "force");
+        assert_eq!(
+            dispatch.members[1].params[0].value_type,
+            RuntimeValueType::Variant
+        );
+        assert!(dispatch.members[1].params[0].optional);
+        assert!(!dispatch.members[1].params[0].param_array);
+        assert_eq!(dispatch.members[1].return_type, None);
 
         let first = vm
             .resolve_project_dynamic_dispatch_plan_for_test(

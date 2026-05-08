@@ -18,7 +18,7 @@ pub use object_ref::{
     ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeClassDescriptor,
     RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
     RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeMemberDescriptor,
-    RuntimeMemberInvokeKind,
+    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
 };
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};

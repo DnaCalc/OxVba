@@ -31,7 +31,8 @@ use oxvba_runtime::safe_array::{
 };
 use oxvba_runtime::{
     BindingHandle, ObjectRef, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
-    RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, Variant, bstr::BStr,
+    RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
+    RuntimeValueType, Variant, bstr::BStr,
 };
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
@@ -350,16 +351,31 @@ impl Vm {
             .members
             .iter()
             .enumerate()
-            .map(|(index, member)| RuntimeMemberDescriptor {
-                name: leak_runtime_descriptor_str(member.member_name.clone()),
-                dispatch_id: member
-                    .dispatch_id
-                    .or(member.known_dispatch_token)
-                    .unwrap_or_else(|| (index as i32) + 1),
-                vtable_slot: Some((7 + index) as u16),
-                invoke_kind: runtime_invoke_kind_for_project_dynamic_member(member.kind),
-                arity: member.visible_param_count,
-                is_default_member: member.is_default_member,
+            .map(|(index, member)| {
+                let params = member
+                    .params
+                    .iter()
+                    .map(|param| RuntimeParamDescriptor {
+                        name: leak_runtime_descriptor_str(param.name.clone()),
+                        value_type: RuntimeValueType::Variant,
+                        by_ref: false,
+                        optional: param.optional,
+                        param_array: param.param_array,
+                    })
+                    .collect::<Vec<_>>();
+                RuntimeMemberDescriptor {
+                    name: leak_runtime_descriptor_str(member.member_name.clone()),
+                    dispatch_id: member
+                        .dispatch_id
+                        .or(member.known_dispatch_token)
+                        .unwrap_or_else(|| (index as i32) + 1),
+                    vtable_slot: Some((7 + index) as u16),
+                    invoke_kind: runtime_invoke_kind_for_project_dynamic_member(member.kind),
+                    arity: member.visible_param_count,
+                    params: Box::leak(params.into_boxed_slice()),
+                    return_type: member.return_slot.map(|_| RuntimeValueType::Variant),
+                    is_default_member: member.is_default_member,
+                }
             })
             .collect::<Vec<_>>();
         let interface_name = leak_runtime_descriptor_str(format!(

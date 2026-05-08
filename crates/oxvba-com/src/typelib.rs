@@ -1,6 +1,6 @@
 use oxvba_runtime::{
     RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-    RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
+    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,13 +116,39 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
     let members = metadata
         .members
         .iter()
-        .map(|member| RuntimeMemberDescriptor {
-            name: leak_typelib_runtime_descriptor_str(member.name.clone()),
-            dispatch_id: member.token,
-            vtable_slot: member.vtable_slot,
-            invoke_kind: runtime_invoke_kind_from_typelib_member(member.invoke_kind),
-            arity: member.parameter_names.len(),
-            is_default_member: member.is_default_member,
+        .map(|member| {
+            let params = member
+                .parameter_names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| {
+                    let (value_type, by_ref) = member
+                        .parameter_types
+                        .get(index)
+                        .copied()
+                        .map(runtime_value_type_from_typelib_param)
+                        .unwrap_or((RuntimeValueType::Variant, false));
+                    RuntimeParamDescriptor {
+                        name: leak_typelib_runtime_descriptor_str(name.clone()),
+                        value_type,
+                        by_ref,
+                        optional: false,
+                        param_array: false,
+                    }
+                })
+                .collect::<Vec<_>>();
+            RuntimeMemberDescriptor {
+                name: leak_typelib_runtime_descriptor_str(member.name.clone()),
+                dispatch_id: member.token,
+                vtable_slot: member.vtable_slot,
+                invoke_kind: runtime_invoke_kind_from_typelib_member(member.invoke_kind),
+                arity: member.parameter_names.len(),
+                params: Box::leak(params.into_boxed_slice()),
+                return_type: member
+                    .return_type
+                    .map(|return_type| runtime_value_type_from_typelib_param(return_type).0),
+                is_default_member: member.is_default_member,
+            }
         })
         .collect::<Vec<_>>();
     let class_name = leak_typelib_runtime_descriptor_str(
@@ -162,13 +188,46 @@ fn runtime_invoke_kind_from_typelib_member(
     }
 }
 
+fn runtime_value_type_from_typelib_param(param_type: TypeLibParamType) -> (RuntimeValueType, bool) {
+    match param_type {
+        TypeLibParamType::Variant => (RuntimeValueType::Variant, false),
+        TypeLibParamType::Long => (RuntimeValueType::Long, false),
+        TypeLibParamType::Integer => (RuntimeValueType::Integer, false),
+        TypeLibParamType::String => (RuntimeValueType::String, false),
+        TypeLibParamType::Boolean => (RuntimeValueType::Boolean, false),
+        TypeLibParamType::Double => (RuntimeValueType::Double, false),
+        TypeLibParamType::Single => (RuntimeValueType::Single, false),
+        TypeLibParamType::Currency => (RuntimeValueType::Currency, false),
+        TypeLibParamType::Date => (RuntimeValueType::Date, false),
+        TypeLibParamType::Decimal => (RuntimeValueType::Decimal, false),
+        TypeLibParamType::Object => (RuntimeValueType::Object, false),
+        TypeLibParamType::Byte => (RuntimeValueType::Byte, false),
+        TypeLibParamType::LongLong => (RuntimeValueType::LongLong, false),
+        TypeLibParamType::LongPtr => (RuntimeValueType::LongPtr, false),
+        TypeLibParamType::ByRefVariant => (RuntimeValueType::Variant, true),
+        TypeLibParamType::ByRefLong => (RuntimeValueType::Long, true),
+        TypeLibParamType::ByRefInteger => (RuntimeValueType::Integer, true),
+        TypeLibParamType::ByRefString => (RuntimeValueType::String, true),
+        TypeLibParamType::ByRefDouble => (RuntimeValueType::Double, true),
+        TypeLibParamType::ByRefSingle => (RuntimeValueType::Single, true),
+        TypeLibParamType::ByRefCurrency => (RuntimeValueType::Currency, true),
+        TypeLibParamType::ByRefDate => (RuntimeValueType::Date, true),
+        TypeLibParamType::ByRefDecimal => (RuntimeValueType::Decimal, true),
+        TypeLibParamType::ByRefObject => (RuntimeValueType::Object, true),
+        TypeLibParamType::ByRefByte => (RuntimeValueType::Byte, true),
+        TypeLibParamType::ByRefBoolean => (RuntimeValueType::Boolean, true),
+        TypeLibParamType::ByRefLongLong => (RuntimeValueType::LongLong, true),
+        TypeLibParamType::ByRefLongPtr => (RuntimeValueType::LongPtr, true),
+    }
+}
+
 fn leak_typelib_runtime_descriptor_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
 
 #[cfg(test)]
 mod tests {
-    use oxvba_runtime::{RuntimeInterfaceId, RuntimeMemberInvokeKind};
+    use oxvba_runtime::{RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType};
 
     use super::*;
 
@@ -248,5 +307,20 @@ mod tests {
             RuntimeMemberInvokeKind::Method
         );
         assert_eq!(dispatch.members[1].arity, 1);
+        assert_eq!(dispatch.members[1].params.len(), 1);
+        assert_eq!(dispatch.members[1].params[0].name, "index");
+        assert_eq!(
+            dispatch.members[1].params[0].value_type,
+            RuntimeValueType::Variant
+        );
+        assert!(!dispatch.members[1].params[0].by_ref);
+        assert_eq!(
+            dispatch.members[1].return_type,
+            Some(RuntimeValueType::Variant)
+        );
+        assert_eq!(
+            dispatch.members[0].return_type,
+            Some(RuntimeValueType::Long)
+        );
     }
 }

@@ -24,12 +24,41 @@ pub enum RuntimeMemberInvokeKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeValueType {
+    Variant,
+    Long,
+    Integer,
+    String,
+    Boolean,
+    Double,
+    Single,
+    Currency,
+    Date,
+    Decimal,
+    Object,
+    Byte,
+    LongLong,
+    LongPtr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeParamDescriptor {
+    pub name: &'static str,
+    pub value_type: RuntimeValueType,
+    pub by_ref: bool,
+    pub optional: bool,
+    pub param_array: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeMemberDescriptor {
     pub name: &'static str,
     pub dispatch_id: i32,
     pub vtable_slot: Option<u16>,
     pub invoke_kind: RuntimeMemberInvokeKind,
     pub arity: usize,
+    pub params: &'static [RuntimeParamDescriptor],
+    pub return_type: Option<RuntimeValueType>,
     pub is_default_member: bool,
 }
 
@@ -361,6 +390,7 @@ mod tests {
         ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
         RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeInterfaceDescriptor,
         RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
+        RuntimeParamDescriptor, RuntimeValueType,
     };
 
     #[test]
@@ -415,6 +445,8 @@ mod tests {
             vtable_slot: Some(7),
             invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
             arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
@@ -448,6 +480,8 @@ mod tests {
             vtable_slot: Some(3),
             invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
             arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
         };
         static SET_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
@@ -456,6 +490,14 @@ mod tests {
             vtable_slot: Some(4),
             invoke_kind: RuntimeMemberInvokeKind::PropertyLet,
             arity: 1,
+            params: &[RuntimeParamDescriptor {
+                name: "value",
+                value_type: RuntimeValueType::Variant,
+                by_ref: false,
+                optional: false,
+                param_array: false,
+            }],
+            return_type: None,
             is_default_member: true,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
