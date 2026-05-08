@@ -15,6 +15,7 @@ use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, Variant};
+use oxvba_vm::Vm;
 
 fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
     static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
@@ -190,6 +191,107 @@ Attribute Value.VB_UserMemId = 0
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("project should execute");
     assert_eq!(out[1], Variant::from_i32(41));
+}
+
+#[test]
+fn pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties() {
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim widget As New Widget
+Dim indexedOut
+Dim ignored
+Dim afterLet
+indexedOut = DispatchInvoke(widget, "Value", 5)
+ignored = DispatchInvoke(widget, "Stored", 46)
+afterLet = DispatchInvoke(widget, "Observe")
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let widget_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Private stored
+Public Sub Class_Initialize()
+stored = 3
+End Sub
+Public Property Get Value(ByVal index)
+Value = stored + index
+End Property
+Public Property Let Stored(ByVal n)
+stored = n
+End Property
+Public Property Get Observe()
+Observe = stored
+End Property
+"#,
+    )
+    .expect("widget module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, widget_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let compiled = compile_project(&manifest).expect("project should compile");
+    let widget_handle = compiled
+        .project_dynamic_objects
+        .iter()
+        .find(|route| route.module_name.eq_ignore_ascii_case("Widget"))
+        .expect("Widget route should exist")
+        .object_handle;
+    let mut vm = Vm::new(
+        HostBuilder::new()
+            .profile(native_host_profile())
+            .policy(HostPolicy::deterministic_runtime())
+            .build(),
+    );
+    vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+    vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
+    vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+    assert!(
+        vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Value", 1)
+            .is_some(),
+        "indexed Value get should have a unique descriptor plan"
+    );
+    assert!(
+        vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Stored", 1)
+            .is_some(),
+        "Property Let should have a unique unhinted descriptor plan by arity"
+    );
+    assert!(
+        vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Observe", 0)
+            .is_some(),
+        "Property Get should have a unique unhinted descriptor plan by arity"
+    );
+    assert!(
+        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 3,
+        "descriptor cache should retain unhinted Value get, Stored let, and Observe get plans"
+    );
+    vm.execute(&compiled.bytecode)
+        .expect("project should execute pure OxVba indexed/property paths");
+    let snapshot = vm.snapshot_variants(compiled.bytecode.slot_count);
+    assert!(
+        snapshot.contains(&Variant::from_i32(8)),
+        "indexed default get should return stored + index"
+    );
+    assert!(
+        snapshot.contains(&Variant::from_i32(46)),
+        "indexed default let should update stored through the dynamic descriptor path"
+    );
+    assert!(
+        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 3,
+        "descriptor cache should remain populated after project execution"
+    );
 }
 
 #[cfg(target_os = "windows")]

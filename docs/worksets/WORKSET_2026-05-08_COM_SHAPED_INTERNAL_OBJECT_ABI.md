@@ -126,6 +126,7 @@ First implementation slice:
   - `cargo test -p oxvba-vm --quiet` -> 7 passed.
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
+  - `cargo test -p oxvba-host --test com_early_project_end_to_end pure_oxvba -- --nocapture` -> 2 passed after pure OxVba descriptor-cache indexed/property coverage.
   - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 121 passed after default-member descriptor-cache integration.
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
@@ -134,6 +135,7 @@ First implementation slice:
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 - `pure_oxvba_class_object_exposes_runtime_descriptor_metadata` proves a real compiled `Dim widget As New Widget` project dynamic object can be registered into the VM and queried for descriptor-backed default-member metadata while the project still executes correctly.
+- `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed property get, property let, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values.
 
 ## Current COM-compatible ABI boundary policy
 

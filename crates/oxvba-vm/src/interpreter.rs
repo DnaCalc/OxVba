@@ -446,7 +446,6 @@ impl Vm {
             )
     }
 
-    #[cfg(test)]
     pub fn resolve_project_dynamic_unhinted_dispatch_plan_for_test(
         &mut self,
         raw: i32,
@@ -461,7 +460,6 @@ impl Vm {
             .resolve_member_unhinted(interface, member_name, arity)
     }
 
-    #[cfg(test)]
     pub fn resolve_project_dynamic_unhinted_default_dispatch_plan_for_test(
         &mut self,
         raw: i32,
@@ -475,7 +473,6 @@ impl Vm {
             .resolve_default_member_unhinted(interface, arity)
     }
 
-    #[cfg(test)]
     pub fn project_dynamic_dispatch_cache_len_for_test(&self, raw: i32) -> usize {
         self.project_dynamic_dispatch_caches
             .get(&raw)
