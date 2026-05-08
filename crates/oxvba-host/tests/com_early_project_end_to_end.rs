@@ -159,6 +159,60 @@ End Sub
 }
 
 #[cfg(target_os = "windows")]
+fn ado_typelib_path(file_name: &str) -> Option<String> {
+    let candidates = [
+        std::env::var_os("ProgramFiles").map(std::path::PathBuf::from),
+        std::env::var_os("ProgramFiles(x86)").map(std::path::PathBuf::from),
+        std::env::var_os("CommonProgramFiles").map(std::path::PathBuf::from),
+        std::env::var_os("CommonProgramFiles(x86)").map(std::path::PathBuf::from),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .flat_map(|root| {
+            [
+                root.join("Common Files")
+                    .join("System")
+                    .join("ado")
+                    .join(file_name),
+                root.join("System").join("ado").join(file_name),
+                root.join("ado").join(file_name),
+            ]
+        })
+        .find(|path| path.exists())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "windows")]
+fn registered_access_jet_ado_available() -> Option<(String, String)> {
+    let adodb = ado_typelib_path("msado15.dll")?;
+    let adox = ado_typelib_path("msadox.dll")?;
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-access-jet-ado-availability",
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim cn As New ADODB.Connection
+Dim stateValue
+stateValue = cn.State
+End Sub
+"#,
+        &[BasprojComRefSpec {
+            include: "ADODB",
+            guid: None,
+            major: None,
+            minor: None,
+            lcid: None,
+            importlib: Some(adodb.as_str()),
+        }],
+    );
+    if std::panic::catch_unwind(|| run_project_windows_hosted(&loaded.manifest, false)).is_err() {
+        return None;
+    }
+    Some((adodb, adox))
+}
+
+#[cfg(target_os = "windows")]
 fn registered_testdispatch_available() -> bool {
     let manifest = manifest_with_reference(
         "OxVba",
@@ -462,6 +516,98 @@ End Sub
         out[2],
         Variant::from_string(oxvba_runtime::bstr::BStr::from("demo"))
     );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_registered_access_jet_ado_database_subset() {
+    let Some((adodb_importlib, adox_importlib)) = registered_access_jet_ado_available() else {
+        return;
+    };
+
+    let unique = format!(
+        "access-jet-early-bound-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join(unique);
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+    let db_path = temp_root.join("ShowcaseJetEarly.accdb");
+    let connection = format!(
+        "Provider=Microsoft.ACE.OLEDB.12.0;Data Source={}",
+        db_path.to_string_lossy()
+    );
+    let escaped_connection = connection.replace('"', "\"\"");
+
+    let main_source = format!(
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim catalog As New ADOX.Catalog
+Dim cn As New ADODB.Connection
+Dim rs
+Dim fieldName
+Dim fieldScore
+Dim nameValue
+Dim scoreValue
+Call DispatchInvoke(catalog, "Create", "{connection}")
+Call cn.Open("{connection}", "", "", 0)
+Call cn.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 0, 0)
+Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 0, 0)
+rs = cn.Execute("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 0, 0)
+fieldName = DispatchInvoke(rs, "Fields", "Name")
+fieldScore = DispatchInvoke(rs, "Fields", "Score")
+nameValue = DispatchInvoke(fieldName, "Value")
+scoreValue = DispatchInvoke(fieldScore, "Value")
+End Sub
+"#,
+        connection = escaped_connection
+    );
+
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-access-jet-early-bound",
+        &main_source,
+        &[
+            BasprojComRefSpec {
+                include: "ADODB",
+                guid: None,
+                major: None,
+                minor: None,
+                lcid: None,
+                importlib: Some(adodb_importlib.as_str()),
+            },
+            BasprojComRefSpec {
+                include: "ADOX",
+                guid: None,
+                major: None,
+                minor: None,
+                lcid: None,
+                importlib: Some(adox_importlib.as_str()),
+            },
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert_eq!(
+        out[5],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[6], Variant::from_i32(99));
+    assert!(
+        db_path.exists(),
+        "early-bound Access/Jet database should be created"
+    );
+
+    let _ = std::fs::remove_dir_all(&temp_root);
 }
 
 #[cfg(target_os = "windows")]
