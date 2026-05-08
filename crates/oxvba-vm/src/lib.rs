@@ -81,6 +81,7 @@ fn default_host_services() -> Arc<dyn HostServices> {
 
 #[cfg(test)]
 mod tests {
+    use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, compile,
     };
@@ -165,6 +166,7 @@ mod tests {
             dispatch.members[0].invoke_kind,
             RuntimeMemberInvokeKind::PropertyGet
         );
+        assert_eq!(dispatch.members[0].arity, 0);
         assert!(dispatch.members[0].is_default_member);
         assert_eq!(dispatch.members[1].name, "Refresh");
         assert_eq!(dispatch.members[1].dispatch_id, 5);
@@ -172,6 +174,38 @@ mod tests {
         assert_eq!(
             dispatch.members[1].invoke_kind,
             RuntimeMemberInvokeKind::Method
+        );
+        assert_eq!(dispatch.members[1].arity, 0);
+
+        let first = vm
+            .resolve_project_dynamic_dispatch_plan_for_test(
+                42,
+                " value ",
+                DynamicCallKind::PropertyGet,
+                0,
+            )
+            .expect("descriptor-backed dispatch plan should resolve");
+        assert_eq!(first.member_index, 0);
+        assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 1);
+        let second = vm
+            .resolve_project_dynamic_dispatch_plan_for_test(
+                42,
+                "VALUE",
+                DynamicCallKind::PropertyGet,
+                0,
+            )
+            .expect("normalized descriptor-backed dispatch plan should be cached");
+        assert_eq!(first, second);
+        assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 1);
+        assert!(
+            vm.resolve_project_dynamic_dispatch_plan_for_test(
+                42,
+                "Value",
+                DynamicCallKind::PropertyLet,
+                0,
+            )
+            .is_none(),
+            "call kind participates in VM project-object descriptor cache resolution"
         );
     }
 }

@@ -149,6 +149,15 @@ fn runtime_invoke_kind_for_project_dynamic_member(
     }
 }
 
+fn runtime_invoke_kind_for_dynamic_call_hint(hint: DynamicCallKind) -> RuntimeMemberInvokeKind {
+    match hint {
+        DynamicCallKind::Method => RuntimeMemberInvokeKind::Method,
+        DynamicCallKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
+        DynamicCallKind::PropertyLet => RuntimeMemberInvokeKind::PropertyLet,
+        DynamicCallKind::PropertySet => RuntimeMemberInvokeKind::PropertySet,
+    }
+}
+
 fn leak_runtime_descriptor_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
@@ -161,6 +170,7 @@ pub struct Vm {
     activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     project_dynamic_objects: HashMap<i32, ProjectDynamicObjectState>,
+    project_dynamic_dispatch_caches: HashMap<i32, oxvba_runtime::RuntimeDispatchPlanCache>,
     foreach_iterators: HashMap<i32, ForEachIteratorState>,
     next_foreach_iterator_id: i32,
     project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
@@ -208,6 +218,7 @@ impl Vm {
             activation_entry_pcs: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
             project_dynamic_objects: HashMap::new(),
+            project_dynamic_dispatch_caches: HashMap::new(),
             foreach_iterators: HashMap::new(),
             next_foreach_iterator_id: 1,
             project_com_withevents_routes: HashMap::new(),
@@ -315,6 +326,7 @@ impl Vm {
     }
 
     pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
+        self.project_dynamic_dispatch_caches.clear();
         self.project_dynamic_objects = routes
             .into_iter()
             .map(|route| {
@@ -346,6 +358,7 @@ impl Vm {
                     .unwrap_or_else(|| (index as i32) + 1),
                 vtable_slot: Some((7 + index) as u16),
                 invoke_kind: runtime_invoke_kind_for_project_dynamic_member(member.kind),
+                arity: member.visible_param_count,
                 is_default_member: member.is_default_member,
             })
             .collect::<Vec<_>>();
@@ -375,6 +388,35 @@ impl Vm {
         self.project_dynamic_objects
             .get(&raw)
             .map(|state| state.object.clone())
+    }
+
+    #[cfg(test)]
+    pub fn resolve_project_dynamic_dispatch_plan_for_test(
+        &mut self,
+        raw: i32,
+        member_name: &str,
+        hint: DynamicCallKind,
+        arity: usize,
+    ) -> Option<oxvba_runtime::RuntimeDispatchPlan> {
+        let object = self.project_dynamic_objects.get(&raw)?.object.clone();
+        let interface = object.query_interface_descriptor(RuntimeInterfaceId::IDispatch)?;
+        self.project_dynamic_dispatch_caches
+            .entry(raw)
+            .or_default()
+            .resolve_member(
+                interface,
+                member_name,
+                runtime_invoke_kind_for_dynamic_call_hint(hint),
+                arity,
+            )
+    }
+
+    #[cfg(test)]
+    pub fn project_dynamic_dispatch_cache_len_for_test(&self, raw: i32) -> usize {
+        self.project_dynamic_dispatch_caches
+            .get(&raw)
+            .map(|cache| cache.len())
+            .unwrap_or_default()
     }
 
     pub fn set_project_procedure_runtime_metadata(
@@ -3717,13 +3759,35 @@ impl Vm {
             return Ok(None);
         };
         let route = state.route;
+        let cached_name_candidate = match (&request.member, request.call_kind_hint) {
+            (DynamicMemberSelector::Name(name), Some(hint)) => object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .and_then(|interface| {
+                    self.project_dynamic_dispatch_caches
+                        .entry(object.raw())
+                        .or_default()
+                        .resolve_member(
+                            interface,
+                            name,
+                            runtime_invoke_kind_for_dynamic_call_hint(hint),
+                            request.args.len(),
+                        )
+                })
+                .and_then(|plan| route.members.get(plan.member_index).cloned()),
+            _ => None,
+        };
         let mut candidates = match &request.member {
-            DynamicMemberSelector::Name(name) => route
-                .members
-                .iter()
-                .filter(|member| member.member_name.eq_ignore_ascii_case(name))
-                .cloned()
-                .collect::<Vec<_>>(),
+            DynamicMemberSelector::Name(name) => cached_name_candidate.map_or_else(
+                || {
+                    route
+                        .members
+                        .iter()
+                        .filter(|member| member.member_name.eq_ignore_ascii_case(name))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                },
+                |member| vec![member],
+            ),
             DynamicMemberSelector::Token(token) => route
                 .members
                 .iter()

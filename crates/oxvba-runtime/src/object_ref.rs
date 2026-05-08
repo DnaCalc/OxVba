@@ -29,6 +29,7 @@ pub struct RuntimeMemberDescriptor {
     pub dispatch_id: i32,
     pub vtable_slot: Option<u16>,
     pub invoke_kind: RuntimeMemberInvokeKind,
+    pub arity: usize,
     pub is_default_member: bool,
 }
 
@@ -119,6 +120,7 @@ impl RuntimeDispatchPlanCache {
                 .find(|(_, candidate)| {
                     normalize_runtime_member_name(candidate.name) == key.normalized_member_name
                         && candidate.invoke_kind == invoke_kind
+                        && candidate.arity == arity
                 })?;
         let plan = RuntimeDispatchPlan {
             interface_id: interface.id,
@@ -412,6 +414,7 @@ mod tests {
             dispatch_id: 0,
             vtable_slot: Some(7),
             invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
             is_default_member: true,
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
@@ -444,6 +447,7 @@ mod tests {
             dispatch_id: 0,
             vtable_slot: Some(3),
             invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
             is_default_member: true,
         };
         static SET_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
@@ -451,6 +455,7 @@ mod tests {
             dispatch_id: 0,
             vtable_slot: Some(4),
             invoke_kind: RuntimeMemberInvokeKind::PropertyLet,
+            arity: 1,
             is_default_member: true,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
@@ -487,6 +492,12 @@ mod tests {
         assert_eq!(put.vtable_slot, Some(4));
         assert_eq!(put.member_index, 1);
         assert_eq!(cache.len(), 2);
+        assert!(
+            cache
+                .resolve_member(&INTERFACE, "value", RuntimeMemberInvokeKind::PropertyGet, 1)
+                .is_none(),
+            "arity participates in descriptor plan resolution"
+        );
     }
 
     #[test]
