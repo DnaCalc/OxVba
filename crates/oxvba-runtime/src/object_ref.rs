@@ -10,8 +10,53 @@ pub const RUNTIME_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeInterfaceId {
     IUnknown,
+    IDispatch,
     Unsupported,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeMemberInvokeKind {
+    Method,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeMemberDescriptor {
+    pub name: &'static str,
+    pub dispatch_id: i32,
+    pub vtable_slot: Option<u16>,
+    pub invoke_kind: RuntimeMemberInvokeKind,
+    pub is_default_member: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeInterfaceDescriptor {
+    pub id: RuntimeInterfaceId,
+    pub name: &'static str,
+    pub members: &'static [RuntimeMemberDescriptor],
+    pub dual_dispatch: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeClassDescriptor {
+    pub name: &'static str,
+    pub interfaces: &'static [RuntimeInterfaceDescriptor],
+}
+
+pub const RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR: RuntimeInterfaceDescriptor =
+    RuntimeInterfaceDescriptor {
+        id: RuntimeInterfaceId::IUnknown,
+        name: "IUnknown",
+        members: &[],
+        dual_dispatch: false,
+    };
+
+pub const COMPAT_OBJECT_CLASS_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
+    name: "OxVba.CompatObject",
+    interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
+};
 
 #[repr(C)]
 pub struct RawRuntimeIUnknownVtbl {
@@ -34,6 +79,7 @@ struct CompatObjectBase {
     unknown: RawRuntimeIUnknown,
     ref_count: AtomicU32,
     compat_identity: i32,
+    class_descriptor: &'static RuntimeClassDescriptor,
 }
 
 static COMPAT_OBJECT_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
@@ -99,6 +145,7 @@ impl ObjectRef {
             },
             ref_count: AtomicU32::new(1),
             compat_identity,
+            class_descriptor: &COMPAT_OBJECT_CLASS_DESCRIPTOR,
         });
         let raw = Box::into_raw(boxed);
         let unknown = unsafe { &mut (*raw).unknown as *mut RawRuntimeIUnknown };
@@ -120,6 +167,21 @@ impl ObjectRef {
 
     pub fn raw_iunknown(&self) -> *mut RawRuntimeIUnknown {
         self.0.as_ptr()
+    }
+
+    pub fn class_descriptor(&self) -> &'static RuntimeClassDescriptor {
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        unsafe { (*owner).class_descriptor }
+    }
+
+    pub fn query_interface_descriptor(
+        &self,
+        iid: RuntimeInterfaceId,
+    ) -> Option<&'static RuntimeInterfaceDescriptor> {
+        self.class_descriptor()
+            .interfaces
+            .iter()
+            .find(|descriptor| descriptor.id == iid)
     }
 
     /// Construct an object reference from an owned raw `IUnknown` pointer.
@@ -231,6 +293,26 @@ mod tests {
         assert_eq!(object, unknown);
         assert_eq!(object.compat_identity(), unknown.compat_identity());
         assert_eq!(object.strong_count_for_test(), 2);
+    }
+
+    #[test]
+    fn compat_object_exposes_descriptor_backed_iunknown_interface() {
+        let object = ObjectRef::from_compat_identity(9);
+        let class_descriptor = object.class_descriptor();
+        assert_eq!(class_descriptor.name, "OxVba.CompatObject");
+        assert_eq!(class_descriptor.interfaces.len(), 1);
+        let iunknown = object
+            .query_interface_descriptor(RuntimeInterfaceId::IUnknown)
+            .expect("compat object should expose internal IUnknown descriptor");
+        assert_eq!(iunknown.name, "IUnknown");
+        assert!(!iunknown.dual_dispatch);
+        assert!(iunknown.members.is_empty());
+        assert!(
+            object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .is_none(),
+            "compat object floor must not falsely claim dual dispatch support"
+        );
     }
 
     #[test]

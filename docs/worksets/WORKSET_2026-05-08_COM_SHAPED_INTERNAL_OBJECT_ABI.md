@@ -1,7 +1,7 @@
 # Workset — COM-Shaped Internal Object ABI And Dispatch Model
 
 Date: 2026-05-08
-Status: planned
+Status: in-progress
 
 ## Objective
 
@@ -17,7 +17,7 @@ Current runtime value truth is already strongly OLE Automation-shaped:
 - runtime `Variant` is a 16-byte VARIANT-shaped cell with VARTYPE/reserved words/payload;
 - object payloads already carry an `ObjectRef` backed by an IUnknown-like base pointer.
 
-The remaining mismatch is object/interface semantics. `ObjectRef` currently exposes an IUnknown-like lifetime/identity floor, but does not yet provide the full internal interface table, typed vtable/member call, dual-interface dispatch, default/indexed property, and QueryInterface-style projection model needed for natural early-bound COM and COM publication.
+The remaining mismatch is object/interface semantics. `ObjectRef` now has the first descriptor-backed compatibility floor (`RuntimeClassDescriptor`, `RuntimeInterfaceDescriptor`, and `RuntimeMemberDescriptor`) and exposes the compat object's internal IUnknown descriptor, but it does not yet provide full typed vtable/member call, dual-interface dispatch, default/indexed property, and QueryInterface-style projection model needed for natural early-bound COM and COM publication.
 
 ## Design Direction
 
@@ -109,6 +109,21 @@ Property assignment-intent path:
 ```vb
 Let widget.Value = 42
 Set widget.Child = child
+```
+
+## Current Evidence
+
+First implementation slice:
+
+- `crates/oxvba-runtime/src/object_ref.rs` defines runtime class/interface/member descriptors and a compatibility class descriptor for existing `ObjectRef` values.
+- `ObjectRef::class_descriptor()` and `ObjectRef::query_interface_descriptor(...)` expose descriptor-backed interface metadata for the current compatibility object floor.
+- `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
+
+Validation:
+
+```powershell
+cargo test -p oxvba-runtime --quiet
+cargo test -p oxvba-compiler --quiet
 ```
 
 ## Completion Criteria

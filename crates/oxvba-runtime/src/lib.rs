@@ -14,6 +14,10 @@ pub mod variant;
 
 pub use coerce::variant_to_vba_string;
 pub use decimal::Decimal96;
-pub use object_ref::{ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeInterfaceId};
+pub use object_ref::{
+    ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeClassDescriptor,
+    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeMemberDescriptor,
+    RuntimeMemberInvokeKind,
+};
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
