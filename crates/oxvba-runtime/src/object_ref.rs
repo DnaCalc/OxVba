@@ -300,7 +300,15 @@ unsafe extern "C" fn compat_query_interface(
     unsafe {
         *ppv = core::ptr::null_mut();
     }
-    if iid != RuntimeInterfaceId::IUnknown {
+    let owner = compat_owner_from_this(this);
+    let supports_iid = unsafe {
+        (*owner)
+            .class_descriptor
+            .interfaces
+            .iter()
+            .any(|interface| interface.id == iid)
+    };
+    if !supports_iid {
         return RUNTIME_E_NOINTERFACE;
     }
     unsafe {
@@ -478,7 +486,7 @@ unsafe impl Sync for ObjectRef {}
 #[cfg(test)]
 mod tests {
     use super::{
-        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
         RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeInterfaceDescriptor,
         RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
         RuntimeParamDescriptor, RuntimeValueType,
@@ -784,6 +792,47 @@ mod tests {
             "ambiguous default member metadata must not be cached as a single plan"
         );
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn descriptor_backed_object_supports_raw_query_interface_projection() {
+        static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(7),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "ITestDual",
+            members: &[VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, DISPATCH_INTERFACE],
+        };
+
+        let object = ObjectRef::from_compat_identity_with_descriptor(12, &TEST_CLASS);
+        let mut out = core::ptr::null_mut();
+        let hr = unsafe {
+            ((*(*object.raw_iunknown()).vtbl).query_interface)(
+                object.raw_iunknown().cast(),
+                RuntimeInterfaceId::IDispatch,
+                &mut out,
+            )
+        };
+        assert_eq!(hr, RUNTIME_S_OK);
+        assert!(!out.is_null());
+        assert_eq!(object.strong_count_for_test(), 2);
+        unsafe {
+            ((*(*object.raw_iunknown()).vtbl).release)(out);
+        }
+        assert_eq!(object.strong_count_for_test(), 1);
     }
 
     #[test]

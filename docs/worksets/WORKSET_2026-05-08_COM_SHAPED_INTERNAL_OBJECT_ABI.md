@@ -116,14 +116,14 @@ Set widget.Child = child
 First implementation slice:
 
 - `crates/oxvba-runtime/src/object_ref.rs` defines runtime class/interface/member descriptors and a compatibility class descriptor for existing `ObjectRef` values.
-- `ObjectRef::class_descriptor()` and `ObjectRef::query_interface_descriptor(...)` expose descriptor-backed interface metadata for the current compatibility object floor.
+- `ObjectRef::class_descriptor()` and `ObjectRef::query_interface_descriptor(...)` expose descriptor-backed interface metadata for the current compatibility object floor, and the raw runtime `QueryInterface` implementation now projects descriptor-advertised interfaces instead of hard-coding IUnknown-only behavior.
 - `ObjectRef::from_compat_identity_with_descriptor(...)` allows future class/object constructors to attach a descriptor-backed interface table while preserving the existing IUnknown-like lifetime floor.
 - `RuntimeDispatchPlanCache` provides the first optimized internal late-bound plan cache keyed by normalized member name, interface id, call kind, and arity; runtime member descriptors now carry arity so cached plans do not conflate indexed/default call shapes.
 - `Vm::set_project_dynamic_objects(...)` now constructs descriptor-backed `ObjectRef` identities for pure OxVba project dynamic/class objects, with dual-dispatch metadata derived from `ProjectDynamicObjectRoute`/`ProjectDynamicMemberRoute`, including parameter descriptors and return type descriptors.
 - VM project-object name and default-member dispatch now consult a per-object descriptor-backed `RuntimeDispatchPlanCache` before falling back to the existing route scan, preserving the optimized late-bound dispatch direction without routing through native `IDispatch` and without caching ambiguous default metadata. Unhinted dynamic calls, including explicit `DispatchInvoke(...)` traffic without a property/method hint, now cache descriptor plans when the member/default lookup is unique for the supplied arity and continue to reject ambiguous shapes.
 - `Instruction::CallProc` now carries optional `ProjectMemberCallDescriptor` metadata for compiler-lowered pure OxVba project member calls (`Method`, `PropertyGet`, `PropertyLet`, `PropertySet`). This preserves the existing direct-call execution path while making known receiver calls explicit typed project-member calls in bytecode rather than opaque ordinary procedure calls.
 - Validation after descriptor-cache integration:
-  - `cargo test -p oxvba-runtime --quiet` -> 78 passed.
+  - `cargo test -p oxvba-runtime --quiet` -> 79 passed.
   - `cargo test -p oxvba-vm --quiet` -> 7 passed.
   - `cargo test -p oxvba-jit --quiet` -> 8 passed.
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
@@ -133,6 +133,7 @@ First implementation slice:
   - Serialization/broader host validation after `CallProc` metadata change: `cargo test -p oxvba-compiler bundle --quiet` -> 10 passed; `cargo test -p oxvba-host --quiet` -> all host test binaries passed (with existing ignored lanes unchanged).
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
+- `descriptor_backed_object_supports_raw_query_interface_projection` proves raw runtime `QueryInterface` succeeds for descriptor-advertised `IDispatch` and preserves AddRef/Release balance.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.
