@@ -1,7 +1,7 @@
 # Workset — Typelib To Internal Interface Binding
 
 Date: 2026-05-08
-Status: planned; depends on `WORKSET_2026-05-08_COM_SHAPED_INTERNAL_OBJECT_ABI.md`
+Status: in-progress; strict Access/JET natural early-bound slice is green, broader descriptor/ABI completion remains
 
 ## Objective
 
@@ -79,7 +79,7 @@ OxVba should support both:
 
 ## Primary Red Test
 
-The strict Access/JET test added in `crates/oxvba-host/tests/com_early_project_end_to_end.rs` is the primary red-to-green target:
+The strict Access/JET test in `crates/oxvba-host/tests/com_early_project_end_to_end.rs` is the primary red-to-green target for the first Access/JET slice:
 
 ```rust
 strict_early_bound_project_executes_registered_access_jet_ado_database_subset
@@ -108,11 +108,13 @@ nameValue = rs!Name
 scoreValue = rs!Score
 ```
 
-Current failure:
+Current status:
 
 ```text
-BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED: external invoke target `adodb.recordset.Fields` expects 0 args from typelib metadata, got 1
+cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture
 ```
+
+passes on the Windows machine used for this run, including `rs.Fields("Name").Value` and `rs!Name` / `rs!Score` value-context shorthand. The implementation currently lowers natural source syntax into the existing COM dispatch bridge internally while preserving strict source shape (no `DispatchInvoke` in the test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
 
 ## Scope
 

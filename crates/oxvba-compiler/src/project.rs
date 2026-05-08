@@ -2965,6 +2965,7 @@ fn expand_bound_source_line(
     let rewritten = rewrite_early_bound_property_assignment(line, early_bound)?;
     let rewritten = rewrite_early_bound_object_assignment(manifest, &rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_property_read_assignment(&rewritten, early_bound)?;
+    let rewritten = rewrite_early_bound_bang_member_assignment(&rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_member_dispatch(&rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_call_statement_without_parens(&rewritten, early_bound)?;
     let rewritten =
@@ -3381,15 +3382,35 @@ fn rewrite_early_bound_member_dispatch(
         let args = split_top_level_args(args_raw)?;
         let actual_arity = args.iter().filter(|arg| !arg.trim().is_empty()).count();
         let expected_arity = member_spec.parameter_names.len();
-        if actual_arity != expected_arity {
+        let is_indexed_default_collection_read = member_spec.invoke_kind
+            == TypeLibMemberInvokeKind::PropertyGet
+            && expected_arity == 0
+            && actual_arity > 0
+            && target_name.ends_with(".Fields");
+        if actual_arity != expected_arity && !is_indexed_default_collection_read {
             return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
                 target: target_name,
                 expected: expected_arity,
                 actual: actual_arity,
             });
         }
-        let replacement = if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
-            format!("DispatchInvoke({var_name}, {member_token})")
+        let member_selector = if target_name.eq_ignore_ascii_case("adox.catalog.Create") {
+            "\"Create\"".to_string()
+        } else {
+            member_token.to_string()
+        };
+        let replacement = if is_indexed_default_collection_read {
+            let rendered_args = args
+                .iter()
+                .map(|arg| arg.trim())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "DispatchInvoke(DispatchInvoke({var_name}, {member_selector}), \"Item\", {rendered_args})"
+            )
+        } else if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
+            format!("DispatchInvoke({var_name}, {member_selector})")
         } else {
             let rendered_args = args
                 .iter()
@@ -3397,7 +3418,7 @@ fn rewrite_early_bound_member_dispatch(
                 .filter(|arg| !arg.is_empty())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("DispatchInvoke({var_name}, {member_token}, {rendered_args})")
+            format!("DispatchInvoke({var_name}, {member_selector}, {rendered_args})")
         };
         replacements.push((name_start, close + 1, replacement));
         cursor = close + 1;
@@ -3689,8 +3710,17 @@ fn rewrite_early_bound_property_assignment(
         (member_expr.to_string(), Vec::new())
     };
     let target_name = format!("{}.{}", binding.qualified_type, member_name);
+    let allowed_assignment_kind = if explicit_set {
+        TypeLibMemberInvokeKind::PropertyPutRef
+    } else {
+        TypeLibMemberInvokeKind::PropertyPut
+    };
     let (member_token, member_spec) =
-        match resolve_early_bound_binding_member_token_and_spec(binding, &member_name) {
+        match resolve_early_bound_binding_member_token_and_spec_of_kinds(
+            binding,
+            &member_name,
+            &[allowed_assignment_kind],
+        ) {
             KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
                 (member_token, member_spec)
             }
@@ -3794,7 +3824,14 @@ fn rewrite_early_bound_property_read_assignment(
     }
     let target_name = format!("{}.{}", binding.qualified_type, member_name);
     let (member_token, member_spec) =
-        match resolve_early_bound_binding_member_token_and_spec(binding, member_name) {
+        match resolve_early_bound_binding_member_token_and_spec_of_kinds(
+            binding,
+            member_name,
+            &[
+                TypeLibMemberInvokeKind::PropertyGet,
+                TypeLibMemberInvokeKind::Method,
+            ],
+        ) {
             KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
                 (member_token, member_spec)
             }
@@ -3835,6 +3872,93 @@ fn rewrite_early_bound_property_read_assignment(
         var_name,
         member_token
     ))
+}
+
+fn rewrite_early_bound_bang_member_assignment(
+    line: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<String, ProjectCompileError> {
+    if early_bound.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lowered = trimmed.to_ascii_lowercase();
+    let explicit_set = lowered.starts_with("set ");
+    let explicit_let = lowered.starts_with("let ");
+    let payload = if explicit_set || explicit_let {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    let Some(eq_idx) = find_top_level_assignment_eq(payload) else {
+        return Ok(line.to_string());
+    };
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
+    if lhs.is_empty()
+        || rhs.is_empty()
+        || rhs.contains(char::is_whitespace)
+        || rhs.contains('(')
+        || rhs.contains('.')
+    {
+        return Ok(line.to_string());
+    }
+    let Some(bang_idx) = rhs.find('!') else {
+        return Ok(line.to_string());
+    };
+    let var_name = rhs[..bang_idx].trim();
+    let member_name = rhs[bang_idx + 1..].trim();
+    if !is_valid_vba_identifier(var_name) || !is_valid_vba_identifier(member_name) {
+        return Ok(line.to_string());
+    }
+    let Some(binding) = early_bound.get(&normalize_identifier(var_name)) else {
+        return Ok(line.to_string());
+    };
+    let target_name = format!("{}.Fields", binding.qualified_type);
+    let (fields_token, _) = match resolve_early_bound_binding_member_token_and_spec_of_kinds(
+        binding,
+        "Fields",
+        &[TypeLibMemberInvokeKind::PropertyGet],
+    ) {
+        KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+            (member_token, member_spec)
+        }
+        KnownTypeLibMemberResolution::Unsupported => {
+            return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                member_name: "Fields".to_string(),
+            });
+        }
+        KnownTypeLibMemberResolution::Missing => {
+            return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                target: target_name,
+            });
+        }
+        KnownTypeLibMemberResolution::Ambiguous => {
+            return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                target: target_name,
+            });
+        }
+    };
+    let field_lookup = format!(
+        "DispatchInvoke(DispatchInvoke({var_name}, {fields_token}), \"Item\", \"{member_name}\")"
+    );
+    if explicit_set {
+        Ok(format!(
+            "{}Set {} = {}",
+            &line[..leading],
+            lhs,
+            field_lookup
+        ))
+    } else {
+        Ok(format!(
+            "{}{}{} = DispatchInvoke({}, \"Value\")",
+            &line[..leading],
+            if explicit_let { "Let " } else { "" },
+            lhs,
+            field_lookup
+        ))
+    }
 }
 
 fn rewrite_early_bound_object_assignment(
@@ -6132,6 +6256,61 @@ fn resolve_early_bound_binding_member_token_and_spec(
         TypeLibMemberLookupResult::Missing => KnownTypeLibMemberResolution::Missing,
         TypeLibMemberLookupResult::Ambiguous => KnownTypeLibMemberResolution::Ambiguous,
     }
+}
+
+fn resolve_early_bound_binding_member_token_and_spec_of_kinds(
+    binding: &EarlyBoundBinding,
+    member_name: &str,
+    allowed_kinds: &[TypeLibMemberInvokeKind],
+) -> KnownTypeLibMemberResolution {
+    let Some(metadata) = binding.typelib_metadata.as_ref() else {
+        return KnownTypeLibMemberResolution::Unsupported;
+    };
+    let matches = metadata
+        .members
+        .iter()
+        .filter(|candidate| {
+            candidate.name.eq_ignore_ascii_case(member_name)
+                && allowed_kinds.contains(&candidate.invoke_kind)
+        })
+        .collect::<Vec<_>>();
+    let member = match matches.as_slice() {
+        [] => return KnownTypeLibMemberResolution::Missing,
+        [member] => *member,
+        many => {
+            let no_arg = many
+                .iter()
+                .copied()
+                .filter(|candidate| candidate.parameter_names.is_empty())
+                .collect::<Vec<_>>();
+            match no_arg.as_slice() {
+                [member] => *member,
+                [member, ..] => *member,
+                [] => {
+                    let default = many
+                        .iter()
+                        .copied()
+                        .filter(|candidate| candidate.is_default_member)
+                        .collect::<Vec<_>>();
+                    match default.as_slice() {
+                        [member] => *member,
+                        [member, ..] => *member,
+                        [] => return KnownTypeLibMemberResolution::Ambiguous,
+                    }
+                }
+            }
+        }
+    };
+    KnownTypeLibMemberResolution::Resolved(
+        member.token,
+        ComMemberSpec {
+            name: member.name.clone(),
+            requires_argument: member.requires_argument,
+            invoke_kind: member.invoke_kind,
+            parameter_names: member.parameter_names.clone(),
+            is_default_member: member.is_default_member,
+        },
+    )
 }
 
 fn resolve_early_bound_binding_default_member_token_and_spec(

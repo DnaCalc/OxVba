@@ -612,7 +612,6 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "red strict early-bound Access/JET test: current implementation does not yet support the natural Fields(\"Name\").Value path"]
 fn strict_early_bound_project_executes_registered_access_jet_ado_database_subset() {
     let Some((adodb_importlib, adox_importlib)) = registered_access_jet_ado_available() else {
         return;
@@ -649,6 +648,8 @@ Dim fieldName As ADODB.Field
 Dim fieldScore As ADODB.Field
 Dim nameValue
 Dim scoreValue
+Dim bangNameValue
+Dim bangScoreValue
 Call catalog.Create("{connection}")
 Call cn.Open("{connection}", "", "", 0)
 Call cn.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 0, 0)
@@ -659,6 +660,8 @@ Set fieldName = rs.Fields("Name")
 Set fieldScore = rs.Fields("Score")
 nameValue = fieldName.Value
 scoreValue = fieldScore.Value
+bangNameValue = rs!Name
+bangScoreValue = rs!Score
 End Sub
 "#,
         connection = escaped_connection
@@ -696,6 +699,11 @@ End Sub
         Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
     );
     assert_eq!(out[6], Variant::from_i32(99));
+    assert_eq!(
+        out[7],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[8], Variant::from_i32(99));
     assert!(
         db_path.exists(),
         "strict early-bound Access/Jet database should be created"
