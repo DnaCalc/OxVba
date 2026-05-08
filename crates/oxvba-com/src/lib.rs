@@ -61,7 +61,7 @@ pub use runtime_state::{
 pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
-    TypeLibResolvedIdentity,
+    TypeLibResolvedIdentity, runtime_class_descriptor_from_typelib_metadata,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{

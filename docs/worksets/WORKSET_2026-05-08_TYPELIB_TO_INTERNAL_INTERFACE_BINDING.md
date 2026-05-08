@@ -124,6 +124,13 @@ Result: 121 passed, 0 failed.
 
 The implementation currently lowers natural source syntax into the existing COM dispatch bridge internally while preserving strict source shape (no `DispatchInvoke` in the test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
 
+Additional descriptor projection progress:
+
+- `oxvba-com::runtime_class_descriptor_from_typelib_metadata(...)` maps imported `TypeLibMetadataBlob` member metadata into the shared runtime descriptor model (`RuntimeClassDescriptor` / `RuntimeInterfaceDescriptor` / `RuntimeMemberDescriptor`).
+- The projection preserves dispatch ids, invoke kind, default-member flag, and arity. It intentionally leaves `vtable_slot` as `None` and `dual_dispatch` as `false` because the current metadata blob does not yet carry vtable slot/typekind evidence.
+- `typelib_metadata_projects_to_runtime_dispatch_descriptor` covers the projection.
+- Validation: `cargo test -p oxvba-com --quiet` -> 93 passed.
+
 ## Scope
 
 ### In scope
