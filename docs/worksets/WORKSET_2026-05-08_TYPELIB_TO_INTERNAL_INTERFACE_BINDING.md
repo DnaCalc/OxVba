@@ -129,8 +129,9 @@ Additional descriptor projection progress:
 - `oxvba-com::runtime_class_descriptor_from_typelib_metadata(...)` maps imported `TypeLibMetadataBlob` member metadata into the shared runtime descriptor model (`RuntimeClassDescriptor` / `RuntimeInterfaceDescriptor` / `RuntimeMemberDescriptor`).
 - The projection preserves dispatch ids, invoke kind, default-member flag, arity, parameter descriptors, return type descriptors, and optional vtable slot metadata. `dual_dispatch` is only asserted when the metadata carries an explicit vtable slot.
 - Live Windows typelib loading now captures `FUNCDESC::oVft` into `TypeLibMemberMetadata::vtable_slot`; fixture/catalog metadata remains test-scoped behind `cfg(test)` / `fixture-typelibs`, with no hardcoded ADODB/ADOX/Scripting/Excel member catalog in production paths.
-- `typelib_metadata_projects_to_runtime_dispatch_descriptor` covers the projection.
-- Validation: `cargo test -p oxvba-com --quiet` -> 93 passed.
+- `ComBinding` now retains the projected runtime class descriptor for typelib-backed native COM bindings, and retained runtime `ObjectRef` identities use that descriptor when created.
+- `typelib_metadata_projects_to_runtime_dispatch_descriptor` covers the standalone projection; `binding_from_typelib_metadata_carries_runtime_descriptor_projection` covers the binding-level connection.
+- Validation: `cargo test -p oxvba-com --quiet` -> 94 passed.
 - Additional Access/JET ambiguity validation: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture` -> 1 passed, with strict source covering both `Set bangFieldName = rs!Name` and `bangNameValue = rs!Name`.
 
 ## Scope

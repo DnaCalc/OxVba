@@ -2,8 +2,9 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComCallbackValue, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
+    runtime_class_descriptor_from_typelib_metadata,
 };
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{ObjectRef, RuntimeClassDescriptor, Variant};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,7 @@ pub struct ComBinding {
     pub native_dispatch: usize,
     pub native_unknown: usize,
     pub runtime_object: Option<ObjectRef>,
+    pub runtime_class_descriptor: Option<&'static RuntimeClassDescriptor>,
     pub member_dispids: BTreeMap<ComMemberToken, i32>,
     pub member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
     pub default_member_token: Option<ComMemberToken>,
@@ -27,6 +29,7 @@ impl ComBinding {
             native_dispatch,
             native_unknown: 0,
             runtime_object: None,
+            runtime_class_descriptor: None,
             member_dispids: BTreeMap::new(),
             member_specs: BTreeMap::new(),
             default_member_token: None,
@@ -68,6 +71,7 @@ pub fn binding_from_typelib_metadata(
     metadata: Option<&TypeLibMetadataBlob>,
 ) -> ComBinding {
     let mut binding = ComBinding::new(prog_id_name, native_dispatch);
+    binding.runtime_class_descriptor = metadata.map(runtime_class_descriptor_from_typelib_metadata);
     binding.member_specs = metadata
         .map(member_specs_from_typelib_metadata)
         .unwrap_or_default();
@@ -424,9 +428,67 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComBinding, ComEventSubscription, ComRuntimeState};
-    use crate::{ComMemberToken, ComValue};
-    use oxvba_runtime::{ObjectRef, VarType};
+    use super::{ComBinding, ComEventSubscription, ComRuntimeState, binding_from_typelib_metadata};
+    use crate::{
+        ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
+        TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    };
+    use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, RuntimeMemberInvokeKind, VarType};
+
+    fn sample_typelib_identity() -> TypeLibResolvedIdentity {
+        TypeLibResolvedIdentity {
+            reference_name: "TestLib".to_string(),
+            requested_coclass: Some("Widget".to_string()),
+            importlib: "TestLib".to_string(),
+            libid: Some("{00000000-0000-0000-0000-000000000001}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "TestLib:1.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn binding_from_typelib_metadata_carries_runtime_descriptor_projection() {
+        let metadata = TypeLibMetadataBlob {
+            identity: sample_typelib_identity(),
+            activation_prog_id: Some("TestLib.Widget".to_string()),
+            member_name_to_token: vec![("Lookup".to_string(), 7)],
+            members: vec![TypeLibMemberMetadata {
+                name: "Lookup".to_string(),
+                token: 7,
+                vtable_slot: Some(9),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["key".to_string()],
+                is_default_member: false,
+                parameter_types: vec![TypeLibParamType::String],
+                return_type: Some(TypeLibParamType::Long),
+            }],
+            events: Vec::new(),
+        };
+
+        let binding =
+            binding_from_typelib_metadata("TestLib.Widget".to_string(), 123, Some(&metadata));
+        let descriptor = binding
+            .runtime_class_descriptor
+            .expect("typelib-backed binding should retain runtime descriptor projection");
+        assert_eq!(descriptor.name, "TestLib.Widget");
+        let dispatch = descriptor
+            .interfaces
+            .iter()
+            .find(|interface| interface.id == RuntimeInterfaceId::IDispatch)
+            .expect("typelib-backed binding should expose dispatch descriptor");
+        assert!(dispatch.dual_dispatch);
+        assert_eq!(dispatch.members[0].name, "Lookup");
+        assert_eq!(dispatch.members[0].dispatch_id, 7);
+        assert_eq!(dispatch.members[0].vtable_slot, Some(9));
+        assert_eq!(
+            dispatch.members[0].invoke_kind,
+            RuntimeMemberInvokeKind::Method
+        );
+        assert_eq!(dispatch.members[0].params[0].name, "key");
+    }
 
     #[test]
     fn runtime_state_queues_projection_callbacks() {

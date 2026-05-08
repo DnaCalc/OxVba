@@ -289,7 +289,10 @@ fn retained_runtime_object(binding: &mut ComBinding, handle: ComObjectToken) -> 
     if let Some(object) = binding.runtime_object.clone() {
         return object;
     }
-    let object = ObjectRef::from_compat_identity(handle.raw());
+    let object = binding.runtime_class_descriptor.map_or_else(
+        || ObjectRef::from_compat_identity(handle.raw()),
+        |descriptor| ObjectRef::from_compat_identity_with_descriptor(handle.raw(), descriptor),
+    );
     binding.runtime_object = Some(object.clone());
     object
 }
