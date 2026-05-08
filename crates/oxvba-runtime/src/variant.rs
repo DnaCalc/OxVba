@@ -21,8 +21,13 @@ pub enum VarType {
     Error = 0x000A,
     Boolean = 0x000B,
     Decimal = 0x000E,
+    SignedByte = 0x0010,
     Byte = 0x0011,
+    UnsignedInteger = 0x0012,
+    UnsignedLong = 0x0013,
     LongLong = 0x0014,
+    UnsignedLongLong = 0x0015,
+    UnsignedInt = 0x0017,
     ArrayVariant = 0x200C,
 }
 
@@ -42,8 +47,13 @@ impl VarType {
             0x000A => Some(Self::Error),
             0x000B => Some(Self::Boolean),
             0x000E => Some(Self::Decimal),
+            0x0010 => Some(Self::SignedByte),
             0x0011 => Some(Self::Byte),
+            0x0012 => Some(Self::UnsignedInteger),
+            0x0013 => Some(Self::UnsignedLong),
             0x0014 => Some(Self::LongLong),
+            0x0015 => Some(Self::UnsignedLongLong),
+            0x0017 => Some(Self::UnsignedInt),
             0x200C => Some(Self::ArrayVariant),
             _ => None,
         }
@@ -404,6 +414,19 @@ impl Variant {
         Some(v != 0)
     }
 
+    pub fn from_i8(value: i8) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0] = value as u8;
+        Self::from_core(VariantCore::from_bytes(VarType::SignedByte, bytes))
+    }
+
+    pub fn as_i8(&self) -> Option<i8> {
+        if self.vtype() != VarType::SignedByte {
+            return None;
+        }
+        Some(self.data_bytes()[0] as i8)
+    }
+
     pub fn from_u8(value: u8) -> Self {
         let mut bytes = [0u8; 8];
         bytes[0] = value;
@@ -415,6 +438,54 @@ impl Variant {
             return None;
         }
         Some(self.data_bytes()[0])
+    }
+
+    pub fn from_u16(value: u16) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..2].copy_from_slice(&value.to_le_bytes());
+        Self::from_core(VariantCore::from_bytes(VarType::UnsignedInteger, bytes))
+    }
+
+    pub fn as_u16(&self) -> Option<u16> {
+        if self.vtype() != VarType::UnsignedInteger {
+            return None;
+        }
+        let bytes = self.data_bytes();
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    pub fn from_u32(value: u32) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&value.to_le_bytes());
+        Self::from_core(VariantCore::from_bytes(VarType::UnsignedLong, bytes))
+    }
+
+    pub fn from_uint(value: u32) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&value.to_le_bytes());
+        Self::from_core(VariantCore::from_bytes(VarType::UnsignedInt, bytes))
+    }
+
+    pub fn as_u32(&self) -> Option<u32> {
+        if self.vtype() != VarType::UnsignedLong && self.vtype() != VarType::UnsignedInt {
+            return None;
+        }
+        let bytes = self.data_bytes();
+        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    pub fn from_u64(value: u64) -> Self {
+        Self::from_core(VariantCore::from_bytes(
+            VarType::UnsignedLongLong,
+            value.to_le_bytes(),
+        ))
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        if self.vtype() != VarType::UnsignedLongLong {
+            return None;
+        }
+        Some(u64::from_le_bytes(self.data_bytes()))
     }
 
     pub fn from_error_code(code: i32) -> Self {

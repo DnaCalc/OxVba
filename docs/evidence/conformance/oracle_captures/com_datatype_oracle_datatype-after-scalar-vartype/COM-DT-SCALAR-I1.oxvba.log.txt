@@ -1,0 +1,9 @@
+   Compiling oxvba-vm v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-vm)
+   Compiling oxvba-jit v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-jit)
+   Compiling oxvba-host v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-host)
+   Compiling oxvba-project v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-project)
+   Compiling oxvba-build v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-build)
+   Compiling oxvba-cli v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.91s
+     Running `target\debug\oxvba-cli.exe run 'C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_datatype_oracle_datatype-after-scalar-vartype\COM-DT-SCALAR-I1.bas' --dump-values --allow-com-activation true --runtime-class host-native`
+VALUES:object:20001|i8:-5|string:"16:-5"

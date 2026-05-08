@@ -764,6 +764,40 @@ impl StandardHostServices {
                     format!("{field} has an invalid Long payload"),
                 )
             })?,
+            VarType::SignedByte => i32::from(value.as_i8().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid SignedByte payload"),
+                )
+            })?),
+            VarType::UnsignedInteger => i32::from(value.as_u16().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("{field} has an invalid UnsignedInteger payload"),
+                )
+            })?),
+            VarType::UnsignedLong | VarType::UnsignedInt => {
+                let value = value.as_u32().ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} has an invalid unsigned 32-bit payload"),
+                    )
+                })?;
+                i32::try_from(value).map_err(|_| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} unsigned 32-bit value {value} is outside i32 range"),
+                    )
+                })?
+            }
             VarType::LongLong => {
                 let value = value.as_i64().ok_or_else(|| {
                     HalError::adapter_fault(
@@ -779,6 +813,24 @@ impl StandardHostServices {
                         capability,
                         op,
                         format!("{field} LongLong value {value} is outside i32 range"),
+                    )
+                })?
+            }
+            VarType::UnsignedLongLong => {
+                let value = value.as_u64().ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} has an invalid UnsignedLongLong payload"),
+                    )
+                })?;
+                i32::try_from(value).map_err(|_| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        format!("{field} UnsignedLongLong value {value} is outside i32 range"),
                     )
                 })?
             }
@@ -845,7 +897,11 @@ impl StandardHostServices {
             VarType::Integer => value.as_i16().unwrap_or(0).to_string(),
             VarType::Long => value.as_i32().unwrap_or(0).to_string(),
             VarType::LongLong => value.as_i64().unwrap_or(0).to_string(),
+            VarType::SignedByte => value.as_i8().unwrap_or(0).to_string(),
             VarType::Byte => value.as_u8().unwrap_or(0).to_string(),
+            VarType::UnsignedInteger => value.as_u16().unwrap_or(0).to_string(),
+            VarType::UnsignedLong | VarType::UnsignedInt => value.as_u32().unwrap_or(0).to_string(),
+            VarType::UnsignedLongLong => value.as_u64().unwrap_or(0).to_string(),
             VarType::Single => value.as_f32().unwrap_or(0.0).to_string(),
             VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
             VarType::Date => value.as_date_f64().unwrap_or(0.0).to_string(),

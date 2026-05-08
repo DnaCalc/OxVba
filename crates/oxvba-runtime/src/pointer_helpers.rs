@@ -24,6 +24,16 @@ use windows_sys::{
 const VT_R4: u16 = 4;
 #[cfg(target_os = "windows")]
 const VT_R8: u16 = 5;
+#[cfg(target_os = "windows")]
+const VT_I1: u16 = 16;
+#[cfg(target_os = "windows")]
+const VT_UI2: u16 = 18;
+#[cfg(target_os = "windows")]
+const VT_UI4: u16 = 19;
+#[cfg(target_os = "windows")]
+const VT_UI8: u16 = 21;
+#[cfg(target_os = "windows")]
+const VT_UINT: u16 = 23;
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
@@ -264,13 +274,34 @@ unsafe fn set_windows_variant_from_variant(
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = value.as_i32().expect("long payload");
         }
+        crate::VarType::SignedByte => {
+            (*variant).Anonymous.Anonymous.vt = VT_I1;
+            (*variant).Anonymous.Anonymous.Anonymous.cVal = value.as_i8().expect("i1 payload");
+        }
         crate::VarType::Byte => {
             (*variant).Anonymous.Anonymous.vt = VT_UI1;
             (*variant).Anonymous.Anonymous.Anonymous.bVal = value.as_u8().expect("byte payload");
         }
+        crate::VarType::UnsignedInteger => {
+            (*variant).Anonymous.Anonymous.vt = VT_UI2;
+            (*variant).Anonymous.Anonymous.Anonymous.uiVal = value.as_u16().expect("ui2 payload");
+        }
+        crate::VarType::UnsignedLong => {
+            (*variant).Anonymous.Anonymous.vt = VT_UI4;
+            (*variant).Anonymous.Anonymous.Anonymous.ulVal = value.as_u32().expect("ui4 payload");
+        }
+        crate::VarType::UnsignedInt => {
+            (*variant).Anonymous.Anonymous.vt = VT_UINT;
+            (*variant).Anonymous.Anonymous.Anonymous.uintVal =
+                value.as_u32().expect("uint payload");
+        }
         crate::VarType::LongLong => {
             (*variant).Anonymous.Anonymous.vt = VT_I8;
             (*variant).Anonymous.Anonymous.Anonymous.llVal = value.as_i64().expect("i64 payload");
+        }
+        crate::VarType::UnsignedLongLong => {
+            (*variant).Anonymous.Anonymous.vt = VT_UI8;
+            (*variant).Anonymous.Anonymous.Anonymous.ullVal = value.as_u64().expect("ui8 payload");
         }
         crate::VarType::Boolean => {
             (*variant).Anonymous.Anonymous.vt = VT_BOOL;
@@ -499,9 +530,23 @@ pub fn register_variant_pointer(value: &Variant) -> Result<i64, String> {
         crate::VarType::LongLong => {
             PointerEntry::I64(Box::new(value.as_i64().expect("LongLong Variant payload")))
         }
+        crate::VarType::SignedByte => PointerEntry::I32(Box::new(i32::from(
+            value.as_i8().expect("SignedByte Variant payload"),
+        ))),
         crate::VarType::Byte => PointerEntry::I32(Box::new(i32::from(
             value.as_u8().expect("Byte Variant payload"),
         ))),
+        crate::VarType::UnsignedInteger => PointerEntry::I32(Box::new(i32::from(
+            value.as_u16().expect("UnsignedInteger Variant payload"),
+        ))),
+        crate::VarType::UnsignedLong | crate::VarType::UnsignedInt => PointerEntry::I64(Box::new(
+            i64::from(value.as_u32().expect("unsigned 32-bit Variant payload")),
+        )),
+        crate::VarType::UnsignedLongLong => PointerEntry::I64(Box::new(
+            i64::try_from(value.as_u64().expect("UnsignedLongLong Variant payload")).map_err(
+                |_| "UnsignedLongLong Variant payload exceeds pointer helper i64 carrier",
+            )?,
+        )),
         crate::VarType::Single => PointerEntry::F64(Box::new(f64::from(
             value.as_f32().expect("Single Variant payload"),
         ))),

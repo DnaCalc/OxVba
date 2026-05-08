@@ -1521,6 +1521,30 @@ where
             op,
         );
     }
+    match vt {
+        VT_I1 => return Ok(Variant::from_i8(variant.Anonymous.Anonymous.Anonymous.cVal)),
+        VT_UI2 => {
+            return Ok(Variant::from_u16(
+                variant.Anonymous.Anonymous.Anonymous.uiVal,
+            ));
+        }
+        VT_UI4 => {
+            return Ok(Variant::from_u32(
+                variant.Anonymous.Anonymous.Anonymous.ulVal,
+            ));
+        }
+        VT_UINT => {
+            return Ok(Variant::from_uint(
+                variant.Anonymous.Anonymous.Anonymous.uintVal,
+            ));
+        }
+        VT_UI8 => {
+            return Ok(Variant::from_u64(
+                variant.Anonymous.Anonymous.Anonymous.ullVal,
+            ));
+        }
+        _ => {}
+    }
     variant_to_com_value(variant)?.to_variant()
 }
 

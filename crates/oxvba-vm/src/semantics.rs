@@ -56,7 +56,11 @@ pub fn runtime_variant_to_text(value: &Variant, field: &str) -> Result<String, S
         VarType::Integer => Ok(value.as_i16().unwrap_or(0).to_string()),
         VarType::Long => Ok(value.as_i32().unwrap_or(0).to_string()),
         VarType::LongLong => Ok(value.as_i64().unwrap_or(0).to_string()),
+        VarType::SignedByte => Ok(value.as_i8().unwrap_or(0).to_string()),
         VarType::Byte => Ok(value.as_u8().unwrap_or(0).to_string()),
+        VarType::UnsignedInteger => Ok(value.as_u16().unwrap_or(0).to_string()),
+        VarType::UnsignedLong | VarType::UnsignedInt => Ok(value.as_u32().unwrap_or(0).to_string()),
+        VarType::UnsignedLongLong => Ok(value.as_u64().unwrap_or(0).to_string()),
         VarType::String => value
             .as_bstr()
             .map(|text| text.as_str().to_string())
@@ -982,7 +986,10 @@ pub fn runtime_vartype_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i3
         oxvba_runtime::VarType::Empty => 0,
         oxvba_runtime::VarType::Null => 1,
         oxvba_runtime::VarType::Error => 10,
-        oxvba_runtime::VarType::ArrayVariant => 8192 + 12,
+        oxvba_runtime::VarType::ArrayVariant => value
+            .as_safearray()
+            .map(|array| 8192 + i32::from(array.element_vartype()))
+            .unwrap_or(8192 + 12),
         _ => 3,
     }
 }
@@ -999,7 +1006,12 @@ pub fn runtime_vartype_compat_bounded_variant(value: &oxvba_runtime::Variant) ->
             .filter(|v| (-32768..=32767).contains(v))
             .map(|_| 2)
             .unwrap_or(3),
-        oxvba_runtime::VarType::LongLong => 3,
+        oxvba_runtime::VarType::LongLong => 20,
+        oxvba_runtime::VarType::SignedByte => 16,
+        oxvba_runtime::VarType::UnsignedInteger => 18,
+        oxvba_runtime::VarType::UnsignedLong => 19,
+        oxvba_runtime::VarType::UnsignedLongLong => 21,
+        oxvba_runtime::VarType::UnsignedInt => 23,
         oxvba_runtime::VarType::Single => 4,
         oxvba_runtime::VarType::Double => 5,
         oxvba_runtime::VarType::Currency => 6,
@@ -1010,7 +1022,10 @@ pub fn runtime_vartype_compat_bounded_variant(value: &oxvba_runtime::Variant) ->
         oxvba_runtime::VarType::Boolean => 11,
         oxvba_runtime::VarType::Decimal => 14,
         oxvba_runtime::VarType::Byte => 2,
-        oxvba_runtime::VarType::ArrayVariant => 8192 + 12,
+        oxvba_runtime::VarType::ArrayVariant => value
+            .as_safearray()
+            .map(|array| 8192 + i32::from(array.element_vartype()))
+            .unwrap_or(8192 + 12),
     }
 }
 
@@ -1297,6 +1312,11 @@ pub fn variant_assignment_value_label(value: &Variant) -> &'static str {
         VarType::Integer => "Integer",
         VarType::Long => "Long",
         VarType::LongLong => "LongLong",
+        VarType::SignedByte => "SignedByte",
+        VarType::UnsignedInteger => "UnsignedInteger",
+        VarType::UnsignedLong => "UnsignedLong",
+        VarType::UnsignedLongLong => "UnsignedLongLong",
+        VarType::UnsignedInt => "UnsignedInt",
         VarType::Single => "Single",
         VarType::Double => "Double",
         VarType::Date => "Date",

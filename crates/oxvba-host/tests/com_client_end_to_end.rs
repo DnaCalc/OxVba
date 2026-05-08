@@ -472,8 +472,8 @@ End Sub
         );
         assert_eq!(
             vm[2],
-            Variant::from_i32(65_000),
-            "VT_UI2 result should coerce into the i32 token lane"
+            Variant::from_u16(65_000),
+            "VT_UI2 result should preserve its Automation VarType carrier"
         );
         assert_eq!(
             vm[3],
@@ -482,8 +482,8 @@ End Sub
         );
         assert_eq!(
             vm[4],
-            Variant::from_i32(-5),
-            "VT_I1 result should coerce into the i32 token lane"
+            Variant::from_i8(-5),
+            "VT_I1 result should preserve its Automation VarType carrier"
         );
         assert_eq!(
             vm[5],
@@ -492,8 +492,8 @@ End Sub
         );
         assert_eq!(
             vm[6],
-            Variant::from_i32(70_000),
-            "VT_UINT result should preserve the current i32 carrier lane when the value fits"
+            Variant::from_uint(70_000),
+            "VT_UINT result should preserve its Automation VarType carrier"
         );
         assert_eq!(
             vm[7],
@@ -502,8 +502,8 @@ End Sub
         );
         assert_eq!(
             vm[8],
-            Variant::from_i32(70_000),
-            "VT_UI8 result should preserve the current i32 carrier lane when the value fits"
+            Variant::from_u64(70_000),
+            "VT_UI8 result should preserve its Automation VarType carrier"
         );
         assert_eq!(
             vm[9],
@@ -512,8 +512,8 @@ End Sub
         );
         assert_eq!(
             vm[10],
-            Variant::from_i32(70_000),
-            "VT_UI4 result should preserve the current i32 carrier lane when the value fits"
+            Variant::from_u32(70_000),
+            "VT_UI4 result should preserve its Automation VarType carrier"
         );
     }
 
@@ -2203,8 +2203,8 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            Variant::from_i64(4_000_000_000),
-            "expected VT_UI4 value preserved on I64 carrier"
+            Variant::from_u32(4_000_000_000),
+            "expected VT_UI4 value preserved on exact unsigned carrier"
         );
     }
 
@@ -2256,8 +2256,8 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            Variant::from_i64(4_000_000_000),
-            "expected VT_UINT value preserved on I64 carrier"
+            Variant::from_uint(4_000_000_000),
+            "expected VT_UINT value preserved on exact unsigned carrier"
         );
     }
 
@@ -2362,8 +2362,8 @@ End Sub
         );
         assert_eq!(
             vm[1],
-            Variant::from_i64(5_000_000_000),
-            "expected VT_UI8 value preserved on I64 carrier"
+            Variant::from_u64(5_000_000_000),
+            "expected VT_UI8 value preserved on exact unsigned carrier"
         );
     }
 

@@ -113,7 +113,13 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
         VarType::Integer => BStr::from(format!("{}", value.as_i16().unwrap_or(0))),
         VarType::Long => BStr::from(format!("{}", value.as_i32().unwrap_or(0))),
         VarType::LongLong => BStr::from(format!("{}", value.as_i64().unwrap_or(0))),
+        VarType::SignedByte => BStr::from(format!("{}", value.as_i8().unwrap_or(0))),
         VarType::Byte => BStr::from(format!("{}", value.as_u8().unwrap_or(0))),
+        VarType::UnsignedInteger => BStr::from(format!("{}", value.as_u16().unwrap_or(0))),
+        VarType::UnsignedLong | VarType::UnsignedInt => {
+            BStr::from(format!("{}", value.as_u32().unwrap_or(0)))
+        }
+        VarType::UnsignedLongLong => BStr::from(format!("{}", value.as_u64().unwrap_or(0))),
         VarType::Single => BStr::from(format_vba_f64(f64::from(value.as_f32().unwrap_or(0.0)))),
         VarType::Double => BStr::from(format_vba_f64(value.as_f64().unwrap_or(0.0))),
         VarType::Date => BStr::from(format_vba_f64(value.as_date_f64().unwrap_or(0.0))),
@@ -123,7 +129,7 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
             "False"
         }),
         VarType::Decimal => BStr::from(format!(
-            "{:?}",
+            "{}",
             value
                 .as_decimal96()
                 .ok_or_else(|| "invalid Decimal variant payload".to_string())?

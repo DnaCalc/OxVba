@@ -113,11 +113,43 @@ impl ComValue {
                     .as_i64()
                     .ok_or_else(|| "invalid LongLong VARIANT payload".to_string())?,
             ),
+            oxvba_runtime::VarType::SignedByte => {
+                Self::I32(i32::from(value.as_i8().ok_or_else(|| {
+                    "invalid SignedByte VARIANT payload".to_string()
+                })?))
+            }
             oxvba_runtime::VarType::Byte => Self::I32(i32::from(
                 value
                     .as_u8()
                     .ok_or_else(|| "invalid Byte VARIANT payload".to_string())?,
             )),
+            oxvba_runtime::VarType::UnsignedInteger => {
+                Self::I32(i32::from(value.as_u16().ok_or_else(|| {
+                    "invalid UnsignedInteger VARIANT payload".to_string()
+                })?))
+            }
+            oxvba_runtime::VarType::UnsignedLong | oxvba_runtime::VarType::UnsignedInt => {
+                let value = value
+                    .as_u32()
+                    .ok_or_else(|| "invalid unsigned 32-bit VARIANT payload".to_string())?;
+                match i32::try_from(value) {
+                    Ok(narrowed) => Self::I32(narrowed),
+                    Err(_) => Self::I64(i64::from(value)),
+                }
+            }
+            oxvba_runtime::VarType::UnsignedLongLong => {
+                let value = value
+                    .as_u64()
+                    .ok_or_else(|| "invalid UnsignedLongLong VARIANT payload".to_string())?;
+                match i64::try_from(value) {
+                    Ok(narrowed) => Self::I64(narrowed),
+                    Err(_) => {
+                        return Err(format!(
+                            "UnsignedLongLong VARIANT value {value} exceeds i64 carrier range"
+                        ));
+                    }
+                }
+            }
             oxvba_runtime::VarType::Single => Self::F64(F64Value::from_single_f64(
                 value
                     .as_f32()

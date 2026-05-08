@@ -48,6 +48,36 @@ namespace OxVba.TestEventServer
 
         [DispId(109)]
         object ReturnSelfArray();
+
+        [DispId(110)]
+        object ReturnSignedByteObject();
+
+        [DispId(111)]
+        object ReturnUnsignedWordObject();
+
+        [DispId(112)]
+        object ReturnUnsignedLongObject();
+
+        [DispId(113)]
+        object ReturnUnsignedHyperObject();
+
+        [DispId(114)]
+        object ReturnDecimalObject();
+
+        [DispId(115)]
+        object ReturnSignedByteArray();
+
+        [DispId(116)]
+        object ReturnUnsignedWordArray();
+
+        [DispId(117)]
+        object ReturnUnsignedLongArray();
+
+        [DispId(118)]
+        object ReturnUnsignedHyperArray();
+
+        [DispId(119)]
+        object ReturnDecimalArray();
     }
 
     [ComVisible(true)]
@@ -123,6 +153,56 @@ namespace OxVba.TestEventServer
         public object ReturnSelfArray()
         {
             return new object[] { this };
+        }
+
+        public object ReturnSignedByteObject()
+        {
+            return (sbyte)-5;
+        }
+
+        public object ReturnUnsignedWordObject()
+        {
+            return (ushort)65000;
+        }
+
+        public object ReturnUnsignedLongObject()
+        {
+            return (uint)4000000000;
+        }
+
+        public object ReturnUnsignedHyperObject()
+        {
+            return (ulong)9000000000;
+        }
+
+        public object ReturnDecimalObject()
+        {
+            return -123.45m;
+        }
+
+        public object ReturnSignedByteArray()
+        {
+            return new sbyte[] { -5, 0, 120 };
+        }
+
+        public object ReturnUnsignedWordArray()
+        {
+            return new ushort[] { 12, 4096, 65000 };
+        }
+
+        public object ReturnUnsignedLongArray()
+        {
+            return new uint[] { 12, 4096, 4000000000 };
+        }
+
+        public object ReturnUnsignedHyperArray()
+        {
+            return new ulong[] { 12, 4096, 9000000000 };
+        }
+
+        public object ReturnDecimalArray()
+        {
+            return new decimal[] { 123.45m, -4.25m, 321m };
         }
 
         private static string FormatValue(object value)

@@ -2932,10 +2932,15 @@ fn format_variant_value(value: &Variant) -> String {
         VarType::Empty => "empty".to_string(),
         VarType::Null => "null".to_string(),
         VarType::Error => format!("error:{}", value.as_error_code().unwrap_or(0)),
-        VarType::Integer | VarType::Long | VarType::Byte => {
-            format!("i32:{}", value.as_i32().unwrap_or(0))
-        }
+        VarType::Integer => format!("i16:{}", value.as_i16().unwrap_or(0)),
+        VarType::Long => format!("i32:{}", value.as_i32().unwrap_or(0)),
+        VarType::SignedByte => format!("i8:{}", value.as_i8().unwrap_or(0)),
+        VarType::Byte => format!("u8:{}", value.as_u8().unwrap_or(0)),
+        VarType::UnsignedInteger => format!("u16:{}", value.as_u16().unwrap_or(0)),
+        VarType::UnsignedLong => format!("u32:{}", value.as_u32().unwrap_or(0)),
+        VarType::UnsignedInt => format!("uint:{}", value.as_u32().unwrap_or(0)),
         VarType::LongLong => format!("i64:{}", value.as_i64().unwrap_or(0)),
+        VarType::UnsignedLongLong => format!("u64:{}", value.as_u64().unwrap_or(0)),
         VarType::Single | VarType::Double | VarType::Date => {
             format!("f64:{}", value.as_f64().unwrap_or(0.0))
         }
