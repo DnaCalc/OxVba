@@ -1,0 +1,16 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>AccessJetStrictEarlyBoundShowcase</ProjectName>
+    <EntryPoint>AccessJetStrictEarlyMain.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="AccessJetStrictEarlyMain.bas" />
+    <COMReference Include="ADODB">
+      <ImportLib>C:\\Program Files\\Common Files\\System\\ado\\msado15.dll</ImportLib>
+    </COMReference>
+    <COMReference Include="ADOX">
+      <ImportLib>C:\\Program Files\\Common Files\\System\\ado\\msadox.dll</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>

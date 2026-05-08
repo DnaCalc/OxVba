@@ -1,0 +1,7 @@
+.module
+? MathHelpers.Add(5, 7)
+? Scale(9)
+.module MathHelpers
+? Add(100, 23)
+reset
+.quit

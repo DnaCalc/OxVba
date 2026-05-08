@@ -1,0 +1,238 @@
+{
+  "runId": "20260508T200437",
+  "generatedUtc": "2026-05-08T18:05:54.4956353Z",
+  "repo": "C:\\Work\\DnaCalc\\OxVba",
+  "runDir": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437",
+  "results": [
+    {
+      "name": "build_cli_and_launcher",
+      "category": "toolchain",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\build_cli_and_launcher.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\build_cli_and_launcher.stderr.log",
+      "notes": "Rust build verifies the command-line integration binaries used by every following pass.",
+      "checks": {
+        "stderrContains": "Finished",
+        "expectFailure": false,
+        "stdoutContains": "",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "single_file_compile_to_oxb",
+      "category": "single-file",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_compile_to_oxb.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_compile_to_oxb.stderr.log",
+      "notes": "Compiles a brand-new .bas source into an OxBundle artifact.",
+      "checks": {
+        "artifactBytes": 1028,
+        "artifactExistsOk": true,
+        "stderrContains": "",
+        "stderrMatched": true,
+        "expectFailure": false,
+        "stdoutContains": "compiled",
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "single_file_run_source_vm",
+      "category": "single-file",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_run_source_vm.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_run_source_vm.stderr.log",
+      "notes": "Runs the source path through the CLI/host/VM stack and checks the slot snapshot.",
+      "checks": {
+        "stderrContains": "",
+        "expectFailure": false,
+        "stdoutContains": "VALUES:i32:42|string:\"single-file-ok\"",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "single_file_run_compiled_launcher",
+      "category": "single-file",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_run_compiled_launcher.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\single_file_run_compiled_launcher.stderr.log",
+      "notes": "Runs the serialized .oxb bundle through oxvba-run and checks executable snapshot output emitted by the launcher.",
+      "checks": {
+        "stderrContains": "Long",
+        "expectFailure": false,
+        "stdoutContains": "",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "two_module_project_run_vm",
+      "category": "project",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_vm.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_vm.stderr.log",
+      "notes": "Project loader resolves two modules and executes a cross-module qualified call plus an unqualified local call.",
+      "checks": {
+        "stderrContains": "",
+        "expectFailure": false,
+        "stdoutContains": "VALUES:i32:42|i32:84|string:\"two-module=84\"",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "two_module_project_run_jit_target",
+      "category": "project",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_jit_target.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_jit_target.stderr.log",
+      "notes": "Same project through the JIT-enabled target; unsupported operations may fall back but the public target produces the same snapshot.",
+      "checks": {
+        "stderrContains": "",
+        "expectFailure": false,
+        "stdoutContains": "VALUES:i32:42|i32:84|string:\"two-module=84\"",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "two_module_project_build_bundle",
+      "category": "project",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_build_bundle.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_build_bundle.stderr.log",
+      "notes": "Build target serializes the project to an OxBundle artifact.",
+      "checks": {
+        "artifactBytes": 3452,
+        "artifactExistsOk": true,
+        "stderrContains": "",
+        "stderrMatched": true,
+        "expectFailure": false,
+        "stdoutContains": "built",
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "two_module_project_run_bundle",
+      "category": "project",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_bundle.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\two_module_project_run_bundle.stderr.log",
+      "notes": "The project bundle is accepted by oxvba-run. Current project-bundle launcher output is intentionally quieter than single-file slot bundles.",
+      "checks": {
+        "stderrContains": "",
+        "expectFailure": false,
+        "stdoutContains": "",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "diagnostic_broken_assignment",
+      "category": "diagnostics",
+      "status": "pass",
+      "exitCode": 1,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\diagnostic_broken_assignment.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\diagnostic_broken_assignment.stderr.log",
+      "notes": "Intentional editor-style broken assignment validates surfaced compiler diagnostics and non-zero exit status.",
+      "checks": {
+        "stderrContains": "compile failed",
+        "expectFailure": true,
+        "stdoutContains": "",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "diagnostic_missing_module_reference",
+      "category": "diagnostics",
+      "status": "pass",
+      "exitCode": 1,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\diagnostic_missing_module_reference.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\diagnostic_missing_module_reference.stderr.log",
+      "notes": "Intentional bad cross-module edit validates compile diagnostic propagation through the project command.",
+      "checks": {
+        "stderrContains": "compile-time diagnostic",
+        "expectFailure": true,
+        "stdoutContains": "",
+        "stderrMatched": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "access_jet_create_insert_query",
+      "category": "access-jet-com",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_create_insert_query.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_create_insert_query.stderr.log",
+      "notes": "OxVba project carries COMReference metadata for ADO/ADOX and uses real Windows COM Automation to create an Access/ACE .accdb, insert two rows, select Grace back, and surface scalar field values in the VM snapshot.",
+      "checks": {
+        "databaseBytes": 184320,
+        "stderrContains": "",
+        "stderrMatched": true,
+        "expectFailure": false,
+        "stdoutContains": "string:\"Grace\"|i32:99",
+        "databaseExistsOk": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "access_jet_mixed_imported_com_create_insert_query",
+      "category": "access-jet-com",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_mixed_imported_com_create_insert_query.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_mixed_imported_com_create_insert_query.stderr.log",
+      "notes": "Mixed imported-COM ADO/ADOX project imports real typelib files, declares ADOX.Catalog and ADODB.Connection with As New, invokes ADODB Open/Execute through metadata-backed calls, still uses DispatchInvoke for unsupported Catalog/Recordset/Field pieces, creates an Access/ACE .accdb, inserts rows, and queries Grace / 99 back.",
+      "checks": {
+        "databaseBytes": 184320,
+        "stderrContains": "",
+        "stderrMatched": true,
+        "expectFailure": false,
+        "stdoutContains": "string:\"Grace\"|i32:99",
+        "databaseExistsOk": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "access_jet_strict_early_bound_create_insert_query",
+      "category": "access-jet-com",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_strict_early_bound_create_insert_query.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\access_jet_strict_early_bound_create_insert_query.stderr.log",
+      "notes": "Strict natural-source Access/JET COM pass: no DispatchInvoke appears in the VBA source; ADOX.Catalog, ADODB.Connection, ADODB.Recordset, and ADODB.Field are imported types, Fields(\"Name\").Value and rs!Name/rs!Score are exercised, and the compiler lowers the natural source into the current COM bridge internally.",
+      "checks": {
+        "databaseBytes": 184320,
+        "stderrContains": "",
+        "stderrMatched": true,
+        "expectFailure": false,
+        "stdoutContains": "string:\"Grace\"|i32:99|string:\"Grace\"|i32:99",
+        "databaseExistsOk": true,
+        "stdoutMatched": true
+      }
+    },
+    {
+      "name": "immediate_window_transcript",
+      "category": "immediate",
+      "status": "pass",
+      "exitCode": 0,
+      "stdout": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\immediate_window_transcript.stdout.log",
+      "stderr": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\showcase\\e2e_external_interfaces_20260508T200437\\logs\\immediate_window_transcript.stderr.log",
+      "notes": "Exercises the bounded Immediate Window interface over the two-module project: current module query, value evaluation, module retargeting, reset, and quit.",
+      "checks": {
+        "transcriptMatchedOk": true
+      }
+    }
+  ]
+}
