@@ -140,7 +140,7 @@ First implementation slice:
 - `compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table` proves known pure OxVba receiver calls carry `ProjectMemberCallDescriptor` bytecode metadata while route metadata remains free of transitional dispatch tokens.
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 - `pure_oxvba_class_object_exposes_runtime_descriptor_metadata` proves a real compiled `Dim widget As New Widget` project dynamic object can be registered into the VM and queried for descriptor-backed default-member metadata while the project still executes correctly.
-- `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed property get, property let, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values.
+- `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed property get, property let, property set, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values.
 - `pure_oxvba_interface_receiver_executes_through_project_descriptor_shape` covers the required pure OxVba interface receiver path (`Dim iface As IWidget`, `Set iface = widget`, `iface.Value(5)`) and validates dispatch to the implementing `IWidget_Value` member.
 
 ## Current COM-compatible ABI boundary policy

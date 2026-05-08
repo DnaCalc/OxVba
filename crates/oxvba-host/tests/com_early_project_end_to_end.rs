@@ -202,12 +202,17 @@ fn pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_pro
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim widget As New Widget
+Dim child As New Child
 Dim indexedOut
 Dim ignored
+Dim ignoredSet
 Dim afterLet
+Dim afterSet
 indexedOut = DispatchInvoke(widget, "Value", 5)
 ignored = DispatchInvoke(widget, "Stored", 46)
 afterLet = DispatchInvoke(widget, "Observe")
+ignoredSet = DispatchInvoke(widget, "Kid", child)
+afterSet = DispatchInvoke(widget, "Observe")
 End Sub
 "#,
     )
@@ -227,16 +232,30 @@ End Property
 Public Property Let Stored(ByVal n)
 stored = n
 End Property
+Public Property Set Kid(ByRef target)
+stored = 17
+End Property
 Public Property Get Observe()
 Observe = stored
 End Property
 "#,
     )
     .expect("widget module should parse");
+    let child_module = module_unit_from_source(
+        "Child",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Child"
+Public Property Get Value()
+Value = 1
+End Property
+"#,
+    )
+    .expect("child module should parse");
     let manifest = ProjectManifest {
         project_name: "ProjectA".to_string(),
         project_kind: ProjectKind::Source,
-        modules: vec![main_module, widget_module],
+        modules: vec![main_module, widget_module, child_module],
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: std::collections::BTreeMap::new(),
@@ -273,9 +292,15 @@ End Property
             .is_some(),
         "Property Get should have a unique unhinted descriptor plan by arity"
     );
+    let child_set_plan = vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Kid", 1);
     assert!(
-        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 3,
-        "descriptor cache should retain unhinted Value get, Stored let, and Observe get plans"
+        child_set_plan.is_some(),
+        "Property Set should have a unique unhinted descriptor plan by arity; route={:?}",
+        compiled.project_dynamic_objects
+    );
+    assert!(
+        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 4,
+        "descriptor cache should retain unhinted Value get, Stored let, Kid set, and Observe get plans"
     );
     vm.execute(&compiled.bytecode)
         .expect("project should execute pure OxVba indexed/property paths");
@@ -289,7 +314,11 @@ End Property
         "indexed default let should update stored through the dynamic descriptor path"
     );
     assert!(
-        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 3,
+        snapshot.contains(&Variant::from_i32(17)),
+        "property set should update stored through the dynamic descriptor path"
+    );
+    assert!(
+        vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 4,
         "descriptor cache should remain populated after project execution"
     );
 }
