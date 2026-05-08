@@ -139,13 +139,20 @@ pub struct ObjectRef(NonNull<RawRuntimeIUnknown>);
 
 impl ObjectRef {
     pub fn from_compat_identity(compat_identity: i32) -> Self {
+        Self::from_compat_identity_with_descriptor(compat_identity, &COMPAT_OBJECT_CLASS_DESCRIPTOR)
+    }
+
+    pub fn from_compat_identity_with_descriptor(
+        compat_identity: i32,
+        class_descriptor: &'static RuntimeClassDescriptor,
+    ) -> Self {
         let boxed = Box::new(CompatObjectBase {
             unknown: RawRuntimeIUnknown {
                 vtbl: &COMPAT_OBJECT_VTBL,
             },
             ref_count: AtomicU32::new(1),
             compat_identity,
-            class_descriptor: &COMPAT_OBJECT_CLASS_DESCRIPTOR,
+            class_descriptor,
         });
         let raw = Box::into_raw(boxed);
         let unknown = unsafe { &mut (*raw).unknown as *mut RawRuntimeIUnknown };
@@ -269,7 +276,11 @@ unsafe impl Sync for ObjectRef {}
 
 #[cfg(test)]
 mod tests {
-    use super::{ObjectRef, RUNTIME_E_NOINTERFACE, RuntimeInterfaceId};
+    use super::{
+        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+        RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
+        RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
+    };
 
     #[test]
     fn object_ref_clone_tracks_refcount_and_identity() {
@@ -313,6 +324,38 @@ mod tests {
                 .is_none(),
             "compat object floor must not falsely claim dual dispatch support"
         );
+    }
+
+    #[test]
+    fn descriptor_backed_object_can_advertise_dual_dispatch_shape() {
+        static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(7),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            is_default_member: true,
+        };
+        static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "ITestDual",
+            members: &[VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, DISPATCH_INTERFACE],
+        };
+
+        let object = ObjectRef::from_compat_identity_with_descriptor(101, &TEST_CLASS);
+        assert_eq!(object.class_descriptor().name, "Project.Widget");
+        let dispatch = object
+            .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+            .expect("test class should advertise a dual dispatch descriptor");
+        assert!(dispatch.dual_dispatch);
+        assert_eq!(dispatch.members.len(), 1);
+        assert_eq!(dispatch.members[0].name, "Value");
+        assert_eq!(dispatch.members[0].vtable_slot, Some(7));
+        assert!(dispatch.members[0].is_default_member);
     }
 
     #[test]
