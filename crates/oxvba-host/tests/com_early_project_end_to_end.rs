@@ -11,7 +11,7 @@ use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, Variant};
 
 fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
     static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
@@ -25,7 +25,7 @@ fn canonicalize_variant(value: Variant) -> Variant {
             .lock()
             .expect("canonical object snapshot map should not be poisoned")
             .entry(raw)
-            .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+            .or_insert_with(|| object.clone())
             .clone();
         return Variant::from_object_ref(canonical);
     }
@@ -481,7 +481,23 @@ End Sub
     );
 
     let out = run_project_windows_hosted(&manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    let obj = expect_object_handle(&out[0]);
+    assert!(obj.raw() >= 20_001);
+    let dispatch = obj
+        .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+        .expect("registered Scripting.Dictionary object should carry typelib descriptor metadata");
+    assert!(
+        dispatch.members.iter().any(|member| {
+            member.name.eq_ignore_ascii_case("Count") && member.is_default_member == false
+        }),
+        "Scripting.Dictionary descriptor should expose Count metadata"
+    );
+    assert!(
+        dispatch.members.iter().any(|member| {
+            member.name.eq_ignore_ascii_case("Exists") && member.params.len() == 1
+        }),
+        "Scripting.Dictionary descriptor should expose Exists parameter metadata"
+    );
     assert_eq!(out[1], Variant::from_i32(1));
     assert_eq!(out[2], Variant::from_bool(true));
 }
