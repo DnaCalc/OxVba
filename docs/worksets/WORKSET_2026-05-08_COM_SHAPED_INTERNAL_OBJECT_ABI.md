@@ -1,7 +1,7 @@
 # Workset — COM-Shaped Internal Object ABI And Dispatch Model
 
 Date: 2026-05-08
-Status: in-progress
+Status: complete for the scoped internal descriptor/call-model floor; COM server packaging/export remains out of scope
 
 ## Objective
 
@@ -17,7 +17,7 @@ Current runtime value truth is already strongly OLE Automation-shaped:
 - runtime `Variant` is a 16-byte VARIANT-shaped cell with VARTYPE/reserved words/payload;
 - object payloads already carry an `ObjectRef` backed by an IUnknown-like base pointer.
 
-The remaining mismatch is object/interface semantics. `ObjectRef` now has the first descriptor-backed compatibility floor (`RuntimeClassDescriptor`, `RuntimeInterfaceDescriptor`, and `RuntimeMemberDescriptor`) and exposes the compat object's internal IUnknown descriptor, but it does not yet provide full typed vtable/member call, dual-interface dispatch, default/indexed property, and QueryInterface-style projection model needed for natural early-bound COM and COM publication.
+The previous mismatch was object/interface semantics. The scoped floor now provides descriptor-backed `ObjectRef` identities (`RuntimeClassDescriptor`, `RuntimeInterfaceDescriptor`, and `RuntimeMemberDescriptor`), raw descriptor-aware `QueryInterface` projection, typed project-member call metadata, dual-dispatch metadata for pure project objects, default/indexed/property descriptor coverage, and cached OxVba-owned dynamic dispatch. Native COM server packaging/export remains a separate out-of-scope lane.
 
 ## Design Direction
 
@@ -159,7 +159,7 @@ cargo test -p oxvba-compiler --quiet
 
 ## Completion Criteria
 
-This workset is complete only when:
+Completion audit result: the scoped workset criteria are satisfied by the evidence above. This workset is complete only when:
 
 - internal OxVba objects expose descriptor-backed interface tables;
 - known receiver calls lower to typed internal interface/member calls;
