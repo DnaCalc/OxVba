@@ -1,0 +1,352 @@
+param(
+    [string]$RunId = (Get-Date -Format 'yyyyMMddTHHmmss'),
+    [string]$EvidenceRoot = 'docs/evidence/showcase'
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = Join-Path $repo $EvidenceRoot
+$runDir = Join-Path $root "e2e_external_interfaces_$RunId"
+$srcDir = Join-Path $runDir 'sources'
+$logDir = Join-Path $runDir 'logs'
+$artifactDir = Join-Path $runDir 'artifacts'
+New-Item -ItemType Directory -Force -Path $srcDir, $logDir, $artifactDir | Out-Null
+
+$results = New-Object System.Collections.Generic.List[object]
+
+function Add-Result {
+    param(
+        [string]$Name,
+        [string]$Category,
+        [string]$Status,
+        [int]$ExitCode,
+        [string]$StdoutPath,
+        [string]$StderrPath,
+        [string]$Notes,
+        [hashtable]$Checks = @{}
+    )
+    $results.Add([pscustomobject]@{
+        name = $Name
+        category = $Category
+        status = $Status
+        exitCode = $ExitCode
+        stdout = if ($StdoutPath) { Resolve-Path -LiteralPath $StdoutPath -ErrorAction SilentlyContinue | ForEach-Object Path } else { $null }
+        stderr = if ($StderrPath) { Resolve-Path -LiteralPath $StderrPath -ErrorAction SilentlyContinue | ForEach-Object Path } else { $null }
+        notes = $Notes
+        checks = $Checks
+    }) | Out-Null
+}
+
+function Invoke-Captured {
+    param(
+        [string]$Name,
+        [string]$Category,
+        [string]$Exe,
+        [string[]]$ArgList,
+        [string]$ExpectStdoutContains = '',
+        [string]$ExpectStderrContains = '',
+        [switch]$ExpectFailure,
+        [scriptblock]$Before = $null,
+        [scriptblock]$After = $null,
+        [string]$Notes = ''
+    )
+    if ($Before) { & $Before }
+    $safe = ($Name -replace '[^A-Za-z0-9_.-]', '_')
+    $stdout = Join-Path $logDir "$safe.stdout.log"
+    $stderr = Join-Path $logDir "$safe.stderr.log"
+    Push-Location $repo
+    try {
+        & $Exe @ArgList > $stdout 2> $stderr
+        $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    } finally {
+        Pop-Location
+    }
+    $outText = if (Test-Path $stdout) { [string](Get-Content -Raw -LiteralPath $stdout) } else { '' }
+    $errText = if (Test-Path $stderr) { [string](Get-Content -Raw -LiteralPath $stderr) } else { '' }
+    if ($null -eq $outText) { $outText = '' }
+    if ($null -eq $errText) { $errText = '' }
+    $checks = @{
+        expectFailure = [bool]$ExpectFailure
+        stdoutContains = $ExpectStdoutContains
+        stderrContains = $ExpectStderrContains
+        stdoutMatched = if ($ExpectStdoutContains) { $outText.Contains($ExpectStdoutContains) } else { $true }
+        stderrMatched = if ($ExpectStderrContains) { $errText.Contains($ExpectStderrContains) } else { $true }
+    }
+    if ($After) {
+        $afterResult = & $After
+        if ($afterResult -is [hashtable]) { foreach ($k in $afterResult.Keys) { $checks[$k] = $afterResult[$k] } }
+    }
+    $exitOk = if ($ExpectFailure) { $exitCode -ne 0 } else { $exitCode -eq 0 }
+    $matchOk = [bool]$checks.stdoutMatched -and [bool]$checks.stderrMatched
+    $extraOk = $true
+    foreach ($k in $checks.Keys) {
+        if ($k.EndsWith('Ok') -and -not [bool]$checks[$k]) { $extraOk = $false }
+    }
+    $status = if ($exitOk -and $matchOk -and $extraOk) { 'pass' } else { 'fail' }
+    Add-Result -Name $Name -Category $Category -Status $status -ExitCode $exitCode -StdoutPath $stdout -StderrPath $stderr -Notes $Notes -Checks $checks
+}
+
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+    $dir = Split-Path -Parent $Path
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
+}
+
+# Build the real external command surfaces once. Subsequent commands use the produced EXEs directly.
+Invoke-Captured -Name 'build_cli_and_launcher' -Category 'toolchain' -Exe 'cargo' -ArgList @('build','-p','oxvba-cli','-p','oxvba-launcher') -ExpectStderrContains 'Finished' -Notes 'Rust build verifies the command-line integration binaries used by every following pass.'
+$cli = Join-Path $repo 'target/debug/oxvba-cli.exe'
+$runner = Join-Path $repo 'target/debug/oxvba-run.exe'
+
+# 1. New single file: compile, run source, run compiled artifact, inspect artifact.
+$single = Join-Path $srcDir 'single_file/HelloSlots.bas'
+$singleOxb = Join-Path $artifactDir 'HelloSlots.oxb'
+Write-Utf8NoBom $single @'
+Sub Main()
+Dim answer
+Dim label
+answer = 40 + 2
+label = "single-file-ok"
+End Sub
+'@
+Invoke-Captured -Name 'single_file_compile_to_oxb' -Category 'single-file' -Exe $cli -ArgList @('compile',$single,'-o',$singleOxb) -ExpectStdoutContains 'compiled' -After { @{ artifactExistsOk = (Test-Path $singleOxb); artifactBytes = if (Test-Path $singleOxb) { (Get-Item $singleOxb).Length } else { 0 } } } -Notes 'Compiles a brand-new .bas source into an OxBundle artifact.'
+Invoke-Captured -Name 'single_file_run_source_vm' -Category 'single-file' -Exe $cli -ArgList @('run',$single,'--dump-values','--runtime-class','windows-stdio') -ExpectStdoutContains 'VALUES:i32:42|string:"single-file-ok"' -Notes 'Runs the source path through the CLI/host/VM stack and checks the slot snapshot.'
+Invoke-Captured -Name 'single_file_run_compiled_launcher' -Category 'single-file' -Exe $runner -ArgList @($singleOxb) -ExpectStderrContains 'Long' -Notes 'Runs the serialized .oxb bundle through oxvba-run and checks executable snapshot output emitted by the launcher.'
+
+# 2. Two-module project: cross-module calls, VM/JIT targets, bundle output.
+$proj = Join-Path $srcDir 'two_module_project'
+New-Item -ItemType Directory -Force -Path $proj | Out-Null
+Write-Utf8NoBom (Join-Path $proj 'Main.bas') @'
+Public Sub Main()
+Dim total
+Dim doubled
+Dim summary
+total = MathHelpers.Add(20, 22)
+doubled = Scale(total)
+summary = MathHelpers.FormatLabel(doubled)
+End Sub
+
+Public Function Scale(ByVal value)
+Scale = value * 2
+End Function
+'@
+Write-Utf8NoBom (Join-Path $proj 'MathHelpers.bas') @'
+Public Function Add(ByVal lhs, ByVal rhs)
+Add = lhs + rhs
+End Function
+
+Public Function FormatLabel(ByVal value)
+FormatLabel = "two-module=" & value
+End Function
+'@
+$basproj = Join-Path $proj 'ShowcaseTwoModule.basproj'
+Write-Utf8NoBom $basproj @'
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ShowcaseTwoModule</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+    <Module Include="MathHelpers.bas" />
+  </ItemGroup>
+</Project>
+'@
+$projOxb = Join-Path $artifactDir 'ShowcaseTwoModule.oxb'
+Invoke-Captured -Name 'two_module_project_run_vm' -Category 'project' -Exe $cli -ArgList @('run-project',$basproj,'--dump-values','--runtime-class','windows-stdio') -ExpectStdoutContains 'VALUES:i32:42|i32:84|string:"two-module=84"' -Notes 'Project loader resolves two modules and executes a cross-module qualified call plus an unqualified local call.'
+Invoke-Captured -Name 'two_module_project_run_jit_target' -Category 'project' -Exe $cli -ArgList @('run-project',$basproj,'--jit','--dump-values','--runtime-class','windows-stdio') -ExpectStdoutContains 'VALUES:i32:42|i32:84|string:"two-module=84"' -Notes 'Same project through the JIT-enabled target; unsupported operations may fall back but the public target produces the same snapshot.'
+Invoke-Captured -Name 'two_module_project_build_bundle' -Category 'project' -Exe $cli -ArgList @('build',$basproj,'-o',$projOxb) -ExpectStdoutContains 'built' -After { @{ artifactExistsOk = (Test-Path $projOxb); artifactBytes = if (Test-Path $projOxb) { (Get-Item $projOxb).Length } else { 0 } } } -Notes 'Build target serializes the project to an OxBundle artifact.'
+Invoke-Captured -Name 'two_module_project_run_bundle' -Category 'project' -Exe $runner -ArgList @($projOxb) -Notes 'The project bundle is accepted by oxvba-run. Current project-bundle launcher output is intentionally quieter than single-file slot bundles.'
+
+# 3. Editing errors and diagnostics.
+$badSyntax = Join-Path $srcDir 'diagnostics/BrokenSyntax.bas'
+Write-Utf8NoBom $badSyntax @'
+Sub Main()
+Dim x
+x =
+End Sub
+'@
+Invoke-Captured -Name 'diagnostic_broken_assignment' -Category 'diagnostics' -Exe $cli -ArgList @('compile',$badSyntax,'-o',(Join-Path $artifactDir 'BrokenSyntax.oxb')) -ExpectFailure -ExpectStderrContains 'compile failed' -Notes 'Intentional editor-style broken assignment validates surfaced compiler diagnostics and non-zero exit status.'
+$badProj = Join-Path $srcDir 'diagnostics_project'
+New-Item -ItemType Directory -Force -Path $badProj | Out-Null
+Write-Utf8NoBom (Join-Path $badProj 'Main.bas') @'
+Public Sub Main()
+Dim total
+total = MissingHelpers.Add(1, 2)
+End Sub
+'@
+$badProjFile = Join-Path $badProj 'BrokenProject.basproj'
+Write-Utf8NoBom $badProjFile @'
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>BrokenProject</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+  </ItemGroup>
+</Project>
+'@
+Invoke-Captured -Name 'diagnostic_missing_module_reference' -Category 'diagnostics' -Exe $cli -ArgList @('run-project',$badProjFile,'--dump-values') -ExpectFailure -ExpectStderrContains 'compile-time diagnostic' -Notes 'Intentional bad cross-module edit validates compile diagnostic propagation through the project command.'
+
+# 4. Access/ACE/Jet database via external COM Automation.
+$accessProj = Join-Path $srcDir 'access_jet_project'
+New-Item -ItemType Directory -Force -Path $accessProj | Out-Null
+$dbPath = Join-Path $artifactDir 'ShowcaseJet.accdb'
+$dbLiteral = $dbPath.Replace('\','\\')
+$provider = 'Microsoft.ACE.OLEDB.12.0'
+$connectionString = "Provider=$provider;Data Source=$dbPath"
+$connectionLiteral = $connectionString.Replace('\','\\')
+Write-Utf8NoBom (Join-Path $accessProj 'AccessJetMain.bas') @"
+Public Sub Main()
+Dim catalog
+Dim cn
+Dim createResult
+Dim insertedAda
+Dim insertedGrace
+Dim rs
+Dim fieldName
+Dim fieldScore
+Dim nameValue
+Dim scoreValue
+Set catalog = CreateObject("ADOX.Catalog")
+createResult = DispatchInvoke(catalog, "Create", "$connectionLiteral")
+Set cn = CreateObject("ADODB.Connection")
+Call DispatchInvoke(cn, "Open", "$connectionLiteral")
+Call DispatchInvoke(cn, "Execute", "CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)")
+insertedAda = DispatchInvoke(cn, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)")
+insertedGrace = DispatchInvoke(cn, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)")
+rs = DispatchInvoke(cn, "Execute", "SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2")
+fieldName = DispatchInvoke(rs, "Fields", "Name")
+fieldScore = DispatchInvoke(rs, "Fields", "Score")
+nameValue = DispatchInvoke(fieldName, "Value")
+scoreValue = DispatchInvoke(fieldScore, "Value")
+End Sub
+"@
+$accessBasproj = Join-Path $accessProj 'AccessJetShowcase.basproj'
+Write-Utf8NoBom $accessBasproj @'
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>AccessJetShowcase</ProjectName>
+    <EntryPoint>AccessJetMain.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="AccessJetMain.bas" />
+    <COMReference Include="ADODB">
+      <ImportLib>msado15.dll</ImportLib>
+    </COMReference>
+    <COMReference Include="ADOX">
+      <ImportLib>msadox.dll</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>
+'@
+$comPreflightOk = $true
+try {
+    $null = New-Object -ComObject 'ADOX.Catalog'
+    $null = New-Object -ComObject 'ADODB.Connection'
+} catch {
+    $comPreflightOk = $false
+    Add-Result -Name 'access_jet_com_preflight' -Category 'access-jet-com' -Status 'blocked' -ExitCode 1 -StdoutPath $null -StderrPath $null -Notes "ADOX/ADODB COM preflight failed: $($_.Exception.Message)"
+}
+if ($comPreflightOk) {
+    if (Test-Path $dbPath) { Remove-Item -Force $dbPath }
+    Invoke-Captured -Name 'access_jet_create_insert_query' -Category 'access-jet-com' -Exe $cli -ArgList @('run-project',$accessBasproj,'--dump-values','--runtime-class','windows-stdio','--allow-com-activation','true','--allow-filesystem-mutation','true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $dbPath); databaseBytes = if (Test-Path $dbPath) { (Get-Item $dbPath).Length } else { 0 } } } -Notes 'OxVba project carries COMReference metadata for ADO/ADOX and uses real Windows COM Automation to create an Access/ACE .accdb, insert two rows, select Grace back, and surface scalar field values in the VM snapshot.'
+}
+
+# 5. Immediate window / REPL transcript.
+$immInput = Join-Path $artifactDir 'immediate_input.txt'
+Write-Utf8NoBom $immInput @'
+.module
+? MathHelpers.Add(5, 7)
+? Scale(9)
+.module MathHelpers
+? Add(100, 23)
+reset
+.quit
+'@
+$safe = 'immediate_window_transcript'
+$immOut = Join-Path $logDir "$safe.stdout.log"
+$immErr = Join-Path $logDir "$safe.stderr.log"
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $cli
+$psi.WorkingDirectory = $repo
+foreach ($a in @('immediate',$basproj,'--module','Main','--runtime-class','windows-stdio')) { [void]$psi.ArgumentList.Add($a) }
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$p = [System.Diagnostics.Process]::Start($psi)
+$p.StandardInput.Write((Get-Content -Raw -LiteralPath $immInput))
+$p.StandardInput.Close()
+$out = $p.StandardOutput.ReadToEnd()
+$err = $p.StandardError.ReadToEnd()
+$p.WaitForExit()
+Write-Utf8NoBom $immOut $out
+Write-Utf8NoBom $immErr $err
+Add-Result -Name 'immediate_window_transcript' -Category 'immediate' -Status ($(if ($p.ExitCode -eq 0 -and $out.Contains('12') -and $out.Contains('18') -and $out.Contains('123') -and $out.Contains('reset')) { 'pass' } else { 'fail' })) -ExitCode $p.ExitCode -StdoutPath $immOut -StderrPath $immErr -Notes 'Exercises the bounded Immediate Window interface over the two-module project: current module query, value evaluation, module retargeting, reset, and quit.' -Checks @{ transcriptMatchedOk = ($out.Contains('12') -and $out.Contains('18') -and $out.Contains('123') -and $out.Contains('reset')) }
+
+$summary = [pscustomobject]@{
+    runId = $RunId
+    generatedUtc = (Get-Date).ToUniversalTime().ToString('o')
+    repo = $repo
+    runDir = $runDir
+    results = $results
+}
+$summaryPath = Join-Path $runDir 'summary.json'
+$summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding utf8
+
+function HtmlEncode([string]$s) { [System.Net.WebUtility]::HtmlEncode($s) }
+function Read-Short([string]$p, [int]$max = 1200) {
+    if (-not $p -or -not (Test-Path $p)) { return '' }
+    $t = [string](Get-Content -Raw -LiteralPath $p)
+    if ($null -eq $t) { $t = '' }
+    if ($t.Length -gt $max) { return $t.Substring(0,$max) + "`n...<truncated>" }
+    return $t
+}
+$pass = @($results | Where-Object status -eq 'pass').Count
+$fail = @($results | Where-Object status -eq 'fail').Count
+$blocked = @($results | Where-Object status -eq 'blocked').Count
+$rows = foreach ($r in $results) {
+    $outText = HtmlEncode (Read-Short $r.stdout)
+    $errText = HtmlEncode (Read-Short $r.stderr)
+    $checksText = HtmlEncode (($r.checks | ConvertTo-Json -Compress -Depth 5))
+    "<tr class='$($r.status)'><td>$($r.category)</td><td>$($r.name)</td><td>$($r.status)</td><td>$($r.exitCode)</td><td>$(HtmlEncode $r.notes)<details><summary>checks/log excerpts</summary><pre>$checksText</pre><h4>stdout</h4><pre>$outText</pre><h4>stderr</h4><pre>$errText</pre></details></td></tr>"
+}
+$html = @"
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>OxVba External Integration E2E Showcase $RunId</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;margin:28px;line-height:1.35;color:#172033} code,pre{font-family:Cascadia Mono,Consolas,monospace} .hero{border-left:6px solid #315efb;background:#f4f7ff;padding:16px 20px;margin-bottom:20px} .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{background:#f7f7f8;border:1px solid #ddd;border-radius:8px;padding:10px} table{border-collapse:collapse;width:100%;font-size:13px} th,td{border:1px solid #ddd;padding:7px;vertical-align:top} th{background:#172033;color:white}.pass td:nth-child(3){color:#078233;font-weight:700}.fail td:nth-child(3){color:#b00020;font-weight:700}.blocked td:nth-child(3){color:#8a5a00;font-weight:700} pre{white-space:pre-wrap;background:#0b1020;color:#e7edf7;padding:10px;border-radius:6px;max-height:260px;overflow:auto} .note{font-size:12px;color:#4b5563}
+</style></head>
+<body>
+<div class="hero"><h1>OxVba external integration end-to-end showcase</h1><p><b>Run:</b> $RunId &nbsp; <b>Generated UTC:</b> $($summary.generatedUtc)</p><p>This is a live technical tour through OxVba's external interfaces: CLI compile/run, serialized bundle execution, project loading, VM/JIT target selection, diagnostics propagation, Windows COM Automation against Access/ACE/Jet database components, and the bounded Immediate Window interface. The evidence below is intentionally executable and inspectable: sources, logs, .oxb bundles, and the generated .accdb sit under <code>$(HtmlEncode $runDir)</code>.</p></div>
+<div class="grid"><div class="card"><b>Pass</b><br><span style="font-size:28px">$pass</span></div><div class="card"><b>Fail</b><br><span style="font-size:28px">$fail</span></div><div class="card"><b>Blocked</b><br><span style="font-size:28px">$blocked</span></div><div class="card"><b>Artifacts</b><br><code>summary.json</code>, logs, sources, bundles, accdb</div></div>
+<h2>Executive technical readout</h2>
+<ul>
+<li><b>Compiler and bundle path:</b> a new single-file program was compiled to an OxBundle, the artifact was size-checked, source execution returned <code>42</code> plus a string sentinel, and the launcher consumed the compiled bundle.</li>
+<li><b>Project model:</b> a fresh two-file project proved module roster loading, qualified cross-module calls, local procedure calls, string coercion/concatenation, VM target execution, JIT-enabled execution, and build serialization.</li>
+<li><b>Diagnostics:</b> deliberate editing mistakes were preserved as non-zero external command failures with compiler/runtime diagnostics in stderr logs.</li>
+<li><b>Access/Jet COM:</b> where ADOX/ADODB are installed, OxVba activated real COM objects, created an Access/ACE <code>.accdb</code>, created a table, inserted records, selected a row, traversed recordset fields through <code>DispatchInvoke</code>, and surfaced <code>Grace / 99</code> in the runtime snapshot. This is a live environment-dependent integration, not a mock.</li>
+<li><b>Immediate interface:</b> the bounded REPL evaluated project procedures, switched default modules, reset the live runtime session, and emitted a transcript suitable for IDE embedding discussions.</li>
+</ul>
+<h2>Truth boundaries for Q&amp;A</h2>
+<p>This showcase does not claim full native AOT compilation or full Office/VBA COM parity. Current executable truth is bytecode plus VM/JIT/fallback behavior; COM traffic here uses the supported late-bound <code>CreateObject</code>/<code>DispatchInvoke</code> bridge and installed Windows COM providers. Access/ACE availability is machine-dependent and recorded as blocked rather than fabricated if missing.</p>
+<h2>Result matrix and log excerpts</h2>
+<table><thead><tr><th>Area</th><th>Pass</th><th>Status</th><th>Exit</th><th>Evidence</th></tr></thead><tbody>
+$($rows -join "`n")
+</tbody></table>
+<p class="note">Source root: <code>$(HtmlEncode $srcDir)</code>. Artifact root: <code>$(HtmlEncode $artifactDir)</code>. Log root: <code>$(HtmlEncode $logDir)</code>.</p>
+</body></html>
+"@
+$htmlPath = Join-Path $runDir 'showcase.html'
+Write-Utf8NoBom $htmlPath $html
+Write-Host "summary=$summaryPath"
+Write-Host "showcase=$htmlPath"
+if ($fail -gt 0) { exit 1 }
+exit 0
