@@ -1,0 +1,9 @@
+   Compiling oxvba-compiler v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-compiler)
+   Compiling oxvba-vm v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-vm)
+   Compiling oxvba-jit v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-jit)
+   Compiling oxvba-host v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-host)
+   Compiling oxvba-project v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-project)
+   Compiling oxvba-build v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-build)
+   Compiling oxvba-launcher v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-launcher)
+   Compiling oxvba-cli v0.1.2 (C:\Work\DnaCalc\OxVba\crates\oxvba-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.99s

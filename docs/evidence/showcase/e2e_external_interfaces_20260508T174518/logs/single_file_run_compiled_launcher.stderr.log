@@ -1,0 +1,2 @@
+  slot[0] = Variant { vtype: Long, reserved1: 0, reserved2: 0, reserved3: 0, data: [42, 0, 0, 0, 0, 0, 0, 0] }
+  slot[1] = Variant { vtype: String, reserved1: 0, reserved2: 0, reserved3: 0, string: Some(BStr("single-file-ok")) }

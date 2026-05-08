@@ -1,0 +1,11 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ShowcaseTwoModule</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+    <Module Include="MathHelpers.bas" />
+  </ItemGroup>
+</Project>
