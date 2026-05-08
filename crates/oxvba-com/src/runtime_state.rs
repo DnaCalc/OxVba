@@ -513,6 +513,7 @@ mod tests {
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["key".to_string()],
+                parameter_optional: vec![true],
                 is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
                 return_type: Some(TypeLibParamType::Long),
@@ -540,6 +541,7 @@ mod tests {
             RuntimeMemberInvokeKind::Method
         );
         assert_eq!(dispatch.members[0].params[0].name, "key");
+        assert!(dispatch.members[0].params[0].optional);
 
         let mut binding = binding;
         let plan = binding

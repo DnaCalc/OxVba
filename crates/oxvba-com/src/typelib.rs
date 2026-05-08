@@ -75,6 +75,7 @@ pub struct TypeLibMemberMetadata {
     pub requires_argument: bool,
     pub invoke_kind: TypeLibMemberInvokeKind,
     pub parameter_names: Vec<String>,
+    pub parameter_optional: Vec<bool>,
     pub is_default_member: bool,
     pub parameter_types: Vec<TypeLibParamType>,
     pub return_type: Option<TypeLibParamType>,
@@ -132,7 +133,11 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
                         name: leak_typelib_runtime_descriptor_str(name.clone()),
                         value_type,
                         by_ref,
-                        optional: false,
+                        optional: member
+                            .parameter_optional
+                            .get(index)
+                            .copied()
+                            .unwrap_or(false),
                         param_array: false,
                     }
                 })
@@ -258,6 +263,7 @@ mod tests {
                     requires_argument: false,
                     invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                     parameter_names: Vec::new(),
+                    parameter_optional: Vec::new(),
                     is_default_member: true,
                     parameter_types: Vec::new(),
                     return_type: Some(TypeLibParamType::Long),
@@ -269,6 +275,7 @@ mod tests {
                     requires_argument: true,
                     invoke_kind: TypeLibMemberInvokeKind::Method,
                     parameter_names: vec!["index".to_string()],
+                    parameter_optional: vec![true],
                     is_default_member: false,
                     parameter_types: vec![TypeLibParamType::Variant],
                     return_type: Some(TypeLibParamType::Variant),
@@ -314,6 +321,7 @@ mod tests {
             RuntimeValueType::Variant
         );
         assert!(!dispatch.members[1].params[0].by_ref);
+        assert!(dispatch.members[1].params[0].optional);
         assert_eq!(
             dispatch.members[1].return_type,
             Some(RuntimeValueType::Variant)

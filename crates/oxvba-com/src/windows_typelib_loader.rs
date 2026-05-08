@@ -979,8 +979,11 @@ unsafe fn extract_members_from_typeinfo(
             parameter_names.push(pname);
         }
 
-        // Extract parameter types
+        // Extract parameter types and optional flags.
         let mut parameter_types = Vec::new();
+        let mut parameter_optional = Vec::new();
+        let optional_count = u32::try_from(fd.cparams_opt.max(0)).unwrap_or(0);
+        let optional_start = cparams.saturating_sub(optional_count);
         for p in 0..cparams {
             let param_desc = &*fd.lprgelemdescparam.add(p as usize);
             let vt = param_desc.tdesc.vt;
@@ -992,7 +995,10 @@ unsafe fn extract_members_from_typeinfo(
             } else {
                 vt_to_param_type(vt, is_byref)
             };
+            let is_optional = (param_desc.paramdesc.wparamflags & 0x0010) != 0 // PARAMFLAG_FOPT
+                || p >= optional_start;
             parameter_types.push(param_type);
+            parameter_optional.push(is_optional);
         }
 
         // Extract return type
@@ -1020,6 +1026,7 @@ unsafe fn extract_members_from_typeinfo(
             requires_argument,
             invoke_kind,
             parameter_names,
+            parameter_optional,
             is_default_member,
             parameter_types,
             return_type,
