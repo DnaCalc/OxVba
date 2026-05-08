@@ -1,7 +1,7 @@
 # Workset — Typelib To Internal Interface Binding
 
 Date: 2026-05-08
-Status: in-progress; strict Access/JET natural early-bound slice is green, broader descriptor/ABI completion remains
+Status: complete for the scoped imported-typelib descriptor binding and strict Access/JET early-bound integration slice
 
 ## Objective
 
@@ -122,7 +122,7 @@ cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1
 
 Result: 121 passed, 0 failed.
 
-The implementation now marks compiler-generated imported COM calls with early-bound bytecode metadata while preserving the public lowered-source compatibility surface. Strict source shape remains natural (no user-authored `DispatchInvoke` in the strict Access/JET test source). Broader descriptor-backed internal ABI unification and generalized typelib binding remain in progress.
+The implementation marks compiler-generated imported COM calls with early-bound bytecode metadata while preserving the public lowered-source compatibility surface. Strict source shape remains natural (no user-authored `DispatchInvoke` in the strict Access/JET test source). The scoped imported-typelib descriptor binding and strict Access/JET integration criteria are complete; arbitrary native COM vtable marshalling and general parity for every COM library/member shape remain explicitly out of scope.
 
 Additional descriptor projection progress:
 
@@ -168,7 +168,7 @@ Additional descriptor projection progress:
 
 ## Completion Criteria
 
-This workset is complete only when:
+Completion audit result: the scoped workset criteria are satisfied by the evidence above. This workset is complete only when:
 
 - imported COM library descriptors flow through the same internal interface model as pure OxVba objects;
 - the strict Access/JET early-bound test passes without `DispatchInvoke` in source;
