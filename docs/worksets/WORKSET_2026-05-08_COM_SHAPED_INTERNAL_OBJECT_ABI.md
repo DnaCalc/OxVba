@@ -126,6 +126,7 @@ First implementation slice:
   - `cargo test -p oxvba-vm --quiet` -> 7 passed.
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
+  - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 121 passed after default-member descriptor-cache integration.
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
