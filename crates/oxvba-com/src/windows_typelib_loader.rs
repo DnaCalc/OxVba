@@ -16,6 +16,8 @@ use crate::typelib::{
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
 #[cfg(target_os = "windows")]
+use std::collections::BTreeMap;
+#[cfg(target_os = "windows")]
 use std::convert::TryFrom;
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
@@ -43,11 +45,19 @@ const INVOKE_PROPERTYPUT: u16 = 4;
 const INVOKE_PROPERTYPUTREF: u16 = 8;
 
 #[cfg(target_os = "windows")]
+const TKIND_ENUM: u32 = 0;
+#[cfg(target_os = "windows")]
+const TKIND_RECORD: u32 = 1;
+#[cfg(target_os = "windows")]
+const TKIND_MODULE: u32 = 2;
+#[cfg(target_os = "windows")]
+const TKIND_INTERFACE: u32 = 3;
+#[cfg(target_os = "windows")]
 const TKIND_DISPATCH: u32 = 4;
 #[cfg(target_os = "windows")]
 const TKIND_COCLASS: u32 = 5;
 #[cfg(target_os = "windows")]
-const TKIND_INTERFACE: u32 = 3;
+const TKIND_ALIAS: u32 = 6;
 
 #[cfg(target_os = "windows")]
 #[allow(dead_code)]
@@ -94,6 +104,26 @@ const VT_PTR: u16 = 26;
 const VT_VOID: u16 = 24;
 #[cfg(target_os = "windows")]
 const VT_INT: u16 = 22;
+#[cfg(target_os = "windows")]
+const VT_I1: u16 = 16;
+#[cfg(target_os = "windows")]
+const VT_UI2: u16 = 18;
+#[cfg(target_os = "windows")]
+const VT_UI4: u16 = 19;
+#[cfg(target_os = "windows")]
+const VT_UI8: u16 = 21;
+#[cfg(target_os = "windows")]
+const VT_UINT: u16 = 23;
+#[cfg(target_os = "windows")]
+const VT_SAFEARRAY: u16 = 27;
+#[cfg(target_os = "windows")]
+const VT_CARRAY: u16 = 28;
+#[cfg(target_os = "windows")]
+const VT_USERDEFINED: u16 = 29;
+#[cfg(target_os = "windows")]
+const VT_LPSTR: u16 = 30;
+#[cfg(target_os = "windows")]
+const VT_LPWSTR: u16 = 31;
 
 // ── FUNCDESC / ELEMDESC / TYPEDESC raw structs ──
 
@@ -525,8 +555,11 @@ fn vt_to_param_type(vt: u16, is_byref: bool) -> TypeLibParamType {
         VT_DISPATCH | VT_UNKNOWN => TypeLibParamType::Object,
         VT_BOOL => TypeLibParamType::Boolean,
         VT_DECIMAL => TypeLibParamType::Decimal,
-        VT_UI1 => TypeLibParamType::Byte,
-        VT_I8 => TypeLibParamType::LongLong,
+        VT_I1 | VT_UI1 => TypeLibParamType::Byte,
+        VT_UI2 | VT_UINT => TypeLibParamType::Long,
+        VT_UI4 | VT_I8 | VT_UI8 => TypeLibParamType::LongLong,
+        VT_LPSTR | VT_LPWSTR => TypeLibParamType::String,
+        VT_SAFEARRAY | VT_CARRAY => TypeLibParamType::Variant,
         _ => TypeLibParamType::Variant,
     };
     if is_byref {
@@ -549,6 +582,74 @@ fn vt_to_param_type(vt: u16, is_byref: bool) -> TypeLibParamType {
     } else {
         base
     }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn apply_byref_param_type(base: TypeLibParamType, is_byref: bool) -> TypeLibParamType {
+    if !is_byref {
+        return base;
+    }
+    match base {
+        TypeLibParamType::Long => TypeLibParamType::ByRefLong,
+        TypeLibParamType::Integer => TypeLibParamType::ByRefInteger,
+        TypeLibParamType::String => TypeLibParamType::ByRefString,
+        TypeLibParamType::Double => TypeLibParamType::ByRefDouble,
+        TypeLibParamType::Single => TypeLibParamType::ByRefSingle,
+        TypeLibParamType::Currency => TypeLibParamType::ByRefCurrency,
+        TypeLibParamType::Date => TypeLibParamType::ByRefDate,
+        TypeLibParamType::Decimal => TypeLibParamType::ByRefDecimal,
+        TypeLibParamType::Object => TypeLibParamType::ByRefObject,
+        TypeLibParamType::Byte => TypeLibParamType::ByRefByte,
+        TypeLibParamType::Boolean => TypeLibParamType::ByRefBoolean,
+        TypeLibParamType::LongLong => TypeLibParamType::ByRefLongLong,
+        TypeLibParamType::LongPtr => TypeLibParamType::ByRefLongPtr,
+        _ => TypeLibParamType::ByRefVariant,
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typedesc_to_param_type(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+    is_byref: bool,
+) -> TypeLibParamType {
+    if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
+        let inner = &*(tdesc.union_field as *const TYPEDESC);
+        return typedesc_to_param_type(owner_ptinfo, inner, true);
+    }
+
+    if tdesc.vt == VT_USERDEFINED && tdesc.union_field != 0 {
+        let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+        let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+        let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+        if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) == COM_S_OK
+            && !ref_ptinfo.is_null()
+        {
+            let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+            let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+            let resolved = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+                && !ref_attr.is_null()
+            {
+                let typekind = (*ref_attr).typekind;
+                let param_type = if typekind == TKIND_ENUM {
+                    TypeLibParamType::Long
+                } else if typekind == TKIND_ALIAS {
+                    typedesc_to_param_type(ref_ptinfo, &(*ref_attr).tdesc_alias, false)
+                } else {
+                    TypeLibParamType::Object
+                };
+                ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+                param_type
+            } else {
+                TypeLibParamType::Variant
+            };
+            ((*ref_vtbl).release)(ref_ptinfo);
+            return apply_byref_param_type(resolved, is_byref);
+        }
+        return apply_byref_param_type(TypeLibParamType::Variant, is_byref);
+    }
+
+    apply_byref_param_type(vt_to_param_type(tdesc.vt, false), is_byref)
 }
 
 #[cfg(target_os = "windows")]
@@ -582,6 +683,275 @@ unsafe fn typeinfo_name(ptinfo: *mut c_void) -> Option<String> {
         return None;
     }
     bstr_to_string_and_free(name_bstr)
+}
+
+// ── Typelib shape audit ──
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TypeLibShapeAudit {
+    pub type_count: u32,
+    pub function_count: u32,
+    pub variable_count: u32,
+    pub typekind_counts: BTreeMap<String, u32>,
+    pub invkind_counts: BTreeMap<String, u32>,
+    pub vt_counts: BTreeMap<String, u32>,
+    pub unsupported_vt_counts: BTreeMap<String, u32>,
+    pub optional_param_count: u32,
+    pub byref_param_count: u32,
+    pub param_array_like_count: u32,
+}
+
+#[cfg(target_os = "windows")]
+impl TypeLibShapeAudit {
+    pub fn unsupported_total(&self) -> u32 {
+        self.unsupported_vt_counts.values().sum()
+    }
+
+    pub fn csv_rows(&self, label: &str) -> Vec<String> {
+        let mut rows = vec![format!(
+            "summary,{label},{},{},{},{},{},{}",
+            self.type_count,
+            self.function_count,
+            self.variable_count,
+            self.optional_param_count,
+            self.byref_param_count,
+            self.param_array_like_count
+        )];
+        for (name, count) in &self.typekind_counts {
+            rows.push(format!("typekind,{label},{name},{count}"));
+        }
+        for (name, count) in &self.invkind_counts {
+            rows.push(format!("invkind,{label},{name},{count}"));
+        }
+        for (name, count) in &self.vt_counts {
+            rows.push(format!("vt,{label},{name},{count}"));
+        }
+        for (name, count) in &self.unsupported_vt_counts {
+            rows.push(format!("unsupported_vt,{label},{name},{count}"));
+        }
+        rows
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn increment_count(map: &mut BTreeMap<String, u32>, key: impl Into<String>) {
+    *map.entry(key.into()).or_default() += 1;
+}
+
+#[cfg(target_os = "windows")]
+fn typekind_label(typekind: u32) -> String {
+    match typekind {
+        TKIND_ENUM => "enum".to_string(),
+        TKIND_RECORD => "record".to_string(),
+        TKIND_MODULE => "module".to_string(),
+        TKIND_INTERFACE => "interface".to_string(),
+        TKIND_DISPATCH => "dispatch".to_string(),
+        TKIND_COCLASS => "coclass".to_string(),
+        TKIND_ALIAS => "alias".to_string(),
+        other => format!("kind_{other}"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn invkind_label(invkind: u16) -> String {
+    match invkind {
+        INVOKE_FUNC => "func".to_string(),
+        INVOKE_PROPERTYGET => "property_get".to_string(),
+        INVOKE_PROPERTYPUT => "property_put".to_string(),
+        INVOKE_PROPERTYPUTREF => "property_putref".to_string(),
+        other => format!("invkind_{other}"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn vt_label(vt: u16) -> String {
+    match vt {
+        VT_VOID => "VT_VOID".to_string(),
+        VT_I2 => "VT_I2".to_string(),
+        VT_I4 => "VT_I4".to_string(),
+        VT_R4 => "VT_R4".to_string(),
+        VT_R8 => "VT_R8".to_string(),
+        VT_CY => "VT_CY".to_string(),
+        VT_DATE => "VT_DATE".to_string(),
+        VT_BSTR => "VT_BSTR".to_string(),
+        VT_DISPATCH => "VT_DISPATCH".to_string(),
+        VT_BOOL => "VT_BOOL".to_string(),
+        VT_VARIANT => "VT_VARIANT".to_string(),
+        VT_UNKNOWN => "VT_UNKNOWN".to_string(),
+        VT_DECIMAL => "VT_DECIMAL".to_string(),
+        VT_I1 => "VT_I1".to_string(),
+        VT_UI1 => "VT_UI1".to_string(),
+        VT_UI2 => "VT_UI2".to_string(),
+        VT_UI4 => "VT_UI4".to_string(),
+        VT_I8 => "VT_I8".to_string(),
+        VT_UI8 => "VT_UI8".to_string(),
+        VT_INT => "VT_INT".to_string(),
+        VT_UINT => "VT_UINT".to_string(),
+        VT_HRESULT => "VT_HRESULT".to_string(),
+        VT_PTR => "VT_PTR".to_string(),
+        VT_SAFEARRAY => "VT_SAFEARRAY".to_string(),
+        VT_CARRAY => "VT_CARRAY".to_string(),
+        VT_USERDEFINED => "VT_USERDEFINED".to_string(),
+        VT_LPSTR => "VT_LPSTR".to_string(),
+        VT_LPWSTR => "VT_LPWSTR".to_string(),
+        other => format!("VT_{other}"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn vt_supported_directly(vt: u16) -> bool {
+    matches!(
+        vt,
+        0 | VT_VOID
+            | VT_HRESULT
+            | VT_I2
+            | VT_I4
+            | VT_R4
+            | VT_R8
+            | VT_CY
+            | VT_DATE
+            | VT_BSTR
+            | VT_DISPATCH
+            | VT_BOOL
+            | VT_VARIANT
+            | VT_UNKNOWN
+            | VT_DECIMAL
+            | VT_I1
+            | VT_UI1
+            | VT_UI2
+            | VT_UI4
+            | VT_I8
+            | VT_UI8
+            | VT_INT
+            | VT_UINT
+            | VT_PTR
+            | VT_SAFEARRAY
+            | VT_CARRAY
+            | VT_LPSTR
+            | VT_LPWSTR
+    )
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn userdefined_typedesc_supported(owner_ptinfo: *mut c_void, tdesc: &TYPEDESC) -> bool {
+    if tdesc.union_field == 0 {
+        return true;
+    }
+    let href = u32::try_from(tdesc.union_field).unwrap_or(0);
+    let vtbl = *(owner_ptinfo as *const *const ITypeInfoVtbl);
+    let mut ref_ptinfo: *mut c_void = std::ptr::null_mut();
+    if ((*vtbl).get_ref_type_info)(owner_ptinfo, href, &mut ref_ptinfo) != COM_S_OK
+        || ref_ptinfo.is_null()
+    {
+        return true;
+    }
+    let ref_vtbl = *(ref_ptinfo as *const *const ITypeInfoVtbl);
+    let mut ref_attr: *mut TYPEATTR = std::ptr::null_mut();
+    let supported = if ((*ref_vtbl).get_type_attr)(ref_ptinfo, &mut ref_attr) == COM_S_OK
+        && !ref_attr.is_null()
+    {
+        let typekind = (*ref_attr).typekind;
+        let ok = matches!(
+            typekind,
+            TKIND_ENUM
+                | TKIND_ALIAS
+                | TKIND_RECORD
+                | TKIND_INTERFACE
+                | TKIND_DISPATCH
+                | TKIND_COCLASS
+        );
+        ((*ref_vtbl).release_type_attr)(ref_ptinfo, ref_attr);
+        ok
+    } else {
+        true
+    };
+    ((*ref_vtbl).release)(ref_ptinfo);
+    supported
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn audit_typedesc(
+    owner_ptinfo: *mut c_void,
+    tdesc: &TYPEDESC,
+    audit: &mut TypeLibShapeAudit,
+) {
+    increment_count(&mut audit.vt_counts, vt_label(tdesc.vt));
+    let supported = if tdesc.vt == VT_USERDEFINED {
+        userdefined_typedesc_supported(owner_ptinfo, tdesc)
+    } else {
+        vt_supported_directly(tdesc.vt)
+    };
+    if !supported {
+        increment_count(&mut audit.unsupported_vt_counts, vt_label(tdesc.vt));
+    }
+    if tdesc.vt == VT_PTR && tdesc.union_field != 0 {
+        let inner = &*(tdesc.union_field as *const TYPEDESC);
+        audit_typedesc(owner_ptinfo, inner, audit);
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn audit_typelib_shapes(ptlib: *mut c_void) -> Result<TypeLibShapeAudit, String> {
+    let mut audit = TypeLibShapeAudit::default();
+    let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+    audit.type_count = count;
+
+    for i in 0..count {
+        let mut typekind: u32 = 0;
+        let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
+        if hr != COM_S_OK {
+            continue;
+        }
+        increment_count(&mut audit.typekind_counts, typekind_label(typekind));
+
+        let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
+        if hr != COM_S_OK || ptinfo.is_null() {
+            continue;
+        }
+        unsafe {
+            let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+            let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
+            if ((*ti_vtbl).get_type_attr)(ptinfo, &mut pattr) == COM_S_OK && !pattr.is_null() {
+                audit.function_count += (*pattr).cfuncs as u32;
+                audit.variable_count += (*pattr).cvars as u32;
+                if (*pattr).typekind == TKIND_ALIAS {
+                    audit_typedesc(ptinfo, &(*pattr).tdesc_alias, &mut audit);
+                }
+                for func_idx in 0..((*pattr).cfuncs as u32) {
+                    let mut pfuncdesc: *mut FUNCDESC = std::ptr::null_mut();
+                    if ((*ti_vtbl).get_func_desc)(ptinfo, func_idx, &mut pfuncdesc) == COM_S_OK
+                        && !pfuncdesc.is_null()
+                    {
+                        let fd = &*pfuncdesc;
+                        increment_count(&mut audit.invkind_counts, invkind_label(fd.invkind));
+                        audit_typedesc(ptinfo, &fd.elemdescfunc.tdesc, &mut audit);
+                        let cparams = fd.cparams.max(0) as u32;
+                        let optional_count = fd.cparams_opt.max(0) as u32;
+                        audit.optional_param_count += optional_count;
+                        for p in 0..cparams {
+                            let param_desc = &*fd.lprgelemdescparam.add(p as usize);
+                            let flags = param_desc.paramdesc.wparamflags;
+                            if (flags & 0x0002) != 0 || param_desc.tdesc.vt == VT_PTR {
+                                audit.byref_param_count += 1;
+                            }
+                            if (flags & 0x0020) != 0 {
+                                audit.param_array_like_count += 1;
+                            }
+                            audit_typedesc(ptinfo, &param_desc.tdesc, &mut audit);
+                        }
+                        ((*ti_vtbl).release_func_desc)(ptinfo, pfuncdesc);
+                    }
+                }
+                ((*ti_vtbl).release_type_attr)(ptinfo, pattr);
+            }
+            ((*ti_vtbl).release)(ptinfo);
+        }
+    }
+
+    Ok(audit)
 }
 
 // ── Public API ──
@@ -852,8 +1222,8 @@ pub fn enumerate_typelib_members(ptlib: *mut c_void) -> Result<Vec<TypeLibMember
         if hr != COM_S_OK {
             continue;
         }
-        // Only process dispatch interfaces and coclasses
-        if typekind != TKIND_DISPATCH && typekind != TKIND_INTERFACE {
+        // Process dispatch/interfaces and module-scoped typelib functions (for example VBA runtime modules).
+        if typekind != TKIND_DISPATCH && typekind != TKIND_INTERFACE && typekind != TKIND_MODULE {
             continue;
         }
 
@@ -927,6 +1297,7 @@ unsafe fn extract_members_from_typeinfo(
         return Err("ITypeInfo::GetTypeAttr failed".to_string());
     }
     let func_count = (*pattr).cfuncs as u32;
+    let typekind = (*pattr).typekind;
     ((*vtbl).release_type_attr)(ptinfo, pattr);
 
     let mut members = Vec::new();
@@ -963,7 +1334,11 @@ unsafe fn extract_members_from_typeinfo(
 
         // Skip IUnknown/IDispatch inherited methods (FUNCKIND_DISPATCH with
         // DISPIDs in the hidden-member range 0x60000000..0x60010000).
-        if (memid as u32) >= 0x6000_0000 && (memid as u32) < 0x6001_0000 && invkind == INVOKE_FUNC {
+        if typekind != TKIND_MODULE
+            && (memid as u32) >= 0x6000_0000
+            && (memid as u32) < 0x6001_0000
+            && invkind == INVOKE_FUNC
+        {
             for name in names.iter().take(name_count as usize).skip(1) {
                 if !name.is_null() {
                     SysFreeString(*name);
@@ -988,10 +1363,8 @@ unsafe fn extract_members_from_typeinfo(
             let param_desc = &*fd.lprgelemdescparam.add(p as usize);
             let vt = param_desc.tdesc.vt;
             let is_byref = (param_desc.paramdesc.wparamflags & 0x0002) != 0; // PARAMFLAG_FOUT
-            let param_type = if vt == VT_PTR {
-                // Pointer to another type — treat as ByRef of the inner type
-                let inner_td = &*(param_desc.tdesc.union_field as *const TYPEDESC);
-                vt_to_param_type(inner_td.vt, true)
+            let param_type = if vt == VT_PTR || vt == VT_USERDEFINED {
+                typedesc_to_param_type(ptinfo, &param_desc.tdesc, is_byref)
             } else {
                 vt_to_param_type(vt, is_byref)
             };
@@ -1006,7 +1379,11 @@ unsafe fn extract_members_from_typeinfo(
         let return_type = if ret_vt == VT_VOID || ret_vt == VT_HRESULT {
             None
         } else {
-            Some(vt_to_param_type(ret_vt, false))
+            Some(typedesc_to_param_type(
+                ptinfo,
+                &fd.elemdescfunc.tdesc,
+                false,
+            ))
         };
 
         let invoke_kind = invkind_to_member_invoke_kind(invkind);
