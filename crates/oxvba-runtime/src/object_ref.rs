@@ -1,20 +1,21 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 pub const RUNTIME_S_OK: i32 = 0;
 pub const RUNTIME_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeInterfaceId {
     IUnknown,
     IDispatch,
     Unsupported,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeMemberInvokeKind {
     Method,
     PropertyGet,
@@ -57,6 +58,84 @@ pub const COMPAT_OBJECT_CLASS_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassD
     name: "OxVba.CompatObject",
     interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RuntimeDispatchCacheKey {
+    pub interface_id: RuntimeInterfaceId,
+    pub normalized_member_name: String,
+    pub invoke_kind: RuntimeMemberInvokeKind,
+    pub arity: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeDispatchPlan {
+    pub interface_id: RuntimeInterfaceId,
+    pub member_index: usize,
+    pub dispatch_id: i32,
+    pub vtable_slot: Option<u16>,
+    pub invoke_kind: RuntimeMemberInvokeKind,
+    pub is_default_member: bool,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RuntimeDispatchPlanCache {
+    entries: BTreeMap<RuntimeDispatchCacheKey, RuntimeDispatchPlan>,
+}
+
+impl RuntimeDispatchPlanCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn resolve_member(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        member_name: &str,
+        invoke_kind: RuntimeMemberInvokeKind,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        let key = RuntimeDispatchCacheKey {
+            interface_id: interface.id,
+            normalized_member_name: normalize_runtime_member_name(member_name),
+            invoke_kind,
+            arity,
+        };
+        if let Some(plan) = self.entries.get(&key).copied() {
+            return Some(plan);
+        }
+        let (member_index, member) =
+            interface
+                .members
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| {
+                    normalize_runtime_member_name(candidate.name) == key.normalized_member_name
+                        && candidate.invoke_kind == invoke_kind
+                })?;
+        let plan = RuntimeDispatchPlan {
+            interface_id: interface.id,
+            member_index,
+            dispatch_id: member.dispatch_id,
+            vtable_slot: member.vtable_slot,
+            invoke_kind: member.invoke_kind,
+            is_default_member: member.is_default_member,
+        };
+        self.entries.insert(key, plan);
+        Some(plan)
+    }
+}
+
+fn normalize_runtime_member_name(member_name: &str) -> String {
+    member_name.trim().to_ascii_lowercase()
+}
 
 #[repr(C)]
 pub struct RawRuntimeIUnknownVtbl {
@@ -278,8 +357,8 @@ unsafe impl Sync for ObjectRef {}
 mod tests {
     use super::{
         ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
-        RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-        RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
+        RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeInterfaceDescriptor,
+        RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
     };
 
     #[test]
@@ -356,6 +435,58 @@ mod tests {
         assert_eq!(dispatch.members[0].name, "Value");
         assert_eq!(dispatch.members[0].vtable_slot, Some(7));
         assert!(dispatch.members[0].is_default_member);
+    }
+
+    #[test]
+    fn runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup() {
+        static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(3),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            is_default_member: true,
+        };
+        static SET_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(4),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyLet,
+            is_default_member: true,
+        };
+        static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "ITestDual",
+            members: &[VALUE_MEMBER, SET_VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+
+        let mut cache = RuntimeDispatchPlanCache::new();
+        let first = cache
+            .resolve_member(
+                &INTERFACE,
+                " VALUE ",
+                RuntimeMemberInvokeKind::PropertyGet,
+                0,
+            )
+            .expect("property get should resolve");
+        assert_eq!(first.dispatch_id, 0);
+        assert_eq!(first.vtable_slot, Some(3));
+        assert_eq!(first.member_index, 0);
+        assert!(first.is_default_member);
+        assert_eq!(cache.len(), 1);
+
+        let second = cache
+            .resolve_member(&INTERFACE, "value", RuntimeMemberInvokeKind::PropertyGet, 0)
+            .expect("cached property get should resolve case-insensitively");
+        assert_eq!(first, second);
+        assert_eq!(cache.len(), 1, "second lookup should reuse the cached plan");
+
+        let put = cache
+            .resolve_member(&INTERFACE, "value", RuntimeMemberInvokeKind::PropertyLet, 1)
+            .expect("property let should use a distinct call-kind/arity plan");
+        assert_eq!(put.vtable_slot, Some(4));
+        assert_eq!(put.member_index, 1);
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]

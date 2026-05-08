@@ -16,6 +16,7 @@ pub use coerce::variant_to_vba_string;
 pub use decimal::Decimal96;
 pub use object_ref::{
     ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeClassDescriptor,
+    RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
     RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeMemberDescriptor,
     RuntimeMemberInvokeKind,
 };
