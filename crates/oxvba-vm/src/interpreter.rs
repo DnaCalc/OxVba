@@ -428,6 +428,25 @@ impl Vm {
     }
 
     #[cfg(test)]
+    pub fn resolve_project_dynamic_default_dispatch_plan_for_test(
+        &mut self,
+        raw: i32,
+        hint: DynamicCallKind,
+        arity: usize,
+    ) -> Option<oxvba_runtime::RuntimeDispatchPlan> {
+        let object = self.project_dynamic_objects.get(&raw)?.object.clone();
+        let interface = object.query_interface_descriptor(RuntimeInterfaceId::IDispatch)?;
+        self.project_dynamic_dispatch_caches
+            .entry(raw)
+            .or_default()
+            .resolve_default_member(
+                interface,
+                runtime_invoke_kind_for_dynamic_call_hint(hint),
+                arity,
+            )
+    }
+
+    #[cfg(test)]
     pub fn project_dynamic_dispatch_cache_len_for_test(&self, raw: i32) -> usize {
         self.project_dynamic_dispatch_caches
             .get(&raw)
@@ -3775,7 +3794,7 @@ impl Vm {
             return Ok(None);
         };
         let route = state.route;
-        let cached_name_candidate = match (&request.member, request.call_kind_hint) {
+        let cached_descriptor_candidate = match (&request.member, request.call_kind_hint) {
             (DynamicMemberSelector::Name(name), Some(hint)) => object
                 .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
                 .and_then(|interface| {
@@ -3790,10 +3809,23 @@ impl Vm {
                         )
                 })
                 .and_then(|plan| route.members.get(plan.member_index).cloned()),
+            (DynamicMemberSelector::DefaultMember, Some(hint)) => object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .and_then(|interface| {
+                    self.project_dynamic_dispatch_caches
+                        .entry(object.raw())
+                        .or_default()
+                        .resolve_default_member(
+                            interface,
+                            runtime_invoke_kind_for_dynamic_call_hint(hint),
+                            request.args.len(),
+                        )
+                })
+                .and_then(|plan| route.members.get(plan.member_index).cloned()),
             _ => None,
         };
         let mut candidates = match &request.member {
-            DynamicMemberSelector::Name(name) => cached_name_candidate.map_or_else(
+            DynamicMemberSelector::Name(name) => cached_descriptor_candidate.clone().map_or_else(
                 || {
                     route
                         .members
@@ -3813,12 +3845,17 @@ impl Vm {
                 })
                 .cloned()
                 .collect::<Vec<_>>(),
-            DynamicMemberSelector::DefaultMember => route
-                .members
-                .iter()
-                .filter(|member| member.is_default_member)
-                .cloned()
-                .collect::<Vec<_>>(),
+            DynamicMemberSelector::DefaultMember => cached_descriptor_candidate.map_or_else(
+                || {
+                    route
+                        .members
+                        .iter()
+                        .filter(|member| member.is_default_member)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                },
+                |member| vec![member],
+            ),
         };
         if let Some(hint) = request.call_kind_hint {
             candidates.retain(|member| Self::project_dynamic_member_matches_hint(member, hint));

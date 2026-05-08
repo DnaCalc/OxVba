@@ -138,19 +138,50 @@ impl RuntimeDispatchPlanCache {
             invoke_kind,
             arity,
         };
+        self.resolve_with_key(interface, key, |candidate, key| {
+            normalize_runtime_member_name(candidate.name) == key.normalized_member_name
+                && candidate.invoke_kind == key.invoke_kind
+                && candidate.arity == key.arity
+        })
+    }
+
+    pub fn resolve_default_member(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        invoke_kind: RuntimeMemberInvokeKind,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        let key = RuntimeDispatchCacheKey {
+            interface_id: interface.id,
+            normalized_member_name: "<default>".to_string(),
+            invoke_kind,
+            arity,
+        };
+        self.resolve_with_key(interface, key, |candidate, key| {
+            candidate.is_default_member
+                && candidate.invoke_kind == key.invoke_kind
+                && candidate.arity == key.arity
+        })
+    }
+
+    fn resolve_with_key(
+        &mut self,
+        interface: &RuntimeInterfaceDescriptor,
+        key: RuntimeDispatchCacheKey,
+        matches: impl Fn(&RuntimeMemberDescriptor, &RuntimeDispatchCacheKey) -> bool,
+    ) -> Option<RuntimeDispatchPlan> {
         if let Some(plan) = self.entries.get(&key).copied() {
             return Some(plan);
         }
-        let (member_index, member) =
-            interface
-                .members
-                .iter()
-                .enumerate()
-                .find(|(_, candidate)| {
-                    normalize_runtime_member_name(candidate.name) == key.normalized_member_name
-                        && candidate.invoke_kind == invoke_kind
-                        && candidate.arity == arity
-                })?;
+        let mut matches = interface
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| matches(candidate, &key));
+        let (member_index, member) = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
         let plan = RuntimeDispatchPlan {
             interface_id: interface.id,
             member_index,
@@ -540,6 +571,56 @@ mod tests {
                 .is_none(),
             "arity participates in descriptor plan resolution"
         );
+
+        let default_get = cache
+            .resolve_default_member(&INTERFACE, RuntimeMemberInvokeKind::PropertyGet, 0)
+            .expect("default property get should resolve through the descriptor cache");
+        assert_eq!(default_get.member_index, 0);
+        assert_eq!(cache.len(), 3);
+        let default_get_again = cache
+            .resolve_default_member(&INTERFACE, RuntimeMemberInvokeKind::PropertyGet, 0)
+            .expect("cached default property get should resolve");
+        assert_eq!(default_get, default_get_again);
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn runtime_dispatch_plan_cache_rejects_ambiguous_default_member() {
+        static FIRST: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(3),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static SECOND: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Item",
+            dispatch_id: 0,
+            vtable_slot: Some(4),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            name: "IAmbiguousDefault",
+            members: &[FIRST, SECOND],
+            dual_dispatch: true,
+        };
+
+        let mut cache = RuntimeDispatchPlanCache::new();
+        assert!(
+            cache
+                .resolve_default_member(&INTERFACE, RuntimeMemberInvokeKind::PropertyGet, 0)
+                .is_none(),
+            "ambiguous default member metadata must not be cached as a single plan"
+        );
+        assert!(cache.is_empty());
     }
 
     #[test]

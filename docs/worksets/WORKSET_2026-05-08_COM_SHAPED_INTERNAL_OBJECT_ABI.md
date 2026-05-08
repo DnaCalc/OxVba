@@ -120,7 +120,7 @@ First implementation slice:
 - `ObjectRef::from_compat_identity_with_descriptor(...)` allows future class/object constructors to attach a descriptor-backed interface table while preserving the existing IUnknown-like lifetime floor.
 - `RuntimeDispatchPlanCache` provides the first optimized internal late-bound plan cache keyed by normalized member name, interface id, call kind, and arity; runtime member descriptors now carry arity so cached plans do not conflate indexed/default call shapes.
 - `Vm::set_project_dynamic_objects(...)` now constructs descriptor-backed `ObjectRef` identities for pure OxVba project dynamic/class objects, with dual-dispatch metadata derived from `ProjectDynamicObjectRoute`/`ProjectDynamicMemberRoute`, including parameter descriptors and return type descriptors.
-- VM project-object name dispatch now consults a per-object descriptor-backed `RuntimeDispatchPlanCache` before falling back to the existing route scan, preserving the optimized late-bound dispatch direction without routing through native `IDispatch`.
+- VM project-object name and default-member dispatch now consult a per-object descriptor-backed `RuntimeDispatchPlanCache` before falling back to the existing route scan, preserving the optimized late-bound dispatch direction without routing through native `IDispatch` and without caching ambiguous default metadata.
 - Validation after descriptor-cache integration:
   - `cargo test -p oxvba-runtime --quiet` -> 75 passed.
   - `cargo test -p oxvba-vm --quiet` -> 7 passed.
@@ -128,7 +128,8 @@ First implementation slice:
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
-- `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching and distinct call-kind/arity plans.
+- `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
+- `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` proves ambiguous default metadata is not cached as a single plan.
 - `project_dynamic_objects_advertise_dual_dispatch_descriptors` proves VM-registered pure project objects advertise descriptor-backed `IDispatch` member metadata, including default member, dispatch id, invoke kind, and vtable slot shape.
 
 Validation:

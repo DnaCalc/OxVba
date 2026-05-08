@@ -213,6 +213,16 @@ mod tests {
             .expect("normalized descriptor-backed dispatch plan should be cached");
         assert_eq!(first, second);
         assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 1);
+        let default = vm
+            .resolve_project_dynamic_default_dispatch_plan_for_test(
+                42,
+                DynamicCallKind::PropertyGet,
+                0,
+            )
+            .expect("descriptor-backed default dispatch plan should resolve");
+        assert_eq!(default.member_index, 0);
+        assert!(default.is_default_member);
+        assert_eq!(vm.project_dynamic_dispatch_cache_len_for_test(42), 2);
         assert!(
             vm.resolve_project_dynamic_dispatch_plan_for_test(
                 42,
