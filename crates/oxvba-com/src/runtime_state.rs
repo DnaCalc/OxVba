@@ -4,7 +4,10 @@ use crate::{
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
     runtime_class_descriptor_from_typelib_metadata,
 };
-use oxvba_runtime::{ObjectRef, RuntimeClassDescriptor, Variant};
+use oxvba_runtime::{
+    ObjectRef, RuntimeClassDescriptor, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
+    RuntimeInterfaceId, RuntimeMemberInvokeKind, Variant,
+};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Debug, Clone)]
@@ -14,6 +17,7 @@ pub struct ComBinding {
     pub native_unknown: usize,
     pub runtime_object: Option<ObjectRef>,
     pub runtime_class_descriptor: Option<&'static RuntimeClassDescriptor>,
+    pub runtime_dispatch_plan_cache: RuntimeDispatchPlanCache,
     pub member_dispids: BTreeMap<ComMemberToken, i32>,
     pub member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
     pub default_member_token: Option<ComMemberToken>,
@@ -30,6 +34,7 @@ impl ComBinding {
             native_unknown: 0,
             runtime_object: None,
             runtime_class_descriptor: None,
+            runtime_dispatch_plan_cache: RuntimeDispatchPlanCache::new(),
             member_dispids: BTreeMap::new(),
             member_specs: BTreeMap::new(),
             default_member_token: None,
@@ -37,6 +42,42 @@ impl ComBinding {
             event_specs: BTreeMap::new(),
             event_trigger_specs: BTreeMap::new(),
         }
+    }
+
+    pub fn resolve_runtime_dispatch_plan(
+        &mut self,
+        member_name: &str,
+        invoke_kind: TypeLibMemberInvokeKind,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        let descriptor = self.runtime_class_descriptor?;
+        let interface = descriptor
+            .interfaces
+            .iter()
+            .find(|interface| interface.id == RuntimeInterfaceId::IDispatch)?;
+        self.runtime_dispatch_plan_cache.resolve_member(
+            interface,
+            member_name,
+            runtime_invoke_kind_from_typelib_member(invoke_kind),
+            arity,
+        )
+    }
+
+    pub fn resolve_runtime_default_dispatch_plan(
+        &mut self,
+        invoke_kind: TypeLibMemberInvokeKind,
+        arity: usize,
+    ) -> Option<RuntimeDispatchPlan> {
+        let descriptor = self.runtime_class_descriptor?;
+        let interface = descriptor
+            .interfaces
+            .iter()
+            .find(|interface| interface.id == RuntimeInterfaceId::IDispatch)?;
+        self.runtime_dispatch_plan_cache.resolve_default_member(
+            interface,
+            runtime_invoke_kind_from_typelib_member(invoke_kind),
+            arity,
+        )
     }
 
     pub fn descriptor(
@@ -87,6 +128,17 @@ pub fn binding_from_typelib_metadata(
 
 fn normalize_ci_token(input: &str) -> String {
     input.trim().to_ascii_lowercase()
+}
+
+fn runtime_invoke_kind_from_typelib_member(
+    invoke_kind: TypeLibMemberInvokeKind,
+) -> RuntimeMemberInvokeKind {
+    match invoke_kind {
+        TypeLibMemberInvokeKind::Method => RuntimeMemberInvokeKind::Method,
+        TypeLibMemberInvokeKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
+        TypeLibMemberInvokeKind::PropertyPut => RuntimeMemberInvokeKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPutRef => RuntimeMemberInvokeKind::PropertySet,
+    }
 }
 
 fn event_trigger_specs_from_typelib_metadata(
@@ -461,7 +513,7 @@ mod tests {
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["key".to_string()],
-                is_default_member: false,
+                is_default_member: true,
                 parameter_types: vec![TypeLibParamType::String],
                 return_type: Some(TypeLibParamType::Long),
             }],
@@ -488,6 +540,24 @@ mod tests {
             RuntimeMemberInvokeKind::Method
         );
         assert_eq!(dispatch.members[0].params[0].name, "key");
+
+        let mut binding = binding;
+        let plan = binding
+            .resolve_runtime_dispatch_plan(" lookup ", TypeLibMemberInvokeKind::Method, 1)
+            .expect("binding-level runtime descriptor plan should resolve by normalized name");
+        assert_eq!(plan.dispatch_id, 7);
+        assert_eq!(plan.vtable_slot, Some(9));
+        assert_eq!(binding.runtime_dispatch_plan_cache.len(), 1);
+        let cached = binding
+            .resolve_runtime_dispatch_plan("LOOKUP", TypeLibMemberInvokeKind::Method, 1)
+            .expect("binding-level runtime descriptor plan should be cached");
+        assert_eq!(plan, cached);
+        assert_eq!(binding.runtime_dispatch_plan_cache.len(), 1);
+        let default_plan = binding
+            .resolve_runtime_default_dispatch_plan(TypeLibMemberInvokeKind::Method, 1)
+            .expect("binding-level default descriptor plan should resolve");
+        assert_eq!(default_plan.dispatch_id, 7);
+        assert_eq!(binding.runtime_dispatch_plan_cache.len(), 2);
     }
 
     #[test]
