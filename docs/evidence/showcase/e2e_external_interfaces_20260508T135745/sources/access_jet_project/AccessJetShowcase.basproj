@@ -1,0 +1,16 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>AccessJetShowcase</ProjectName>
+    <EntryPoint>AccessJetMain.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="AccessJetMain.bas" />
+    <COMReference Include="ADODB">
+      <ImportLib>msado15.dll</ImportLib>
+    </COMReference>
+    <COMReference Include="ADOX">
+      <ImportLib>msadox.dll</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>
