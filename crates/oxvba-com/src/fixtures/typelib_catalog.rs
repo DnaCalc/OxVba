@@ -422,6 +422,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Count".to_string(),
                 token: TEST_DISPID_COUNT,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
@@ -432,6 +433,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Exists".to_string(),
                 token: TEST_DISPID_EXISTS,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -442,6 +444,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FireChanged".to_string(),
                 token: TEST_DISPID_FIRE_CHANGED,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -452,6 +455,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FireChangedPair".to_string(),
                 token: TEST_DISPID_FIRE_CHANGED_PAIR,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -462,6 +466,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FireChangedSourceInterface".to_string(),
                 token: TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -472,6 +477,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
                 token: TEST_DISPID_PING,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -482,6 +488,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Lookup".to_string(),
                 token: TEST_DISPID_LOOKUP,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["value".to_string()],
@@ -492,6 +499,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SetValue".to_string(),
                 token: TEST_DISPID_SET_VALUE,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["value".to_string()],
@@ -502,6 +510,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SetValueRef".to_string(),
                 token: TEST_DISPID_SET_VALUE_REF,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["value".to_string()],
@@ -512,6 +521,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Value".to_string(),
                 token: TEST_DISPID_VALUE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
@@ -522,6 +532,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SumPair".to_string(),
                 token: TEST_DISPID_SUM_PAIR,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
@@ -532,6 +543,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "LookupPair".to_string(),
                 token: TEST_DISPID_LOOKUP_PAIR,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
@@ -542,6 +554,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SetIndexedValue".to_string(),
                 token: TEST_DISPID_SET_INDEXED_VALUE,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
@@ -552,6 +565,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SetIndexedValueRef".to_string(),
                 token: TEST_DISPID_SET_INDEXED_VALUE_REF,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
@@ -562,6 +576,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "EchoVariant".to_string(),
                 token: TEST_DISPID_ECHO_VARIANT,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -572,6 +587,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
                 token: TEST_DISPID_RAISE_EXCEPTION,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -582,6 +598,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "RaiseRichException".to_string(),
                 token: TEST_DISPID_RAISE_RICH_EXCEPTION,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -592,6 +609,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSmallInt".to_string(),
                 token: TEST_DISPID_RETURN_SMALLINT,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -602,6 +620,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedWord".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_WORD,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -612,6 +631,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnByte".to_string(),
                 token: TEST_DISPID_RETURN_BYTE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -622,6 +642,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSignedByte".to_string(),
                 token: TEST_DISPID_RETURN_SIGNED_BYTE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -632,6 +653,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlatformInt".to_string(),
                 token: TEST_DISPID_RETURN_PLATFORM_INT,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -642,6 +664,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUInt".to_string(),
                 token: TEST_DISPID_RETURN_PLATFORM_UINT,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -652,6 +675,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnHyper".to_string(),
                 token: TEST_DISPID_RETURN_HYPER,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -662,6 +686,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyper".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_HYPER,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -672,6 +697,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDouble".to_string(),
                 token: TEST_DISPID_RETURN_DOUBLE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -682,6 +708,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSingle".to_string(),
                 token: TEST_DISPID_RETURN_SINGLE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -692,6 +719,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDate".to_string(),
                 token: TEST_DISPID_RETURN_DATE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -702,6 +730,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnCurrency".to_string(),
                 token: TEST_DISPID_RETURN_CURRENCY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -712,6 +741,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDecimal".to_string(),
                 token: TEST_DISPID_RETURN_DECIMAL,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -722,6 +752,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnBool".to_string(),
                 token: TEST_DISPID_RETURN_BOOL,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -732,6 +763,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnString".to_string(),
                 token: TEST_DISPID_RETURN_STRING,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -742,6 +774,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnMissingMemberName".to_string(),
                 token: TEST_DISPID_RETURN_MISSING_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -752,6 +785,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPingMemberName".to_string(),
                 token: TEST_DISPID_RETURN_PING_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -762,6 +796,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnLookupMemberName".to_string(),
                 token: TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -772,6 +807,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSumPairMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SUM_PAIR_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -782,6 +818,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnLookupPairMemberName".to_string(),
                 token: TEST_DISPID_RETURN_LOOKUP_PAIR_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -792,6 +829,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSetValueMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -802,6 +840,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSetValueRefMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -812,6 +851,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SET_INDEXED_VALUE_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -822,6 +862,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueRefMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SET_INDEXED_VALUE_REF_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -832,6 +873,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnValueMemberName".to_string(),
                 token: TEST_DISPID_RETURN_VALUE_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -842,6 +884,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDefaultMemberName".to_string(),
                 token: TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -852,6 +895,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnEmpty".to_string(),
                 token: TEST_DISPID_RETURN_EMPTY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -862,6 +906,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnNull".to_string(),
                 token: TEST_DISPID_RETURN_NULL,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -872,6 +917,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnError".to_string(),
                 token: TEST_DISPID_RETURN_ERROR,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -882,6 +928,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnByRefLong".to_string(),
                 token: TEST_DISPID_RETURN_BYREF_LONG,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -892,6 +939,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnByRefLongArray".to_string(),
                 token: TEST_DISPID_RETURN_BYREF_LONG_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -902,6 +950,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideHyper".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_HYPER,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -912,6 +961,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_HYPER_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -922,6 +972,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyper".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -932,6 +983,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -942,6 +994,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnVariantMatrix".to_string(),
                 token: TEST_DISPID_RETURN_VARIANT_MATRIX,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -952,6 +1005,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "NewEnum".to_string(),
                 token: -4,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
@@ -962,6 +1016,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownVariantArray".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -972,6 +1027,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
                 token: TEST_DISPID_RETURN_LONG,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -982,6 +1038,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLong".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_LONG,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -992,6 +1049,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntArray".to_string(),
                 token: TEST_DISPID_RETURN_SMALLINT_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1002,6 +1060,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnBoolArray".to_string(),
                 token: TEST_DISPID_RETURN_BOOL_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1012,6 +1071,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnStringArray".to_string(),
                 token: TEST_DISPID_RETURN_STRING_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1022,6 +1082,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSmallIntMatrix".to_string(),
                 token: TEST_DISPID_RETURN_SMALLINT_MATRIX,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1032,6 +1093,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknown".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1042,6 +1104,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownArray".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1052,6 +1115,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnByteArray".to_string(),
                 token: TEST_DISPID_RETURN_BYTE_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1062,6 +1126,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSignedByteArray".to_string(),
                 token: TEST_DISPID_RETURN_SIGNED_BYTE_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1072,6 +1137,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlatformIntArray".to_string(),
                 token: TEST_DISPID_RETURN_PLATFORM_INT_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1082,6 +1148,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlatformUIntArray".to_string(),
                 token: TEST_DISPID_RETURN_PLATFORM_UINT_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1092,6 +1159,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_HYPER_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1102,6 +1170,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1112,6 +1181,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDoubleArray".to_string(),
                 token: TEST_DISPID_RETURN_DOUBLE_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1122,6 +1192,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSingleArray".to_string(),
                 token: TEST_DISPID_RETURN_SINGLE_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1132,6 +1203,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDateArray".to_string(),
                 token: TEST_DISPID_RETURN_DATE_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1142,6 +1214,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnCurrencyArray".to_string(),
                 token: TEST_DISPID_RETURN_CURRENCY_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1152,6 +1225,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDecimalArray".to_string(),
                 token: TEST_DISPID_RETURN_DECIMAL_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1162,6 +1236,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLong".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1172,6 +1247,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedLongArray".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1182,6 +1258,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUInt".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_PLATFORM_UINT,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1192,6 +1269,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWidePlatformUIntArray".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1202,6 +1280,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnLongArray".to_string(),
                 token: TEST_DISPID_RETURN_LONG_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1212,6 +1291,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedLongArray".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_LONG_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1222,6 +1302,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatch".to_string(),
                 token: TEST_DISPID_RETURN_SELF_DISPATCH,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1232,6 +1313,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SelfDispatch".to_string(),
                 token: TEST_DISPID_RETURN_SELF_DISPATCH,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
@@ -1242,6 +1324,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfUnknown".to_string(),
                 token: TEST_DISPID_RETURN_SELF_UNKNOWN,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1252,6 +1335,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "SelfUnknown".to_string(),
                 token: TEST_DISPID_RETURN_SELF_UNKNOWN,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
@@ -1262,6 +1346,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArg".to_string(),
                 token: TEST_DISPID_CLASSIFY_VARIANT_ARG,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -1272,6 +1357,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ClassifyVariantArrayFirstElementArg".to_string(),
                 token: TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -1282,6 +1368,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatchArray".to_string(),
                 token: TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1292,6 +1379,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedDispatchArray".to_string(),
                 token: TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1302,6 +1390,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfTypedUnknownArray".to_string(),
                 token: TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1399,6 +1488,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FireSimpleEvent".to_string(),
                 token: TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1409,6 +1499,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FireValueChanged".to_string(),
                 token: TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -1419,6 +1510,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "FirePairChanged".to_string(),
                 token: TEST_EVENT_SERVER_DISPID_FIRE_PAIR_CHANGED,
+                vtable_slot: None,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -1429,6 +1521,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
                 token: TEST_EVENT_SERVER_DISPID_PING,
+                vtable_slot: None,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

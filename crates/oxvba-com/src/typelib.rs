@@ -71,6 +71,7 @@ pub enum TypeLibParamType {
 pub struct TypeLibMemberMetadata {
     pub name: String,
     pub token: i32,
+    pub vtable_slot: Option<u16>,
     pub requires_argument: bool,
     pub invoke_kind: TypeLibMemberInvokeKind,
     pub parameter_names: Vec<String>,
@@ -118,7 +119,7 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
         .map(|member| RuntimeMemberDescriptor {
             name: leak_typelib_runtime_descriptor_str(member.name.clone()),
             dispatch_id: member.token,
-            vtable_slot: None,
+            vtable_slot: member.vtable_slot,
             invoke_kind: runtime_invoke_kind_from_typelib_member(member.invoke_kind),
             arity: member.parameter_names.len(),
             is_default_member: member.is_default_member,
@@ -137,7 +138,10 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
             id: RuntimeInterfaceId::IDispatch,
             name: interface_name,
             members,
-            dual_dispatch: false,
+            dual_dispatch: metadata
+                .members
+                .iter()
+                .any(|member| member.vtable_slot.is_some()),
         }]
         .into_boxed_slice(),
     );
@@ -191,6 +195,7 @@ mod tests {
                 TypeLibMemberMetadata {
                     name: "Value".to_string(),
                     token: 0,
+                    vtable_slot: Some(7),
                     requires_argument: false,
                     invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                     parameter_names: Vec::new(),
@@ -201,6 +206,7 @@ mod tests {
                 TypeLibMemberMetadata {
                     name: "Item".to_string(),
                     token: 5,
+                    vtable_slot: None,
                     requires_argument: true,
                     invoke_kind: TypeLibMemberInvokeKind::Method,
                     parameter_names: vec!["index".to_string()],
@@ -221,14 +227,14 @@ mod tests {
             .find(|interface| interface.id == RuntimeInterfaceId::IDispatch)
             .expect("typelib projection should expose dispatch descriptor metadata");
         assert!(
-            !dispatch.dual_dispatch,
-            "vtable slots are not inferred from this metadata yet"
+            dispatch.dual_dispatch,
+            "explicit vtable slots project a dual-interface descriptor"
         );
         assert_eq!(dispatch.name, "OxVba.TestDispatch._Dispatch");
         assert_eq!(dispatch.members.len(), 2);
         assert_eq!(dispatch.members[0].name, "Value");
         assert_eq!(dispatch.members[0].dispatch_id, 0);
-        assert_eq!(dispatch.members[0].vtable_slot, None);
+        assert_eq!(dispatch.members[0].vtable_slot, Some(7));
         assert_eq!(
             dispatch.members[0].invoke_kind,
             RuntimeMemberInvokeKind::PropertyGet

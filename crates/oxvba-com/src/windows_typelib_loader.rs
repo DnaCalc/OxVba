@@ -2,10 +2,11 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref, clippy::upper_case_acronyms)]
 //! Live ITypeLib/ITypeInfo COM loading for arbitrary typelib resolution.
 //!
-//! This module provides real COM-based type library loading as a fallback
-//! when hardcoded catalog entries are insufficient. It wraps LoadRegTypeLib,
+//! This module provides real COM-based type library loading for registered
+//! and path-addressed COM type libraries. It wraps LoadRegTypeLib,
 //! LoadTypeLibEx, and the ITypeLib/ITypeInfo COM interfaces to extract
-//! member metadata from arbitrary registered type libraries.
+//! member metadata from arbitrary registered type libraries. Test fixture
+//! typelibs are handled separately behind `cfg(test)` / `fixture-typelibs`.
 
 #[cfg(target_os = "windows")]
 use crate::typelib::{
@@ -1015,6 +1016,7 @@ unsafe fn extract_members_from_typeinfo(
         members.push(TypeLibMemberMetadata {
             name: func_name,
             token: memid,
+            vtable_slot: u16::try_from(fd.oVft).ok(),
             requires_argument,
             invoke_kind,
             parameter_names,
