@@ -114,7 +114,7 @@ Current status:
 cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture
 ```
 
-passes on the Windows machine used for this run, including `rs.Fields("Name").Value` and `rs!Name` / `rs!Score` value-context shorthand. The broader early-bound host binary also passed:
+passes on the Windows machine used for this run, including `rs.Fields("Name").Value`, `Set bangFieldName = rs!Name` object-context shorthand, and `rs!Name` / `rs!Score` value-context shorthand. The broader early-bound host binary also passed:
 
 ```powershell
 cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1
@@ -130,6 +130,7 @@ Additional descriptor projection progress:
 - The projection preserves dispatch ids, invoke kind, default-member flag, and arity. It intentionally leaves `vtable_slot` as `None` and `dual_dispatch` as `false` because the current metadata blob does not yet carry vtable slot/typekind evidence.
 - `typelib_metadata_projects_to_runtime_dispatch_descriptor` covers the projection.
 - Validation: `cargo test -p oxvba-com --quiet` -> 93 passed.
+- Additional Access/JET ambiguity validation: `cargo test -p oxvba-host --test com_early_project_end_to_end strict_early_bound_project_executes_registered_access_jet_ado_database_subset -- --nocapture` -> 1 passed, with strict source covering both `Set bangFieldName = rs!Name` and `bangNameValue = rs!Name`.
 
 ## Scope
 

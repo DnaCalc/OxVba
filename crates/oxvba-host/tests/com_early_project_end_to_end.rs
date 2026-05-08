@@ -646,6 +646,7 @@ Dim cn As New ADODB.Connection
 Dim rs As ADODB.Recordset
 Dim fieldName As ADODB.Field
 Dim fieldScore As ADODB.Field
+Dim bangFieldName As ADODB.Field
 Dim nameValue
 Dim scoreValue
 Dim bangNameValue
@@ -658,6 +659,7 @@ Call cn.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace
 Set rs = cn.Execute("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 0, 0)
 Set fieldName = rs.Fields("Name")
 Set fieldScore = rs.Fields("Score")
+Set bangFieldName = rs!Name
 nameValue = fieldName.Value
 scoreValue = fieldScore.Value
 bangNameValue = rs!Name
@@ -694,16 +696,17 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert!(expect_object_handle(&out[1]).raw() >= 20_001);
     assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[5]).raw() >= 20_001);
     assert_eq!(
-        out[5],
+        out[6],
         Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
     );
-    assert_eq!(out[6], Variant::from_i32(99));
+    assert_eq!(out[7], Variant::from_i32(99));
     assert_eq!(
-        out[7],
+        out[8],
         Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
     );
-    assert_eq!(out[8], Variant::from_i32(99));
+    assert_eq!(out[9], Variant::from_i32(99));
     assert!(
         db_path.exists(),
         "strict early-bound Access/Jet database should be created"
