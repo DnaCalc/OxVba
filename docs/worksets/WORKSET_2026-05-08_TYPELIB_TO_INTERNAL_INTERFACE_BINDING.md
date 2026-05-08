@@ -39,6 +39,14 @@ nameValue = fieldName.Value
 
 with a typelib arity/member-shape diagnostic.
 
+The same workset must also support the common DAO/ADO recordset bang-member idiom:
+
+```vb
+MyValue = MyRecordset!ColName
+```
+
+For this expression, `!ColName` is not a field access on an OxVba UDT. It is Access/VBA recordset shorthand: use the recordset's default collection/member path to look up item `"ColName"`, then because the assignment lacks `Set`, dereference the returned object's default value property and assign that scalar value.
+
 ## Design Direction
 
 Imported COM typelibs should become another producer of the same internal descriptors used by OxVba-native classes and interfaces.
@@ -49,6 +57,7 @@ For each imported typelib:
 - coclasses map to activation identities and default/source interfaces;
 - interfaces map to internal interface descriptors;
 - members map to internal member descriptors with DISPIDs, vtable slots where available, invoke kind, property flags, default/indexed metadata, optional/named argument metadata, return type, and parameter descriptors;
+- recordset/bang-member syntax maps to the same descriptor machinery as an indexed/default collection lookup plus value-context default-member dereference;
 - imported object values carry native COM receiver state plus projected internal interface identity;
 - known imported receiver calls lower to typed internal interface/member calls;
 - runtime dispatch adapter chooses native COM vtable or native COM `IDispatch`/`IDispatchEx` strategy according to available metadata and policy.
@@ -93,6 +102,10 @@ Set fieldName = rs.Fields("Name")
 Set fieldScore = rs.Fields("Score")
 nameValue = fieldName.Value
 scoreValue = fieldScore.Value
+
+' Required shorthand equivalent for value context:
+nameValue = rs!Name
+scoreValue = rs!Score
 ```
 
 Current failure:
@@ -110,9 +123,10 @@ BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED: external invoke target `adodb.recordset
 3. Represent imported default and indexed properties correctly.
 4. Support returned imported object typing across assignments and chained calls.
 5. Support optional/named/default arguments sufficiently for ADO/ADOX Access/JET flow.
-6. Cache native COM name lookup and DISPID binding for dynamic imported calls.
-7. Preserve assignment intent for object-returning imported members (`Set` vs value assignment).
-8. Make the strict Access/JET natural early-bound test pass without `DispatchInvoke` in source.
+6. Support recordset bang-member syntax (`MyRecordset!ColName`) as default collection lookup by field name followed by value-context default-property dereference when the expression is used without `Set`.
+7. Cache native COM name lookup and DISPID binding for dynamic imported calls.
+8. Preserve assignment intent for object-returning imported members (`Set` vs value assignment), including bang-member behavior where `Set field = rs!Name` preserves the field object but `value = rs!Name` reads the field's default value.
+9. Make the strict Access/JET natural early-bound test pass without `DispatchInvoke` in source.
 
 ### Out of scope
 
@@ -126,6 +140,7 @@ This workset is complete only when:
 
 - imported COM library descriptors flow through the same internal interface model as pure OxVba objects;
 - the strict Access/JET early-bound test passes without `DispatchInvoke` in source;
+- the strict Access/JET test includes and passes `MyRecordset!ColName` value-context shorthand semantics;
 - mixed imported-COM showcase language is either removed or clearly separated from true early-bound evidence;
 - dynamic imported COM calls cache name/DISPID lookup;
 - docs explain vtable-vs-dispatch policy for imported native COM calls;
