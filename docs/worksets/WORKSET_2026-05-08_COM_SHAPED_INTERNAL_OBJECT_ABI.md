@@ -129,7 +129,7 @@ First implementation slice:
   - `cargo test -p oxvba-compiler --quiet` -> 818 passed.
   - `cargo test -p oxvba-host --test project_entry_point_end_to_end -- --test-threads=1` -> 2 passed.
   - `cargo test -p oxvba-host --test com_early_project_end_to_end pure_oxvba -- --nocapture` -> 3 passed after pure OxVba descriptor-cache indexed/property coverage and interface receiver execution coverage.
-  - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 123 passed after project-member call descriptor metadata and pure OxVba descriptor-cache indexed/property coverage.
+  - `cargo test -p oxvba-host --test com_early_project_end_to_end -- --test-threads=1` -> 124 passed after project-member call descriptor metadata, pure OxVba descriptor-cache indexed/property coverage, and interface receiver execution coverage.
   - Serialization/broader host validation after `CallProc` metadata change: `cargo test -p oxvba-compiler bundle --quiet` -> 10 passed; `cargo test -p oxvba-host --quiet` -> all host test binaries passed (with existing ignored lanes unchanged).
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
