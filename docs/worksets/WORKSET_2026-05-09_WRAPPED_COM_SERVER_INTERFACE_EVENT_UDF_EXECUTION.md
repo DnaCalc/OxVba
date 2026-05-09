@@ -55,6 +55,13 @@ OxVba already has important substrate:
   emitted member descriptor table and COM call-frame marshaling helpers for the
   first scalar method slice; object-return, array-return, and richer error
   evidence remain in the later late-bound validation bead.
+- COM-0007 now has controlled Windows client evidence for the first
+  late-bound scalar method slice: emitted DLL exports, `LoadLibraryW`,
+  `DllGetClassObject`, `IClassFactory::CreateInstance`, `LockServer`,
+  `DllCanUnloadNow`, `GetIDsOfNames`, and `Invoke` returning the wrapped OxVba
+  scalar result. The row remains `implemented-subset` until the registered
+  load/CreateObject, property/default-member, object-return, array-return, and
+  supported-error breadth is delivered by follow-up bead `bd-wcs1.5.5`.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -62,10 +69,11 @@ OxVba already has important substrate:
 
 The missing truth is also explicit:
 
-- `oxvba build` does not yet produce/register a usable in-process COM server DLL
-  for `OutputType=ComServer`.
-- The generated COM server `IDispatch` implementation is still a skeleton;
-  `GetIDsOfNames` and `Invoke` do not route into OxVba descriptors/engine.
+- `oxvba build` does not yet register a usable in-process COM server DLL for
+  `OutputType=ComServer`.
+- The generated COM server `IDispatch` implementation is still limited to the
+  first descriptor-backed scalar method slice; broader Automation behavior is
+  open in `bd-wcs1.5.5`.
 - Type library publication for OxVba classes is not yet integrated into a real
   COM server build output.
 - Dual-interface vtable projection and COM connection-point event publication

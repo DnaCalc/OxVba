@@ -11,7 +11,7 @@ Generated from:
 | Domain | Rows | In Progress | Implemented Subset | Implemented Full | Verified | Planned |
 |---|---|---|---|---|---|---|
 | language | 4 | 0 | 4 | 0 | 0 | 0 |
-| com_external | 10 | 0 | 1 | 0 | 5 | 4 |
+| com_external | 10 | 0 | 2 | 0 | 5 | 3 |
 | project_hosting | 11 | 1 | 9 | 0 | 0 | 1 |
 | language_services_formalization | 8 | 3 | 5 | 0 | 0 | 0 |
 
@@ -19,7 +19,6 @@ Generated from:
 
 | Feature ID | Domain | Feature | Truth State | Matrix |
 |---|---|---|---|---|
-| COM-0007 | com_external | WrappedComServer in-process DLL late-bound IDispatch publication | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
 | COM-0008 | com_external | WrappedComServer generated TLB and dispatch-backed early-bound client calls | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
 | COM-0009 | com_external | WrappedComServer Automation-safe dual-interface vtable publication | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
 | COM-0010 | com_external | WrappedComServer source dispinterface and connection-point event publication | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
