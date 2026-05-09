@@ -238,7 +238,25 @@ const IID_ICLASSFACTORY: GUID = GUID {
             guid.data4[0], guid.data4[1], guid.data4[2], guid.data4[3],
             guid.data4[4], guid.data4[5], guid.data4[6], guid.data4[7],
         ));
+        let iface_uuid_str = deterministic_uuid(project_name, &format!("I{}", class.class_name));
+        let iface_guid = crate::typelib_gen::parse_uuid(&iface_uuid_str);
+        s.push_str(&format!(
+            "const IID_I{}: GUID = GUID {{\n    data1: {:#010X}, data2: {:#06X}, data3: {:#06X},\n    data4: [{:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}],\n}};\n\n",
+            class.class_name.to_ascii_uppercase(),
+            iface_guid.data1, iface_guid.data2, iface_guid.data3,
+            iface_guid.data4[0], iface_guid.data4[1], iface_guid.data4[2], iface_guid.data4[3],
+            iface_guid.data4[4], iface_guid.data4[5], iface_guid.data4[6], iface_guid.data4[7],
+        ));
     }
+
+    s.push_str("fn interface_iid_for_class(class_index: usize) -> Option<&'static GUID> {\n    match class_index {\n");
+    for (class_index, class) in classes.iter().enumerate() {
+        s.push_str(&format!(
+            "        {class_index} => Some(&IID_I{}),\n",
+            class.class_name.to_ascii_uppercase()
+        ));
+    }
+    s.push_str("        _ => None,\n    }\n}\n\n");
 
     s
 }
@@ -258,6 +276,7 @@ fn generate_member_tables(classes: &[ComClassExportDescriptor]) -> String {
     name: &'static str,
     dispid: i32,
     kind: u8,
+    vtable_slot: i16,
     is_default_member: bool,
 }
 
@@ -272,6 +291,7 @@ const MEMBER_KIND_PROPERTYSET: u8 = 3;
         s.push_str(&format!(
             "static CLASS_{class_index}_MEMBERS: &[MemberDescriptor] = &[\n"
         ));
+        let mut next_vtable_slot = 0i16;
         for (member_index, member) in class.members.iter().enumerate() {
             let dispid = member.dispatch_id_or(member_index + 1);
             let kind = match member.kind {
@@ -282,8 +302,20 @@ const MEMBER_KIND_PROPERTYSET: u8 = 3;
                 oxvba_compiler::ProjectDynamicMemberKind::PropertySet => "MEMBER_KIND_PROPERTYSET",
             };
             let is_default_member = member.is_default_member;
+            let vtable_slot = if matches!(
+                member.kind,
+                oxvba_compiler::ProjectDynamicMemberKind::Method
+                    | oxvba_compiler::ProjectDynamicMemberKind::Function
+            ) && member.param_count == 0
+            {
+                let slot = next_vtable_slot;
+                next_vtable_slot += 1;
+                slot
+            } else {
+                -1
+            };
             s.push_str(&format!(
-                "    MemberDescriptor {{ name: \"{}\", dispid: {dispid}, kind: {kind}, is_default_member: {is_default_member} }},\n",
+                "    MemberDescriptor {{ name: \"{}\", dispid: {dispid}, kind: {kind}, vtable_slot: {vtable_slot}, is_default_member: {is_default_member} }},\n",
                 rust_string_literal(&member.member_name)
             ));
         }
@@ -331,6 +363,12 @@ fn member_by_name(class_index: usize, name: &str) -> Option<&'static MemberDescr
     members_for_class(class_index)
         .iter()
         .find(|member| member.name.eq_ignore_ascii_case(name))
+}
+
+fn vtable_member(class_index: usize, slot: i16) -> Option<&'static MemberDescriptor> {
+    members_for_class(class_index)
+        .iter()
+        .find(|member| member.vtable_slot == slot)
 }
 
 fn member_kind_from_dispatch_flags(flags: u16) -> u8 {
@@ -406,6 +444,21 @@ struct IDispatchVtbl {
     get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
     get_ids_of_names: unsafe extern "system" fn(*mut c_void, *const GUID, *const *const u16, u32, u32, *mut i32) -> i32,
     invoke: unsafe extern "system" fn(*mut c_void, i32, *const GUID, u32, u16, *mut c_void, *mut c_void, *mut c_void, *mut u32) -> i32,
+}
+
+#[repr(C)]
+struct WrappedDualVtbl {
+    // IUnknown
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    // IDispatch
+    get_type_info_count: unsafe extern "system" fn(*mut c_void, *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(*mut c_void, *const GUID, *const *const u16, u32, u32, *mut i32) -> i32,
+    invoke: unsafe extern "system" fn(*mut c_void, i32, *const GUID, u32, u16, *mut c_void, *mut c_void, *mut c_void, *mut u32) -> i32,
+    // First bounded Automation-safe vtable slot: HRESULT Method([out, retval] LONG*)
+    vtable_call_0: unsafe extern "system" fn(*mut c_void, *mut i32) -> i32,
 }
 
 "#
@@ -787,11 +840,14 @@ unsafe extern "system" fn cf_create_instance(
     }
 
     let iid = &*riid;
-    if *iid != IID_IUNKNOWN && *iid != IID_IDISPATCH {
+    let factory = &*(this as *const OxVbaClassFactory);
+    let supports_custom_iid = interface_iid_for_class(factory.class_index)
+        .map(|custom_iid| *iid == *custom_iid)
+        .unwrap_or(false);
+    if *iid != IID_IUNKNOWN && *iid != IID_IDISPATCH && !supports_custom_iid {
         return E_NOINTERFACE;
     }
 
-    let factory = &*(this as *const OxVbaClassFactory);
     let instance = match OxVbaDispatchInstance::new(factory.class_index) {
         Ok(instance) => instance,
         Err(hr) => return hr,
@@ -832,7 +888,7 @@ struct OxVbaDispatchInstance {
     object: ObjectRef,
 }
 
-static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
+static DISPATCH_VTBL: WrappedDualVtbl = WrappedDualVtbl {
     query_interface: di_query_interface,
     add_ref: di_add_ref,
     release: di_release,
@@ -840,6 +896,7 @@ static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
     get_type_info: di_get_type_info,
     get_ids_of_names: di_get_ids_of_names,
     invoke: di_invoke,
+    vtable_call_0: di_vtable_call_0,
 };
 
 impl OxVbaDispatchInstance {
@@ -860,7 +917,7 @@ impl OxVbaDispatchInstance {
             .create_class_instance(&mut session, class_name)
             .map_err(|_| CLASS_E_CLASSNOTAVAILABLE)?;
         Ok(Self {
-            vtbl: &DISPATCH_VTBL,
+            vtbl: (&DISPATCH_VTBL as *const WrappedDualVtbl).cast::<IDispatchVtbl>(),
             ref_count: AtomicI32::new(1),
             class_index,
             engine,
@@ -877,7 +934,7 @@ impl OxVbaDispatchInstance {
         ref_count: i32,
     ) -> Self {
         Self {
-            vtbl: &DISPATCH_VTBL,
+            vtbl: (&DISPATCH_VTBL as *const WrappedDualVtbl).cast::<IDispatchVtbl>(),
             ref_count: AtomicI32::new(ref_count),
             class_index,
             engine,
@@ -895,7 +952,11 @@ unsafe extern "system" fn di_query_interface(
     if ppv.is_null() { return E_INVALIDARG; }
     *ppv = std::ptr::null_mut();
     let iid = &*riid;
-    if *iid == IID_IUNKNOWN || *iid == IID_IDISPATCH {
+    let inst = &*(this as *const OxVbaDispatchInstance);
+    let supports_custom_iid = interface_iid_for_class(inst.class_index)
+        .map(|custom_iid| *iid == *custom_iid)
+        .unwrap_or(false);
+    if *iid == IID_IUNKNOWN || *iid == IID_IDISPATCH || supports_custom_iid {
         *ppv = this;
         di_add_ref(this);
         S_OK
@@ -920,6 +981,32 @@ unsafe extern "system" fn di_release(this: *mut c_void) -> u32 {
     } else {
         (prev - 1) as u32
     }
+}
+
+unsafe extern "system" fn di_vtable_call_0(this: *mut c_void, retval: *mut i32) -> i32 {
+    if this.is_null() || retval.is_null() {
+        return E_INVALIDARG;
+    }
+    let inst = &mut *(this as *mut OxVbaDispatchInstance);
+    let Some(member) = vtable_member(inst.class_index, 0) else {
+        return E_NOTIMPL;
+    };
+    let mut session = inst.session.borrow_mut();
+    let value = match inst.engine.invoke_member_on_object_with_kind(
+        &mut session,
+        inst.object.clone(),
+        member.name,
+        Some(RuntimeCallKind::Method),
+        &[],
+    ) {
+        Ok(value) => value,
+        Err(_) => return E_INVALIDARG,
+    };
+    let Some(value) = value.as_i32() else {
+        return E_INVALIDARG;
+    };
+    *retval = value;
+    S_OK
 }
 
 unsafe extern "system" fn di_get_type_info_count(
@@ -1282,9 +1369,12 @@ mod tests {
         assert!(source.contains("compile_and_prepare_session_from_bundle"));
         assert!(source.contains("create_class_instance"));
         assert!(source.contains("IDispatchVtbl"));
+        assert!(source.contains("WrappedDualVtbl"));
         assert!(source.contains("di_query_interface"));
         assert!(source.contains("di_invoke"));
+        assert!(source.contains("di_vtable_call_0"));
         assert!(source.contains("di_get_ids_of_names"));
+        assert!(source.contains("IID_IWIDGET"));
     }
 
     #[test]
@@ -1565,6 +1655,45 @@ mod tests {
             }
 
             #[repr(C)]
+            struct TestWidgetVtbl {
+                query_interface: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                get_type_info_count:
+                    unsafe extern "system" fn(*mut core::ffi::c_void, *mut u32) -> i32,
+                get_type_info: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    u32,
+                    u32,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                get_ids_of_names: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *const *const u16,
+                    u32,
+                    u32,
+                    *mut i32,
+                ) -> i32,
+                invoke: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    i32,
+                    *const TestGuid,
+                    u32,
+                    u16,
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *mut u32,
+                ) -> i32,
+                ping: unsafe extern "system" fn(*mut core::ffi::c_void, *mut i32) -> i32,
+            }
+
+            #[repr(C)]
             struct TestClassFactoryVtbl {
                 query_interface: unsafe extern "system" fn(
                     *mut core::ffi::c_void,
@@ -1585,6 +1714,11 @@ mod tests {
             #[repr(C)]
             struct TestComObject {
                 vtbl: *const TestDispatchVtbl,
+            }
+
+            #[repr(C)]
+            struct TestWidgetObject {
+                vtbl: *const TestWidgetVtbl,
             }
 
             #[repr(C)]
@@ -1647,6 +1781,14 @@ mod tests {
                 data3: parsed.data3,
                 data4: parsed.data4,
             };
+            let iface_uuid = deterministic_uuid("TestProj", "IWidget");
+            let parsed_iface = crate::typelib_gen::parse_uuid(&iface_uuid);
+            let iid_iwidget = TestGuid {
+                data1: parsed_iface.data1,
+                data2: parsed_iface.data2,
+                data3: parsed_iface.data3,
+                data4: parsed_iface.data4,
+            };
 
             let mut factory_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
             assert_eq!(
@@ -1674,6 +1816,21 @@ mod tests {
             assert!(!dispatch_ptr.is_null());
 
             let dispatch = &*(dispatch_ptr as *const TestComObject);
+            let mut widget_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                ((*dispatch.vtbl).query_interface)(dispatch_ptr, &iid_iwidget, &mut widget_ptr),
+                S_OK
+            );
+            assert!(!widget_ptr.is_null());
+            let widget = &*(widget_ptr as *const TestWidgetObject);
+            let mut vtable_ping_result = i32::MIN;
+            assert_eq!(
+                ((*widget.vtbl).ping)(widget_ptr, &mut vtable_ping_result),
+                S_OK
+            );
+            assert_eq!(vtable_ping_result, 7);
+            assert_eq!(((*widget.vtbl).release)(widget_ptr), 1);
+
             let ping_name: Vec<u16> = "Ping".encode_utf16().chain(std::iter::once(0)).collect();
             let names = [ping_name.as_ptr()];
             let mut dispid = i32::MIN;

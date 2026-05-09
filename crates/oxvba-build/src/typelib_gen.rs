@@ -65,7 +65,7 @@ mod ffi {
     pub const SYS_WIN64: u32 = 3;
 
     // TYPEKIND
-    pub const TKIND_DISPATCH: u32 = 4;
+    pub const TKIND_INTERFACE: u32 = 3;
     pub const TKIND_COCLASS: u32 = 5;
 
     // TYPEFLAGS
@@ -86,8 +86,7 @@ mod ffi {
     pub const INVOKE_PROPERTYPUT: u32 = 4;
 
     // FUNCKIND
-    pub const FUNC_DISPATCH: u32 = 4;
-
+    pub const FUNC_PUREVIRTUAL: u32 = 1;
     // CALLCONV
     pub const CC_STDCALL: u32 = 4;
 
@@ -464,7 +463,7 @@ fn create_class_typeinfos(
             (tlib_vtbl.create_type_info)(
                 ptlib,
                 iface_name_wide.as_ptr(),
-                TKIND_DISPATCH,
+                TKIND_INTERFACE,
                 &mut ptinfo_iface,
             ),
             "CreateTypeInfo(interface)",
@@ -483,10 +482,13 @@ fn create_class_typeinfos(
             (iface_vtbl.set_doc_string)(ptinfo_iface, iface_doc_wide.as_ptr()),
             "ICreateTypeInfo::SetDocString(interface)",
         )?;
-        // Note: SetTypeFlags with TYPEFLAG_FOLEAUTOMATION returns TYPE_E_BADMODULEKIND
-        // for pure TKIND_DISPATCH. The system auto-sets appropriate flags for dispatch
-        // interfaces. Explicit SetTypeFlags is only needed for TKIND_INTERFACE (dual).
-        // For VBA COM servers, pure dispatch (TKIND_DISPATCH) is the correct model.
+        check_hr(
+            (iface_vtbl.set_type_flags)(
+                ptinfo_iface,
+                u32::from(TYPEFLAG_FDUAL | TYPEFLAG_FOLEAUTOMATION | TYPEFLAG_FDISPATCHABLE),
+            ),
+            "ICreateTypeInfo::SetTypeFlags(interface)",
+        )?;
         check_hr(
             (iface_vtbl.set_version)(ptinfo_iface, 1, 0),
             "ICreateTypeInfo::SetVersion(interface)",
@@ -657,12 +659,12 @@ fn add_dispatch_members(
             } else {
                 param_descs.as_mut_ptr()
             },
-            funckind: FUNC_DISPATCH,
+            funckind: FUNC_PUREVIRTUAL,
             invkind,
             callconv: CC_STDCALL,
             cparams: total_params as i16,
             cparams_opt: 0,
-            o_vft: 0,
+            o_vft: ((7 + i) * std::mem::size_of::<usize>()) as i16,
             cscodes: 0,
             elemdesc_func: ElemDesc {
                 tdesc: TypeDesc {

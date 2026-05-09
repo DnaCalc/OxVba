@@ -73,6 +73,12 @@ OxVba already has important substrate:
   default property get/let, object return, array return, error/`EXCEPINFO`, and
   registered `CoCreateInstance` activation slices. Office/VBA project-reference
   evidence remains outside the implemented subset.
+- COM-0009 now has the first dual-interface projection evidence:
+  generated wrapped objects expose deterministic custom `I<ClassName>` IIDs,
+  `QueryInterface` returns the class interface, the generated vtable has an
+  `IUnknown`/`IDispatch` prefix followed by a bounded no-arg scalar method slot,
+  and the Windows DLL test calls `Widget.Ping` through that vtable slot. Full
+  dispatch/vtable equivalence remains in `bd-wcs1.7.2`.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -84,8 +90,8 @@ The missing truth is also explicit:
   `OutputType=ComServer`.
 - Office/VBA early-bound project-reference evidence is not part of COM-0007 and
   remains deferred beyond the current COM-0008 controlled TypeLib-aware subset.
-- Dual-interface vtable projection and COM connection-point event publication
-  are not yet implemented.
+- Full dual-interface dispatch/vtable equivalence and COM connection-point event
+  publication are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.

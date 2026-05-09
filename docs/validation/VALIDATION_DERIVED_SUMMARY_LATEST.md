@@ -11,7 +11,7 @@ Generated from:
 | Domain | Rows | In Progress | Implemented Subset | Implemented Full | Verified | Planned |
 |---|---|---|---|---|---|---|
 | language | 4 | 0 | 4 | 0 | 0 | 0 |
-| com_external | 10 | 0 | 3 | 0 | 5 | 2 |
+| com_external | 10 | 1 | 3 | 0 | 5 | 1 |
 | project_hosting | 11 | 1 | 9 | 0 | 0 | 1 |
 | language_services_formalization | 8 | 3 | 5 | 0 | 0 | 0 |
 
@@ -19,7 +19,7 @@ Generated from:
 
 | Feature ID | Domain | Feature | Truth State | Matrix |
 |---|---|---|---|---|
-| COM-0009 | com_external | WrappedComServer Automation-safe dual-interface vtable publication | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
+| COM-0009 | com_external | WrappedComServer Automation-safe dual-interface vtable publication | in-progress | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
 | COM-0010 | com_external | WrappedComServer source dispinterface and connection-point event publication | planned | docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv |
 | PH-0010 | project_hosting | MS-OVBA storage roundtrip | in-progress | docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv |
 | PH-0011 | project_hosting | Host UDF catalog and invocation for DnaOneCalc/OxIde-style hosts | planned | docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv |
