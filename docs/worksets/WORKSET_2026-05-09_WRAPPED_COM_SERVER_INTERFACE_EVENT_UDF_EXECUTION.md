@@ -51,6 +51,10 @@ OxVba already has important substrate:
   instances through `Engine::create_class_instance`; controlled Windows client
   coverage exercises `DllGetClassObject`, `CreateInstance`, `LockServer`, and
   `DllCanUnloadNow` without claiming `Invoke` success yet.
+- Generated `IDispatch::GetIDsOfNames` and `Invoke` now route through the
+  emitted member descriptor table and COM call-frame marshaling helpers for the
+  first scalar method slice; object-return, array-return, and richer error
+  evidence remain in the later late-bound validation bead.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

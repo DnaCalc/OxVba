@@ -90,8 +90,16 @@ use std::ffi::c_void;
 use std::sync::atomic::{{AtomicI32, Ordering}};
 
 use oxvba_compiler::OxBundle;
+use oxvba_com::{{
+    COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_TYPEMISMATCH, disp_params_to_runtime_call_frame,
+    runtime_call_error_to_excepinfo, runtime_call_result_to_variant,
+}};
 use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
-use oxvba_runtime::ObjectRef;
+use oxvba_runtime::{{
+    ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant as RuntimeVariant,
+}};
+use windows_sys::Win32::System::Com::{{DISPPARAMS, EXCEPINFO}};
+use windows_sys::Win32::System::Variant::VARIANT;
 
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
@@ -104,6 +112,8 @@ const E_NOINTERFACE: i32 = 0x80004002_u32 as i32;
 const E_OUTOFMEMORY: i32 = 0x8007000E_u32 as i32;
 const CLASS_E_CLASSNOTAVAILABLE: i32 = 0x80040111_u32 as i32;
 const CLASS_E_NOAGGREGATION: i32 = 0x80040110_u32 as i32;
+const DISP_E_UNKNOWNNAME: i32 = 0x80020006_u32 as i32;
+const E_NOTIMPL: i32 = 0x80004001_u32 as i32;
 
 "#
     ));
@@ -111,6 +121,7 @@ const CLASS_E_NOAGGREGATION: i32 = 0x80040110_u32 as i32;
     // GUID struct and IID constants
     source.push_str(&generate_guid_definitions(project_name, classes));
     source.push_str(&generate_class_table(classes));
+    source.push_str(&generate_member_tables(classes));
 
     // IUnknown / IDispatch / IClassFactory vtable structs
     source.push_str(generate_vtable_structs());
@@ -215,6 +226,70 @@ fn generate_class_table(classes: &[ComClassExportDescriptor]) -> String {
     }
     s.push_str("];\n\n");
     s
+}
+
+fn generate_member_tables(classes: &[ComClassExportDescriptor]) -> String {
+    let mut s = String::from(
+        r#"struct MemberDescriptor {
+    name: &'static str,
+    dispid: i32,
+}
+
+"#,
+    );
+    for (class_index, class) in classes.iter().enumerate() {
+        s.push_str(&format!(
+            "static CLASS_{class_index}_MEMBERS: &[MemberDescriptor] = &[\n"
+        ));
+        for (member_index, member) in class.members.iter().enumerate() {
+            let dispid = member.dispatch_id_or(member_index + 1);
+            s.push_str(&format!(
+                "    MemberDescriptor {{ name: \"{}\", dispid: {dispid} }},\n",
+                rust_string_literal(&member.member_name)
+            ));
+        }
+        s.push_str("];\n\n");
+    }
+    s.push_str("static CLASS_MEMBERS: &[&[MemberDescriptor]] = &[\n");
+    for class_index in 0..classes.len() {
+        s.push_str(&format!("    CLASS_{class_index}_MEMBERS,\n"));
+    }
+    s.push_str("];\n\n");
+    s.push_str(
+        r#"fn members_for_class(class_index: usize) -> &'static [MemberDescriptor] {
+    CLASS_MEMBERS.get(class_index).copied().unwrap_or(&[])
+}
+
+fn member_by_dispid(class_index: usize, dispid: i32) -> Option<&'static MemberDescriptor> {
+    members_for_class(class_index)
+        .iter()
+        .find(|member| member.dispid == dispid)
+}
+
+fn member_by_name(class_index: usize, name: &str) -> Option<&'static MemberDescriptor> {
+    members_for_class(class_index)
+        .iter()
+        .find(|member| member.name.eq_ignore_ascii_case(name))
+}
+
+unsafe fn wide_name_to_string(ptr: *const u16) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while *ptr.add(len) != 0 {
+        len += 1;
+    }
+    Some(String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len)))
+}
+
+"#,
+    );
+    s
+}
+
+fn rust_string_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn generate_vtable_structs() -> &'static str {
@@ -557,38 +632,114 @@ unsafe extern "system" fn di_get_type_info(
     _lcid: u32,
     _pp_tinfo: *mut *mut c_void,
 ) -> i32 {
-    // Type info not provided (typelib-based type info can be added in S3)
-    0x80004001_u32 as i32 // E_NOTIMPL
+    // Type info not provided until the typelib bead is wired into this path.
+    E_NOTIMPL
 }
 
 unsafe extern "system" fn di_get_ids_of_names(
-    _this: *mut c_void,
+    this: *mut c_void,
     _riid: *const GUID,
-    _rgsznames: *const *const u16,
-    _cnames: u32,
+    rgsznames: *const *const u16,
+    cnames: u32,
     _lcid: u32,
-    _rgdispid: *mut i32,
+    rgdispid: *mut i32,
 ) -> i32 {
-    // Future: look up member names from the compiled project's dispatch table
-    // and return DISPIDs. For now, return DISP_E_UNKNOWNNAME.
-    0x80020006_u32 as i32 // DISP_E_UNKNOWNNAME
+    if rgsznames.is_null() || rgdispid.is_null() || cnames == 0 {
+        return E_INVALIDARG;
+    }
+    let inst = &*(this as *const OxVbaDispatchInstance);
+    let Some(name) = wide_name_to_string(*rgsznames) else {
+        return E_INVALIDARG;
+    };
+    let Some(member) = member_by_name(inst.class_index, &name) else {
+        return DISP_E_UNKNOWNNAME;
+    };
+    *rgdispid = member.dispid;
+    S_OK
 }
 
 unsafe extern "system" fn di_invoke(
-    _this: *mut c_void,
-    _dispid_member: i32,
+    this: *mut c_void,
+    dispid_member: i32,
     _riid: *const GUID,
-    _lcid: u32,
-    _w_flags: u16,
-    _p_disp_params: *mut c_void,
-    _p_var_result: *mut c_void,
-    _p_excep_info: *mut c_void,
-    _pu_arg_err: *mut u32,
+    lcid: u32,
+    w_flags: u16,
+    p_disp_params: *mut c_void,
+    p_var_result: *mut c_void,
+    p_excep_info: *mut c_void,
+    pu_arg_err: *mut u32,
 ) -> i32 {
-    // Future: Translate DISPPARAMS → DynamicCallRequest, execute via the
-    // OxVba runtime engine session, translate result back to VARIANT.
-    // For now, return DISP_E_MEMBERNOTFOUND.
-    0x80020003_u32 as i32 // DISP_E_MEMBERNOTFOUND
+    let inst = &mut *(this as *mut OxVbaDispatchInstance);
+    let Some(member) = member_by_dispid(inst.class_index, dispid_member) else {
+        return COM_DISP_E_MEMBERNOTFOUND;
+    };
+    let params = p_disp_params as *mut DISPPARAMS;
+    let frame = match disp_params_to_runtime_call_frame(dispid_member, w_flags, params, lcid) {
+        Ok(frame) => frame,
+        Err(err) => {
+            let runtime_error = RuntimeCallError::new(
+                COM_DISP_E_TYPEMISMATCH,
+                err.message,
+                RuntimeCallSource::ExternalComDispatch,
+            );
+            return runtime_call_error_to_excepinfo(
+                &runtime_error,
+                p_excep_info as *mut EXCEPINFO,
+                pu_arg_err,
+                if params.is_null() { 0 } else { (*params).cArgs as usize },
+            );
+        }
+    };
+    let mut args = frame
+        .positional_args
+        .into_iter()
+        .map(|arg| arg.value)
+        .collect::<Vec<RuntimeVariant>>();
+    if let Some(property_put_arg) = frame.property_put_arg {
+        args.push(property_put_arg.value);
+    }
+    let value = match inst.engine.invoke_member_on_object_with_variants(
+        &mut inst.session,
+        inst.object.clone(),
+        member.name,
+        &args,
+    ) {
+        Ok(value) => value,
+        Err(err) => {
+            let runtime_error = RuntimeCallError::new(
+                COM_DISP_E_MEMBERNOTFOUND,
+                err.to_string(),
+                RuntimeCallSource::ExternalComDispatch,
+            );
+            return runtime_call_error_to_excepinfo(
+                &runtime_error,
+                p_excep_info as *mut EXCEPINFO,
+                pu_arg_err,
+                if params.is_null() { 0 } else { (*params).cArgs as usize },
+            );
+        }
+    };
+    if !p_var_result.is_null() {
+        if let Err(message) = runtime_call_result_to_variant(
+            &RuntimeCallResult::value(value),
+            p_var_result as *mut VARIANT,
+            &mut |_object| Err("WrappedComServer object result marshaling is not wired yet".to_string()),
+            &mut |_dispatch| {},
+        ) {
+            let runtime_error = RuntimeCallError::new(
+                COM_DISP_E_TYPEMISMATCH,
+                message,
+                RuntimeCallSource::ExternalComDispatch,
+            );
+            return runtime_call_error_to_excepinfo(
+                &runtime_error,
+                p_excep_info as *mut EXCEPINFO,
+                pu_arg_err,
+                if params.is_null() { 0 } else { (*params).cArgs as usize },
+            );
+        }
+    }
+    S_OK
 }
 "#
 }
@@ -726,7 +877,14 @@ mod tests {
             prog_id: Some("TestProj.Widget".to_string()),
             instancing: Some(Instancing::MultiUse),
             description: None,
-            members: vec![],
+            members: vec![DispatchMemberInfo {
+                member_name: "Ping".to_string(),
+                kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                param_count: 0,
+                dispatch_id: Some(1),
+                member_flags: None,
+                is_default_member: false,
+            }],
         }];
         let err = compile_wrapped_com_server_shim(
             "TestProj",
@@ -784,7 +942,14 @@ mod tests {
             prog_id: Some("TestProj.Widget".to_string()),
             instancing: Some(Instancing::MultiUse),
             description: None,
-            members: vec![],
+            members: vec![DispatchMemberInfo {
+                member_name: "Ping".to_string(),
+                kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                param_count: 0,
+                dispatch_id: Some(1),
+                member_flags: None,
+                is_default_member: false,
+            }],
         }];
 
         let output =
@@ -821,7 +986,7 @@ mod tests {
             }
 
             #[repr(C)]
-            struct TestUnknownVtbl {
+            struct TestDispatchVtbl {
                 query_interface: unsafe extern "system" fn(
                     *mut core::ffi::c_void,
                     *const TestGuid,
@@ -829,6 +994,33 @@ mod tests {
                 ) -> i32,
                 add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
                 release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                get_type_info_count:
+                    unsafe extern "system" fn(*mut core::ffi::c_void, *mut u32) -> i32,
+                get_type_info: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    u32,
+                    u32,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                get_ids_of_names: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *const *const u16,
+                    u32,
+                    u32,
+                    *mut i32,
+                ) -> i32,
+                invoke: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    i32,
+                    *const TestGuid,
+                    u32,
+                    u16,
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *mut u32,
+                ) -> i32,
             }
 
             #[repr(C)]
@@ -851,7 +1043,7 @@ mod tests {
 
             #[repr(C)]
             struct TestComObject {
-                vtbl: *const TestUnknownVtbl,
+                vtbl: *const TestDispatchVtbl,
             }
 
             #[repr(C)]
@@ -931,6 +1123,51 @@ mod tests {
             assert!(!dispatch_ptr.is_null());
 
             let dispatch = &*(dispatch_ptr as *const TestComObject);
+            let ping_name: Vec<u16> = "Ping".encode_utf16().chain(std::iter::once(0)).collect();
+            let names = [ping_name.as_ptr()];
+            let mut dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut dispid,
+                ),
+                S_OK
+            );
+            assert_ne!(dispid, i32::MIN);
+
+            let mut params = windows_sys::Win32::System::Com::DISPPARAMS {
+                rgvarg: std::ptr::null_mut(),
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 0,
+                cNamedArgs: 0,
+            };
+            let mut result: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            let mut arg_err = u32::MAX;
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    (&mut params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    (&mut result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(
+                result.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_I4
+            );
+            assert_eq!(result.Anonymous.Anonymous.Anonymous.lVal, 7);
+            windows_sys::Win32::System::Variant::VariantClear(&mut result);
+
             assert_eq!(((*dispatch.vtbl).release)(dispatch_ptr), 0);
             assert_eq!(((*factory.vtbl).release)(factory_ptr), 0);
             assert_eq!(can_unload(), S_OK);
