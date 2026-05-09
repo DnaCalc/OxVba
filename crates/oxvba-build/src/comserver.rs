@@ -11,7 +11,7 @@ use oxvba_project::ComClassExportDescriptor;
 
 use crate::compile::{BuildError, ShimOutputType, compile_shim};
 use crate::idl::deterministic_uuid;
-use crate::typelib_gen::{TypeLibGenError, generate_typelib};
+use crate::typelib_gen::{TypeLibGenError, generate_typelib_with_events};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedComServerBuildOutput {
@@ -67,13 +67,30 @@ pub fn compile_wrapped_com_server_shim(
 
     let tlb_path = output_path.with_extension("tlb");
     let tlb_literal = tlb_path.to_string_lossy().replace('\\', "/");
-    generate_typelib(project_name, &tlb_literal, classes)?;
+    let events = load_wrapped_com_events(oxb_path);
+    generate_typelib_with_events(project_name, &tlb_literal, classes, &events)?;
     let source = generate_com_server_shim(project_name, oxb_path, Some(&tlb_literal), classes);
     compile_shim(&source, output_path, ShimOutputType::Dll)?;
     Ok(WrappedComServerBuildOutput {
         dll_path: output_path.to_path_buf(),
         tlb_path,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn load_wrapped_com_events(
+    oxb_path: &str,
+) -> Vec<oxvba_compiler::bundle::BundleComEventDescriptor> {
+    let Ok(bytes) = std::fs::read(oxb_path) else {
+        return Vec::new();
+    };
+    let Ok(bundle) = oxvba_compiler::bundle::OxBundle::deserialize_from_bytes(&bytes) else {
+        return Vec::new();
+    };
+    bundle
+        .descriptor_inventory
+        .map(|inventory| inventory.com_events)
+        .unwrap_or_default()
 }
 
 /// Generate Rust source code for a COM server in-process DLL.

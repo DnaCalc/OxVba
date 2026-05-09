@@ -10,6 +10,8 @@ use std::ffi::c_void;
 use oxvba_project::ComClassExportDescriptor;
 
 use crate::idl::deterministic_uuid;
+#[cfg(target_os = "windows")]
+use oxvba_compiler::bundle::BundleComEventDescriptor;
 
 // ── GUID helper ──
 
@@ -66,6 +68,7 @@ mod ffi {
 
     // TYPEKIND
     pub const TKIND_INTERFACE: u32 = 3;
+    pub const TKIND_DISPATCH: u32 = 4;
     pub const TKIND_COCLASS: u32 = 5;
 
     // TYPEFLAGS
@@ -79,6 +82,7 @@ mod ffi {
 
     // IMPLTYPEFLAGS
     pub const IMPLTYPEFLAG_FDEFAULT: i32 = 1;
+    pub const IMPLTYPEFLAG_FSOURCE: i32 = 2;
 
     // INVOKEKIND
     pub const INVOKE_FUNC: u32 = 1;
@@ -87,6 +91,7 @@ mod ffi {
 
     // FUNCKIND
     pub const FUNC_PUREVIRTUAL: u32 = 1;
+    pub const FUNC_DISPATCH: u32 = 4;
     // CALLCONV
     pub const CC_STDCALL: u32 = 4;
 
@@ -327,13 +332,23 @@ pub fn generate_typelib(
     output_path: &str,
     classes: &[ComClassExportDescriptor],
 ) -> Result<TypeLibGenResult, TypeLibGenError> {
+    generate_typelib_with_events(project_name, output_path, classes, &[])
+}
+
+#[cfg(target_os = "windows")]
+pub fn generate_typelib_with_events(
+    project_name: &str,
+    output_path: &str,
+    classes: &[ComClassExportDescriptor],
+    events: &[BundleComEventDescriptor],
+) -> Result<TypeLibGenResult, TypeLibGenError> {
     use ffi::*;
 
     // Ensure COM is initialized (STA). Ignore RPC_E_CHANGED_MODE if already init'd.
     let coin_hr = unsafe { CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED) };
     let did_coin = coin_hr >= 0; // S_OK or S_FALSE (already initialized)
 
-    let result = generate_typelib_inner(project_name, output_path, classes);
+    let result = generate_typelib_inner(project_name, output_path, classes, events);
 
     if did_coin {
         unsafe {
@@ -349,6 +364,7 @@ fn generate_typelib_inner(
     project_name: &str,
     output_path: &str,
     classes: &[ComClassExportDescriptor],
+    events: &[BundleComEventDescriptor],
 ) -> Result<TypeLibGenResult, TypeLibGenError> {
     use ffi::*;
 
@@ -391,8 +407,16 @@ fn generate_typelib_inner(
     let mut total_members = 0usize;
 
     for class in classes {
+        let class_events = events
+            .iter()
+            .filter(|event| {
+                event
+                    .source_module_name
+                    .eq_ignore_ascii_case(&class.class_name)
+            })
+            .collect::<Vec<_>>();
         let (iface_member_count, _) =
-            create_class_typeinfos(ptlib, tlib_vtbl, project_name, class)?;
+            create_class_typeinfos(ptlib, tlib_vtbl, project_name, class, &class_events)?;
         total_members += iface_member_count;
     }
 
@@ -442,6 +466,7 @@ fn create_class_typeinfos(
     tlib_vtbl: &ffi::ICreateTypeLibVtbl,
     project_name: &str,
     class: &ComClassExportDescriptor,
+    events: &[&BundleComEventDescriptor],
 ) -> Result<(usize, ()), TypeLibGenError> {
     use ffi::*;
 
@@ -507,6 +532,12 @@ fn create_class_typeinfos(
     }
 
     // ── Create the coclass ──
+    let ptinfo_source = if events.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        create_source_dispinterface(ptlib, tlib_vtbl, project_name, class, events)?
+    };
+
     let coclass_name_wide = to_wide(class_name);
     let mut ptinfo_coclass: *mut c_void = std::ptr::null_mut();
 
@@ -568,6 +599,42 @@ fn create_class_typeinfos(
             (coclass_vtbl.set_impl_type_flags)(ptinfo_coclass, 0, IMPLTYPEFLAG_FDEFAULT),
             "ICreateTypeInfo::SetImplTypeFlags(coclass)",
         )?;
+        if !ptinfo_source.is_null() {
+            let source_create_vtbl = get_vtbl::<ICreateTypeInfoVtbl>(ptinfo_source);
+            let mut ptypeinfo_source: *mut c_void = std::ptr::null_mut();
+            check_hr(
+                (source_create_vtbl.query_interface)(
+                    ptinfo_source,
+                    &IID_ITYPEINFO,
+                    &mut ptypeinfo_source,
+                ),
+                "ICreateTypeInfo::QueryInterface(ITypeInfo) on source",
+            )?;
+            let mut source_href: u32 = 0;
+            check_hr(
+                (coclass_vtbl.add_ref_type_info)(
+                    ptinfo_coclass,
+                    ptypeinfo_source,
+                    &mut source_href,
+                ),
+                "ICreateTypeInfo::AddRefTypeInfo(coclass→source)",
+            )?;
+            check_hr(
+                (coclass_vtbl.add_impl_type)(ptinfo_coclass, 1, source_href),
+                "ICreateTypeInfo::AddImplType(coclass source)",
+            )?;
+            check_hr(
+                (coclass_vtbl.set_impl_type_flags)(
+                    ptinfo_coclass,
+                    1,
+                    IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE,
+                ),
+                "ICreateTypeInfo::SetImplTypeFlags(coclass source)",
+            )?;
+            let source_typeinfo_vtbl = get_vtbl::<ICreateTypeInfoVtbl>(ptypeinfo_source);
+            (source_typeinfo_vtbl.release)(ptypeinfo_source);
+            (source_create_vtbl.release)(ptinfo_source);
+        }
 
         // Layout and release
         check_hr(
@@ -579,6 +646,104 @@ fn create_class_typeinfos(
     }
 
     Ok((member_count, ()))
+}
+
+#[cfg(target_os = "windows")]
+fn create_source_dispinterface(
+    ptlib: *mut c_void,
+    tlib_vtbl: &ffi::ICreateTypeLibVtbl,
+    project_name: &str,
+    class: &ComClassExportDescriptor,
+    events: &[&BundleComEventDescriptor],
+) -> Result<*mut c_void, TypeLibGenError> {
+    use ffi::*;
+
+    let source_name = format!("_{}Events", class.class_name);
+    let source_uuid_str = deterministic_uuid(project_name, &source_name);
+    let source_guid = parse_uuid(&source_uuid_str);
+    let source_name_wide = to_wide(&source_name);
+    let mut ptinfo_source: *mut c_void = std::ptr::null_mut();
+
+    unsafe {
+        check_hr(
+            (tlib_vtbl.create_type_info)(
+                ptlib,
+                source_name_wide.as_ptr(),
+                TKIND_DISPATCH,
+                &mut ptinfo_source,
+            ),
+            "CreateTypeInfo(source dispinterface)",
+        )?;
+    }
+
+    let source_vtbl = unsafe { get_vtbl::<ICreateTypeInfoVtbl>(ptinfo_source) };
+    unsafe {
+        check_hr(
+            (source_vtbl.set_guid)(ptinfo_source, &source_guid),
+            "ICreateTypeInfo::SetGuid(source)",
+        )?;
+        check_hr(
+            (source_vtbl.set_doc_string)(ptinfo_source, source_name_wide.as_ptr()),
+            "ICreateTypeInfo::SetDocString(source)",
+        )?;
+        check_hr(
+            (source_vtbl.set_version)(ptinfo_source, 1, 0),
+            "ICreateTypeInfo::SetVersion(source)",
+        )?;
+    }
+
+    for (index, event) in events.iter().enumerate() {
+        let dispid = event.event_token.unwrap_or((index + 1) as i32);
+        let event_name_wide = to_wide(&event.event_name);
+        let funcdesc = FuncDesc {
+            memid: dispid,
+            lprgscode: std::ptr::null_mut(),
+            lprgelemdescparam: std::ptr::null_mut(),
+            funckind: FUNC_DISPATCH,
+            invkind: INVOKE_FUNC,
+            callconv: CC_STDCALL,
+            cparams: 0,
+            cparams_opt: 0,
+            o_vft: 0,
+            cscodes: 0,
+            elemdesc_func: ElemDesc {
+                tdesc: TypeDesc {
+                    union_field: 0,
+                    vt: VT_HRESULT,
+                },
+                paramdesc: ParamDesc {
+                    pparamdescex: std::ptr::null_mut(),
+                    wparamflags: 0,
+                },
+            },
+            w_func_flags: 0,
+        };
+        unsafe {
+            check_hr(
+                (source_vtbl.add_func_desc)(ptinfo_source, index as u32, &funcdesc),
+                &format!("AddFuncDesc(source {})", event.event_name),
+            )?;
+            let names = [event_name_wide.as_ptr()];
+            check_hr(
+                (source_vtbl.set_func_and_param_names)(
+                    ptinfo_source,
+                    index as u32,
+                    names.as_ptr(),
+                    1,
+                ),
+                &format!("SetFuncAndParamNames(source {})", event.event_name),
+            )?;
+        }
+    }
+
+    unsafe {
+        check_hr(
+            (source_vtbl.layout_type)(ptinfo_source),
+            "ICreateTypeInfo::LayOut(source)",
+        )?;
+    }
+
+    Ok(ptinfo_source)
 }
 
 /// Add dispatch member functions to a type info.
@@ -996,6 +1161,54 @@ mod tests {
             .find(|member| member.name == "NewEnum")
             .expect("NewEnum should be present");
         assert_eq!(new_enum.token, -4);
+
+        let _ = std::fs::remove_file(&tlb_path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn generate_typelib_publishes_source_dispinterface() {
+        use oxvba_project::{ComClassExportDescriptor, DispatchMemberInfo};
+
+        let classes = vec![ComClassExportDescriptor {
+            class_name: "Emitter".to_string(),
+            prog_id: Some("EventTest.Emitter".to_string()),
+            instancing: None,
+            description: None,
+            members: vec![DispatchMemberInfo {
+                member_name: "Fire".to_string(),
+                kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
+                param_count: 0,
+                dispatch_id: Some(1),
+                member_flags: None,
+                is_default_member: false,
+            }],
+        }];
+        let events = vec![oxvba_compiler::bundle::BundleComEventDescriptor {
+            stable_event_id: "event:eventtest:emitter:changed".to_string(),
+            source_project_name: "EventTest".to_string(),
+            source_module_name: "Emitter".to_string(),
+            event_name: "Changed".to_string(),
+            event_token: Some(7),
+            binding_token: None,
+            prog_id_name: None,
+            handler_symbol: "sink_changed".to_string(),
+            guard_symbol_zero_arg: "guard_changed_0".to_string(),
+            guard_symbol_one_arg: "guard_changed_1".to_string(),
+        }];
+
+        let temp_dir = std::env::temp_dir();
+        let tlb_path = temp_dir
+            .join("oxvba_test_typelib_events.tlb")
+            .to_string_lossy()
+            .to_string();
+
+        let result = generate_typelib_with_events("EventTest", &tlb_path, &classes, &events)
+            .expect("event source typelib generation should work");
+        assert_eq!(result.class_count, 1);
+        assert_eq!(result.member_count, 1);
+        assert!(std::path::Path::new(&tlb_path).exists());
+        verify_typelib_roundtrip(&tlb_path, "EventTest", &classes).unwrap();
 
         let _ = std::fs::remove_file(&tlb_path);
     }

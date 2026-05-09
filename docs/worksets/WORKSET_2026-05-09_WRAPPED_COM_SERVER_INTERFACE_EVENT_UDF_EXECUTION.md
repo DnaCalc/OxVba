@@ -81,6 +81,11 @@ OxVba already has important substrate:
   asserts the result equals the `IDispatch::Invoke` result from the same object.
   Broader argument/property/byref/object/array/error vtable parity remains
   outside the implemented subset.
+- COM-0010 now has source-dispinterface metadata evidence: wrapped server
+  TypeLib generation consumes `descriptor_inventory.com_events`, emits
+  deterministic `_<ClassName>Events` source dispinterfaces with stable event
+  DISPIDs, and links them from coclasses as default source implemented types.
+  Runtime connection points and live sink dispatch remain in later beads.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
