@@ -1096,6 +1096,104 @@ mod tests {
     use oxvba_project::{ComClassExportDescriptor, DispatchMemberInfo, Instancing};
     use std::path::{Path, PathBuf};
 
+    #[cfg(target_os = "windows")]
+    fn dispatch_id_from_typelib(
+        tlb_path: &Path,
+        project_name: &str,
+        interface_name: &str,
+        member_name: &str,
+    ) -> i32 {
+        use std::ffi::c_void;
+        use std::os::windows::ffi::OsStrExt;
+
+        #[repr(C)]
+        struct TestTypeLibVtbl {
+            query_interface: unsafe extern "system" fn(
+                *mut c_void,
+                *const crate::typelib_gen::Guid,
+                *mut *mut c_void,
+            ) -> i32,
+            add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+            release: unsafe extern "system" fn(*mut c_void) -> u32,
+            get_type_info_count: unsafe extern "system" fn(*mut c_void) -> u32,
+            get_type_info: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
+            get_type_info_type: unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> i32,
+            get_type_info_of_guid: unsafe extern "system" fn(
+                *mut c_void,
+                *const crate::typelib_gen::Guid,
+                *mut *mut c_void,
+            ) -> i32,
+        }
+
+        #[repr(C)]
+        struct TestTypeInfoVtbl {
+            query_interface: unsafe extern "system" fn(
+                *mut c_void,
+                *const crate::typelib_gen::Guid,
+                *mut *mut c_void,
+            ) -> i32,
+            add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+            release: unsafe extern "system" fn(*mut c_void) -> u32,
+            get_type_attr: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+            get_type_comp: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+            get_func_desc: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
+            get_var_desc: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
+            get_names:
+                unsafe extern "system" fn(*mut c_void, i32, *mut *mut u16, u32, *mut u32) -> i32,
+            get_ref_type_of_impl_type: unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> i32,
+            get_impl_type_flags: unsafe extern "system" fn(*mut c_void, u32, *mut i32) -> i32,
+            get_ids_of_names:
+                unsafe extern "system" fn(*mut c_void, *mut *const u16, u32, *mut i32) -> i32,
+        }
+
+        unsafe extern "system" {
+            fn LoadTypeLib(szfile: *const u16, pptlib: *mut *mut c_void) -> i32;
+        }
+
+        const S_OK: i32 = 0;
+        let wide_path: Vec<u16> = tlb_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut typelib_ptr: *mut c_void = std::ptr::null_mut();
+        assert_eq!(
+            unsafe { LoadTypeLib(wide_path.as_ptr(), &mut typelib_ptr) },
+            S_OK
+        );
+        assert!(!typelib_ptr.is_null());
+
+        let typelib = unsafe { &*(*(typelib_ptr as *const *const TestTypeLibVtbl)) };
+        let iface_guid =
+            crate::typelib_gen::parse_uuid(&deterministic_uuid(project_name, interface_name));
+        let mut typeinfo_ptr: *mut c_void = std::ptr::null_mut();
+        assert_eq!(
+            unsafe { (typelib.get_type_info_of_guid)(typelib_ptr, &iface_guid, &mut typeinfo_ptr) },
+            S_OK
+        );
+        assert!(!typeinfo_ptr.is_null());
+
+        let typeinfo = unsafe { &*(*(typeinfo_ptr as *const *const TestTypeInfoVtbl)) };
+        let mut member_wide: Vec<u16> = member_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut names = [member_wide.as_mut_ptr().cast_const()];
+        let mut dispid = i32::MIN;
+        assert_eq!(
+            unsafe {
+                (typeinfo.get_ids_of_names)(typeinfo_ptr, names.as_mut_ptr(), 1, &mut dispid)
+            },
+            S_OK
+        );
+
+        unsafe {
+            (typeinfo.release)(typeinfo_ptr);
+            (typelib.release)(typelib_ptr);
+        }
+        dispid
+    }
+
     struct TempDirGuard {
         path: PathBuf,
     }
@@ -1381,6 +1479,21 @@ mod tests {
             &classes,
         )
         .expect("generated WrappedComServer typelib should load");
+        let typelib_ping_dispid =
+            dispatch_id_from_typelib(&output.tlb_path, "TestProj", "IWidget", "Ping");
+        let typelib_value_dispid =
+            dispatch_id_from_typelib(&output.tlb_path, "TestProj", "IWidget", "Value");
+        let typelib_child_dispid =
+            dispatch_id_from_typelib(&output.tlb_path, "TestProj", "IWidget", "ReturnChild");
+        let typelib_numbers_dispid =
+            dispatch_id_from_typelib(&output.tlb_path, "TestProj", "IWidget", "Numbers");
+        let typelib_boom_dispid =
+            dispatch_id_from_typelib(&output.tlb_path, "TestProj", "IWidget", "Boom");
+        assert_eq!(typelib_ping_dispid, 1);
+        assert_eq!(typelib_value_dispid, 0);
+        assert_eq!(typelib_child_dispid, 2);
+        assert_eq!(typelib_numbers_dispid, 3);
+        assert_eq!(typelib_boom_dispid, 4);
 
         let bytes = std::fs::read(&output.dll_path).expect("read built DLL");
         for export in [
@@ -1588,7 +1701,7 @@ mod tests {
             assert_eq!(
                 ((*dispatch.vtbl).invoke)(
                     dispatch_ptr,
-                    dispid,
+                    typelib_ping_dispid,
                     std::ptr::null(),
                     0,
                     windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
@@ -1621,6 +1734,7 @@ mod tests {
                 S_OK
             );
             assert_eq!(value_dispid, 0);
+            assert_eq!(value_dispid, typelib_value_dispid);
 
             let mut put_arg: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
             put_arg.Anonymous.Anonymous.vt = windows_sys::Win32::System::Variant::VT_I4;
@@ -1635,7 +1749,7 @@ mod tests {
             assert_eq!(
                 ((*dispatch.vtbl).invoke)(
                     dispatch_ptr,
-                    value_dispid,
+                    typelib_value_dispid,
                     std::ptr::null(),
                     0,
                     windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUT as u16,
@@ -1657,7 +1771,7 @@ mod tests {
             assert_eq!(
                 ((*dispatch.vtbl).invoke)(
                     dispatch_ptr,
-                    value_dispid,
+                    typelib_value_dispid,
                     std::ptr::null(),
                     0,
                     windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET as u16,
@@ -1692,11 +1806,12 @@ mod tests {
                 ),
                 S_OK
             );
+            assert_eq!(self_dispid, typelib_child_dispid);
             let mut self_result: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
             let mut self_excep: windows_sys::Win32::System::Com::EXCEPINFO = std::mem::zeroed();
             let self_hr = ((*dispatch.vtbl).invoke)(
                 dispatch_ptr,
-                self_dispid,
+                typelib_child_dispid,
                 std::ptr::null(),
                 0,
                 windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
@@ -1741,12 +1856,13 @@ mod tests {
                 ),
                 S_OK
             );
+            assert_eq!(numbers_dispid, typelib_numbers_dispid);
             let mut numbers_result: windows_sys::Win32::System::Variant::VARIANT =
                 std::mem::zeroed();
             assert_eq!(
                 ((*dispatch.vtbl).invoke)(
                     dispatch_ptr,
-                    numbers_dispid,
+                    typelib_numbers_dispid,
                     std::ptr::null(),
                     0,
                     windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
@@ -1801,10 +1917,11 @@ mod tests {
                 ),
                 S_OK
             );
+            assert_eq!(boom_dispid, typelib_boom_dispid);
             let mut excep: windows_sys::Win32::System::Com::EXCEPINFO = std::mem::zeroed();
             let hr = ((*dispatch.vtbl).invoke)(
                 dispatch_ptr,
-                boom_dispid,
+                typelib_boom_dispid,
                 std::ptr::null(),
                 0,
                 windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
@@ -1873,6 +1990,7 @@ mod tests {
                 ),
                 S_OK
             );
+            assert_eq!(cocreated_ping_dispid, typelib_ping_dispid);
             let mut cocreated_result: windows_sys::Win32::System::Variant::VARIANT =
                 std::mem::zeroed();
             let mut cocreated_params = windows_sys::Win32::System::Com::DISPPARAMS {
@@ -1884,7 +2002,7 @@ mod tests {
             assert_eq!(
                 ((*cocreated.vtbl).invoke)(
                     cocreated_dispatch,
-                    cocreated_ping_dispid,
+                    typelib_ping_dispid,
                     std::ptr::null(),
                     0,
                     windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,

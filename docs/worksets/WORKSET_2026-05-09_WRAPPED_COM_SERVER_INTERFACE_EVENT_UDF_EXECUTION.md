@@ -65,8 +65,14 @@ OxVba already has important substrate:
 - COM-0008 now has generated TypeLib evidence for the publication half:
   `compile_wrapped_com_server_shim` emits a sibling `.tlb`, the `.tlb` loads
   through Windows TypeLib roundtrip checks, and `DllRegisterServer` writes
-  per-user TypeLib metadata linked from each CLSID. Early-bound client-call
-  evidence remains in `bd-wcs1.6.2`.
+  per-user TypeLib metadata linked from each CLSID.
+- COM-0008 now also has controlled TypeLib-aware client-call evidence:
+  `wrapped_com_server_build_compiles_dll_with_standard_exports` loads the
+  generated TypeLib, resolves wrapped member DISPIDs through `IWidget`
+  `ITypeInfo`, and uses those TypeLib-derived DISPIDs to call scalar methods,
+  default property get/let, object return, array return, error/`EXCEPINFO`, and
+  registered `CoCreateInstance` activation slices. Office/VBA project-reference
+  evidence remains outside the implemented subset.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -76,10 +82,8 @@ The missing truth is also explicit:
 
 - `oxvba build` does not yet register a usable in-process COM server DLL for
   `OutputType=ComServer`.
-- Office/VBA early-bound evidence is not part of COM-0007 and remains in the
-  COM-0008/type-library lane.
-- Type library publication for OxVba classes is not yet integrated into a real
-  COM server build output.
+- Office/VBA early-bound project-reference evidence is not part of COM-0007 and
+  remains deferred beyond the current COM-0008 controlled TypeLib-aware subset.
 - Dual-interface vtable projection and COM connection-point event publication
   are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
