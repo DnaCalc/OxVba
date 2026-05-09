@@ -8,6 +8,7 @@ Canonical path: `docs/spec/BUILD_TARGET_AND_WRAPPER_BOUNDARY_V1.md`
 Related docs:
 - `docs/spec/BASPROJ_SPEC_V1.md`
 - `docs/worksets/WORKSET_2026-04-02_WRAPPER_BUILD_TARGET_AND_NATIVE_HOSTING_EXECUTION.md`
+- `docs/worksets/WORKSET_2026-05-09_WRAPPED_COM_SERVER_INTERFACE_EVENT_UDF_EXECUTION.md`
 
 ---
 
@@ -38,8 +39,13 @@ This separation is required so wrapper/native-hosting lanes do not overload sema
 | `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default except `OutputType=Addin`, where `oxvba build` packages the bundle into a generated `.xll` |
 | `WrapperExe` | Native executable wrapper over a canonical `.oxb` payload | planned delivery lane |
 | `WrapperLibrary` | Native DLL/shared-library wrapper over a canonical `.oxb` payload | planned delivery lane |
+| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | planned delivery lane; not satisfied by generated-source skeletons alone |
 
 Default: `Bundle`
+
+`WrappedComServer` is the canonical build-target spelling. `WrapperComServer` is reserved only as a compatibility alias for human input if project parsers or host surfaces choose to accept it; canonical generated `.basproj` files and host DTOs should emit `WrappedComServer`.
+
+`OutputType=ComServer` and `BuildTarget=WrappedComServer` are intentionally separate. `OutputType=ComServer` declares semantic COM server shape: exposed/creatable classes, class/interface metadata, and COM server rules for project execution. `BuildTarget=WrappedComServer` declares the physical packaging lane: compile the canonical `.oxb` plus reusable descriptor metadata into a Windows in-process COM DLL wrapper.
 
 ---
 
@@ -54,6 +60,8 @@ The wrapper boundary must receive enough information from the canonical OxVBA si
 - native export descriptors when applicable
 - project/runtime policy metadata required at launch
 - reference metadata needed for deterministic host bootstrap
+- COM class/interface/member/event descriptors when `BuildTarget=WrappedComServer`
+- registration metadata: CLSIDs, ProgIDs, type library identity, bitness, registration scope, and manifest or registry output plan
 
 This contract intentionally keeps:
 - compiler/runtime semantics in the existing OxVBA core
@@ -68,5 +76,23 @@ This spec does not by itself define:
 - DLL/shared-library ABI/export layout
 - COM server registration details
 - XLL entrypoint layout
+
+---
+
+## 6. WrappedComServer Boundary
+
+The WrappedComServer lane produces a Windows desktop in-process COM server wrapper around the canonical OxVBA bundle. The expected artifact set is:
+
+- `.oxb` canonical semantic payload
+- compiled DLL containing the COM entry points and wrapper runtime
+- generated type library when the selected tier requires early binding
+- registration plan and, where selected, registry script or registration-free manifest
+- build transcript, diagnostics, and debug symbols where available
+
+The first physical tier must provide standard in-process COM activation and late-bound dispatch for the scoped class set before any broader server/export row can move beyond planned/subset status. Later tiers add generated type libraries, dual-interface vtable projection, and connection-point events.
+
+Current generated-source COM skeletons are scaffolding only. They do not satisfy the WrappedComServer boundary unless the build produces a loadable DLL and the relevant validation row has runtime evidence for activation, object creation, dispatch, and any named Office/VBA client behavior.
+
+The lane is Windows-only unless a future workset defines a portable equivalent. Bitness, toolchain availability, registration scope, and administrative requirements must be reported through build-plan/build-result surfaces rather than inferred from CLI text.
 
 Those are downstream delivery lanes built on this boundary.
