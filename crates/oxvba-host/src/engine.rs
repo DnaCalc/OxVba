@@ -9,8 +9,8 @@ use oxvba_com::{
     DynamicEventPayload, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest,
-    compile_project, compile_with_runtime_metadata,
+    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectManifest, compile_project, compile_with_runtime_metadata,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -23,7 +23,10 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{
+    ObjectRef, RuntimeCallArgument, RuntimeCallContext, RuntimeCallFrame, RuntimeCallKind,
+    RuntimeCallResult, RuntimeCallSelector, RuntimeCallSource, RuntimeInterfaceId, Variant,
+};
 use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
 
 use crate::{
@@ -42,6 +45,17 @@ pub enum DiagnosticPhase {
 pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
     message: String,
+}
+
+fn runtime_call_kind_for_project_member(kind: ProjectDynamicMemberKind) -> RuntimeCallKind {
+    match kind {
+        ProjectDynamicMemberKind::Method | ProjectDynamicMemberKind::Function => {
+            RuntimeCallKind::Method
+        }
+        ProjectDynamicMemberKind::PropertyGet => RuntimeCallKind::PropertyGet,
+        ProjectDynamicMemberKind::PropertyLet => RuntimeCallKind::PropertyLet,
+        ProjectDynamicMemberKind::PropertySet => RuntimeCallKind::PropertySet,
+    }
 }
 
 impl PhaseDiagnostic {
@@ -827,6 +841,7 @@ impl Engine {
             .members
             .iter()
             .find(|m| m.member_name.eq_ignore_ascii_case(member))
+            .cloned()
             .ok_or_else(|| {
                 PhaseDiagnostic::runtime(format!(
                     "member `{member}` not found on object {}",
@@ -844,15 +859,82 @@ impl Engine {
             )));
         }
 
+        let frame = Self::build_project_member_call_frame(
+            &object,
+            route.module_name.as_str(),
+            &member_route,
+            args,
+        );
+        self.invoke_project_member_call_frame(session, object, &member_route, frame)
+    }
+
+    fn build_project_member_call_frame(
+        object: &ObjectRef,
+        module_name: &str,
+        member_route: &ProjectDynamicMemberRoute,
+        args: &[Variant],
+    ) -> RuntimeCallFrame {
+        let selector = member_route
+            .dispatch_id
+            .or(member_route.known_dispatch_token)
+            .map(|dispatch_id| RuntimeCallSelector::DispatchId {
+                interface: object
+                    .query_interface_projection(RuntimeInterfaceId::IDispatch)
+                    .map(|projection| projection.interface_identity),
+                dispatch_id,
+            })
+            .unwrap_or_else(|| RuntimeCallSelector::Name {
+                receiver_type: Some(module_name.to_string()),
+                member_name: member_route.member_name.clone(),
+            });
+        let mut frame = RuntimeCallFrame::new(
+            selector,
+            runtime_call_kind_for_project_member(member_route.kind),
+        )
+        .with_receiver(object.clone())
+        .with_context(RuntimeCallContext::new(RuntimeCallSource::InternalProject));
+
+        let property_put_index = match member_route.kind {
+            ProjectDynamicMemberKind::PropertyLet | ProjectDynamicMemberKind::PropertySet => {
+                args.len().checked_sub(1)
+            }
+            _ => None,
+        };
+        for (index, arg) in args.iter().cloned().enumerate() {
+            let call_arg = RuntimeCallArgument::by_value(arg);
+            if Some(index) == property_put_index {
+                frame.set_property_put_arg(call_arg);
+            } else {
+                frame.push_positional_arg(call_arg);
+            }
+        }
+        frame
+    }
+
+    fn invoke_project_member_call_frame(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        object: ObjectRef,
+        member_route: &ProjectDynamicMemberRoute,
+        frame: RuntimeCallFrame,
+    ) -> Result<Variant, PhaseDiagnostic> {
+        let mut visible_args = frame
+            .positional_args
+            .iter()
+            .map(|arg| arg.value.clone())
+            .collect::<Vec<_>>();
+        if let Some(property_put_arg) = frame.property_put_arg {
+            visible_args.push(property_put_arg.value);
+        }
         // Class members have an implicit `Me` parameter in slot 0.
         // Prepend the canonical ObjectRef value for `Me`, then the caller-supplied args.
-        let has_implicit_me = member_route.param_slots.len() > args.len();
+        let has_implicit_me = member_route.param_slots.len() > visible_args.len();
         let full_args: Vec<Variant> = if has_implicit_me {
             let mut v = vec![Variant::from_object_ref(object)];
-            v.extend_from_slice(args);
+            v.append(&mut visible_args);
             v
         } else {
-            args.to_vec()
+            visible_args
         };
 
         session
@@ -866,8 +948,12 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)?;
 
         match member_route.return_slot {
-            Some(slot) => Ok(session.read_variant_slot(slot)),
-            None => Ok(Variant::empty()),
+            Some(slot) => Ok(RuntimeCallResult::value(session.read_variant_slot(slot))
+                .value
+                .expect("call result should carry value")),
+            None => Ok(RuntimeCallResult::empty()
+                .value
+                .unwrap_or_else(Variant::empty)),
         }
     }
 
@@ -1245,5 +1331,57 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
             Some(("DeclareInvoke", CapabilityId::DynamicLinking))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oxvba_compiler::{ProjectDynamicMemberKind, ProjectDynamicMemberRoute};
+    use oxvba_runtime::{ObjectRef, RuntimeCallKind, RuntimeCallSelector, Variant};
+
+    use super::Engine;
+
+    fn member_route(kind: ProjectDynamicMemberKind) -> ProjectDynamicMemberRoute {
+        ProjectDynamicMemberRoute {
+            member_name: "Value".to_string(),
+            lowered_name: "project_widget_value".to_string(),
+            known_dispatch_token: Some(0),
+            dispatch_id: Some(0),
+            member_flags: None,
+            is_default_member: true,
+            kind,
+            visible_param_count: 1,
+            params: Vec::new(),
+            entry_pc: 10,
+            param_slots: vec![0, 1],
+            return_slot: Some(2),
+        }
+    }
+
+    #[test]
+    fn project_member_call_frame_separates_property_put_value() {
+        let object = ObjectRef::from_compat_identity(88);
+        let route = member_route(ProjectDynamicMemberKind::PropertyLet);
+        let frame = Engine::build_project_member_call_frame(
+            &object,
+            "Widget",
+            &route,
+            &[Variant::from_i32(42)],
+        );
+
+        assert_eq!(frame.kind, RuntimeCallKind::PropertyLet);
+        assert!(matches!(
+            frame.selector,
+            RuntimeCallSelector::DispatchId { dispatch_id: 0, .. }
+        ));
+        assert!(frame.positional_args.is_empty());
+        assert_eq!(
+            frame
+                .property_put_arg
+                .as_ref()
+                .and_then(|arg| arg.value.as_i32()),
+            Some(42)
+        );
+        assert_eq!(frame.receiver.as_ref().map(ObjectRef::raw), Some(88));
     }
 }

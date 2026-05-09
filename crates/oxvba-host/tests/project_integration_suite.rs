@@ -104,11 +104,41 @@ fn format_expected_variant(value: &Variant) -> Result<String, String> {
                 .as_i32()
                 .ok_or_else(|| "invalid Long payload".to_string())?
         ),
+        VarType::SignedByte => format!(
+            "i32:{}",
+            value
+                .as_i8()
+                .ok_or_else(|| "invalid SignedByte payload".to_string())?
+        ),
+        VarType::UnsignedInteger => format!(
+            "i32:{}",
+            value
+                .as_u16()
+                .ok_or_else(|| "invalid UnsignedInteger payload".to_string())?
+        ),
+        VarType::UnsignedLong => format!(
+            "u32:{}",
+            value
+                .as_u32()
+                .ok_or_else(|| "invalid UnsignedLong payload".to_string())?
+        ),
         VarType::LongLong => format!(
             "i64:{}",
             value
                 .as_i64()
                 .ok_or_else(|| "invalid LongLong payload".to_string())?
+        ),
+        VarType::UnsignedLongLong => format!(
+            "u64:{}",
+            value
+                .as_u64()
+                .ok_or_else(|| "invalid UnsignedLongLong payload".to_string())?
+        ),
+        VarType::UnsignedInt => format!(
+            "u32:{}",
+            value
+                .as_u32()
+                .ok_or_else(|| "invalid UnsignedInt payload".to_string())?
         ),
         VarType::Byte => format!(
             "i32:{}",
