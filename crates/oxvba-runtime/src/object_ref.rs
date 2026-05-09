@@ -18,6 +18,7 @@ pub enum RuntimeInterfaceId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(C)]
 pub struct RuntimeGuid {
     pub data1: u32,
     pub data2: u16,
@@ -504,11 +505,8 @@ fn normalize_runtime_member_name(member_name: &str) -> String {
 
 #[repr(C)]
 pub struct RawRuntimeIUnknownVtbl {
-    pub query_interface: unsafe extern "C" fn(
-        this: *mut c_void,
-        iid: RuntimeInterfaceId,
-        ppv: *mut *mut c_void,
-    ) -> i32,
+    pub query_interface:
+        unsafe extern "C" fn(this: *mut c_void, iid: RuntimeGuid, ppv: *mut *mut c_void) -> i32,
     pub add_ref: unsafe extern "C" fn(this: *mut c_void) -> u32,
     pub release: unsafe extern "C" fn(this: *mut c_void) -> u32,
 }
@@ -534,7 +532,7 @@ static COMPAT_OBJECT_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
 
 unsafe extern "C" fn compat_query_interface(
     this: *mut c_void,
-    iid: RuntimeInterfaceId,
+    iid: RuntimeGuid,
     ppv: *mut *mut c_void,
 ) -> i32 {
     if ppv.is_null() {
@@ -544,14 +542,13 @@ unsafe extern "C" fn compat_query_interface(
         *ppv = core::ptr::null_mut();
     }
     let owner = compat_owner_from_this(this);
-    let supports_iid = iid != RuntimeInterfaceId::Unsupported
-        && unsafe {
-            (*owner)
-                .class_descriptor
-                .interfaces
-                .iter()
-                .any(|interface| interface.id == iid)
-        };
+    let supports_iid = unsafe {
+        (*owner)
+            .class_descriptor
+            .interfaces
+            .iter()
+            .any(|interface| interface.identity.guid == iid)
+    };
     if !supports_iid {
         return RUNTIME_E_NOINTERFACE;
     }
@@ -1215,6 +1212,20 @@ mod tests {
 
     #[test]
     fn descriptor_backed_object_supports_raw_query_interface_projection() {
+        const CUSTOM_GUID: RuntimeGuid = RuntimeGuid::new(
+            0x3333_3333,
+            0x4444,
+            0x5555,
+            [0x66, 0x66, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77],
+        );
+        const CUSTOM_IDENTITY: RuntimeInterfaceIdentity = RuntimeInterfaceIdentity::custom(
+            CUSTOM_GUID,
+            "Project._WidgetCustom",
+            RuntimeInterfaceKind::Dual,
+            Some(1),
+            Some(0),
+            Some(1033),
+        );
         static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
             dispatch_id: 0,
@@ -1232,25 +1243,50 @@ mod tests {
             members: &[VALUE_MEMBER],
             dual_dispatch: true,
         };
+        static CUSTOM_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::Unsupported,
+            identity: CUSTOM_IDENTITY,
+            name: "Project._WidgetCustom",
+            members: &[VALUE_MEMBER],
+            dual_dispatch: true,
+        };
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "Project.Widget",
-            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, DISPATCH_INTERFACE],
+            interfaces: &[
+                RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+                DISPATCH_INTERFACE,
+                CUSTOM_INTERFACE,
+            ],
         };
 
         let object = ObjectRef::from_compat_identity_with_descriptor(12, &TEST_CLASS);
-        let mut out = core::ptr::null_mut();
-        let hr = unsafe {
+        let mut dispatch_out = core::ptr::null_mut();
+        let dispatch_hr = unsafe {
             ((*(*object.raw_iunknown()).vtbl).query_interface)(
                 object.raw_iunknown().cast(),
-                RuntimeInterfaceId::IDispatch,
-                &mut out,
+                RUNTIME_GUID_IDISPATCH,
+                &mut dispatch_out,
             )
         };
-        assert_eq!(hr, RUNTIME_S_OK);
-        assert!(!out.is_null());
+        assert_eq!(dispatch_hr, RUNTIME_S_OK);
+        assert_eq!(dispatch_out, object.raw_iunknown().cast());
         assert_eq!(object.strong_count_for_test(), 2);
+
+        let mut custom_out = core::ptr::null_mut();
+        let custom_hr = unsafe {
+            ((*(*object.raw_iunknown()).vtbl).query_interface)(
+                object.raw_iunknown().cast(),
+                CUSTOM_GUID,
+                &mut custom_out,
+            )
+        };
+        assert_eq!(custom_hr, RUNTIME_S_OK);
+        assert_eq!(custom_out, object.raw_iunknown().cast());
+        assert_eq!(object.strong_count_for_test(), 3);
+
         unsafe {
-            ((*(*object.raw_iunknown()).vtbl).release)(out);
+            ((*(*object.raw_iunknown()).vtbl).release)(dispatch_out);
+            ((*(*object.raw_iunknown()).vtbl).release)(custom_out);
         }
         assert_eq!(object.strong_count_for_test(), 1);
     }
@@ -1263,7 +1299,7 @@ mod tests {
         let hr = unsafe {
             ((*vtbl).query_interface)(
                 object.raw_iunknown().cast(),
-                RuntimeInterfaceId::IUnknown,
+                RUNTIME_GUID_IUNKNOWN,
                 &mut out,
             )
         };
@@ -1276,10 +1312,17 @@ mod tests {
         let hr = unsafe {
             ((*vtbl).query_interface)(
                 object.raw_iunknown().cast(),
-                RuntimeInterfaceId::Unsupported,
+                RuntimeGuid::new(
+                    0xFFFF_FFFF,
+                    0xFFFF,
+                    0xFFFF,
+                    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+                ),
                 &mut out,
             )
         };
         assert_eq!(hr, RUNTIME_E_NOINTERFACE);
+        assert!(out.is_null());
+        assert_eq!(object.strong_count_for_test(), 1);
     }
 }
