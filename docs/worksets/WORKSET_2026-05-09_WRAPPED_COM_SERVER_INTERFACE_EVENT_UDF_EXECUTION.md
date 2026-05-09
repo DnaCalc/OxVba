@@ -107,6 +107,11 @@ OxVba already has important substrate:
   registration artifacts, required tools, capability profile, and per-user
   registration plan, and `EmbeddedBuildResult` exposes direct `dll_path`,
   `tlb_path`, and `registration_plan` fields.
+- Final implemented-subset terminal audit is published at
+  `docs/evidence/conformance/WRAPPED_COM_SERVER_TERMINAL_AUDIT_2026-05-09.md`.
+  It confirms the terminal checks passed and keeps the remaining Office/VBA,
+  broader dual-interface, richer event, and richer host-UDF gaps explicit in
+  the validation rows.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
