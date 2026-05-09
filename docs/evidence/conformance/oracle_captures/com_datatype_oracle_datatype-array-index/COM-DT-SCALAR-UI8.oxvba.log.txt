@@ -1,0 +1,3 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running `target\debug\oxvba-cli.exe run 'C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_datatype_oracle_datatype-array-index\COM-DT-SCALAR-UI8.bas' --dump-values --allow-com-activation true --runtime-class host-native`
+VALUES:object:20001|u64:9000000000|string:"21:9000000000"

@@ -5178,6 +5178,13 @@ fn parse_stdlib_intrinsic_call_expr(
     Some(BoundExpr::IntrinsicCall { name, args })
 }
 
+fn starts_with_call_name_ci(text: &str, name: &str) -> bool {
+    text.trim_start()
+        .get(..name.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(name))
+        && text.trim_start()[name.len()..].trim_start().starts_with('(')
+}
+
 fn parse_varptr_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if let Some(base) = parse_array_element_base_for_varptr(arg, array_bounds) {
         return Some(BoundExpr::VarPtrArrayBuffer(base));
@@ -5206,13 +5213,30 @@ fn parse_runtime_array_index_target(
         return None;
     }
     let base = normalize_ident(expr[..open].trim())?;
-    let bounds = array_bounds.get(&base)?;
-    if !bounds.is_empty() {
-        return None;
-    }
     let args = split_call_args(expr[open + 1..close].trim())?;
     if args.is_empty() {
         return None;
+    }
+    match array_bounds.get(&base) {
+        Some(bounds) if bounds.is_empty() => {}
+        Some(_) => return None,
+        None => {
+            let dynamic_bound_arg = args.iter().any(|arg| {
+                let trimmed = arg.trim();
+                (starts_with_call_name_ci(trimmed, "lbound") || starts_with_call_name_ci(trimmed, "ubound"))
+                    && trimmed
+                        .find('(')
+                        .and_then(|open| trimmed.rfind(')').map(|close| (open, close)))
+                        .is_some_and(|(open, close)| {
+                            close > open
+                                && normalize_ident(trimmed[open + 1..close].trim())
+                                    .is_some_and(|name| name.eq_ignore_ascii_case(&base))
+                        })
+            });
+            if !dynamic_bound_arg {
+                return None;
+            }
+        }
     }
     let indices = args
         .into_iter()

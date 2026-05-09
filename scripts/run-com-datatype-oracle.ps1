@@ -74,7 +74,9 @@ End Function
     function Invoke-OxProbe {
         param($Case)
         $sourcePath = Join-Path $runDir ($Case.id + ".bas")
-        $describe = if ($Case.kind -eq "array") {
+        $describe = if ($Case.id -eq "COM-DT-ARRAY-DECIMAL") {
+            'observed = CStr(VarType(v)) & ":" & CStr(LBound(v)) & ":" & CStr(UBound(v)) & ":" & CStr(v(LBound(v))) & ":" & CStr(v(UBound(v)))'
+        } elseif ($Case.kind -eq "array") {
             'observed = CStr(VarType(v)) & ":" & CStr(LBound(v)) & ":" & CStr(UBound(v))'
         } else {
             'observed = CStr(VarType(v)) & ":" & CStr(v)'
