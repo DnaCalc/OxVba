@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use oxvba_compiler::bundle::BundleComEventDescriptor;
 use oxvba_project::ComClassExportDescriptor;
 
 use crate::compile::{BuildError, ShimOutputType, compile_shim};
@@ -69,7 +70,8 @@ pub fn compile_wrapped_com_server_shim(
     let tlb_literal = tlb_path.to_string_lossy().replace('\\', "/");
     let events = load_wrapped_com_events(oxb_path);
     generate_typelib_with_events(project_name, &tlb_literal, classes, &events)?;
-    let source = generate_com_server_shim(project_name, oxb_path, Some(&tlb_literal), classes);
+    let source =
+        generate_com_server_shim(project_name, oxb_path, Some(&tlb_literal), classes, &events);
     compile_shim(&source, output_path, ShimOutputType::Dll)?;
     Ok(WrappedComServerBuildOutput {
         dll_path: output_path.to_path_buf(),
@@ -107,6 +109,7 @@ pub fn generate_com_server_shim(
     oxb_path: &str,
     typelib_path: Option<&str>,
     classes: &[ComClassExportDescriptor],
+    events: &[BundleComEventDescriptor],
 ) -> String {
     let mut source = String::new();
 
@@ -156,9 +159,10 @@ const E_NOTIMPL: i32 = 0x80004001_u32 as i32;
     ));
 
     // GUID struct and IID constants
-    source.push_str(&generate_guid_definitions(project_name, classes));
+    source.push_str(&generate_guid_definitions(project_name, classes, events));
     source.push_str(&generate_class_table(classes));
     source.push_str(&generate_member_tables(classes));
+    source.push_str(&generate_event_tables(project_name, classes, events));
 
     // IUnknown / IDispatch / IClassFactory vtable structs
     source.push_str(generate_vtable_structs());
@@ -213,7 +217,11 @@ pub extern "system" fn DllCanUnloadNow() -> i32 {
     source
 }
 
-fn generate_guid_definitions(project_name: &str, classes: &[ComClassExportDescriptor]) -> String {
+fn generate_guid_definitions(
+    project_name: &str,
+    classes: &[ComClassExportDescriptor],
+    events: &[BundleComEventDescriptor],
+) -> String {
     let mut s = String::new();
 
     s.push_str(
@@ -240,6 +248,14 @@ const IID_ICLASSFACTORY: GUID = GUID {
     data1: 0x00000001, data2: 0x0000, data3: 0x0000,
     data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
 };
+const IID_ICONNECTIONPOINTCONTAINER: GUID = GUID {
+    data1: 0xB196B284, data2: 0xBAB4, data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+const IID_ICONNECTIONPOINT: GUID = GUID {
+    data1: 0xB196B286, data2: 0xBAB4, data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
 
 "#,
     );
@@ -263,6 +279,26 @@ const IID_ICLASSFACTORY: GUID = GUID {
             iface_guid.data1, iface_guid.data2, iface_guid.data3,
             iface_guid.data4[0], iface_guid.data4[1], iface_guid.data4[2], iface_guid.data4[3],
             iface_guid.data4[4], iface_guid.data4[5], iface_guid.data4[6], iface_guid.data4[7],
+        ));
+    }
+
+    for class in classes {
+        if !events.iter().any(|event| {
+            event
+                .source_module_name
+                .eq_ignore_ascii_case(&class.class_name)
+        }) {
+            continue;
+        }
+        let source_name = format!("_{}Events", class.class_name);
+        let source_uuid_str = deterministic_uuid(project_name, &source_name);
+        let source_guid = crate::typelib_gen::parse_uuid(&source_uuid_str);
+        s.push_str(&format!(
+            "const IID_{}EVENTS: GUID = GUID {{\n    data1: {:#010X}, data2: {:#06X}, data3: {:#06X},\n    data4: [{:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}, {:#04X}],\n}};\n\n",
+            class.class_name.to_ascii_uppercase(),
+            source_guid.data1, source_guid.data2, source_guid.data3,
+            source_guid.data4[0], source_guid.data4[1], source_guid.data4[2], source_guid.data4[3],
+            source_guid.data4[4], source_guid.data4[5], source_guid.data4[6], source_guid.data4[7],
         ));
     }
 
@@ -426,6 +462,64 @@ unsafe fn wide_name_to_string(ptr: *const u16) -> Option<String> {
     s
 }
 
+fn generate_event_tables(
+    _project_name: &str,
+    classes: &[ComClassExportDescriptor],
+    events: &[BundleComEventDescriptor],
+) -> String {
+    let mut s = String::from(
+        r#"struct EventDescriptor {
+    name: &'static str,
+    dispid: i32,
+}
+
+"#,
+    );
+    for (class_index, class) in classes.iter().enumerate() {
+        s.push_str(&format!(
+            "static CLASS_{class_index}_EVENTS: &[EventDescriptor] = &[\n"
+        ));
+        for (event_index, event) in events
+            .iter()
+            .filter(|event| {
+                event
+                    .source_module_name
+                    .eq_ignore_ascii_case(&class.class_name)
+            })
+            .enumerate()
+        {
+            let dispid = event.event_token.unwrap_or((event_index + 1) as i32);
+            s.push_str(&format!(
+                "    EventDescriptor {{ name: \"{}\", dispid: {dispid} }},\n",
+                rust_string_literal(&event.event_name)
+            ));
+        }
+        s.push_str("];\n\n");
+    }
+    s.push_str("static CLASS_EVENTS: &[&[EventDescriptor]] = &[\n");
+    for class_index in 0..classes.len() {
+        s.push_str(&format!("    CLASS_{class_index}_EVENTS,\n"));
+    }
+    s.push_str("];\n\n");
+    s.push_str("fn events_for_class(class_index: usize) -> &'static [EventDescriptor] {\n    CLASS_EVENTS.get(class_index).copied().unwrap_or(&[])\n}\n\n");
+    s.push_str("fn first_event_for_class(class_index: usize) -> Option<&'static EventDescriptor> {\n    events_for_class(class_index).first()\n}\n\n");
+    s.push_str("fn source_iid_for_class(class_index: usize) -> Option<&'static GUID> {\n    match class_index {\n");
+    for (class_index, class) in classes.iter().enumerate() {
+        if events.iter().any(|event| {
+            event
+                .source_module_name
+                .eq_ignore_ascii_case(&class.class_name)
+        }) {
+            s.push_str(&format!(
+                "        {class_index} => Some(&IID_{}EVENTS),\n",
+                class.class_name.to_ascii_uppercase()
+            ));
+        }
+    }
+    s.push_str("        _ => None,\n    }\n}\n\n");
+    s
+}
+
 fn rust_string_literal(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -462,6 +556,27 @@ struct IDispatchVtbl {
     get_type_info: unsafe extern "system" fn(*mut c_void, u32, u32, *mut *mut c_void) -> i32,
     get_ids_of_names: unsafe extern "system" fn(*mut c_void, *const GUID, *const *const u16, u32, u32, *mut i32) -> i32,
     invoke: unsafe extern "system" fn(*mut c_void, i32, *const GUID, u32, u16, *mut c_void, *mut c_void, *mut c_void, *mut u32) -> i32,
+}
+
+#[repr(C)]
+struct IConnectionPointContainerVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    enum_connection_points: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+    find_connection_point: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+}
+
+#[repr(C)]
+struct IConnectionPointVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    get_connection_interface: unsafe extern "system" fn(*mut c_void, *mut GUID) -> i32,
+    get_connection_point_container: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
+    advise: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut u32) -> i32,
+    unadvise: unsafe extern "system" fn(*mut c_void, u32) -> i32,
+    enum_connections: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
 }
 
 #[repr(C)]
@@ -899,11 +1014,20 @@ fn generate_dispatch_instance_impl() -> &'static str {
 #[repr(C)]
 struct OxVbaDispatchInstance {
     vtbl: *const IDispatchVtbl,
+    connection_point_container_vtbl: *const IConnectionPointContainerVtbl,
+    connection_point_vtbl: *const IConnectionPointVtbl,
     ref_count: AtomicI32,
     class_index: usize,
+    next_cookie: u32,
+    sinks: Vec<AdvisedSink>,
     engine: Rc<Engine>,
     session: Rc<RefCell<ProjectRuntimeSession>>,
     object: ObjectRef,
+}
+
+struct AdvisedSink {
+    cookie: u32,
+    dispatch: *mut c_void,
 }
 
 static DISPATCH_VTBL: WrappedDualVtbl = WrappedDualVtbl {
@@ -915,6 +1039,25 @@ static DISPATCH_VTBL: WrappedDualVtbl = WrappedDualVtbl {
     get_ids_of_names: di_get_ids_of_names,
     invoke: di_invoke,
     vtable_call_0: di_vtable_call_0,
+};
+
+static CONNECTION_POINT_CONTAINER_VTBL: IConnectionPointContainerVtbl = IConnectionPointContainerVtbl {
+    query_interface: cpc_query_interface,
+    add_ref: cpc_add_ref,
+    release: cpc_release,
+    enum_connection_points: cpc_enum_connection_points,
+    find_connection_point: cpc_find_connection_point,
+};
+
+static CONNECTION_POINT_VTBL: IConnectionPointVtbl = IConnectionPointVtbl {
+    query_interface: cp_query_interface,
+    add_ref: cp_add_ref,
+    release: cp_release,
+    get_connection_interface: cp_get_connection_interface,
+    get_connection_point_container: cp_get_connection_point_container,
+    advise: cp_advise,
+    unadvise: cp_unadvise,
+    enum_connections: cp_enum_connections,
 };
 
 impl OxVbaDispatchInstance {
@@ -936,8 +1079,12 @@ impl OxVbaDispatchInstance {
             .map_err(|_| CLASS_E_CLASSNOTAVAILABLE)?;
         Ok(Self {
             vtbl: (&DISPATCH_VTBL as *const WrappedDualVtbl).cast::<IDispatchVtbl>(),
+            connection_point_container_vtbl: &CONNECTION_POINT_CONTAINER_VTBL,
+            connection_point_vtbl: &CONNECTION_POINT_VTBL,
             ref_count: AtomicI32::new(1),
             class_index,
+            next_cookie: 1,
+            sinks: Vec::new(),
             engine,
             session: Rc::new(RefCell::new(session)),
             object,
@@ -953,8 +1100,12 @@ impl OxVbaDispatchInstance {
     ) -> Self {
         Self {
             vtbl: (&DISPATCH_VTBL as *const WrappedDualVtbl).cast::<IDispatchVtbl>(),
+            connection_point_container_vtbl: &CONNECTION_POINT_CONTAINER_VTBL,
+            connection_point_vtbl: &CONNECTION_POINT_VTBL,
             ref_count: AtomicI32::new(ref_count),
             class_index,
+            next_cookie: 1,
+            sinks: Vec::new(),
             engine,
             session,
             object,
@@ -978,6 +1129,10 @@ unsafe extern "system" fn di_query_interface(
         *ppv = this;
         di_add_ref(this);
         S_OK
+    } else if *iid == IID_ICONNECTIONPOINTCONTAINER && source_iid_for_class(inst.class_index).is_some() {
+        *ppv = (&mut *(this as *mut OxVbaDispatchInstance)).connection_point_container_ptr();
+        di_add_ref(this);
+        S_OK
     } else {
         E_NOINTERFACE
     }
@@ -989,9 +1144,12 @@ unsafe extern "system" fn di_add_ref(this: *mut c_void) -> u32 {
 }
 
 unsafe extern "system" fn di_release(this: *mut c_void) -> u32 {
-    let inst = &*(this as *const OxVbaDispatchInstance);
+    let inst = &mut *(this as *mut OxVbaDispatchInstance);
     let prev = inst.ref_count.fetch_sub(1, Ordering::SeqCst);
     if prev <= 1 {
+        for sink in inst.sinks.drain(..) {
+            release_dispatch_sink(sink.dispatch);
+        }
         // Future: trigger Class_Terminate here before deallocation
         drop(Box::from_raw(this as *mut OxVbaDispatchInstance));
         GLOBAL_REF_COUNT.fetch_sub(1, Ordering::SeqCst);
@@ -999,6 +1157,172 @@ unsafe extern "system" fn di_release(this: *mut c_void) -> u32 {
     } else {
         (prev - 1) as u32
     }
+}
+
+impl OxVbaDispatchInstance {
+    fn connection_point_container_ptr(&mut self) -> *mut c_void {
+        (&mut self.connection_point_container_vtbl as *mut *const IConnectionPointContainerVtbl)
+            .cast::<c_void>()
+    }
+
+    fn connection_point_ptr(&mut self) -> *mut c_void {
+        (&mut self.connection_point_vtbl as *mut *const IConnectionPointVtbl).cast::<c_void>()
+    }
+}
+
+unsafe fn instance_from_cpc(this: *mut c_void) -> *mut OxVbaDispatchInstance {
+    (this as *mut u8)
+        .sub(std::mem::offset_of!(
+            OxVbaDispatchInstance,
+            connection_point_container_vtbl
+        ))
+        .cast::<OxVbaDispatchInstance>()
+}
+
+unsafe fn instance_from_cp(this: *mut c_void) -> *mut OxVbaDispatchInstance {
+    (this as *mut u8)
+        .sub(std::mem::offset_of!(OxVbaDispatchInstance, connection_point_vtbl))
+        .cast::<OxVbaDispatchInstance>()
+}
+
+unsafe fn add_ref_dispatch_sink(dispatch: *mut c_void) {
+    let object = &*(dispatch as *const IDispatchInterface);
+    ((*object.vtbl).add_ref)(dispatch);
+}
+
+unsafe fn release_dispatch_sink(dispatch: *mut c_void) {
+    let object = &*(dispatch as *const IDispatchInterface);
+    ((*object.vtbl).release)(dispatch);
+}
+
+#[repr(C)]
+struct IDispatchInterface {
+    vtbl: *const IDispatchVtbl,
+}
+
+#[repr(C)]
+struct IUnknownInterface {
+    vtbl: *const IUnknownVtbl,
+}
+
+unsafe extern "system" fn cpc_query_interface(this: *mut c_void, riid: *const GUID, ppv: *mut *mut c_void) -> i32 {
+    di_query_interface(instance_from_cpc(this).cast::<c_void>(), riid, ppv)
+}
+
+unsafe extern "system" fn cpc_add_ref(this: *mut c_void) -> u32 {
+    di_add_ref(instance_from_cpc(this).cast::<c_void>())
+}
+
+unsafe extern "system" fn cpc_release(this: *mut c_void) -> u32 {
+    di_release(instance_from_cpc(this).cast::<c_void>())
+}
+
+unsafe extern "system" fn cpc_enum_connection_points(_this: *mut c_void, pp_enum: *mut *mut c_void) -> i32 {
+    if !pp_enum.is_null() {
+        *pp_enum = std::ptr::null_mut();
+    }
+    E_NOTIMPL
+}
+
+unsafe extern "system" fn cpc_find_connection_point(this: *mut c_void, riid: *const GUID, pp_cp: *mut *mut c_void) -> i32 {
+    if riid.is_null() || pp_cp.is_null() {
+        return E_INVALIDARG;
+    }
+    *pp_cp = std::ptr::null_mut();
+    let inst = &mut *instance_from_cpc(this);
+    let Some(source_iid) = source_iid_for_class(inst.class_index) else {
+        return E_NOINTERFACE;
+    };
+    if *riid != *source_iid {
+        return E_NOINTERFACE;
+    }
+    *pp_cp = inst.connection_point_ptr();
+    di_add_ref(inst as *mut OxVbaDispatchInstance as *mut c_void);
+    S_OK
+}
+
+unsafe extern "system" fn cp_query_interface(this: *mut c_void, riid: *const GUID, ppv: *mut *mut c_void) -> i32 {
+    if ppv.is_null() || riid.is_null() {
+        return E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    let iid = &*riid;
+    if *iid == IID_IUNKNOWN || *iid == IID_ICONNECTIONPOINT {
+        *ppv = this;
+        cp_add_ref(this);
+        S_OK
+    } else {
+        E_NOINTERFACE
+    }
+}
+
+unsafe extern "system" fn cp_add_ref(this: *mut c_void) -> u32 {
+    di_add_ref(instance_from_cp(this).cast::<c_void>())
+}
+
+unsafe extern "system" fn cp_release(this: *mut c_void) -> u32 {
+    di_release(instance_from_cp(this).cast::<c_void>())
+}
+
+unsafe extern "system" fn cp_get_connection_interface(this: *mut c_void, p_iid: *mut GUID) -> i32 {
+    if p_iid.is_null() {
+        return E_INVALIDARG;
+    }
+    let inst = &*instance_from_cp(this);
+    let Some(source_iid) = source_iid_for_class(inst.class_index) else {
+        return E_NOINTERFACE;
+    };
+    *p_iid = *source_iid;
+    S_OK
+}
+
+unsafe extern "system" fn cp_get_connection_point_container(this: *mut c_void, pp_cpc: *mut *mut c_void) -> i32 {
+    if pp_cpc.is_null() {
+        return E_INVALIDARG;
+    }
+    let inst = &mut *instance_from_cp(this);
+    *pp_cpc = inst.connection_point_container_ptr();
+    di_add_ref(inst as *mut OxVbaDispatchInstance as *mut c_void);
+    S_OK
+}
+
+unsafe extern "system" fn cp_advise(this: *mut c_void, p_unk_sink: *mut c_void, pdw_cookie: *mut u32) -> i32 {
+    if p_unk_sink.is_null() || pdw_cookie.is_null() {
+        return E_INVALIDARG;
+    }
+    *pdw_cookie = 0;
+    let inst = &mut *instance_from_cp(this);
+    let sink_object = &*(p_unk_sink as *const IUnknownInterface);
+    let mut dispatch_ptr: *mut c_void = std::ptr::null_mut();
+    let hr = ((*sink_object.vtbl).query_interface)(p_unk_sink, &IID_IDISPATCH, &mut dispatch_ptr);
+    if hr < 0 || dispatch_ptr.is_null() {
+        return E_NOINTERFACE;
+    }
+    let cookie = inst.next_cookie.max(1);
+    inst.next_cookie = inst.next_cookie.saturating_add(1).max(1);
+    inst.sinks.push(AdvisedSink { cookie, dispatch: dispatch_ptr });
+    *pdw_cookie = cookie;
+    S_OK
+}
+
+unsafe extern "system" fn cp_unadvise(this: *mut c_void, dw_cookie: u32) -> i32 {
+    if dw_cookie == 0 {
+        return E_INVALIDARG;
+    }
+    let inst = &mut *instance_from_cp(this);
+    let Some(index) = inst.sinks.iter().position(|sink| sink.cookie == dw_cookie) else {
+        return E_INVALIDARG;
+    };
+    let sink = inst.sinks.remove(index);
+    release_dispatch_sink(sink.dispatch);
+    S_OK
+}
+
+unsafe extern "system" fn cp_enum_connections(_this: *mut c_void, pp_enum: *mut *mut c_void) -> i32 {
+    if !pp_enum.is_null() {
+        *pp_enum = std::ptr::null_mut();
+    }
+    E_NOTIMPL
 }
 
 unsafe extern "system" fn di_vtable_call_0(this: *mut c_void, retval: *mut i32) -> i32 {
@@ -1190,7 +1514,65 @@ unsafe extern "system" fn di_invoke(
             );
         }
     }
+    drop(session);
+    fire_matching_event_sinks(inst, member, params, lcid);
     S_OK
+}
+
+unsafe fn fire_matching_event_sinks(
+    inst: &mut OxVbaDispatchInstance,
+    member: &MemberDescriptor,
+    params: *mut DISPPARAMS,
+    lcid: u32,
+) {
+    if member.kind != MEMBER_KIND_METHOD {
+        return;
+    }
+    let Some(event) = first_event_for_class(inst.class_index) else {
+        return;
+    };
+    let fire_name = format!("Fire{}", event.name);
+    let raise_name = format!("Raise{}", event.name);
+    if !member.name.eq_ignore_ascii_case(&fire_name)
+        && !member.name.eq_ignore_ascii_case(&raise_name)
+        && !member.name.eq_ignore_ascii_case(event.name)
+    {
+        return;
+    }
+
+    let mut sink_args: Vec<VARIANT> = Vec::new();
+    if !params.is_null() && !(*params).rgvarg.is_null() {
+        for i in 0..(*params).cArgs as usize {
+            let mut arg: VARIANT = std::mem::zeroed();
+            std::ptr::copy_nonoverlapping((*params).rgvarg.add(i), &mut arg, 1);
+            sink_args.push(arg);
+        }
+    }
+    let mut disp_params = DISPPARAMS {
+        rgvarg: if sink_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            sink_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: sink_args.len() as u32,
+        cNamedArgs: 0,
+    };
+    for sink in &inst.sinks {
+        let dispatch = &*(sink.dispatch as *const IDispatchInterface);
+        let mut arg_err = u32::MAX;
+        let _ = ((*dispatch.vtbl).invoke)(
+            sink.dispatch,
+            event.dispid,
+            std::ptr::null(),
+            lcid,
+            DISPATCH_METHOD as u16,
+            (&mut disp_params as *mut DISPPARAMS).cast(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut arg_err,
+        );
+    }
 }
 "#
 }
@@ -1338,7 +1720,7 @@ mod tests {
             members: vec![],
         }];
 
-        let source = generate_com_server_shim("TestProj", "test.oxb", None, &classes);
+        let source = generate_com_server_shim("TestProj", "test.oxb", None, &classes, &[]);
         assert!(source.contains("DllMain"));
         assert!(source.contains("DllGetClassObject"));
         assert!(source.contains("DllCanUnloadNow"));
@@ -1365,7 +1747,7 @@ mod tests {
             }],
         }];
 
-        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes);
+        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes, &[]);
         assert!(source.contains("OxVbaClassFactory"));
         assert!(source.contains("IClassFactoryVtbl"));
         assert!(source.contains("cf_create_instance"));
@@ -1382,7 +1764,7 @@ mod tests {
             members: vec![],
         }];
 
-        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes);
+        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes, &[]);
         assert!(source.contains("OxVbaDispatchInstance"));
         assert!(source.contains("compile_and_prepare_session_from_bundle"));
         assert!(source.contains("create_class_instance"));
@@ -1414,7 +1796,7 @@ mod tests {
             },
         ];
 
-        let source = generate_com_server_shim("Multi", "test.oxb", None, &classes);
+        let source = generate_com_server_shim("Multi", "test.oxb", None, &classes, &[]);
         assert!(source.contains("CLSID_ALPHA"));
         assert!(source.contains("CLSID_BETA"));
         assert!(source.contains("Multi.Alpha"));
@@ -1473,7 +1855,19 @@ mod tests {
                     vb_exposed: true,
                     ..Default::default()
                 },
-                source: "Private stored As Long\nPrivate Sub Class_Initialize()\nstored = 7\nEnd Sub\nPublic Function Ping() As Long\nPing = stored\nEnd Function\nPublic Property Get Value() As Long\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n As Long)\nstored = n\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Function ReturnChild() As Object\nDim c As New Child\nSet ReturnChild = c\nEnd Function\nPublic Function Numbers() As Variant\nNumbers = Array(2, 4, 6)\nEnd Function\nPublic Function Boom()\nErr.Raise 77\nEnd Function\n"
+                source: "Public Event Changed(ByVal n As Long)\nPrivate stored As Long\nPrivate Sub Class_Initialize()\nstored = 7\nEnd Sub\nPublic Function Ping() As Long\nPing = stored\nEnd Function\nPublic Sub FireChanged(ByVal n As Long)\nRaiseEvent Changed(n)\nEnd Sub\nPublic Property Get Value() As Long\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n As Long)\nstored = n\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Function ReturnChild() As Object\nDim c As New Child\nSet ReturnChild = c\nEnd Function\nPublic Function Numbers() As Variant\nNumbers = Array(2, 4, 6)\nEnd Function\nPublic Function Boom()\nErr.Raise 77\nEnd Function\n"
+                    .to_string(),
+            },
+            ModuleUnit {
+                module_name: "Sink".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes {
+                    vb_name: "Sink".to_string(),
+                    vb_creatable: true,
+                    vb_exposed: true,
+                    ..Default::default()
+                },
+                source: "Private WithEvents src As Widget\nPublic Sub Attach(ByVal w As Widget)\nSet src = w\nEnd Sub\nPrivate Sub src_Changed(ByVal n As Long)\nEnd Sub\n"
                     .to_string(),
             },
             ModuleUnit {
@@ -1531,6 +1925,14 @@ mod tests {
                         dispatch_id: Some(0),
                         member_flags: None,
                         is_default_member: true,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "FireChanged".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
+                        param_count: 1,
+                        dispatch_id: Some(5),
+                        member_flags: None,
+                        is_default_member: false,
                     },
                     DispatchMemberInfo {
                         member_name: "ReturnChild".to_string(),
@@ -1712,6 +2114,53 @@ mod tests {
             }
 
             #[repr(C)]
+            struct TestConnectionPointContainerVtbl {
+                query_interface: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                enum_connection_points: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                find_connection_point: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+            }
+
+            #[repr(C)]
+            struct TestConnectionPointVtbl {
+                query_interface: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                get_connection_interface:
+                    unsafe extern "system" fn(*mut core::ffi::c_void, *mut TestGuid) -> i32,
+                get_connection_point_container: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                advise: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *mut u32,
+                ) -> i32,
+                unadvise: unsafe extern "system" fn(*mut core::ffi::c_void, u32) -> i32,
+                enum_connections: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+            }
+
+            #[repr(C)]
             struct TestClassFactoryVtbl {
                 query_interface: unsafe extern "system" fn(
                     *mut core::ffi::c_void,
@@ -1740,6 +2189,144 @@ mod tests {
             }
 
             #[repr(C)]
+            struct TestConnectionPointContainerObject {
+                vtbl: *const TestConnectionPointContainerVtbl,
+            }
+
+            #[repr(C)]
+            struct TestConnectionPointObject {
+                vtbl: *const TestConnectionPointVtbl,
+            }
+
+            #[repr(C)]
+            struct TestSink {
+                vtbl: *const TestDispatchVtbl,
+                ref_count: i32,
+                calls: i32,
+                last_arg: i32,
+            }
+
+            const SINK_S_OK: i32 = 0;
+            const SINK_E_INVALIDARG: i32 = 0x80070057_u32 as i32;
+            const SINK_E_NOINTERFACE: i32 = 0x80004002_u32 as i32;
+            const SINK_E_NOTIMPL: i32 = 0x80004001_u32 as i32;
+            const SINK_IID_IUNKNOWN: TestGuid = TestGuid {
+                data1: 0x00000000,
+                data2: 0x0000,
+                data3: 0x0000,
+                data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            };
+            const SINK_IID_IDISPATCH: TestGuid = TestGuid {
+                data1: 0x00020400,
+                data2: 0x0000,
+                data3: 0x0000,
+                data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            };
+
+            unsafe extern "system" fn sink_query_interface(
+                this: *mut core::ffi::c_void,
+                iid: *const TestGuid,
+                ppv: *mut *mut core::ffi::c_void,
+            ) -> i32 {
+                if ppv.is_null() || iid.is_null() {
+                    return SINK_E_INVALIDARG;
+                }
+                unsafe {
+                    *ppv = std::ptr::null_mut();
+                }
+                if unsafe { *iid == SINK_IID_IUNKNOWN || *iid == SINK_IID_IDISPATCH } {
+                    unsafe {
+                        *ppv = this;
+                        sink_add_ref(this);
+                    }
+                    SINK_S_OK
+                } else {
+                    SINK_E_NOINTERFACE
+                }
+            }
+
+            unsafe extern "system" fn sink_add_ref(this: *mut core::ffi::c_void) -> u32 {
+                let sink = unsafe { &mut *(this as *mut TestSink) };
+                sink.ref_count += 1;
+                sink.ref_count as u32
+            }
+
+            unsafe extern "system" fn sink_release(this: *mut core::ffi::c_void) -> u32 {
+                let sink = unsafe { &mut *(this as *mut TestSink) };
+                sink.ref_count -= 1;
+                sink.ref_count.max(0) as u32
+            }
+
+            unsafe extern "system" fn sink_get_type_info_count(
+                _this: *mut core::ffi::c_void,
+                pctinfo: *mut u32,
+            ) -> i32 {
+                if !pctinfo.is_null() {
+                    unsafe {
+                        *pctinfo = 0;
+                    }
+                }
+                SINK_S_OK
+            }
+
+            unsafe extern "system" fn sink_get_type_info(
+                _this: *mut core::ffi::c_void,
+                _i_tinfo: u32,
+                _lcid: u32,
+                _pp_tinfo: *mut *mut core::ffi::c_void,
+            ) -> i32 {
+                SINK_E_NOTIMPL
+            }
+
+            unsafe extern "system" fn sink_get_ids_of_names(
+                _this: *mut core::ffi::c_void,
+                _riid: *const TestGuid,
+                _names: *const *const u16,
+                _cnames: u32,
+                _lcid: u32,
+                _dispid: *mut i32,
+            ) -> i32 {
+                SINK_E_NOTIMPL
+            }
+
+            unsafe extern "system" fn sink_invoke(
+                this: *mut core::ffi::c_void,
+                dispid: i32,
+                _riid: *const TestGuid,
+                _lcid: u32,
+                _flags: u16,
+                params: *mut core::ffi::c_void,
+                _result: *mut core::ffi::c_void,
+                _excep: *mut core::ffi::c_void,
+                _arg_err: *mut u32,
+            ) -> i32 {
+                let sink = unsafe { &mut *(this as *mut TestSink) };
+                sink.calls += 1;
+                assert_eq!(dispid, 1);
+                let params = params as *mut windows_sys::Win32::System::Com::DISPPARAMS;
+                assert!(!params.is_null());
+                assert_eq!(unsafe { (*params).cArgs }, 1);
+                let arg = unsafe { (*params).rgvarg };
+                assert!(!arg.is_null());
+                assert_eq!(
+                    unsafe { (*arg).Anonymous.Anonymous.vt },
+                    windows_sys::Win32::System::Variant::VT_I4
+                );
+                sink.last_arg = unsafe { (*arg).Anonymous.Anonymous.Anonymous.lVal };
+                SINK_S_OK
+            }
+
+            static TEST_SINK_VTBL: TestDispatchVtbl = TestDispatchVtbl {
+                query_interface: sink_query_interface,
+                add_ref: sink_add_ref,
+                release: sink_release,
+                get_type_info_count: sink_get_type_info_count,
+                get_type_info: sink_get_type_info,
+                get_ids_of_names: sink_get_ids_of_names,
+                invoke: sink_invoke,
+            };
+
+            #[repr(C)]
             struct TestClassFactory {
                 vtbl: *const TestClassFactoryVtbl,
             }
@@ -1765,6 +2352,12 @@ mod tests {
                 data2: 0x0000,
                 data3: 0x0000,
                 data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            };
+            const IID_ICONNECTIONPOINTCONTAINER: TestGuid = TestGuid {
+                data1: 0xB196B284,
+                data2: 0xBAB4,
+                data3: 0x101A,
+                data4: [0xB6, 0x9C, 0, 0xAA, 0, 0x34, 0x1D, 0x07],
             };
 
             let mut wide_path: Vec<u16> = output
@@ -1806,6 +2399,14 @@ mod tests {
                 data2: parsed_iface.data2,
                 data3: parsed_iface.data3,
                 data4: parsed_iface.data4,
+            };
+            let source_uuid = deterministic_uuid("TestProj", "_WidgetEvents");
+            let parsed_source = crate::typelib_gen::parse_uuid(&source_uuid);
+            let iid_widget_events = TestGuid {
+                data1: parsed_source.data1,
+                data2: parsed_source.data2,
+                data3: parsed_source.data3,
+                data4: parsed_source.data4,
             };
 
             let mut factory_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
@@ -1897,6 +2498,104 @@ mod tests {
                 vtable_ping_result
             );
             windows_sys::Win32::System::Variant::VariantClear(&mut result);
+
+            let mut cpc_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                ((*dispatch.vtbl).query_interface)(
+                    dispatch_ptr,
+                    &IID_ICONNECTIONPOINTCONTAINER,
+                    &mut cpc_ptr,
+                ),
+                S_OK
+            );
+            assert!(!cpc_ptr.is_null());
+            let cpc = &*(cpc_ptr as *const TestConnectionPointContainerObject);
+            let mut cp_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                ((*cpc.vtbl).find_connection_point)(cpc_ptr, &iid_widget_events, &mut cp_ptr),
+                S_OK
+            );
+            assert!(!cp_ptr.is_null());
+            let cp = &*(cp_ptr as *const TestConnectionPointObject);
+            let mut sink = TestSink {
+                vtbl: &TEST_SINK_VTBL,
+                ref_count: 1,
+                calls: 0,
+                last_arg: i32::MIN,
+            };
+            let mut cookie = 0;
+            assert_eq!(
+                ((*cp.vtbl).advise)(
+                    cp_ptr,
+                    (&mut sink as *mut TestSink).cast::<core::ffi::c_void>(),
+                    &mut cookie,
+                ),
+                S_OK
+            );
+            assert_ne!(cookie, 0);
+
+            let fire_name: Vec<u16> = "FireChanged"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let names = [fire_name.as_ptr()];
+            let mut fire_dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut fire_dispid,
+                ),
+                S_OK
+            );
+            assert_eq!(fire_dispid, 5);
+            let mut fire_arg: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            fire_arg.Anonymous.Anonymous.vt = windows_sys::Win32::System::Variant::VT_I4;
+            fire_arg.Anonymous.Anonymous.Anonymous.lVal = 123;
+            let mut fire_params = windows_sys::Win32::System::Com::DISPPARAMS {
+                rgvarg: &mut fire_arg,
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 1,
+                cNamedArgs: 0,
+            };
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    fire_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    (&mut fire_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(sink.calls, 1);
+            assert_eq!(sink.last_arg, 123);
+            assert_eq!(((*cp.vtbl).unadvise)(cp_ptr, cookie), S_OK);
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    fire_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    (&mut fire_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(sink.calls, 1);
+            assert_eq!(sink.last_arg, 123);
+            assert_ne!(((*cp.vtbl).release)(cp_ptr), 0);
+            assert_ne!(((*cpc.vtbl).release)(cpc_ptr), 0);
 
             let value_name: Vec<u16> = "Value".encode_utf16().chain(std::iter::once(0)).collect();
             let names = [value_name.as_ptr()];

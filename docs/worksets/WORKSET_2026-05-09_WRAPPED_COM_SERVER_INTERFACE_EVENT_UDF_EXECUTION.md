@@ -85,7 +85,11 @@ OxVba already has important substrate:
   TypeLib generation consumes `descriptor_inventory.com_events`, emits
   deterministic `_<ClassName>Events` source dispinterfaces with stable event
   DISPIDs, and links them from coclasses as default source implemented types.
-  Runtime connection points and live sink dispatch remain in later beads.
+  It also has controlled runtime connection-point evidence for
+  `IConnectionPointContainer::FindConnectionPoint`, `IConnectionPoint::Advise`,
+  sink `IDispatch::Invoke` payload delivery from `Widget.FireChanged(123)`,
+  `Unadvise`, and no callback after unsubscribe. Office/VBA `WithEvents` oracle
+  evidence remains in `bd-wcs1.8.3`.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
