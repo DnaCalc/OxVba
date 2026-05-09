@@ -114,6 +114,15 @@ pub struct BundleHostCallDescriptor {
     pub module_name: String,
     pub procedure_name: String,
     pub kind: crate::project::ExportKind,
+    pub selection_policy: String,
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub argument_descriptions: Vec<Option<String>>,
+    pub volatile: bool,
+    pub dependency_policy: String,
+    pub side_effect_policy: String,
+    pub thread_safety_policy: String,
+    pub allowed_contexts: Vec<String>,
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
@@ -533,6 +542,9 @@ fn host_call_descriptor_from_export(
                         .eq_ignore_ascii_case(&export.procedure_name)
             })
         });
+    let argument_descriptions = procedure_metadata
+        .map(argument_descriptions_from_metadata)
+        .unwrap_or_default();
     BundleHostCallDescriptor {
         stable_host_call_id: stable_id([
             "host-call",
@@ -545,6 +557,18 @@ fn host_call_descriptor_from_export(
         module_name: export.module_name.clone(),
         procedure_name: export.procedure_name.clone(),
         kind: export.kind,
+        selection_policy: "public-procedural-functions".to_string(),
+        category: None,
+        description: None,
+        argument_descriptions,
+        volatile: false,
+        dependency_policy: "explicit-arguments-only".to_string(),
+        side_effect_policy: "no-host-side-effects".to_string(),
+        thread_safety_policy: "single-threaded-vba-compatible".to_string(),
+        allowed_contexts: vec![
+            "worksheet-cell".to_string(),
+            "host-formula-evaluator".to_string(),
+        ],
         entry_pc: procedure_metadata.map(|meta| meta.entry_pc).unwrap_or(0),
         param_slots: procedure_metadata
             .map(|meta| meta.param_slots.clone())
@@ -555,6 +579,21 @@ fn host_call_descriptor_from_export(
             .unwrap_or_default(),
         return_type: procedure_metadata.and_then(|meta| meta.return_type),
     }
+}
+
+fn argument_descriptions_from_metadata(meta: &ProcedureRuntimeMetadata) -> Vec<Option<String>> {
+    meta.param_slots
+        .iter()
+        .map(|param_slot| {
+            meta.slots
+                .iter()
+                .find(|slot| slot.slot == *param_slot)
+                .and_then(|slot| {
+                    let name = slot.name.trim();
+                    (!name.is_empty()).then(|| name.to_string())
+                })
+        })
+        .collect()
 }
 
 fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
@@ -898,6 +937,34 @@ mod tests {
                 .any(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd")
                     && call.param_slots.len() == 2)
         );
+        let host_add = inventory
+            .host_calls
+            .iter()
+            .find(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd"))
+            .expect("HostAdd host-call descriptor");
+        assert_eq!(host_add.kind, ExportKind::Function);
+        assert!(!host_add.stable_host_call_id.is_empty());
+        assert_eq!(host_add.selection_policy, "public-procedural-functions");
+        assert_eq!(
+            host_add.argument_descriptions,
+            vec![Some("a".to_string()), Some("b".to_string())]
+        );
+        assert!(!host_add.volatile);
+        assert_eq!(host_add.dependency_policy, "explicit-arguments-only");
+        assert_eq!(host_add.side_effect_policy, "no-host-side-effects");
+        assert_eq!(
+            host_add.thread_safety_policy,
+            "single-threaded-vba-compatible"
+        );
+        assert_eq!(
+            host_add.allowed_contexts,
+            vec![
+                "worksheet-cell".to_string(),
+                "host-formula-evaluator".to_string()
+            ]
+        );
+        assert_eq!(host_add.param_types.len(), 2);
+        assert!(host_add.return_type.is_some());
 
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
@@ -912,6 +979,23 @@ mod tests {
         assert_eq!(
             restored_inventory.host_calls.len(),
             inventory.host_calls.len()
+        );
+        let restored_host_add = restored_inventory
+            .host_calls
+            .iter()
+            .find(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd"))
+            .expect("restored HostAdd host-call descriptor");
+        assert_eq!(
+            restored_host_add.selection_policy,
+            host_add.selection_policy
+        );
+        assert_eq!(
+            restored_host_add.argument_descriptions,
+            host_add.argument_descriptions
+        );
+        assert_eq!(
+            restored_host_add.allowed_contexts,
+            host_add.allowed_contexts
         );
     }
 }

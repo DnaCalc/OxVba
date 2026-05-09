@@ -91,6 +91,11 @@ OxVba already has important substrate:
   `Unadvise`, and no callback after unsubscribe. `bd-wcs1.8.3` publishes a
   reproducible controlled-sink evidence capture; Office/VBA `WithEvents`
   coverage remains outside the implemented subset.
+- PH-0011 now has the first descriptor metadata slice: host-call descriptors in
+  `descriptor_inventory.host_calls` carry stable identities, entry/slot/type
+  metadata, argument-name slots, and conservative UDF policy fields for
+  selection, volatility, dependencies, side effects, thread safety, and allowed
+  host contexts. Typed catalog/invoke support remains pending.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -103,7 +108,7 @@ The missing truth is also explicit:
 - Office/VBA early-bound project-reference evidence is not part of COM-0007 and
   remains deferred beyond the current COM-0008 controlled TypeLib-aware subset.
 - Broader dual-interface argument/property/byref/object/array/error parity and
-  COM connection-point event publication are not yet implemented.
+  Office/VBA `WithEvents` event proof are not yet implemented.
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
