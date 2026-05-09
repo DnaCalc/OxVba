@@ -13,9 +13,10 @@ client, creates a wrapped OxVba class instance through `IClassFactory`, resolves
 a member through `IDispatch::GetIDsOfNames`, and invokes the member through
 `IDispatch::Invoke`.
 
-This is not yet a registry or Office/VBA `CreateObject` claim. It is also not a
-full late-bound breadth claim for properties, default members, object returns,
-array returns, or rich supported error propagation.
+This is not yet a registry or Office/VBA `CreateObject` claim. It is a
+controlled native DLL-load client claim for late-bound method, property,
+default member, object return, array return, and supported error propagation
+through the generated `IDispatch` surface.
 
 ## Reusable command
 
@@ -45,11 +46,23 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
 - `IDispatch::Invoke(DISPATCH_METHOD)` routes through the descriptor-backed
   call frame and returns `VT_I4` value `7` after `Class_Initialize` state is
   applied.
+- `IDispatch::Invoke(DISPATCH_PROPERTYPUT)` routes to the `Property Let`
+  descriptor for default DISPID `0`.
+- `IDispatch::Invoke(DISPATCH_PROPERTYGET)` routes to the `Property Get`
+  descriptor for default DISPID `0` and returns the updated `VT_I4` property
+  value.
+- A wrapped method returning a project class object marshals as `VT_DISPATCH`
+  using a generated dispatch wrapper over the same runtime session.
+- A wrapped method returning `Array(2, 4, 6)` marshals as
+  `VT_ARRAY | VT_VARIANT` with lower bound `0`, upper bound `2`, and first
+  element `VT_I4` value `2`.
+- A wrapped method raising `Err.Raise 77` returns `DISP_E_EXCEPTION` and
+  populates `EXCEPINFO.bstrDescription`.
 - Releasing the object and factory restores `DllCanUnloadNow == S_OK`.
 
 ## Residual delivery work
 
 `COM-0007` remains `implemented-subset`, not complete. Remaining delivery
-surface includes a registered per-user load path or equivalent `CreateObject`
-evidence, property get/let/set, default member invocation, object return,
-SAFEARRAY/array return, and supported error/`EXCEPINFO` behavior.
+surface is the registered per-user load path or equivalent `CreateObject`
+evidence. Office/VBA early-bound behavior remains owned by `COM-0008`, not this
+late-bound controlled-client row.

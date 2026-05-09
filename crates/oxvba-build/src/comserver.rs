@@ -87,6 +87,8 @@ pub fn generate_com_server_shim(
 #![cfg(target_os = "windows")]
 
 use std::ffi::c_void;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{{AtomicI32, Ordering}};
 
 use oxvba_compiler::OxBundle;
@@ -96,9 +98,12 @@ use oxvba_com::{{
 }};
 use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
 use oxvba_runtime::{{
-    ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant as RuntimeVariant,
+    ObjectRef, RuntimeCallError, RuntimeCallKind, RuntimeCallResult, RuntimeCallSource, Variant as RuntimeVariant,
 }};
-use windows_sys::Win32::System::Com::{{DISPPARAMS, EXCEPINFO}};
+use windows_sys::Win32::System::Com::{{
+    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
+    DISPPARAMS, EXCEPINFO,
+}};
 use windows_sys::Win32::System::Variant::VARIANT;
 
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
@@ -233,7 +238,14 @@ fn generate_member_tables(classes: &[ComClassExportDescriptor]) -> String {
         r#"struct MemberDescriptor {
     name: &'static str,
     dispid: i32,
+    kind: u8,
+    is_default_member: bool,
 }
+
+const MEMBER_KIND_METHOD: u8 = 0;
+const MEMBER_KIND_PROPERTYGET: u8 = 1;
+const MEMBER_KIND_PROPERTYLET: u8 = 2;
+const MEMBER_KIND_PROPERTYSET: u8 = 3;
 
 "#,
     );
@@ -243,8 +255,16 @@ fn generate_member_tables(classes: &[ComClassExportDescriptor]) -> String {
         ));
         for (member_index, member) in class.members.iter().enumerate() {
             let dispid = member.dispatch_id_or(member_index + 1);
+            let kind = match member.kind {
+                oxvba_compiler::ProjectDynamicMemberKind::Method
+                | oxvba_compiler::ProjectDynamicMemberKind::Function => "MEMBER_KIND_METHOD",
+                oxvba_compiler::ProjectDynamicMemberKind::PropertyGet => "MEMBER_KIND_PROPERTYGET",
+                oxvba_compiler::ProjectDynamicMemberKind::PropertyLet => "MEMBER_KIND_PROPERTYLET",
+                oxvba_compiler::ProjectDynamicMemberKind::PropertySet => "MEMBER_KIND_PROPERTYSET",
+            };
+            let is_default_member = member.is_default_member;
             s.push_str(&format!(
-                "    MemberDescriptor {{ name: \"{}\", dispid: {dispid} }},\n",
+                "    MemberDescriptor {{ name: \"{}\", dispid: {dispid}, kind: {kind}, is_default_member: {is_default_member} }},\n",
                 rust_string_literal(&member.member_name)
             ));
         }
@@ -266,10 +286,53 @@ fn member_by_dispid(class_index: usize, dispid: i32) -> Option<&'static MemberDe
         .find(|member| member.dispid == dispid)
 }
 
+fn member_by_dispid_and_flags(
+    class_index: usize,
+    dispid: i32,
+    flags: u16,
+) -> Option<&'static MemberDescriptor> {
+    let members = members_for_class(class_index);
+    let requested_kind = member_kind_from_dispatch_flags(flags);
+    members
+        .iter()
+        .find(|member| member.dispid == dispid && member.kind == requested_kind)
+        .or_else(|| {
+            if dispid == 0 {
+                members
+                    .iter()
+                    .find(|member| member.is_default_member && member.kind == requested_kind)
+            } else {
+                None
+            }
+        })
+        .or_else(|| members.iter().find(|member| member.dispid == dispid))
+}
+
 fn member_by_name(class_index: usize, name: &str) -> Option<&'static MemberDescriptor> {
     members_for_class(class_index)
         .iter()
         .find(|member| member.name.eq_ignore_ascii_case(name))
+}
+
+fn member_kind_from_dispatch_flags(flags: u16) -> u8 {
+    if flags & DISPATCH_PROPERTYPUTREF as u16 != 0 {
+        MEMBER_KIND_PROPERTYSET
+    } else if flags & DISPATCH_PROPERTYPUT as u16 != 0 {
+        MEMBER_KIND_PROPERTYLET
+    } else if flags & DISPATCH_PROPERTYGET as u16 != 0 {
+        MEMBER_KIND_PROPERTYGET
+    } else {
+        MEMBER_KIND_METHOD
+    }
+}
+
+fn runtime_call_kind_from_member_kind(kind: u8) -> RuntimeCallKind {
+    match kind {
+        MEMBER_KIND_PROPERTYGET => RuntimeCallKind::PropertyGet,
+        MEMBER_KIND_PROPERTYLET => RuntimeCallKind::PropertyLet,
+        MEMBER_KIND_PROPERTYSET => RuntimeCallKind::PropertySet,
+        _ => RuntimeCallKind::Method,
+    }
 }
 
 unsafe fn wide_name_to_string(ptr: *const u16) -> Option<String> {
@@ -540,8 +603,8 @@ struct OxVbaDispatchInstance {
     vtbl: *const IDispatchVtbl,
     ref_count: AtomicI32,
     class_index: usize,
-    engine: Engine,
-    session: ProjectRuntimeSession,
+    engine: Rc<Engine>,
+    session: Rc<RefCell<ProjectRuntimeSession>>,
     object: ObjectRef,
 }
 
@@ -562,10 +625,10 @@ impl OxVbaDispatchInstance {
         };
         let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
             .map_err(|_| E_OUTOFMEMORY)?;
-        let engine = Engine::new(HostConfig {
+        let engine = Rc::new(Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
-        });
+        }));
         let mut session = engine
             .compile_and_prepare_session_from_bundle(&bundle)
             .map_err(|_| E_OUTOFMEMORY)?;
@@ -577,9 +640,26 @@ impl OxVbaDispatchInstance {
             ref_count: AtomicI32::new(1),
             class_index,
             engine,
-            session,
+            session: Rc::new(RefCell::new(session)),
             object,
         })
+    }
+
+    fn from_existing(
+        class_index: usize,
+        engine: Rc<Engine>,
+        session: Rc<RefCell<ProjectRuntimeSession>>,
+        object: ObjectRef,
+        ref_count: i32,
+    ) -> Self {
+        Self {
+            vtbl: &DISPATCH_VTBL,
+            ref_count: AtomicI32::new(ref_count),
+            class_index,
+            engine,
+            session,
+            object,
+        }
     }
 }
 
@@ -670,7 +750,7 @@ unsafe extern "system" fn di_invoke(
     pu_arg_err: *mut u32,
 ) -> i32 {
     let inst = &mut *(this as *mut OxVbaDispatchInstance);
-    let Some(member) = member_by_dispid(inst.class_index, dispid_member) else {
+    let Some(member) = member_by_dispid_and_flags(inst.class_index, dispid_member, w_flags) else {
         return COM_DISP_E_MEMBERNOTFOUND;
     };
     let params = p_disp_params as *mut DISPPARAMS;
@@ -698,10 +778,12 @@ unsafe extern "system" fn di_invoke(
     if let Some(property_put_arg) = frame.property_put_arg {
         args.push(property_put_arg.value);
     }
-    let value = match inst.engine.invoke_member_on_object_with_variants(
-        &mut inst.session,
+    let mut session = inst.session.borrow_mut();
+    let value = match inst.engine.invoke_member_on_object_with_kind(
+        &mut session,
         inst.object.clone(),
         member.name,
+        Some(runtime_call_kind_from_member_kind(member.kind)),
         &args,
     ) {
         Ok(value) => value,
@@ -719,12 +801,52 @@ unsafe extern "system" fn di_invoke(
             );
         }
     };
+    let value = match value.as_i32() {
+        Some(handle) => {
+            let object = ObjectRef::from_compat_identity(handle);
+            if inst.engine.class_name_for_object(&session, &object).is_some() {
+                RuntimeVariant::from_object_ref(object)
+            } else {
+                value
+            }
+        }
+        None => value,
+    };
     if !p_var_result.is_null() {
         if let Err(message) = runtime_call_result_to_variant(
             &RuntimeCallResult::value(value),
             p_var_result as *mut VARIANT,
-            &mut |_object| Err("WrappedComServer object result marshaling is not wired yet".to_string()),
-            &mut |_dispatch| {},
+            &mut |object| {
+                if object.raw() == inst.object.raw() {
+                    return Ok(this);
+                }
+                let Some(class_name) = inst.engine.class_name_for_object(&session, &object) else {
+                    return Err("WrappedComServer object result did not map to a project class".to_string());
+                };
+                let Some(class_index) = CLASS_NAMES
+                    .iter()
+                    .position(|candidate| candidate.eq_ignore_ascii_case(class_name))
+                else {
+                    return Err(format!(
+                        "WrappedComServer object result class `{class_name}` is not exported"
+                    ));
+                };
+                let child = OxVbaDispatchInstance::from_existing(
+                    class_index,
+                    Rc::clone(&inst.engine),
+                    Rc::clone(&inst.session),
+                    object,
+                    0,
+                );
+                let raw = Box::into_raw(Box::new(child)) as *mut c_void;
+                GLOBAL_REF_COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(raw)
+            },
+            &mut |dispatch| {
+                if !dispatch.is_null() {
+                    di_add_ref(dispatch);
+                }
+            },
         ) {
             let runtime_error = RuntimeCallError::new(
                 COM_DISP_E_TYPEMISMATCH,
@@ -921,7 +1043,19 @@ mod tests {
                     vb_exposed: true,
                     ..Default::default()
                 },
-                source: "Private stored As Long\nPrivate Sub Class_Initialize()\nstored = 7\nEnd Sub\nPublic Function Ping() As Long\nPing = stored\nEnd Function\n"
+                source: "Private stored As Long\nPrivate Sub Class_Initialize()\nstored = 7\nEnd Sub\nPublic Function Ping() As Long\nPing = stored\nEnd Function\nPublic Property Get Value() As Long\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n As Long)\nstored = n\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Function ReturnChild() As Object\nDim c As New Child\nSet ReturnChild = c\nEnd Function\nPublic Function Numbers() As Variant\nNumbers = Array(2, 4, 6)\nEnd Function\nPublic Function Boom()\nErr.Raise 77\nEnd Function\n"
+                    .to_string(),
+            },
+            ModuleUnit {
+                module_name: "Child".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes {
+                    vb_name: "Child".to_string(),
+                    vb_creatable: true,
+                    vb_exposed: true,
+                    ..Default::default()
+                },
+                source: "Public Property Get Value() As Long\nValue = 19\nEnd Property\nAttribute Value.VB_UserMemId = 0\n"
                     .to_string(),
             }],
             references: vec![],
@@ -937,20 +1071,78 @@ mod tests {
         .expect("write bundle");
         let bundle_literal = bundle_path.to_string_lossy().replace('\\', "/");
         let dll_path = temp.path().join("TestProj.dll");
-        let classes = vec![ComClassExportDescriptor {
-            class_name: "Widget".to_string(),
-            prog_id: Some("TestProj.Widget".to_string()),
-            instancing: Some(Instancing::MultiUse),
-            description: None,
-            members: vec![DispatchMemberInfo {
-                member_name: "Ping".to_string(),
-                kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
-                param_count: 0,
-                dispatch_id: Some(1),
-                member_flags: None,
-                is_default_member: false,
-            }],
-        }];
+        let classes = vec![
+            ComClassExportDescriptor {
+                class_name: "Widget".to_string(),
+                prog_id: Some("TestProj.Widget".to_string()),
+                instancing: Some(Instancing::MultiUse),
+                description: None,
+                members: vec![
+                    DispatchMemberInfo {
+                        member_name: "Ping".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                        param_count: 0,
+                        dispatch_id: Some(1),
+                        member_flags: None,
+                        is_default_member: false,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "Value".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                        param_count: 0,
+                        dispatch_id: Some(0),
+                        member_flags: None,
+                        is_default_member: true,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "Value".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyLet,
+                        param_count: 1,
+                        dispatch_id: Some(0),
+                        member_flags: None,
+                        is_default_member: true,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "ReturnChild".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                        param_count: 0,
+                        dispatch_id: Some(2),
+                        member_flags: None,
+                        is_default_member: false,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "Numbers".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                        param_count: 0,
+                        dispatch_id: Some(3),
+                        member_flags: None,
+                        is_default_member: false,
+                    },
+                    DispatchMemberInfo {
+                        member_name: "Boom".to_string(),
+                        kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
+                        param_count: 0,
+                        dispatch_id: Some(4),
+                        member_flags: None,
+                        is_default_member: false,
+                    },
+                ],
+            },
+            ComClassExportDescriptor {
+                class_name: "Child".to_string(),
+                prog_id: Some("TestProj.Child".to_string()),
+                instancing: Some(Instancing::MultiUse),
+                description: None,
+                members: vec![DispatchMemberInfo {
+                    member_name: "Value".to_string(),
+                    kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                    param_count: 0,
+                    dispatch_id: Some(0),
+                    member_flags: None,
+                    is_default_member: true,
+                }],
+            },
+        ];
 
         let output =
             compile_wrapped_com_server_shim("TestProj", &bundle_literal, &classes, &dll_path)
@@ -974,7 +1166,11 @@ mod tests {
 
         unsafe {
             use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
             use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+            use windows_sys::Win32::System::Ole::{
+                SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
+            };
 
             #[repr(C)]
             #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1167,6 +1363,218 @@ mod tests {
             );
             assert_eq!(result.Anonymous.Anonymous.Anonymous.lVal, 7);
             windows_sys::Win32::System::Variant::VariantClear(&mut result);
+
+            let value_name: Vec<u16> = "Value".encode_utf16().chain(std::iter::once(0)).collect();
+            let names = [value_name.as_ptr()];
+            let mut value_dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut value_dispid,
+                ),
+                S_OK
+            );
+            assert_eq!(value_dispid, 0);
+
+            let mut put_arg: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            put_arg.Anonymous.Anonymous.vt = windows_sys::Win32::System::Variant::VT_I4;
+            put_arg.Anonymous.Anonymous.Anonymous.lVal = 41;
+            let mut property_put_dispid = oxvba_com::windows_client::COM_DISPID_PROPERTYPUT;
+            let mut put_params = windows_sys::Win32::System::Com::DISPPARAMS {
+                rgvarg: &mut put_arg,
+                rgdispidNamedArgs: &mut property_put_dispid,
+                cArgs: 1,
+                cNamedArgs: 1,
+            };
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    value_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUT as u16,
+                    (&mut put_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+
+            let mut get_params = windows_sys::Win32::System::Com::DISPPARAMS {
+                rgvarg: std::ptr::null_mut(),
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 0,
+                cNamedArgs: 0,
+            };
+            let mut value_result: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    value_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET as u16,
+                    (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    (&mut value_result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(
+                value_result.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_I4
+            );
+            assert_eq!(value_result.Anonymous.Anonymous.Anonymous.lVal, 41);
+            windows_sys::Win32::System::Variant::VariantClear(&mut value_result);
+
+            let self_name: Vec<u16> = "ReturnChild"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let names = [self_name.as_ptr()];
+            let mut self_dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut self_dispid,
+                ),
+                S_OK
+            );
+            let mut self_result: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            let mut self_excep: windows_sys::Win32::System::Com::EXCEPINFO = std::mem::zeroed();
+            let self_hr = ((*dispatch.vtbl).invoke)(
+                dispatch_ptr,
+                self_dispid,
+                std::ptr::null(),
+                0,
+                windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                (&mut self_result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
+                (&mut self_excep as *mut windows_sys::Win32::System::Com::EXCEPINFO).cast(),
+                &mut arg_err,
+            );
+            if self_hr != S_OK {
+                let description = if self_excep.bstrDescription.is_null() {
+                    String::new()
+                } else {
+                    let len = SysStringLen(self_excep.bstrDescription) as usize;
+                    String::from_utf16_lossy(std::slice::from_raw_parts(
+                        self_excep.bstrDescription,
+                        len,
+                    ))
+                };
+                SysFreeString(self_excep.bstrSource);
+                SysFreeString(self_excep.bstrDescription);
+                panic!("ReturnChild Invoke failed: hr={self_hr:#010X}; {description}");
+            }
+            assert_eq!(
+                self_result.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_DISPATCH
+            );
+            assert!(!self_result.Anonymous.Anonymous.Anonymous.pdispVal.is_null());
+            windows_sys::Win32::System::Variant::VariantClear(&mut self_result);
+
+            let numbers_name: Vec<u16> =
+                "Numbers".encode_utf16().chain(std::iter::once(0)).collect();
+            let names = [numbers_name.as_ptr()];
+            let mut numbers_dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut numbers_dispid,
+                ),
+                S_OK
+            );
+            let mut numbers_result: windows_sys::Win32::System::Variant::VARIANT =
+                std::mem::zeroed();
+            assert_eq!(
+                ((*dispatch.vtbl).invoke)(
+                    dispatch_ptr,
+                    numbers_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                    (&mut numbers_result as *mut windows_sys::Win32::System::Variant::VARIANT)
+                        .cast(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(
+                numbers_result.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_ARRAY
+                    | windows_sys::Win32::System::Variant::VT_VARIANT
+            );
+            let psa = numbers_result.Anonymous.Anonymous.Anonymous.parray;
+            let mut lower = i32::MIN;
+            let mut upper = i32::MIN;
+            assert_eq!(SafeArrayGetLBound(psa.cast_const(), 1, &mut lower), S_OK);
+            assert_eq!(SafeArrayGetUBound(psa.cast_const(), 1, &mut upper), S_OK);
+            assert_eq!((lower, upper), (0, 2));
+            let mut first: windows_sys::Win32::System::Variant::VARIANT = std::mem::zeroed();
+            let first_index = 0;
+            assert_eq!(
+                SafeArrayGetElement(
+                    psa.cast_const(),
+                    &first_index,
+                    (&mut first as *mut windows_sys::Win32::System::Variant::VARIANT).cast()
+                ),
+                S_OK
+            );
+            assert_eq!(
+                first.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_I4
+            );
+            assert_eq!(first.Anonymous.Anonymous.Anonymous.lVal, 2);
+            windows_sys::Win32::System::Variant::VariantClear(&mut first);
+            windows_sys::Win32::System::Variant::VariantClear(&mut numbers_result);
+
+            let boom_name: Vec<u16> = "Boom".encode_utf16().chain(std::iter::once(0)).collect();
+            let names = [boom_name.as_ptr()];
+            let mut boom_dispid = i32::MIN;
+            assert_eq!(
+                ((*dispatch.vtbl).get_ids_of_names)(
+                    dispatch_ptr,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut boom_dispid,
+                ),
+                S_OK
+            );
+            let mut excep: windows_sys::Win32::System::Com::EXCEPINFO = std::mem::zeroed();
+            let hr = ((*dispatch.vtbl).invoke)(
+                dispatch_ptr,
+                boom_dispid,
+                std::ptr::null(),
+                0,
+                windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
+                std::ptr::null_mut(),
+                (&mut excep as *mut windows_sys::Win32::System::Com::EXCEPINFO).cast(),
+                &mut arg_err,
+            );
+            assert_eq!(hr, oxvba_com::windows_client::COM_DISP_E_EXCEPTION);
+            assert!(!excep.bstrDescription.is_null());
+            SysFreeString(excep.bstrSource);
+            SysFreeString(excep.bstrDescription);
 
             assert_eq!(((*dispatch.vtbl).release)(dispatch_ptr), 0);
             assert_eq!(((*factory.vtbl).release)(factory_ptr), 0);

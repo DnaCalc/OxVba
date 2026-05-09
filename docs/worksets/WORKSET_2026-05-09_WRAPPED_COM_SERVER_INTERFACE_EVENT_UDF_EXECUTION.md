@@ -55,13 +55,13 @@ OxVba already has important substrate:
   emitted member descriptor table and COM call-frame marshaling helpers for the
   first scalar method slice; object-return, array-return, and richer error
   evidence remain in the later late-bound validation bead.
-- COM-0007 now has controlled Windows client evidence for the first
-  late-bound scalar method slice: emitted DLL exports, `LoadLibraryW`,
-  `DllGetClassObject`, `IClassFactory::CreateInstance`, `LockServer`,
-  `DllCanUnloadNow`, `GetIDsOfNames`, and `Invoke` returning the wrapped OxVba
-  scalar result. The row remains `implemented-subset` until the registered
-  load/CreateObject, property/default-member, object-return, array-return, and
-  supported-error breadth is delivered by follow-up bead `bd-wcs1.5.5`.
+- COM-0007 now has controlled Windows client evidence for emitted DLL exports,
+  `LoadLibraryW`, `DllGetClassObject`, `IClassFactory::CreateInstance`,
+  `LockServer`, `DllCanUnloadNow`, `GetIDsOfNames`, method `Invoke`, property
+  get/let through default DISPID `0`, project object return as `VT_DISPATCH`,
+  SAFEARRAY/array return, and supported error/`EXCEPINFO` behavior. The row
+  remains `implemented-subset` until a registered per-user load path or
+  equivalent `CreateObject` evidence is captured.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -72,8 +72,8 @@ The missing truth is also explicit:
 - `oxvba build` does not yet register a usable in-process COM server DLL for
   `OutputType=ComServer`.
 - The generated COM server `IDispatch` implementation is still limited to the
-  first descriptor-backed scalar method slice; broader Automation behavior is
-  open in `bd-wcs1.5.5`.
+  controlled DLL-load client lane; registered `CreateObject` publication is not
+  yet evidenced.
 - Type library publication for OxVba classes is not yet integrated into a real
   COM server build output.
 - Dual-interface vtable projection and COM connection-point event publication
@@ -651,8 +651,11 @@ First executable beads:
   `Engine::create_class_instance`
 - `bd-wcs1.5.3` - implement `IDispatch::GetIDsOfNames` and `Invoke` over
   descriptors/call frames
-- `bd-wcs1.5.4` - add controlled Windows client `CreateObject` + late-bound invoke
+- `bd-wcs1.5.4` - add controlled Windows client DLL-load late-bound invoke
   evidence
+- `bd-wcs1.5.5` - expand controlled late-bound dispatch breadth beyond scalar
+  method slice
+- `bd-wcs1.5.6` - implement registered/per-user `CreateObject` publication path
 - `bd-wcs1.6.1` - generate/register TLB from descriptors for one class
 - `bd-wcs1.6.2` - add Office/VBA early-bound oracle for wrapped class calls
 - `bd-wcs1.7.1` - generate one Automation-safe dual-interface vtable projection

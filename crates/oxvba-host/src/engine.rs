@@ -828,6 +828,17 @@ impl Engine {
         member: &str,
         args: &[Variant],
     ) -> Result<Variant, PhaseDiagnostic> {
+        self.invoke_member_on_object_with_kind(session, object, member, None, args)
+    }
+
+    pub fn invoke_member_on_object_with_kind(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        object: ObjectRef,
+        member: &str,
+        call_kind: Option<RuntimeCallKind>,
+        args: &[Variant],
+    ) -> Result<Variant, PhaseDiagnostic> {
         // Find the dynamic object route for this handle
         let route = session
             .compiled
@@ -846,7 +857,22 @@ impl Engine {
         let member_route = route
             .members
             .iter()
-            .find(|m| m.member_name.eq_ignore_ascii_case(member))
+            .find(|m| {
+                m.member_name.eq_ignore_ascii_case(member)
+                    && call_kind
+                        .map(|kind| runtime_call_kind_for_project_member(m.kind) == kind)
+                        .unwrap_or(true)
+            })
+            .or_else(|| {
+                if call_kind.is_some() {
+                    route
+                        .members
+                        .iter()
+                        .find(|m| m.member_name.eq_ignore_ascii_case(member))
+                } else {
+                    None
+                }
+            })
             .cloned()
             .ok_or_else(|| {
                 PhaseDiagnostic::runtime(format!(
@@ -872,6 +898,20 @@ impl Engine {
             args,
         );
         self.invoke_project_member_call_frame(session, object, &member_route, frame)
+    }
+
+    pub fn class_name_for_object<'a>(
+        &self,
+        session: &'a ProjectRuntimeSession,
+        object: &ObjectRef,
+    ) -> Option<&'a str> {
+        let _ = self;
+        session
+            .compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|route| route.object_handle == object.raw())
+            .map(|route| route.module_name.as_str())
     }
 
     fn build_project_member_call_frame(
