@@ -66,14 +66,27 @@ impl EmbeddedWorkspaceSnapshot {
 pub struct EmbeddedBuildRequest {
     pub request_id: DirectHostBuildRequestId,
     pub workspace: EmbeddedWorkspaceSnapshot,
+    pub target: EmbeddedBuildTarget,
 }
 
 impl EmbeddedBuildRequest {
     pub fn new(workspace: EmbeddedWorkspaceSnapshot) -> Self {
-        let request_id = build_request_id_for_workspace(&workspace);
+        Self::with_build_target(workspace, EmbeddedBuildTarget::Bundle)
+    }
+
+    pub fn wrapped_com_server(workspace: EmbeddedWorkspaceSnapshot) -> Self {
+        Self::with_build_target(workspace, EmbeddedBuildTarget::WrappedComServer)
+    }
+
+    pub fn with_build_target(
+        workspace: EmbeddedWorkspaceSnapshot,
+        target: EmbeddedBuildTarget,
+    ) -> Self {
+        let request_id = build_request_id_for_workspace(&workspace, target);
         Self {
             request_id,
             workspace,
+            target,
         }
     }
 
@@ -84,8 +97,111 @@ impl EmbeddedBuildRequest {
         Self {
             request_id: request_id.into(),
             workspace,
+            target: EmbeddedBuildTarget::Bundle,
         }
     }
+
+    pub fn with_request_id_and_target(
+        workspace: EmbeddedWorkspaceSnapshot,
+        request_id: impl Into<DirectHostBuildRequestId>,
+        target: EmbeddedBuildTarget,
+    ) -> Self {
+        Self {
+            request_id: request_id.into(),
+            workspace,
+            target,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedBuildTarget {
+    Bundle,
+    WrappedComServer,
+}
+
+impl EmbeddedBuildTarget {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Bundle => "Bundle",
+            Self::WrappedComServer => "WrappedComServer",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedBuildArtifactKind {
+    Bundle,
+    DynamicLibrary,
+    TypeLibrary,
+    RegistrationPlan,
+    BuildLog,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedBuildArtifactPlan {
+    pub kind: EmbeddedBuildArtifactKind,
+    pub path: PathBuf,
+    pub required: bool,
+}
+
+impl EmbeddedBuildArtifactPlan {
+    pub fn new(kind: EmbeddedBuildArtifactKind, path: impl Into<PathBuf>, required: bool) -> Self {
+        Self {
+            kind,
+            path: path.into(),
+            required,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedComRegistrationScope {
+    None,
+    PerUser,
+    Machine,
+    RegistrationFreeManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedComServerRegistrationPlan {
+    pub scope: EmbeddedComRegistrationScope,
+    pub requires_admin: bool,
+    pub command_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedRequiredTool {
+    pub name: String,
+    pub required: bool,
+}
+
+impl EmbeddedRequiredTool {
+    pub fn required(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            required: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedComServerCapabilityProfile {
+    pub windows: bool,
+    pub bitness: String,
+    pub toolchain: Vec<EmbeddedRequiredTool>,
+    pub registration_scopes: Vec<EmbeddedComRegistrationScope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedBuildPlan {
+    pub request_id: DirectHostBuildRequestId,
+    pub target: EmbeddedBuildTarget,
+    pub artifacts: Vec<EmbeddedBuildArtifactPlan>,
+    pub required_tools: Vec<EmbeddedRequiredTool>,
+    pub warnings: Vec<String>,
+    pub com_server_capability: Option<EmbeddedComServerCapabilityProfile>,
+    pub registration_plan: Option<EmbeddedComServerRegistrationPlan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +214,10 @@ pub enum EmbeddedBuildStatus {
 pub struct EmbeddedBuildResult {
     pub request_id: DirectHostBuildRequestId,
     pub workspace: EmbeddedWorkspaceSnapshot,
+    pub plan: EmbeddedBuildPlan,
+    pub dll_path: Option<PathBuf>,
+    pub tlb_path: Option<PathBuf>,
+    pub registration_plan: Option<EmbeddedComServerRegistrationPlan>,
     pub status: EmbeddedBuildStatus,
     pub diagnostics: Vec<PhaseDiagnostic>,
 }
@@ -106,10 +226,25 @@ impl EmbeddedBuildResult {
     pub fn succeeded(
         request_id: DirectHostBuildRequestId,
         workspace: EmbeddedWorkspaceSnapshot,
+        plan: EmbeddedBuildPlan,
     ) -> Self {
+        let dll_path = plan
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == EmbeddedBuildArtifactKind::DynamicLibrary)
+            .map(|artifact| artifact.path.clone());
+        let tlb_path = plan
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == EmbeddedBuildArtifactKind::TypeLibrary)
+            .map(|artifact| artifact.path.clone());
         Self {
             request_id,
             workspace,
+            registration_plan: plan.registration_plan.clone(),
+            plan,
+            dll_path,
+            tlb_path,
             status: EmbeddedBuildStatus::Succeeded,
             diagnostics: Vec::new(),
         }
@@ -118,11 +253,16 @@ impl EmbeddedBuildResult {
     pub fn failed(
         request_id: DirectHostBuildRequestId,
         workspace: EmbeddedWorkspaceSnapshot,
+        plan: EmbeddedBuildPlan,
         diagnostics: Vec<PhaseDiagnostic>,
     ) -> Self {
         Self {
             request_id,
             workspace,
+            registration_plan: plan.registration_plan.clone(),
+            plan,
+            dll_path: None,
+            tlb_path: None,
             status: EmbeddedBuildStatus::Failed,
             diagnostics,
         }
@@ -433,17 +573,25 @@ impl<'engine> EmbeddedBuildRunHost<'engine> {
     }
 
     pub fn build_workspace(&self, request: &EmbeddedBuildRequest) -> EmbeddedBuildResult {
+        let plan = self.build_plan(request);
         match compile_project(&request.workspace.manifest) {
             Ok(_) => EmbeddedBuildResult::succeeded(
                 request.request_id.clone(),
                 request.workspace.clone(),
+                plan,
             ),
             Err(err) => EmbeddedBuildResult::failed(
                 request.request_id.clone(),
                 request.workspace.clone(),
+                plan,
                 vec![PhaseDiagnostic::compile(err.to_string())],
             ),
         }
+    }
+
+    pub fn build_plan(&self, request: &EmbeddedBuildRequest) -> EmbeddedBuildPlan {
+        let _ = self;
+        embedded_build_plan_for_request(request)
     }
 
     pub fn build_workspace_with_events(
@@ -669,10 +817,12 @@ impl<'engine> EmbeddedRunSession<'engine> {
 
 fn build_request_id_for_workspace(
     workspace: &EmbeddedWorkspaceSnapshot,
+    target: EmbeddedBuildTarget,
 ) -> DirectHostBuildRequestId {
     DirectHostBuildRequestId::new(format!(
-        "build:{}:{:?}:{}",
+        "build:{}:{}:{:?}:{}",
         normalize_workspace_target_path(workspace.workspace.path()).display(),
+        target.code(),
         workspace.workspace.source_policy,
         workspace.manifest.project_name
     ))
@@ -708,15 +858,135 @@ fn normalize_workspace_target_path(path: &Path) -> PathBuf {
     absolute.canonicalize().unwrap_or(absolute)
 }
 
+fn embedded_build_plan_for_request(request: &EmbeddedBuildRequest) -> EmbeddedBuildPlan {
+    let output_dir = embedded_build_output_dir(&request.workspace);
+    let project_name = sanitize_artifact_stem(&request.workspace.manifest.project_name);
+    match request.target {
+        EmbeddedBuildTarget::Bundle => EmbeddedBuildPlan {
+            request_id: request.request_id.clone(),
+            target: request.target,
+            artifacts: vec![EmbeddedBuildArtifactPlan::new(
+                EmbeddedBuildArtifactKind::Bundle,
+                output_dir.join(format!("{project_name}.oxb")),
+                true,
+            )],
+            required_tools: vec![],
+            warnings: vec![],
+            com_server_capability: None,
+            registration_plan: None,
+        },
+        EmbeddedBuildTarget::WrappedComServer => {
+            let mut warnings = Vec::new();
+            if !cfg!(target_os = "windows") {
+                warnings.push(
+                    "WrappedComServer build output is only available on Windows hosts".to_string(),
+                );
+            }
+            let bitness = if cfg!(target_pointer_width = "64") {
+                "x64"
+            } else if cfg!(target_pointer_width = "32") {
+                "x86"
+            } else {
+                "unknown"
+            }
+            .to_string();
+            let required_tools = vec![
+                EmbeddedRequiredTool::required("rustc"),
+                EmbeddedRequiredTool::required("cargo"),
+                EmbeddedRequiredTool::required("windows-sdk"),
+            ];
+            let registration_plan = EmbeddedComServerRegistrationPlan {
+                scope: EmbeddedComRegistrationScope::PerUser,
+                requires_admin: false,
+                command_hint: Some("DllRegisterServer".to_string()),
+            };
+            EmbeddedBuildPlan {
+                request_id: request.request_id.clone(),
+                target: request.target,
+                artifacts: vec![
+                    EmbeddedBuildArtifactPlan::new(
+                        EmbeddedBuildArtifactKind::Bundle,
+                        output_dir.join(format!("{project_name}.oxb")),
+                        true,
+                    ),
+                    EmbeddedBuildArtifactPlan::new(
+                        EmbeddedBuildArtifactKind::DynamicLibrary,
+                        output_dir.join(format!("{project_name}.dll")),
+                        true,
+                    ),
+                    EmbeddedBuildArtifactPlan::new(
+                        EmbeddedBuildArtifactKind::TypeLibrary,
+                        output_dir.join(format!("{project_name}.tlb")),
+                        true,
+                    ),
+                    EmbeddedBuildArtifactPlan::new(
+                        EmbeddedBuildArtifactKind::RegistrationPlan,
+                        output_dir.join(format!("{project_name}.registration.json")),
+                        true,
+                    ),
+                    EmbeddedBuildArtifactPlan::new(
+                        EmbeddedBuildArtifactKind::BuildLog,
+                        output_dir.join(format!("{project_name}.build.log")),
+                        false,
+                    ),
+                ],
+                required_tools: required_tools.clone(),
+                warnings,
+                com_server_capability: Some(EmbeddedComServerCapabilityProfile {
+                    windows: cfg!(target_os = "windows"),
+                    bitness,
+                    toolchain: required_tools,
+                    registration_scopes: vec![
+                        EmbeddedComRegistrationScope::None,
+                        EmbeddedComRegistrationScope::PerUser,
+                        EmbeddedComRegistrationScope::RegistrationFreeManifest,
+                    ],
+                }),
+                registration_plan: Some(registration_plan),
+            }
+        }
+    }
+}
+
+fn embedded_build_output_dir(workspace: &EmbeddedWorkspaceSnapshot) -> PathBuf {
+    let path = workspace.workspace.path();
+    if path.extension().is_some() {
+        path.parent()
+            .map(|parent| parent.join("target").join("oxvba"))
+            .unwrap_or_else(|| PathBuf::from("target").join("oxvba"))
+    } else {
+        path.join("target").join("oxvba")
+    }
+}
+
+fn sanitize_artifact_stem(project_name: &str) -> String {
+    let stem = project_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if stem.is_empty() {
+        "project".to_string()
+    } else {
+        stem
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        EmbeddedBuildRequest, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
-        EmbeddedBuildStartedEvent, EmbeddedBuildStatus, EmbeddedExecutionSourcePolicy,
-        EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
-        EmbeddedInvokeProcedureVariantRequest, EmbeddedOutputChannel, EmbeddedOutputLine,
-        EmbeddedProcedureTarget, EmbeddedResetKind, EmbeddedResetRequest, EmbeddedRunRequest,
-        EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+        EmbeddedBuildArtifactKind, EmbeddedBuildRequest, EmbeddedBuildRunEvent,
+        EmbeddedBuildRunHost, EmbeddedBuildStartedEvent, EmbeddedBuildStatus, EmbeddedBuildTarget,
+        EmbeddedComRegistrationScope, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
+        EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureVariantRequest,
+        EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget, EmbeddedResetKind,
+        EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedRunStatus, EmbeddedWorkspaceInput,
+        EmbeddedWorkspaceSnapshot,
     };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
@@ -834,6 +1104,79 @@ mod tests {
         assert_eq!(
             build.workspace.workspace.source_policy,
             EmbeddedExecutionSourcePolicy::WorkspaceOverlay
+        );
+    }
+
+    #[test]
+    fn wrapped_com_server_build_plan_reports_artifacts_and_registration_dtos() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let workspace = EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
+            make_manifest("Public Function Ping() As Long\nPing = 42\nEnd Function\n"),
+        );
+        let request = EmbeddedBuildRequest::wrapped_com_server(workspace);
+
+        let plan = host.build_plan(&request);
+        assert_eq!(request.target, EmbeddedBuildTarget::WrappedComServer);
+        assert_eq!(plan.target, EmbeddedBuildTarget::WrappedComServer);
+        assert!(request.request_id.as_str().contains("WrappedComServer"));
+        assert!(plan.artifacts.iter().any(|artifact| artifact.kind
+            == EmbeddedBuildArtifactKind::Bundle
+            && artifact.path.ends_with("App.oxb")
+            && artifact.required));
+        assert!(plan.artifacts.iter().any(|artifact| artifact.kind
+            == EmbeddedBuildArtifactKind::DynamicLibrary
+            && artifact.path.ends_with("App.dll")
+            && artifact.required));
+        assert!(plan.artifacts.iter().any(|artifact| artifact.kind
+            == EmbeddedBuildArtifactKind::TypeLibrary
+            && artifact.path.ends_with("App.tlb")
+            && artifact.required));
+        assert!(
+            plan.required_tools
+                .iter()
+                .any(|tool| tool.name == "windows-sdk" && tool.required)
+        );
+        let registration_plan = plan.registration_plan.as_ref().expect("registration plan");
+        assert_eq!(
+            registration_plan.scope,
+            EmbeddedComRegistrationScope::PerUser
+        );
+        assert!(!registration_plan.requires_admin);
+        let capability = plan
+            .com_server_capability
+            .as_ref()
+            .expect("COM server capability profile");
+        assert!(!capability.bitness.is_empty());
+        assert!(
+            capability
+                .registration_scopes
+                .contains(&EmbeddedComRegistrationScope::RegistrationFreeManifest)
+        );
+
+        let result = host.build_workspace(&request);
+        assert_eq!(result.status, EmbeddedBuildStatus::Succeeded);
+        assert_eq!(result.plan.target, EmbeddedBuildTarget::WrappedComServer);
+        assert!(
+            result
+                .dll_path
+                .as_ref()
+                .is_some_and(|path| path.ends_with("App.dll"))
+        );
+        assert!(
+            result
+                .tlb_path
+                .as_ref()
+                .is_some_and(|path| path.ends_with("App.tlb"))
+        );
+        assert_eq!(
+            result
+                .registration_plan
+                .as_ref()
+                .expect("result registration plan")
+                .scope,
+            EmbeddedComRegistrationScope::PerUser
         );
     }
 

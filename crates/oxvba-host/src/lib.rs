@@ -27,15 +27,17 @@ pub use direct_host::{
     DirectHostWorkspaceId,
 };
 pub use embedded::{
-    EmbeddedBuildRequest, EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
+    EmbeddedBuildArtifactKind, EmbeddedBuildArtifactPlan, EmbeddedBuildPlan, EmbeddedBuildRequest,
+    EmbeddedBuildResult, EmbeddedBuildRunEvent, EmbeddedBuildRunHost,
     EmbeddedBuildRunHostCommandStatus, EmbeddedBuildStartedEvent, EmbeddedBuildStatus,
-    EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget, EmbeddedInvokeEntryPointRequest,
-    EmbeddedInvokeProcedureVariantRequest, EmbeddedInvokeStatus, EmbeddedInvokeVariantResult,
-    EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget, EmbeddedResetKind,
-    EmbeddedResetRequest, EmbeddedResetResult, EmbeddedResetStatus, EmbeddedRunRequest,
-    EmbeddedRunResult, EmbeddedRunSession, EmbeddedRunSessionCommandStatus,
-    EmbeddedRunSessionError, EmbeddedRunStartedEvent, EmbeddedRunStatus, EmbeddedWorkspaceInput,
-    EmbeddedWorkspaceSnapshot,
+    EmbeddedBuildTarget, EmbeddedComRegistrationScope, EmbeddedComServerCapabilityProfile,
+    EmbeddedComServerRegistrationPlan, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
+    EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureVariantRequest, EmbeddedInvokeStatus,
+    EmbeddedInvokeVariantResult, EmbeddedOutputChannel, EmbeddedOutputLine,
+    EmbeddedProcedureTarget, EmbeddedRequiredTool, EmbeddedResetKind, EmbeddedResetRequest,
+    EmbeddedResetResult, EmbeddedResetStatus, EmbeddedRunRequest, EmbeddedRunResult,
+    EmbeddedRunSession, EmbeddedRunSessionCommandStatus, EmbeddedRunSessionError,
+    EmbeddedRunStartedEvent, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
     ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,

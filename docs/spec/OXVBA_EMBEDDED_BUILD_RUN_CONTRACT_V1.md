@@ -105,6 +105,18 @@ These results should expose:
 - structured output events
 - duration/phase metrics where inexpensive
 
+For wrapper targets, build requests and results must expose the physical build
+target as typed data. The current `WrappedComServer` DTO slice uses:
+- `EmbeddedBuildTarget::WrappedComServer`
+- `EmbeddedBuildPlan { target, artifacts, required_tools, warnings }`
+- `EmbeddedBuildResult { plan, dll_path, tlb_path, registration_plan, diagnostics }`
+- `EmbeddedComServerCapabilityProfile { windows, bitness, toolchain, registration_scopes }`
+- `EmbeddedComServerRegistrationPlan { scope, requires_admin, command_hint }`
+
+OxIde should use these fields directly for disabled states, artifact display,
+registration affordances, and toolchain messaging. It should not infer
+WrappedComServer availability by parsing CLI output.
+
 ### Events
 
 Expected event family:
@@ -232,8 +244,8 @@ This keeps the host architecture clean:
 This contract does not imply:
 - replacing the CLI
 - replacing `oxvba-lsp`
-- packaging/wrapper build targets
-- COM/XLL hosting contracts
+- native packaging targets beyond the typed wrapper DTOs named in this contract
+- COM/XLL runtime hosting contracts
 - browser/web host transport contracts
 
 Those remain separate lanes.

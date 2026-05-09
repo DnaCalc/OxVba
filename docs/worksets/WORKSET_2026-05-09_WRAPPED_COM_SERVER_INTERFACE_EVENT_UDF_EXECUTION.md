@@ -101,6 +101,12 @@ OxVba already has important substrate:
   the prepared-session VM path with caller, locale, dependency-token, and
   volatile-request context shape. Broader array/error return and host harness
   evidence remains pending.
+- OxIde/direct-host build DTOs now have a WrappedComServer planning/result
+  slice: `EmbeddedBuildRequest` carries `EmbeddedBuildTarget::WrappedComServer`,
+  `EmbeddedBuildRunHost::build_plan` returns planned `.oxb`/`.dll`/`.tlb` and
+  registration artifacts, required tools, capability profile, and per-user
+  registration plan, and `EmbeddedBuildResult` exposes direct `dll_path`,
+  `tlb_path`, and `registration_plan` fields.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
