@@ -11,16 +11,19 @@ use oxvba_project::ComClassExportDescriptor;
 
 use crate::compile::{BuildError, ShimOutputType, compile_shim};
 use crate::idl::deterministic_uuid;
+use crate::typelib_gen::{TypeLibGenError, generate_typelib};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedComServerBuildOutput {
     pub dll_path: PathBuf,
+    pub tlb_path: PathBuf,
 }
 
 #[derive(Debug)]
 pub enum WrappedComServerBuildError {
     UnsupportedPlatform { target_os: &'static str },
     Build(BuildError),
+    TypeLib(TypeLibGenError),
 }
 
 impl std::fmt::Display for WrappedComServerBuildError {
@@ -33,6 +36,7 @@ impl std::fmt::Display for WrappedComServerBuildError {
                 )
             }
             Self::Build(err) => write!(f, "{err}"),
+            Self::TypeLib(err) => write!(f, "{err}"),
         }
     }
 }
@@ -40,6 +44,12 @@ impl std::fmt::Display for WrappedComServerBuildError {
 impl From<BuildError> for WrappedComServerBuildError {
     fn from(value: BuildError) -> Self {
         Self::Build(value)
+    }
+}
+
+impl From<TypeLibGenError> for WrappedComServerBuildError {
+    fn from(value: TypeLibGenError) -> Self {
+        Self::TypeLib(value)
     }
 }
 
@@ -55,10 +65,14 @@ pub fn compile_wrapped_com_server_shim(
         });
     }
 
-    let source = generate_com_server_shim(project_name, oxb_path, classes);
+    let tlb_path = output_path.with_extension("tlb");
+    let tlb_literal = tlb_path.to_string_lossy().replace('\\', "/");
+    generate_typelib(project_name, &tlb_literal, classes)?;
+    let source = generate_com_server_shim(project_name, oxb_path, Some(&tlb_literal), classes);
     compile_shim(&source, output_path, ShimOutputType::Dll)?;
     Ok(WrappedComServerBuildOutput {
         dll_path: output_path.to_path_buf(),
+        tlb_path,
     })
 }
 
@@ -74,6 +88,7 @@ pub fn compile_wrapped_com_server_shim(
 pub fn generate_com_server_shim(
     project_name: &str,
     oxb_path: &str,
+    typelib_path: Option<&str>,
     classes: &[ComClassExportDescriptor],
 ) -> String {
     let mut source = String::new();
@@ -166,7 +181,11 @@ pub extern "system" fn DllCanUnloadNow() -> i32 {
     );
 
     // DllRegisterServer / DllUnregisterServer (delegates to registration module)
-    source.push_str(&generate_registration_exports(project_name, classes));
+    source.push_str(&generate_registration_exports(
+        project_name,
+        typelib_path,
+        classes,
+    ));
 
     // IClassFactory implementation
     source.push_str(generate_class_factory_impl());
@@ -446,6 +465,7 @@ pub extern "system" fn DllGetClassObject(
 
 fn generate_registration_exports(
     project_name: &str,
+    typelib_path: Option<&str>,
     classes: &[ComClassExportDescriptor],
 ) -> String {
     let mut s = String::new();
@@ -586,6 +606,11 @@ pub extern "system" fn DllRegisterServer() -> i32 {
 "#,
     );
 
+    let libid = format!("{{{}}}", deterministic_uuid(project_name, "__typelib__"));
+    let typelib_key = format!("Software\\Classes\\TypeLib\\{libid}\\1.0\\0\\win64");
+    let typelib_flags_key = format!("Software\\Classes\\TypeLib\\{libid}\\1.0\\FLAGS");
+    let typelib_helpdir_key = format!("Software\\Classes\\TypeLib\\{libid}\\1.0\\HELPDIR");
+
     for class in classes {
         let default_prog_id = format!("{project_name}.{}", class.class_name);
         let prog_id = class.prog_id.as_deref().unwrap_or(&default_prog_id);
@@ -601,12 +626,14 @@ pub extern "system" fn DllRegisterServer() -> i32 {
         let clsid_key = format!("Software\\Classes\\CLSID\\{clsid}");
         let clsid_inproc_key = format!("{clsid_key}\\InprocServer32");
         let clsid_progid_key = format!("{clsid_key}\\ProgID");
+        let clsid_typelib_key = format!("{clsid_key}\\TypeLib");
         let progid_key = format!("Software\\Classes\\{prog_id}");
         let progid_clsid_key = format!("{progid_key}\\CLSID");
         s.push_str(&format!(
             r#"    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
     if !set_key_default_value(HKEY_CURRENT_USER, "{}", &dll_path) {{ return E_INVALIDARG; }}
     if !set_key_named_value(HKEY_CURRENT_USER, "{}", "ThreadingModel", "Apartment") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
     if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
     if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
     if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
@@ -617,10 +644,25 @@ pub extern "system" fn DllRegisterServer() -> i32 {
             rust_string_literal(&clsid_inproc_key),
             rust_string_literal(&clsid_progid_key),
             rust_string_literal(prog_id),
+            rust_string_literal(&clsid_typelib_key),
+            rust_string_literal(&libid),
             rust_string_literal(&progid_key),
             rust_string_literal(&description),
             rust_string_literal(&progid_clsid_key),
             rust_string_literal(&clsid),
+        ));
+    }
+
+    if let Some(typelib_path) = typelib_path {
+        s.push_str(&format!(
+            r#"    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "0") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "") {{ return E_INVALIDARG; }}
+"#,
+            rust_string_literal(&typelib_key),
+            rust_string_literal(typelib_path),
+            rust_string_literal(&typelib_flags_key),
+            rust_string_literal(&typelib_helpdir_key),
         ));
     }
 
@@ -650,6 +692,11 @@ pub extern "system" fn DllUnregisterServer() -> i32 {
             rust_string_literal(&progid_key),
         ));
     }
+    s.push_str(&format!(
+        r#"    delete_key_tree(HKEY_CURRENT_USER, "{}");
+"#,
+        rust_string_literal(&format!("Software\\Classes\\TypeLib\\{libid}")),
+    ));
 
     s.push_str(
         r#"    S_OK
@@ -1088,7 +1135,7 @@ mod tests {
             members: vec![],
         }];
 
-        let source = generate_com_server_shim("TestProj", "test.oxb", &classes);
+        let source = generate_com_server_shim("TestProj", "test.oxb", None, &classes);
         assert!(source.contains("DllMain"));
         assert!(source.contains("DllGetClassObject"));
         assert!(source.contains("DllCanUnloadNow"));
@@ -1115,7 +1162,7 @@ mod tests {
             }],
         }];
 
-        let source = generate_com_server_shim("TestApp", "test.oxb", &classes);
+        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes);
         assert!(source.contains("OxVbaClassFactory"));
         assert!(source.contains("IClassFactoryVtbl"));
         assert!(source.contains("cf_create_instance"));
@@ -1132,7 +1179,7 @@ mod tests {
             members: vec![],
         }];
 
-        let source = generate_com_server_shim("TestApp", "test.oxb", &classes);
+        let source = generate_com_server_shim("TestApp", "test.oxb", None, &classes);
         assert!(source.contains("OxVbaDispatchInstance"));
         assert!(source.contains("compile_and_prepare_session_from_bundle"));
         assert!(source.contains("create_class_instance"));
@@ -1161,7 +1208,7 @@ mod tests {
             },
         ];
 
-        let source = generate_com_server_shim("Multi", "test.oxb", &classes);
+        let source = generate_com_server_shim("Multi", "test.oxb", None, &classes);
         assert!(source.contains("CLSID_ALPHA"));
         assert!(source.contains("CLSID_BETA"));
         assert!(source.contains("Multi.Alpha"));
@@ -1326,6 +1373,14 @@ mod tests {
                 .expect("WrappedComServer DLL build should succeed");
         assert_eq!(output.dll_path, dll_path);
         assert!(output.dll_path.exists());
+        assert_eq!(output.tlb_path, dll_path.with_extension("tlb"));
+        assert!(output.tlb_path.exists());
+        crate::typelib_gen::verify_typelib_roundtrip(
+            &output.tlb_path.to_string_lossy(),
+            "TestProj",
+            &classes,
+        )
+        .expect("generated WrappedComServer typelib should load");
 
         let bytes = std::fs::read(&output.dll_path).expect("read built DLL");
         for export in [

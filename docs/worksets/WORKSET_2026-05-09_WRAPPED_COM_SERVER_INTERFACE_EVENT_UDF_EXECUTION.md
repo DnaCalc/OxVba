@@ -62,6 +62,11 @@ OxVba already has important substrate:
   SAFEARRAY/array return, supported error/`EXCEPINFO` behavior,
   `DllRegisterServer`/`DllUnregisterServer` per-user registration,
   `CLSIDFromProgID`, and `CoCreateInstance` registered activation.
+- COM-0008 now has generated TypeLib evidence for the publication half:
+  `compile_wrapped_com_server_shim` emits a sibling `.tlb`, the `.tlb` loads
+  through Windows TypeLib roundtrip checks, and `DllRegisterServer` writes
+  per-user TypeLib metadata linked from each CLSID. Early-bound client-call
+  evidence remains in `bd-wcs1.6.2`.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

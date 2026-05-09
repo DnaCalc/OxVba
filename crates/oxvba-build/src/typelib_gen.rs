@@ -108,6 +108,8 @@ mod ffi {
     pub const FUNCFLAG_FDEFAULTBIND: u16 = 0x0020;
     pub const FUNCFLAG_FHIDDEN: u16 = 0x0040;
 
+    pub const TYPE_E_AMBIGUOUS: i32 = 0x8002802B_u32 as i32;
+
     // IID_IDispatch
     #[allow(dead_code)]
     pub const IID_IDISPATCH: Guid = Guid {
@@ -697,28 +699,22 @@ fn add_dispatch_members(
         if is_function {
             let retval_name = ffi::to_wide("pRetVal");
             names.push(retval_name.as_ptr());
-            unsafe {
-                check_hr(
-                    (vtbl.set_func_and_param_names)(
-                        ptinfo,
-                        i as u32,
-                        names.as_ptr(),
-                        names.len() as u32,
-                    ),
-                    &format!("SetFuncAndParamNames({})", member.member_name),
-                )?;
-            }
-        } else {
-            unsafe {
-                check_hr(
-                    (vtbl.set_func_and_param_names)(
-                        ptinfo,
-                        i as u32,
-                        names.as_ptr(),
-                        names.len() as u32,
-                    ),
-                    &format!("SetFuncAndParamNames({})", member.member_name),
-                )?;
+        }
+        unsafe {
+            let hr = (vtbl.set_func_and_param_names)(
+                ptinfo,
+                i as u32,
+                names.as_ptr(),
+                names.len() as u32,
+            );
+            let duplicate_property_accessor = hr == TYPE_E_AMBIGUOUS
+                && matches!(
+                    member.kind,
+                    oxvba_compiler::ProjectDynamicMemberKind::PropertyLet
+                        | oxvba_compiler::ProjectDynamicMemberKind::PropertySet
+                );
+            if !duplicate_property_accessor {
+                check_hr(hr, &format!("SetFuncAndParamNames({})", member.member_name))?;
             }
         }
     }
