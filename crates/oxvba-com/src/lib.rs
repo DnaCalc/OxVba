@@ -19,6 +19,8 @@ pub mod typelib_cache;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
 pub mod windows_bridge;
+#[cfg(target_os = "windows")]
+pub mod windows_call_frame;
 pub mod windows_client;
 #[cfg(target_os = "windows")]
 pub mod windows_connection_point;
@@ -74,6 +76,12 @@ pub use typelib_catalog::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_bridge::{WindowsComBridge, WindowsComBridgeDispatchError};
+#[cfg(target_os = "windows")]
+pub use windows_call_frame::{
+    ComCallFrameMarshalError, apply_runtime_call_writebacks_to_disp_params,
+    disp_params_to_runtime_call_frame, logical_arg_index_to_com_arg_index,
+    runtime_call_error_to_excepinfo, runtime_call_result_to_variant,
+};
 #[cfg(target_os = "windows")]
 pub use windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,

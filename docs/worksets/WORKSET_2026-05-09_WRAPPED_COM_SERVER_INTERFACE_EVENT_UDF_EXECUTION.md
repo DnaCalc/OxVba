@@ -2,7 +2,7 @@
 
 Date: 2026-05-09
 Owner: Codex
-Status: planned
+Status: in-progress
 Bead root: `bd-wcs1`
 
 ## Purpose
@@ -35,6 +35,9 @@ OxVba already has important substrate:
   early-bound member metadata.
 - `Engine::create_class_instance` and
   `Engine::invoke_member_on_object_with_variants` exist as wrapper-facing hooks.
+- `RuntimeCallFrame`/`RuntimeCallResult` are live, pure OxVba object member
+  invocation routes through them, and Windows COM `DISPPARAMS`/`VARIANT`
+  marshaling helpers now lower into and out of the same call-frame carrier.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
