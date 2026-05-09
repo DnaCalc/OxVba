@@ -88,8 +88,9 @@ OxVba already has important substrate:
   It also has controlled runtime connection-point evidence for
   `IConnectionPointContainer::FindConnectionPoint`, `IConnectionPoint::Advise`,
   sink `IDispatch::Invoke` payload delivery from `Widget.FireChanged(123)`,
-  `Unadvise`, and no callback after unsubscribe. Office/VBA `WithEvents` oracle
-  evidence remains in `bd-wcs1.8.3`.
+  `Unadvise`, and no callback after unsubscribe. `bd-wcs1.8.3` publishes a
+  reproducible controlled-sink evidence capture; Office/VBA `WithEvents`
+  coverage remains outside the implemented subset.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

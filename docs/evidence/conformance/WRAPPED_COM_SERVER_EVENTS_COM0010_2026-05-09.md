@@ -1,7 +1,7 @@
 # WrappedComServer events COM-0010 evidence
 
 Date: 2026-05-09
-Beads: `bd-wcs1.8.1`, `bd-wcs1.8.2`
+Beads: `bd-wcs1.8.1`, `bd-wcs1.8.2`, `bd-wcs1.8.3`
 Matrix row: `COM-0010`
 
 ## Scope
@@ -22,6 +22,7 @@ This is not Office/VBA `WithEvents` oracle evidence.
 cargo test -p oxvba-build generate_typelib --quiet
 cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_exports --quiet
 cargo check -p oxvba-build --quiet
+./scripts/run-com-wrapped-server-events.ps1 -EvidenceDir docs/evidence/conformance/oracle_captures/wrapped_com_events_20260509T000000Z
 ```
 
 ## Verified behavior
@@ -50,11 +51,15 @@ cargo check -p oxvba-build --quiet
   with a `VT_I4` payload of `123`.
 - The same test invokes `FireChanged` again after `Unadvise` and verifies no
   second callback reaches the sink.
+- Timestamped controlled sink evidence is captured under
+  `docs/evidence/conformance/oracle_captures/wrapped_com_events_20260509T000000Z/`.
+- The Office probe in that capture found Excel automation available
+  (`Excel available: 16.0`), but this evidence does not claim an Excel/VBA
+  `WithEvents` client.
 
 ## Residual
 
-`COM-0010` remains `in-progress` pending `bd-wcs1.8.3` oracle evidence. The
-current runtime subset is controlled and dispatch-sink based; Office/VBA
-`WithEvents`, `EnumConnectionPoints`, `EnumConnections`, multi-event selection,
-richer payload shapes, and documented external ordering evidence are not claimed
-by this bead.
+`COM-0010` is an `implemented-subset` for controlled dispatch-sink
+connection-point events. Office/VBA `WithEvents`, `EnumConnectionPoints`,
+`EnumConnections`, multi-event selection, richer payload shapes, and broader
+external ordering evidence are not claimed by this subset.

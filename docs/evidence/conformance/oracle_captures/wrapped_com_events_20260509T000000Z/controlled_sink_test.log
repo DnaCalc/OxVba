@@ -1,0 +1,11 @@
+
+running 1 test
+test comserver::tests::wrapped_com_server_build_compiles_dll_with_standard_exports has been running for over 60 seconds
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 144.25s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
