@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{
-    ModuleAttributes, ModuleKind, ModuleUnit, OxBundle, ProjectKind, ProjectManifest,
-    ProjectReference, ReferenceKind, compile_project,
+    DeclareParamType, ModuleAttributes, ModuleKind, ModuleUnit, OxBundle, ProjectKind,
+    ProjectManifest, ProjectReference, ReferenceKind, compile_project,
 };
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{Engine, HostConfig, HostUdfCallContext};
 use oxvba_runtime::{VarType, Variant, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
@@ -168,6 +168,119 @@ fn multiple_invocations_on_same_session() {
         .invoke_procedure_with_variants(&mut session, "Mod1", "Triple", &[Variant::from_i32(7)])
         .unwrap();
     assert_eq!(r2.as_i32(), Some(21));
+}
+
+#[test]
+fn host_udf_catalog_exposes_public_procedural_functions_with_policy() {
+    let manifest = make_manifest(vec![
+        make_module(
+            "Main",
+            concat!(
+                "Public Function HostAdd(a As Long, b As Long) As Long\n",
+                "HostAdd = a + b\n",
+                "End Function\n",
+                "Public Sub Helper()\n",
+                "End Sub\n",
+                "Private Function Hidden() As Long\n",
+                "Hidden = 1\n",
+                "End Function\n"
+            ),
+        ),
+        make_class_module(
+            "Widget",
+            "Public Function ClassAdd(a As Long, b As Long) As Long\nClassAdd = a + b\nEnd Function\n",
+        ),
+    ]);
+
+    let engine = Engine::default();
+    let session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let catalog = engine.host_udf_catalog(&session);
+
+    assert_eq!(catalog.functions.len(), 1);
+    let host_add = &catalog.functions[0];
+    assert_eq!(host_add.module_name, "main");
+    assert_eq!(host_add.procedure_name, "hostadd");
+    assert_eq!(
+        host_add.stable_host_call_id,
+        "host-call:testproj:main:hostadd:function"
+    );
+    assert_eq!(host_add.arguments.len(), 2);
+    assert_eq!(host_add.arguments[0].name.as_deref(), Some("a"));
+    assert_eq!(
+        host_add.arguments[0].value_type,
+        Some(DeclareParamType::Long)
+    );
+    assert_eq!(host_add.arguments[1].name.as_deref(), Some("b"));
+    assert_eq!(
+        host_add.arguments[1].value_type,
+        Some(DeclareParamType::Long)
+    );
+    assert_eq!(host_add.return_type, Some(DeclareParamType::Long));
+    assert!(!host_add.volatile);
+    assert_eq!(host_add.dependency_policy, "explicit-arguments-only");
+    assert_eq!(host_add.side_effect_policy, "no-host-side-effects");
+    assert_eq!(
+        host_add.thread_safety_policy,
+        "single-threaded-vba-compatible"
+    );
+    assert_eq!(
+        host_add.allowed_contexts,
+        vec![
+            "worksheet-cell".to_string(),
+            "host-formula-evaluator".to_string()
+        ]
+    );
+}
+
+#[test]
+fn host_udf_invoke_runs_public_function_with_caller_context() {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        "Public Function HostAdd(a As Long, b As Long) As Long\nHostAdd = a + b\nEnd Function\n",
+    )]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let catalog = engine.host_udf_catalog(&session);
+    let host_add = &catalog.functions[0];
+
+    let result = engine
+        .invoke_host_udf_with_variants(
+            &mut session,
+            &host_add.stable_host_call_id,
+            HostUdfCallContext::new()
+                .with_caller("Sheet1!A1")
+                .with_locale(1033)
+                .with_dependency("Sheet1!B1:C1")
+                .with_volatile_requested(true),
+            &[Variant::from_i32(2), Variant::from_i32(5)],
+        )
+        .unwrap();
+
+    assert_eq!(result.value.as_i32(), Some(7));
+    assert_eq!(result.caller.as_deref(), Some("Sheet1!A1"));
+    assert!(result.volatile_requested);
+    assert_eq!(result.dependency_tokens, vec!["Sheet1!B1:C1".to_string()]);
+}
+
+#[test]
+fn host_udf_invoke_rejects_sub_exports() {
+    let manifest = make_manifest(vec![make_module("Main", "Public Sub Helper()\nEnd Sub\n")]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    assert!(engine.host_udf_catalog(&session).functions.is_empty());
+
+    let err = engine
+        .invoke_host_udf_with_variants(
+            &mut session,
+            "host-call:testproj:main:helper:sub",
+            HostUdfCallContext::new(),
+            &[],
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("host UDF function not found"), "got: {err}");
 }
 
 #[test]

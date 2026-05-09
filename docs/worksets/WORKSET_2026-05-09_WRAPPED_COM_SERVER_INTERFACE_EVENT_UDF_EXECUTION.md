@@ -95,7 +95,12 @@ OxVba already has important substrate:
   `descriptor_inventory.host_calls` carry stable identities, entry/slot/type
   metadata, argument-name slots, and conservative UDF policy fields for
   selection, volatility, dependencies, side effects, thread safety, and allowed
-  host contexts. Typed catalog/invoke support remains pending.
+  host contexts. It also has a first typed host API slice:
+  `Engine::host_udf_catalog` enumerates public procedural functions only and
+  `Engine::invoke_host_udf_with_variants` invokes a stable catalog entry through
+  the prepared-session VM path with caller, locale, dependency-token, and
+  volatile-request context shape. Broader array/error return and host harness
+  evidence remains pending.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

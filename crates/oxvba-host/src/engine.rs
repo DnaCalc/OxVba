@@ -9,8 +9,9 @@ use oxvba_com::{
     DynamicEventPayload, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectManifest, compile_project, compile_with_runtime_metadata,
+    Bytecode, CompiledProject, DeclareParamType, ExportKind, HostProcedureExport, Instruction,
+    ProcedureRuntimeMetadata, ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectManifest,
+    compile_project, compile_with_runtime_metadata,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -45,6 +46,87 @@ pub enum DiagnosticPhase {
 pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
     message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfCatalog {
+    pub functions: Vec<HostUdfFunctionDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfFunctionDescriptor {
+    pub stable_host_call_id: String,
+    pub project_name: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub arguments: Vec<HostUdfArgumentDescriptor>,
+    pub return_type: Option<DeclareParamType>,
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub volatile: bool,
+    pub dependency_policy: String,
+    pub side_effect_policy: String,
+    pub thread_safety_policy: String,
+    pub allowed_contexts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfArgumentDescriptor {
+    pub name: Option<String>,
+    pub value_type: Option<DeclareParamType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfCallContext {
+    pub caller: Option<String>,
+    pub locale_id: Option<u32>,
+    pub dependency_tokens: Vec<String>,
+    pub volatile_requested: bool,
+}
+
+impl HostUdfCallContext {
+    pub fn new() -> Self {
+        Self {
+            caller: None,
+            locale_id: None,
+            dependency_tokens: Vec::new(),
+            volatile_requested: false,
+        }
+    }
+
+    pub fn with_caller(mut self, caller: impl Into<String>) -> Self {
+        self.caller = Some(caller.into());
+        self
+    }
+
+    pub fn with_locale(mut self, locale_id: u32) -> Self {
+        self.locale_id = Some(locale_id);
+        self
+    }
+
+    pub fn with_dependency(mut self, dependency_token: impl Into<String>) -> Self {
+        self.dependency_tokens.push(dependency_token.into());
+        self
+    }
+
+    pub fn with_volatile_requested(mut self, volatile_requested: bool) -> Self {
+        self.volatile_requested = volatile_requested;
+        self
+    }
+}
+
+impl Default for HostUdfCallContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfInvokeResult {
+    pub value: Variant,
+    pub caller: Option<String>,
+    pub volatile_requested: bool,
+    pub dependency_tokens: Vec<String>,
 }
 
 fn runtime_call_kind_for_project_member(kind: ProjectDynamicMemberKind) -> RuntimeCallKind {
@@ -765,6 +847,125 @@ impl Engine {
         }
     }
 
+    pub fn host_udf_catalog(&self, session: &ProjectRuntimeSession) -> HostUdfCatalog {
+        let mut functions = session
+            .compiled
+            .host_exports
+            .iter()
+            .filter(|export| export.kind == ExportKind::Function)
+            .map(|export| self.host_udf_descriptor_from_export(session, export))
+            .collect::<Vec<_>>();
+        functions.sort_by(|left, right| {
+            (
+                left.module_name.to_ascii_lowercase(),
+                left.procedure_name.to_ascii_lowercase(),
+            )
+                .cmp(&(
+                    right.module_name.to_ascii_lowercase(),
+                    right.procedure_name.to_ascii_lowercase(),
+                ))
+        });
+        HostUdfCatalog { functions }
+    }
+
+    pub fn invoke_host_udf_with_variants(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        stable_host_call_id: &str,
+        context: HostUdfCallContext,
+        args: &[Variant],
+    ) -> Result<HostUdfInvokeResult, PhaseDiagnostic> {
+        let export = session
+            .compiled
+            .host_exports
+            .iter()
+            .find(|export| {
+                export.kind == ExportKind::Function
+                    && stable_host_call_id_for_export(export) == stable_host_call_id
+            })
+            .cloned()
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "host UDF function not found: {stable_host_call_id}"
+                ))
+            })?;
+
+        let _frame = self.build_host_udf_call_frame(&export, &context, args);
+        let value = self.invoke_procedure_with_variants(
+            session,
+            &export.module_name,
+            &export.procedure_name,
+            args,
+        )?;
+
+        Ok(HostUdfInvokeResult {
+            value,
+            caller: context.caller,
+            volatile_requested: context.volatile_requested,
+            dependency_tokens: context.dependency_tokens,
+        })
+    }
+
+    fn host_udf_descriptor_from_export(
+        &self,
+        session: &ProjectRuntimeSession,
+        export: &HostProcedureExport,
+    ) -> HostUdfFunctionDescriptor {
+        let _ = self;
+        let metadata = find_procedure_metadata(
+            &session.compiled.procedure_runtime_metadata,
+            &export.module_name,
+            &export.procedure_name,
+        );
+        HostUdfFunctionDescriptor {
+            stable_host_call_id: stable_host_call_id_for_export(export),
+            project_name: export.project_name.clone(),
+            module_name: export.module_name.clone(),
+            procedure_name: export.procedure_name.clone(),
+            arguments: metadata
+                .map(host_udf_arguments_from_metadata)
+                .unwrap_or_default(),
+            return_type: metadata.and_then(|meta| meta.return_type),
+            category: None,
+            description: None,
+            volatile: false,
+            dependency_policy: "explicit-arguments-only".to_string(),
+            side_effect_policy: "no-host-side-effects".to_string(),
+            thread_safety_policy: "single-threaded-vba-compatible".to_string(),
+            allowed_contexts: vec![
+                "worksheet-cell".to_string(),
+                "host-formula-evaluator".to_string(),
+            ],
+        }
+    }
+
+    fn build_host_udf_call_frame(
+        &self,
+        export: &HostProcedureExport,
+        context: &HostUdfCallContext,
+        args: &[Variant],
+    ) -> RuntimeCallFrame {
+        let _ = self;
+        let mut runtime_context = RuntimeCallContext::new(RuntimeCallSource::HostUdf);
+        if let Some(caller) = &context.caller {
+            runtime_context = runtime_context.with_caller(caller.clone());
+        }
+        if let Some(locale_id) = context.locale_id {
+            runtime_context = runtime_context.with_locale(locale_id);
+        }
+        let mut frame = RuntimeCallFrame::new(
+            RuntimeCallSelector::HostCall {
+                host_call_id: stable_host_call_id_for_export(export),
+            },
+            RuntimeCallKind::HostCall,
+        )
+        .with_context(runtime_context);
+        for arg in args.iter().cloned() {
+            frame.push_positional_arg(RuntimeCallArgument::by_value(arg));
+        }
+        frame
+    }
+
     /// Create a new instance of a class module in the runtime session.
     pub fn create_class_instance(
         &self,
@@ -1308,6 +1509,57 @@ impl Engine {
             ))),
         }
     }
+}
+
+fn find_procedure_metadata<'a>(
+    metadata: &'a std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    module_name: &str,
+    procedure_name: &str,
+) -> Option<&'a ProcedureRuntimeMetadata> {
+    let suffix = format!(
+        "_{}_{}",
+        module_name.to_ascii_lowercase(),
+        procedure_name.to_ascii_lowercase()
+    );
+    metadata
+        .iter()
+        .find(|(key, _)| key.ends_with(&suffix))
+        .map(|(_, value)| value)
+}
+
+fn host_udf_arguments_from_metadata(
+    metadata: &ProcedureRuntimeMetadata,
+) -> Vec<HostUdfArgumentDescriptor> {
+    metadata
+        .param_slots
+        .iter()
+        .enumerate()
+        .map(|(index, param_slot)| HostUdfArgumentDescriptor {
+            name: metadata
+                .slots
+                .iter()
+                .find(|slot| slot.slot == *param_slot)
+                .and_then(|slot| {
+                    let name = slot.name.trim();
+                    (!name.is_empty()).then(|| name.to_string())
+                }),
+            value_type: metadata.param_types.get(index).copied(),
+        })
+        .collect()
+}
+
+fn stable_host_call_id_for_export(export: &HostProcedureExport) -> String {
+    [
+        "host-call",
+        &export.project_name,
+        &export.module_name,
+        &export.procedure_name,
+        &format!("{:?}", export.kind),
+    ]
+    .into_iter()
+    .map(|part| part.trim().to_ascii_lowercase())
+    .collect::<Vec<_>>()
+    .join(":")
 }
 
 fn normalize_callback_payload(

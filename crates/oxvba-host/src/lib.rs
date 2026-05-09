@@ -38,8 +38,9 @@ pub use embedded::{
     EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
-    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
-    ProjectRuntimeSession,
+    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
+    HostUdfArgumentDescriptor, HostUdfCallContext, HostUdfCatalog, HostUdfFunctionDescriptor,
+    HostUdfInvokeResult, PhaseDiagnostic, ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,
