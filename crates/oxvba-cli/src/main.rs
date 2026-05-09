@@ -135,6 +135,22 @@ fn run_build(args: Vec<String>) {
             })
             .collect();
     }
+    if !com_class_exports.is_empty()
+        && let Some(ref mut descriptor_inventory) = bundle.descriptor_inventory
+    {
+        for class_descriptor in &mut descriptor_inventory.com_classes {
+            if let Some(validated) = com_class_exports.iter().find(|candidate| {
+                candidate
+                    .class_name
+                    .eq_ignore_ascii_case(&class_descriptor.class_name)
+            }) {
+                class_descriptor.prog_id = validated.prog_id.clone();
+                class_descriptor.instancing =
+                    validated.instancing.map(|value| format!("{value:?}"));
+                class_descriptor.description = validated.description.clone();
+            }
+        }
+    }
     let bytes = bundle.serialize_to_bytes().unwrap_or_else(|err| {
         eprintln!("oxvba build: bundle serialization failed: {err}");
         std::process::exit(1);

@@ -11,14 +11,14 @@ use rkyv::{Archive, Deserialize, Serialize};
 use crate::bytecode::Bytecode;
 use crate::emit::ProcedureRuntimeMetadata;
 use crate::project::{
-    HostProcedureExport, ProjectComWithEventsRoute, ProjectDynamicObjectRoute,
-    ProjectEventDispatchBinding,
+    HostProcedureExport, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicObjectRoute, ProjectEventDispatchBinding,
 };
 
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -36,6 +36,89 @@ pub struct ManifestSnapshot {
 pub struct ExportInventory {
     pub host_exports: Vec<HostProcedureExport>,
     pub com_class_exports: Vec<ComClassExportEntry>,
+}
+
+/// Descriptor inventory consumed by generated wrappers and hosts.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct DescriptorInventory {
+    pub com_classes: Vec<BundleComClassDescriptor>,
+    pub com_events: Vec<BundleComEventDescriptor>,
+    pub host_calls: Vec<BundleHostCallDescriptor>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleComClassDescriptor {
+    pub stable_class_id: String,
+    pub project_name: String,
+    pub module_name: String,
+    pub class_name: String,
+    pub object_handle: i32,
+    pub prog_id: Option<String>,
+    pub instancing: Option<String>,
+    pub clsid: Option<String>,
+    pub description: Option<String>,
+    pub interfaces: Vec<BundleComInterfaceDescriptor>,
+    pub members: Vec<BundleComMemberDescriptor>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleComInterfaceDescriptor {
+    pub stable_interface_id: String,
+    pub name: String,
+    pub kind: String,
+    pub source_interface: bool,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleComMemberDescriptor {
+    pub stable_member_id: String,
+    pub member_name: String,
+    pub lowered_name: String,
+    pub kind: ProjectDynamicMemberKind,
+    pub dispatch_id: Option<i32>,
+    pub member_flags: Option<u32>,
+    pub is_default_member: bool,
+    pub visible_param_count: usize,
+    pub params: Vec<BundleComParamDescriptor>,
+    pub entry_pc: usize,
+    pub param_slots: Vec<usize>,
+    pub return_slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleComParamDescriptor {
+    pub name: String,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<i32>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleComEventDescriptor {
+    pub stable_event_id: String,
+    pub source_project_name: String,
+    pub source_module_name: String,
+    pub event_name: String,
+    pub event_token: Option<i32>,
+    pub binding_token: Option<i32>,
+    pub prog_id_name: Option<String>,
+    pub handler_symbol: String,
+    pub guard_symbol_zero_arg: String,
+    pub guard_symbol_one_arg: String,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleHostCallDescriptor {
+    pub stable_host_call_id: String,
+    pub project_name: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub kind: crate::project::ExportKind,
+    pub entry_pc: usize,
+    pub param_slots: Vec<usize>,
+    pub return_slot: Option<usize>,
+    pub param_types: Vec<crate::bytecode::DeclareParamType>,
+    pub return_type: Option<crate::bytecode::DeclareParamType>,
 }
 
 /// Toolchain fingerprint for cache invalidation.
@@ -70,6 +153,7 @@ pub struct OxBundle {
     pub event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
     pub com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
     pub dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    pub descriptor_inventory: Option<DescriptorInventory>,
 }
 
 /// v1 bundle layout for backward-compatible deserialization.
@@ -77,6 +161,20 @@ pub struct OxBundle {
 struct LegacyOxBundleV1 {
     bytecode: Bytecode,
     procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+}
+
+/// v2 bundle layout for backward-compatible deserialization.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV2 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
 }
 
 impl OxBundle {
@@ -97,6 +195,7 @@ impl OxBundle {
             event_dispatch_bindings: None,
             com_withevents_routes: None,
             dynamic_object_routes: None,
+            descriptor_inventory: None,
         }
     }
 
@@ -146,6 +245,7 @@ impl OxBundle {
             } else {
                 Some(compiled.project_dynamic_objects.clone())
             },
+            descriptor_inventory: descriptor_inventory_from_compiled_project(compiled),
         }
     }
 
@@ -191,9 +291,9 @@ impl OxBundle {
 
         // Read version.
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version != 1 && version != 2 {
+        if version != 1 && version != 2 && version != 3 {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1 or 2)"
+                "unsupported bundle version {version} (expected 1, 2, or 3)"
             ));
         }
 
@@ -220,12 +320,249 @@ impl OxBundle {
                 rkyv::from_bytes::<LegacyOxBundleV1, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v1: {e}"))?;
             Ok(OxBundle::new(legacy.bytecode, legacy.procedure_metadata))
+        } else if version == 2 {
+            let legacy: LegacyOxBundleV2 =
+                rkyv::from_bytes::<LegacyOxBundleV2, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v2: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy.procedure_metadata,
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: None,
+            })
         } else {
             let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
                 .map_err(|e| format!("deserialize: {e}"))?;
             Ok(bundle)
         }
     }
+}
+
+fn descriptor_inventory_from_compiled_project(
+    compiled: &crate::project::CompiledProject,
+) -> Option<DescriptorInventory> {
+    let com_classes = compiled
+        .project_dynamic_objects
+        .iter()
+        .map(com_class_descriptor_from_route)
+        .collect::<Vec<_>>();
+    let mut com_events = compiled
+        .event_dispatch_bindings
+        .iter()
+        .map(event_descriptor_from_dispatch_binding)
+        .collect::<Vec<_>>();
+    com_events.extend(
+        compiled
+            .project_com_withevents_routes
+            .iter()
+            .map(event_descriptor_from_withevents_route),
+    );
+    com_events.sort_by(|lhs, rhs| lhs.stable_event_id.cmp(&rhs.stable_event_id));
+    com_events.dedup_by(|lhs, rhs| lhs.stable_event_id == rhs.stable_event_id);
+
+    let host_calls = compiled
+        .host_exports
+        .iter()
+        .map(|export| {
+            host_call_descriptor_from_export(export, &compiled.procedure_runtime_metadata)
+        })
+        .collect::<Vec<_>>();
+
+    if com_classes.is_empty() && com_events.is_empty() && host_calls.is_empty() {
+        None
+    } else {
+        Some(DescriptorInventory {
+            com_classes,
+            com_events,
+            host_calls,
+        })
+    }
+}
+
+fn com_class_descriptor_from_route(route: &ProjectDynamicObjectRoute) -> BundleComClassDescriptor {
+    let stable_class_id = stable_id(["com-class", &route.project_name, &route.module_name]);
+    let default_interface_name = format!("_{}", route.module_name);
+    BundleComClassDescriptor {
+        stable_class_id: stable_class_id.clone(),
+        project_name: route.project_name.clone(),
+        module_name: route.module_name.clone(),
+        class_name: route.module_name.clone(),
+        object_handle: route.object_handle,
+        prog_id: None,
+        instancing: None,
+        clsid: None,
+        description: None,
+        interfaces: std::iter::once(BundleComInterfaceDescriptor {
+            stable_interface_id: stable_id([
+                "com-interface",
+                &route.project_name,
+                &route.module_name,
+                &default_interface_name,
+            ]),
+            name: default_interface_name,
+            kind: "dispatch".to_string(),
+            source_interface: false,
+        })
+        .chain(
+            route
+                .implements_interfaces
+                .iter()
+                .map(|name| BundleComInterfaceDescriptor {
+                    stable_interface_id: stable_id([
+                        "com-interface",
+                        &route.project_name,
+                        &route.module_name,
+                        name,
+                    ]),
+                    name: name.clone(),
+                    kind: "implemented".to_string(),
+                    source_interface: false,
+                }),
+        )
+        .collect(),
+        members: route
+            .members
+            .iter()
+            .enumerate()
+            .map(|(index, member)| BundleComMemberDescriptor {
+                stable_member_id: stable_id([
+                    "com-member",
+                    &route.project_name,
+                    &route.module_name,
+                    &member.member_name,
+                    &format!("{:?}", member.kind),
+                    &member
+                        .dispatch_id
+                        .map(|id| id.to_string())
+                        .unwrap_or_else(|| format!("ordinal-{index}")),
+                ]),
+                member_name: member.member_name.clone(),
+                lowered_name: member.lowered_name.clone(),
+                kind: member.kind,
+                dispatch_id: member.dispatch_id,
+                member_flags: member.member_flags,
+                is_default_member: member.is_default_member,
+                visible_param_count: member.visible_param_count,
+                params: member
+                    .params
+                    .iter()
+                    .map(|param| BundleComParamDescriptor {
+                        name: param.name.clone(),
+                        optional: param.optional,
+                        param_array: param.param_array,
+                        default_value: param.default_value,
+                    })
+                    .collect(),
+                entry_pc: member.entry_pc,
+                param_slots: member.param_slots.clone(),
+                return_slot: member.return_slot,
+            })
+            .collect(),
+    }
+}
+
+fn event_descriptor_from_dispatch_binding(
+    binding: &ProjectEventDispatchBinding,
+) -> BundleComEventDescriptor {
+    BundleComEventDescriptor {
+        stable_event_id: stable_id([
+            "event",
+            &binding.source_project_name,
+            &binding.source_module_name,
+            &binding.event_name,
+            &binding.handler_symbol,
+        ]),
+        source_project_name: binding.source_project_name.clone(),
+        source_module_name: binding.source_module_name.clone(),
+        event_name: binding.event_name.clone(),
+        event_token: None,
+        binding_token: None,
+        prog_id_name: None,
+        handler_symbol: binding.handler_symbol.clone(),
+        guard_symbol_zero_arg: binding.guard_symbol_zero_arg.clone(),
+        guard_symbol_one_arg: binding.guard_symbol_one_arg.clone(),
+    }
+}
+
+fn event_descriptor_from_withevents_route(
+    route: &ProjectComWithEventsRoute,
+) -> BundleComEventDescriptor {
+    BundleComEventDescriptor {
+        stable_event_id: stable_id([
+            "event",
+            &route.prog_id_name,
+            &route.event_name,
+            &route.event_token.to_string(),
+            &route.handler_symbol,
+        ]),
+        source_project_name: String::new(),
+        source_module_name: String::new(),
+        event_name: route.event_name.clone(),
+        event_token: Some(route.event_token),
+        binding_token: Some(route.binding_token),
+        prog_id_name: Some(route.prog_id_name.clone()),
+        handler_symbol: route.handler_symbol.clone(),
+        guard_symbol_zero_arg: route.guard_symbol_zero_arg.clone(),
+        guard_symbol_one_arg: route.guard_symbol_one_arg.clone(),
+    }
+}
+
+fn host_call_descriptor_from_export(
+    export: &HostProcedureExport,
+    metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> BundleHostCallDescriptor {
+    let procedure_metadata = metadata
+        .get(&format!(
+            "{}.{}",
+            export.module_name.to_ascii_lowercase(),
+            export.procedure_name.to_ascii_lowercase()
+        ))
+        .or_else(|| {
+            metadata.values().find(|candidate| {
+                candidate
+                    .module_name
+                    .eq_ignore_ascii_case(&export.module_name)
+                    && candidate
+                        .procedure_name
+                        .eq_ignore_ascii_case(&export.procedure_name)
+            })
+        });
+    BundleHostCallDescriptor {
+        stable_host_call_id: stable_id([
+            "host-call",
+            &export.project_name,
+            &export.module_name,
+            &export.procedure_name,
+            &format!("{:?}", export.kind),
+        ]),
+        project_name: export.project_name.clone(),
+        module_name: export.module_name.clone(),
+        procedure_name: export.procedure_name.clone(),
+        kind: export.kind,
+        entry_pc: procedure_metadata.map(|meta| meta.entry_pc).unwrap_or(0),
+        param_slots: procedure_metadata
+            .map(|meta| meta.param_slots.clone())
+            .unwrap_or_default(),
+        return_slot: procedure_metadata.and_then(|meta| meta.return_slot),
+        param_types: procedure_metadata
+            .map(|meta| meta.param_types.clone())
+            .unwrap_or_default(),
+        return_type: procedure_metadata.and_then(|meta| meta.return_type),
+    }
+}
+
+fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    parts
+        .into_iter()
+        .map(|part| part.trim().to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 #[cfg(test)]
@@ -292,11 +629,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_2() {
+    fn header_version_is_3() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
@@ -347,6 +684,51 @@ mod tests {
         assert_eq!(restored.bytecode.instructions.len(), 1);
         assert!(restored.manifest_snapshot.is_none());
         assert!(restored.export_inventory.is_none());
+    }
+
+    #[test]
+    fn v2_backward_compat() {
+        let bytecode = Bytecode {
+            instructions: vec![Instruction::Halt],
+            external_call_descriptors: vec![],
+            slot_count: 0,
+            user_slot_count: 0,
+        };
+        let legacy = LegacyOxBundleV2 {
+            bytecode,
+            procedure_metadata: BTreeMap::new(),
+            manifest_snapshot: Some(ManifestSnapshot {
+                project_name: "LegacyV2".to_string(),
+                project_kind: "compiled".to_string(),
+                module_names: vec!["Main".to_string()],
+                reference_names: vec![],
+            }),
+            export_inventory: None,
+            source_hashes: None,
+            toolchain_fingerprint: None,
+            event_dispatch_bindings: None,
+            com_withevents_routes: None,
+            dynamic_object_routes: None,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v2");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v2");
+        assert_eq!(
+            restored
+                .manifest_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.project_name.as_str()),
+            Some("LegacyV2")
+        );
+        assert!(restored.descriptor_inventory.is_none());
     }
 
     #[test]
@@ -460,5 +842,76 @@ mod tests {
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
         assert!(restored.manifest_snapshot.is_some());
+    }
+
+    #[test]
+    fn from_compiled_project_persists_descriptor_inventory() {
+        let manifest = crate::project::ProjectManifest {
+            project_name: "DescriptorProj".to_string(),
+            project_kind: crate::project::ProjectKind::Library,
+            modules: vec![
+                crate::project::ModuleUnit {
+                    module_name: "Main".to_string(),
+                    module_kind: crate::project::ModuleKind::Procedural,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Main".to_string(),
+                        ..Default::default()
+                    },
+                    source: "Public Function HostAdd(a As Long, b As Long) As Long\nHostAdd = a + b\nEnd Function".to_string(),
+                },
+                crate::project::ModuleUnit {
+                    module_name: "Widget".to_string(),
+                    module_kind: crate::project::ModuleKind::Class,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Widget".to_string(),
+                        vb_creatable: true,
+                        vb_exposed: true,
+                        ..Default::default()
+                    },
+                    source: "Public Function Add(a As Long, b As Long) As Long\nAdd = a + b\nEnd Function\nPublic Property Get Value() As Long\nValue = 42\nEnd Property".to_string(),
+                },
+            ],
+            references: vec![],
+            reference_projects: vec![],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = crate::compile_project(&manifest).expect("compile");
+        let bundle = OxBundle::from_compiled_project(&compiled, "DescriptorProj");
+        let inventory = bundle
+            .descriptor_inventory
+            .as_ref()
+            .expect("descriptor inventory");
+        assert_eq!(inventory.com_classes.len(), 1);
+        assert_eq!(inventory.com_classes[0].class_name, "widget");
+        assert!(
+            inventory.com_classes[0]
+                .members
+                .iter()
+                .any(|member| member.member_name.eq_ignore_ascii_case("Add")
+                    && !member.stable_member_id.is_empty())
+        );
+        assert!(
+            inventory
+                .host_calls
+                .iter()
+                .any(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd")
+                    && call.param_slots.len() == 2)
+        );
+
+        let bytes = bundle.serialize_to_bytes().expect("serialize");
+        let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored_inventory = restored
+            .descriptor_inventory
+            .as_ref()
+            .expect("restored descriptor inventory");
+        assert_eq!(
+            restored_inventory.com_classes[0].stable_class_id,
+            inventory.com_classes[0].stable_class_id
+        );
+        assert_eq!(
+            restored_inventory.host_calls.len(),
+            inventory.host_calls.len()
+        );
     }
 }

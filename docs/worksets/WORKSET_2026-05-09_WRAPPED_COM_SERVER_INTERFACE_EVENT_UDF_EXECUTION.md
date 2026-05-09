@@ -38,6 +38,9 @@ OxVba already has important substrate:
 - `RuntimeCallFrame`/`RuntimeCallResult` are live, pure OxVba object member
   invocation routes through them, and Windows COM `DISPPARAMS`/`VARIANT`
   marshaling helpers now lower into and out of the same call-frame carrier.
+- `OxBundle` v3 now persists a descriptor inventory for COM classes,
+  interfaces, members, events, and host-callable procedures while preserving
+  v1/v2 bundle read compatibility.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

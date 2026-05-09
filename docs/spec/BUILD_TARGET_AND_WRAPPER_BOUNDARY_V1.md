@@ -63,6 +63,13 @@ The wrapper boundary must receive enough information from the canonical OxVBA si
 - COM class/interface/member/event descriptors when `BuildTarget=WrappedComServer`
 - registration metadata: CLSIDs, ProgIDs, type library identity, bitness, registration scope, and manifest or registry output plan
 
+Descriptor compatibility policy: wrappers and hosts must consume COM and
+host-call descriptor truth from the serialized `OxBundle` inventory when it is
+present. The bundle reader must keep upgrading older supported bundle versions
+without that inventory to an explicit `None` descriptor state; wrappers may then
+fail with a typed "descriptor inventory unavailable" diagnostic rather than
+reparsing source files or silently inventing metadata.
+
 This contract intentionally keeps:
 - compiler/runtime semantics in the existing OxVBA core
 - packaging mechanics in wrapper/native-hosting lanes

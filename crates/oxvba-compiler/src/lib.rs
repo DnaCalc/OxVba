@@ -11,7 +11,11 @@ pub mod typecheck;
 
 use thiserror::Error;
 
-pub use bundle::{ComClassExportEntry, OxBundle};
+pub use bundle::{
+    BundleComClassDescriptor, BundleComEventDescriptor, BundleComInterfaceDescriptor,
+    BundleComMemberDescriptor, BundleComParamDescriptor, BundleHostCallDescriptor,
+    ComClassExportEntry, DescriptorInventory, OxBundle,
+};
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
