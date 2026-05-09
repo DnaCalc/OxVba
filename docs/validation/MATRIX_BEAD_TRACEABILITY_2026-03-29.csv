@@ -67,7 +67,11 @@ bd-wcs1.5.1,bd-wcs1.5,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX
 bd-wcs1.5.3,bd-wcs1.5,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0007,IDispatch GetIDsOfNames/Invoke implementation over descriptors and call frames.
 bd-wcs1.6.2,bd-wcs1.6,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0008,Office/VBA early-bound oracle for generated wrapped server typelib.
 bd-wcs1.7.2,bd-wcs1.7,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0009,Dispatch/vtable equivalence evidence for Automation-safe dual-interface member.
+bd-wcs1.8.1,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Wrapped event source dispinterface and coclass source metadata publication.
 bd-wcs1.8.2,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Connection point Advise/Unadvise and RaiseEvent sink dispatch.
+bd-wcs1.8.3,bd-wcs1.8,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv,COM-0010,Controlled sink event oracle evidence capture and COM-0010 subset documentation.
+bd-wcs1.9.1,bd-wcs1.9,docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,PH-0011,Host-callable UDF descriptor metadata and conservative policy fields persisted in bundle inventory.
 bd-wcs1.9.2,bd-wcs1.9,docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,PH-0011,Typed host UDF catalog/invoke API with caller context and volatile/dependency sinks.
 bd-wcs1.9.3,bd-wcs1.9,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv;docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,COM-0007;COM-0008;COM-0009;COM-0010;PH-0011,OxIde build-plan/build-result/registration DTO exposure for WrappedComServer and host-UDF catalog.
+bd-wcs1.10.1,bd-wcs1.10,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv;docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,COM-0007;COM-0008;COM-0009;COM-0010;PH-0011,Validation matrices and bead traceability refreshed for wrapped COM/event/UDF implemented subset evidence.
 bd-wcs1.10.2,bd-wcs1.10,docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv;docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv,COM-0007;COM-0008;COM-0009;COM-0010;PH-0011,Final evidence and terminal audit for implemented wrapped COM/server/UDF subset.
