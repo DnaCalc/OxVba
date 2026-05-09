@@ -267,6 +267,7 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
                 "Bundle" => Some(BuildTarget::Bundle),
                 "WrapperExe" => Some(BuildTarget::WrapperExe),
                 "WrapperLibrary" => Some(BuildTarget::WrapperLibrary),
+                "WrappedComServer" | "WrapperComServer" => Some(BuildTarget::WrappedComServer),
                 _ => None,
             };
         }

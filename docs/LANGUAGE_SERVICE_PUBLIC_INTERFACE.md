@@ -129,6 +129,10 @@ Status:
 - COM capability profile and runtime availability DTOs now exist via `com_capability_profile` and `com_runtime_invocation_availability`
 - a direct OxIde-facing COM helper surface now exists via `ComSelectionService`, `inspect_workspace_com_project_state`, `capability_profile`, `runtime_invocation_availability`, and `plan_reorder_references`
 - direct project compile/options DTOs now exist via `inspect_workspace_compile_options` and `HostProjectCompileOptionsSurface`
+- `HostProjectCompileOptionsSurface` and `HostProjectSettingsEdit::SetBuildTarget`
+  now carry `BuildTarget::WrappedComServer`; the legacy input spelling
+  `WrapperComServer` is normalized by project parsing and canonical generated
+  project files emit `WrappedComServer`
 - canonical `.basproj` mutation/apply flows now exist via `apply_host_project_edits_to_basproj` and `apply_host_project_edits_to_basproj_path`
 - validated project roster/reference edit planning and apply flow now exists via `prepare_host_project_edit_plan`, `validate_host_project_edits`, and `apply_host_project_edit_plan`
 - validated scalar project/compile settings planning and apply flow now exists via `prepare_host_project_settings_edit_plan`, `validate_host_project_settings_edits`, and `apply_host_project_settings_edit_plan`

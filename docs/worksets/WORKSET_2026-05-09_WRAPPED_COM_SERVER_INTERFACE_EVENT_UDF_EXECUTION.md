@@ -41,6 +41,9 @@ OxVba already has important substrate:
 - `OxBundle` v3 now persists a descriptor inventory for COM classes,
   interfaces, members, events, and host-callable procedures while preserving
   v1/v2 bundle read compatibility.
+- `.basproj` parsing, canonical generation, and direct host project-settings
+  DTOs now represent `BuildTarget=WrappedComServer`; the compatibility input
+  spelling `WrapperComServer` normalizes to the canonical value.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

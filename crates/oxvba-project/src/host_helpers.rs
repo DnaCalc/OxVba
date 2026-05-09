@@ -313,6 +313,10 @@ pub fn inspect_workspace_compile_options(
                 .unwrap_or_default()
         });
 
+    let build_target = loaded
+        .map(|loaded| loaded.build_target)
+        .or(properties.build_target);
+
     Ok(HostProjectCompileOptionsSurface {
         workspace_kind: surface.workspace_kind,
         workspace_target: surface.workspace_target,
@@ -321,9 +325,7 @@ pub fn inspect_workspace_compile_options(
             .map(|loaded| loaded.manifest.project_name.clone())
             .unwrap_or(surface.project_name),
         output_type: surface.output_type,
-        build_target: loaded
-            .map(|loaded| loaded.build_target)
-            .or(properties.build_target),
+        build_target,
         runtime_flavor: loaded
             .map(|loaded| loaded.runtime_flavor)
             .or(properties.runtime_flavor),
@@ -345,7 +347,7 @@ pub fn inspect_workspace_compile_options(
         build_profiles: default_build_profiles(),
         source_policies: default_source_policy_options(),
         run_targets: run_targets_for_entry_point(entry_point.as_deref(), load_error),
-        build_check_status: build_check_status(load_error),
+        build_check_status: build_check_status(load_error, build_target),
     })
 }
 
@@ -922,6 +924,7 @@ fn compile_options_surface_from_basproj(
         .map(parse_define_constants)
         .unwrap_or_default();
     let entry_point = basproj.properties.entry_point.clone();
+    let build_target = basproj.properties.build_target;
     Ok(HostProjectCompileOptionsSurface {
         workspace_kind: surface.workspace_kind,
         workspace_target: workspace_path.to_path_buf(),
@@ -935,7 +938,7 @@ fn compile_options_surface_from_basproj(
             .properties
             .output_type
             .unwrap_or(surface.output_type),
-        build_target: basproj.properties.build_target,
+        build_target,
         runtime_flavor: basproj.properties.runtime_flavor,
         entry_point: entry_point.clone(),
         default_runtime_profile: basproj.properties.default_runtime_profile,
@@ -949,7 +952,7 @@ fn compile_options_surface_from_basproj(
         build_profiles: default_build_profiles(),
         source_policies: default_source_policy_options(),
         run_targets: run_targets_for_entry_point(entry_point.as_deref(), None),
-        build_check_status: DirectHostCommandStatus::available(),
+        build_check_status: build_check_status(None, build_target),
     })
 }
 
@@ -1006,13 +1009,25 @@ fn run_targets_for_entry_point(
     }]
 }
 
-fn build_check_status(load_error: Option<&BasProjError>) -> DirectHostCommandStatus {
+fn build_check_status(
+    load_error: Option<&BasProjError>,
+    build_target: Option<BuildTarget>,
+) -> DirectHostCommandStatus {
     match load_error {
         Some(error) => DirectHostCommandStatus::disabled(
             DirectHostIssue::new(DirectHostIssueKind::ProjectInvalid)
                 .with_technical_detail(error.to_string())
                 .with_retryability(DirectHostRetryability::NotRetryable),
         ),
+        None if build_target == Some(BuildTarget::WrappedComServer)
+            && !cfg!(target_os = "windows") =>
+        {
+            DirectHostCommandStatus::disabled(
+                DirectHostIssue::new(DirectHostIssueKind::NonWindowsUnsupported)
+                    .with_summary("WrappedComServer builds require Windows")
+                    .with_retryability(DirectHostRetryability::NotRetryable),
+            )
+        }
         None => DirectHostCommandStatus::available(),
     }
 }
@@ -1709,7 +1724,7 @@ mod tests {
                 HostProjectSettingsEdit::SetEntryPoint(Some("Main.Boot".to_string())),
                 HostProjectSettingsEdit::SetDefineConstants(Some("Trace=1".to_string())),
                 HostProjectSettingsEdit::SetRuntimeFlavor(Some(RuntimeFlavor::Lite)),
-                HostProjectSettingsEdit::SetBuildTarget(Some(BuildTarget::Bundle)),
+                HostProjectSettingsEdit::SetBuildTarget(Some(BuildTarget::WrappedComServer)),
             ],
         )
         .expect("settings plan");
@@ -1718,7 +1733,7 @@ mod tests {
         assert_eq!(preview.project_name, "RenamedApp");
         assert_eq!(preview.entry_point.as_deref(), Some("Main.Boot"));
         assert_eq!(preview.runtime_flavor, Some(RuntimeFlavor::Lite));
-        assert_eq!(preview.build_target, Some(BuildTarget::Bundle));
+        assert_eq!(preview.build_target, Some(BuildTarget::WrappedComServer));
 
         let application = apply_host_project_settings_edit_plan(&plan).expect("apply plan");
         assert_eq!(application.applied_edits, 5);
@@ -1731,6 +1746,7 @@ mod tests {
         assert!(written.contains("<ProjectName>RenamedApp</ProjectName>"));
         assert!(written.contains("<EntryPoint>Main.Boot</EntryPoint>"));
         assert!(written.contains("<DefineConstants>Trace=1</DefineConstants>"));
+        assert!(written.contains("<BuildTarget>WrappedComServer</BuildTarget>"));
 
         let _ = fs::remove_dir_all(&temp_root);
     }

@@ -389,6 +389,7 @@ fn build_target_str(build_target: BuildTarget) -> &'static str {
         BuildTarget::Bundle => "Bundle",
         BuildTarget::WrapperExe => "WrapperExe",
         BuildTarget::WrapperLibrary => "WrapperLibrary",
+        BuildTarget::WrappedComServer => "WrappedComServer",
     }
 }
 

@@ -55,6 +55,7 @@ pub enum BuildTarget {
     Bundle,
     WrapperExe,
     WrapperLibrary,
+    WrappedComServer,
 }
 
 /// COM class instancing mode.

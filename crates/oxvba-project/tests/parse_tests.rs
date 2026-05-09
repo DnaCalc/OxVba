@@ -881,6 +881,28 @@ fn parse_explicit_build_target_property() {
 }
 
 #[test]
+fn parse_wrapped_com_server_build_target_and_compat_alias() {
+    for spelling in ["WrappedComServer", "WrapperComServer"] {
+        let xml = format!(
+            r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>{spelling}</BuildTarget>
+    <ProjectName>ComWidget</ProjectName>
+  </PropertyGroup>
+</Project>"#
+        );
+
+        let basproj = parse_basproj_xml(&xml).expect("parse");
+        assert_eq!(basproj.properties.output_type, Some(OutputType::ComServer));
+        assert_eq!(
+            basproj.properties.build_target,
+            Some(BuildTarget::WrappedComServer)
+        );
+    }
+}
+
+#[test]
 fn serialize_build_target_property_when_present() {
     let basproj = BasProj {
         sdk: "OxVba.Sdk/0.1.0".to_string(),
@@ -899,6 +921,28 @@ fn serialize_build_target_property_when_present() {
 
     let xml = serialize_basproj_xml(&basproj);
     assert!(xml.contains("<BuildTarget>WrapperExe</BuildTarget>"));
+}
+
+#[test]
+fn serialize_wrapped_com_server_uses_canonical_spelling() {
+    let basproj = BasProj {
+        sdk: "OxVba.Sdk/0.1.0".to_string(),
+        properties: BasProjProperties {
+            output_type: Some(OutputType::ComServer),
+            build_target: Some(BuildTarget::WrappedComServer),
+            project_name: Some("ComWidget".to_string()),
+            ..Default::default()
+        },
+        modules: vec![],
+        project_references: vec![],
+        com_references: vec![],
+        native_references: vec![],
+        native_exports: vec![],
+    };
+
+    let xml = serialize_basproj_xml(&basproj);
+    assert!(xml.contains("<BuildTarget>WrappedComServer</BuildTarget>"));
+    assert!(!xml.contains("<BuildTarget>WrapperComServer</BuildTarget>"));
 }
 
 // ---------------------------------------------------------------------------
