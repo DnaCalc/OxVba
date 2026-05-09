@@ -453,19 +453,174 @@ fn generate_registration_exports(
     s.push_str(
         r#"// ── Registration ──
 
+const HKEY_CURRENT_USER: isize = 0x80000001_u32 as isize;
+const KEY_ALL_ACCESS: u32 = 0xF003F;
+const REG_SZ: u32 = 1;
+const ERROR_SUCCESS: u32 = 0;
+const MAX_PATH_CHARS: usize = 32768;
+
+#[link(name = "advapi32")]
+unsafe extern "system" {
+    fn RegCreateKeyExW(
+        hkey: isize,
+        lpsubkey: *const u16,
+        reserved: u32,
+        lpclass: *const u16,
+        dwoptions: u32,
+        samdesired: u32,
+        lpsecurityattributes: *const c_void,
+        phkresult: *mut isize,
+        lpdwdisposition: *mut u32,
+    ) -> u32;
+    fn RegSetValueExW(
+        hkey: isize,
+        lpvaluename: *const u16,
+        reserved: u32,
+        dwtype: u32,
+        lpdata: *const u8,
+        cbdata: u32,
+    ) -> u32;
+    fn RegCloseKey(hkey: isize) -> u32;
+    fn RegDeleteTreeW(hkey: isize, lpsubkey: *const u16) -> u32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetModuleFileNameW(hmodule: *mut c_void, lpfilename: *mut u16, nsize: u32) -> u32;
+}
+
+fn to_wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn module_path() -> Option<String> {
+    let mut buffer = vec![0u16; MAX_PATH_CHARS];
+    let len = unsafe { GetModuleFileNameW(H_MODULE, buffer.as_mut_ptr(), buffer.len() as u32) };
+    if len == 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..len as usize]))
+}
+
+fn set_key_default_value(parent: isize, subkey: &str, value: &str) -> bool {
+    let subkey_w = to_wide(subkey);
+    let mut hkey: isize = 0;
+    let mut disposition: u32 = 0;
+    unsafe {
+        if RegCreateKeyExW(
+            parent,
+            subkey_w.as_ptr(),
+            0,
+            std::ptr::null(),
+            0,
+            KEY_ALL_ACCESS,
+            std::ptr::null(),
+            &mut hkey,
+            &mut disposition,
+        ) != ERROR_SUCCESS
+        {
+            return false;
+        }
+        let value_w = to_wide(value);
+        let byte_len = (value_w.len() * 2) as u32;
+        let ok = RegSetValueExW(
+            hkey,
+            std::ptr::null(),
+            0,
+            REG_SZ,
+            value_w.as_ptr().cast::<u8>(),
+            byte_len,
+        ) == ERROR_SUCCESS;
+        RegCloseKey(hkey);
+        ok
+    }
+}
+
+fn set_key_named_value(parent: isize, subkey: &str, name: &str, value: &str) -> bool {
+    let subkey_w = to_wide(subkey);
+    let mut hkey: isize = 0;
+    let mut disposition: u32 = 0;
+    unsafe {
+        if RegCreateKeyExW(
+            parent,
+            subkey_w.as_ptr(),
+            0,
+            std::ptr::null(),
+            0,
+            KEY_ALL_ACCESS,
+            std::ptr::null(),
+            &mut hkey,
+            &mut disposition,
+        ) != ERROR_SUCCESS
+        {
+            return false;
+        }
+        let name_w = to_wide(name);
+        let value_w = to_wide(value);
+        let byte_len = (value_w.len() * 2) as u32;
+        let ok = RegSetValueExW(
+            hkey,
+            name_w.as_ptr(),
+            0,
+            REG_SZ,
+            value_w.as_ptr().cast::<u8>(),
+            byte_len,
+        ) == ERROR_SUCCESS;
+        RegCloseKey(hkey);
+        ok
+    }
+}
+
+fn delete_key_tree(parent: isize, subkey: &str) {
+    let subkey_w = to_wide(subkey);
+    unsafe {
+        RegDeleteTreeW(parent, subkey_w.as_ptr());
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn DllRegisterServer() -> i32 {
-    // Real registration writes HKCR entries for each class.
-    // See oxvba_build::registration for the full implementation.
+    let Some(dll_path) = module_path() else {
+        return E_INVALIDARG;
+    };
 "#,
     );
 
     for class in classes {
         let default_prog_id = format!("{project_name}.{}", class.class_name);
         let prog_id = class.prog_id.as_deref().unwrap_or(&default_prog_id);
+        let clsid = format!(
+            "{{{}}}",
+            deterministic_uuid(project_name, &class.class_name)
+        );
+        let description = class
+            .description
+            .as_deref()
+            .unwrap_or(&class.class_name)
+            .to_string();
+        let clsid_key = format!("Software\\Classes\\CLSID\\{clsid}");
+        let clsid_inproc_key = format!("{clsid_key}\\InprocServer32");
+        let clsid_progid_key = format!("{clsid_key}\\ProgID");
+        let progid_key = format!("Software\\Classes\\{prog_id}");
+        let progid_clsid_key = format!("{progid_key}\\CLSID");
         s.push_str(&format!(
-            "    // Register: {} as {prog_id}\n",
-            class.class_name
+            r#"    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", &dll_path) {{ return E_INVALIDARG; }}
+    if !set_key_named_value(HKEY_CURRENT_USER, "{}", "ThreadingModel", "Apartment") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
+    if !set_key_default_value(HKEY_CURRENT_USER, "{}", "{}") {{ return E_INVALIDARG; }}
+"#,
+            rust_string_literal(&clsid_key),
+            rust_string_literal(&description),
+            rust_string_literal(&clsid_inproc_key),
+            rust_string_literal(&clsid_inproc_key),
+            rust_string_literal(&clsid_progid_key),
+            rust_string_literal(prog_id),
+            rust_string_literal(&progid_key),
+            rust_string_literal(&description),
+            rust_string_literal(&progid_clsid_key),
+            rust_string_literal(&clsid),
         ));
     }
 
@@ -475,7 +630,29 @@ pub extern "system" fn DllRegisterServer() -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "system" fn DllUnregisterServer() -> i32 {
-    S_OK
+"#,
+    );
+
+    for class in classes {
+        let default_prog_id = format!("{project_name}.{}", class.class_name);
+        let prog_id = class.prog_id.as_deref().unwrap_or(&default_prog_id);
+        let clsid = format!(
+            "{{{}}}",
+            deterministic_uuid(project_name, &class.class_name)
+        );
+        let clsid_key = format!("Software\\Classes\\CLSID\\{clsid}");
+        let progid_key = format!("Software\\Classes\\{prog_id}");
+        s.push_str(&format!(
+            r#"    delete_key_tree(HKEY_CURRENT_USER, "{}");
+    delete_key_tree(HKEY_CURRENT_USER, "{}");
+"#,
+            rust_string_literal(&clsid_key),
+            rust_string_literal(&progid_key),
+        ));
+    }
+
+    s.push_str(
+        r#"    S_OK
 }
 
 "#,
@@ -1253,6 +1430,8 @@ mod tests {
                 *mut *mut core::ffi::c_void,
             ) -> i32;
             type DllCanUnloadNowFn = unsafe extern "system" fn() -> i32;
+            type DllRegisterServerFn = unsafe extern "system" fn() -> i32;
+            type DllUnregisterServerFn = unsafe extern "system" fn() -> i32;
 
             const S_OK: i32 = 0;
             const IID_IDISPATCH: TestGuid = TestGuid {
@@ -1283,6 +1462,14 @@ mod tests {
             ));
             let can_unload: DllCanUnloadNowFn =
                 std::mem::transmute(GetProcAddress(library, c"DllCanUnloadNow".as_ptr().cast()));
+            let register_server: DllRegisterServerFn = std::mem::transmute(GetProcAddress(
+                library,
+                c"DllRegisterServer".as_ptr().cast(),
+            ));
+            let unregister_server: DllUnregisterServerFn = std::mem::transmute(GetProcAddress(
+                library,
+                c"DllUnregisterServer".as_ptr().cast(),
+            ));
 
             let uuid = deterministic_uuid("TestProj", "Widget");
             let parsed = crate::typelib_gen::parse_uuid(&uuid);
@@ -1579,6 +1766,93 @@ mod tests {
             assert_eq!(((*dispatch.vtbl).release)(dispatch_ptr), 0);
             assert_eq!(((*factory.vtbl).release)(factory_ptr), 0);
             assert_eq!(can_unload(), S_OK);
+
+            assert_eq!(unregister_server(), S_OK);
+            assert_eq!(register_server(), S_OK);
+
+            use windows_sys::Win32::System::Com::{
+                CLSCTX_INPROC_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
+                CoInitializeEx, CoUninitialize,
+            };
+            const RPC_E_CHANGED_MODE: i32 = 0x80010106_u32 as i32;
+            let prog_id: Vec<u16> = "TestProj.Widget"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let mut registered_clsid: windows_sys::core::GUID = std::mem::zeroed();
+            assert_eq!(
+                CLSIDFromProgID(prog_id.as_ptr(), &mut registered_clsid),
+                S_OK
+            );
+            let coinitialize_hr =
+                CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+            let should_uninitialize = coinitialize_hr == S_OK;
+            assert!(
+                coinitialize_hr == S_OK || coinitialize_hr == RPC_E_CHANGED_MODE,
+                "CoInitializeEx failed with {coinitialize_hr:#010X}"
+            );
+            let mut cocreated_dispatch: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                CoCreateInstance(
+                    &registered_clsid,
+                    std::ptr::null_mut(),
+                    CLSCTX_INPROC_SERVER,
+                    (&IID_IDISPATCH as *const TestGuid).cast(),
+                    &mut cocreated_dispatch,
+                ),
+                S_OK
+            );
+            assert!(!cocreated_dispatch.is_null());
+            let cocreated = &*(cocreated_dispatch as *const TestComObject);
+            let ping_name: Vec<u16> = "Ping".encode_utf16().chain(std::iter::once(0)).collect();
+            let names = [ping_name.as_ptr()];
+            let mut cocreated_ping_dispid = i32::MIN;
+            assert_eq!(
+                ((*cocreated.vtbl).get_ids_of_names)(
+                    cocreated_dispatch,
+                    std::ptr::null(),
+                    names.as_ptr(),
+                    1,
+                    0,
+                    &mut cocreated_ping_dispid,
+                ),
+                S_OK
+            );
+            let mut cocreated_result: windows_sys::Win32::System::Variant::VARIANT =
+                std::mem::zeroed();
+            let mut cocreated_params = windows_sys::Win32::System::Com::DISPPARAMS {
+                rgvarg: std::ptr::null_mut(),
+                rgdispidNamedArgs: std::ptr::null_mut(),
+                cArgs: 0,
+                cNamedArgs: 0,
+            };
+            assert_eq!(
+                ((*cocreated.vtbl).invoke)(
+                    cocreated_dispatch,
+                    cocreated_ping_dispid,
+                    std::ptr::null(),
+                    0,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    (&mut cocreated_params as *mut windows_sys::Win32::System::Com::DISPPARAMS)
+                        .cast(),
+                    (&mut cocreated_result as *mut windows_sys::Win32::System::Variant::VARIANT)
+                        .cast(),
+                    std::ptr::null_mut(),
+                    &mut arg_err,
+                ),
+                S_OK
+            );
+            assert_eq!(
+                cocreated_result.Anonymous.Anonymous.vt,
+                windows_sys::Win32::System::Variant::VT_I4
+            );
+            assert_eq!(cocreated_result.Anonymous.Anonymous.Anonymous.lVal, 7);
+            windows_sys::Win32::System::Variant::VariantClear(&mut cocreated_result);
+            assert_eq!(((*cocreated.vtbl).release)(cocreated_dispatch), 0);
+            if should_uninitialize {
+                CoUninitialize();
+            }
+            assert_eq!(unregister_server(), S_OK);
         }
     }
 }

@@ -59,9 +59,9 @@ OxVba already has important substrate:
   `LoadLibraryW`, `DllGetClassObject`, `IClassFactory::CreateInstance`,
   `LockServer`, `DllCanUnloadNow`, `GetIDsOfNames`, method `Invoke`, property
   get/let through default DISPID `0`, project object return as `VT_DISPATCH`,
-  SAFEARRAY/array return, and supported error/`EXCEPINFO` behavior. The row
-  remains `implemented-subset` until a registered per-user load path or
-  equivalent `CreateObject` evidence is captured.
+  SAFEARRAY/array return, supported error/`EXCEPINFO` behavior,
+  `DllRegisterServer`/`DllUnregisterServer` per-user registration,
+  `CLSIDFromProgID`, and `CoCreateInstance` registered activation.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
@@ -71,9 +71,8 @@ The missing truth is also explicit:
 
 - `oxvba build` does not yet register a usable in-process COM server DLL for
   `OutputType=ComServer`.
-- The generated COM server `IDispatch` implementation is still limited to the
-  controlled DLL-load client lane; registered `CreateObject` publication is not
-  yet evidenced.
+- Office/VBA early-bound evidence is not part of COM-0007 and remains in the
+  COM-0008/type-library lane.
 - Type library publication for OxVba classes is not yet integrated into a real
   COM server build output.
 - Dual-interface vtable projection and COM connection-point event publication

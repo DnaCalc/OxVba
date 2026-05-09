@@ -13,10 +13,10 @@ client, creates a wrapped OxVba class instance through `IClassFactory`, resolves
 a member through `IDispatch::GetIDsOfNames`, and invokes the member through
 `IDispatch::Invoke`.
 
-This is not yet a registry or Office/VBA `CreateObject` claim. It is a
-controlled native DLL-load client claim for late-bound method, property,
-default member, object return, array return, and supported error propagation
-through the generated `IDispatch` surface.
+This is a controlled native Windows client claim for late-bound method,
+property, default member, object return, array return, supported error
+propagation, and per-user registered activation through the generated
+`IDispatch` surface.
 
 ## Reusable command
 
@@ -42,6 +42,14 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
 - `IClassFactory::LockServer` changes `DllCanUnloadNow` as expected.
 - `IClassFactory::CreateInstance` returns an `IDispatch` object backed by
   `Engine::create_class_instance`.
+- `DllRegisterServer` writes per-user `HKCU\Software\Classes` CLSID/ProgID
+  entries for the generated DLL, including `InprocServer32` and
+  `ThreadingModel=Apartment`.
+- `CLSIDFromProgID("TestProj.Widget")` resolves the registered class.
+- `CoCreateInstance(CLSCTX_INPROC_SERVER, IID_IDispatch)` returns the wrapped
+  class through the registered COM activation path.
+- The registered activation path can resolve and invoke `Ping`, returning
+  `VT_I4` value `7`.
 - `IDispatch::GetIDsOfNames("Ping")` resolves the emitted member descriptor.
 - `IDispatch::Invoke(DISPATCH_METHOD)` routes through the descriptor-backed
   call frame and returns `VT_I4` value `7` after `Class_Initialize` state is
@@ -58,11 +66,12 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
   element `VT_I4` value `2`.
 - A wrapped method raising `Err.Raise 77` returns `DISP_E_EXCEPTION` and
   populates `EXCEPINFO.bstrDescription`.
-- Releasing the object and factory restores `DllCanUnloadNow == S_OK`.
+- `DllUnregisterServer` removes the per-user CLSID/ProgID entries after the
+  test, and releasing object/factory references restores `DllCanUnloadNow ==
+  S_OK`.
 
 ## Residual delivery work
 
-`COM-0007` remains `implemented-subset`, not complete. Remaining delivery
-surface is the registered per-user load path or equivalent `CreateObject`
-evidence. Office/VBA early-bound behavior remains owned by `COM-0008`, not this
-late-bound controlled-client row.
+`COM-0007` is complete for the controlled Windows late-bound client scope.
+Office/VBA early-bound behavior remains owned by `COM-0008`, not this
+late-bound row.
