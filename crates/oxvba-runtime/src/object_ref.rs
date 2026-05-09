@@ -226,6 +226,36 @@ pub const RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY: RuntimeInterfaceIdentity 
         None,
     );
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeLifetimePolicy {
+    RefCounted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeApartmentModel {
+    Unknown,
+    SingleThreaded,
+    MultiThreaded,
+    Both,
+    Neutral,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeObjectIdentity {
+    pub stable_object_id: u64,
+    pub compat_identity: i32,
+    pub class_descriptor: &'static RuntimeClassDescriptor,
+    pub lifetime_policy: RuntimeLifetimePolicy,
+    pub apartment_model: RuntimeApartmentModel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeInterfaceProjection {
+    pub object_identity: RuntimeObjectIdentity,
+    pub interface_identity: RuntimeInterfaceIdentity,
+    pub interface_descriptor: &'static RuntimeInterfaceDescriptor,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeMemberInvokeKind {
     Method,
@@ -492,7 +522,7 @@ pub struct RawRuntimeIUnknown {
 struct CompatObjectBase {
     unknown: RawRuntimeIUnknown,
     ref_count: AtomicU32,
-    compat_identity: i32,
+    identity: RuntimeObjectIdentity,
     class_descriptor: &'static RuntimeClassDescriptor,
 }
 
@@ -514,13 +544,14 @@ unsafe extern "C" fn compat_query_interface(
         *ppv = core::ptr::null_mut();
     }
     let owner = compat_owner_from_this(this);
-    let supports_iid = unsafe {
-        (*owner)
-            .class_descriptor
-            .interfaces
-            .iter()
-            .any(|interface| interface.id == iid)
-    };
+    let supports_iid = iid != RuntimeInterfaceId::Unsupported
+        && unsafe {
+            (*owner)
+                .class_descriptor
+                .interfaces
+                .iter()
+                .any(|interface| interface.id == iid)
+        };
     if !supports_iid {
         return RUNTIME_E_NOINTERFACE;
     }
@@ -568,12 +599,19 @@ impl ObjectRef {
         compat_identity: i32,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
+        let stable_object_id = compat_identity as u32 as u64;
         let boxed = Box::new(CompatObjectBase {
             unknown: RawRuntimeIUnknown {
                 vtbl: &COMPAT_OBJECT_VTBL,
             },
             ref_count: AtomicU32::new(1),
-            compat_identity,
+            identity: RuntimeObjectIdentity {
+                stable_object_id,
+                compat_identity,
+                class_descriptor,
+                lifetime_policy: RuntimeLifetimePolicy::RefCounted,
+                apartment_model: RuntimeApartmentModel::Unknown,
+            },
             class_descriptor,
         });
         let raw = Box::into_raw(boxed);
@@ -587,7 +625,7 @@ impl ObjectRef {
 
     pub fn compat_identity(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
-        unsafe { (*owner).compat_identity }
+        unsafe { (*owner).identity.compat_identity }
     }
 
     pub fn raw(&self) -> i32 {
@@ -601,6 +639,11 @@ impl ObjectRef {
     pub fn class_descriptor(&self) -> &'static RuntimeClassDescriptor {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).class_descriptor }
+    }
+
+    pub fn object_identity(&self) -> RuntimeObjectIdentity {
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        unsafe { (*owner).identity }
     }
 
     pub fn query_interface_descriptor(
@@ -621,6 +664,30 @@ impl ObjectRef {
             .interfaces
             .iter()
             .find(|descriptor| descriptor.identity.guid == guid)
+    }
+
+    pub fn query_interface_projection(
+        &self,
+        iid: RuntimeInterfaceId,
+    ) -> Option<RuntimeInterfaceProjection> {
+        let descriptor = self.query_interface_descriptor(iid)?;
+        Some(RuntimeInterfaceProjection {
+            object_identity: self.object_identity(),
+            interface_identity: descriptor.identity,
+            interface_descriptor: descriptor,
+        })
+    }
+
+    pub fn query_interface_projection_by_guid(
+        &self,
+        guid: RuntimeGuid,
+    ) -> Option<RuntimeInterfaceProjection> {
+        let descriptor = self.query_interface_descriptor_by_guid(guid)?;
+        Some(RuntimeInterfaceProjection {
+            object_identity: self.object_identity(),
+            interface_identity: descriptor.identity,
+            interface_descriptor: descriptor,
+        })
     }
 
     /// Construct an object reference from an owned raw `IUnknown` pointer.
@@ -711,9 +778,10 @@ mod tests {
     use super::{
         ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,
         RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
-        RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor,
-        RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind,
-        RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+        RuntimeApartmentModel, RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeGuid,
+        RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity,
+        RuntimeInterfaceKind, RuntimeLifetimePolicy, RuntimeMemberDescriptor,
+        RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
     };
 
     #[test]
@@ -812,6 +880,74 @@ mod tests {
         assert_eq!(descriptor.identity.major_version, Some(1));
         assert_eq!(descriptor.identity.minor_version, Some(0));
         assert_eq!(descriptor.identity.lcid, Some(1033));
+    }
+
+    #[test]
+    fn interface_projections_share_runtime_object_identity() {
+        const CUSTOM_GUID: RuntimeGuid = RuntimeGuid::new(
+            0x2222_2222,
+            0x3333,
+            0x4444,
+            [0x55, 0x55, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66],
+        );
+        const CUSTOM_IDENTITY: RuntimeInterfaceIdentity = RuntimeInterfaceIdentity::custom(
+            CUSTOM_GUID,
+            "Project._WidgetEvents",
+            RuntimeInterfaceKind::Source,
+            Some(1),
+            Some(0),
+            Some(1033),
+        );
+        static CUSTOM_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::Unsupported,
+            identity: CUSTOM_IDENTITY,
+            name: "Project._WidgetEvents",
+            members: &[],
+            dual_dispatch: false,
+        };
+        static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "Project._Widget",
+            members: &[],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            interfaces: &[
+                RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+                DISPATCH_INTERFACE,
+                CUSTOM_INTERFACE,
+            ],
+        };
+
+        let object = ObjectRef::from_compat_identity_with_descriptor(303, &TEST_CLASS);
+        let unknown = object
+            .query_interface_projection(RuntimeInterfaceId::IUnknown)
+            .expect("IUnknown projection");
+        let dispatch = object
+            .query_interface_projection(RuntimeInterfaceId::IDispatch)
+            .expect("IDispatch projection");
+        let source = object
+            .query_interface_projection_by_guid(CUSTOM_GUID)
+            .expect("custom source projection");
+
+        assert_eq!(unknown.object_identity, dispatch.object_identity);
+        assert_eq!(dispatch.object_identity, source.object_identity);
+        assert_eq!(unknown.object_identity.compat_identity, 303);
+        assert_eq!(unknown.object_identity.stable_object_id, 303);
+        assert_eq!(
+            unknown.object_identity.lifetime_policy,
+            RuntimeLifetimePolicy::RefCounted
+        );
+        assert_eq!(
+            unknown.object_identity.apartment_model,
+            RuntimeApartmentModel::Unknown
+        );
+        assert_eq!(unknown.interface_identity.guid, RUNTIME_GUID_IUNKNOWN);
+        assert_eq!(dispatch.interface_identity.guid, RUNTIME_GUID_IDISPATCH);
+        assert_eq!(source.interface_identity.guid, CUSTOM_GUID);
+        assert_eq!(object.strong_count_for_test(), 1);
     }
 
     #[test]
