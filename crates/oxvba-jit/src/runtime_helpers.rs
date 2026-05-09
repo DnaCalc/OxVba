@@ -3217,6 +3217,15 @@ fn apply_external_writebacks(
 
 // ── Private helper functions ─────────────────────────────────────────
 
+fn parse_embedded_runtime_error_code(message: &str) -> Option<i32> {
+    let marker = "runtime error: ";
+    let start = message.find(marker)? + marker.len();
+    message[start..]
+        .split(|c: char| !c.is_ascii_digit() && c != '-')
+        .next()
+        .and_then(|s| s.parse::<i32>().ok())
+}
+
 /// Route a host service error through the JitContext error handling.
 /// Returns OK if the error was handled (OERN or GoTo label), ERR_RUNTIME otherwise.
 fn route_host_error(ctx: *mut JitContext) -> i32 {
@@ -3271,7 +3280,8 @@ fn hal_error_code(kind: HalErrorKind, capability: CapabilityId) -> i32 {
 
 /// Route a HalError through the JitContext error handling.
 fn route_hal_error(ctx: *mut JitContext, err: HalError) -> i32 {
-    let code = hal_error_code(err.kind, err.capability);
+    let code = parse_embedded_runtime_error_code(&err.message)
+        .unwrap_or_else(|| hal_error_code(err.kind, err.capability));
     route_host_error_code(ctx, code)
 }
 

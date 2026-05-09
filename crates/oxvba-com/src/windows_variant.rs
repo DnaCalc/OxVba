@@ -678,6 +678,14 @@ unsafe fn safe_array_element_to_variant(
 }
 
 #[cfg(target_os = "windows")]
+const VT_RECORD_VALUE: u16 = 36;
+
+#[cfg(target_os = "windows")]
+fn unsupported_vba_visible_safearray_vartype(element_vt: u16) -> bool {
+    matches!(element_vt, VT_I1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT)
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn safe_array_to_variant_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
     psa: *mut SAFEARRAY,
@@ -706,6 +714,16 @@ where
             "SafeArrayGetVartype failed with HRESULT {:#010X}",
             hr as u32
         ));
+    }
+
+    if unsupported_vba_visible_safearray_vartype(element_vt) {
+        return Err(
+            "runtime error: 458 (Variable uses an Automation type not supported in Visual Basic)"
+                .to_string(),
+        );
+    }
+    if element_vt == VT_RECORD_VALUE {
+        return Err("runtime error: 13 (Type mismatch)".to_string());
     }
 
     // Collect per-dimension bounds.
@@ -1543,6 +1561,7 @@ where
                 variant.Anonymous.Anonymous.Anonymous.ullVal,
             ));
         }
+        VT_RECORD_VALUE => return Err("runtime error: 13 (Type mismatch)".to_string()),
         _ => {}
     }
     variant_to_com_value(variant)?.to_variant()

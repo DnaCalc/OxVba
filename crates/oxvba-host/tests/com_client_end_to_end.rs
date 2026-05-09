@@ -12,9 +12,8 @@ mod windows_com_e2e {
         bstr::BStr,
         safe_array::{
             SafeArray, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
-            VT_DISPATCH_VALUE, VT_I1_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_INT_VALUE,
-            VT_R4_VALUE, VT_R8_VALUE, VT_UI1_VALUE, VT_UI4_VALUE, VT_UI8_VALUE, VT_UINT_VALUE,
-            VT_UNKNOWN_VALUE,
+            VT_DISPATCH_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_INT_VALUE, VT_R4_VALUE,
+            VT_R8_VALUE, VT_UI1_VALUE, VT_UNKNOWN_VALUE,
         },
     };
 
@@ -534,6 +533,7 @@ Dim unsignedLongArray
 Dim boolArray
 Dim stringArray
 obj = CreateObject("OxVba.TestDispatch")
+On Error Resume Next
 smallArray = DispatchInvoke(obj, "ReturnSmallIntArray")
 byteArray = DispatchInvoke(obj, "ReturnByteArray")
 signedByteArray = DispatchInvoke(obj, "ReturnSignedByteArray")
@@ -587,18 +587,8 @@ End Sub
         );
         assert_eq!(
             vm[3],
-            Variant::from_safearray(
-                SafeArray::from_typed_variants(
-                    VT_I1_VALUE,
-                    vec![
-                        Variant::from_i32(-5),
-                        Variant::from_i32(0),
-                        Variant::from_i32(120),
-                    ],
-                )
-                .expect("typed i1 array"),
-            ),
-            "VT_ARRAY|VT_I1 result should preserve signed byte array elements on the current i32 carrier lane"
+            Variant::empty(),
+            "VT_ARRAY|VT_I1 should match Excel/VBA by surfacing unsupported Automation type error under Resume Next"
         );
         assert_eq!(
             vm[4],
@@ -617,18 +607,8 @@ End Sub
         );
         assert_eq!(
             vm[5],
-            Variant::from_safearray(
-                SafeArray::from_typed_variants(
-                    VT_UINT_VALUE,
-                    vec![
-                        Variant::from_i32(12),
-                        Variant::from_i32(4_096),
-                        Variant::from_i32(70_000),
-                    ],
-                )
-                .expect("typed uint array"),
-            ),
-            "VT_ARRAY|VT_UINT result should preserve platform uint array elements within the current i32 carrier lane"
+            Variant::empty(),
+            "VT_ARRAY|VT_UINT should match Excel/VBA by surfacing unsupported Automation type error under Resume Next"
         );
         assert_eq!(
             vm[6],
@@ -647,18 +627,8 @@ End Sub
         );
         assert_eq!(
             vm[7],
-            Variant::from_safearray(
-                SafeArray::from_typed_variants(
-                    VT_UI8_VALUE,
-                    vec![
-                        Variant::from_i32(12),
-                        Variant::from_i32(4_096),
-                        Variant::from_i32(70_000),
-                    ],
-                )
-                .expect("typed ui8 array"),
-            ),
-            "VT_ARRAY|VT_UI8 result should preserve unsigned hyper array elements within the current i32 carrier lane"
+            Variant::empty(),
+            "VT_ARRAY|VT_UI8 should match Excel/VBA by surfacing unsupported Automation type error under Resume Next"
         );
         assert_eq!(
             vm[8],
@@ -677,18 +647,8 @@ End Sub
         );
         assert_eq!(
             vm[9],
-            Variant::from_safearray(
-                SafeArray::from_typed_variants(
-                    VT_UI4_VALUE,
-                    vec![
-                        Variant::from_i32(12),
-                        Variant::from_i32(4_096),
-                        Variant::from_i32(70_000),
-                    ],
-                )
-                .expect("typed ui4 array"),
-            ),
-            "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
+            Variant::empty(),
+            "VT_ARRAY|VT_UI4 should match Excel/VBA by surfacing unsupported Automation type error under Resume Next"
         );
         assert_eq!(
             vm[10],
@@ -2214,8 +2174,11 @@ End Sub
 Sub Main()
 Dim obj
 Dim wideArray
+Dim errNo
 obj = CreateObject("OxVba.TestDispatch")
+On Error Resume Next
 wideArray = DispatchInvoke(obj, "ReturnWideUnsignedLongArray")
+errNo = Err.Number
 End Sub
 "#;
 
@@ -2225,15 +2188,10 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UI4 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        let array = vm[1]
-            .as_safearray()
-            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
-        let values = array
-            .variant_elements()
-            .expect("array should have elements");
-        assert!(
-            values.contains(&Variant::from_i64(4_000_000_000)),
-            "expected VT_UI4 array element preserved on I64 carrier, got {values:?}"
+        assert_eq!(
+            vm[2],
+            Variant::from_i32(458),
+            "VT_ARRAY|VT_UI4 should match Excel/VBA unsupported Automation type error"
         );
     }
 
@@ -2267,8 +2225,11 @@ End Sub
 Sub Main()
 Dim obj
 Dim wideArray
+Dim errNo
 obj = CreateObject("OxVba.TestDispatch")
+On Error Resume Next
 wideArray = DispatchInvoke(obj, "ReturnWidePlatformUIntArray")
+errNo = Err.Number
 End Sub
 "#;
 
@@ -2278,15 +2239,10 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UINT array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        let array = vm[1]
-            .as_safearray()
-            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
-        let values = array
-            .variant_elements()
-            .expect("array should have elements");
-        assert!(
-            values.contains(&Variant::from_i64(4_000_000_000)),
-            "expected VT_UINT array element preserved on I64 carrier, got {values:?}"
+        assert_eq!(
+            vm[2],
+            Variant::from_i32(458),
+            "VT_ARRAY|VT_UINT should match Excel/VBA unsupported Automation type error"
         );
     }
 
@@ -2373,8 +2329,11 @@ End Sub
 Sub Main()
 Dim obj
 Dim wideArray
+Dim errNo
 obj = CreateObject("OxVba.TestDispatch")
+On Error Resume Next
 wideArray = DispatchInvoke(obj, "ReturnWideUnsignedHyperArray")
+errNo = Err.Number
 End Sub
 "#;
 
@@ -2384,15 +2343,10 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_UI8 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        let array = vm[1]
-            .as_safearray()
-            .unwrap_or_else(|| panic!("expected SAFEARRAY, got {:?}", vm[1]));
-        let values = array
-            .variant_elements()
-            .expect("array should have elements");
-        assert!(
-            values.contains(&Variant::from_i64(5_000_000_000)),
-            "expected VT_UI8 array element preserved on I64 carrier, got {values:?}"
+        assert_eq!(
+            vm[2],
+            Variant::from_i32(458),
+            "VT_ARRAY|VT_UI8 should match Excel/VBA unsupported Automation type error"
         );
     }
 

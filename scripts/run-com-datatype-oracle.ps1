@@ -32,7 +32,10 @@ try {
         @{ id="COM-DT-ARRAY-UI2"; kind="array"; expr="obj.ReturnUnsignedWordArray()"; ox='DispatchInvoke(obj, "ReturnUnsignedWordArray")' },
         @{ id="COM-DT-ARRAY-UI4"; kind="array"; expr="obj.ReturnUnsignedLongArray()"; ox='DispatchInvoke(obj, "ReturnUnsignedLongArray")' },
         @{ id="COM-DT-ARRAY-UI8"; kind="array"; expr="obj.ReturnUnsignedHyperArray()"; ox='DispatchInvoke(obj, "ReturnUnsignedHyperArray")' },
-        @{ id="COM-DT-ARRAY-DECIMAL"; kind="array"; expr="obj.ReturnDecimalArray()"; ox='DispatchInvoke(obj, "ReturnDecimalArray")' }
+        @{ id="COM-DT-ARRAY-DECIMAL"; kind="array"; expr="obj.ReturnDecimalArray()"; ox='DispatchInvoke(obj, "ReturnDecimalArray")' },
+        @{ id="COM-DT-OBJECT-SELF"; kind="object"; expr="obj.ReturnSelfObject()"; ox='DispatchInvoke(obj, "ReturnSelfObject")' },
+        @{ id="COM-DT-RECORD-SCALAR"; kind="error"; expr="obj.ReturnRecordObject()"; ox='DispatchInvoke(obj, "ReturnRecordObject")' },
+        @{ id="COM-DT-RECORD-ARRAY"; kind="error"; expr="obj.ReturnRecordArray()"; ox='DispatchInvoke(obj, "ReturnRecordArray")' }
     )
 
     function Invoke-ExcelProbe {
@@ -46,19 +49,22 @@ try {
             $mod.Name = "MainModule"
             $body = if ($Case.kind -eq "array") {
                 'RunProbe = CStr(VarType(v)) & ":" & CStr(LBound(v)) & ":" & CStr(UBound(v)) & ":" & CStr(v(LBound(v))) & ":" & CStr(v(UBound(v)))'
+            } elseif ($Case.kind -eq "object") {
+                'RunProbe = CStr(VarType(v)) & ":" & CStr(v.Ping())'
             } else {
                 'RunProbe = CStr(VarType(v)) & ":" & CStr(v)'
             }
+            $assign = if ($Case.kind -eq "object") { "Set v = $($Case.expr)" } else { "v = $($Case.expr)" }
             $code = @"
 Public Function RunProbe()
 On Error GoTo EH
 Dim obj As Object, v As Variant
 Set obj = CreateObject("OxVba.TestEventServer")
-v = $($Case.expr)
+$assign
 $body
 Exit Function
 EH:
-RunProbe = "ERR:" & CStr(Err.Number) & ":" & Err.Description
+RunProbe = "ERR:" & CStr(Err.Number)
 End Function
 "@
             [void]$mod.CodeModule.AddFromString($code)
@@ -78,19 +84,39 @@ End Function
             'observed = CStr(VarType(v)) & ":" & CStr(LBound(v)) & ":" & CStr(UBound(v)) & ":" & CStr(v(LBound(v))) & ":" & CStr(v(UBound(v)))'
         } elseif ($Case.kind -eq "array") {
             'observed = CStr(VarType(v)) & ":" & CStr(LBound(v)) & ":" & CStr(UBound(v))'
+        } elseif ($Case.kind -eq "object") {
+            'observed = CStr(VarType(v)) & ":" & CStr(DispatchInvoke(v, "Ping"))'
         } else {
             'observed = CStr(VarType(v)) & ":" & CStr(v)'
         }
-        $source = @"
+        $source = if (($Case.kind -eq "array" -and $Case.id -ne "COM-DT-ARRAY-DECIMAL") -or $Case.kind -eq "error") {
+@"
 Sub Main()
 Dim obj
 Dim v
 Dim observed
 obj = CreateObject("OxVba.TestEventServer")
+On Error Resume Next
 v = $($Case.ox)
+If Err.Number <> 0 Then
+    observed = "ERR:" & CStr(Err.Number)
+Else
+    $describe
+End If
+End Sub
+"@
+        } else {
+@"
+Sub Main()
+Dim obj
+Dim v
+Dim observed
+obj = CreateObject("OxVba.TestEventServer")
+$(if ($Case.kind -eq "object") { "Set v = $($Case.ox)" } else { "v = $($Case.ox)" })
 $describe
 End Sub
 "@
+        }
         Set-Content -Path $sourcePath -Value $source
         $logPath = Join-Path $runDir ($Case.id + ".oxvba.log.txt")
         $cargoArgs = @("run", "-p", "oxvba-cli", "--", "run", $sourcePath, "--dump-values", "--allow-com-activation", "true", "--runtime-class", "host-native")

@@ -37,6 +37,15 @@ use oxvba_runtime::{
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
 
+fn parse_embedded_runtime_error_code(message: &str) -> Option<i32> {
+    let marker = "runtime error: ";
+    let start = message.find(marker)? + marker.len();
+    message[start..]
+        .split(|c: char| !c.is_ascii_digit() && c != '-')
+        .next()
+        .and_then(|s| s.parse::<i32>().ok())
+}
+
 #[derive(Debug, Default, Clone)]
 struct WithEventsOwnerIterator {
     owners: Vec<ObjectRef>,
@@ -272,8 +281,11 @@ impl Vm {
     }
 
     fn route_host_error(&mut self, pc: usize, err: HalError) -> Result<usize, String> {
-        let code = Self::hal_error_code(err.kind, err.capability);
         let detail = format!("{} [{}] {}", err.stable_code, err.operation, err.message);
+        if let Some(code) = parse_embedded_runtime_error_code(&err.message) {
+            return self.route_runtime_error(pc, code, Some(detail.as_str()));
+        }
+        let code = Self::hal_error_code(err.kind, err.capability);
         self.route_runtime_error(pc, code, Some(detail.as_str()))
     }
 

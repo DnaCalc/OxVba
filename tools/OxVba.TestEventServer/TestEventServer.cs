@@ -78,6 +78,22 @@ namespace OxVba.TestEventServer
 
         [DispId(119)]
         object ReturnDecimalArray();
+
+        [DispId(120)]
+        object ReturnSelfObject();
+
+        [DispId(121)]
+        object ReturnRecordObject();
+
+        [DispId(122)]
+        object ReturnRecordArray();
+    }
+
+    [ComVisible(true)]
+    [Guid("E2A30001-0001-0001-0001-000000000005")]
+    public struct TestRecord
+    {
+        public int Number;
     }
 
     [ComVisible(true)]
@@ -203,6 +219,21 @@ namespace OxVba.TestEventServer
         public object ReturnDecimalArray()
         {
             return new decimal[] { 123.45m, -4.25m, 321m };
+        }
+
+        public object ReturnSelfObject()
+        {
+            return this;
+        }
+
+        public object ReturnRecordObject()
+        {
+            return new TestRecord { Number = 123 };
+        }
+
+        public object ReturnRecordArray()
+        {
+            return new TestRecord[] { new TestRecord { Number = 123 } };
         }
 
         private static string FormatValue(object value)
