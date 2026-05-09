@@ -89,6 +89,10 @@ pub fn generate_com_server_shim(
 use std::ffi::c_void;
 use std::sync::atomic::{{AtomicI32, Ordering}};
 
+use oxvba_compiler::OxBundle;
+use oxvba_host::{{Engine, HostConfig, ProjectRuntimeSession}};
+use oxvba_runtime::ObjectRef;
+
 const BUNDLE_BYTES: &[u8] = include_bytes!("{oxb_path}");
 
 static GLOBAL_REF_COUNT: AtomicI32 = AtomicI32::new(0);
@@ -106,6 +110,7 @@ const CLASS_E_NOAGGREGATION: i32 = 0x80040110_u32 as i32;
 
     // GUID struct and IID constants
     source.push_str(&generate_guid_definitions(project_name, classes));
+    source.push_str(&generate_class_table(classes));
 
     // IUnknown / IDispatch / IClassFactory vtable structs
     source.push_str(generate_vtable_structs());
@@ -200,6 +205,15 @@ const IID_ICLASSFACTORY: GUID = GUID {
         ));
     }
 
+    s
+}
+
+fn generate_class_table(classes: &[ComClassExportDescriptor]) -> String {
+    let mut s = String::from("const CLASS_NAMES: &[&str] = &[\n");
+    for class in classes {
+        s.push_str(&format!("    \"{}\",\n", class.class_name));
+    }
+    s.push_str("];\n\n");
     s
 }
 
@@ -416,7 +430,10 @@ unsafe extern "system" fn cf_create_instance(
     }
 
     let factory = &*(this as *const OxVbaClassFactory);
-    let instance = OxVbaDispatchInstance::new(factory.class_index);
+    let instance = match OxVbaDispatchInstance::new(factory.class_index) {
+        Ok(instance) => instance,
+        Err(hr) => return hr,
+    };
     let raw = Box::into_raw(Box::new(instance));
     *ppv = raw as *mut c_void;
     GLOBAL_REF_COUNT.fetch_add(1, Ordering::SeqCst);
@@ -448,10 +465,9 @@ struct OxVbaDispatchInstance {
     vtbl: *const IDispatchVtbl,
     ref_count: AtomicI32,
     class_index: usize,
-    // In a full implementation, this would hold:
-    // - A ProjectRuntimeSession handle
-    // - A DynamicObjectBridge for IDispatch delegation
-    // - Class_Initialize/Class_Terminate lifecycle state
+    engine: Engine,
+    session: ProjectRuntimeSession,
+    object: ObjectRef,
 }
 
 static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
@@ -465,14 +481,30 @@ static DISPATCH_VTBL: IDispatchVtbl = IDispatchVtbl {
 };
 
 impl OxVbaDispatchInstance {
-    fn new(class_index: usize) -> Self {
-        // Future: Load BUNDLE_BYTES → create ProjectRuntimeSession → create class instance
-        // This triggers Class_Initialize
-        Self {
+    fn new(class_index: usize) -> Result<Self, i32> {
+        let Some(class_name) = CLASS_NAMES.get(class_index).copied() else {
+            return Err(CLASS_E_CLASSNOTAVAILABLE);
+        };
+        let bundle = OxBundle::deserialize_from_bytes(BUNDLE_BYTES)
+            .map_err(|_| E_OUTOFMEMORY)?;
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let mut session = engine
+            .compile_and_prepare_session_from_bundle(&bundle)
+            .map_err(|_| E_OUTOFMEMORY)?;
+        let object = engine
+            .create_class_instance(&mut session, class_name)
+            .map_err(|_| CLASS_E_CLASSNOTAVAILABLE)?;
+        Ok(Self {
             vtbl: &DISPATCH_VTBL,
             ref_count: AtomicI32::new(1),
             class_index,
-        }
+            engine,
+            session,
+            object,
+        })
     }
 }
 
@@ -652,6 +684,8 @@ mod tests {
 
         let source = generate_com_server_shim("TestApp", "test.oxb", &classes);
         assert!(source.contains("OxVbaDispatchInstance"));
+        assert!(source.contains("compile_and_prepare_session_from_bundle"));
+        assert!(source.contains("create_class_instance"));
         assert!(source.contains("IDispatchVtbl"));
         assert!(source.contains("di_query_interface"));
         assert!(source.contains("di_invoke"));
@@ -710,9 +744,39 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn wrapped_com_server_build_compiles_dll_with_standard_exports() {
+        use oxvba_compiler::{
+            ModuleAttributes, ModuleKind, ModuleUnit, OxBundle, ProjectKind, ProjectManifest,
+            compile_project,
+        };
+
         let temp = TempDirGuard::new("oxvba_wrapped_com_server_compile");
         let bundle_path = temp.path().join("bundle.oxb");
-        std::fs::write(&bundle_path, b"dummy bundle bytes").expect("write dummy bundle");
+        let manifest = ProjectManifest {
+            project_name: "TestProj".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![ModuleUnit {
+                module_name: "Widget".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes {
+                    vb_name: "Widget".to_string(),
+                    vb_creatable: true,
+                    vb_exposed: true,
+                    ..Default::default()
+                },
+                source: "Private stored As Long\nPrivate Sub Class_Initialize()\nstored = 7\nEnd Sub\nPublic Function Ping() As Long\nPing = stored\nEnd Function\n"
+                    .to_string(),
+            }],
+            references: vec![],
+            reference_projects: vec![],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("compile wrapped COM project");
+        let bundle = OxBundle::from_compiled_project(&compiled, "TestProj");
+        std::fs::write(
+            &bundle_path,
+            bundle.serialize_to_bytes().expect("serialize bundle"),
+        )
+        .expect("write bundle");
         let bundle_literal = bundle_path.to_string_lossy().replace('\\', "/");
         let dll_path = temp.path().join("TestProj.dll");
         let classes = vec![ComClassExportDescriptor {
@@ -741,6 +805,135 @@ mod tests {
                 "expected PE export name {}",
                 String::from_utf8_lossy(export)
             );
+        }
+
+        unsafe {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+            #[repr(C)]
+            #[derive(Clone, Copy, PartialEq, Eq)]
+            struct TestGuid {
+                data1: u32,
+                data2: u16,
+                data3: u16,
+                data4: [u8; 8],
+            }
+
+            #[repr(C)]
+            struct TestUnknownVtbl {
+                query_interface: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+            }
+
+            #[repr(C)]
+            struct TestClassFactoryVtbl {
+                query_interface: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                add_ref: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
+                create_instance: unsafe extern "system" fn(
+                    *mut core::ffi::c_void,
+                    *mut core::ffi::c_void,
+                    *const TestGuid,
+                    *mut *mut core::ffi::c_void,
+                ) -> i32,
+                lock_server: unsafe extern "system" fn(*mut core::ffi::c_void, i32) -> i32,
+            }
+
+            #[repr(C)]
+            struct TestComObject {
+                vtbl: *const TestUnknownVtbl,
+            }
+
+            #[repr(C)]
+            struct TestClassFactory {
+                vtbl: *const TestClassFactoryVtbl,
+            }
+
+            type DllGetClassObjectFn = unsafe extern "system" fn(
+                *const TestGuid,
+                *const TestGuid,
+                *mut *mut core::ffi::c_void,
+            ) -> i32;
+            type DllCanUnloadNowFn = unsafe extern "system" fn() -> i32;
+
+            const S_OK: i32 = 0;
+            const IID_IDISPATCH: TestGuid = TestGuid {
+                data1: 0x00020400,
+                data2: 0x0000,
+                data3: 0x0000,
+                data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            };
+            const IID_ICLASSFACTORY: TestGuid = TestGuid {
+                data1: 0x00000001,
+                data2: 0x0000,
+                data3: 0x0000,
+                data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46],
+            };
+
+            let mut wide_path: Vec<u16> = output
+                .dll_path
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            let library = LoadLibraryW(wide_path.as_mut_ptr());
+            assert!(!library.is_null(), "LoadLibraryW should load generated DLL");
+
+            let get_class_object: DllGetClassObjectFn = std::mem::transmute(GetProcAddress(
+                library,
+                c"DllGetClassObject".as_ptr().cast(),
+            ));
+            let can_unload: DllCanUnloadNowFn =
+                std::mem::transmute(GetProcAddress(library, c"DllCanUnloadNow".as_ptr().cast()));
+
+            let uuid = deterministic_uuid("TestProj", "Widget");
+            let parsed = crate::typelib_gen::parse_uuid(&uuid);
+            let clsid = TestGuid {
+                data1: parsed.data1,
+                data2: parsed.data2,
+                data3: parsed.data3,
+                data4: parsed.data4,
+            };
+
+            let mut factory_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                get_class_object(&clsid, &IID_ICLASSFACTORY, &mut factory_ptr),
+                S_OK
+            );
+            assert!(!factory_ptr.is_null());
+            assert_ne!(can_unload(), S_OK);
+
+            let factory = &*(factory_ptr as *const TestClassFactory);
+            assert_eq!(((*factory.vtbl).lock_server)(factory_ptr, 1), S_OK);
+            assert_ne!(can_unload(), S_OK);
+            assert_eq!(((*factory.vtbl).lock_server)(factory_ptr, 0), S_OK);
+
+            let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+            assert_eq!(
+                ((*factory.vtbl).create_instance)(
+                    factory_ptr,
+                    std::ptr::null_mut(),
+                    &IID_IDISPATCH,
+                    &mut dispatch_ptr,
+                ),
+                S_OK
+            );
+            assert!(!dispatch_ptr.is_null());
+
+            let dispatch = &*(dispatch_ptr as *const TestComObject);
+            assert_eq!(((*dispatch.vtbl).release)(dispatch_ptr), 0);
+            assert_eq!(((*factory.vtbl).release)(factory_ptr), 0);
+            assert_eq!(can_unload(), S_OK);
         }
     }
 }

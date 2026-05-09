@@ -782,6 +782,15 @@ impl Engine {
             .ok_or_else(|| PhaseDiagnostic::runtime(format!("class not found: {class_name}")))?;
 
         let handle = route.object_handle;
+        let object = session
+            .vm
+            .project_dynamic_object_ref(handle)
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "object identity {} not found in project dynamic runtime state",
+                    handle
+                ))
+            })?;
 
         // Try to invoke Class_Initialize if present
         let init_suffix = format!("_{}_class_initialize", lowered);
@@ -792,26 +801,23 @@ impl Engine {
             .find(|(k, _)| k.ends_with(&init_suffix))
             .map(|(_, v)| v.clone())
         {
+            let init_args = if metadata.param_slots.is_empty() {
+                Vec::new()
+            } else {
+                vec![Variant::from_object_ref(object.clone())]
+            };
             session
                 .vm
                 .invoke_procedure_with_variants(
                     &session.compiled.bytecode,
                     metadata.entry_pc,
                     &metadata.param_slots,
-                    &[],
+                    &init_args,
                 )
                 .map_err(PhaseDiagnostic::runtime)?;
         }
 
-        session
-            .vm
-            .project_dynamic_object_ref(handle)
-            .ok_or_else(|| {
-                PhaseDiagnostic::runtime(format!(
-                    "object identity {} not found in project dynamic runtime state",
-                    handle
-                ))
-            })
+        Ok(object)
     }
 
     /// Invoke a method on a class object instance with exact Variant args.

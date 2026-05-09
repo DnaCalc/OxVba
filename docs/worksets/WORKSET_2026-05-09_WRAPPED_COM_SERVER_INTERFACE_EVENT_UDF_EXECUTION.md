@@ -47,6 +47,10 @@ OxVba already has important substrate:
 - `oxvba-build`/CLI can compile the bounded Windows WrappedComServer DLL
   skeleton and verify the standard COM export names; `IDispatch` behavior is
   still intentionally not claimed.
+- Generated `IClassFactory::CreateInstance` now creates wrapped OxVba class
+  instances through `Engine::create_class_instance`; controlled Windows client
+  coverage exercises `DllGetClassObject`, `CreateInstance`, `LockServer`, and
+  `DllCanUnloadNow` without claiming `Invoke` success yet.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with
