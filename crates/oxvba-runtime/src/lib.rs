@@ -4,6 +4,7 @@ pub mod alloc;
 pub mod arithmetic;
 pub mod bstr;
 pub mod builtins;
+pub mod call_frame;
 pub mod coerce;
 pub mod decimal;
 pub mod object_ref;
@@ -12,6 +13,11 @@ pub mod safe_array;
 pub mod value_types;
 pub mod variant;
 
+pub use call_frame::{
+    RuntimeByRefSlot, RuntimeByRefWriteback, RuntimeCallArgument, RuntimeCallContext,
+    RuntimeCallError, RuntimeCallFrame, RuntimeCallKind, RuntimeCallResult, RuntimeCallSelector,
+    RuntimeCallSource, RuntimeNamedArgument,
+};
 pub use coerce::variant_to_vba_string;
 pub use decimal::Decimal96;
 pub use object_ref::{
