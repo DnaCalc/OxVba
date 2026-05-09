@@ -107,6 +107,14 @@ OxVba already has important substrate:
   registration artifacts, required tools, capability profile, and per-user
   registration plan, and `EmbeddedBuildResult` exposes direct `dll_path`,
   `tlb_path`, and `registration_plan` fields.
+- 2026-05-10 review correction: the OxIde/direct-host build result slice is
+  reopened. `EmbeddedBuildRunHost::build_workspace` currently reports success
+  from `compile_project` and planned artifact paths; it does not execute the
+  wrapped COM wrapper build or verify that the DLL/TLB artifacts exist. This is
+  tracked as true WrappedComServer residual delivery work in `bd-wcs1.9.4`.
+- 2026-05-10 sequencing note: deeper host-program and UDF semantics are moved
+  into `docs/worksets/WORKSET_2026-05-10_HOST_PROGRAM_DESIGN_AND_UDF_REWORK.md`
+  (`bd-sg5h`) for execution after the next WrappedComServer workset.
 - Final implemented-subset terminal audit is published at
   `docs/evidence/conformance/WRAPPED_COM_SERVER_TERMINAL_AUDIT_2026-05-09.md`.
   It confirms the terminal checks passed and keeps the remaining Office/VBA,
@@ -128,6 +136,10 @@ The missing truth is also explicit:
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
+- Direct-host WrappedComServer `build_workspace` semantics are not yet honest:
+  they must either run and verify the wrapper build artifacts or return a
+  planning/non-success state that cannot be mistaken for produced DLL/TLB
+  artifacts.
 
 ## Governing vocabulary and build model
 
@@ -716,6 +728,8 @@ First executable beads:
   volatile/dependency sinks
 - `bd-wcs1.9.3` - expose OxIde build-plan/build-result/registration DTOs for
   WrappedComServer
+- `bd-wcs1.9.4` - make direct-host WrappedComServer build execute and verify
+  artifacts
 - `bd-wcs1.10.1` - refresh COM/project-hosting validation matrices and traceability
 - `bd-wcs1.10.2` - publish final evidence and terminal audit for the implemented
   subset
