@@ -307,6 +307,7 @@ const MEMBER_KIND_PROPERTYSET: u8 = 3;
                 oxvba_compiler::ProjectDynamicMemberKind::Method
                     | oxvba_compiler::ProjectDynamicMemberKind::Function
             ) && member.param_count == 0
+                && next_vtable_slot == 0
             {
                 let slot = next_vtable_slot;
                 next_vtable_slot += 1;
@@ -1874,6 +1875,10 @@ mod tests {
                 windows_sys::Win32::System::Variant::VT_I4
             );
             assert_eq!(result.Anonymous.Anonymous.Anonymous.lVal, 7);
+            assert_eq!(
+                result.Anonymous.Anonymous.Anonymous.lVal,
+                vtable_ping_result
+            );
             windows_sys::Win32::System::Variant::VariantClear(&mut result);
 
             let value_name: Vec<u16> = "Value".encode_utf16().chain(std::iter::once(0)).collect();

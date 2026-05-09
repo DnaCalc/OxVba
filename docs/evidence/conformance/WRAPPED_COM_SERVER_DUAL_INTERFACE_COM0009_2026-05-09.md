@@ -1,16 +1,17 @@
 # WrappedComServer dual-interface COM-0009 evidence
 
 Date: 2026-05-09
-Bead: `bd-wcs1.7.1`
+Beads: `bd-wcs1.7.1`, `bd-wcs1.7.2`
 Matrix row: `COM-0009`
 
 ## Scope
 
-This evidence covers the first bounded dual-interface projection for
+This evidence covers the bounded dual-interface projection for
 `WrappedComServer`. It proves that generated wrapped objects can expose a
 deterministic custom interface IID, return that interface from `QueryInterface`,
 and execute one Automation-safe vtable slot over the same runtime object used by
-the dispatch path.
+the dispatch path. It also proves that the dispatch and vtable paths return the
+same value for the supported member.
 
 The supported signature slice is intentionally narrow: a no-argument method
 published as `HRESULT Method([out, retval] LONG*)`. Broader parameters, property
@@ -36,14 +37,21 @@ cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_ex
 - The Windows DLL test queries `IWidget` from the wrapped `Widget` object and
   calls the custom `Ping` vtable slot. The vtable call returns `S_OK` and the
   expected `Long` value `7`.
+- The same test invokes `Ping` through `IDispatch::Invoke` and asserts that the
+  dispatch `VT_I4` result equals the vtable `[out, retval]` result from the same
+  wrapped object.
 - The generated TypeLib now emits the default interface as a dual Automation
   interface (`TYPEFLAG_FDUAL`, `TYPEFLAG_FOLEAUTOMATION`,
   `TYPEFLAG_FDISPATCHABLE`) with vtable offsets for members.
+- The generated vtable surface exposes only the first supported no-argument
+  method slot in this bead; later eligible members remain dispatch-only until a
+  broader ABI tier is explicitly implemented.
 - Existing TypeLib generation and dispatch-backed wrapped server tests remain
   green after the dual-interface projection change.
 
 ## Residual
 
-`COM-0009` remains `in-progress` until `bd-wcs1.7.2` proves dispatch/vtable
-equivalence across the scoped member set and updates the validation row to the
-final evidenced subset.
+`COM-0009` is an `implemented-subset` for the bounded no-argument scalar method
+slot. Properties, arguments, byref writebacks, object identity equivalence,
+arrays, error parity, and additional vtable slots are outside this subset and
+remain deferred.
