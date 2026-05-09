@@ -164,6 +164,15 @@ fn run_build(args: Vec<String>) {
         build_xll_addin(&input, &out, &loaded, &bytes);
         return;
     }
+    if loaded.build_target == oxvba_project::BuildTarget::WrappedComServer {
+        build_wrapped_com_server(
+            &out,
+            &loaded.manifest.project_name,
+            &bytes,
+            &com_class_exports,
+        );
+        return;
+    }
 
     fs::write(&out, &bytes).unwrap_or_else(|err| {
         eprintln!("oxvba build: cannot write {}: {err}", out.display());
@@ -175,6 +184,46 @@ fn run_build(args: Vec<String>) {
         input.display(),
         out.display(),
         bytes.len()
+    );
+}
+
+fn build_wrapped_com_server(
+    out: &Path,
+    project_name: &str,
+    bundle_bytes: &[u8],
+    com_class_exports: &[oxvba_project::ComClassExportDescriptor],
+) {
+    let temp_bundle_path = std::env::temp_dir().join(format!(
+        "oxvba_com_server_bundle_{}_{}.oxb",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    fs::write(&temp_bundle_path, bundle_bytes).unwrap_or_else(|err| {
+        eprintln!(
+            "oxvba build: cannot stage COM server bundle {}: {err}",
+            temp_bundle_path.display()
+        );
+        std::process::exit(1);
+    });
+    let bundle_literal = temp_bundle_path.to_string_lossy().replace('\\', "/");
+    let result = oxvba_build::comserver::compile_wrapped_com_server_shim(
+        project_name,
+        &bundle_literal,
+        com_class_exports,
+        out,
+    );
+    let _ = fs::remove_file(&temp_bundle_path);
+    result.unwrap_or_else(|err| {
+        eprintln!("oxvba build: WrappedComServer build failed: {err}");
+        std::process::exit(1);
+    });
+    println!(
+        "built WrappedComServer {} → {}",
+        project_name,
+        out.display()
     );
 }
 
@@ -2693,7 +2742,9 @@ fn cli_output_type_name(output_type: oxvba_project::OutputType) -> &'static str 
 }
 
 fn default_build_output_path(input: &Path, loaded: &oxvba_project::LoadedProject) -> PathBuf {
-    let extension = if loaded.output_type == oxvba_project::OutputType::Addin {
+    let extension = if loaded.build_target == oxvba_project::BuildTarget::WrappedComServer {
+        "dll"
+    } else if loaded.output_type == oxvba_project::OutputType::Addin {
         "xll"
     } else {
         "oxb"
@@ -4032,6 +4083,32 @@ End Function
         assert_eq!(
             default_build_output_path(Path::new("legacy.vbp"), &loaded),
             PathBuf::from("ExcelAddin.xll")
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn default_build_output_path_uses_dll_for_wrapped_com_server_projects() {
+        let temp_root = unique_temp_dir("oxvba_cli_wrapped_com_output_default");
+        std::fs::write(
+            temp_root.join("Widget.cls"),
+            "Attribute VB_Name = \"Widget\"\nPublic Function Ping() As Long\nPing = 1\nEnd Function\n",
+        )
+        .expect("write class module");
+        let loaded = oxvba_project::load_basproj_from_str(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>ComServer</OutputType>\n    <BuildTarget>WrappedComServer</BuildTarget>\n    <ProjectName>ComWidget</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <ClassModule Include=\"Widget.cls\">\n      <VBExposed>True</VBExposed>\n      <VBCreatable>True</VBCreatable>\n    </ClassModule>\n  </ItemGroup>\n</Project>\n",
+            &temp_root,
+        )
+        .expect("temp COM server project should load");
+
+        assert_eq!(
+            default_build_output_path(&temp_root, &loaded),
+            temp_root.join("ComWidget.dll")
+        );
+        assert_eq!(
+            default_build_output_path(Path::new("legacy.vbp"), &loaded),
+            PathBuf::from("ComWidget.dll")
         );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");

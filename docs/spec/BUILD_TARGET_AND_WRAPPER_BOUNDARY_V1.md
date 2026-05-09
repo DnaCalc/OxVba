@@ -39,7 +39,7 @@ This separation is required so wrapper/native-hosting lanes do not overload sema
 | `Bundle` | Canonical OxVBA bundle artifact | emits `.oxb`; current stable default except `OutputType=Addin`, where `oxvba build` packages the bundle into a generated `.xll` |
 | `WrapperExe` | Native executable wrapper over a canonical `.oxb` payload | planned delivery lane |
 | `WrapperLibrary` | Native DLL/shared-library wrapper over a canonical `.oxb` payload | planned delivery lane |
-| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | planned delivery lane; not satisfied by generated-source skeletons alone |
+| `WrappedComServer` | Windows in-process COM DLL wrapper over a canonical `.oxb` payload for `OutputType=ComServer` projects | bounded DLL skeleton build lane active; not a dispatch/registration completion claim |
 
 Default: `Bundle`
 
@@ -98,7 +98,7 @@ The WrappedComServer lane produces a Windows desktop in-process COM server wrapp
 
 The first physical tier must provide standard in-process COM activation and late-bound dispatch for the scoped class set before any broader server/export row can move beyond planned/subset status. Later tiers add generated type libraries, dual-interface vtable projection, and connection-point events.
 
-Current generated-source COM skeletons are scaffolding only. They do not satisfy the WrappedComServer boundary unless the build produces a loadable DLL and the relevant validation row has runtime evidence for activation, object creation, dispatch, and any named Office/VBA client behavior.
+Current generated-source COM skeletons are scaffolding only. The bounded first tier can compile a Windows DLL with standard COM exports, but that does not satisfy the WrappedComServer boundary beyond skeleton artifact production. Completion still requires the relevant validation row to have runtime evidence for activation, object creation, dispatch, and any named Office/VBA client behavior.
 
 The lane is Windows-only unless a future workset defines a portable equivalent. Bitness, toolchain availability, registration scope, and administrative requirements must be reported through build-plan/build-result surfaces rather than inferred from CLI text.
 

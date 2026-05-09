@@ -44,6 +44,9 @@ OxVba already has important substrate:
 - `.basproj` parsing, canonical generation, and direct host project-settings
   DTOs now represent `BuildTarget=WrappedComServer`; the compatibility input
   spelling `WrapperComServer` normalizes to the canonical value.
+- `oxvba-build`/CLI can compile the bounded Windows WrappedComServer DLL
+  skeleton and verify the standard COM export names; `IDispatch` behavior is
+  still intentionally not claimed.
 - `OutputType=ComServer` and creatable class metadata exist in `.basproj` and
   project validation.
 - `crates/oxvba-build/src/comserver.rs` emits a COM DLL skeleton with

@@ -5,9 +5,62 @@
 //! backed by OxVba engine runtime sessions, delegating `IDispatch` through
 //! `DynamicObjectBridge`.
 
+use std::path::{Path, PathBuf};
+
 use oxvba_project::ComClassExportDescriptor;
 
+use crate::compile::{BuildError, ShimOutputType, compile_shim};
 use crate::idl::deterministic_uuid;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrappedComServerBuildOutput {
+    pub dll_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub enum WrappedComServerBuildError {
+    UnsupportedPlatform { target_os: &'static str },
+    Build(BuildError),
+}
+
+impl std::fmt::Display for WrappedComServerBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedPlatform { target_os } => {
+                write!(
+                    f,
+                    "WrappedComServer DLL builds require Windows; current target_os={target_os}"
+                )
+            }
+            Self::Build(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl From<BuildError> for WrappedComServerBuildError {
+    fn from(value: BuildError) -> Self {
+        Self::Build(value)
+    }
+}
+
+pub fn compile_wrapped_com_server_shim(
+    project_name: &str,
+    oxb_path: &str,
+    classes: &[ComClassExportDescriptor],
+    output_path: &Path,
+) -> Result<WrappedComServerBuildOutput, WrappedComServerBuildError> {
+    if !cfg!(target_os = "windows") {
+        return Err(WrappedComServerBuildError::UnsupportedPlatform {
+            target_os: std::env::consts::OS,
+        });
+    }
+
+    let source = generate_com_server_shim(project_name, oxb_path, classes);
+    compile_shim(&source, output_path, ShimOutputType::Dll)?;
+    Ok(WrappedComServerBuildOutput {
+        dll_path: output_path.to_path_buf(),
+    })
+}
 
 /// Generate Rust source code for a COM server in-process DLL.
 ///
@@ -30,6 +83,7 @@ pub fn generate_com_server_shim(
         r#"//! Auto-generated OxVBA COM server DLL for project "{project_name}".
 
 #![allow(non_snake_case)]
+#![allow(unsafe_op_in_unsafe_fn)]
 #![cfg(target_os = "windows")]
 
 use std::ffi::c_void;
@@ -61,7 +115,7 @@ const CLASS_E_NOAGGREGATION: i32 = 0x80040110_u32 as i32;
         r#"
 // ── DLL Entry Points ──
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn DllMain(
     h_instance: *mut c_void,
     dw_reason: u32,
@@ -82,7 +136,7 @@ pub extern "system" fn DllMain(
     // DllCanUnloadNow
     source.push_str(
         r#"
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn DllCanUnloadNow() -> i32 {
     if GLOBAL_REF_COUNT.load(Ordering::SeqCst) == 0 { S_OK } else { 1 }
 }
@@ -191,7 +245,7 @@ fn generate_dll_get_class_object(
     classes: &[ComClassExportDescriptor],
 ) -> String {
     let mut source = String::from(
-        r#"#[no_mangle]
+        r#"#[unsafe(no_mangle)]
 pub extern "system" fn DllGetClassObject(
     rclsid: *const GUID,
     riid: *const GUID,
@@ -247,7 +301,7 @@ fn generate_registration_exports(
     s.push_str(
         r#"// ── Registration ──
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn DllRegisterServer() -> i32 {
     // Real registration writes HKCR entries for each class.
     // See oxvba_build::registration for the full implementation.
@@ -267,7 +321,7 @@ pub extern "system" fn DllRegisterServer() -> i32 {
         r#"    S_OK
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn DllUnregisterServer() -> i32 {
     S_OK
 }
@@ -511,6 +565,36 @@ unsafe extern "system" fn di_invoke(
 mod tests {
     use super::*;
     use oxvba_project::{ComClassExportDescriptor, DispatchMemberInfo, Instancing};
+    use std::path::{Path, PathBuf};
+
+    struct TempDirGuard {
+        path: PathBuf,
+    }
+
+    impl TempDirGuard {
+        fn new(prefix: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "{prefix}_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("unix epoch")
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn com_server_shim_structure() {
@@ -598,5 +682,65 @@ mod tests {
         assert!(source.contains("CLSID_BETA"));
         assert!(source.contains("Multi.Alpha"));
         assert!(source.contains("Multi.Beta"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn wrapped_com_server_build_reports_typed_non_windows_unsupported() {
+        let classes = vec![ComClassExportDescriptor {
+            class_name: "Widget".to_string(),
+            prog_id: Some("TestProj.Widget".to_string()),
+            instancing: Some(Instancing::MultiUse),
+            description: None,
+            members: vec![],
+        }];
+        let err = compile_wrapped_com_server_shim(
+            "TestProj",
+            "test.oxb",
+            &classes,
+            Path::new("TestProj.dll"),
+        )
+        .expect_err("non-Windows build should be typed unsupported");
+        assert!(matches!(
+            err,
+            WrappedComServerBuildError::UnsupportedPlatform { .. }
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn wrapped_com_server_build_compiles_dll_with_standard_exports() {
+        let temp = TempDirGuard::new("oxvba_wrapped_com_server_compile");
+        let bundle_path = temp.path().join("bundle.oxb");
+        std::fs::write(&bundle_path, b"dummy bundle bytes").expect("write dummy bundle");
+        let bundle_literal = bundle_path.to_string_lossy().replace('\\', "/");
+        let dll_path = temp.path().join("TestProj.dll");
+        let classes = vec![ComClassExportDescriptor {
+            class_name: "Widget".to_string(),
+            prog_id: Some("TestProj.Widget".to_string()),
+            instancing: Some(Instancing::MultiUse),
+            description: None,
+            members: vec![],
+        }];
+
+        let output =
+            compile_wrapped_com_server_shim("TestProj", &bundle_literal, &classes, &dll_path)
+                .expect("WrappedComServer DLL build should succeed");
+        assert_eq!(output.dll_path, dll_path);
+        assert!(output.dll_path.exists());
+
+        let bytes = std::fs::read(&output.dll_path).expect("read built DLL");
+        for export in [
+            b"DllGetClassObject".as_slice(),
+            b"DllCanUnloadNow".as_slice(),
+            b"DllRegisterServer".as_slice(),
+            b"DllUnregisterServer".as_slice(),
+        ] {
+            assert!(
+                bytes.windows(export.len()).any(|window| window == export),
+                "expected PE export name {}",
+                String::from_utf8_lossy(export)
+            );
+        }
     }
 }
