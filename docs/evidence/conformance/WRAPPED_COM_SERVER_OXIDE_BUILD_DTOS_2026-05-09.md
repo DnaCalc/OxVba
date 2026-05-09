@@ -49,3 +49,10 @@ This DTO surface is an implemented subset for OxIde/direct-host planning. It
 does not execute the wrapper compiler itself from `oxvba-host`, does not perform
 registration from the embedded facade, and does not replace the wrapped COM
 runtime evidence already tracked under `COM-0007` through `COM-0010`.
+
+2026-05-10 review correction: this residual is not merely future polish.
+`EmbeddedBuildRunHost::build_workspace` currently returns a successful
+`EmbeddedBuildResult` from source compilation and exposes planned `dll_path` and
+`tlb_path` values without running the wrapped COM wrapper build or verifying that
+those artifacts exist. The direct-host build-result lane is reopened under
+`bd-wcs1.9.3`, with residual delivery tracked by `bd-wcs1.9.4`.

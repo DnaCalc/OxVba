@@ -81,10 +81,20 @@ cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet
   worksheet volatile/dependency semantics, and DnaOneCalc/OxIde host-context
   harness evidence remain open under `PH-0011`, which therefore remains
   `in-progress`.
+- 2026-05-10 review correction: the OxIde/direct-host WrappedComServer
+  build-result lane is reopened because `build_workspace` reports success and
+  planned DLL/TLB paths without executing the wrapper build or verifying emitted
+  artifacts. This is tracked by reopened `bd-wcs1.9.3` and residual delivery
+  bead `bd-wcs1.9.4`.
+- 2026-05-10 host/UDF design correction: the UDF context, descriptor source of
+  truth, and function-vs-Sub descriptor questions are moved to
+  `docs/worksets/WORKSET_2026-05-10_HOST_PROGRAM_DESIGN_AND_UDF_REWORK.md`
+  (`bd-sg5h`) rather than treated as complete WrappedComServer closure work.
 
 ## Governance stance
 
-The workset terminal audit is an implemented-subset audit, not a claim of full
-Office/VBA or arbitrary-host parity. The validation rows deliberately retain
-`implemented-subset` or `in-progress` statuses where broader behavior remains
-unproved.
+The workset terminal audit is an implemented-subset audit and now has a reopened
+direct-host build-result residual; it is not a claim of full Office/VBA,
+arbitrary-host parity, or verified direct-host WrappedComServer artifact
+production. The validation rows deliberately retain `implemented-subset` or
+`in-progress` statuses where broader behavior remains unproved.
