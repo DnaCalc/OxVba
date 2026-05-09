@@ -8,12 +8,223 @@ pub const RUNTIME_S_OK: i32 = 0;
 pub const RUNTIME_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RuntimeInterfaceId {
     IUnknown,
     IDispatch,
+    IConnectionPointContainer,
+    IConnectionPoint,
     Unsupported,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuntimeGuid {
+    pub data1: u32,
+    pub data2: u16,
+    pub data3: u16,
+    pub data4: [u8; 8],
+}
+
+impl RuntimeGuid {
+    pub const fn new(data1: u32, data2: u16, data3: u16, data4: [u8; 8]) -> Self {
+        Self {
+            data1,
+            data2,
+            data3,
+            data4,
+        }
+    }
+
+    pub fn parse(input: &str) -> Option<Self> {
+        let trimmed = input.trim();
+        let body = trimmed
+            .strip_prefix('{')
+            .and_then(|inner| inner.strip_suffix('}'))
+            .unwrap_or(trimmed);
+        let mut parts = body.split('-');
+        let data1 = parse_hex_u32(parts.next()?, 8)?;
+        let data2 = parse_hex_u16(parts.next()?, 4)?;
+        let data3 = parse_hex_u16(parts.next()?, 4)?;
+        let data4_hi = parts.next()?;
+        let data4_lo = parts.next()?;
+        if parts.next().is_some() || data4_hi.len() != 4 || data4_lo.len() != 12 {
+            return None;
+        }
+        let mut data4 = [0u8; 8];
+        data4[0] = parse_hex_u8(&data4_hi[0..2])?;
+        data4[1] = parse_hex_u8(&data4_hi[2..4])?;
+        for index in 0..6 {
+            let start = index * 2;
+            data4[index + 2] = parse_hex_u8(&data4_lo[start..start + 2])?;
+        }
+        Some(Self::new(data1, data2, data3, data4))
+    }
+
+    pub fn to_canonical_string(self) -> String {
+        format!(
+            "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+            self.data1,
+            self.data2,
+            self.data3,
+            self.data4[0],
+            self.data4[1],
+            self.data4[2],
+            self.data4[3],
+            self.data4[4],
+            self.data4[5],
+            self.data4[6],
+            self.data4[7]
+        )
+    }
+}
+
+impl core::fmt::Display for RuntimeGuid {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.to_canonical_string())
+    }
+}
+
+fn parse_hex_u32(input: &str, expected_len: usize) -> Option<u32> {
+    if input.len() != expected_len {
+        return None;
+    }
+    u32::from_str_radix(input, 16).ok()
+}
+
+fn parse_hex_u16(input: &str, expected_len: usize) -> Option<u16> {
+    if input.len() != expected_len {
+        return None;
+    }
+    u16::from_str_radix(input, 16).ok()
+}
+
+fn parse_hex_u8(input: &str) -> Option<u8> {
+    if input.len() != 2 {
+        return None;
+    }
+    u8::from_str_radix(input, 16).ok()
+}
+
+pub const RUNTIME_GUID_IUNKNOWN: RuntimeGuid =
+    RuntimeGuid::new(0x0000_0000, 0x0000, 0x0000, [0xC0, 0, 0, 0, 0, 0, 0, 0x46]);
+pub const RUNTIME_GUID_IDISPATCH: RuntimeGuid =
+    RuntimeGuid::new(0x0002_0400, 0x0000, 0x0000, [0xC0, 0, 0, 0, 0, 0, 0, 0x46]);
+pub const RUNTIME_GUID_ICONNECTIONPOINTCONTAINER: RuntimeGuid = RuntimeGuid::new(
+    0xB196_B284,
+    0xBAB4,
+    0x101A,
+    [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+);
+pub const RUNTIME_GUID_ICONNECTIONPOINT: RuntimeGuid = RuntimeGuid::new(
+    0xB196_B286,
+    0xBAB4,
+    0x101A,
+    [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RuntimeInterfaceKind {
+    Unknown,
+    Dispatch,
+    Dual,
+    Source,
+    ConnectionPointContainer,
+    ConnectionPoint,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuntimeInterfaceIdentity {
+    pub id: RuntimeInterfaceId,
+    pub guid: RuntimeGuid,
+    pub name: &'static str,
+    pub kind: RuntimeInterfaceKind,
+    pub major_version: Option<u16>,
+    pub minor_version: Option<u16>,
+    pub lcid: Option<u32>,
+}
+
+impl RuntimeInterfaceIdentity {
+    pub const fn new(
+        id: RuntimeInterfaceId,
+        guid: RuntimeGuid,
+        name: &'static str,
+        kind: RuntimeInterfaceKind,
+        major_version: Option<u16>,
+        minor_version: Option<u16>,
+        lcid: Option<u32>,
+    ) -> Self {
+        Self {
+            id,
+            guid,
+            name,
+            kind,
+            major_version,
+            minor_version,
+            lcid,
+        }
+    }
+
+    pub const fn custom(
+        guid: RuntimeGuid,
+        name: &'static str,
+        kind: RuntimeInterfaceKind,
+        major_version: Option<u16>,
+        minor_version: Option<u16>,
+        lcid: Option<u32>,
+    ) -> Self {
+        Self::new(
+            RuntimeInterfaceId::Unsupported,
+            guid,
+            name,
+            kind,
+            major_version,
+            minor_version,
+            lcid,
+        )
+    }
+}
+
+pub const RUNTIME_IUNKNOWN_INTERFACE_IDENTITY: RuntimeInterfaceIdentity =
+    RuntimeInterfaceIdentity::new(
+        RuntimeInterfaceId::IUnknown,
+        RUNTIME_GUID_IUNKNOWN,
+        "IUnknown",
+        RuntimeInterfaceKind::Unknown,
+        None,
+        None,
+        None,
+    );
+pub const RUNTIME_IDISPATCH_INTERFACE_IDENTITY: RuntimeInterfaceIdentity =
+    RuntimeInterfaceIdentity::new(
+        RuntimeInterfaceId::IDispatch,
+        RUNTIME_GUID_IDISPATCH,
+        "IDispatch",
+        RuntimeInterfaceKind::Dispatch,
+        None,
+        None,
+        None,
+    );
+pub const RUNTIME_ICONNECTIONPOINTCONTAINER_INTERFACE_IDENTITY: RuntimeInterfaceIdentity =
+    RuntimeInterfaceIdentity::new(
+        RuntimeInterfaceId::IConnectionPointContainer,
+        RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
+        "IConnectionPointContainer",
+        RuntimeInterfaceKind::ConnectionPointContainer,
+        None,
+        None,
+        None,
+    );
+pub const RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY: RuntimeInterfaceIdentity =
+    RuntimeInterfaceIdentity::new(
+        RuntimeInterfaceId::IConnectionPoint,
+        RUNTIME_GUID_ICONNECTIONPOINT,
+        "IConnectionPoint",
+        RuntimeInterfaceKind::ConnectionPoint,
+        None,
+        None,
+        None,
+    );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeMemberInvokeKind {
@@ -65,6 +276,7 @@ pub struct RuntimeMemberDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeInterfaceDescriptor {
     pub id: RuntimeInterfaceId,
+    pub identity: RuntimeInterfaceIdentity,
     pub name: &'static str,
     pub members: &'static [RuntimeMemberDescriptor],
     pub dual_dispatch: bool,
@@ -79,6 +291,7 @@ pub struct RuntimeClassDescriptor {
 pub const RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR: RuntimeInterfaceDescriptor =
     RuntimeInterfaceDescriptor {
         id: RuntimeInterfaceId::IUnknown,
+        identity: RUNTIME_IUNKNOWN_INTERFACE_IDENTITY,
         name: "IUnknown",
         members: &[],
         dual_dispatch: false,
@@ -400,6 +613,16 @@ impl ObjectRef {
             .find(|descriptor| descriptor.id == iid)
     }
 
+    pub fn query_interface_descriptor_by_guid(
+        &self,
+        guid: RuntimeGuid,
+    ) -> Option<&'static RuntimeInterfaceDescriptor> {
+        self.class_descriptor()
+            .interfaces
+            .iter()
+            .find(|descriptor| descriptor.identity.guid == guid)
+    }
+
     /// Construct an object reference from an owned raw `IUnknown` pointer.
     ///
     /// # Safety
@@ -486,10 +709,11 @@ unsafe impl Sync for ObjectRef {}
 #[cfg(test)]
 mod tests {
     use super::{
-        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
-        RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeInterfaceDescriptor,
-        RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind,
-        RuntimeParamDescriptor, RuntimeValueType,
+        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,
+        RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
+        RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor,
+        RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind,
+        RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
     };
 
     #[test]
@@ -537,6 +761,60 @@ mod tests {
     }
 
     #[test]
+    fn runtime_guid_parses_and_formats_canonical_identity() {
+        let parsed = RuntimeGuid::parse("{00020400-0000-0000-c000-000000000046}")
+            .expect("IDispatch GUID should parse with braces and mixed case");
+        assert_eq!(parsed, RUNTIME_GUID_IDISPATCH);
+        assert_eq!(parsed.to_string(), "00020400-0000-0000-C000-000000000046");
+        assert_eq!(
+            RuntimeGuid::parse("00000000-0000-0000-C000-000000000046"),
+            Some(RUNTIME_GUID_IUNKNOWN)
+        );
+        assert!(RuntimeGuid::parse("00020400-0000-0000-C000").is_none());
+        assert!(RuntimeGuid::parse("not-a-guid").is_none());
+    }
+
+    #[test]
+    fn runtime_interface_identity_carries_custom_iid_metadata() {
+        const CUSTOM_GUID: RuntimeGuid = RuntimeGuid::new(
+            0x1111_1111,
+            0x2222,
+            0x3333,
+            [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55],
+        );
+        const CUSTOM_IDENTITY: RuntimeInterfaceIdentity = RuntimeInterfaceIdentity::custom(
+            CUSTOM_GUID,
+            "Project._Widget",
+            RuntimeInterfaceKind::Dual,
+            Some(1),
+            Some(0),
+            Some(1033),
+        );
+        static CUSTOM_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::Unsupported,
+            identity: CUSTOM_IDENTITY,
+            name: "Project._Widget",
+            members: &[],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, CUSTOM_INTERFACE],
+        };
+
+        let object = ObjectRef::from_compat_identity_with_descriptor(202, &TEST_CLASS);
+        let descriptor = object
+            .query_interface_descriptor_by_guid(CUSTOM_GUID)
+            .expect("custom interface should be discoverable by GUID");
+        assert_eq!(descriptor.identity.guid, CUSTOM_GUID);
+        assert_eq!(descriptor.identity.name, "Project._Widget");
+        assert_eq!(descriptor.identity.kind, RuntimeInterfaceKind::Dual);
+        assert_eq!(descriptor.identity.major_version, Some(1));
+        assert_eq!(descriptor.identity.minor_version, Some(0));
+        assert_eq!(descriptor.identity.lcid, Some(1033));
+    }
+
+    #[test]
     fn descriptor_backed_object_can_advertise_dual_dispatch_shape() {
         static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
@@ -550,6 +828,7 @@ mod tests {
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "ITestDual",
             members: &[VALUE_MEMBER],
             dual_dispatch: true,
@@ -601,6 +880,7 @@ mod tests {
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "ITestDual",
             members: &[VALUE_MEMBER, SET_VALUE_MEMBER],
             dual_dispatch: true,
@@ -682,6 +962,7 @@ mod tests {
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "ITestDual",
             members: &[VALUE_MEMBER, PUT_VALUE_MEMBER],
             dual_dispatch: true,
@@ -732,6 +1013,7 @@ mod tests {
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "IAmbiguous",
             members: &[GET_VALUE, METHOD_VALUE],
             dual_dispatch: true,
@@ -779,6 +1061,7 @@ mod tests {
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "IAmbiguousDefault",
             members: &[FIRST, SECOND],
             dual_dispatch: true,
@@ -808,6 +1091,7 @@ mod tests {
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: "ITestDual",
             members: &[VALUE_MEMBER],
             dual_dispatch: true,

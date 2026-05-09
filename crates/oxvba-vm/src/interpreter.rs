@@ -400,6 +400,7 @@ impl Vm {
         let interfaces = Box::leak(
             vec![RuntimeInterfaceDescriptor {
                 id: RuntimeInterfaceId::IDispatch,
+                identity: oxvba_runtime::RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
                 name: interface_name,
                 members,
                 dual_dispatch: true,

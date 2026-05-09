@@ -1,6 +1,7 @@
 use oxvba_runtime::{
-    RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+    RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
+    RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
+    RuntimeValueType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +168,7 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
     let interfaces = Box::leak(
         vec![RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
             name: interface_name,
             members,
             dual_dispatch: metadata

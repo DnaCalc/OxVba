@@ -15,10 +15,14 @@ pub mod variant;
 pub use coerce::variant_to_vba_string;
 pub use decimal::Decimal96;
 pub use object_ref::{
-    ObjectRef, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeClassDescriptor,
-    RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
-    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeMemberDescriptor,
-    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+    ObjectRef, RUNTIME_GUID_ICONNECTIONPOINT, RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
+    RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN, RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY,
+    RUNTIME_ICONNECTIONPOINTCONTAINER_INTERFACE_IDENTITY, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+    RUNTIME_IUNKNOWN_INTERFACE_IDENTITY, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl,
+    RuntimeClassDescriptor, RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
+    RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity,
+    RuntimeInterfaceKind, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
+    RuntimeValueType,
 };
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
