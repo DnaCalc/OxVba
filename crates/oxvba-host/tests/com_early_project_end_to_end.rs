@@ -295,7 +295,8 @@ End Property
             .is_some(),
         "Property Get should have a unique unhinted descriptor plan by arity"
     );
-    let child_set_plan = vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Kid", 1);
+    let child_set_plan =
+        vm.resolve_project_dynamic_unhinted_dispatch_plan_for_test(widget_handle, "Kid", 1);
     assert!(
         child_set_plan.is_some(),
         "Property Set should have a unique unhinted descriptor plan by arity; route={:?}",
@@ -530,6 +531,88 @@ struct BasprojComRefSpec<'a> {
 }
 
 #[cfg(target_os = "windows")]
+fn workspace_root_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn run_wrapped_com_server_build(
+    server_basproj_path: &std::path::Path,
+    dll_path: &std::path::Path,
+) -> Result<(), String> {
+    let output = std::process::Command::new("cargo")
+        .arg("run")
+        .arg("--quiet")
+        .arg("-p")
+        .arg("oxvba-cli")
+        .arg("--")
+        .arg("build")
+        .arg(server_basproj_path)
+        .arg("-o")
+        .arg(dll_path)
+        .current_dir(workspace_root_dir())
+        .output()
+        .map_err(|err| format!("failed to start wrapped COM server build command: {err}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "wrapped COM server build failed with status {}: {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn run_regsvr32(args: &[&str], dll_path: &std::path::Path) -> Result<(), String> {
+    let output = std::process::Command::new("regsvr32")
+        .args(args)
+        .arg(dll_path)
+        .output()
+        .map_err(|err| format!("failed to start regsvr32: {err}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "regsvr32 {:?} failed for {} with status {}: {}",
+            args,
+            dll_path.display(),
+            output.status,
+            stderr.trim()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+struct RegisteredComServerGuard {
+    dll_path: std::path::PathBuf,
+}
+
+#[cfg(target_os = "windows")]
+impl RegisteredComServerGuard {
+    fn register(dll_path: std::path::PathBuf) -> Result<Self, String> {
+        run_regsvr32(&["/s"], &dll_path)?;
+        Ok(Self { dll_path })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for RegisteredComServerGuard {
+    fn drop(&mut self) {
+        let _ = run_regsvr32(&["/s", "/u"], &self.dll_path);
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn load_typelib_basproj_with_ref_specs(
     temp_leaf: &str,
     main_source: &str,
@@ -608,6 +691,118 @@ fn load_typelib_basproj_with_refs(
         })
         .collect::<Vec<_>>();
     load_typelib_basproj_with_ref_specs(temp_leaf, main_source, &specs)
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn wrapped_com_server_build_register_and_early_bind_interface_addthem() {
+    let unique = format!(
+        "wrapped-com-server-imycalc-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join(unique);
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+
+    let interface_source = r#"
+Attribute VB_Name = "IMyCalc"
+Option Explicit
+Public Function AddThem(ByVal leftValue As Double, ByVal rightValue As Double) As Double
+End Function
+"#;
+    let class_source = r#"
+Attribute VB_Name = "MyCalc"
+Option Explicit
+Implements IMyCalc
+Private Function IMyCalc_AddThem(ByVal leftValue As Double, ByVal rightValue As Double) As Double
+IMyCalc_AddThem = leftValue + rightValue
+End Function
+"#;
+    std::fs::write(temp_root.join("IMyCalc.cls"), interface_source).expect("write IMyCalc.cls");
+    std::fs::write(temp_root.join("MyCalc.cls"), class_source).expect("write MyCalc.cls");
+
+    let server_basproj_path = temp_root.join("MyCalcServer.basproj");
+    let server_basproj = r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>ComServer</OutputType>
+    <BuildTarget>WrappedComServer</BuildTarget>
+    <ProjectName>MyCalcServer</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClassModule Include="IMyCalc.cls" />
+    <ClassModule Include="MyCalc.cls">
+      <VBExposed>True</VBExposed>
+      <VBCreatable>True</VBCreatable>
+      <ProgId>MyCalcServerLib.MyCalc</ProgId>
+    </ClassModule>
+  </ItemGroup>
+</Project>
+"#;
+    std::fs::write(&server_basproj_path, server_basproj).expect("write server basproj");
+
+    let server_dll_path = temp_root.join("MyCalcServer.dll");
+    run_wrapped_com_server_build(&server_basproj_path, &server_dll_path)
+        .expect("build wrapped COM server");
+    let server_tlb_path = server_dll_path.with_extension("tlb");
+    assert!(
+        server_dll_path.exists(),
+        "expected wrapped COM server DLL {}",
+        server_dll_path.display()
+    );
+    assert!(
+        server_tlb_path.exists(),
+        "expected wrapped COM server TypeLib {}",
+        server_tlb_path.display()
+    );
+    let registration_guard =
+        RegisteredComServerGuard::register(server_dll_path.clone()).expect("register DLL");
+
+    let consumer_source = r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim calc As IMyCalc
+Dim resultValue
+Set calc = New MyCalc
+resultValue = calc.AddThem(1.25, 2.5)
+Debug.Print resultValue
+End Sub
+"#;
+    let consumer_temp_leaf = format!(
+        "basproj-early-bound-wrapped-com-imycalc-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
+    let importlib = server_tlb_path.to_string_lossy().to_string();
+    let consumer_loaded = load_typelib_basproj_with_ref_specs(
+        &consumer_temp_leaf,
+        consumer_source,
+        &[BasprojComRefSpec {
+            include: "MyCalcServer",
+            guid: None,
+            major: None,
+            minor: None,
+            lcid: None,
+            importlib: Some(importlib.as_str()),
+        }],
+    );
+
+    let snapshot = run_project_windows_hosted(&consumer_loaded.manifest, false);
+    assert!(
+        snapshot.contains(&Variant::from_f64(3.75)),
+        "expected AddThem result in snapshot after early-bound IMyCalc call; snapshot={snapshot:?}"
+    );
+
+    drop(registration_guard);
+    let _ = std::fs::remove_dir_all(&temp_root);
 }
 
 #[cfg(target_os = "windows")]

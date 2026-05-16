@@ -1,6 +1,8 @@
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use oxvba_compiler::{ProjectManifest, compile_project};
+use oxvba_compiler::{OxBundle, ProjectManifest, compile_project};
 use oxvba_runtime::Variant;
 use thiserror::Error;
 
@@ -575,11 +577,28 @@ impl<'engine> EmbeddedBuildRunHost<'engine> {
     pub fn build_workspace(&self, request: &EmbeddedBuildRequest) -> EmbeddedBuildResult {
         let plan = self.build_plan(request);
         match compile_project(&request.workspace.manifest) {
-            Ok(_) => EmbeddedBuildResult::succeeded(
-                request.request_id.clone(),
-                request.workspace.clone(),
-                plan,
-            ),
+            Ok(compiled) => match request.target {
+                EmbeddedBuildTarget::Bundle => EmbeddedBuildResult::succeeded(
+                    request.request_id.clone(),
+                    request.workspace.clone(),
+                    plan,
+                ),
+                EmbeddedBuildTarget::WrappedComServer => {
+                    match execute_wrapped_com_server_build(request, &plan, &compiled) {
+                        Ok(()) => EmbeddedBuildResult::succeeded(
+                            request.request_id.clone(),
+                            request.workspace.clone(),
+                            plan,
+                        ),
+                        Err(diagnostic) => EmbeddedBuildResult::failed(
+                            request.request_id.clone(),
+                            request.workspace.clone(),
+                            plan,
+                            vec![diagnostic],
+                        ),
+                    }
+                }
+            },
             Err(err) => EmbeddedBuildResult::failed(
                 request.request_id.clone(),
                 request.workspace.clone(),
@@ -858,6 +877,203 @@ fn normalize_workspace_target_path(path: &Path) -> PathBuf {
     absolute.canonicalize().unwrap_or(absolute)
 }
 
+fn execute_wrapped_com_server_build(
+    request: &EmbeddedBuildRequest,
+    plan: &EmbeddedBuildPlan,
+    compiled: &oxvba_compiler::CompiledProject,
+) -> Result<(), PhaseDiagnostic> {
+    if !cfg!(target_os = "windows") {
+        return Err(PhaseDiagnostic::compile(
+            "WrappedComServer build output is only available on Windows hosts",
+        ));
+    }
+    if request.workspace.workspace.source_policy != EmbeddedExecutionSourcePolicy::DiskOnly {
+        return Err(PhaseDiagnostic::compile(
+            "WrappedComServer build execution currently requires EmbeddedExecutionSourcePolicy::DiskOnly",
+        ));
+    }
+    if !request.workspace.workspace.path().exists() {
+        return Err(PhaseDiagnostic::compile(format!(
+            "WrappedComServer build workspace path does not exist: {}",
+            request.workspace.workspace.path().display()
+        )));
+    }
+
+    let bundle_path = planned_artifact_path(plan, EmbeddedBuildArtifactKind::Bundle)?;
+    let dll_path = planned_artifact_path(plan, EmbeddedBuildArtifactKind::DynamicLibrary)?;
+    let tlb_path = planned_artifact_path(plan, EmbeddedBuildArtifactKind::TypeLibrary)?;
+    let registration_plan_path =
+        planned_artifact_path(plan, EmbeddedBuildArtifactKind::RegistrationPlan)?;
+    let build_log_path = optional_artifact_path(plan, EmbeddedBuildArtifactKind::BuildLog);
+
+    ensure_parent_dir(&bundle_path)?;
+    let bundle =
+        OxBundle::from_compiled_project(compiled, &request.workspace.manifest.project_name);
+    let bundle_bytes = bundle
+        .serialize_to_bytes()
+        .map_err(|err| PhaseDiagnostic::compile(format!("bundle serialization failed: {err}")))?;
+    fs::write(&bundle_path, &bundle_bytes).map_err(|err| {
+        PhaseDiagnostic::compile(format!("cannot write {}: {err}", bundle_path.display()))
+    })?;
+
+    ensure_parent_dir(&dll_path)?;
+    let workspace_root = workspace_root_dir();
+    let workspace_arg = request.workspace.workspace.path().display().to_string();
+    let dll_arg = dll_path.display().to_string();
+    let output = Command::new("cargo")
+        .arg("run")
+        .arg("--quiet")
+        .arg("-p")
+        .arg("oxvba-cli")
+        .arg("--")
+        .arg("build")
+        .arg(&workspace_arg)
+        .arg("-o")
+        .arg(&dll_arg)
+        .current_dir(&workspace_root)
+        .output()
+        .map_err(|err| {
+            PhaseDiagnostic::compile(format!(
+                "WrappedComServer build command failed to start from {}: {err}",
+                workspace_root.display()
+            ))
+        })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if let Some(path) = build_log_path.as_ref() {
+        let _ = ensure_parent_dir(path).and_then(|_| {
+            fs::write(
+                path,
+                format!(
+                    "command: cargo run --quiet -p oxvba-cli -- build {} -o {}\nstatus: {}\n\nstdout:\n{}\n\nstderr:\n{}\n",
+                    workspace_arg,
+                    dll_arg,
+                    output.status,
+                    stdout,
+                    stderr
+                ),
+            )
+            .map_err(|err| {
+                PhaseDiagnostic::compile(format!("cannot write {}: {err}", path.display()))
+            })
+        });
+    }
+    if !output.status.success() {
+        return Err(PhaseDiagnostic::compile(format!(
+            "WrappedComServer build failed with status {}: {}",
+            output.status,
+            stderr.trim()
+        )));
+    }
+
+    let registration_plan = plan.registration_plan.as_ref().ok_or_else(|| {
+        PhaseDiagnostic::compile("WrappedComServer plan missing registration_plan metadata")
+    })?;
+    write_registration_plan_artifact(&registration_plan_path, registration_plan)?;
+
+    let mut missing_paths = Vec::new();
+    for artifact in plan.artifacts.iter().filter(|artifact| artifact.required) {
+        if !artifact.path.exists() {
+            missing_paths.push(artifact.path.display().to_string());
+        }
+    }
+    if !missing_paths.is_empty() {
+        return Err(PhaseDiagnostic::compile(format!(
+            "WrappedComServer build did not produce required artifacts: {}",
+            missing_paths.join(", ")
+        )));
+    }
+    if !dll_path.exists() || !tlb_path.exists() {
+        return Err(PhaseDiagnostic::compile(format!(
+            "WrappedComServer build completed without expected DLL/TLB outputs (dll={}, tlb={})",
+            dll_path.display(),
+            tlb_path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+fn planned_artifact_path(
+    plan: &EmbeddedBuildPlan,
+    kind: EmbeddedBuildArtifactKind,
+) -> Result<PathBuf, PhaseDiagnostic> {
+    plan.artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind)
+        .map(|artifact| artifact.path.clone())
+        .ok_or_else(|| {
+            PhaseDiagnostic::compile(format!(
+                "WrappedComServer build plan missing artifact {:?}",
+                kind
+            ))
+        })
+}
+
+fn optional_artifact_path(
+    plan: &EmbeddedBuildPlan,
+    kind: EmbeddedBuildArtifactKind,
+) -> Option<PathBuf> {
+    plan.artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind)
+        .map(|artifact| artifact.path.clone())
+}
+
+fn ensure_parent_dir(path: &Path) -> Result<(), PhaseDiagnostic> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            PhaseDiagnostic::compile(format!(
+                "cannot create artifact directory {}: {err}",
+                parent.display()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn write_registration_plan_artifact(
+    path: &Path,
+    plan: &EmbeddedComServerRegistrationPlan,
+) -> Result<(), PhaseDiagnostic> {
+    ensure_parent_dir(path)?;
+    let command_hint = plan
+        .command_hint
+        .as_ref()
+        .map(|value| format!("\"{}\"", json_escape_string(value)))
+        .unwrap_or_else(|| "null".to_string());
+    let json = format!(
+        "{{\n  \"scope\": \"{}\",\n  \"requires_admin\": {},\n  \"command_hint\": {}\n}}\n",
+        registration_scope_name(plan.scope),
+        if plan.requires_admin { "true" } else { "false" },
+        command_hint
+    );
+    fs::write(path, json)
+        .map_err(|err| PhaseDiagnostic::compile(format!("cannot write {}: {err}", path.display())))
+}
+
+fn registration_scope_name(scope: EmbeddedComRegistrationScope) -> &'static str {
+    match scope {
+        EmbeddedComRegistrationScope::None => "None",
+        EmbeddedComRegistrationScope::PerUser => "PerUser",
+        EmbeddedComRegistrationScope::Machine => "Machine",
+        EmbeddedComRegistrationScope::RegistrationFreeManifest => "RegistrationFreeManifest",
+    }
+}
+
+fn json_escape_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn workspace_root_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
+}
+
 fn embedded_build_plan_for_request(request: &EmbeddedBuildRequest) -> EmbeddedBuildPlan {
     let output_dir = embedded_build_output_dir(&request.workspace);
     let project_name = sanitize_artifact_stem(&request.workspace.manifest.project_name);
@@ -979,6 +1195,10 @@ fn sanitize_artifact_stem(project_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::{
         EmbeddedBuildArtifactKind, EmbeddedBuildRequest, EmbeddedBuildRunEvent,
         EmbeddedBuildRunHost, EmbeddedBuildStartedEvent, EmbeddedBuildStatus, EmbeddedBuildTarget,
@@ -1023,6 +1243,46 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: Default::default(),
         }
+    }
+
+    fn make_wrapped_com_server_manifest() -> ProjectManifest {
+        let mut class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Ping() As Long\nPing = 42\nEnd Function\n",
+        )
+        .expect("class module");
+        class_module.attributes.vb_exposed = true;
+        class_module.attributes.vb_creatable = true;
+        class_module.attributes.vb_global_namespace = false;
+        class_module.attributes.vb_predeclared_id = false;
+        ProjectManifest {
+            project_name: "App".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![class_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: Default::default(),
+        }
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default();
+        let path = std::env::temp_dir().join(format!("{prefix}_{}_{}", std::process::id(), stamp));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    fn write_wrapped_com_server_fixture_project(root: &std::path::Path) -> PathBuf {
+        let widget_source = "Attribute VB_Name = \"Widget\"\nPublic Function Ping() As Long\nPing = 42\nEnd Function\n";
+        fs::write(root.join("Widget.cls"), widget_source).expect("write class module");
+        let basproj = "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>ComServer</OutputType>\n    <BuildTarget>WrappedComServer</BuildTarget>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <ClassModule Include=\"Widget.cls\">\n      <VBExposed>True</VBExposed>\n      <VBCreatable>True</VBCreatable>\n    </ClassModule>\n  </ItemGroup>\n</Project>\n";
+        let basproj_path = root.join("App.basproj");
+        fs::write(&basproj_path, basproj).expect("write basproj");
+        basproj_path
     }
 
     #[test]
@@ -1111,9 +1371,11 @@ mod tests {
     fn wrapped_com_server_build_plan_reports_artifacts_and_registration_dtos() {
         let engine = Engine::new(HostConfig::default());
         let host = EmbeddedBuildRunHost::new(&engine);
+        let temp_root = unique_temp_dir("oxvba_embedded_wrapped_com_server_build");
+        let basproj_path = write_wrapped_com_server_fixture_project(&temp_root);
         let workspace = EmbeddedWorkspaceSnapshot::new(
-            EmbeddedWorkspaceInput::workspace_overlay("App.basproj"),
-            make_manifest("Public Function Ping() As Long\nPing = 42\nEnd Function\n"),
+            EmbeddedWorkspaceInput::disk_only(&basproj_path),
+            make_wrapped_com_server_manifest(),
         );
         let request = EmbeddedBuildRequest::wrapped_com_server(workspace);
 
@@ -1156,28 +1418,70 @@ mod tests {
         );
 
         let result = host.build_workspace(&request);
-        assert_eq!(result.status, EmbeddedBuildStatus::Succeeded);
-        assert_eq!(result.plan.target, EmbeddedBuildTarget::WrappedComServer);
-        assert!(
-            result
+        if cfg!(target_os = "windows") {
+            assert_eq!(result.status, EmbeddedBuildStatus::Succeeded);
+            assert_eq!(result.plan.target, EmbeddedBuildTarget::WrappedComServer);
+            let dll_path = result
                 .dll_path
                 .as_ref()
-                .is_some_and(|path| path.ends_with("App.dll"))
-        );
-        assert!(
-            result
+                .expect("wrapped com server dll path should be present");
+            let tlb_path = result
                 .tlb_path
                 .as_ref()
-                .is_some_and(|path| path.ends_with("App.tlb"))
-        );
-        assert_eq!(
-            result
-                .registration_plan
-                .as_ref()
-                .expect("result registration plan")
-                .scope,
-            EmbeddedComRegistrationScope::PerUser
-        );
+                .expect("wrapped com server tlb path should be present");
+            assert!(dll_path.exists(), "expected {}", dll_path.display());
+            assert!(tlb_path.exists(), "expected {}", tlb_path.display());
+            let registration_artifact = result
+                .plan
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.kind == EmbeddedBuildArtifactKind::RegistrationPlan)
+                .expect("registration plan artifact");
+            assert!(
+                registration_artifact.path.exists(),
+                "expected {}",
+                registration_artifact.path.display()
+            );
+            assert_eq!(
+                result
+                    .registration_plan
+                    .as_ref()
+                    .expect("result registration plan")
+                    .scope,
+                EmbeddedComRegistrationScope::PerUser
+            );
+        } else {
+            assert_eq!(result.status, EmbeddedBuildStatus::Failed);
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|diag| diag.message().contains("only available on Windows hosts"))
+            );
+        }
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn wrapped_com_server_build_workspace_requires_disk_only_source_policy() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let temp_root = unique_temp_dir("oxvba_embedded_wrapped_com_source_policy");
+        let basproj_path = write_wrapped_com_server_fixture_project(&temp_root);
+        let request = EmbeddedBuildRequest::wrapped_com_server(EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::workspace_overlay(&basproj_path),
+            make_wrapped_com_server_manifest(),
+        ));
+
+        let result = host.build_workspace(&request);
+        assert_eq!(result.status, EmbeddedBuildStatus::Failed);
+        assert!(result.diagnostics.iter().any(|diag| {
+            diag.message()
+                .contains("EmbeddedExecutionSourcePolicy::DiskOnly")
+        }));
+
+        let _ = fs::remove_dir_all(&temp_root);
     }
 
     #[test]

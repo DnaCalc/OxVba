@@ -107,11 +107,12 @@ OxVba already has important substrate:
   registration artifacts, required tools, capability profile, and per-user
   registration plan, and `EmbeddedBuildResult` exposes direct `dll_path`,
   `tlb_path`, and `registration_plan` fields.
-- 2026-05-10 review correction: the OxIde/direct-host build result slice is
-  reopened. `EmbeddedBuildRunHost::build_workspace` currently reports success
-  from `compile_project` and planned artifact paths; it does not execute the
-  wrapped COM wrapper build or verify that the DLL/TLB artifacts exist. This is
-  tracked as true WrappedComServer residual delivery work in `bd-wcs1.9.4`.
+- 2026-05-10 direct-host correction closure: `EmbeddedBuildRunHost::build_workspace`
+  now executes the WrappedComServer build lane for Windows `DiskOnly` requests,
+  writes the planned `.oxb` and registration-plan artifacts, invokes the wrapper
+  build command, and verifies required `.dll`/`.tlb`/plan artifacts before
+  returning success. Non-Windows, non-`DiskOnly`, build-command failure, and
+  missing-artifact paths now return typed failed build diagnostics.
 - 2026-05-10 sequencing note: deeper host-program and UDF semantics are moved
   into `docs/worksets/WORKSET_2026-05-10_HOST_PROGRAM_DESIGN_AND_UDF_REWORK.md`
   (`bd-sg5h`) for execution after the next WrappedComServer workset.
@@ -136,10 +137,9 @@ The missing truth is also explicit:
 - Host worksheet-UDF invocation for DnaOneCalc/OxIde-style hosts needs to share
   the same call descriptor/call-frame core but should not be conflated with
   Automation Add-Ins.
-- Direct-host WrappedComServer `build_workspace` semantics are not yet honest:
-  they must either run and verify the wrapper build artifacts or return a
-  planning/non-success state that cannot be mistaken for produced DLL/TLB
-  artifacts.
+- Direct-host WrappedComServer execution currently requires
+  `EmbeddedExecutionSourcePolicy::DiskOnly` and does not perform registration
+  side effects itself.
 
 ## Governing vocabulary and build model
 
