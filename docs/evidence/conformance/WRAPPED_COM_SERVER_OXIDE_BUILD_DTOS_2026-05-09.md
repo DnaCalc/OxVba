@@ -1,23 +1,24 @@
 # WrappedComServer OxIde build DTO evidence
 
-Date: 2026-05-09
-Bead: `bd-wcs1.9.3`
+Date: 2026-05-10
+Bead: `bd-wcs1.9.3`, `bd-wcs1.9.4`
 Matrix rows: `COM-0007`, `COM-0008`, `COM-0009`, `COM-0010`, `PH-0011`
 
 ## Scope
 
-This evidence covers the typed direct-host planning/result surface that OxIde
-can consume for `BuildTarget=WrappedComServer` without parsing CLI text.
-
-This is a DTO and planning surface. It does not by itself claim a new wrapped
-COM runtime capability beyond the existing COM evidence rows.
+This evidence covers the typed direct-host surface that OxIde can consume for
+`BuildTarget=WrappedComServer` without parsing CLI text:
+1. typed planning DTOs,
+2. typed build result fields,
+3. actual wrapped COM build execution and artifact verification.
 
 ## Commands
 
 ```powershell
 cargo test -p oxvba-host wrapped_com_server_build_plan_reports_artifacts_and_registration_dtos --quiet
+cargo test -p oxvba-host wrapped_com_server_build_workspace_requires_disk_only_source_policy --quiet
 cargo test -p oxvba-host embedded_build_run_ids_events_and_command_status_are_correlated --quiet
-cargo check -p oxvba-host --quiet
+cargo test -p oxvba-host embedded::tests --quiet
 ```
 
 ## Verified behavior
@@ -39,20 +40,27 @@ cargo check -p oxvba-host --quiet
 - `EmbeddedBuildResult` carries the build plan plus direct `dll_path`,
   `tlb_path`, and registration-plan fields so hosts do not need to infer them
   from output text.
+- `EmbeddedBuildRunHost::build_workspace` now executes the wrapped COM build
+  pipeline for `EmbeddedBuildTarget::WrappedComServer` on Windows
+  `DiskOnly` requests by:
+  - compiling/serializing the `.oxb` artifact,
+  - invoking the wrapped COM build lane through `cargo run -p oxvba-cli -- build`,
+  - materializing a registration-plan artifact,
+  - verifying required artifacts (`.oxb`, `.dll`, `.tlb`, registration JSON)
+    before returning `EmbeddedBuildStatus::Succeeded`.
+- `EmbeddedBuildRunHost::build_workspace` now returns
+  `EmbeddedBuildStatus::Failed` with typed diagnostics for non-Windows hosts,
+  non-`DiskOnly` requests, failed build commands, or missing artifacts.
 - Existing embedded build/run request IDs, event correlation, and command
   availability tests remain green after adding the target-aware build request
   shape.
 
 ## Residual
 
-This DTO surface is an implemented subset for OxIde/direct-host planning. It
-does not execute the wrapper compiler itself from `oxvba-host`, does not perform
-registration from the embedded facade, and does not replace the wrapped COM
-runtime evidence already tracked under `COM-0007` through `COM-0010`.
-
-2026-05-10 review correction: this residual is not merely future polish.
-`EmbeddedBuildRunHost::build_workspace` currently returns a successful
-`EmbeddedBuildResult` from source compilation and exposes planned `dll_path` and
-`tlb_path` values without running the wrapped COM wrapper build or verifying that
-those artifacts exist. The direct-host build-result lane is reopened under
-`bd-wcs1.9.3`, with residual delivery tracked by `bd-wcs1.9.4`.
+This DTO surface remains an implemented subset:
+1. embedded facade execution currently requires
+   `EmbeddedExecutionSourcePolicy::DiskOnly` for WrappedComServer builds;
+2. the direct-host API still exposes a registration plan artifact, but it does
+   not perform registry mutation itself;
+3. COM runtime parity claims still come from `COM-0007` through `COM-0010`
+   evidence rows.

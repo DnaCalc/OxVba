@@ -1,6 +1,6 @@
 # WrappedComServer terminal audit
 
-Date: 2026-05-09
+Date: 2026-05-10
 Bead: `bd-wcs1.10.2`
 Workset: `docs/worksets/WORKSET_2026-05-09_WRAPPED_COM_SERVER_INTERFACE_EVENT_UDF_EXECUTION.md`
 Matrix rows: `COM-0007`, `COM-0008`, `COM-0009`, `COM-0010`, `PH-0011`
@@ -16,6 +16,9 @@ The wrapped COM/server/UDF workset has an implemented subset with evidence for:
 - Host-call descriptor metadata, typed host UDF catalog enumeration, and scalar
   stable-ID host UDF invocation with caller/dependency/volatile context shape.
 - OxIde/direct-host `WrappedComServer` build-plan/build-result/registration DTOs.
+- OxIde/direct-host `WrappedComServer` executable build-result semantics:
+  success now requires produced `.oxb`/`.dll`/`.tlb`/registration artifacts,
+  with typed failed diagnostics for unsupported or failed build paths.
 - Validation matrices, traceability, derived summaries, and governance aligned
   to the implemented subset.
 
@@ -47,7 +50,8 @@ cargo test -p oxvba-build generate_typelib --quiet
 cargo test -p oxvba-build wrapped_com_server_build_compiles_dll_with_standard_exports --quiet
 cargo test -p oxvba-host --test invoke_procedure_tests host_udf --quiet
 cargo test -p oxvba-host wrapped_com_server_build_plan_reports_artifacts_and_registration_dtos --quiet
-cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet
+cargo test -p oxvba-host wrapped_com_server_build_workspace_requires_disk_only_source_policy --quiet
+cargo test -p oxvba-host embedded::tests --quiet
 ./scripts/generate-validation-derived-summaries.ps1
 ./scripts/check-governance.ps1
 ```
@@ -60,9 +64,11 @@ cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet
 - `cargo test -p oxvba-host --test invoke_procedure_tests host_udf --quiet`:
   passed, 3 tests.
 - `cargo test -p oxvba-host wrapped_com_server_build_plan_reports_artifacts_and_registration_dtos --quiet`:
+  passed, 1 focused test (includes live WrappedComServer artifact build).
+- `cargo test -p oxvba-host wrapped_com_server_build_workspace_requires_disk_only_source_policy --quiet`:
   passed, 1 focused test.
-- `cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet`:
-  passed.
+- `cargo test -p oxvba-host embedded::tests --quiet`:
+  passed, 16 focused embedded-host tests.
 - `./scripts/generate-validation-derived-summaries.ps1`: regenerated latest
   validation summary.
 - `./scripts/check-governance.ps1`: passed, including validation ownership,
@@ -81,11 +87,6 @@ cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet
   worksheet volatile/dependency semantics, and DnaOneCalc/OxIde host-context
   harness evidence remain open under `PH-0011`, which therefore remains
   `in-progress`.
-- 2026-05-10 review correction: the OxIde/direct-host WrappedComServer
-  build-result lane is reopened because `build_workspace` reports success and
-  planned DLL/TLB paths without executing the wrapper build or verifying emitted
-  artifacts. This is tracked by reopened `bd-wcs1.9.3` and residual delivery
-  bead `bd-wcs1.9.4`.
 - 2026-05-10 host/UDF design correction: the UDF context, descriptor source of
   truth, and function-vs-Sub descriptor questions are moved to
   `docs/worksets/WORKSET_2026-05-10_HOST_PROGRAM_DESIGN_AND_UDF_REWORK.md`
@@ -93,8 +94,7 @@ cargo check -p oxvba-build -p oxvba-host -p oxvba-compiler --quiet
 
 ## Governance stance
 
-The workset terminal audit is an implemented-subset audit and now has a reopened
-direct-host build-result residual; it is not a claim of full Office/VBA,
-arbitrary-host parity, or verified direct-host WrappedComServer artifact
-production. The validation rows deliberately retain `implemented-subset` or
-`in-progress` statuses where broader behavior remains unproved.
+The workset terminal audit is an implemented-subset audit; it is not a claim of
+full Office/VBA or arbitrary-host parity. The validation rows deliberately
+retain `implemented-subset` or `in-progress` statuses where broader behavior
+remains unproved.
