@@ -76,6 +76,59 @@ pub struct HostUdfArgumentDescriptor {
     pub value_type: Option<DeclareParamType>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostUdfTypeMapEvidence {
+    ExcelObserved,
+    ExcelDocumented,
+    HostProvisional,
+    Rejected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfTypedParameterDescriptor {
+    pub name: Option<String>,
+    pub vba_type: DeclareParamType,
+    pub evidence: HostUdfTypeMapEvidence,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfTypedSignature {
+    pub stable_host_call_id: String,
+    pub project_name: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub parameters: Vec<HostUdfTypedParameterDescriptor>,
+    pub return_type: DeclareParamType,
+    pub evidence: HostUdfTypeMapEvidence,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HostUdfTypedValue {
+    Double(f64),
+}
+
+impl HostUdfTypedValue {
+    pub fn declare_type(&self) -> DeclareParamType {
+        match self {
+            Self::Double(_) => DeclareParamType::Double,
+        }
+    }
+
+    fn to_variant(&self) -> Variant {
+        match self {
+            Self::Double(value) => Variant::from_f64(*value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostUdfTypedInvokeResult {
+    pub value: HostUdfTypedValue,
+    pub caller: Option<String>,
+    pub volatile_requested: bool,
+    pub dependency_tokens: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostUdfCallContext {
     pub caller: Option<String>,
@@ -868,6 +921,136 @@ impl Engine {
         HostUdfCatalog { functions }
     }
 
+    pub fn host_udf_typed_signature(
+        &self,
+        session: &ProjectRuntimeSession,
+        stable_host_call_id: &str,
+        evidence: HostUdfTypeMapEvidence,
+    ) -> Result<HostUdfTypedSignature, PhaseDiagnostic> {
+        let descriptor = self
+            .host_udf_catalog(session)
+            .functions
+            .into_iter()
+            .find(|function| function.stable_host_call_id == stable_host_call_id)
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "host UDF function not found: {stable_host_call_id}"
+                ))
+            })?;
+
+        let return_type = descriptor.return_type.ok_or_else(|| {
+            PhaseDiagnostic::runtime(format!(
+                "host UDF `{stable_host_call_id}` has no typed return descriptor"
+            ))
+        })?;
+        if return_type != DeclareParamType::Double {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "host UDF `{stable_host_call_id}` return type `{}` is not admitted by the typed first slice",
+                declare_param_type_label(return_type)
+            )));
+        }
+
+        let mut parameters = Vec::with_capacity(descriptor.arguments.len());
+        for (index, argument) in descriptor.arguments.iter().enumerate() {
+            let Some(vba_type) = argument.value_type else {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "host UDF `{stable_host_call_id}` argument {index} has no typed descriptor"
+                )));
+            };
+            if vba_type != DeclareParamType::Double {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "host UDF `{stable_host_call_id}` argument {index} type `{}` is not admitted by the typed first slice",
+                    declare_param_type_label(vba_type)
+                )));
+            }
+            parameters.push(HostUdfTypedParameterDescriptor {
+                name: argument.name.clone(),
+                vba_type,
+                evidence,
+            });
+        }
+
+        Ok(HostUdfTypedSignature {
+            stable_host_call_id: descriptor.stable_host_call_id,
+            project_name: descriptor.project_name,
+            module_name: descriptor.module_name,
+            procedure_name: descriptor.procedure_name,
+            parameters,
+            return_type,
+            evidence,
+        })
+    }
+
+    pub fn invoke_host_udf_typed(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        signature: &HostUdfTypedSignature,
+        context: HostUdfCallContext,
+        args: &[HostUdfTypedValue],
+    ) -> Result<HostUdfTypedInvokeResult, PhaseDiagnostic> {
+        if signature.evidence == HostUdfTypeMapEvidence::Rejected {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "host UDF `{}` typed signature is marked rejected and cannot be invoked",
+                signature.stable_host_call_id
+            )));
+        }
+        if args.len() != signature.parameters.len() {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "host UDF `{}` expected {} typed arguments but got {}",
+                signature.stable_host_call_id,
+                signature.parameters.len(),
+                args.len()
+            )));
+        }
+        for (index, (arg, param)) in args.iter().zip(signature.parameters.iter()).enumerate() {
+            if arg.declare_type() != param.vba_type {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "host UDF `{}` argument {index} expected `{}` but got `{}`",
+                    signature.stable_host_call_id,
+                    declare_param_type_label(param.vba_type),
+                    declare_param_type_label(arg.declare_type())
+                )));
+            }
+        }
+
+        let variant_args = args
+            .iter()
+            .map(HostUdfTypedValue::to_variant)
+            .collect::<Vec<_>>();
+        let result = self.invoke_host_udf_with_variants(
+            session,
+            &signature.stable_host_call_id,
+            context,
+            &variant_args,
+        )?;
+        let value = match signature.return_type {
+            DeclareParamType::Double => result
+                .value
+                .as_f64()
+                .map(HostUdfTypedValue::Double)
+                .ok_or_else(|| {
+                    PhaseDiagnostic::runtime(format!(
+                        "host UDF `{}` returned non-Double value for typed Double result",
+                        signature.stable_host_call_id
+                    ))
+                })?,
+            other => {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "host UDF `{}` return type `{}` is not admitted by the typed first slice",
+                    signature.stable_host_call_id,
+                    declare_param_type_label(other)
+                )));
+            }
+        };
+
+        Ok(HostUdfTypedInvokeResult {
+            value,
+            caller: result.caller,
+            volatile_requested: result.volatile_requested,
+            dependency_tokens: result.dependency_tokens,
+        })
+    }
+
     pub fn invoke_host_udf_with_variants(
         &self,
         session: &mut ProjectRuntimeSession,
@@ -1560,6 +1743,24 @@ fn stable_host_call_id_for_export(export: &HostProcedureExport) -> String {
     .map(|part| part.trim().to_ascii_lowercase())
     .collect::<Vec<_>>()
     .join(":")
+}
+
+fn declare_param_type_label(value: DeclareParamType) -> &'static str {
+    match value {
+        DeclareParamType::Long => "Long",
+        DeclareParamType::Integer => "Integer",
+        DeclareParamType::String => "String",
+        DeclareParamType::Boolean => "Boolean",
+        DeclareParamType::Double => "Double",
+        DeclareParamType::Single => "Single",
+        DeclareParamType::Currency => "Currency",
+        DeclareParamType::Date => "Date",
+        DeclareParamType::Byte => "Byte",
+        DeclareParamType::LongLong => "LongLong",
+        DeclareParamType::LongPtr => "LongPtr",
+        DeclareParamType::Variant => "Variant",
+        DeclareParamType::Any => "Any",
+    }
 }
 
 fn normalize_callback_payload(

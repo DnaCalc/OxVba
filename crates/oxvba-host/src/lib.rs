@@ -42,7 +42,9 @@ pub use embedded::{
 pub use engine::{
     ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
     HostUdfArgumentDescriptor, HostUdfCallContext, HostUdfCatalog, HostUdfFunctionDescriptor,
-    HostUdfInvokeResult, PhaseDiagnostic, ProjectRuntimeSession,
+    HostUdfInvokeResult, HostUdfTypeMapEvidence, HostUdfTypedInvokeResult,
+    HostUdfTypedParameterDescriptor, HostUdfTypedSignature, HostUdfTypedValue, PhaseDiagnostic,
+    ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,

@@ -7,7 +7,9 @@ use oxvba_compiler::{
     ProjectManifest, ProjectReference, ReferenceKind, compile_project,
 };
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig, HostUdfCallContext};
+use oxvba_host::{
+    Engine, HostConfig, HostUdfCallContext, HostUdfTypeMapEvidence, HostUdfTypedValue,
+};
 use oxvba_runtime::{VarType, Variant, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
@@ -261,6 +263,115 @@ fn host_udf_invoke_runs_public_function_with_caller_context() {
     assert_eq!(result.caller.as_deref(), Some("Sheet1!A1"));
     assert!(result.volatile_requested);
     assert_eq!(result.dependency_tokens, vec!["Sheet1!B1:C1".to_string()]);
+}
+
+#[test]
+fn typed_host_udf_signature_and_invoke_admit_double_first_slice() {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        concat!(
+            "Public Function AddThem(val1 As Double, val2 As Double) As Double\n",
+            "AddThem = val1 + val2\n",
+            "End Function\n"
+        ),
+    )]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let catalog = engine.host_udf_catalog(&session);
+    let add_them = &catalog.functions[0];
+
+    let signature = engine
+        .host_udf_typed_signature(
+            &session,
+            &add_them.stable_host_call_id,
+            HostUdfTypeMapEvidence::ExcelObserved,
+        )
+        .unwrap();
+    assert_eq!(signature.procedure_name, "addthem");
+    assert_eq!(signature.return_type, DeclareParamType::Double);
+    assert_eq!(signature.evidence, HostUdfTypeMapEvidence::ExcelObserved);
+    assert_eq!(signature.parameters.len(), 2);
+    assert_eq!(signature.parameters[0].name.as_deref(), Some("val1"));
+    assert_eq!(signature.parameters[0].vba_type, DeclareParamType::Double);
+    assert_eq!(signature.parameters[1].name.as_deref(), Some("val2"));
+    assert_eq!(signature.parameters[1].vba_type, DeclareParamType::Double);
+
+    let result = engine
+        .invoke_host_udf_typed(
+            &mut session,
+            &signature,
+            HostUdfCallContext::new().with_caller("Sheet1!A1"),
+            &[
+                HostUdfTypedValue::Double(2.0),
+                HostUdfTypedValue::Double(3.0),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(result.value, HostUdfTypedValue::Double(5.0));
+    assert_eq!(result.caller.as_deref(), Some("Sheet1!A1"));
+}
+
+#[test]
+fn typed_host_udf_signature_rejects_non_double_first_slice() {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        "Public Function AddLongs(a As Long, b As Long) As Long\nAddLongs = a + b\nEnd Function\n",
+    )]);
+
+    let engine = Engine::default();
+    let session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let catalog = engine.host_udf_catalog(&session);
+    let add_longs = &catalog.functions[0];
+
+    let err = engine
+        .host_udf_typed_signature(
+            &session,
+            &add_longs.stable_host_call_id,
+            HostUdfTypeMapEvidence::ExcelObserved,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("not admitted by the typed first slice"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn typed_host_udf_invoke_rejects_rejected_type_map_evidence() {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        "Public Function AddThem(a As Double, b As Double) As Double\nAddThem = a + b\nEnd Function\n",
+    )]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let catalog = engine.host_udf_catalog(&session);
+    let add_them = &catalog.functions[0];
+
+    let signature = engine
+        .host_udf_typed_signature(
+            &session,
+            &add_them.stable_host_call_id,
+            HostUdfTypeMapEvidence::Rejected,
+        )
+        .unwrap();
+
+    let err = engine
+        .invoke_host_udf_typed(
+            &mut session,
+            &signature,
+            HostUdfCallContext::new(),
+            &[
+                HostUdfTypedValue::Double(2.0),
+                HostUdfTypedValue::Double(3.0),
+            ],
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("marked rejected"), "got: {err}");
 }
 
 #[test]
