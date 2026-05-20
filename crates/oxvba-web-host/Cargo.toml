@@ -7,9 +7,15 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-oxvba-host.workspace = true
-oxvba-languageservice.workspace = true
+oxvba-host = { workspace = true, optional = true }
+oxvba-languageservice = { path = "../oxvba-languageservice", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
 oxvba-runtime.workspace = true
 oxvba-vm.workspace = true
+
+[features]
+default = ["native-host"]
+native-host = ["dep:oxvba-host", "oxvba-languageservice/host-session"]

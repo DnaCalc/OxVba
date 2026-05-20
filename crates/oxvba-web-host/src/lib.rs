@@ -1,11 +1,13 @@
+#[cfg(feature = "native-host")]
 use oxvba_host::{
     DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind,
     ImmediateVariantEvaluationOutput, ImmediateVariantValueProjection,
 };
+#[cfg(feature = "native-host")]
+use oxvba_languageservice::HostWorkspaceDocument;
 use oxvba_languageservice::{
-    DiagnosticSeverity, HostWorkspaceDocument, SemanticProvenance, SpannedDiagnostic,
-    SymbolProvenanceKind,
+    DiagnosticSeverity, SemanticProvenance, SpannedDiagnostic, SymbolProvenanceKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -172,6 +174,7 @@ pub struct WebSemanticProvenance {
     pub kind: WebProvenanceKind,
 }
 
+#[cfg(feature = "native-host")]
 pub fn project_workspace_loaded(
     workspace_target: impl Into<String>,
     documents: &[HostWorkspaceDocument],
@@ -186,6 +189,7 @@ pub fn project_workspace_loaded(
     })
 }
 
+#[cfg(feature = "native-host")]
 impl From<HostWorkspaceDocument> for WebWorkspaceDocument {
     fn from(value: HostWorkspaceDocument) -> Self {
         Self {
@@ -229,6 +233,7 @@ impl From<SpannedDiagnostic> for WebDiagnostic {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<ImmediateInputKind> for WebImmediateInputKind {
     fn from(value: ImmediateInputKind) -> Self {
         match value {
@@ -240,6 +245,7 @@ impl From<ImmediateInputKind> for WebImmediateInputKind {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<WebImmediateInputKind> for ImmediateInputKind {
     fn from(value: WebImmediateInputKind) -> Self {
         match value {
@@ -251,6 +257,7 @@ impl From<WebImmediateInputKind> for ImmediateInputKind {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<ImmediateDisplayStyle> for WebImmediateDisplayStyle {
     fn from(value: ImmediateDisplayStyle) -> Self {
         match value {
@@ -261,6 +268,7 @@ impl From<ImmediateDisplayStyle> for WebImmediateDisplayStyle {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<WebImmediateDisplayStyle> for ImmediateDisplayStyle {
     fn from(value: WebImmediateDisplayStyle) -> Self {
         match value {
@@ -271,6 +279,7 @@ impl From<WebImmediateDisplayStyle> for ImmediateDisplayStyle {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<WebImmediateRequest> for ImmediateEvaluationRequest {
     fn from(value: WebImmediateRequest) -> Self {
         Self {
@@ -282,6 +291,7 @@ impl From<WebImmediateRequest> for ImmediateEvaluationRequest {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<ImmediateEvaluationRequest> for WebImmediateRequest {
     fn from(value: ImmediateEvaluationRequest) -> Self {
         Self {
@@ -293,6 +303,7 @@ impl From<ImmediateEvaluationRequest> for WebImmediateRequest {
     }
 }
 
+#[cfg(feature = "native-host")]
 impl From<ImmediateVariantValueProjection> for WebImmediateOutput {
     fn from(value: ImmediateVariantValueProjection) -> Self {
         Self::Value {
@@ -301,6 +312,7 @@ impl From<ImmediateVariantValueProjection> for WebImmediateOutput {
     }
 }
 
+#[cfg(feature = "native-host")]
 pub fn project_immediate_result(
     output: &ImmediateVariantEvaluationOutput,
     diagnostics: &[impl ToString],
@@ -319,6 +331,7 @@ pub fn project_immediate_result(
     }
 }
 
+#[cfg(feature = "native-host")]
 pub fn project_debug_pause_state(value: &DebugVariantPauseState) -> WebDebugPauseState {
     WebDebugPauseState {
         stop_kind: format!("{:?}", value.stop),
@@ -326,6 +339,7 @@ pub fn project_debug_pause_state(value: &DebugVariantPauseState) -> WebDebugPaus
     }
 }
 
+#[cfg(feature = "native-host")]
 fn project_debug_frame(value: &DebugFrameVariant) -> WebDebugFrame {
     WebDebugFrame {
         module_name: value.module_name.clone(),
@@ -337,6 +351,7 @@ fn project_debug_frame(value: &DebugFrameVariant) -> WebDebugFrame {
     }
 }
 
+#[cfg(feature = "native-host")]
 fn project_debug_value(value: &DebugFrameVariantValue) -> WebDebugValue {
     WebDebugValue {
         name: value.name.clone(),
@@ -362,10 +377,12 @@ impl From<SemanticProvenance> for WebSemanticProvenance {
 }
 
 #[cfg(test)]
+#[cfg(feature = "native-host")]
 mod tests {
     use oxvba_host::{
         DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
-        DirectHostStackFrameId, ImmediateVariantEvaluationOutput,
+        DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason, DirectHostStackFrameId,
+        ImmediateVariantEvaluationOutput,
     };
     use oxvba_languageservice::{
         DiagnosticSeverity, DocumentId, HostWorkspaceDocument, SpannedDiagnostic, TextSpan,
@@ -447,6 +464,9 @@ mod tests {
                 },
                 call_stack_depth: 1,
             },
+            current_source: DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            ),
             frames: vec![DebugFrameVariant {
                 frame_id: DirectHostStackFrameId::new("debug:test:frame:1"),
                 module_name: "Module1".to_string(),
@@ -454,6 +474,9 @@ mod tests {
                 entry_pc: 4,
                 source_line_start: 10,
                 source_line_end: 20,
+                source: DirectHostSourceSpanStatus::unavailable(
+                    DirectHostSourceUnavailableReason::NoSourceLocation,
+                ),
                 values: vec![DebugFrameVariantValue {
                     name: "x".to_string(),
                     slot: 1,

@@ -24,6 +24,7 @@ pub mod windows_call_frame;
 pub mod windows_client;
 #[cfg(target_os = "windows")]
 pub mod windows_connection_point;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod windows_ffi_bridge;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;

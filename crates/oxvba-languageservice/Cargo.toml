@@ -9,8 +9,12 @@ repository.workspace = true
 [dependencies]
 oxvba-syntax.workspace = true
 oxvba-compiler.workspace = true
-oxvba-host.workspace = true
-oxvba-project.workspace = true
+oxvba-host = { workspace = true, optional = true }
+oxvba-project = { workspace = true, optional = true }
 
 [dev-dependencies]
 oxvba-runtime.workspace = true
+
+[features]
+default = ["host-session"]
+host-session = ["dep:oxvba-host", "dep:oxvba-project"]

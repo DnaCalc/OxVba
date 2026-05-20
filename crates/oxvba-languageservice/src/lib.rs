@@ -15,6 +15,7 @@
 //! - `oxvba-lsp` should stay a thin transport layered over the same semantics.
 
 pub mod document;
+#[cfg(feature = "host-session")]
 pub mod host_session;
 pub mod semantic;
 pub mod service;
@@ -22,6 +23,7 @@ pub mod span;
 pub mod workspace;
 
 pub use document::{Document, DocumentId};
+#[cfg(feature = "host-session")]
 pub use host_session::{
     HostEditorDocumentVersion, HostEditorResponse, HostEditorResponseVersion, HostSessionError,
     HostWorkspaceDocument, HostWorkspaceDocumentVersioned, HostWorkspaceModuleRosterEntry,
