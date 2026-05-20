@@ -1,0 +1,86 @@
+# DNA OxIde After-W370 Source-Span Audit
+
+Date: 2026-05-20
+Bead: `bd-94av.2.1`
+Workset: `docs/worksets/WORKSET_2026-05-19_DNAOXIDE_AFTER_W370_DIRECT_HOST_ROUNDOUT.md`
+
+## Scope
+
+This audit covers the after-W370 request for editor-grade source-span DTOs on
+runtime, debug, watch, breakpoint, and Immediate direct-host surfaces.
+
+The audit is not a delivery claim. Its purpose is to identify which source
+truth already exists, which direct-host rows expose it, and which follow-up
+delivery beads own the missing projection work.
+
+## Current Source Truth
+
+Available source truth:
+
+- `oxvba_host::DirectHostSourceSpan` exists with `document_id`, `start`, and
+  `end` positions.
+- `DirectHostIssueContext` can already carry an optional
+  `DirectHostSourceSpan`.
+- compiler `ProcedureRuntimeMetadata` carries `module_name`, `procedure_name`,
+  `entry_pc`, `source_line_start`, `source_line_end`, `statement_line_numbers`,
+  and `statement_entry_pcs`.
+- VM `DebugStop` carries `DebugSourceLocation` with `module_name`,
+  `procedure_name`, `entry_pc`, `statement_pc`, and optional `line_number`.
+- `HostWorkspaceRoster` exposes module/document identity and per-document
+  versions for workspace-backed projects.
+
+Important limitation:
+
+- runtime/debug/Immediate host DTOs generally know module names and line
+  numbers, while `DirectHostSourceSpan` requires a `DirectHostDocumentId`.
+  The missing bridge is a stable module-to-document source map at the direct
+  runtime/debug/Immediate boundary.
+
+## Row-Family Findings
+
+| Row family | Current exposed source shape | Gap | Delivery owner |
+| --- | --- | --- | --- |
+| Runtime build/run diagnostics | `EmbeddedBuildResult`, `EmbeddedRunResult`, and invocation results carry `PhaseDiagnostic` values. `PhaseDiagnostic` has phase and message only. | No document ID, source range, or typed no-source reason is available on runtime/build/run diagnostics. | `bd-94av.2.2` |
+| Runtime invocation failures | `EmbeddedInvokeVariantResult` carries target module/procedure and diagnostics on failure. | The target gives a module/procedure hint, but failure rows do not carry an editor span or explicit source-unavailable reason. | `bd-94av.2.2` |
+| Debug pause/current statement | `HostDebugVariantRunResult::Paused` carries `DebugVariantPauseState`; `DebugStop` carries module/procedure and optional line. | Stop rows do not expose `DirectHostSourceSpan`, document ID, or span-unavailable status. | `bd-94av.2.3` |
+| Debug stack frames | `DebugFrameVariant` carries module/procedure plus procedure `source_line_start` and `source_line_end`. | Frame rows expose line ranges but not document-ID-backed `DirectHostSourceSpan`; frame locals have no declaration/source range. | `bd-94av.2.3` |
+| Debug breakpoint binding rows | `DebugBreakpointRecord` carries module name, line number, binding status, unresolved reason, and hit count. | Bound/unresolved rows do not carry `DirectHostSourceSpan`; unresolved reasons are not source-linked when the module exists but no executable statement exists on the requested line. | `bd-94av.2.3` |
+| Watch evaluations | `DebugWatchEvaluation` carries watch ID, expression text, and value/unavailable/error status. Error statuses carry `DirectHostIssue` but no source span. | Watch diagnostics do not carry the paused-frame source span, expression source span, or explicit no-source reason. | `bd-94av.2.4` |
+| Immediate diagnostics | `ImmediateVariantEvaluationResult` carries output and diagnostics. Parse/literal diagnostics are returned as `PhaseDiagnostic`. `ImmediateSessionError` can project some target-module context into `DirectHostIssue`. | Immediate diagnostics lack input/source spans, target module document IDs, and no-session/source-unavailable DTO status. | `bd-94av.2.4` |
+| ThinSliceHello evidence | Existing fixture proves overlay build/run, Immediate, debug, watch, and breakpoint behavior over temp project copies. | It proves module/line metadata is usable for breakpoint setup, but it does not assert document-ID-backed spans on output rows. | `bd-94av.2.3`, `bd-94av.2.4` |
+
+## Delivery Split
+
+The missing work should be split because each lane has a different owner and
+source-map shape:
+
+1. Runtime/build/run diagnostics need a source-bearing diagnostic DTO layered
+   over `PhaseDiagnostic` without breaking existing callers.
+2. Debug pause/frame/breakpoint rows need a module/document source-map bridge
+   and stable `DirectHostSourceSpan` projection.
+3. Watch and Immediate diagnostics need diagnostic/status rows that can attach
+   either paused-frame spans, input spans, or typed no-source reasons.
+
+## Non-Claims
+
+This audit does not claim:
+
+- full editor source-span coverage;
+- source ranges for every local variable declaration;
+- arbitrary Immediate expression parsing spans;
+- complete runtime error source recovery for VM errors that currently surface
+  only as strings.
+
+Those remain delivery work under the child beads created from this audit.
+
+## Review Notes
+
+Fresh-eyes review points before closing `bd-94av.2.1`:
+
+- The audit distinguishes existing compiler/VM source truth from direct-host
+  DTO projection gaps.
+- It avoids calling the current module/line-only debug surface complete.
+- It leaves child delivery beads for every row family named in the handoff.
+- It does not broaden COM, browser/WASM, or editor-version claims outside this
+  bead's source-span scope.
+

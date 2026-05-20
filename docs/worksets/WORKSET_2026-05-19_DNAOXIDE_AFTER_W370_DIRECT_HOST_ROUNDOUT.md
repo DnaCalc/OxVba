@@ -162,7 +162,10 @@ Epics:
 First executable beads:
 
 - `bd-94av.1.1` - publish after-W370 intake map and residual lanes
-- `bd-94av.2.1` - audit runtime/debug/Immediate row families for source-span DTO gaps
+- `bd-94av.2.1` - audit runtime/debug/Immediate row families for source-span DTO gaps (audit published in `docs/reviews/DNAOXIDE_AFTER_W370_SOURCE_SPAN_AUDIT_2026-05-20.md`; delivery children open)
+- `bd-94av.2.2` - add source-bearing runtime diagnostic DTOs
+- `bd-94av.2.3` - project debug pause/frame/breakpoint source spans
+- `bd-94av.2.4` - project watch and Immediate diagnostic source spans
 - `bd-94av.3.1` - audit editor-facing responses for missing version provenance
 - `bd-94av.4.1` - prove or bound the browser-safe crate graph
 - `bd-94av.5.1` - extend direct-host issue taxonomy for stale/busy/no-session/browser gaps
