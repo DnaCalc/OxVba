@@ -555,7 +555,7 @@ pub fn com_runtime_invocation_availability() -> ComRuntimeInvocationAvailability
         DirectHostCommandStatus::available()
     } else {
         DirectHostCommandStatus::disabled(non_windows_com_issue(
-            DirectHostIssueKind::ComRuntimeUnavailable,
+            DirectHostIssueKind::ComInvocationUnavailable,
             "COM runtime invocation requires a Windows native COM host",
         ))
     };
@@ -1101,7 +1101,7 @@ mod tests {
             assert!(matches!(
                 &availability.command_status,
                 DirectHostCommandStatus::Disabled { reason }
-                    if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+                    if reason.stable_code == "DH-COM-INVOCATION-UNAVAILABLE"
             ));
             assert!(matches!(
                 &profile.reference_discovery.status,
@@ -1111,7 +1111,7 @@ mod tests {
             assert!(matches!(
                 &profile.runtime_invocation.status,
                 DirectHostCapabilityStatus::Unavailable { reason }
-                    if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+                    if reason.stable_code == "DH-COM-INVOCATION-UNAVAILABLE"
             ));
         }
     }

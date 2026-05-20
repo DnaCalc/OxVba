@@ -99,6 +99,7 @@ impl DirectHostCapabilityKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectHostIssueKind {
     BrowserUnsupported,
+    BrowserResponseFamilyUnsupported,
     NonWindowsUnsupported,
     NativeServiceMissing,
     NativeServiceUnhealthy,
@@ -106,20 +107,29 @@ pub enum DirectHostIssueKind {
     WorkspaceInvalid,
     ProjectInvalid,
     DocumentNotFound,
+    WorkspaceVersionStale,
+    DocumentVersionStale,
     CompileOptionsInvalid,
     BuildFailed,
     RunTargetMissing,
     RuntimeStartupFailed,
     RuntimeSessionUnavailable,
+    RuntimeBusy,
+    RuntimeAlreadyRunning,
+    RuntimeNotRunning,
+    RuntimeStopped,
     ImmediateUnavailable,
+    ImmediateSessionUnavailable,
     ImmediateEvaluationFailed,
     DebugUnavailable,
+    DebugSessionUnavailable,
     NotPaused,
     WatchEvaluationFailed,
     BreakpointUnresolved,
     ComDiscoveryUnavailable,
     ComReferenceMissingOrBroken,
     ComRuntimeUnavailable,
+    ComInvocationUnavailable,
     ComBitnessOrApartmentIncompatible,
 }
 
@@ -127,6 +137,9 @@ impl DirectHostIssueKind {
     pub fn stable_code(self) -> &'static str {
         match self {
             DirectHostIssueKind::BrowserUnsupported => "DH-BROWSER-UNSUPPORTED",
+            DirectHostIssueKind::BrowserResponseFamilyUnsupported => {
+                "DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED"
+            }
             DirectHostIssueKind::NonWindowsUnsupported => "DH-NONWINDOWS-UNSUPPORTED",
             DirectHostIssueKind::NativeServiceMissing => "DH-NATIVE-SERVICE-MISSING",
             DirectHostIssueKind::NativeServiceUnhealthy => "DH-NATIVE-SERVICE-UNHEALTHY",
@@ -134,20 +147,29 @@ impl DirectHostIssueKind {
             DirectHostIssueKind::WorkspaceInvalid => "DH-WORKSPACE-INVALID",
             DirectHostIssueKind::ProjectInvalid => "DH-PROJECT-INVALID",
             DirectHostIssueKind::DocumentNotFound => "DH-DOCUMENT-NOT-FOUND",
+            DirectHostIssueKind::WorkspaceVersionStale => "DH-WORKSPACE-VERSION-STALE",
+            DirectHostIssueKind::DocumentVersionStale => "DH-DOCUMENT-VERSION-STALE",
             DirectHostIssueKind::CompileOptionsInvalid => "DH-COMPILE-OPTIONS-INVALID",
             DirectHostIssueKind::BuildFailed => "DH-BUILD-FAILED",
             DirectHostIssueKind::RunTargetMissing => "DH-RUN-TARGET-MISSING",
             DirectHostIssueKind::RuntimeStartupFailed => "DH-RUNTIME-STARTUP-FAILED",
             DirectHostIssueKind::RuntimeSessionUnavailable => "DH-RUNTIME-SESSION-UNAVAILABLE",
+            DirectHostIssueKind::RuntimeBusy => "DH-RUNTIME-BUSY",
+            DirectHostIssueKind::RuntimeAlreadyRunning => "DH-RUNTIME-ALREADY-RUNNING",
+            DirectHostIssueKind::RuntimeNotRunning => "DH-RUNTIME-NOT-RUNNING",
+            DirectHostIssueKind::RuntimeStopped => "DH-RUNTIME-STOPPED",
             DirectHostIssueKind::ImmediateUnavailable => "DH-IMMEDIATE-UNAVAILABLE",
+            DirectHostIssueKind::ImmediateSessionUnavailable => "DH-IMMEDIATE-SESSION-UNAVAILABLE",
             DirectHostIssueKind::ImmediateEvaluationFailed => "DH-IMMEDIATE-EVALUATION-FAILED",
             DirectHostIssueKind::DebugUnavailable => "DH-DEBUG-UNAVAILABLE",
+            DirectHostIssueKind::DebugSessionUnavailable => "DH-DEBUG-SESSION-UNAVAILABLE",
             DirectHostIssueKind::NotPaused => "DH-NOT-PAUSED",
             DirectHostIssueKind::WatchEvaluationFailed => "DH-WATCH-EVALUATION-FAILED",
             DirectHostIssueKind::BreakpointUnresolved => "DH-BREAKPOINT-UNRESOLVED",
             DirectHostIssueKind::ComDiscoveryUnavailable => "DH-COM-DISCOVERY-UNAVAILABLE",
             DirectHostIssueKind::ComReferenceMissingOrBroken => "DH-COM-REFERENCE-MISSING-BROKEN",
             DirectHostIssueKind::ComRuntimeUnavailable => "DH-COM-RUNTIME-UNAVAILABLE",
+            DirectHostIssueKind::ComInvocationUnavailable => "DH-COM-INVOCATION-UNAVAILABLE",
             DirectHostIssueKind::ComBitnessOrApartmentIncompatible => {
                 "DH-COM-BITNESS-APARTMENT-INCOMPATIBLE"
             }
@@ -159,6 +181,9 @@ impl DirectHostIssueKind {
             DirectHostIssueKind::BrowserUnsupported => {
                 "Capability is not available in browser profiles"
             }
+            DirectHostIssueKind::BrowserResponseFamilyUnsupported => {
+                "Response family is not available in browser profiles"
+            }
             DirectHostIssueKind::NonWindowsUnsupported => "Capability is only available on Windows",
             DirectHostIssueKind::NativeServiceMissing => "Native service is not available",
             DirectHostIssueKind::NativeServiceUnhealthy => "Native service is unhealthy",
@@ -166,14 +191,26 @@ impl DirectHostIssueKind {
             DirectHostIssueKind::WorkspaceInvalid => "Workspace is invalid",
             DirectHostIssueKind::ProjectInvalid => "Project is invalid",
             DirectHostIssueKind::DocumentNotFound => "Document is not part of the loaded workspace",
+            DirectHostIssueKind::WorkspaceVersionStale => {
+                "Workspace revision is stale for the requested operation"
+            }
+            DirectHostIssueKind::DocumentVersionStale => {
+                "Document version is stale for the requested operation"
+            }
             DirectHostIssueKind::CompileOptionsInvalid => "Compile options are invalid",
             DirectHostIssueKind::BuildFailed => "Build failed",
             DirectHostIssueKind::RunTargetMissing => "Run target is missing",
             DirectHostIssueKind::RuntimeStartupFailed => "Runtime startup failed",
             DirectHostIssueKind::RuntimeSessionUnavailable => "Runtime session is unavailable",
+            DirectHostIssueKind::RuntimeBusy => "Runtime is busy",
+            DirectHostIssueKind::RuntimeAlreadyRunning => "Runtime is already running",
+            DirectHostIssueKind::RuntimeNotRunning => "Runtime is not running",
+            DirectHostIssueKind::RuntimeStopped => "Runtime is stopped",
             DirectHostIssueKind::ImmediateUnavailable => "Immediate Window is unavailable",
+            DirectHostIssueKind::ImmediateSessionUnavailable => "Immediate session is unavailable",
             DirectHostIssueKind::ImmediateEvaluationFailed => "Immediate evaluation failed",
             DirectHostIssueKind::DebugUnavailable => "Debugger is unavailable",
+            DirectHostIssueKind::DebugSessionUnavailable => "Debug session is unavailable",
             DirectHostIssueKind::NotPaused => "Debug session is not paused",
             DirectHostIssueKind::WatchEvaluationFailed => "Watch evaluation failed",
             DirectHostIssueKind::BreakpointUnresolved => "Breakpoint is unresolved",
@@ -182,6 +219,7 @@ impl DirectHostIssueKind {
                 "COM reference is missing or broken"
             }
             DirectHostIssueKind::ComRuntimeUnavailable => "COM runtime invocation is unavailable",
+            DirectHostIssueKind::ComInvocationUnavailable => "COM invocation is unavailable",
             DirectHostIssueKind::ComBitnessOrApartmentIncompatible => {
                 "COM bitness or apartment model is incompatible"
             }
@@ -278,6 +316,11 @@ pub struct DirectHostIssueContext {
     pub stack_frame_id: Option<DirectHostStackFrameId>,
     pub watch_id: Option<DirectHostWatchId>,
     pub source_span: Option<DirectHostSourceSpan>,
+    pub expected_workspace_revision: Option<u64>,
+    pub actual_workspace_revision: Option<u64>,
+    pub expected_document_version: Option<u64>,
+    pub actual_document_version: Option<u64>,
+    pub response_family: Option<String>,
     pub path: Option<PathBuf>,
 }
 
@@ -384,6 +427,46 @@ impl DirectHostIssue {
         self.context.watch_id = Some(watch_id.into());
         self
     }
+
+    pub fn with_workspace_revision(mut self, expected: u64, actual: u64) -> Self {
+        self.context.expected_workspace_revision = Some(expected);
+        self.context.actual_workspace_revision = Some(actual);
+        self
+    }
+
+    pub fn with_document_version(mut self, expected: u64, actual: u64) -> Self {
+        self.context.expected_document_version = Some(expected);
+        self.context.actual_document_version = Some(actual);
+        self
+    }
+
+    pub fn with_response_family(mut self, response_family: impl Into<String>) -> Self {
+        self.context.response_family = Some(response_family.into());
+        self
+    }
+
+    pub fn stale_workspace_version(expected: u64, actual: u64) -> Self {
+        Self::new(DirectHostIssueKind::WorkspaceVersionStale)
+            .with_retryability(DirectHostRetryability::Retryable)
+            .with_workspace_revision(expected, actual)
+    }
+
+    pub fn stale_document_version(
+        document_id: impl Into<DirectHostDocumentId>,
+        expected: u64,
+        actual: u64,
+    ) -> Self {
+        Self::new(DirectHostIssueKind::DocumentVersionStale)
+            .with_retryability(DirectHostRetryability::Retryable)
+            .with_document_id(document_id)
+            .with_document_version(expected, actual)
+    }
+
+    pub fn browser_response_family_unsupported(response_family: impl Into<String>) -> Self {
+        Self::new(DirectHostIssueKind::BrowserResponseFamilyUnsupported)
+            .with_retryability(DirectHostRetryability::NotRetryable)
+            .with_response_family(response_family)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -467,8 +550,9 @@ impl DirectHostCapability {
 mod tests {
     use super::{
         DirectHostCapability, DirectHostCapabilityKind, DirectHostCommandStatus,
-        DirectHostDebugSessionId, DirectHostDocumentId, DirectHostIssue, DirectHostIssueKind,
-        DirectHostModuleId, DirectHostRetryability,
+        DirectHostDebugSessionId, DirectHostDocumentId, DirectHostImmediateSessionId,
+        DirectHostIssue, DirectHostIssueKind, DirectHostModuleId, DirectHostRetryability,
+        DirectHostRuntimeSessionId,
     };
 
     #[test]
@@ -477,6 +561,10 @@ mod tests {
             (
                 DirectHostIssueKind::BrowserUnsupported,
                 "DH-BROWSER-UNSUPPORTED",
+            ),
+            (
+                DirectHostIssueKind::BrowserResponseFamilyUnsupported,
+                "DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED",
             ),
             (
                 DirectHostIssueKind::NonWindowsUnsupported,
@@ -504,6 +592,14 @@ mod tests {
                 "DH-DOCUMENT-NOT-FOUND",
             ),
             (
+                DirectHostIssueKind::WorkspaceVersionStale,
+                "DH-WORKSPACE-VERSION-STALE",
+            ),
+            (
+                DirectHostIssueKind::DocumentVersionStale,
+                "DH-DOCUMENT-VERSION-STALE",
+            ),
+            (
                 DirectHostIssueKind::CompileOptionsInvalid,
                 "DH-COMPILE-OPTIONS-INVALID",
             ),
@@ -520,9 +616,23 @@ mod tests {
                 DirectHostIssueKind::RuntimeSessionUnavailable,
                 "DH-RUNTIME-SESSION-UNAVAILABLE",
             ),
+            (DirectHostIssueKind::RuntimeBusy, "DH-RUNTIME-BUSY"),
+            (
+                DirectHostIssueKind::RuntimeAlreadyRunning,
+                "DH-RUNTIME-ALREADY-RUNNING",
+            ),
+            (
+                DirectHostIssueKind::RuntimeNotRunning,
+                "DH-RUNTIME-NOT-RUNNING",
+            ),
+            (DirectHostIssueKind::RuntimeStopped, "DH-RUNTIME-STOPPED"),
             (
                 DirectHostIssueKind::ImmediateUnavailable,
                 "DH-IMMEDIATE-UNAVAILABLE",
+            ),
+            (
+                DirectHostIssueKind::ImmediateSessionUnavailable,
+                "DH-IMMEDIATE-SESSION-UNAVAILABLE",
             ),
             (
                 DirectHostIssueKind::ImmediateEvaluationFailed,
@@ -531,6 +641,10 @@ mod tests {
             (
                 DirectHostIssueKind::DebugUnavailable,
                 "DH-DEBUG-UNAVAILABLE",
+            ),
+            (
+                DirectHostIssueKind::DebugSessionUnavailable,
+                "DH-DEBUG-SESSION-UNAVAILABLE",
             ),
             (DirectHostIssueKind::NotPaused, "DH-NOT-PAUSED"),
             (
@@ -552,6 +666,10 @@ mod tests {
             (
                 DirectHostIssueKind::ComRuntimeUnavailable,
                 "DH-COM-RUNTIME-UNAVAILABLE",
+            ),
+            (
+                DirectHostIssueKind::ComInvocationUnavailable,
+                "DH-COM-INVOCATION-UNAVAILABLE",
             ),
             (
                 DirectHostIssueKind::ComBitnessOrApartmentIncompatible,
@@ -594,8 +712,84 @@ mod tests {
     fn direct_host_capability_exposes_stable_kind_codes() {
         let capability = DirectHostCapability::unavailable(
             DirectHostCapabilityKind::ComRuntimeInvocation,
-            DirectHostIssue::new(DirectHostIssueKind::ComRuntimeUnavailable),
+            DirectHostIssue::new(DirectHostIssueKind::ComInvocationUnavailable),
         );
         assert_eq!(capability.kind.code(), "com-runtime-invocation");
+    }
+
+    #[test]
+    fn direct_host_command_status_classifies_runtime_and_no_session_states() {
+        for (kind, code) in [
+            (DirectHostIssueKind::RuntimeBusy, "DH-RUNTIME-BUSY"),
+            (
+                DirectHostIssueKind::RuntimeAlreadyRunning,
+                "DH-RUNTIME-ALREADY-RUNNING",
+            ),
+            (
+                DirectHostIssueKind::RuntimeNotRunning,
+                "DH-RUNTIME-NOT-RUNNING",
+            ),
+            (DirectHostIssueKind::RuntimeStopped, "DH-RUNTIME-STOPPED"),
+        ] {
+            let status = DirectHostCommandStatus::disabled(
+                DirectHostIssue::new(kind)
+                    .with_runtime_session_id(DirectHostRuntimeSessionId::new("runtime:1")),
+            );
+            let reason = status.disabled_reason().expect("disabled reason");
+            assert_eq!(reason.kind, kind);
+            assert_eq!(reason.stable_code, code);
+            assert_eq!(
+                reason.context.runtime_session_id.as_ref().unwrap().as_str(),
+                "runtime:1"
+            );
+        }
+
+        let immediate = DirectHostCommandStatus::disabled(
+            DirectHostIssue::new(DirectHostIssueKind::ImmediateSessionUnavailable)
+                .with_immediate_session_id(DirectHostImmediateSessionId::new("immediate:missing")),
+        );
+        assert_eq!(
+            immediate.disabled_reason().unwrap().stable_code,
+            "DH-IMMEDIATE-SESSION-UNAVAILABLE"
+        );
+
+        let debug = DirectHostCommandStatus::disabled(
+            DirectHostIssue::new(DirectHostIssueKind::DebugSessionUnavailable)
+                .with_debug_session_id(DirectHostDebugSessionId::new("debug:missing")),
+        );
+        assert_eq!(
+            debug.disabled_reason().unwrap().stable_code,
+            "DH-DEBUG-SESSION-UNAVAILABLE"
+        );
+    }
+
+    #[test]
+    fn direct_host_taxonomy_carries_stale_version_context() {
+        let workspace = DirectHostIssue::stale_workspace_version(10, 12);
+        assert_eq!(workspace.kind, DirectHostIssueKind::WorkspaceVersionStale);
+        assert_eq!(workspace.retryability, DirectHostRetryability::Retryable);
+        assert_eq!(workspace.context.expected_workspace_revision, Some(10));
+        assert_eq!(workspace.context.actual_workspace_revision, Some(12));
+
+        let document = DirectHostIssue::stale_document_version("Module1", 4, 5);
+        assert_eq!(document.kind, DirectHostIssueKind::DocumentVersionStale);
+        assert_eq!(
+            document.context.document_id.as_ref().unwrap().as_str(),
+            "Module1"
+        );
+        assert_eq!(document.context.expected_document_version, Some(4));
+        assert_eq!(document.context.actual_document_version, Some(5));
+    }
+
+    #[test]
+    fn direct_host_taxonomy_classifies_browser_response_family() {
+        let issue = DirectHostIssue::browser_response_family_unsupported("debug");
+        assert_eq!(
+            issue.kind,
+            DirectHostIssueKind::BrowserResponseFamilyUnsupported
+        );
+        assert_eq!(issue.stable_code, "DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED");
+        assert_eq!(issue.retryability, DirectHostRetryability::NotRetryable);
+        assert_eq!(issue.context.response_family.as_deref(), Some("debug"));
     }
 }

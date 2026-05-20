@@ -208,12 +208,12 @@ fn dnaoxide_thin_slice_hello_com_broken_reference_and_runtime_availability_are_t
         assert!(matches!(
             &profile.runtime_availability.command_status,
             DirectHostCommandStatus::Disabled { reason }
-                if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+                if reason.stable_code == "DH-COM-INVOCATION-UNAVAILABLE"
         ));
         assert!(matches!(
             &profile.runtime_invocation.status,
             DirectHostCapabilityStatus::Unavailable { reason }
-                if reason.stable_code == "DH-COM-RUNTIME-UNAVAILABLE"
+                if reason.stable_code == "DH-COM-INVOCATION-UNAVAILABLE"
         ));
     }
 }
