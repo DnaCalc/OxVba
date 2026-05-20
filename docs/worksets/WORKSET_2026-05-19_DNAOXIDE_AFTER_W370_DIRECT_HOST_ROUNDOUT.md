@@ -1,7 +1,7 @@
 # Workset: DNA OxIde After-W370 Direct Host Roundout
 
 Date: 2026-05-19
-Status: in-progress
+Status: completed 2026-05-20
 Source handoff: `../OxIde/docs/HANDOFF_OXVBA_REQUESTED_WORK_AFTER_W370.md`
 
 ## Purpose
@@ -41,10 +41,10 @@ This workset does not claim:
 | --- | --- | --- |
 | P1 debug identity, watches, breakpoints, source spans | Most requested DTO names already exist in `oxvba-host`: `DirectHostDebugSessionId`, `DirectHostStackFrameId`, `DirectHostWatchId`, `DirectHostBreakpointId`, `DebugSessionCommandStatus`, `DebugWatchRecord`, `DebugWatchEvaluation`, `DebugWatchEvaluationStatus`, `DebugBreakpointRecord`, `DebugBreakpointBindingStatus`, `DebugBreakpointUnresolvedReason`, `DebugVariantPauseState`, and `HostDebugVariantRunResult`. Tests cover stable IDs, command status, watch add/update/remove/evaluation states, breakpoint binding/unresolved/hit/clear behavior, and ThinSliceHello-style debug proof. | Treat identity/watch/breakpoint DTOs as `available-subset`; keep residual delivery open for broader source-span/remap coverage and richer paused-context expression evaluation. |
 | P2 runtime/Immediate session attachment | `EmbeddedRunSession::into_immediate_session` exists in `oxvba-host`, and the ThinSliceHello fixture test attaches Immediate from a live runtime session with runtime/immediate ID correlation. | Treat attachment as `available-subset`; keep residual delivery open for no-session host-level disabled DTOs, source-span diagnostics, and broader evaluation-failure taxonomy. |
-| P3 runtime/debug source-span breadth | `DirectHostSourceSpan` exists and debug pause/frame records expose procedure/range-oriented source data, but not every requested row has editor-grade spans. | Accept as remaining delivery work. |
-| P4 workspace/editor version identity | `HostWorkspaceRoster` exposes `snapshot_revision`, per-module `document_version`, and overlay flags. The lower-level language-service API has semantic provenance, but not every editor-facing response carries a stable document/workspace version DTO. | Accept as remaining delivery work. |
-| P5 browser/WASM host feasibility | `oxvba-web-host`, HAL browser profile descriptors, and typed browser/native unsupported issue kinds exist. A checked browser-safe crate-graph gate and feature-separated unavailable packet family are not yet proven here. | Accept as remaining delivery work. |
-| P6 COM runtime invocation boundary | `ComCapabilityProfile` and `ComRuntimeInvocationAvailability` exist and expose typed unavailable states; no broad COM runtime invocation claim is made. | Accept as boundary-hardening work; do not claim invocation support beyond existing availability DTOs. |
+| P3 runtime/debug source-span breadth | `DirectHostSourceSpanStatus` now reaches runtime diagnostics, debug pause/current source/frame records, breakpoint rows, watch rows, and Immediate results with known spans where available and typed unavailable reasons otherwise. | Delivered by `bd-94av.2`; no claim that every generated/runtime-only condition has a concrete editor source span. |
+| P4 workspace/editor version identity | `HostWorkspaceRoster` exposes `snapshot_revision`, per-module `document_version`, and overlay flags; host-session editor responses now carry `HostEditorResponseVersion` with document/workspace freshness identity. | Delivered by `bd-94av.3`; OxIde-side stale-response rejection remains an OxIde consumption task. |
+| P5 browser/WASM host feasibility | `oxvba-languageservice` and `oxvba-web-host` no-default browser subsets pass `wasm32-unknown-unknown` checks; native host/JIT/COM dependencies are feature-gated out; `WebHostEvent::Unavailable` carries typed browser unsupported response-family packets. | Delivered by `bd-94av.4`; full `oxvba-web-shell` browser execution remains a documented non-claim/future shell split. |
+| P6 COM runtime invocation boundary | `ComCapabilityProfile` and `ComRuntimeInvocationAvailability` expose typed unavailable states, now using precise `DH-COM-INVOCATION-UNAVAILABLE` for invocation boundary failures. | Delivered by `bd-94av.5`; do not claim invocation support beyond existing availability DTOs. |
 | P7 shared error/capability taxonomy | `DirectHostIssueKind`, `DirectHostIssue`, `DirectHostCommandStatus`, and `DirectHostCapability*` exist with stable `DH-*` codes. After `bd-94av.5.1`, the taxonomy includes explicit stale document/workspace version, runtime busy/running/stopped, no-session Immediate/debug, browser response-family unsupported, and COM invocation-unavailable classifications. | Treat taxonomy as hardened; future DTO lanes should consume these stable codes without claiming broad COM invocation or browser-native execution support. |
 
 ## Current Evidence Anchors
@@ -71,6 +71,8 @@ cargo test -p oxvba-languageservice --test dnaoxide_thin_slice_hello --quiet
 
 ### Lane A - After-W370 Surface Reconciliation
 
+Status: closed by `bd-94av.1`.
+
 Effect: support.
 
 Outcome: keep this intake, the May 7 DnaOxIde workset, and public guidance in
@@ -86,6 +88,8 @@ Close condition:
 
 ### Lane B - Source-Span Breadth
 
+Status: closed by `bd-94av.2`.
+
 Effect: delivery.
 
 Outcome: editor-grade `DirectHostSourceSpan` coverage for runtime errors,
@@ -100,6 +104,8 @@ Close condition:
   mutating checked-in fixtures.
 
 ### Lane C - Editor Version Identity
+
+Status: closed by `bd-94av.3`.
 
 Effect: delivery.
 
@@ -117,6 +123,8 @@ Close condition:
 
 ### Lane D - Browser/WASM Safe Subset
 
+Status: closed by `bd-94av.4`.
+
 Effect: delivery.
 
 Outcome: a browser-safe OxVBA subset can build without native COM/runtime
@@ -131,6 +139,8 @@ Close condition:
 - feature gates are documented for OxIde browser builds.
 
 ### Lane E - COM Runtime Boundary And Shared Taxonomy
+
+Status: closed by `bd-94av.5`.
 
 Effect: delivery.
 
@@ -162,21 +172,25 @@ Epics:
 First executable beads:
 
 - `bd-94av.1.1` - publish after-W370 intake map and residual lanes
-- `bd-94av.2.1` - audit runtime/debug/Immediate row families for source-span DTO gaps (audit published in `docs/reviews/DNAOXIDE_AFTER_W370_SOURCE_SPAN_AUDIT_2026-05-20.md`; delivery children open)
+- `bd-94av.2.1` - audit runtime/debug/Immediate row families for source-span DTO gaps
 - `bd-94av.2.2` - add source-bearing runtime diagnostic DTOs
 - `bd-94av.2.3` - project debug pause/frame/breakpoint source spans
 - `bd-94av.2.4` - project watch and Immediate diagnostic source spans
-- `bd-94av.3.1` - audit editor-facing responses for missing version provenance (audit published in `docs/reviews/DNAOXIDE_AFTER_W370_EDITOR_VERSION_PROVENANCE_AUDIT_2026-05-20.md`; delivery child open)
+- `bd-94av.3.1` - audit editor-facing responses for missing version provenance
 - `bd-7bvk` - add versioned host-session editor response DTOs
-- `bd-94av.4.1` - prove or bound the browser-safe crate graph (blocked graph documented in `docs/reviews/DNAOXIDE_AFTER_W370_BROWSER_WASM_CRATE_GRAPH_2026-05-20.md`; delivery child open)
+- `bd-94av.4.1` - prove or bound the browser-safe crate graph
 - `bd-5wjn` - split browser-safe language-service graph from native host/JIT dependencies
 - `bd-94av.5.1` - extend direct-host issue taxonomy for stale/busy/no-session/browser gaps
 
 ## Terminal Condition
 
-This workset can close only when every real residual from the after-W370 handoff
-is either:
+Satisfied 2026-05-20. Every real residual from the after-W370 handoff is either:
 
 1. delivered with local tests/evidence and public DTO documentation; or
 2. explicitly deferred to a named workset/bead with a non-claim boundary that
    OxIde can consume honestly.
+
+Closure evidence is recorded in the closed `bd-94av.1` through `bd-94av.5`
+epics and their child beads. The remaining non-claims are full OxIde vendored
+consumption, full browser shell execution, concrete source spans for generated
+or runtime-only conditions, and broad COM runtime invocation support.
