@@ -43,6 +43,7 @@ pub enum WebHostEvent {
     ImmediateResult(WebImmediateResult),
     DebugPaused(WebDebugPauseState),
     RunStateChanged(WebRunState),
+    Unavailable(WebUnavailableResponse),
     Error {
         operation: String,
         message: String,
@@ -61,6 +62,49 @@ pub enum WebRunState {
     Running,
     Paused,
     Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WebHostResponseFamily {
+    Runtime,
+    Immediate,
+    Debug,
+    Com,
+    NativeService,
+}
+
+impl WebHostResponseFamily {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Runtime => "runtime",
+            Self::Immediate => "immediate",
+            Self::Debug => "debug",
+            Self::Com => "com",
+            Self::NativeService => "native-service",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WebRetryability {
+    Retryable,
+    NotRetryable,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebHostIssue {
+    pub stable_code: String,
+    pub summary: String,
+    pub retryability: WebRetryability,
+    pub response_family: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebUnavailableResponse {
+    pub operation: String,
+    pub family: WebHostResponseFamily,
+    pub issue: WebHostIssue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +216,22 @@ pub struct WebSemanticProvenance {
     pub document_id: String,
     pub snapshot_version: u64,
     pub kind: WebProvenanceKind,
+}
+
+pub fn browser_unsupported_response(
+    operation: impl Into<String>,
+    family: WebHostResponseFamily,
+) -> WebHostEvent {
+    WebHostEvent::Unavailable(WebUnavailableResponse {
+        operation: operation.into(),
+        family,
+        issue: WebHostIssue {
+            stable_code: "DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED".to_string(),
+            summary: "Response family is not available in browser profiles".to_string(),
+            retryability: WebRetryability::NotRetryable,
+            response_family: Some(family.code().to_string()),
+        },
+    })
 }
 
 #[cfg(feature = "native-host")]
@@ -372,6 +432,56 @@ impl From<SemanticProvenance> for WebSemanticProvenance {
             document_id: value.document_id,
             snapshot_version: value.snapshot_version,
             kind: value.kind.into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod browser_contract_tests {
+    use super::{
+        WebHostEvent, WebHostResponseFamily, WebRetryability, browser_unsupported_response,
+    };
+
+    #[test]
+    fn browser_unsupported_response_is_typed_and_serializable() {
+        let event = browser_unsupported_response("DebugStart", WebHostResponseFamily::Debug);
+        let json = serde_json::to_string(&event).expect("serialize unavailable event");
+        let restored: WebHostEvent = serde_json::from_str(&json).expect("deserialize event");
+
+        match restored {
+            WebHostEvent::Unavailable(response) => {
+                assert_eq!(response.operation, "DebugStart");
+                assert_eq!(response.family, WebHostResponseFamily::Debug);
+                assert_eq!(
+                    response.issue.stable_code,
+                    "DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED"
+                );
+                assert_eq!(response.issue.retryability, WebRetryability::NotRetryable);
+                assert_eq!(response.issue.response_family.as_deref(), Some("debug"));
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn browser_unsupported_response_classifies_native_families() {
+        let expected = [
+            (WebHostResponseFamily::Runtime, "runtime"),
+            (WebHostResponseFamily::Immediate, "immediate"),
+            (WebHostResponseFamily::Debug, "debug"),
+            (WebHostResponseFamily::Com, "com"),
+            (WebHostResponseFamily::NativeService, "native-service"),
+        ];
+
+        for (family, code) in expected {
+            let event = browser_unsupported_response(code, family);
+            match event {
+                WebHostEvent::Unavailable(response) => {
+                    assert_eq!(response.family, family);
+                    assert_eq!(response.issue.response_family.as_deref(), Some(code));
+                }
+                other => panic!("unexpected event: {other:?}"),
+            }
         }
     }
 }

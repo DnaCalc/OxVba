@@ -70,6 +70,10 @@ The split is explicit:
 - `oxvba-web-host` now gates native runtime/debug/Immediate projection helpers
   behind a default `native-host` feature; no-default builds keep serializable
   browser DTOs and language-service projection types without `oxvba-host`.
+- `oxvba-web-host` now exposes typed browser unavailable packets through
+  `WebHostEvent::Unavailable`, `WebUnavailableResponse`, and the stable
+  `DH-BROWSER-RESPONSE-FAMILY-UNSUPPORTED` code for runtime, Immediate, debug,
+  COM, and native-service response families.
 - `oxvba-com` gates the native FFI bridge and `libc` dependency out for
   `wasm32`, avoiding the unavailable `dlopen`/`dlsym` path in browser checks.
 
@@ -78,7 +82,7 @@ The split is explicit:
 | Surface | Current state | Browser-safe gap | Delivery owner |
 | --- | --- | --- | --- |
 | `oxvba-languageservice` | Default feature includes host-session native/project integration. No-default feature graph passes `wasm32-unknown-unknown`. | Browser callers must use no-default features until host-session is split into browser-safe and native subprofiles. | delivered subset |
-| `oxvba-web-host` | Default feature includes native host runtime/debug/Immediate projection helpers. No-default feature graph passes `wasm32-unknown-unknown`. | Typed unavailable packets for runtime/debug/COM/native command families still need a browser command-response contract. | delivered subset / taxonomy follow-up |
+| `oxvba-web-host` | Default feature includes native host runtime/debug/Immediate projection helpers. No-default feature graph passes `wasm32-unknown-unknown`; typed browser unavailable packets cover runtime, Immediate, debug, COM, and native-service response families. | Browser shell command routing still needs to consume the unavailable packet helper. | delivered subset / shell follow-up |
 | `oxvba-web-shell` | Depends on `oxvba-host`, `oxvba-project`, and native runtime session wiring. | Needs a separate shell/browser feature split before a WASM shell build can be claimed. | future |
 
 ## Non-Claims
@@ -101,8 +105,12 @@ Delivered in `bd-5wjn`:
 - feature-gated language-service and web-host browser-safe checks;
 - `wasm32` gating for the COM native FFI bridge.
 
+Delivered in `bd-94av.4`:
+
+- typed browser unavailable packets for runtime, Immediate, debug, COM, and
+  native-service response families.
+
 Remaining future work:
 
 - browser-shell feature split;
-- typed browser unavailable packets for runtime/debug/COM/native command
-  families.
+- browser-shell command routing that emits typed unavailable packets directly.
