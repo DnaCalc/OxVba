@@ -128,6 +128,36 @@ Residual:
   adapter concern;
 - watch and Immediate diagnostic source spans remain under `bd-94av.2.4`.
 
+### `bd-94av.2.4` Watch and Immediate Diagnostic Spans
+
+Status: delivered subset.
+
+`DebugWatchEvaluation` and `ImmediateVariantEvaluationResult` now carry
+`DirectHostSourceSpanStatus` values, and `ImmediateSessionError` exposes
+`direct_host_source()` for error rows that do not return an evaluation result.
+
+Watch and Immediate projection now covers:
+
+- not-paused watch rows with typed `NoSourceLocation`;
+- paused watch value/error rows with the current paused-frame source status;
+- Immediate parse/literal diagnostics with typed
+  `GeneratedOrSyntheticSource`, avoiding fake document IDs for ad hoc input;
+- missing unqualified Immediate targets with typed `NoSourceLocation`;
+- unknown Immediate target modules with typed `NoMatchingDocument` and no fake
+  source span.
+
+Tests prove:
+
+- not-paused watch unavailable rows carry a typed no-source status;
+- unknown watch-expression errors carry the paused-frame source status;
+- Immediate literal and parse diagnostics carry synthetic-input source status;
+- unknown target modules do not fabricate a `DirectHostSourceSpan`.
+
+Residual:
+
+- Immediate input text is not yet represented by a first-class document ID;
+- richer expression-range spans remain future editor/adapter projection work.
+
 ## Non-Claims
 
 This audit does not claim:

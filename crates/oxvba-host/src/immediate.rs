@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::direct_host::{
     DirectHostCommandStatus, DirectHostImmediateSessionId, DirectHostIssue, DirectHostIssueKind,
-    DirectHostRuntimeSessionId,
+    DirectHostRuntimeSessionId, DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason,
 };
 use crate::engine::PhaseDiagnostic;
 use crate::{Engine, ProjectRuntimeSession};
@@ -80,6 +80,7 @@ pub enum ImmediateVariantEvaluationOutput {
 pub struct ImmediateVariantEvaluationResult {
     pub output: ImmediateVariantEvaluationOutput,
     pub diagnostics: Vec<PhaseDiagnostic>,
+    pub source: DirectHostSourceSpanStatus,
 }
 
 impl ImmediateVariantEvaluationResult {
@@ -87,6 +88,9 @@ impl ImmediateVariantEvaluationResult {
         Self {
             output: ImmediateVariantEvaluationOutput::Empty,
             diagnostics: Vec::new(),
+            source: DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            ),
         }
     }
 }
@@ -116,6 +120,24 @@ impl ImmediateSessionError {
                 DirectHostIssue::new(DirectHostIssueKind::ImmediateEvaluationFailed)
                     .with_technical_detail(self.to_string())
                     .with_document_id(module.clone())
+            }
+        }
+    }
+
+    pub fn direct_host_source(&self) -> DirectHostSourceSpanStatus {
+        match self {
+            ImmediateSessionError::Phase(_) => DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            ),
+            ImmediateSessionError::UnknownTargetModule { module } if module == "<none>" => {
+                DirectHostSourceSpanStatus::unavailable(
+                    DirectHostSourceUnavailableReason::NoSourceLocation,
+                )
+            }
+            ImmediateSessionError::UnknownTargetModule { .. } => {
+                DirectHostSourceSpanStatus::unavailable(
+                    DirectHostSourceUnavailableReason::NoMatchingDocument,
+                )
             }
         }
     }
@@ -238,6 +260,9 @@ impl<'engine> ImmediateSession<'engine> {
                 Ok(ImmediateVariantEvaluationResult {
                     output: ImmediateVariantEvaluationOutput::Reset,
                     diagnostics: Vec::new(),
+                    source: DirectHostSourceSpanStatus::unavailable(
+                        DirectHostSourceUnavailableReason::NoSourceLocation,
+                    ),
                 })
             }
         }
@@ -259,6 +284,9 @@ impl<'engine> ImmediateSession<'engine> {
                 .map(|_| ImmediateVariantEvaluationResult {
                     output: ImmediateVariantEvaluationOutput::Reset,
                     diagnostics: Vec::new(),
+                    source: DirectHostSourceSpanStatus::unavailable(
+                        DirectHostSourceUnavailableReason::NoSourceLocation,
+                    ),
                 })
                 .map_err(ImmediateSessionError::Phase);
         }
@@ -269,6 +297,9 @@ impl<'engine> ImmediateSession<'engine> {
                 return Ok(ImmediateVariantEvaluationResult {
                     output: ImmediateVariantEvaluationOutput::Empty,
                     diagnostics: vec![PhaseDiagnostic::compile(message)],
+                    source: DirectHostSourceSpanStatus::unavailable(
+                        DirectHostSourceUnavailableReason::GeneratedOrSyntheticSource,
+                    ),
                 });
             }
         };
@@ -279,6 +310,12 @@ impl<'engine> ImmediateSession<'engine> {
             .ok_or_else(|| ImmediateSessionError::UnknownTargetModule {
                 module: "<none>".to_string(),
             })?;
+
+        if !self.module_exists(&module_name) {
+            return Err(ImmediateSessionError::UnknownTargetModule {
+                module: module_name,
+            });
+        }
 
         let variant_value = self
             .engine
@@ -309,7 +346,17 @@ impl<'engine> ImmediateSession<'engine> {
         Ok(ImmediateVariantEvaluationResult {
             output,
             diagnostics: Vec::new(),
+            source: DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            ),
         })
+    }
+
+    fn module_exists(&self, module_name: &str) -> bool {
+        self.manifest
+            .modules
+            .iter()
+            .any(|module| module.module_name.eq_ignore_ascii_case(module_name))
     }
 }
 
@@ -505,6 +552,7 @@ mod tests {
         ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateSession,
         ImmediateVariantEvaluationOutput,
     };
+    use crate::direct_host::{DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {
@@ -837,6 +885,42 @@ End Function
                 .message()
                 .contains("unsupported argument `counter`")
         );
+        assert!(matches!(
+            result.source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::GeneratedOrSyntheticSource
+            )
+        ));
+    }
+
+    #[test]
+    fn immediate_session_reports_input_source_status_for_parse_diagnostics() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function DoubleValue(value As Integer) As Integer
+    DoubleValue = value * 2
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+        session.set_default_target_module(Some("Module1"));
+
+        let result = session
+            .evaluate_variant(&ImmediateEvaluationRequest::new("DoubleValue(21"))
+            .expect("parse diagnostic result");
+
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.diagnostics[0].message().contains("missing closing"));
+        assert!(matches!(
+            result.source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::GeneratedOrSyntheticSource
+            )
+        ));
     }
 
     #[test]
@@ -864,6 +948,46 @@ End Function
                 module: "<none>".to_string()
             }
         );
+        assert!(matches!(
+            err.direct_host_source(),
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation
+            )
+        ));
+    }
+
+    #[test]
+    fn immediate_session_unknown_target_module_has_no_fake_source_span() {
+        let engine = Engine::new(HostConfig::default());
+        let manifest = make_manifest(
+            r#"
+Public Function GetValue() As Integer
+    GetValue = 42
+End Function
+"#,
+        );
+
+        let mut session = engine
+            .prepare_immediate_session(&manifest)
+            .expect("immediate session");
+
+        let err = session
+            .evaluate_variant(&ImmediateEvaluationRequest::new("MissingModule.GetValue()"))
+            .expect_err("unknown module should fail");
+
+        assert_eq!(
+            err,
+            super::ImmediateSessionError::UnknownTargetModule {
+                module: "MissingModule".to_string()
+            }
+        );
+        assert!(matches!(
+            err.direct_host_source(),
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoMatchingDocument
+            )
+        ));
+        assert!(err.direct_host_source().source_span().is_none());
     }
 
     #[test]

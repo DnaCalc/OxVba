@@ -168,6 +168,7 @@ pub struct DebugWatchEvaluation {
     pub watch_id: DirectHostWatchId,
     pub expression_text: String,
     pub status: DebugWatchEvaluationStatus,
+    pub source: DirectHostSourceSpanStatus,
 }
 
 pub struct DebugSession<'engine> {
@@ -313,27 +314,49 @@ impl<'engine> DebugSession<'engine> {
     }
 
     pub fn evaluate_watches(&self) -> Vec<DebugWatchEvaluation> {
+        let paused_source = self
+            .current_variant_pause_state()
+            .ok()
+            .flatten()
+            .map(|pause| pause.current_source)
+            .unwrap_or_else(|| {
+                DirectHostSourceSpanStatus::unavailable(
+                    DirectHostSourceUnavailableReason::NoSourceLocation,
+                )
+            });
         self.watch_records
             .iter()
             .map(|record| {
-                let status = match self
+                let (status, source) = match self
                     .evaluate_variant(&DebugEvaluationRequest::new(record.expression_text.clone()))
                 {
-                    Ok(result) => DebugWatchEvaluationStatus::Value(result.value),
-                    Err(DebugSessionError::NotPaused) => DebugWatchEvaluationStatus::Unavailable(
-                        DirectHostIssue::new(DirectHostIssueKind::NotPaused)
-                            .with_debug_session_id(self.debug_session_id.clone())
-                            .with_watch_id(record.watch_id.clone()),
+                    Ok(result) => (
+                        DebugWatchEvaluationStatus::Value(result.value),
+                        paused_source.clone(),
                     ),
-                    Err(err) => DebugWatchEvaluationStatus::Error(
-                        err.direct_host_issue()
-                            .with_watch_id(record.watch_id.clone()),
+                    Err(DebugSessionError::NotPaused) => (
+                        DebugWatchEvaluationStatus::Unavailable(
+                            DirectHostIssue::new(DirectHostIssueKind::NotPaused)
+                                .with_debug_session_id(self.debug_session_id.clone())
+                                .with_watch_id(record.watch_id.clone()),
+                        ),
+                        DirectHostSourceSpanStatus::unavailable(
+                            DirectHostSourceUnavailableReason::NoSourceLocation,
+                        ),
+                    ),
+                    Err(err) => (
+                        DebugWatchEvaluationStatus::Error(
+                            err.direct_host_issue()
+                                .with_watch_id(record.watch_id.clone()),
+                        ),
+                        paused_source.clone(),
                     ),
                 };
                 DebugWatchEvaluation {
                     watch_id: record.watch_id.clone(),
                     expression_text: record.expression_text.clone(),
                     status,
+                    source,
                 }
             })
             .collect()
@@ -936,6 +959,12 @@ mod tests {
             DebugWatchEvaluationStatus::Unavailable(issue)
                 if issue.stable_code == "DH-NOT-PAUSED"
         ));
+        assert!(matches!(
+            before_start[0].source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation
+            )
+        ));
 
         let HostDebugVariantRunResult::Paused(_) = session.start_variants().expect("entry pause")
         else {
@@ -946,6 +975,13 @@ mod tests {
             &entry_eval[0].status,
             DebugWatchEvaluationStatus::Error(issue)
                 if issue.stable_code == "DH-WATCH-EVALUATION-FAILED"
+        ));
+        assert!(matches!(
+            &entry_eval[0].source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line == 2
+                    && span.end.line == 3
         ));
 
         let HostDebugVariantRunResult::Paused(_) =
@@ -960,6 +996,11 @@ mod tests {
                 if value.name.eq_ignore_ascii_case("y")
                     && value.variant_value.as_i32() == Some(4)
         ));
+        assert!(matches!(
+            &values[0].source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1" && span.start.line > 0
+        ));
 
         let updated = session
             .update_watch(&watch.watch_id, "missing")
@@ -969,6 +1010,11 @@ mod tests {
             &session.evaluate_watches()[0].status,
             DebugWatchEvaluationStatus::Error(issue)
                 if issue.stable_code == "DH-WATCH-EVALUATION-FAILED"
+        ));
+        assert!(matches!(
+            &session.evaluate_watches()[0].source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1" && span.start.line > 0
         ));
         let removed = session.remove_watch(&watch.watch_id).expect("remove watch");
         assert_eq!(removed.watch_id, watch.watch_id);
