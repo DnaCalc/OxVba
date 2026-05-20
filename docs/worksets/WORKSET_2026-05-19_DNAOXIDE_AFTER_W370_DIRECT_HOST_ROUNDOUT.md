@@ -168,7 +168,8 @@ First executable beads:
 - `bd-94av.2.4` - project watch and Immediate diagnostic source spans
 - `bd-94av.3.1` - audit editor-facing responses for missing version provenance (audit published in `docs/reviews/DNAOXIDE_AFTER_W370_EDITOR_VERSION_PROVENANCE_AUDIT_2026-05-20.md`; delivery child open)
 - `bd-7bvk` - add versioned host-session editor response DTOs
-- `bd-94av.4.1` - prove or bound the browser-safe crate graph
+- `bd-94av.4.1` - prove or bound the browser-safe crate graph (blocked graph documented in `docs/reviews/DNAOXIDE_AFTER_W370_BROWSER_WASM_CRATE_GRAPH_2026-05-20.md`; delivery child open)
+- `bd-5wjn` - split browser-safe language-service graph from native host/JIT dependencies
 - `bd-94av.5.1` - extend direct-host issue taxonomy for stale/busy/no-session/browser gaps
 
 ## Terminal Condition
