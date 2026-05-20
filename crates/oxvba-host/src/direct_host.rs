@@ -222,6 +222,49 @@ impl DirectHostSourceSpan {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectHostSourceUnavailableReason {
+    NoSourceLocation,
+    NoMatchingDocument,
+    SourceMapUnavailable,
+    GeneratedOrSyntheticSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectHostSourceSpanStatus {
+    Known(DirectHostSourceSpan),
+    Unavailable(DirectHostSourceUnavailableReason),
+}
+
+impl DirectHostSourceSpanStatus {
+    pub fn known(span: DirectHostSourceSpan) -> Self {
+        Self::Known(span)
+    }
+
+    pub fn unavailable(reason: DirectHostSourceUnavailableReason) -> Self {
+        Self::Unavailable(reason)
+    }
+
+    pub fn source_span(&self) -> Option<&DirectHostSourceSpan> {
+        match self {
+            Self::Known(span) => Some(span),
+            Self::Unavailable(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectHostDiagnostic {
+    pub issue: DirectHostIssue,
+    pub source: DirectHostSourceSpanStatus,
+}
+
+impl DirectHostDiagnostic {
+    pub fn new(issue: DirectHostIssue, source: DirectHostSourceSpanStatus) -> Self {
+        Self { issue, source }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DirectHostIssueContext {
     pub workspace_id: Option<DirectHostWorkspaceId>,

@@ -8,8 +8,9 @@ use thiserror::Error;
 
 use crate::Engine;
 use crate::direct_host::{
-    DirectHostBuildRequestId, DirectHostCommandStatus, DirectHostIssue, DirectHostIssueKind,
-    DirectHostRetryability, DirectHostRunRequestId, DirectHostRuntimeSessionId,
+    DirectHostBuildRequestId, DirectHostCommandStatus, DirectHostDiagnostic, DirectHostIssue,
+    DirectHostIssueContext, DirectHostIssueKind, DirectHostRetryability, DirectHostRunRequestId,
+    DirectHostRuntimeSessionId, DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason,
 };
 use crate::engine::PhaseDiagnostic;
 
@@ -269,6 +270,10 @@ impl EmbeddedBuildResult {
             diagnostics,
         }
     }
+
+    pub fn direct_host_diagnostics(&self) -> Vec<DirectHostDiagnostic> {
+        diagnostics_without_source(&self.diagnostics)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -339,6 +344,10 @@ impl EmbeddedRunResult {
             status: EmbeddedRunStatus::Failed,
             diagnostics,
         }
+    }
+
+    pub fn direct_host_diagnostics(&self) -> Vec<DirectHostDiagnostic> {
+        diagnostics_without_source(&self.diagnostics)
     }
 }
 
@@ -461,6 +470,20 @@ impl EmbeddedInvokeVariantResult {
             diagnostics,
             return_value: None,
         }
+    }
+
+    pub fn direct_host_diagnostics(&self) -> Vec<DirectHostDiagnostic> {
+        diagnostics_without_source(&self.diagnostics)
+    }
+
+    pub fn direct_host_diagnostics_with_source(
+        &self,
+        source: DirectHostSourceSpanStatus,
+    ) -> Vec<DirectHostDiagnostic> {
+        self.diagnostics
+            .iter()
+            .map(|diagnostic| direct_host_diagnostic(diagnostic, source.clone()))
+            .collect()
     }
 }
 
@@ -877,6 +900,35 @@ fn normalize_workspace_target_path(path: &Path) -> PathBuf {
     absolute.canonicalize().unwrap_or(absolute)
 }
 
+fn diagnostics_without_source(diagnostics: &[PhaseDiagnostic]) -> Vec<DirectHostDiagnostic> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| {
+            direct_host_diagnostic(
+                diagnostic,
+                DirectHostSourceSpanStatus::Unavailable(
+                    DirectHostSourceUnavailableReason::NoSourceLocation,
+                ),
+            )
+        })
+        .collect()
+}
+
+fn direct_host_diagnostic(
+    diagnostic: &PhaseDiagnostic,
+    source: DirectHostSourceSpanStatus,
+) -> DirectHostDiagnostic {
+    let mut issue = diagnostic.direct_host_issue();
+    if let Some(span) = source.source_span() {
+        issue = issue.with_context(DirectHostIssueContext {
+            document_id: Some(span.document_id.clone()),
+            source_span: Some(span.clone()),
+            ..Default::default()
+        });
+    }
+    DirectHostDiagnostic::new(issue, source)
+}
+
 fn execute_wrapped_com_server_build(
     request: &EmbeddedBuildRequest,
     plan: &EmbeddedBuildPlan,
@@ -1205,8 +1257,12 @@ mod tests {
         EmbeddedComRegistrationScope, EmbeddedExecutionSourcePolicy, EmbeddedInvocationTarget,
         EmbeddedInvokeEntryPointRequest, EmbeddedInvokeProcedureVariantRequest,
         EmbeddedOutputChannel, EmbeddedOutputLine, EmbeddedProcedureTarget, EmbeddedResetKind,
-        EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedRunStatus, EmbeddedWorkspaceInput,
-        EmbeddedWorkspaceSnapshot,
+        EmbeddedResetRequest, EmbeddedRunRequest, EmbeddedRunSessionError, EmbeddedRunStatus,
+        EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
+    };
+    use crate::direct_host::{
+        DirectHostIssueKind, DirectHostSourceSpan, DirectHostSourceSpanStatus,
+        DirectHostSourceUnavailableReason, DirectHostTextPosition,
     };
     use crate::{Engine, HostConfig};
     use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
@@ -1635,6 +1691,46 @@ mod tests {
             result.diagnostics[0].phase(),
             crate::DiagnosticPhase::CompileTime
         );
+        let direct = result.direct_host_diagnostics();
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].issue.kind, DirectHostIssueKind::BuildFailed);
+        assert!(matches!(
+            direct[0].source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation
+            )
+        ));
+    }
+
+    #[test]
+    fn embedded_host_run_project_compile_failure_projects_no_source_diagnostics() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let mut manifest = make_manifest("Sub Main()\nEnd Sub\n");
+        manifest.modules.push(
+            module_unit_from_source("Module1", ModuleKind::Procedural, "Sub Other()\nEnd Sub\n")
+                .expect("duplicate module"),
+        );
+        let request = EmbeddedRunRequest::new(EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::disk_only("Broken.basproj"),
+            manifest,
+        ));
+
+        let result = match host.run_project(&request) {
+            Ok(_) => panic!("run should fail"),
+            Err(result) => result,
+        };
+        let direct = result.direct_host_diagnostics();
+
+        assert_eq!(result.status, EmbeddedRunStatus::Failed);
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].issue.kind, DirectHostIssueKind::BuildFailed);
+        assert!(matches!(
+            direct[0].source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation
+            )
+        ));
     }
 
     #[test]
@@ -1658,6 +1754,59 @@ mod tests {
             ))
             .expect("invoke");
         assert_eq!(result.return_value, Some(Variant::from_i32(42)));
+    }
+
+    #[test]
+    fn embedded_invoke_failure_can_project_known_source_diagnostic() {
+        let engine = Engine::new(HostConfig::default());
+        let host = EmbeddedBuildRunHost::new(&engine);
+        let request = EmbeddedRunRequest::new(EmbeddedWorkspaceSnapshot::new(
+            EmbeddedWorkspaceInput::disk_only("App.basproj"),
+            make_manifest("Public Sub Main()\nEnd Sub\n"),
+        ));
+        let mut session = host.run_project(&request).expect("run session");
+        let target = EmbeddedProcedureTarget::new("Module1", "MissingProcedure");
+        let err = session
+            .invoke_procedure_variant(&EmbeddedInvokeProcedureVariantRequest::new(
+                target.clone(),
+                Vec::new(),
+            ))
+            .expect_err("missing procedure should fail");
+        let EmbeddedRunSessionError::Phase(diagnostic) = err else {
+            panic!("expected phase diagnostic");
+        };
+        let failed = super::EmbeddedInvokeVariantResult::failed(
+            EmbeddedInvocationTarget::Procedure(target),
+            vec![diagnostic],
+        );
+        let source_span = DirectHostSourceSpan::new(
+            "doc:Module1",
+            DirectHostTextPosition::new(1, 0),
+            DirectHostTextPosition::new(2, 0),
+        );
+        let direct = failed.direct_host_diagnostics_with_source(DirectHostSourceSpanStatus::known(
+            source_span.clone(),
+        ));
+
+        assert_eq!(direct.len(), 1);
+        assert_eq!(
+            direct[0].issue.kind,
+            DirectHostIssueKind::RuntimeStartupFailed
+        );
+        assert_eq!(
+            direct[0]
+                .issue
+                .context
+                .document_id
+                .as_ref()
+                .expect("document id")
+                .as_str(),
+            "doc:Module1"
+        );
+        assert_eq!(
+            direct[0].source.source_span().expect("known source span"),
+            &source_span
+        );
     }
 
     #[test]

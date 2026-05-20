@@ -20,11 +20,12 @@ pub use debugger::{
 pub use direct_host::{
     DirectHostBreakpointId, DirectHostBuildRequestId, DirectHostCapability,
     DirectHostCapabilityKind, DirectHostCapabilityStatus, DirectHostCommandStatus,
-    DirectHostDebugSessionId, DirectHostDocumentId, DirectHostImmediateSessionId, DirectHostIssue,
-    DirectHostIssueContext, DirectHostIssueKind, DirectHostModuleId, DirectHostProjectId,
-    DirectHostRetryability, DirectHostRunRequestId, DirectHostRuntimeSessionId,
-    DirectHostSourceSpan, DirectHostStackFrameId, DirectHostTextPosition, DirectHostWatchId,
-    DirectHostWorkspaceId,
+    DirectHostDebugSessionId, DirectHostDiagnostic, DirectHostDocumentId,
+    DirectHostImmediateSessionId, DirectHostIssue, DirectHostIssueContext, DirectHostIssueKind,
+    DirectHostModuleId, DirectHostProjectId, DirectHostRetryability, DirectHostRunRequestId,
+    DirectHostRuntimeSessionId, DirectHostSourceSpan, DirectHostSourceSpanStatus,
+    DirectHostSourceUnavailableReason, DirectHostStackFrameId, DirectHostTextPosition,
+    DirectHostWatchId, DirectHostWorkspaceId,
 };
 pub use embedded::{
     EmbeddedBuildArtifactKind, EmbeddedBuildArtifactPlan, EmbeddedBuildPlan, EmbeddedBuildRequest,

@@ -61,6 +61,40 @@ source-map shape:
 3. Watch and Immediate diagnostics need diagnostic/status rows that can attach
    either paused-frame spans, input spans, or typed no-source reasons.
 
+## Delivery Updates
+
+### `bd-94av.2.2` Runtime Diagnostic DTOs
+
+Status: delivered subset.
+
+`DirectHostDiagnostic`, `DirectHostSourceSpanStatus`, and
+`DirectHostSourceUnavailableReason` now provide an additive direct-host
+diagnostic row over existing `PhaseDiagnostic` values. Existing build/run/
+invoke result fields remain unchanged.
+
+Runtime/build/run projection now covers:
+
+- `EmbeddedBuildResult::direct_host_diagnostics`;
+- `EmbeddedRunResult::direct_host_diagnostics`;
+- `EmbeddedInvokeVariantResult::direct_host_diagnostics`;
+- `EmbeddedInvokeVariantResult::direct_host_diagnostics_with_source`.
+
+Tests prove:
+
+- build compile failures project a typed direct-host diagnostic with
+  `NoSourceLocation`;
+- run compile failures project a typed direct-host diagnostic with
+  `NoSourceLocation`;
+- runtime invocation failure rows can carry a known `DirectHostSourceSpan` and
+  propagate the document ID into `DirectHostIssueContext`.
+
+Residual:
+
+- automatic runtime error source recovery from VM string errors is not claimed;
+- module/document source-map projection for debug pause/frame/breakpoint rows
+  remains under `bd-94av.2.3`;
+- watch and Immediate diagnostic source spans remain under `bd-94av.2.4`.
+
 ## Non-Claims
 
 This audit does not claim:
@@ -83,4 +117,3 @@ Fresh-eyes review points before closing `bd-94av.2.1`:
 - It leaves child delivery beads for every row family named in the handoff.
 - It does not broaden COM, browser/WASM, or editor-version claims outside this
   bead's source-span scope.
-
