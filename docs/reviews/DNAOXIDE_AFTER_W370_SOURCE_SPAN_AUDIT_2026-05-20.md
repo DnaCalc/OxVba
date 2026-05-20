@@ -95,6 +95,39 @@ Residual:
   remains under `bd-94av.2.3`;
 - watch and Immediate diagnostic source spans remain under `bd-94av.2.4`.
 
+### `bd-94av.2.3` Debug Pause/Frame/Breakpoint Spans
+
+Status: delivered subset.
+
+`DebugVariantPauseState`, `DebugFrameVariant`, and `DebugBreakpointRecord`
+now carry `DirectHostSourceSpanStatus` values. The direct debugger layer maps
+manifest module identity to `DirectHostDocumentId` and projects line-backed
+spans where compiler/VM metadata identifies a module and source line.
+
+Debug projection now covers:
+
+- pause/current statement spans on `DebugVariantPauseState::current_source`;
+- procedure range spans on `DebugFrameVariant::source`;
+- bound breakpoint spans on `DebugBreakpointRecord::source`;
+- module-existing unresolved breakpoint spans for non-executable requested
+  lines;
+- `NoMatchingDocument` for breakpoint rows whose module cannot be mapped.
+
+Tests prove:
+
+- entry pauses carry a document-ID-backed current statement span;
+- stepped frames carry document-ID-backed procedure spans;
+- bound breakpoint rows carry the requested executable line span;
+- module-existing unresolved breakpoint rows retain the requested source line;
+- no-matching-module breakpoint rows carry a typed no-source status instead of
+  a fake span.
+
+Residual:
+
+- source-map projection is manifest-module based; path/URI mapping remains an
+  adapter concern;
+- watch and Immediate diagnostic source spans remain under `bd-94av.2.4`.
+
 ## Non-Claims
 
 This audit does not claim:

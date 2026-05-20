@@ -8,7 +8,9 @@ use thiserror::Error;
 
 use crate::direct_host::{
     DirectHostBreakpointId, DirectHostCommandStatus, DirectHostDebugSessionId, DirectHostIssue,
-    DirectHostIssueKind, DirectHostRuntimeSessionId, DirectHostStackFrameId, DirectHostWatchId,
+    DirectHostIssueKind, DirectHostRuntimeSessionId, DirectHostSourceSpan,
+    DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason, DirectHostStackFrameId,
+    DirectHostTextPosition, DirectHostWatchId,
 };
 use crate::engine::PhaseDiagnostic;
 use crate::{Engine, ProjectRuntimeSession};
@@ -37,6 +39,7 @@ pub struct DebugFrameVariant {
     pub entry_pc: usize,
     pub source_line_start: usize,
     pub source_line_end: usize,
+    pub source: DirectHostSourceSpanStatus,
     /// Retained value-model frame values.
     pub values: Vec<DebugFrameVariantValue>,
 }
@@ -44,6 +47,7 @@ pub struct DebugFrameVariant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebugVariantPauseState {
     pub stop: DebugStop,
+    pub current_source: DirectHostSourceSpanStatus,
     pub frames: Vec<DebugFrameVariant>,
 }
 
@@ -142,6 +146,7 @@ pub struct DebugBreakpointRecord {
     pub enabled: bool,
     pub binding_status: DebugBreakpointBindingStatus,
     pub unresolved_reason: Option<DebugBreakpointUnresolvedReason>,
+    pub source: DirectHostSourceSpanStatus,
     pub hit_count: u64,
 }
 
@@ -349,11 +354,12 @@ impl<'engine> DebugSession<'engine> {
             self.bind_source_breakpoint(&module_name, line_number);
         let record = DebugBreakpointRecord {
             breakpoint_id,
-            module_name,
+            module_name: module_name.clone(),
             line_number,
             enabled: true,
             binding_status,
             unresolved_reason,
+            source: self.source_span_for_module_line(&module_name, Some(line_number)),
             hit_count: 0,
         };
         self.breakpoint_records.push(record.clone());
@@ -612,6 +618,11 @@ impl<'engine> DebugSession<'engine> {
                 entry_pc: metadata.entry_pc,
                 source_line_start: metadata.source_line_start,
                 source_line_end: metadata.source_line_end,
+                source: self.source_span_for_module_range(
+                    &metadata.module_name,
+                    metadata.source_line_start,
+                    metadata.source_line_end,
+                ),
                 values: metadata
                     .slots
                     .iter()
@@ -619,7 +630,13 @@ impl<'engine> DebugSession<'engine> {
                     .collect(),
             });
         }
-        Ok(DebugVariantPauseState { stop, frames })
+        let current_source =
+            self.source_span_for_module_line(&stop.location.module_name, stop.location.line_number);
+        Ok(DebugVariantPauseState {
+            stop,
+            current_source,
+            frames,
+        })
     }
 
     fn metadata_for_entry_pc(&self, entry_pc: usize) -> Option<&ProcedureRuntimeMetadata> {
@@ -644,6 +661,61 @@ impl<'engine> DebugSession<'engine> {
             display_text,
             variant_value,
         }
+    }
+
+    fn source_span_for_module_line(
+        &self,
+        module_name: &str,
+        line_number: Option<usize>,
+    ) -> DirectHostSourceSpanStatus {
+        let Some(line_number) = line_number else {
+            return DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            );
+        };
+        if line_number == 0 {
+            return DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            );
+        }
+        self.source_span_for_module_range(module_name, line_number, line_number)
+    }
+
+    fn source_span_for_module_range(
+        &self,
+        module_name: &str,
+        source_line_start: usize,
+        source_line_end: usize,
+    ) -> DirectHostSourceSpanStatus {
+        let Some(module) = self
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name.eq_ignore_ascii_case(module_name))
+        else {
+            return DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoMatchingDocument,
+            );
+        };
+        if source_line_start == 0 || source_line_end == 0 {
+            return DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            );
+        }
+        let start_line = source_line_start.min(source_line_end);
+        let end_line = source_line_start.max(source_line_end);
+        let (Ok(start_line), Ok(end_line)) =
+            (u32::try_from(start_line), u32::try_from(end_line + 1))
+        else {
+            return DirectHostSourceSpanStatus::unavailable(
+                DirectHostSourceUnavailableReason::NoSourceLocation,
+            );
+        };
+        DirectHostSourceSpanStatus::known(DirectHostSourceSpan::new(
+            module.module_name.clone(),
+            DirectHostTextPosition::new(start_line, 0),
+            DirectHostTextPosition::new(end_line, 0),
+        ))
     }
 }
 
@@ -694,6 +766,7 @@ mod tests {
         DebugBreakpointBindingStatus, DebugBreakpointUnresolvedReason, DebugEvaluationRequest,
         DebugFrameValueKind, DebugWatchEvaluationStatus, HostDebugVariantRunResult,
     };
+    use crate::direct_host::{DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason};
     use crate::{Engine, HostConfig};
 
     fn make_manifest(source: &str) -> ProjectManifest {
@@ -751,6 +824,13 @@ mod tests {
         };
         assert_eq!(entry_pause.stop.reason, DebugStopReason::Entry);
         assert_eq!(entry_pause.frames.len(), 1);
+        assert!(matches!(
+            &entry_pause.current_source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line == 2
+                    && span.end.line == 3
+        ));
         let HostDebugVariantRunResult::Paused(callee_pause) = session
             .step_into_variants()
             .expect("step into should pause in callee")
@@ -759,8 +839,20 @@ mod tests {
         };
         assert_eq!(callee_pause.stop.reason, DebugStopReason::Step);
         assert_eq!(callee_pause.frames.len(), 2);
+        assert!(matches!(
+            &callee_pause.current_source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1" && span.start.line > 0
+        ));
         let current = callee_pause.frames.last().expect("current frame");
         assert!(current.procedure_name.eq_ignore_ascii_case("Foo"));
+        assert!(matches!(
+            &current.source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line > 0
+                    && span.end.line > span.start.line
+        ));
         let y = session
             .evaluate_variant(&DebugEvaluationRequest::new("y"))
             .expect("y should be visible in callee");
@@ -905,6 +997,12 @@ mod tests {
             missing.unresolved_reason,
             Some(DebugBreakpointUnresolvedReason::NoMatchingModule)
         );
+        assert!(matches!(
+            missing.source,
+            DirectHostSourceSpanStatus::Unavailable(
+                DirectHostSourceUnavailableReason::NoMatchingDocument
+            )
+        ));
         let invalid_line = session.set_source_breakpoint("Module1", 99);
         assert_eq!(
             invalid_line.binding_status,
@@ -914,12 +1012,26 @@ mod tests {
             invalid_line.unresolved_reason,
             Some(DebugBreakpointUnresolvedReason::NoExecutableStatementOnLine)
         );
+        assert!(matches!(
+            &invalid_line.source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line == 99
+                    && span.end.line == 100
+        ));
 
         let bound = session.set_source_breakpoint("Module1", 3);
         assert_eq!(bound.binding_status, DebugBreakpointBindingStatus::Bound);
         assert!(bound.unresolved_reason.is_none());
         assert!(bound.enabled);
         assert!(bound.breakpoint_id.as_str().contains(":breakpoint:3"));
+        assert!(matches!(
+            &bound.source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line == 3
+                    && span.end.line == 4
+        ));
 
         let HostDebugVariantRunResult::Paused(entry_pause) =
             session.start_variants().expect("entry pause")
@@ -933,6 +1045,13 @@ mod tests {
                 .as_str()
                 .contains(":frame:1:")
         );
+        assert!(matches!(
+            &entry_pause.current_source,
+            DirectHostSourceSpanStatus::Known(span)
+                if span.document_id.as_str() == "Module1"
+                    && span.start.line == 2
+                    && span.end.line == 3
+        ));
         let _ = session
             .continue_execution_variants()
             .expect("continuing with a bound breakpoint should be valid");
