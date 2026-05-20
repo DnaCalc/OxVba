@@ -68,6 +68,46 @@ call. The wrapper should include:
 - tests proving the response version changes after `set_document_text` and that
   empty result sets still carry freshness.
 
+## Delivery Updates
+
+### `bd-7bvk` Versioned Host-Session Editor Response DTOs
+
+Status: delivered subset.
+
+`HostEditorResponse<T>`, `HostEditorResponseVersion`,
+`HostEditorDocumentVersion`, and `HostWorkspaceDocumentVersioned` now provide
+additive response-level freshness DTOs over direct `HostWorkspaceSession`
+editor query methods. Existing raw methods remain available.
+
+Versioned projection now covers:
+
+- `documents_response`;
+- `document_source_response`;
+- `diagnostics_response`;
+- `document_symbols_response`;
+- `workspace_symbols_response`;
+- `completions_response`;
+- `hover_response`;
+- `go_to_definition_response`;
+- `find_references_response`.
+
+Tests prove:
+
+- document list rows carry per-document versions;
+- document-scoped responses carry queried document ID/version and workspace
+  revision;
+- workspace-scoped empty result sets carry workspace revision;
+- document versions and workspace revision change after `set_document_text`;
+- empty diagnostics/hover/workspace-symbol results still carry freshness.
+
+Residual:
+
+- versioned signature-help, rename-preparation, reference-analysis, and
+  code-action direct host-session methods remain future work if those surfaces
+  are exposed through `HostWorkspaceSession`;
+- stale-response rejection remains a host policy using these DTOs, not an
+  automatic OxVBA-side discard.
+
 ## Non-Claims
 
 This audit does not claim:

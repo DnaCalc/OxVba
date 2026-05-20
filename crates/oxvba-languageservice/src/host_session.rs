@@ -33,6 +33,30 @@ pub struct HostWorkspaceDocument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostEditorDocumentVersion {
+    pub document_id: DocumentId,
+    pub document_version: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostEditorResponseVersion {
+    pub document: Option<HostEditorDocumentVersion>,
+    pub workspace_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostEditorResponse<T> {
+    pub version: HostEditorResponseVersion,
+    pub payload: T,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostWorkspaceDocumentVersioned {
+    pub document: HostWorkspaceDocument,
+    pub document_version: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostWorkspaceRoster {
     pub workspace_id: DirectHostWorkspaceId,
     pub project_id: DirectHostProjectId,
@@ -259,6 +283,28 @@ impl HostWorkspaceSession {
         docs
     }
 
+    pub fn documents_response(&self) -> HostEditorResponse<Vec<HostWorkspaceDocumentVersioned>> {
+        let mut docs = self
+            .service
+            .workspace
+            .document_ids()
+            .filter_map(|id| self.service.workspace.document(id))
+            .map(|doc| HostWorkspaceDocumentVersioned {
+                document: HostWorkspaceDocument {
+                    id: doc.id.clone(),
+                    project_name: doc.project_name.clone(),
+                    provenance_kind: doc.provenance_kind,
+                },
+                document_version: doc.version,
+            })
+            .collect::<Vec<_>>();
+        docs.sort_by(|left, right| left.document.id.0.cmp(&right.document.id.0));
+        HostEditorResponse {
+            version: self.workspace_response_version(),
+            payload: docs,
+        }
+    }
+
     pub fn document_source(&self, document: &DocumentId) -> Result<String, HostSessionError> {
         self.service
             .workspace
@@ -267,6 +313,15 @@ impl HostWorkspaceSession {
             .ok_or_else(|| HostSessionError::DocumentNotFound {
                 document: document.clone(),
             })
+    }
+
+    pub fn document_source_response(
+        &self,
+        document: &DocumentId,
+    ) -> Result<HostEditorResponse<String>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.document_source(document)?;
+        Ok(HostEditorResponse { version, payload })
     }
 
     pub fn set_document_text(
@@ -308,6 +363,15 @@ impl HostWorkspaceSession {
         Ok(self.service.diagnostics(document))
     }
 
+    pub fn diagnostics_response(
+        &self,
+        document: &DocumentId,
+    ) -> Result<HostEditorResponse<Vec<SpannedDiagnostic>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.diagnostics(document);
+        Ok(HostEditorResponse { version, payload })
+    }
+
     pub fn document_symbols(
         &self,
         document: &DocumentId,
@@ -316,8 +380,27 @@ impl HostWorkspaceSession {
         Ok(self.service.document_symbols(document))
     }
 
+    pub fn document_symbols_response(
+        &self,
+        document: &DocumentId,
+    ) -> Result<HostEditorResponse<Vec<DocumentSymbol>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.document_symbols(document);
+        Ok(HostEditorResponse { version, payload })
+    }
+
     pub fn workspace_symbols(&self, query: &str) -> Vec<WorkspaceSymbol> {
         self.service.workspace_symbols(query)
+    }
+
+    pub fn workspace_symbols_response(
+        &self,
+        query: &str,
+    ) -> HostEditorResponse<Vec<WorkspaceSymbol>> {
+        HostEditorResponse {
+            version: self.workspace_response_version(),
+            payload: self.service.workspace_symbols(query),
+        }
     }
 
     pub fn completions(
@@ -329,6 +412,16 @@ impl HostWorkspaceSession {
         Ok(self.service.completions(document, position))
     }
 
+    pub fn completions_response(
+        &self,
+        document: &DocumentId,
+        position: Position,
+    ) -> Result<HostEditorResponse<Vec<CompletionItem>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.completions(document, position);
+        Ok(HostEditorResponse { version, payload })
+    }
+
     pub fn hover(
         &self,
         document: &DocumentId,
@@ -336,6 +429,16 @@ impl HostWorkspaceSession {
     ) -> Result<Option<HoverInfo>, HostSessionError> {
         self.ensure_document(document)?;
         Ok(self.service.hover(document, position))
+    }
+
+    pub fn hover_response(
+        &self,
+        document: &DocumentId,
+        position: Position,
+    ) -> Result<HostEditorResponse<Option<HoverInfo>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.hover(document, position);
+        Ok(HostEditorResponse { version, payload })
     }
 
     pub fn go_to_definition(
@@ -347,6 +450,16 @@ impl HostWorkspaceSession {
         Ok(self.service.go_to_definition(document, position))
     }
 
+    pub fn go_to_definition_response(
+        &self,
+        document: &DocumentId,
+        position: Position,
+    ) -> Result<HostEditorResponse<Option<Location>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.go_to_definition(document, position);
+        Ok(HostEditorResponse { version, payload })
+    }
+
     pub fn find_references(
         &self,
         document: &DocumentId,
@@ -354,6 +467,16 @@ impl HostWorkspaceSession {
     ) -> Result<Vec<Location>, HostSessionError> {
         self.ensure_document(document)?;
         Ok(self.service.find_references(document, position))
+    }
+
+    pub fn find_references_response(
+        &self,
+        document: &DocumentId,
+        position: Position,
+    ) -> Result<HostEditorResponse<Vec<Location>>, HostSessionError> {
+        let version = self.document_response_version(document)?;
+        let payload = self.service.find_references(document, position);
+        Ok(HostEditorResponse { version, payload })
     }
 
     pub fn semantic_provenance(
@@ -376,6 +499,31 @@ impl HostWorkspaceSession {
             Err(HostSessionError::DocumentNotFound {
                 document: document.clone(),
             })
+        }
+    }
+
+    fn document_response_version(
+        &self,
+        document: &DocumentId,
+    ) -> Result<HostEditorResponseVersion, HostSessionError> {
+        let document = self.service.workspace.document(document).ok_or_else(|| {
+            HostSessionError::DocumentNotFound {
+                document: document.clone(),
+            }
+        })?;
+        Ok(HostEditorResponseVersion {
+            document: Some(HostEditorDocumentVersion {
+                document_id: document.id.clone(),
+                document_version: document.version,
+            }),
+            workspace_revision: self.workspace_snapshot_revision(),
+        })
+    }
+
+    fn workspace_response_version(&self) -> HostEditorResponseVersion {
+        HostEditorResponseVersion {
+            document: None,
+            workspace_revision: self.workspace_snapshot_revision(),
         }
     }
 
@@ -530,6 +678,130 @@ mod tests {
             .find(|document| document.id == DocumentId::new("Module1"))
             .expect("root module should be present");
         assert_eq!(module.project_name.as_deref(), Some("App"));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn host_session_versioned_editor_responses_track_freshness() {
+        let temp_root = unique_temp_dir("oxvba_host_session_versions");
+        fs::create_dir_all(&temp_root).expect("temp dir");
+        fs::write(temp_root.join("Module1.bas"), "Sub Main()\nEnd Sub\n").expect("module");
+        fs::write(
+            temp_root.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("basproj");
+
+        let mut session = HostWorkspaceSession::load_workspace_path(&temp_root).expect("session");
+        let module = DocumentId::new("Module1");
+
+        let docs = session.documents_response();
+        let initial_workspace_revision = docs.version.workspace_revision;
+        assert!(initial_workspace_revision >= 1);
+        let module_row = docs
+            .payload
+            .iter()
+            .find(|document| document.document.id == module)
+            .expect("module document row");
+        assert_eq!(module_row.document_version, 1);
+
+        let source = session
+            .document_source_response(&module)
+            .expect("versioned source");
+        assert_eq!(
+            source.version.workspace_revision,
+            initial_workspace_revision
+        );
+        assert_eq!(
+            source
+                .version
+                .document
+                .as_ref()
+                .map(|doc| doc.document_version),
+            Some(1)
+        );
+        assert_eq!(source.payload, "Sub Main()\nEnd Sub\n");
+
+        let empty_symbols = session.workspace_symbols_response("DefinitelyMissing");
+        assert!(empty_symbols.payload.is_empty());
+        assert!(empty_symbols.version.document.is_none());
+        assert_eq!(
+            empty_symbols.version.workspace_revision,
+            initial_workspace_revision
+        );
+
+        session
+            .set_document_text(&module, "Sub Main()\n    Dim x As Long\nEnd Sub\n")
+            .expect("change document");
+
+        let diagnostics = session
+            .diagnostics_response(&module)
+            .expect("versioned diagnostics");
+        assert!(diagnostics.payload.is_empty());
+        assert_eq!(
+            diagnostics
+                .version
+                .document
+                .as_ref()
+                .map(|doc| doc.document_version),
+            Some(2)
+        );
+        assert!(diagnostics.version.workspace_revision > initial_workspace_revision);
+
+        let hover = session.hover_response(&module, 0).expect("versioned hover");
+        assert!(hover.payload.is_none());
+        assert_eq!(
+            hover
+                .version
+                .document
+                .as_ref()
+                .map(|doc| doc.document_id.clone()),
+            Some(module.clone())
+        );
+        assert_eq!(
+            hover.version.workspace_revision,
+            diagnostics.version.workspace_revision
+        );
+
+        let document_symbols = session
+            .document_symbols_response(&module)
+            .expect("versioned document symbols");
+        let completions = session
+            .completions_response(&module, 0)
+            .expect("versioned completions");
+        let definition = session
+            .go_to_definition_response(&module, 0)
+            .expect("versioned definition");
+        let references = session
+            .find_references_response(&module, 0)
+            .expect("versioned references");
+        for version in [
+            &document_symbols.version,
+            &completions.version,
+            &definition.version,
+            &references.version,
+        ] {
+            assert_eq!(
+                version.document.as_ref().map(|doc| doc.document_id.clone()),
+                Some(module.clone())
+            );
+            assert_eq!(
+                version.document.as_ref().map(|doc| doc.document_version),
+                Some(2)
+            );
+            assert_eq!(
+                version.workspace_revision,
+                diagnostics.version.workspace_revision
+            );
+        }
+
+        let empty_symbols_after_change = session.workspace_symbols_response("DefinitelyMissing");
+        assert!(empty_symbols_after_change.payload.is_empty());
+        assert_eq!(
+            empty_symbols_after_change.version.workspace_revision,
+            diagnostics.version.workspace_revision
+        );
 
         let _ = fs::remove_dir_all(&temp_root);
     }
