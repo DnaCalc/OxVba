@@ -88,6 +88,13 @@ is stable, typed, provenance-rich, and retraction-capable. It must not claim
 that formulas bind or that UDF names shadow built-ins or defined names; those
 claims depend on OxFunc `W093` plus OxFml `W074` evidence.
 
+Current support state after `bd-sg5h.2`: `HostUdfFunctionDescriptor` now exposes
+the OxVba-owned descriptor facts needed by W093-oriented consumers without
+owning registry behavior. The descriptor separates registration identity,
+callable metadata, invocation target, capability constraints, and change-signal
+inputs. Evidence:
+`docs/evidence/HOST_UDF_W093_METADATA_DESCRIPTOR_2026-05-22.md`.
+
 ## Seed Issues From Review
 
 These notes are intentionally early seeds, not final design decisions.

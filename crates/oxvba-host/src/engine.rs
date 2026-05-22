@@ -59,6 +59,11 @@ pub struct HostUdfFunctionDescriptor {
     pub project_name: String,
     pub module_name: String,
     pub procedure_name: String,
+    pub registration_identity: HostUdfRegistrationIdentity,
+    pub callable_metadata: HostUdfCallableMetadata,
+    pub invocation_target: HostUdfInvocationTarget,
+    pub capability_constraints: HostUdfCapabilityConstraints,
+    pub change_signal_inputs: Vec<String>,
     pub arguments: Vec<HostUdfArgumentDescriptor>,
     pub return_type: Option<DeclareParamType>,
     pub category: Option<String>,
@@ -68,6 +73,46 @@ pub struct HostUdfFunctionDescriptor {
     pub side_effect_policy: String,
     pub thread_safety_policy: String,
     pub allowed_contexts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfRegistrationIdentity {
+    pub source_system: String,
+    pub source_fingerprint: String,
+    pub unregister_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfCallableMetadata {
+    pub worksheet_visible_name: String,
+    pub export_kind: String,
+    pub arity: usize,
+    pub parameter_type_text: Vec<Option<String>>,
+    pub return_type_text: Option<String>,
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub descriptor_fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfInvocationTarget {
+    pub stable_host_call_id: String,
+    pub project_name: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub runtime_profile: String,
+    pub argument_conversion_lane: String,
+    pub result_conversion_lane: String,
+    pub diagnostic_projection_lane: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUdfCapabilityConstraints {
+    pub supported_value_subsets: Vec<String>,
+    pub allowed_contexts: Vec<String>,
+    pub side_effect_policy: String,
+    pub thread_safety_policy: String,
+    pub unsupported_reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1100,25 +1145,73 @@ impl Engine {
             &export.module_name,
             &export.procedure_name,
         );
-        HostUdfFunctionDescriptor {
-            stable_host_call_id: stable_host_call_id_for_export(export),
+        let stable_host_call_id = stable_host_call_id_for_export(export);
+        let arguments = metadata
+            .map(host_udf_arguments_from_metadata)
+            .unwrap_or_default();
+        let return_type = metadata.and_then(|meta| meta.return_type);
+        let category = None;
+        let description = None;
+        let dependency_policy = "explicit-arguments-only".to_string();
+        let side_effect_policy = "no-host-side-effects".to_string();
+        let thread_safety_policy = "single-threaded-vba-compatible".to_string();
+        let allowed_contexts = vec![
+            "worksheet-cell".to_string(),
+            "host-formula-evaluator".to_string(),
+        ];
+        let callable_metadata = host_udf_callable_metadata(
+            export,
+            &arguments,
+            return_type,
+            category.clone(),
+            description.clone(),
+        );
+        let registration_identity = host_udf_registration_identity(export, &callable_metadata);
+        let invocation_target = HostUdfInvocationTarget {
+            stable_host_call_id: stable_host_call_id.clone(),
             project_name: export.project_name.clone(),
             module_name: export.module_name.clone(),
             procedure_name: export.procedure_name.clone(),
-            arguments: metadata
-                .map(host_udf_arguments_from_metadata)
-                .unwrap_or_default(),
-            return_type: metadata.and_then(|meta| meta.return_type),
-            category: None,
-            description: None,
-            volatile: false,
-            dependency_policy: "explicit-arguments-only".to_string(),
-            side_effect_policy: "no-host-side-effects".to_string(),
-            thread_safety_policy: "single-threaded-vba-compatible".to_string(),
-            allowed_contexts: vec![
-                "worksheet-cell".to_string(),
-                "host-formula-evaluator".to_string(),
+            runtime_profile: "prepared-project-session".to_string(),
+            argument_conversion_lane: "variant-host-udf-arguments".to_string(),
+            result_conversion_lane: "variant-host-udf-result".to_string(),
+            diagnostic_projection_lane: "phase-diagnostic".to_string(),
+        };
+        let capability_constraints = HostUdfCapabilityConstraints {
+            supported_value_subsets: vec![
+                "variant-scalar-first-tier".to_string(),
+                "typed-double-first-slice".to_string(),
             ],
+            allowed_contexts: allowed_contexts.clone(),
+            side_effect_policy: side_effect_policy.clone(),
+            thread_safety_policy: thread_safety_policy.clone(),
+            unsupported_reasons: Vec::new(),
+        };
+        HostUdfFunctionDescriptor {
+            stable_host_call_id,
+            project_name: export.project_name.clone(),
+            module_name: export.module_name.clone(),
+            procedure_name: export.procedure_name.clone(),
+            registration_identity,
+            callable_metadata,
+            invocation_target,
+            capability_constraints,
+            change_signal_inputs: vec![
+                "project-load".to_string(),
+                "project-unload".to_string(),
+                "module-edit".to_string(),
+                "function-admission-change".to_string(),
+                "descriptor-fingerprint-change".to_string(),
+            ],
+            arguments,
+            return_type,
+            category,
+            description,
+            volatile: false,
+            dependency_policy,
+            side_effect_policy,
+            thread_safety_policy,
+            allowed_contexts,
         }
     }
 
@@ -1731,6 +1824,79 @@ fn host_udf_arguments_from_metadata(
         .collect()
 }
 
+fn host_udf_callable_metadata(
+    export: &HostProcedureExport,
+    arguments: &[HostUdfArgumentDescriptor],
+    return_type: Option<DeclareParamType>,
+    category: Option<String>,
+    description: Option<String>,
+) -> HostUdfCallableMetadata {
+    let parameter_type_text = arguments
+        .iter()
+        .map(|argument| {
+            argument
+                .value_type
+                .map(declare_param_type_label)
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    let return_type_text = return_type
+        .map(declare_param_type_label)
+        .map(str::to_string);
+    let descriptor_fingerprint = stable_metadata_fingerprint([
+        "descriptor",
+        &export.project_name,
+        &export.module_name,
+        &export.procedure_name,
+        &format!("{:?}", export.kind),
+        &arguments
+            .iter()
+            .map(|argument| argument.name.as_deref().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join(","),
+        &parameter_type_text
+            .iter()
+            .map(|item| item.as_deref().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join(","),
+        return_type_text.as_deref().unwrap_or(""),
+        category.as_deref().unwrap_or(""),
+        description.as_deref().unwrap_or(""),
+    ]);
+
+    HostUdfCallableMetadata {
+        worksheet_visible_name: export.procedure_name.clone(),
+        export_kind: format!("{:?}", export.kind).to_ascii_lowercase(),
+        arity: arguments.len(),
+        parameter_type_text,
+        return_type_text,
+        category,
+        description,
+        descriptor_fingerprint,
+    }
+}
+
+fn host_udf_registration_identity(
+    export: &HostProcedureExport,
+    callable_metadata: &HostUdfCallableMetadata,
+) -> HostUdfRegistrationIdentity {
+    let source_fingerprint = stable_metadata_fingerprint([
+        "source",
+        &export.project_name,
+        &export.module_name,
+        &export.procedure_name,
+        &format!("{:?}", export.kind),
+    ]);
+    HostUdfRegistrationIdentity {
+        source_system: "oxvba-project".to_string(),
+        unregister_key: format!(
+            "{}:{}:{}",
+            source_fingerprint, callable_metadata.descriptor_fingerprint, callable_metadata.arity
+        ),
+        source_fingerprint,
+    }
+}
+
 fn stable_host_call_id_for_export(export: &HostProcedureExport) -> String {
     [
         "host-call",
@@ -1743,6 +1909,19 @@ fn stable_host_call_id_for_export(export: &HostProcedureExport) -> String {
     .map(|part| part.trim().to_ascii_lowercase())
     .collect::<Vec<_>>()
     .join(":")
+}
+
+fn stable_metadata_fingerprint<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for part in parts {
+        for byte in part.trim().to_ascii_lowercase().as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("oxvba-fp-{hash:016x}")
 }
 
 fn declare_param_type_label(value: DeclareParamType) -> &'static str {

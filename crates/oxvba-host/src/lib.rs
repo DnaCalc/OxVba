@@ -42,10 +42,11 @@ pub use embedded::{
 };
 pub use engine::{
     ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
-    HostUdfArgumentDescriptor, HostUdfCallContext, HostUdfCatalog, HostUdfFunctionDescriptor,
-    HostUdfInvokeResult, HostUdfTypeMapEvidence, HostUdfTypedInvokeResult,
-    HostUdfTypedParameterDescriptor, HostUdfTypedSignature, HostUdfTypedValue, PhaseDiagnostic,
-    ProjectRuntimeSession,
+    HostUdfArgumentDescriptor, HostUdfCallContext, HostUdfCallableMetadata,
+    HostUdfCapabilityConstraints, HostUdfCatalog, HostUdfFunctionDescriptor,
+    HostUdfInvocationTarget, HostUdfInvokeResult, HostUdfRegistrationIdentity,
+    HostUdfTypeMapEvidence, HostUdfTypedInvokeResult, HostUdfTypedParameterDescriptor,
+    HostUdfTypedSignature, HostUdfTypedValue, PhaseDiagnostic, ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,

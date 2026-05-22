@@ -206,6 +206,53 @@ fn host_udf_catalog_exposes_public_procedural_functions_with_policy() {
         host_add.stable_host_call_id,
         "host-call:testproj:main:hostadd:function"
     );
+    assert_eq!(
+        host_add.registration_identity.source_system,
+        "oxvba-project"
+    );
+    assert!(
+        host_add
+            .registration_identity
+            .source_fingerprint
+            .starts_with("oxvba-fp-")
+    );
+    assert!(
+        host_add
+            .registration_identity
+            .unregister_key
+            .contains(&host_add.callable_metadata.descriptor_fingerprint)
+    );
+    assert_eq!(host_add.callable_metadata.worksheet_visible_name, "hostadd");
+    assert_eq!(host_add.callable_metadata.export_kind, "function");
+    assert_eq!(host_add.callable_metadata.arity, 2);
+    assert_eq!(
+        host_add.callable_metadata.parameter_type_text,
+        vec![Some("Long".to_string()), Some("Long".to_string())]
+    );
+    assert_eq!(
+        host_add.callable_metadata.return_type_text,
+        Some("Long".to_string())
+    );
+    assert_eq!(
+        host_add.invocation_target.stable_host_call_id,
+        host_add.stable_host_call_id
+    );
+    assert_eq!(
+        host_add.invocation_target.runtime_profile,
+        "prepared-project-session"
+    );
+    assert_eq!(
+        host_add.invocation_target.argument_conversion_lane,
+        "variant-host-udf-arguments"
+    );
+    assert_eq!(
+        host_add.invocation_target.result_conversion_lane,
+        "variant-host-udf-result"
+    );
+    assert_eq!(
+        host_add.invocation_target.diagnostic_projection_lane,
+        "phase-diagnostic"
+    );
     assert_eq!(host_add.arguments.len(), 2);
     assert_eq!(host_add.arguments[0].name.as_deref(), Some("a"));
     assert_eq!(
@@ -230,6 +277,27 @@ fn host_udf_catalog_exposes_public_procedural_functions_with_policy() {
         vec![
             "worksheet-cell".to_string(),
             "host-formula-evaluator".to_string()
+        ]
+    );
+    assert_eq!(
+        host_add.capability_constraints.allowed_contexts,
+        host_add.allowed_contexts
+    );
+    assert_eq!(
+        host_add.capability_constraints.supported_value_subsets,
+        vec![
+            "variant-scalar-first-tier".to_string(),
+            "typed-double-first-slice".to_string()
+        ]
+    );
+    assert_eq!(
+        host_add.change_signal_inputs,
+        vec![
+            "project-load".to_string(),
+            "project-unload".to_string(),
+            "module-edit".to_string(),
+            "function-admission-change".to_string(),
+            "descriptor-fingerprint-change".to_string()
         ]
     );
 }
