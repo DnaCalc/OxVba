@@ -45,6 +45,49 @@ Out of scope:
 - The reopened WrappedComServer direct-host build execution gap, which remains
   owned by `bd-wcs1.9.4` in the WrappedComServer workset.
 
+## DNA Calc Registry Alignment
+
+This workset is the OxVba source-discovery counterpart to OxFunc `W093` and
+OxFml `W074`. OxVba owns VBA project/module/procedure discovery, VBA/XLL-adjacent
+descriptor facts, and invocation-time provenance. It does not own worksheet
+formula name precedence, registry mutation semantics, or TreeCalc reference
+semantics.
+
+The host-call/UDF catalog produced here must be convertible into OxFunc
+source-neutral UDF registration requests without a host-local function mirror.
+The first metadata lane must carry:
+
+1. stable source identity: project/session id, module id, procedure id, and a
+   source fingerprint suitable for unregister/re-register decisions,
+2. callable surface metadata: worksheet-visible name, public/procedural function
+   classification, arity, parameter names, parameter type text where known,
+   return type text where known, help/category text when the source supplies it,
+3. invocation descriptor: OxVba project handle, module/procedure route, runtime
+   profile, host-call context needs, argument conversion lane, result conversion
+   lane, and diagnostic projection lane,
+4. capability and safety facts: supported scalar/array/result subsets,
+   side-effect policy, volatility/dependency hints when known, thread-safety
+   posture when known, and explicit unsupported reasons,
+5. change facts: project load/unload, module edit, function admission/rejection
+   change, and descriptor fingerprint change.
+
+Downstream ownership is fixed:
+
+1. OxFunc owns `UdfRegistrationRequest`, UDF registration/unregistration,
+   immutable registry snapshot identity, capability overlays, and
+   `RegistryChangeSet` output.
+2. OxFml owns formula parse/bind/name resolution, registry snapshot consumption,
+   `#NAME?` recovery, unregister/capability-denial invalidation, and Excel
+   oracle-backed name/call precedence.
+3. DnaOneCalc owns its single-formula host orchestration and may load OxVba
+   projects as a UDF source, but it must not keep a second comprehensive
+   function catalog or decide formula-name precedence locally.
+
+OxVba evidence for this lane should therefore prove that the discovered catalog
+is stable, typed, provenance-rich, and retraction-capable. It must not claim
+that formulas bind or that UDF names shadow built-ins or defined names; those
+claims depend on OxFunc `W093` plus OxFml `W074` evidence.
+
 ## Seed Issues From Review
 
 These notes are intentionally early seeds, not final design decisions.
