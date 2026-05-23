@@ -92,7 +92,7 @@ Required checks: `cargo test -p oxvba-host`; `cargo test -p oxvba-debug core_`.
 | `handle_breakpoint_clear.rs` | `handle_clear_source_breakpoint_removes_stop` | clear removes binding |
 | `handle_breakpoints.rs` | `handle_breakpoints_lists_current_records` | list returns projected current records |
 | `handle_watch_add.rs` | `handle_add_watch_records_expression` | add watch works through worker |
-| `handle_watch_update.rs` | `handle_update_watch_changes_expression` | update watch works through worker |
+| `handle_watch_modify.rs` | `handle_update_watch_changes_expression` | update watch works through worker |
 | `handle_watch_remove.rs` | `handle_remove_watch_deletes_record` | remove watch works through worker |
 | `handle_watch_evaluate.rs` | `handle_evaluate_watches_returns_current_values` | evaluate watches returns projected values |
 | `handle_inspect.rs` | `handle_current_pause_stack_locals_and_evaluate_work` | inspect commands work when paused |

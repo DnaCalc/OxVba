@@ -1,0 +1,4 @@
+<Project name="MultiModuleWalkthrough">
+  <Module path="Module1.bas" kind="Standard" />
+  <Module path="Module2.bas" kind="Standard" />
+</Project>
