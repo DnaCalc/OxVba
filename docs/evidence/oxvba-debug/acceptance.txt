@@ -1,0 +1,39 @@
+OxVba Debug Handle Architecture acceptance evidence
+Date: 2026-05-23
+Workset: docs/worksets/WORKSET_2026-05-23_OXVBA_DEBUG_HANDLE_ARCHITECTURE.md
+Epic: bd-00fz
+Child beads: bd-00fz.1 through bd-00fz.16
+
+Reference scenarios:
+- PASS: cargo test -p oxvba-debug --test scenarios_dap_style_flow --test scenarios_oxide_cockpit_flow
+  - dap_style_flow_attach_breakpoint_stack_evaluate_exit
+  - oxide_cockpit_flow_watch_breakpoint_step_disable_exit
+
+Windows local matrix:
+- PASS: cargo test -p oxvba-debug
+- PASS: cargo test -p oxvba-debug --features tokio
+- PASS: cargo test -p oxvba-debug --features proptest --test property_random_sequences
+- PASS: cargo test -p oxvba-host (rerun with 900s timeout after fixing parallel temp-dir collision in com_early_project_end_to_end helper)
+- PASS: cargo check --workspace --all-targets
+- PASS: cargo check -p oxvba-debug --target x86_64-unknown-linux-gnu --all-targets
+
+Benchmark/stress evidence:
+- PASS: focused stress lane was run three times for B13.
+- PASS: cargo bench -p oxvba-debug --features bench --bench handle_latency -- --quiet
+- Benchmark summary: docs/evidence/oxvba-debug/benchmarks/B13_HANDLE_LATENCY.md
+
+Governance/bead gates to run at terminal closure:
+- br lint bd-00fz.1 ... bd-00fz.16
+- br dep cycles
+- br ready no open bd-00fz child work
+- pwsh -NoProfile -File scripts/check-governance.ps1
+
+Handoff docs:
+- docs/HANDOFF_OXVBA_DEBUG_HANDLE_v1.md
+- docs/HANDOFF_OXIDE_MIGRATE_TO_DEBUG_HANDLE.md
+- docs/HANDOFF_OXVBA_DAP_FROM_DEBUG_HANDLE.md
+
+Deferred/out-of-scope:
+- OxIde migration remains downstream work in OxIde/oxide-wf81.
+- oxvba-dap server/protocol remains a future workset layered on DebugSessionHandle.
+- CLI debug REPL, remote DAP, conditional breakpoints, hit counts, exception breakpoints, pause, restart-frame, and edit-and-continue remain future work.

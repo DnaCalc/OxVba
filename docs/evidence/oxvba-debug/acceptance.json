@@ -1,0 +1,77 @@
+{
+  "date": "2026-05-23",
+  "workset": "docs/worksets/WORKSET_2026-05-23_OXVBA_DEBUG_HANDLE_ARCHITECTURE.md",
+  "epic": "bd-00fz",
+  "children": [
+    "bd-00fz.1",
+    "bd-00fz.2",
+    "bd-00fz.3",
+    "bd-00fz.4",
+    "bd-00fz.5",
+    "bd-00fz.6",
+    "bd-00fz.7",
+    "bd-00fz.8",
+    "bd-00fz.9",
+    "bd-00fz.10",
+    "bd-00fz.11",
+    "bd-00fz.12",
+    "bd-00fz.13",
+    "bd-00fz.14",
+    "bd-00fz.15",
+    "bd-00fz.16"
+  ],
+  "reference_scenarios": {
+    "command": "cargo test -p oxvba-debug --test scenarios_dap_style_flow --test scenarios_oxide_cockpit_flow",
+    "status": "pass",
+    "tests": [
+      "dap_style_flow_attach_breakpoint_stack_evaluate_exit",
+      "oxide_cockpit_flow_watch_breakpoint_step_disable_exit"
+    ]
+  },
+  "matrix": [
+    {
+      "command": "cargo test -p oxvba-debug",
+      "platform": "windows-local",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p oxvba-debug --features tokio",
+      "platform": "windows-local",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p oxvba-debug --features proptest --test property_random_sequences",
+      "platform": "windows-local",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p oxvba-host",
+      "platform": "windows-local",
+      "status": "pass",
+      "note": "rerun with 900s timeout after unique temp-dir fix for parallel com_early_project_end_to_end helper"
+    },
+    {
+      "command": "cargo check --workspace --all-targets",
+      "platform": "windows-local",
+      "status": "pass"
+    },
+    {
+      "command": "cargo check -p oxvba-debug --target x86_64-unknown-linux-gnu --all-targets",
+      "platform": "linux-cross-check-from-windows",
+      "status": "pass"
+    }
+  ],
+  "handoff_docs": [
+    "docs/HANDOFF_OXVBA_DEBUG_HANDLE_v1.md",
+    "docs/HANDOFF_OXIDE_MIGRATE_TO_DEBUG_HANDLE.md",
+    "docs/HANDOFF_OXVBA_DAP_FROM_DEBUG_HANDLE.md"
+  ],
+  "benchmark_evidence": "docs/evidence/oxvba-debug/benchmarks/B13_HANDLE_LATENCY.md",
+  "deferred": [
+    "OxIde migration in OxIde/oxide-wf81",
+    "future oxvba-dap server/protocol workset",
+    "CLI debug REPL",
+    "DAP-over-TCP / remote debugging",
+    "conditional breakpoints / hit counts / exception breakpoints / pause / restart-frame / edit-and-continue"
+  ]
+}
