@@ -1,9 +1,40 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B13. Claim: session isolation and resource stability
+use std::{sync::mpsc, time::Duration};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn one_hundred_concurrent_sessions_complete_without_crosstalk_or_leak() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let (tx, rx) = mpsc::channel();
+    for index in 0..100 {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(|| {
+                let handle = support_handle::attach(support_handle::multi_module_manifest()).handle;
+                let session_id = handle.session_id().clone();
+                let pause = handle.start().expect("start");
+                let breakpoints = handle.breakpoints().expect("breakpoints");
+                handle.detach().expect("detach");
+                (index, session_id, pause, breakpoints.len())
+            });
+            let _ = tx.send(result);
+        });
+    }
+    drop(tx);
+
+    let mut session_ids = std::collections::BTreeSet::new();
+    for _ in 0..100 {
+        let (index, session_id, _pause, breakpoint_count) = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("concurrent session should not deadlock")
+            .expect("concurrent session should not panic");
+        assert_eq!(
+            breakpoint_count, 0,
+            "session {index} should not see cross-talk breakpoints"
+        );
+        assert!(
+            session_ids.insert(session_id),
+            "session ids should be unique"
+        );
+    }
 }

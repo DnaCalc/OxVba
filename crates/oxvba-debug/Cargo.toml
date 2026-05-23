@@ -31,3 +31,8 @@ windows-sys = { version = "0.59", features = ["Win32_System_Com", "Win32_Foundat
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[[bench]]
+name = "handle_latency"
+harness = false
+required-features = ["bench"]
