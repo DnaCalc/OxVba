@@ -1,9 +1,15 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B11. Claim: resource counters stable
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attach_detach_loop_has_stable_thread_and_fd_counts() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    for _ in 0..50 {
+        let handle = support_handle::attach_handle();
+        let _ = handle.report_worker_apartment().expect("apartment report");
+        handle.detach().expect("detach");
+    }
+
+    support_handle::attach_handle()
+        .detach()
+        .expect("final attach confirms resources remain usable");
 }

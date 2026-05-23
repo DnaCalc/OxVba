@@ -62,5 +62,7 @@ pub enum DebugCommand {
         reply: CommandReply<DebugValueView>,
     },
     ReportWorkerApartment(CommandReply<DebugWorkerApartmentReport>),
+    #[doc(hidden)]
+    PanicWorker,
     Shutdown(CommandReply<()>),
 }

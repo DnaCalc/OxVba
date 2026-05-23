@@ -1,9 +1,28 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B11. Claim: worker panic propagates as `WorkerFailed`
+use oxvba_debug::DebugError;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn worker_panic_marks_handle_failed_without_deadlock() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    handle
+        .panic_worker_for_test()
+        .expect("panic command should enqueue before worker exits");
+
+    let err = handle
+        .start()
+        .expect_err("subsequent call reports worker failure");
+    assert!(matches!(
+        err,
+        DebugError::WorkerFailed { stage: "panic", .. }
+    ));
+
+    let err = handle
+        .detach()
+        .expect_err("detach reports recorded worker failure");
+    assert!(matches!(
+        err,
+        DebugError::WorkerFailed { stage: "panic", .. }
+    ));
 }

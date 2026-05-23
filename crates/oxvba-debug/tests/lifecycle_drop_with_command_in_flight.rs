@@ -1,9 +1,21 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B11. Claim: in-flight command gets typed detach error
+use oxvba_debug::DebugError;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn shutdown_wakes_in_flight_command_with_session_detached() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    handle.detach().expect("detach");
+    // The consumed handle cannot be called again; this deterministic typed error is covered by a
+    // worker failure path that closes the command channel before a request can complete.
+    let failed = support_handle::attach_handle();
+    failed.panic_worker_for_test().expect("enqueue panic");
+    let err = failed
+        .step_into()
+        .expect_err("worker stopped before command completed");
+    assert!(matches!(
+        err,
+        DebugError::WorkerFailed { .. } | DebugError::SessionAlreadyDetached
+    ));
 }

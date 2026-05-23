@@ -1,16 +1,21 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B11. Claim: explicit detach on last handle joins worker
+use oxvba_debug::DebugError;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn detach_last_handle_joins_worker_cleanly() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    handle.detach().expect("last handle detaches and joins");
 }
 
-/// Owner: B11. Claim: clone-safe detach semantics
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn detach_with_clones_returns_outstanding_handles() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let clone = handle.clone();
+    let err = handle
+        .detach()
+        .expect_err("clone keeps session outstanding");
+    assert_eq!(err, DebugError::OutstandingHandles { count: 1 });
+    clone.detach().expect("last clone detaches");
 }

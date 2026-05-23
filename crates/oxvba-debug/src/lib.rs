@@ -78,7 +78,13 @@ pub fn attach_debug_session(
     let initial_events = events.subscribe();
     let worker = spawn_debug_worker(engine, manifest, config, events.clone())?;
     Ok(DebugSessionAttach {
-        handle: DebugSessionHandle::new(worker.session_id, worker.commands, worker.join, events),
+        handle: DebugSessionHandle::new(
+            worker.session_id,
+            worker.commands,
+            worker.join,
+            worker.failure,
+            events,
+        ),
         events: initial_events,
     })
 }

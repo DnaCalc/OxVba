@@ -1,9 +1,18 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B11. Claim: implicit drop detach works
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn dropping_all_handles_shuts_down_worker() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    for _ in 0..25 {
+        let handle = support_handle::attach_handle();
+        let clone = handle.clone();
+        drop(handle);
+        drop(clone);
+    }
+
+    // If implicit shutdown leaked live workers or poisoned shared state, this final attach/detach
+    // tends to hang or fail on the same process.
+    support_handle::attach_handle()
+        .detach()
+        .expect("attach after implicit drops");
 }

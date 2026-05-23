@@ -1,5 +1,9 @@
 use std::{
-    sync::{Arc, Mutex},
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
 };
 
@@ -7,6 +11,8 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 use oxvba_compiler::ProjectManifest;
 use oxvba_hal::{HostOutputChannel, install_thread_output_tap};
 use oxvba_host::{DirectHostDebugSessionId, Engine};
+
+static NEXT_DEBUG_SESSION_ORDINAL: AtomicU64 = AtomicU64::new(1);
 
 use crate::{
     com_apartment::DebugComApartmentGuard,
@@ -34,6 +40,7 @@ pub struct DebugWorkerAttach {
     pub session_id: DirectHostDebugSessionId,
     pub commands: Sender<DebugCommand>,
     pub join: thread::JoinHandle<()>,
+    pub failure: Arc<Mutex<Option<DebugError>>>,
 }
 
 pub(crate) fn spawn_debug_worker(
@@ -44,63 +51,81 @@ pub(crate) fn spawn_debug_worker(
 ) -> Result<DebugWorkerAttach, DebugAttachError> {
     let (commands_tx, commands_rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = bounded(1);
+    let failure = Arc::new(Mutex::new(None));
+    let worker_failure = failure.clone();
     let join = thread::Builder::new()
         .name(format!("oxvba-debug:{}", manifest.project_name))
         .spawn(move || {
-            let apartment = match DebugComApartmentGuard::initialize(config.com_apartment) {
-                Ok(apartment) => apartment,
-                Err(message) => {
-                    let _ = ready_tx.send(Err(DebugAttachError::WorkerFailed {
-                        stage: "com_initialize",
-                        message,
-                    }));
-                    return;
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                let apartment = match DebugComApartmentGuard::initialize(config.com_apartment) {
+                    Ok(apartment) => apartment,
+                    Err(message) => {
+                        let _ = ready_tx.send(Err(DebugAttachError::WorkerFailed {
+                            stage: "com_initialize",
+                            message,
+                        }));
+                        return;
+                    }
+                };
+                let runtime = match engine.compile_and_prepare_session(&manifest) {
+                    Ok(runtime) => runtime,
+                    Err(diagnostic) => {
+                        let _ = ready_tx.send(Err(DebugAttachError::Prepare {
+                            message: diagnostic.to_string(),
+                        }));
+                        return;
+                    }
+                };
+                let mut core = DebugSessionCore::new(engine, manifest, runtime);
+                let ordinal = NEXT_DEBUG_SESSION_ORDINAL.fetch_add(1, Ordering::Relaxed);
+                let session_id = DirectHostDebugSessionId::new(format!(
+                    "{}#{}",
+                    core.debug_session_id().as_str(),
+                    ordinal
+                ));
+                let output_tap = Arc::new(Mutex::new(Vec::new()));
+                let tap_buffer = output_tap.clone();
+                let _output_tap_guard = install_thread_output_tap(Arc::new(
+                    move |channel: HostOutputChannel, text: &str| {
+                        tap_buffer
+                            .lock()
+                            .expect("debug output tap buffer poisoned")
+                            .push((channel, text.to_string()));
+                    },
+                ));
+                let mut publisher =
+                    DebugEventPublisher::new(events, session_id.as_str().to_string(), output_tap);
+                for module in core.manifest().modules.iter() {
+                    publisher.publish(DebugEvent::ModuleLoaded {
+                        seq: 0,
+                        session_id: String::new(),
+                        module: DebugModuleView {
+                            name: module.module_name.clone(),
+                            path: None,
+                        },
+                    });
                 }
-            };
-            let runtime = match engine.compile_and_prepare_session(&manifest) {
-                Ok(runtime) => runtime,
-                Err(diagnostic) => {
-                    let _ = ready_tx.send(Err(DebugAttachError::Prepare {
-                        message: diagnostic.to_string(),
-                    }));
-                    return;
-                }
-            };
-            let mut core = DebugSessionCore::new(engine, manifest, runtime);
-            let session_id = core.debug_session_id().clone();
-            let output_tap = Arc::new(Mutex::new(Vec::new()));
-            let tap_buffer = output_tap.clone();
-            let _output_tap_guard = install_thread_output_tap(Arc::new(
-                move |channel: HostOutputChannel, text: &str| {
-                    tap_buffer
-                        .lock()
-                        .expect("debug output tap buffer poisoned")
-                        .push((channel, text.to_string()));
-                },
-            ));
-            let mut publisher =
-                DebugEventPublisher::new(events, session_id.as_str().to_string(), output_tap);
-            for module in core.manifest().modules.iter() {
-                publisher.publish(DebugEvent::ModuleLoaded {
+                publisher.publish(DebugEvent::ThreadStarted {
                     seq: 0,
                     session_id: String::new(),
-                    module: DebugModuleView {
-                        name: module.module_name.clone(),
-                        path: None,
-                    },
+                    thread_id: 1,
                 });
-            }
-            publisher.publish(DebugEvent::ThreadStarted {
-                seq: 0,
-                session_id: String::new(),
-                thread_id: 1,
-            });
-            if ready_tx.send(Ok(session_id)).is_err() {
+                if ready_tx.send(Ok(session_id)).is_err() {
+                    publisher.close();
+                    return;
+                }
+                run_command_loop(&mut core, commands_rx, &mut publisher, &apartment);
                 publisher.close();
-                return;
+            }));
+            if let Err(panic) = outcome {
+                let error = DebugError::WorkerFailed {
+                    stage: "panic",
+                    message: panic_message(panic),
+                };
+                if let Ok(mut failure) = worker_failure.lock() {
+                    *failure = Some(error);
+                }
             }
-            run_command_loop(&mut core, commands_rx, &mut publisher, &apartment);
-            publisher.close();
         })
         .map_err(|err| DebugAttachError::WorkerFailed {
             stage: "spawn",
@@ -112,6 +137,7 @@ pub(crate) fn spawn_debug_worker(
             session_id,
             commands: commands_tx,
             join,
+            failure,
         }),
         Ok(Err(err)) => {
             let _ = join.join();
@@ -318,6 +344,9 @@ fn handle_command(
             let _ = reply.send(Ok(apartment.report()));
             false
         }
+        DebugCommand::PanicWorker => {
+            panic!("debug worker panic requested for lifecycle coverage");
+        }
         DebugCommand::Shutdown(reply) => {
             let _ = reply.send(Ok(()));
             true
@@ -497,6 +526,16 @@ impl DebugEventPublisher {
                 thread_id,
             },
         }
+    }
+}
+
+fn panic_message(panic: Box<dyn std::any::Any + Send + 'static>) -> String {
+    if let Some(message) = panic.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = panic.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_string()
     }
 }
 

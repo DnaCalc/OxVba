@@ -24,6 +24,7 @@ struct HandleInner {
     session_id: DirectHostDebugSessionId,
     commands: Sender<DebugCommand>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
+    failure: Arc<Mutex<Option<DebugError>>>,
     events: DebugEventHub,
 }
 
@@ -41,6 +42,7 @@ impl DebugSessionHandle {
         session_id: DirectHostDebugSessionId,
         commands: Sender<DebugCommand>,
         worker: thread::JoinHandle<()>,
+        failure: Arc<Mutex<Option<DebugError>>>,
         events: DebugEventHub,
     ) -> Self {
         Self {
@@ -48,6 +50,7 @@ impl DebugSessionHandle {
                 session_id,
                 commands,
                 worker: Mutex::new(Some(worker)),
+                failure,
                 events,
             }),
         }
@@ -181,7 +184,29 @@ impl DebugSessionHandle {
         if outstanding > 0 {
             return Err(DebugError::OutstandingHandles { count: outstanding });
         }
-        self.request(DebugCommand::Shutdown)?;
+        self.shutdown_and_join()
+    }
+
+    #[doc(hidden)]
+    pub fn panic_worker_for_test(&self) -> Result<(), DebugError> {
+        self.inner
+            .commands
+            .send(DebugCommand::PanicWorker)
+            .map_err(|_| {
+                self.recorded_failure()
+                    .unwrap_or(DebugError::SessionAlreadyDetached)
+            })
+    }
+
+    fn shutdown_and_join(&self) -> Result<(), DebugError> {
+        match self.request(DebugCommand::Shutdown) {
+            Ok(()) | Err(DebugError::SessionAlreadyDetached) => {}
+            Err(err) => return Err(err),
+        }
+        self.join_worker()
+    }
+
+    fn join_worker(&self) -> Result<(), DebugError> {
         let join = self
             .inner
             .worker
@@ -194,6 +219,9 @@ impl DebugSessionHandle {
                 message: panic_message(panic),
             })?;
         }
+        if let Some(err) = self.recorded_failure() {
+            return Err(err);
+        }
         Ok(())
     }
 
@@ -201,15 +229,48 @@ impl DebugSessionHandle {
         &self,
         build: impl FnOnce(CommandReply<T>) -> DebugCommand,
     ) -> Result<T, DebugError> {
+        if let Some(err) = self.recorded_failure() {
+            return Err(err);
+        }
         let (reply_tx, reply_rx) = bounded(1);
         self.inner
             .commands
             .send(build(reply_tx))
-            .map_err(|_| DebugError::SessionAlreadyDetached)?;
-        reply_rx.recv().map_err(|_| DebugError::WorkerFailed {
-            stage: "reply",
-            message: "debug worker stopped before replying".to_string(),
+            .map_err(|_| self.error_after_worker_stopped(DebugError::SessionAlreadyDetached))?;
+        reply_rx.recv().map_err(|_| {
+            self.error_after_worker_stopped(DebugError::WorkerFailed {
+                stage: "reply",
+                message: "debug worker stopped before replying".to_string(),
+            })
         })?
+    }
+
+    fn error_after_worker_stopped(&self, fallback: DebugError) -> DebugError {
+        let _ = self.join_worker();
+        self.recorded_failure().unwrap_or(fallback)
+    }
+
+    fn recorded_failure(&self) -> Option<DebugError> {
+        self.inner
+            .failure
+            .lock()
+            .ok()
+            .and_then(|failure| failure.clone())
+    }
+}
+
+impl Drop for HandleInner {
+    fn drop(&mut self) {
+        if let Ok(mut worker) = self.worker.lock() {
+            if worker.is_some() {
+                let (reply_tx, reply_rx) = bounded(1);
+                let _ = self.commands.send(DebugCommand::Shutdown(reply_tx));
+                let _ = reply_rx.recv();
+                if let Some(join) = worker.take() {
+                    let _ = join.join();
+                }
+            }
+        }
     }
 }
 
