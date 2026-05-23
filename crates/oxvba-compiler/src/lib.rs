@@ -22,7 +22,8 @@ pub use emit::{
     bound_type_to_declare_param_type,
 };
 pub use project::{
-    CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
+    CompiledProject, CompilerLineMapping, CompilerModuleSourceMap, CompilerSourceLineKind,
+    CompilerSourceMap, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
     ProjectComWithEventsRoute, ProjectCompileError, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     ProjectEventDispatchBinding, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,

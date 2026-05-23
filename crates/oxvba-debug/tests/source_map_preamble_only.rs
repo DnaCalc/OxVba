@@ -1,9 +1,9 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: preamble-only module edge handled
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn preamble_only_module_has_no_executable_lines() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map("Option Explicit\nOption Compare Text");
+    assert_eq!(map.file_to_runtime("Module1", 1), Some(1));
+    assert!(map.executable_file_lines("Module1").is_empty());
 }

@@ -1,16 +1,19 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: only attribute drops; `Option Explicit` remains user-visible
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attribute_dropped_option_explicit_preserved() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map(
+        "Attribute VB_Name = \"Module1\"\nOption Explicit\nSub Main()\nEnd Sub",
+    );
+    assert_eq!(map.file_to_runtime("Module1", 1), None);
+    assert_eq!(map.file_to_runtime("Module1", 2), Some(1));
 }
 
-/// Owner: B08. Claim: `Option Compare` / `Option Base` preserve user identity
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn option_compare_and_option_base_are_preserved() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map =
+        support_source_map::debug_map("Option Compare Text\nOption Base 1\nSub Main()\nEnd Sub");
+    assert_eq!(map.file_to_runtime("Module1", 1), Some(1));
+    assert_eq!(map.file_to_runtime("Module1", 2), Some(2));
 }

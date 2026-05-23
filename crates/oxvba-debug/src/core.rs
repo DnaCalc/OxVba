@@ -16,6 +16,8 @@ use oxvba_host::{
 };
 use oxvba_host::{Engine, PhaseDiagnostic, ProjectRuntimeSession};
 
+use crate::source_map::DebugSourceMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebugFrameValueKind {
     Parameter,
@@ -181,6 +183,7 @@ pub struct DebugSessionCore {
     runtime_session_id: Option<DirectHostRuntimeSessionId>,
     manifest: ProjectManifest,
     runtime: ProjectRuntimeSession,
+    source_map: DebugSourceMap,
     watch_records: Vec<DebugWatchRecord>,
     breakpoint_records: Vec<DebugBreakpointRecord>,
     not_send_sync: PhantomData<Rc<()>>,
@@ -208,6 +211,7 @@ impl DebugSessionCore {
             debug_session_id: debug_session_id.into(),
             runtime_session_id,
             manifest,
+            source_map: DebugSourceMap::from_compiled_project(runtime.compiled()),
             runtime,
             watch_records: Vec::new(),
             breakpoint_records: Vec::new(),
@@ -253,6 +257,10 @@ impl DebugSessionCore {
 
     pub fn runtime_mut(&mut self) -> &mut ProjectRuntimeSession {
         &mut self.runtime
+    }
+
+    pub fn source_map(&self) -> &DebugSourceMap {
+        &self.source_map
     }
 
     pub fn command_status(&self) -> DebugSessionCommandStatus {
@@ -374,21 +382,26 @@ impl DebugSessionCore {
         line_number: usize,
     ) -> DebugBreakpointRecord {
         let module_name = module_name.into();
+        let runtime_line_number = self
+            .source_map
+            .file_to_runtime(&module_name, u32::try_from(line_number).unwrap_or(u32::MAX))
+            .map(|line| line as usize)
+            .unwrap_or(line_number);
         let breakpoint_id = DirectHostBreakpointId::new(format!(
             "{}:breakpoint:{}",
             self.debug_session_id.as_str(),
             self.breakpoint_records.len() + 1
         ));
         let (binding_status, unresolved_reason) =
-            self.bind_source_breakpoint(&module_name, line_number);
+            self.bind_source_breakpoint(&module_name, runtime_line_number);
         let record = DebugBreakpointRecord {
             breakpoint_id,
             module_name: module_name.clone(),
-            line_number,
+            line_number: runtime_line_number,
             enabled: true,
             binding_status,
             unresolved_reason,
-            source: self.source_span_for_module_line(&module_name, Some(line_number)),
+            source: self.source_span_for_module_line(&module_name, Some(runtime_line_number)),
             hit_count: 0,
         };
         self.breakpoint_records.push(record.clone());
@@ -735,9 +748,17 @@ impl DebugSessionCore {
         }
         let start_line = source_line_start.min(source_line_end);
         let end_line = source_line_start.max(source_line_end);
-        let (Ok(start_line), Ok(end_line)) =
-            (u32::try_from(start_line), u32::try_from(end_line + 1))
-        else {
+        let mapped_start = self
+            .source_map
+            .runtime_to_file(module_name, u32::try_from(start_line).unwrap_or(u32::MAX))
+            .unwrap_or_else(|| u32::try_from(start_line).unwrap_or(u32::MAX));
+        let mapped_end = self
+            .source_map
+            .runtime_to_file(module_name, u32::try_from(end_line).unwrap_or(u32::MAX))
+            .unwrap_or_else(|| u32::try_from(end_line).unwrap_or(u32::MAX));
+        let end_exclusive = mapped_end.saturating_add(1);
+        let (start_line, end_line) = (mapped_start, end_exclusive);
+        if start_line == u32::MAX || end_line == u32::MAX {
             return DirectHostSourceSpanStatus::unavailable(
                 DirectHostSourceUnavailableReason::NoSourceLocation,
             );

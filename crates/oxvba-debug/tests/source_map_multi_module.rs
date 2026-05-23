@@ -1,9 +1,31 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+use std::collections::BTreeMap;
 
-/// Owner: B08. Claim: per-module maps do not cross-contaminate
+use oxvba_compiler::{
+    ModuleKind, ProjectKind, ProjectManifest, compile_project, module_unit_from_source,
+};
+use oxvba_debug::DebugSourceMap;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn module_maps_are_independent() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let manifest = ProjectManifest {
+        project_name: "MultiMap".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            module_unit_from_source(
+                "Module1",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"Module1\"\nSub Main()\nEnd Sub",
+            )
+            .unwrap(),
+            module_unit_from_source("Module2", ModuleKind::Procedural, "Sub Helper()\nEnd Sub")
+                .unwrap(),
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    };
+    let compiled = compile_project(&manifest).expect("compile");
+    let map = DebugSourceMap::from_compiled_project(&compiled);
+    assert_eq!(map.file_to_runtime("Module1", 1), None);
+    assert_eq!(map.file_to_runtime("Module2", 1), Some(1));
 }

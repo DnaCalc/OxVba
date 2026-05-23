@@ -5182,7 +5182,9 @@ fn starts_with_call_name_ci(text: &str, name: &str) -> bool {
     text.trim_start()
         .get(..name.len())
         .is_some_and(|head| head.eq_ignore_ascii_case(name))
-        && text.trim_start()[name.len()..].trim_start().starts_with('(')
+        && text.trim_start()[name.len()..]
+            .trim_start()
+            .starts_with('(')
 }
 
 fn parse_varptr_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
@@ -5223,7 +5225,8 @@ fn parse_runtime_array_index_target(
         None => {
             let dynamic_bound_arg = args.iter().any(|arg| {
                 let trimmed = arg.trim();
-                (starts_with_call_name_ci(trimmed, "lbound") || starts_with_call_name_ci(trimmed, "ubound"))
+                (starts_with_call_name_ci(trimmed, "lbound")
+                    || starts_with_call_name_ci(trimmed, "ubound"))
                     && trimmed
                         .find('(')
                         .and_then(|open| trimmed.rfind(')').map(|close| (open, close)))

@@ -228,10 +228,83 @@ pub struct ProjectDynamicObjectRoute {
     pub implements_interfaces: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompilerSourceLineKind {
+    Preserved,
+    DroppedAttribute,
+    DroppedOptionPrivateModule,
+    DroppedImplements,
+    CompilerInsertedHelper,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompilerLineMapping {
+    pub file_line: u32,
+    pub runtime_line: Option<u32>,
+    pub kind: CompilerSourceLineKind,
+    pub executable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CompilerModuleSourceMap {
+    pub module_name: String,
+    pub lines: Vec<CompilerLineMapping>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CompilerSourceMap {
+    pub modules: BTreeMap<String, CompilerModuleSourceMap>,
+}
+
+impl CompilerModuleSourceMap {
+    pub fn file_to_runtime(&self, file_line: u32) -> Option<u32> {
+        self.lines
+            .iter()
+            .find(|line| line.file_line == file_line)
+            .and_then(|line| line.runtime_line)
+    }
+
+    pub fn runtime_to_file(&self, runtime_line: u32) -> Option<u32> {
+        self.lines
+            .iter()
+            .find(|line| line.runtime_line == Some(runtime_line))
+            .map(|line| line.file_line)
+    }
+
+    pub fn nearest_executable_file_line(&self, file_line: u32) -> Option<u32> {
+        self.lines
+            .iter()
+            .filter(|line| line.executable)
+            .min_by_key(|line| line.file_line.abs_diff(file_line))
+            .map(|line| line.file_line)
+    }
+
+    pub fn executable_file_lines(&self) -> Vec<u32> {
+        self.lines
+            .iter()
+            .filter(|line| line.executable)
+            .map(|line| line.file_line)
+            .collect()
+    }
+}
+
+impl CompilerSourceMap {
+    pub fn module(&self, module_name: &str) -> Option<&CompilerModuleSourceMap> {
+        self.modules
+            .get(&module_name.to_ascii_lowercase())
+            .or_else(|| {
+                self.modules
+                    .values()
+                    .find(|module| module.module_name.eq_ignore_ascii_case(module_name))
+            })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CompiledProject {
     pub bytecode: Bytecode,
     pub procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    pub source_maps: CompilerSourceMap,
     pub rewritten_source: String,
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
@@ -672,9 +745,11 @@ fn compile_project_with_strategy(
     let public_rewritten_source = rewritten_source
         .replace("__OxVbaEarlyInvoke", "DispatchInvoke")
         .replace("__oxvbaearlyinvoke", "dispatchinvoke");
+    let source_maps = build_compiler_source_map(manifest, &procedure_runtime_metadata);
     Ok(CompiledProject {
         bytecode,
         procedure_runtime_metadata,
+        source_maps,
         rewritten_source: public_rewritten_source,
         host_exports,
         reference_visible_exports,
@@ -682,6 +757,62 @@ fn compile_project_with_strategy(
         project_com_withevents_routes,
         project_dynamic_objects,
     })
+}
+
+fn build_compiler_source_map(
+    manifest: &ProjectManifest,
+    metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> CompilerSourceMap {
+    let mut modules = BTreeMap::new();
+    for module in &manifest.modules {
+        let executable: BTreeSet<u32> = metadata
+            .values()
+            .filter(|item| item.module_name.eq_ignore_ascii_case(&module.module_name))
+            .flat_map(|item| item.statement_line_numbers.iter().copied())
+            .filter_map(|line| u32::try_from(line).ok())
+            .collect();
+        let mut lines = Vec::new();
+        let mut runtime_line_counter = 0u32;
+        for (index, line) in module.source.lines().enumerate() {
+            let file_line = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            let trimmed = line.trim_start();
+            let kind = if trimmed.starts_with("Attribute ") {
+                CompilerSourceLineKind::DroppedAttribute
+            } else if trimmed.eq_ignore_ascii_case("Option Private Module") {
+                CompilerSourceLineKind::DroppedOptionPrivateModule
+            } else if trimmed.starts_with("Implements ") {
+                CompilerSourceLineKind::DroppedImplements
+            } else {
+                CompilerSourceLineKind::Preserved
+            };
+            let runtime_line = match kind {
+                CompilerSourceLineKind::Preserved => {
+                    runtime_line_counter = runtime_line_counter.saturating_add(1);
+                    Some(runtime_line_counter)
+                }
+                CompilerSourceLineKind::DroppedAttribute
+                | CompilerSourceLineKind::DroppedOptionPrivateModule
+                | CompilerSourceLineKind::DroppedImplements
+                | CompilerSourceLineKind::CompilerInsertedHelper => None,
+            };
+            lines.push(CompilerLineMapping {
+                file_line,
+                runtime_line,
+                kind,
+                executable: runtime_line
+                    .map(|line| executable.contains(&line))
+                    .unwrap_or(false),
+            });
+        }
+        modules.insert(
+            module.module_name.to_ascii_lowercase(),
+            CompilerModuleSourceMap {
+                module_name: module.module_name.clone(),
+                lines,
+            },
+        );
+    }
+    CompilerSourceMap { modules }
 }
 
 fn collect_predeclared_property_read_rewrite_routes(

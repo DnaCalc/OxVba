@@ -42,6 +42,7 @@ pub use events::{
     DebugEventRecvError, DebugOutputChannel,
 };
 pub use handle::{DebugSessionAttach, DebugSessionHandle};
+pub use source_map::DebugSourceMap;
 pub use views::{
     DebugBreakpointBindingStatusView, DebugBreakpointView, DebugExitView, DebugFrameView,
     DebugModuleView, DebugPauseView, DebugRunResultView, DebugSourceLocationView,

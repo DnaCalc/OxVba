@@ -1,9 +1,11 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: executable user lines satisfy inverse property
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn runtime_to_file_round_trips_executable_user_lines() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map("Sub Main()\nDim x As Long\nx = 1\nEnd Sub");
+    for line in map.executable_file_lines("Module1") {
+        let runtime = map.file_to_runtime("Module1", line).expect("runtime line");
+        assert_eq!(map.runtime_to_file("Module1", runtime), Some(line));
+    }
 }

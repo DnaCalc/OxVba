@@ -1,9 +1,9 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: blank lines preserve file-line identity where appropriate
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn blank_lines_are_preserved_in_file_mapping() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map("Sub Main()\n\nDim x As Long\nEnd Sub");
+    assert_eq!(map.file_to_runtime("Module1", 2), Some(2));
+    assert_eq!(map.runtime_to_file("Module1", 2), Some(2));
 }

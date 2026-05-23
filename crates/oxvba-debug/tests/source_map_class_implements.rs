@@ -1,9 +1,24 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+use oxvba_compiler::{
+    CompilerLineMapping, CompilerModuleSourceMap, CompilerSourceLineKind, CompilerSourceMap,
+};
+use oxvba_debug::DebugSourceMap;
+use std::collections::BTreeMap;
 
-/// Owner: B08. Claim: class `Implements` line does not surface as executable user line
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn class_implements_line_is_dropped() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let mut modules = BTreeMap::new();
+    modules.insert(
+        "class1".to_string(),
+        CompilerModuleSourceMap {
+            module_name: "Class1".to_string(),
+            lines: vec![CompilerLineMapping {
+                file_line: 1,
+                runtime_line: None,
+                kind: CompilerSourceLineKind::DroppedImplements,
+                executable: false,
+            }],
+        },
+    );
+    let map = DebugSourceMap::new(CompilerSourceMap { modules });
+    assert_eq!(map.file_to_runtime("Class1", 1), None);
 }

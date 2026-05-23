@@ -1,9 +1,9 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: `Attribute ...` lines are non-executable/dropped
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attribute_lines_are_dropped() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map("Attribute VB_Name = \"Module1\"\nSub Main()\nEnd Sub");
+    assert_eq!(map.file_to_runtime("Module1", 1), None);
+    assert_eq!(map.file_to_runtime("Module1", 2), Some(1));
 }

@@ -121,7 +121,7 @@ pub fn frame_view_from_core(frame: &DebugFrameVariant) -> DebugFrameView {
     DebugFrameView {
         id: frame.frame_id.as_str().to_string(),
         name: format!("{}::{}", frame.module_name, frame.procedure_name),
-        location: source_location_from_span_status(&frame.module_name, frame.source_line_start),
+        location: source_location_from_status(&frame.source),
     }
 }
 
@@ -136,15 +136,7 @@ pub fn pause_view_from_core(pause: &DebugPauseState) -> DebugPauseView {
         frame_id: current_frame
             .map(|frame| frame.frame_id.as_str().to_string())
             .unwrap_or_default(),
-        current_location: pause
-            .stop
-            .location
-            .line_number
-            .map(|line| DebugSourceLocationView {
-                module: pause.stop.location.module_name.clone(),
-                file_line: u32::try_from(line).unwrap_or(u32::MAX),
-                runtime_line: Some(u32::try_from(line).unwrap_or(u32::MAX)),
-            }),
+        current_location: source_location_from_status(&pause.current_source),
         frames: pause.frames.iter().map(frame_view_from_core).collect(),
     }
 }
@@ -153,7 +145,11 @@ pub fn breakpoint_view_from_core(record: &DebugBreakpointRecord) -> DebugBreakpo
     DebugBreakpointView {
         id: record.breakpoint_id.as_str().to_string(),
         module: record.module_name.clone(),
-        file_line: u32::try_from(record.line_number).unwrap_or(u32::MAX),
+        file_line: record
+            .source
+            .source_span()
+            .map(|span| span.start.line)
+            .unwrap_or_else(|| u32::try_from(record.line_number).unwrap_or(u32::MAX)),
         enabled: record.enabled,
         binding_status: match record.binding_status {
             DebugBreakpointBindingStatus::Bound => DebugBreakpointBindingStatusView::Bound,
@@ -219,15 +215,14 @@ fn value_kind_from_core(value: &DebugFrameVariantValue) -> DebugValueKindView {
     }
 }
 
-fn source_location_from_span_status(module: &str, line: usize) -> Option<DebugSourceLocationView> {
-    let line = u32::try_from(line).ok()?;
-    if line == 0 {
-        return None;
-    }
+fn source_location_from_status(
+    status: &oxvba_host::DirectHostSourceSpanStatus,
+) -> Option<DebugSourceLocationView> {
+    let span = status.source_span()?;
     Some(DebugSourceLocationView {
-        module: module.to_string(),
-        file_line: line,
-        runtime_line: Some(line),
+        module: span.document_id.as_str().to_string(),
+        file_line: span.start.line,
+        runtime_line: Some(span.start.line),
     })
 }
 

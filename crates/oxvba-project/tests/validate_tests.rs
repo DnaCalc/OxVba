@@ -27,6 +27,7 @@ fn make_compiled_project(
             user_slot_count: 0,
         },
         procedure_runtime_metadata: metadata,
+        source_maps: oxvba_compiler::CompilerSourceMap::default(),
         rewritten_source: String::new(),
         host_exports,
         reference_visible_exports: Vec::new(),

@@ -1,9 +1,9 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_source_map/mod.rs"]
+mod support_source_map;
 
-/// Owner: B08. Claim: generated helper lines never surface as editor locations
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn compiler_inserted_helper_lines_are_non_user() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let map = support_source_map::debug_map("Sub Main()\nDim x As Long\nx = 1\nEnd Sub");
+    assert_eq!(map.runtime_to_file("__OxVbaGenerated", 1), None);
+    assert!(!map.executable_file_lines("Module1").contains(&0));
 }

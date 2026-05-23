@@ -1633,6 +1633,7 @@ impl Engine {
         let compiled = CompiledProject {
             bytecode: bundle.bytecode.clone(),
             procedure_runtime_metadata: bundle.procedure_metadata.clone(),
+            source_maps: oxvba_compiler::CompilerSourceMap::default(),
             rewritten_source: String::new(),
             host_exports: bundle
                 .export_inventory
