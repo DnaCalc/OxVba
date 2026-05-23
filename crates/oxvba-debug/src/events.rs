@@ -278,6 +278,22 @@ impl DebugEventReceiver {
         }
     }
 
+    #[cfg(feature = "tokio")]
+    pub async fn recv_async(&self) -> Result<DebugEvent, DebugEventRecvError> {
+        let receiver = self.clone();
+        tokio::task::spawn_blocking(move || receiver.recv())
+            .await
+            .map_err(|_| DebugEventRecvError::Disconnected)?
+    }
+
+    #[cfg(feature = "tokio")]
+    pub async fn recv_delivery_async(&self) -> Result<DebugEventDelivery, DebugEventRecvError> {
+        let receiver = self.clone();
+        tokio::task::spawn_blocking(move || receiver.recv_delivery())
+            .await
+            .map_err(|_| DebugEventRecvError::Disconnected)?
+    }
+
     pub fn try_recv(&self) -> Result<DebugEvent, TryRecvError> {
         loop {
             match self.try_recv_delivery() {

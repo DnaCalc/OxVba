@@ -1,9 +1,14 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#![cfg(feature = "tokio")]
 
-/// Owner: B10. Claim: async event wrapper preserves event sequence
-#[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
-fn tokio_event_receiver_observes_same_sequence_as_sync_receiver() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+#[path = "support_handle/mod.rs"]
+mod support_handle;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tokio_event_receiver_observes_same_sequence_as_sync_receiver() {
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let receiver = attach.handle.subscribe();
+    let _ = attach.handle.start_async().await.expect("start");
+    let event = receiver.recv_async().await.expect("event");
+    assert_eq!(event.seq(), 3);
+    attach.handle.detach_async().await.expect("detach");
 }

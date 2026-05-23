@@ -1,9 +1,15 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#![cfg(feature = "tokio")]
 
-/// Owner: B10. Claim: async wrapper returns same typed result as sync path
-#[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
-fn step_into_async_matches_sync_step_into() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+#[path = "support_handle/mod.rs"]
+mod support_handle;
+
+use oxvba_debug::DebugRunResultView;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn step_into_async_matches_sync_step_into() {
+    let handle = support_handle::attach_handle();
+    let _ = handle.start_async().await.expect("start");
+    let result = handle.step_into_async().await.expect("step into");
+    assert!(matches!(result, DebugRunResultView::Paused(_)));
+    handle.detach_async().await.expect("detach");
 }
