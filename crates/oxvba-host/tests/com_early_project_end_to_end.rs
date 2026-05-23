@@ -618,10 +618,20 @@ fn load_typelib_basproj_with_ref_specs(
     main_source: &str,
     com_refs: &[BasprojComRefSpec<'_>],
 ) -> oxvba_project::LoadedProject {
+    let unique_leaf = format!(
+        "{}-{}-{:?}-{}",
+        temp_leaf,
+        std::process::id(),
+        std::thread::current().id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
     let temp_root = std::env::current_dir()
         .expect("cwd")
         .join("temp")
-        .join(temp_leaf);
+        .join(unique_leaf);
     std::fs::create_dir_all(&temp_root).expect("create temp root");
 
     let basproj_path = temp_root.join("ProjectA.basproj");
