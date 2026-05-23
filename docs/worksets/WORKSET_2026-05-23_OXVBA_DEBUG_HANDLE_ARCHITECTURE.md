@@ -20,13 +20,15 @@ editor would reinvent the same bridge with the same `unsafe impl Send`
 justifications, the same COM-apartment story, and the same lifecycle plumbing
 - in every consumer.
 
-This workset stands up a new `oxvba-debug` crate whose `DebugSessionHandle` is
-the single consumer-facing API: `Send + Sync + 'static`, cheap to clone, owning
-a worker thread that holds the `!Send` debug state, exposing the full step /
-breakpoint / watch / inspect surface plus a first-class event stream
-(`Stopped` / `Output` / `Continued` / `Exited` / ...). Multiple consumers
-(OxIde in Tauri managed state, an in-process embedder, a future `oxvba-dap`
-server) share one architecture instead of each inventing the same scaffolding.
+This workset stands up a new `oxvba-debug` crate as the long-term debugger
+home. It owns both the raw stateful debugger core and the consumer-facing
+`DebugSessionHandle`. The handle is `Send + Sync + 'static`, cheap to clone,
+and owns a worker thread that holds explicitly `!Send` debug state. The crate
+exposes the full step / breakpoint / watch / inspect surface plus a
+first-class event stream (`Stopped` / `Output` / `Continued` / `Exited` /
+...). Multiple consumers (OxIde in Tauri managed state, an in-process
+embedder, a future `oxvba-dap` server) share one architecture instead of each
+inventing the same scaffolding.
 
 The "right interface shape" is the three-layer model:
 
@@ -37,7 +39,7 @@ Layer 3   protocol adapters (oxvba-dap, oxvba-cli debug, ...)   <-- separate wor
 Layer 2   DebugSessionHandle (Send + Sync handle + worker + events)  <-- this workset
               |
               v wraps a worker thread that owns
-Layer 1   DebugSessionCore (today's oxvba_host::DebugSession)   <-- mostly unchanged
+Layer 1   DebugSessionCore (moved from oxvba_host::DebugSession)  <-- this workset
 ```
 
 `oxvba-dap` (Layer 3) is a distinct workset/crate layered on top of
@@ -48,27 +50,36 @@ design decision here is made with DAP as a first-class consumer.
 
 `oxvba-debug` owns:
 
+- The raw stateful debugger core (`DebugSessionCore`), moved out of
+  `oxvba-host::debugger` and made explicitly `!Send` / `!Sync`.
+- All debugger-domain records and requests
+  (`DebugWatchRecord/Evaluation/Status`,
+  `DebugBreakpointRecord/BindingStatus/UnresolvedReason`,
+  `DebugPauseState`, `DebugFrame*`, `DebugEvaluationRequest`,
+  `DebugSessionCommandStatus`, core run-result types).
 - The consumer-facing `DebugSessionHandle` (Send + Sync, Arc-clone, lifecycle).
 - The worker thread, command marshalling channel, event broadcast stream, and
   COM apartment management.
 - The public debug-domain DTOs (`DebugPauseView`, `DebugBreakpointView`,
   `DebugWatchView`, `DebugFrameView`, `DebugValueView`, `DebugEvent`, ...) -
   these become the canonical types every consumer reads.
-- The file-line <-> compiled-source-line mapping (currently in OxIde; moves
-  here so all consumers benefit, not just OxIde).
+- Debug source-map consumption for editor file lines <-> VM/runtime lines;
+  the compiler emits the map and `oxvba-debug` applies it so every consumer
+  benefits, not just OxIde.
 - The async `*_async` surface (feature-gated tokio).
-- The `attach_debug_session(engine, manifest, config) -> DebugSessionHandle`
-  entry point.
+- The `prepare_debug_session_core(engine, manifest, config)` raw entry point
+  and `attach_debug_session(engine, manifest, config)` handle entry point.
 
 `oxvba-host` keeps:
 
-- `Engine`, `HostConfig`, `prepare_debug_session(&manifest)` (today's raw
-  stateful core, used as the worker's internal core). The borrowing
-  `DebugSession<'engine>` stays in `oxvba-host` to avoid a circular dep
-  (`oxvba-debug` depends on `oxvba-host` for `Engine`; we don't want the
-  reverse).
+- `Engine`, `HostConfig`, `ProjectRuntimeSession`, and runtime preparation
+  (`compile_and_prepare_session`, plus the minimal public debug-runtime
+  primitive methods needed by `oxvba-debug` to drive VM debug execution).
 - `EmbeddedBuildRunHost`, `ProjectManifest` re-exports, all runtime-hosting
   surfaces unrelated to debug.
+- No dependency on `oxvba-debug`. `oxvba-host::debugger` is deleted or reduced
+  to a short migration note; it must not re-export `oxvba-debug`, because that
+  would create the crate cycle this workset is explicitly removing.
 
 `oxvba-vm` keeps the VM-internal primitives (`DebugStop`, `DebugStopReason`,
 `DebugRunResult`) it already owns; `oxvba-debug` projects them into the public
@@ -87,27 +98,30 @@ Out of scope (separate worksets):
 
 ## Status Terms
 
-- `available`: exposed by `oxvba_host::DebugSession` today; re-projected in
-  `oxvba-debug` with no semantic change.
+- `available`: exposed by `oxvba_host::DebugSession` today; moved or
+  re-projected in `oxvba-debug` with no semantic change.
 - `new-in-this-workset`: net-new surface created by `oxvba-debug` (handle,
   events, async, etc.).
-- `moved`: type or function lives in `oxvba-debug` after this workset; old
-  location may re-export for one release before being deleted.
+- `moved`: type or function lives in `oxvba-debug` after this workset. Old
+  `oxvba-host` imports are a source migration, not a re-export, because the
+  new crate graph intentionally has no `oxvba-host -> oxvba-debug` edge.
 
 ## Architecture: layer boundaries and crate dependencies
 
 ```
                 +-------------------+
                 |   oxvba-debug     |   <-- new
-                |   (Layer 2 +      |
-                |    public DTOs)   |
+                |   (Layer 1 core + |
+                |    Layer 2 handle |
+                |    + public DTOs) |
                 +---------+---------+
                           |
                           v
                 +---------+---------+
-                |   oxvba-host      |   <-- unchanged
-                |   (Engine, core,  |
-                |    runtime)       |
+                |   oxvba-host      |
+                |   (Engine, runtime|
+                |    preparation +  |
+                |    debug VM ops)  |
                 +---------+---------+
                           |
                           v
@@ -120,57 +134,85 @@ Out of scope (separate worksets):
 ```
 
 `oxvba-debug` depends on `oxvba-host`, `oxvba-vm`, `oxvba-runtime` (for
-Variant types in view projections), and `oxvba-compiler` (for
-`ProjectManifest`). No reverse deps.
+Variant types in core projections), and `oxvba-compiler` (for
+`ProjectManifest` and source-map data). No reverse deps.
+
+The host/debug boundary is intentionally narrow: `oxvba-host` prepares
+`ProjectRuntimeSession` values and exposes low-level debug runtime operations
+on that session; `oxvba-debug` owns debugger state, source mapping,
+breakpoint/watch registries, pause/value projection, eventing, and handle
+lifecycle.
 
 ## Crate-relocation map
 
 | Surface | Today (oxvba-host) | After this workset |
 |---|---|---|
-| `Engine`, `HostConfig`, `prepare_debug_session` | `oxvba-host` | `oxvba-host` (unchanged) |
-| `DebugSession<'engine>` (the borrow-bound core) | `oxvba-host::debugger` | `oxvba-host::debugger` (kept; the worker holds one) |
-| `DebugWatchRecord/Evaluation/Status` | `oxvba-host::debugger` | `oxvba-debug::watches` (re-exported from `oxvba-host` for one release) |
-| `DebugBreakpointRecord/BindingStatus/UnresolvedReason` | `oxvba-host::debugger` | `oxvba-debug::breakpoints` (re-exported) |
-| `DebugVariantPauseState`, `DebugFrameVariant*` | `oxvba-host::debugger` | `oxvba-debug::frames` (re-exported) |
-| `HostDebugVariantRunResult`, `DebugSessionError`, `DebugEvaluationRequest`, `DebugVariantEvaluationResult`, `DebugSessionCommandStatus` | `oxvba-host::debugger` | `oxvba-debug::*` (re-exported) |
+| `Engine`, `HostConfig`, runtime preparation | `oxvba-host` | `oxvba-host` (unchanged owner) |
+| Low-level debug VM ops on `ProjectRuntimeSession` | `oxvba-host` internals / `oxvba-host::debugger` callers | `oxvba-host` public narrow API consumed by `oxvba-debug` |
+| `DebugSession<'engine>` (borrow-bound core) | `oxvba-host::debugger` | removed; replaced by owned `oxvba-debug::DebugSessionCore` |
+| `DebugWatchRecord/Evaluation/Status` | `oxvba-host::debugger` | `oxvba-debug::watches` |
+| `DebugBreakpointRecord/BindingStatus/UnresolvedReason` | `oxvba-host::debugger` | `oxvba-debug::breakpoints` |
+| `DebugVariantPauseState`, `DebugFrameVariant*` | `oxvba-host::debugger` | `oxvba-debug::frames` |
+| `HostDebugVariantRunResult`, `DebugSessionError`, `DebugEvaluationRequest`, `DebugVariantEvaluationResult`, `DebugSessionCommandStatus` | `oxvba-host::debugger` | `oxvba-debug::*` |
 | Public view DTOs (Send+Sync projections) | n/a | `oxvba-debug::views` (new) |
 | `DebugSessionHandle`, `attach_debug_session`, events, worker | n/a | `oxvba-debug` (new) |
-| File-line <-> compiled-source-line mapping | (currently in OxIde adapter) | `oxvba-debug::line_mapping` (move) |
+| File-line <-> runtime-line source maps | partly in OxIde adapter / implicit compiler metadata | `oxvba-compiler` emits maps; `oxvba-debug::source_map` consumes them |
 
 ## Public API sketch (binding contract for downstream worksets)
 
 ```rust
 // crates/oxvba-debug/src/lib.rs
 
+use std::sync::Arc;
+
+pub use core::{DebugSessionCore, DebugCoreConfig, DebugCoreRunResult};
+pub use records::{DebugBreakpointRecord, DebugWatchRecord, DebugEvaluationRequest,
+                  DebugSessionCommandStatus};
 pub use views::{DebugPauseView, DebugBreakpointView, DebugWatchView,
-                DebugFrameView, DebugValueView, DebugStopReasonView};
+                DebugFrameView, DebugValueView, DebugStopReasonView,
+                DebugRunResultView, DebugExitView};
 pub use events::{DebugEvent, DebugEventReceiver};
 pub use errors::{DebugAttachError, DebugError};
-pub use config::{DebugAttachConfig, DebugComApartment, DebugEventChannelMode};
+pub use config::{DebugAttachConfig, DebugComApartment, DebugEventChannelMode,
+                 DebugStartMode};
+
+pub fn prepare_debug_session_core(
+    engine: Arc<Engine>,
+    manifest: ProjectManifest,
+    config: DebugCoreConfig,
+) -> Result<DebugSessionCore, DebugAttachError>;
 
 pub fn attach_debug_session(
-    engine: &Engine,
+    engine: Arc<Engine>,
     manifest: ProjectManifest,
     config: DebugAttachConfig,
-) -> Result<DebugSessionHandle, DebugAttachError>;
+) -> Result<DebugSessionAttach, DebugAttachError>;
+
+pub struct DebugSessionAttach {
+    pub handle: DebugSessionHandle,
+    // Created before the worker emits startup events, so attach-time
+    // ModuleLoaded / ThreadStarted / Stopped events are observable.
+    pub events: DebugEventReceiver,
+}
 
 #[derive(Clone)]
 pub struct DebugSessionHandle { /* Arc<HandleInner> */ }
 
-// SAFETY: the !Send DebugSessionCore lives exclusively on the worker thread,
-// which is created in `attach_debug_session` and joined on shutdown. Callers
-// communicate only through the channel; no field of the handle's Inner is ever
-// dereferenced off the worker thread.
-unsafe impl Send for DebugSessionHandle {}
-unsafe impl Sync for DebugSessionHandle {}
+// No unsafe Send/Sync impl is permitted for the handle. The handle is Send +
+// Sync only if its concrete fields (channels, atomics, mutex-protected join
+// handle, immutable ids) make it so. `DebugSessionCore` is made explicitly
+// !Send / !Sync (for example with a private `PhantomData<Rc<()>>`) and is
+// constructed inside the worker thread.
 
 impl DebugSessionHandle {
     // --- stepping
-    pub fn step_into(&self) -> Result<DebugPauseView, DebugError>;
-    pub fn step_over(&self) -> Result<DebugPauseView, DebugError>;
-    pub fn step_out(&self)  -> Result<DebugPauseView, DebugError>;
-    pub fn continue_execution(&self) -> Result<DebugPauseView, DebugError>;
-    pub fn pause(&self) -> Result<DebugPauseView, DebugError>;  // future: cooperative pause
+    pub fn start(&self) -> Result<DebugRunResultView, DebugError>;
+    pub fn step_into(&self) -> Result<DebugRunResultView, DebugError>;
+    pub fn step_over(&self) -> Result<DebugRunResultView, DebugError>;
+    pub fn step_out(&self)  -> Result<DebugRunResultView, DebugError>;
+    pub fn continue_execution(&self) -> Result<DebugRunResultView, DebugError>;
+    // Cooperative pause is not part of v1; do not publish a stub that always
+    // fails. Add it when the VM can actually pause a running evaluation.
 
     // --- breakpoints
     pub fn set_source_breakpoint(&self, module: &str, file_line: u32, enabled: bool)
@@ -191,6 +233,7 @@ impl DebugSessionHandle {
 
     // --- frame / value inspection
     pub fn current_pause(&self) -> Result<Option<DebugPauseView>, DebugError>;
+    pub fn stack_frames(&self) -> Result<Vec<DebugFrameView>, DebugError>;
     pub fn frame_locals(&self, frame: &DirectHostStackFrameId)
         -> Result<Vec<DebugValueView>, DebugError>;
     pub fn evaluate(&self, frame: Option<&DirectHostStackFrameId>, expression: &str)
@@ -205,12 +248,13 @@ impl DebugSessionHandle {
 
     // --- async wrappers (feature = "tokio")
     #[cfg(feature = "tokio")]
-    pub async fn step_into_async(&self) -> Result<DebugPauseView, DebugError>;
+    pub async fn step_into_async(&self) -> Result<DebugRunResultView, DebugError>;
     // ... and so on for every command above.
 }
 
 pub enum DebugEvent {
     Stopped {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         reason: DebugStopReasonView,
         thread_id: Option<u32>,            // future; today always None / 0
@@ -218,27 +262,34 @@ pub enum DebugEvent {
         location: Option<DebugSourceLocationView>,
     },
     Output {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         channel: DebugOutputChannel,        // Stdout | Stderr | Host (Debug.Print)
         text: String,
     },
     Continued {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         all_threads_continued: bool,        // DAP-friendly
     },
     Exited {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         exit_code: Option<i32>,
     },
     BreakpointChanged {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
+        change: DebugBreakpointChangeKind,  // Added | Changed | Removed
         breakpoint: DebugBreakpointView,
     },
     ModuleLoaded {
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         module: DebugModuleView,
     },
     ThreadStarted {                         // forward-looking; today always for the primary thread
+        seq: u64,
         session_id: DirectHostDebugSessionId,
         thread_id: u32,
     },
@@ -246,9 +297,9 @@ pub enum DebugEvent {
 
 pub struct DebugAttachConfig {
     pub com_apartment: DebugComApartment,   // Sta (Windows default) | Mta | None
-    pub event_channel: DebugEventChannelMode, // Bounded(n) | Unbounded
-    pub stop_on_entry: bool,
-    pub source_policy: EmbeddedExecutionSourcePolicy,
+    pub event_channel: DebugEventChannelMode, // default Bounded(256); opt-in Unbounded
+    pub start_mode: DebugStartMode,         // Manual | StopOnEntry
+    pub output_capture: DebugOutputCaptureMode,
 }
 
 pub enum DebugError {
@@ -257,6 +308,9 @@ pub enum DebugError {
     UnknownWatch(DirectHostWatchId),
     UnknownFrame(DirectHostStackFrameId),
     Evaluation { expression: String, message: String },
+    Completed,
+    UnsupportedCommand(&'static str),
+    OutstandingHandles { count: usize },
     SessionAlreadyDetached,
     WorkerFailed { stage: &'static str, message: String },
     Internal(String),                       // unexpected; always recorded
@@ -269,21 +323,41 @@ flow trivially through DAP JSON, Tauri IPC, or any other transport.
 ## Threading & COM apartment model
 
 - Each `attach_debug_session` spawns exactly **one** worker thread.
-- That worker owns the `Engine` (or holds it from the caller, lifetime-pinned
-  via the handle's Arc) and the `DebugSessionCore<'engine>`. The core never
-  crosses thread boundaries.
+- Callers pass `Arc<Engine>`, not `&Engine`. The worker constructs and owns
+  `DebugSessionCore` inside the worker thread by calling `oxvba-host` runtime
+  preparation APIs. No borrowed `Engine` lifetime is smuggled into a
+  `'static` handle.
+- `DebugSessionCore` owns `Arc<Engine>`, `ProjectManifest`,
+  `ProjectRuntimeSession`, breakpoint/watch registries, source maps, and the
+  last pause state. It is explicitly `!Send` / `!Sync`; only transport-ready
+  view values and command replies cross the worker boundary.
 - On Windows, if `config.com_apartment == Sta`, the worker calls
   `CoInitializeEx(NULL, COINIT_APARTMENTTHREADED)` on startup and
   `CoUninitialize` on shutdown. This is the **correct** placement of COM
   apartment management - the runtime knows its semantics, consumers don't have
   to. (Mta and None are also supported; tests cross-platform via None.)
-- Commands marshal through a `crossbeam_channel::unbounded::<DebugCommand>()`
-  (sync) or `tokio::sync::mpsc` (async path). Each command carries a
-  `oneshot::Sender<Result<DebugReply, DebugError>>` for the response.
-- Events are broadcast through `tokio::sync::broadcast` (or `crossbeam`-based
-  multi-producer multi-consumer fanout for the sync-only build). Subscribers
-  joining late get future events; replay is **not** automatic (consumers that
-  need an event log keep their own).
+- The v1 STA path is valid for synchronous in-apartment COM work. Any future
+  cross-apartment callback, connection-point event sink, or COM event pump lane
+  must replace blocking channel waits with a pumped wait loop
+  (`MsgWaitForMultipleObjects`-style on Windows) so STA messages are serviced.
+  Until that lands, hosts that need COM callbacks should use `Mta` or `None`
+  unless they provide an external pump around the worker.
+- Commands marshal through one sync worker channel
+  (`crossbeam_channel::Sender<DebugCommand>`). Sync methods block on the reply;
+  async methods send to the same worker and await a tokio oneshot on the
+  caller side. There is one serialization path, not a separate async worker.
+- Events are broadcast through an internal event hub. The initial receiver
+  returned in `DebugSessionAttach` is registered before the worker emits
+  startup events. Later `handle.subscribe()` calls receive future events only;
+  replay is **not** automatic unless a future explicit replay feature is added.
+- `DebugAttachConfig::default()` uses `DebugEventChannelMode::Bounded(256)`.
+  Bounded mode is drop-oldest with a typed lag/drop signal for slow
+  subscribers. `Unbounded` is available for controlled tests or embeddings that
+  explicitly own the memory-growth risk.
+- Every event carries a monotonic `seq`. When a command both emits an event and
+  returns a reply, the worker sends the event first, then the reply. Tests
+  assert that ordering by `seq` and by receiver availability, not by scheduler
+  timing assumptions.
 - Concurrent caller commands serialize at the channel; the worker processes
   them sequentially. This matches the VM's single-threaded execution model.
 - Handle clones share one worker via `Arc<HandleInner>`. Last `Arc` drop
@@ -293,11 +367,12 @@ flow trivially through DAP JSON, Tauri IPC, or any other transport.
 
 Tests live at five levels, each owned by a specific bead's deliverables:
 
-### Layer 1 - Core (`oxvba-host::DebugSession`) regression
-Existing OxVba `DebugSession` tests stay in `oxvba-host/tests/`. After the
-type-move bead (B03), they import from `oxvba-debug::*` or via re-export, but
-their semantics are pinned: no behavior change at this layer is allowed by
-this workset.
+### Layer 1 - Core (`oxvba-debug::DebugSessionCore`) regression
+Existing OxVba `DebugSession` tests move from `oxvba-host` to
+`oxvba-debug/tests/core_*.rs` during the core-move bead (B03). Their semantics
+are pinned: the moved core must preserve current stepping, breakpoint, watch,
+pause, and retained-Variant behavior before handle work is layered on top.
+`oxvba-host` keeps only runtime-preparation and debug-runtime primitive tests.
 
 ### Layer 2 - Handle behavior (`oxvba-debug/tests/handle_*.rs`)
 Each handle method has a happy-path test that exercises:
@@ -305,22 +380,25 @@ Each handle method has a happy-path test that exercises:
 - assert the returned view types are `Send + Sync` (via `static_assertions`)
 - assert handle methods serialize correctly across multiple caller threads
   (spawn N threads, each issues commands; record observed serialization).
+- assert normal completion returns `DebugRunResultView::Exited`, not an error
+  and not a fake pause.
 
 ### Layer 2 - Events (`oxvba-debug/tests/events_*.rs`)
 For every event variant, drive an action that should produce it and assert
 the subscriber receives the right event in the right order. Test:
-- single subscriber sees all events from attach onward
+- initial receiver returned from attach sees startup events
+- late subscriber sees only future events
 - multiple subscribers see the same stream
-- slow subscriber doesn't block worker (event channel either drops oldest or
-  applies back-pressure; tested both modes)
+- slow subscriber doesn't block worker; bounded mode reports lag/drop state
 - subscriber drop is safe; worker continues
-- event ordering: Stopped before any subsequent command response
+- event ordering: worker assigns `Stopped` a lower `seq` before the command
+  response completes
 
 ### Layer 2 - Lifecycle (`oxvba-debug/tests/lifecycle_*.rs`)
 - attach failure (bad manifest, compile error): worker doesn't start; handle
   not returned; resources cleaned
-- attach success then explicit `detach()`: worker joins, no leak (verified by
-  thread count and resource counters)
+- attach success then explicit `detach()` on the last handle clone: worker
+  joins, no leak (verified by thread count and resource counters)
 - attach then drop all handle clones: implicit detach
 - attach, command in flight, then drop handle: in-flight command returns
   `SessionAlreadyDetached`
@@ -333,36 +411,39 @@ the subscriber receives the right event in the right order. Test:
   matches channel arrival order; no data races (verified under
   `RUSTFLAGS="-Z sanitizer=thread"` in CI)
 - 100 concurrent sessions: each independent; no cross-talk
-- compile-fail test: `assert_impl_all!(DebugSessionHandle: Send, Sync, Clone)`;
-  `assert_not_impl_any!(DebugSessionCore<'_>: Send)` (negation pin)
+- compile-fail/static assertion tests:
+  `assert_impl_all!(DebugSessionHandle: Send, Sync, Clone)`;
+  `assert_not_impl_any!(DebugSessionCore: Send, Sync)`. No unsafe Send/Sync
+  impl for the handle is allowed.
 
 ### Layer 2 - COM apartment (`oxvba-debug/tests/com_apartment_*.rs`)
 - `com_apartment = Sta` on Windows: worker successfully initializes STA;
-  CoUninitialize on shutdown; test asserts via `CoGetApartmentType`
-- `com_apartment = Mta`: MTA init verified
+  worker-thread report verifies STA; CoUninitialize on shutdown
+- `com_apartment = Mta`: worker-thread report verifies MTA
 - `com_apartment = None`: no COM call (test runs on Linux too)
 - multiple sessions: each worker independent apartment
 
-### Layer 2 - Line mapping (`oxvba-debug/tests/line_mapping_*.rs`)
-- bare source (no preamble): offset = 0; file_line == oxvba_line
-- single `Attribute VB_Name = "..."`: offset = 1
-- `Attribute` + `Option Explicit`: offset = 2 (canonical thin-slice)
-- combinations: `Attribute` + `Option Explicit` + `Option Compare Text` +
-  `Option Base 1` + `Option Private Module`: offset = 5
-- blank lines preserved (not counted in offset)
-- comment lines (`'`, `Rem `): preserved
-- property: `oxvba_to_file(file_to_oxvba(N)) == N` for any N in the proc body
+### Layer 2 - Source mapping (`oxvba-debug/tests/source_map_*.rs`)
+- bare source: editor lines map identity to runtime lines
+- `Attribute ...`, `Option Private Module`, and class `Implements` lines are
+  dropped and mapped as non-executable user lines
+- `Option Explicit`, `Option Compare`, `Option Base`, blank lines, and comment
+  lines are preserved with correct user-line identity
+- compiler-inserted helper lines are marked non-user and never surface as
+  editor locations
+- property: `runtime_to_file(file_to_runtime(N)) == N` for executable user
+  lines in the proc body
 - cross-module: each module computed independently against its own source
 - edge: empty module
 - edge: module with only preamble (no proc)
 
 ### Layer 2 - Async surface (`oxvba-debug/tests/async_*.rs`, feature = "tokio")
-- `step_into_async()` returns a Future resolving to the same value as the
-  sync `step_into()`
+- `step_into_async()` returns a Future resolving to the same
+  `DebugRunResultView` as the sync `step_into()`
 - concurrent async commands (5 spawned tasks) serialize at the worker
 - cancellation: dropping the future before completion does not break the
   worker (next sync command succeeds)
-- async event subscription using `tokio::sync::broadcast::Receiver`
+- async event subscription uses the tokio wrapper over the same event sequence
 
 ### Layer 2 - Property / replay (`oxvba-debug/tests/property_*.rs`)
 - proptest: random sequences of (attach, set_bp, step*, continue, watch ops,
@@ -383,20 +464,20 @@ Two canonical scenarios that mirror real consumers, ensuring the contract
 covers their needs:
 
 **Scenario A - DAP-style flow** (mirrors what `oxvba-dap` will do):
-1. attach
+1. attach and retain the initial `DebugEventReceiver`
 2. setBreakpoints(Module1, [line 6])
-3. on event Stopped(reason=Entry): assert frame_id, location
+3. on event Stopped(reason=Entry): assert frame_id, location, monotonic seq
 4. continueExecution
 5. on event Stopped(reason=Breakpoint): assert breakpoint id, line
 6. stackTrace -> assert frame list with real ids
 7. scopes(frame_id) -> not in this workset; locals via `frame_locals`
 8. evaluate(frame_id, "answer") -> assert value
 9. continueExecution
-10. on event Exited: assert exit_code
+10. on event Exited: assert exit_code and command result `Exited`
 11. detach
 
 **Scenario B - OxIde cockpit flow** (mirrors what OxIde will do post-migration):
-1. attach (project = thin-slice)
+1. attach (project = thin-slice) and retain the initial event receiver
 2. add_watch("answer")
 3. set_source_breakpoint(Module1, 6, enabled=true)
 4. continue_execution -> Stopped(Breakpoint) at line 6
@@ -422,9 +503,9 @@ Goal:
 Design:
   - `docs/spec/OXVBA_DEBUG_HANDLE_DESIGN.md`: full design doc covering layer
     diagram, public API (binding contract from this workset), event taxonomy,
-    lifecycle, COM apartment policy, async surface, error model, downstream
-    migration story (OxIde and `oxvba-dap` first), backward-compat strategy
-    for the type-move (re-exports, deprecation window).
+    lifecycle, COM apartment policy, async surface, error model, source-map
+    contract, downstream migration story (OxIde and `oxvba-dap` first), and
+    the deliberate source-level migration away from `oxvba-host::debugger`.
   - `docs/spec/OXVBA_DEBUG_TEST_CATALOG.md`: the cross-layer test catalog
     (this document's "Testing strategy" section, expanded with concrete test
     names mapped to beads).
@@ -446,12 +527,13 @@ Type: Infrastructure
 
 Goal:
   Empty `oxvba-debug` crate exists in the workspace with dependencies on
-  `oxvba-host`, `oxvba-vm`, `oxvba-runtime`, `oxvba-compiler`. `cargo build`
-  and `cargo test` green for the empty crate.
+  `oxvba-host`, `oxvba-vm`, `oxvba-runtime`, `oxvba-compiler`, `crossbeam-channel`,
+  `serde`, and `static_assertions`; optional dependencies are feature-gated.
+  `cargo build` and `cargo test` are green for the empty crate.
 
 Design:
-  - `crates/oxvba-debug/Cargo.toml`: `[package]`, deps, two features
-    (`tokio`, `proptest`).
+  - `crates/oxvba-debug/Cargo.toml`: `[package]`, deps, features
+    (`tokio`, `proptest`, `bench`).
   - `crates/oxvba-debug/src/lib.rs`: empty module skeleton matching the
     design doc's module layout.
   - Add to workspace `Cargo.toml`.
@@ -486,15 +568,16 @@ Design:
   - `crates/oxvba-debug/tests/fixtures/`: canonical fixtures (`thin_slice`,
     `multi_module_walkthrough`, `com_dispatch_smoke`, `bare_no_preamble`).
   - `crates/oxvba-debug/tests/handle_send_sync.rs`: compile-fail / type
-    assertions (`assert_impl_all`, `assert_not_impl_any`).
+    assertions (`assert_impl_all`, `assert_not_impl_any`) proving the handle is
+    `Send + Sync` while `DebugSessionCore` is not.
   - Empty test stubs in each `handle_*.rs`, `events_*.rs`, `lifecycle_*.rs`,
-    `concurrency_*.rs`, `com_apartment_*.rs`, `line_mapping_*.rs`,
+    `concurrency_*.rs`, `com_apartment_*.rs`, `source_map_*.rs`,
     `async_*.rs`, `property_*.rs`, `stress_*.rs`, `scenarios_*.rs` file
     enumerating every catalog item.
 
 Tests:
   - The Send/Sync compile-fail/static-assertion tests pass against the
-    (empty) handle skeleton from B01.
+    (empty) handle/core skeleton from B01.
   - All other tests panic on `unimplemented!()` and are gated by
     `#[ignore]` until their implementing bead lands - so CI stays green while
     the catalog is visible in `cargo test --list`.
@@ -509,39 +592,52 @@ Closure:
   - [ ] Send/Sync compile-fail/static-assertion tests green.
   - [ ] CI green (ignored stubs counted, not failing).
 
-### B03 - Move debug-domain DTOs into `oxvba-debug`
+### B03 - Move the raw debug core and domain types into `oxvba-debug`
 
-Type: Refactor
+Type: Refactor / architecture
 
 Goal:
-  `DebugWatchRecord/Evaluation/Status`, `DebugBreakpointRecord/BindingStatus/UnresolvedReason`,
-  `DebugVariantPauseState`, `DebugFrameVariant*`, `HostDebugVariantRunResult`,
-  `DebugSessionError`, `DebugEvaluationRequest`, `DebugVariantEvaluationResult`,
-  `DebugSessionCommandStatus` live in `oxvba-debug`; `oxvba-host` re-exports
-  them under their old paths for one release for downstream backward compat;
-  every existing OxVba test still passes.
+  The existing borrow-bound `oxvba_host::DebugSession<'engine>` implementation
+  becomes owned `oxvba_debug::DebugSessionCore`. All current debugger-domain
+  types (`DebugWatchRecord/Evaluation/Status`,
+  `DebugBreakpointRecord/BindingStatus/UnresolvedReason`,
+  `DebugVariantPauseState` renamed to `DebugPauseState`,
+  `DebugFrameVariant*`, core run results, `DebugSessionError`,
+  `DebugEvaluationRequest`, `DebugVariantEvaluationResult`,
+  `DebugSessionCommandStatus`) move with it. `oxvba-host` no longer contains a
+  public debugger facade, and every existing debugger semantic test passes
+  from the new crate.
 
 Design:
-  - Move types module-by-module; each move keeps a `pub use` re-export in
-    `oxvba-host::debugger` with `#[deprecated(note = "use oxvba_debug::*")]`.
-  - `DebugSession<'engine>` itself **stays** in `oxvba-host` (it's the
-    Engine-borrowing core; moving it would force a circular dep). Its method
-    signatures continue to refer to the (now-relocated) types via re-export.
-  - No semantic change.
+  - `DebugSessionCore` owns `Arc<Engine>`, `ProjectManifest`, and
+    `ProjectRuntimeSession`; it does not borrow `Engine`.
+  - `DebugSessionCore` is explicitly `!Send` / `!Sync` so it cannot be moved
+    out of the worker thread by accident.
+  - `oxvba-host` exposes only the minimal debug-runtime primitive API needed by
+    the moved core: start / continue / step / snapshot / set-breakpoints /
+    procedure metadata access over `ProjectRuntimeSession`.
+  - `Engine::prepare_debug_session` is removed from `oxvba-host`; the raw
+    replacement is `oxvba_debug::prepare_debug_session_core(Arc<Engine>, ...)`.
+    This is a deliberate source migration to keep the crate graph acyclic.
+  - No semantic change to stepping, watch evaluation, breakpoint binding, or
+    retained Variant pause data.
 
 Tests:
-  - All existing `oxvba-host` tests pass unchanged.
-  - New `oxvba-debug` tests assert each re-exported path resolves identically.
+  - Current `oxvba-host` debugger unit tests move to
+    `oxvba-debug/tests/core_*.rs` and pass with equivalent assertions.
+  - `oxvba-host` retains tests for the new low-level runtime primitive API.
+  - `assert_not_impl_any!(DebugSessionCore: Send, Sync)` is green.
 
 Evidence:
   - `cargo test -p oxvba-host` green.
-  - `cargo test -p oxvba-debug` green for the type-move regression.
+  - `cargo test -p oxvba-debug core_` green for the core-move regression.
 
 Closure:
-  - [ ] All listed types live in `oxvba-debug`.
-  - [ ] `oxvba-host` re-exports compile and emit deprecation warnings only
-        for direct out-of-tree consumers.
-  - [ ] No semantic regression.
+  - [ ] `DebugSessionCore` and all listed debug-domain types live in
+        `oxvba-debug`.
+  - [ ] `oxvba-host` has no dependency on `oxvba-debug` and no public
+        `oxvba-host::debugger` facade.
+  - [ ] No semantic regression in the moved core.
 
 ### B04 - Public view DTOs + Send/Sync projection layer
 
@@ -551,16 +647,17 @@ Goal:
   `oxvba-debug::views` exposes Send + Sync + Clone + serde::Serialize view
   types (`DebugPauseView`, `DebugBreakpointView`, `DebugWatchView`,
   `DebugFrameView`, `DebugValueView`, `DebugSourceLocationView`,
-  `DebugStopReasonView`, `DebugModuleView`) that project the internal
-  records / pause state into transport-ready DTOs - the canonical shape
-  every consumer reads.
+  `DebugStopReasonView`, `DebugModuleView`, `DebugRunResultView`,
+  `DebugExitView`) that project the internal records / pause state into
+  transport-ready DTOs - the canonical shape every consumer reads.
 
 Design:
   - Each view excludes raw `Variant` (which is !Send / non-serializable);
     Variant values are projected to `DebugValueView { display_text, type_label,
     kind, raw_repr (optional Base64 bytes) }`.
-  - Free function `view::pause_view_from_core(&DebugVariantPauseState,
-    &LineMapping) -> DebugPauseView` (and similarly for breakpoint, watch).
+  - Free function `view::pause_view_from_core(&DebugPauseState,
+    &DebugSourceMap) -> DebugPauseView` (and similarly for run result,
+    breakpoint, watch).
 
 Tests:
   - For each view, a round-trip through serde_json yields the same value.
@@ -580,17 +677,17 @@ Closure:
 Type: Feature
 
 Goal:
-  `attach_debug_session` spawns a worker that owns the
-  `DebugSessionCore<'engine>`; the returned `DebugSessionHandle` is Send +
-  Sync, cheap to clone, and exposes the synchronous command surface (every
-  stepping / breakpoint / watch / inspect method from the design doc).
-  Commands marshal via `crossbeam_channel`; responses via `oneshot`.
+  `attach_debug_session(Arc<Engine>, ...)` spawns a worker that constructs and
+  owns `DebugSessionCore`; the returned `DebugSessionHandle` is Send + Sync,
+  cheap to clone, and exposes the synchronous command surface (every stepping /
+  breakpoint / watch / inspect method from the design doc). Commands marshal
+  via `crossbeam_channel`; responses return typed replies including normal
+  completion (`DebugRunResultView::Exited`).
   **No events yet** (B06 + B07).
 
 Design:
-  - `handle.rs`: `DebugSessionHandle { inner: Arc<HandleInner> }`; unsafe
-    Send/Sync impls with documented safety invariant; `Drop` for `HandleInner`
-    signals worker shutdown.
+  - `handle.rs`: `DebugSessionHandle { inner: Arc<HandleInner> }`; no unsafe
+    Send/Sync impl; `Drop` for `HandleInner` signals worker shutdown.
   - `worker.rs`: worker loop owns the core, processes `DebugCommand` enum,
     sends `Result<DebugReply, DebugError>` via oneshot.
   - `command.rs`: `DebugCommand` enum with one variant per public method.
@@ -599,12 +696,15 @@ Design:
 Tests (from B02 catalog, now implemented):
   - `handle_step_into.rs`, `handle_step_over.rs`, `handle_step_out.rs`,
     `handle_continue.rs`: each calls the method on a fresh handle and
-    asserts the returned `DebugPauseView` matches the equivalent
-    `DebugSession::start_variants + step_*_variants` flow.
+    asserts the returned `DebugRunResultView` matches the equivalent
+    `DebugSessionCore::start + step_*` flow.
   - `handle_breakpoint_set.rs`, `handle_breakpoint_toggle.rs`,
     `handle_breakpoint_clear.rs`: each exercises real OxVba binding semantics.
   - `handle_watch_*.rs`: add/update/remove/evaluate.
   - `handle_inspect.rs`: current_pause, frame_locals, evaluate.
+  - `handle_completion.rs`: continuing past completion returns
+    `DebugRunResultView::Exited`, and later stepping returns a typed
+    `DebugError::Completed`.
   - `concurrency_serialization.rs`: 8 caller threads issuing commands;
     response order matches send order at the channel.
 
@@ -614,7 +714,8 @@ Evidence:
 
 Closure:
   - [ ] Every public command method implemented and pinned by tests.
-  - [ ] Handle Send + Sync verified by B02 static assertions.
+  - [ ] Handle Send + Sync verified by B02 static assertions without unsafe
+        Send/Sync.
   - [ ] No data races (thread-sanitizer pass).
 
 ### B06 - Event taxonomy + subscription stream
@@ -623,36 +724,45 @@ Type: Feature
 
 Goal:
   `DebugEvent` enum (Stopped / Output / Continued / Exited / BreakpointChanged
-  / ModuleLoaded / ThreadStarted) is defined; `handle.subscribe() ->
-  DebugEventReceiver` returns a multi-consumer broadcast receiver; subscribers
-  joining late receive future events only (no automatic replay); the channel
-  mode is configurable (Bounded(n) for back-pressure or drop-oldest, or
-  Unbounded).
+  / ModuleLoaded / ThreadStarted) is defined; `attach_debug_session` returns an
+  initial `DebugEventReceiver` that is subscribed before startup events, and
+  `handle.subscribe() -> DebugEventReceiver` returns future events for later
+  subscribers. The channel mode defaults to `Bounded(256)` with explicit
+  drop-oldest / typed lag semantics; `Unbounded` is opt-in for controlled
+  embeddings that accept memory-growth risk.
 
 Design:
-  - `events.rs`: `DebugEvent` enum + `DebugEventReceiver` (wraps
-    `tokio::sync::broadcast::Receiver` when `tokio` feature is on, otherwise
-    a `crossbeam_channel::Receiver` from a fanout).
+  - `events.rs`: `DebugEvent` enum + `DebugEventReceiver` over a small
+    sync-first event hub. With `tokio`, async subscribers get a tokio-friendly
+    wrapper over the same sequence stream.
   - The worker holds the broadcast `Sender` and emits events at known points
     (B07 wires the emission sites).
+  - Every event has monotonic `seq` assigned by the worker.
+  - `DebugAttachConfig::default().event_channel ==
+    DebugEventChannelMode::Bounded(256)` is part of the public contract.
 
 Tests:
-  - `events_subscribe_before_attach.rs`: subscriber created before any event;
-    receives all events.
+  - `events_initial_receiver_from_attach.rs`: receiver returned from attach
+    observes attach-time `ModuleLoaded`, `ThreadStarted`, and entry `Stopped`
+    events.
+  - `events_late_subscriber_future_only.rs`: `handle.subscribe()` after attach
+    receives future events only.
   - `events_multi_subscriber.rs`: 3 subscribers receive identical streams.
   - `events_slow_subscriber_bounded.rs`: bounded channel + slow subscriber
-    drops oldest, worker not blocked.
+    drops oldest with a typed lag/drop signal, worker not blocked.
+  - `events_default_channel_mode.rs`: default config uses bounded capacity 256.
   - `events_subscriber_drop_safe.rs`: subscriber dropped mid-stream; worker
     continues; remaining subscribers unaffected.
-  - `events_ordering.rs`: `Stopped` event delivered to subscriber before the
-    next command response (deterministic ordering).
+  - `events_ordering.rs`: event `seq` and receiver availability prove the
+    worker emitted `Stopped` before completing the command response.
 
 Evidence:
   - Event delivery tests green; ordering pinned.
 
 Closure:
   - [ ] `subscribe()` works; multi-consumer semantics correct.
-  - [ ] Configurable channel mode tested in both bounded and unbounded modes.
+  - [ ] Initial attach receiver, late subscribers, and configurable channel
+        modes tested.
 
 ### B07 - Worker emits events at the right times
 
@@ -669,7 +779,10 @@ Goal:
 Design:
   - Each handle command that changes state has a corresponding event emission
     in the worker after the state change.
-  - `Output` is captured from the VM's stdout/stderr/host collectors.
+  - `Output` is captured through an explicit debug output tap introduced at the
+    host/VM boundary in this bead. It must observe `Debug.Print`, console
+    stdout/stderr, and host diagnostic output without replacing or suppressing
+    the embedding's existing callbacks.
   - The Variant `Stopped` location uses the same line mapping as
     `current_pause`.
 
@@ -677,10 +790,12 @@ Tests (each event variant has a "what produces it" test):
   - `events_stopped_on_entry.rs`: attach -> Stopped(Entry).
   - `events_stopped_on_breakpoint.rs`: continue to breakpoint -> Stopped(Breakpoint).
   - `events_stopped_on_step.rs`: step_into -> Stopped(Step).
-  - `events_continued.rs`: continue_execution -> Continued.
+  - `events_continued.rs`: continue_execution -> Continued, followed by
+    Stopped or Exited as appropriate.
   - `events_exited.rs`: continue past last instruction -> Exited.
   - `events_output_debug_print.rs`: Debug.Print "hello" -> Output(Host, "hello").
-  - `events_breakpoint_changed.rs`: set_enabled(false) -> BreakpointChanged.
+  - `events_breakpoint_changed.rs`: add / enable-toggle / remove each produce
+    BreakpointChanged with the correct change kind.
   - `events_module_loaded.rs`: attach to 2-module project -> 2 ModuleLoaded.
 
 Evidence:
@@ -690,44 +805,59 @@ Closure:
   - [ ] Every event variant emitted at the right time.
   - [ ] Subscriber tests in B06 still green after wiring.
 
-### B08 - Line-basis mapping in the projection layer
+### B08 - Compiler source maps in the projection layer
 
-Type: Feature (moves the mapping from OxIde into `oxvba-debug`)
+Type: Feature (compiler + debug; compiler-emitted source maps consumed by
+`oxvba-debug`)
 
 Goal:
   The handle's view projections (file_line in `DebugSourceLocationView`,
   in `DebugBreakpointView`, in `DebugPauseView.current_location`) carry
-  **editor file lines**, not OxVba's compiled-source-line basis. Inputs
-  (`set_source_breakpoint(file_line)`) accept editor file lines and the
-  worker converts to OxVba's basis before calling `set_source_breakpoint`
-  on the core.
+  **editor file lines**. Inputs (`set_source_breakpoint(file_line)`) accept
+  editor file lines and the worker converts to the VM/runtime line basis using
+  compiler-emitted source maps before binding breakpoints. This bead explicitly
+  includes `oxvba-compiler` work: `CompiledProject` must carry structured
+  source-map data produced by the same lowering path that emits bytecode and
+  procedure metadata.
 
 Design:
-  - `line_mapping.rs`: `LineMapping` struct built from a `ProjectManifest`
-    at attach time: per-module count of leading `attribute ` / `option `
-    lines (the rule `oxvba_compiler::lower_module_source` applies).
-  - `LineMapping::file_to_oxvba(module, file_line)` and
-    `LineMapping::oxvba_to_file(module, oxvba_line)`.
-  - Wired into view projection (B04) and command marshalling (B05).
+  - Add compiler-owned source-map data to `CompiledProject`: for each module,
+    map editor source lines to lowered/runtime lines and back, including
+    dropped lines (`Attribute ...`, `Option Private Module`, class
+    `Implements`), preserved lines (`Option Explicit`, `Option Compare`,
+    `Option Base`, comments, blanks), and compiler-inserted helper lines.
+  - `oxvba-debug::source_map::DebugSourceMap` wraps the compiler map with
+    debugger-specific helpers: `file_to_runtime(module, file_line)`,
+    `runtime_to_file(module, runtime_line)`, and
+    `nearest_executable_file_line(module, file_line)` where DAP-style
+    breakpoint binding needs a stable unresolved/bound explanation.
+  - The mapping is not a hardcoded preamble offset. It is derived from the same
+    lowering pass that produces bytecode and procedure metadata.
+  - Wired into view projection (B04) and command marshalling (B05/B07).
   - OxIde's `crates/oxide-oxvba` mapping (currently lives there) is the
     direct ancestor; this bead supersedes it. OxIde removes its copy in
     its follow-up migration bead (out of scope here).
 
 Tests:
-  - All `line_mapping_*.rs` stubs from B02 implemented:
-    bare (offset 0), Attribute-only (1), Attribute+Option Explicit (2),
-    Attribute+Option Explicit+Option Compare Text+Option Base 1 (4),
-    blanks preserved, comments preserved, inverse property
-    `oxvba_to_file(file_to_oxvba(N)) == N`, multi-module independent,
-    edge cases (empty module, preamble-only module).
+  - All `source_map_*.rs` stubs from B02 implemented:
+    bare identity, Attribute-only dropped, Attribute+Option Explicit where
+    only Attribute is dropped, Attribute+Option Explicit+Option Compare Text+
+    Option Base 1 where the option lines are preserved, Option Private Module
+    dropped, class Implements dropped, blanks preserved, comments preserved,
+    compiler-inserted helper lines marked non-user, inverse property
+    `runtime_to_file(file_to_runtime(N)) == N` for mapped executable user
+    lines, multi-module independent, edge cases (empty module, preamble-only
+    module).
   - Snapshot: thin-slice statements at file lines 6/7/8 (Dim / `=` /
     Debug.Print) bind through the handle when caller passes file lines.
 
 Evidence:
-  - All line-mapping catalog tests green.
+  - `cargo test -p oxvba-compiler` green for source-map emission tests.
+  - All source-map catalog tests green.
   - Snapshot of bound vs. unresolved by file line.
 
 Closure:
+  - [ ] `CompiledProject` exposes structured source-map data for every module.
   - [ ] Mapping applied uniformly on input + output paths.
   - [ ] Every catalog scenario green.
 
@@ -746,21 +876,32 @@ Design:
     `#[cfg(windows)]` gated; the no-op `None` path works on all platforms.
   - The worker initializes COM before constructing the core (so
     IDispatch creation inside the core sees the right apartment).
+  - V1 STA support is scoped to synchronous in-apartment COM work. This bead
+    documents, but does not implement, the required future pumped wait loop for
+    cross-apartment callbacks / COM event sinks. That future lane must not
+    broaden STA claims until the worker loop services Windows messages while
+    waiting for commands.
+  - Tests verify the apartment from inside the worker via a test-only
+    `DebugCommand::ReportWorkerApartment` / public test helper. A test-thread
+    `CoGetApartmentType` call alone is not acceptable evidence because COM
+    apartment state is thread-local.
   - Teardown is best-effort but logged on failure.
 
 Tests:
-  - `com_apartment_sta_init.rs` (Windows): assert via
-    `CoGetApartmentType` that the worker is STA.
-  - `com_apartment_mta_init.rs` (Windows): MTA init verified.
+  - `com_apartment_sta_init.rs` (Windows): worker reports STA after init.
+  - `com_apartment_mta_init.rs` (Windows): worker reports MTA after init.
   - `com_apartment_none.rs` (cross-platform): no COM call; works on Linux.
   - `com_apartment_multi_session.rs` (Windows): two sessions, two
     independent apartments.
 
 Evidence:
-  - COM init/uninit verified by tests; no apartment leaks across sessions.
+  - COM init/uninit verified from the worker thread; no apartment leaks across
+    sessions.
 
 Closure:
   - [ ] STA / MTA / None all supported.
+  - [ ] STA support statement explicitly bounded to sync in-apartment COM until
+        a pumped wait loop lands.
   - [ ] Cross-platform CI (Windows + Linux at least) covers the
         apartment-relevant subset on each.
 
@@ -769,26 +910,28 @@ Closure:
 Type: Feature
 
 Goal:
-  For every sync handle method there's an `*_async` variant returning
-  `impl Future<Output = Result<View, DebugError>>`. Async subscribers can
-  use a `tokio::sync::broadcast::Receiver` directly. Sync callers (OxIde
-  in Tauri commands) and async callers (`oxvba-dap` server) both work
-  from the same handle.
+  For every sync handle method there's an `*_async` variant returning the same
+  typed output as the sync method. Async subscribers can use a tokio-friendly
+  receiver over the same sequenced event stream. Sync callers (OxIde in Tauri
+  commands) and async callers (`oxvba-dap` server) both work from the same
+  handle.
 
 Design:
-  - `async_handle.rs`, `#[cfg(feature = "tokio")]`: each method spawns the
-    command into the worker channel and awaits a tokio oneshot.
+  - `async_handle.rs`, `#[cfg(feature = "tokio")]`: each method sends the
+    command into the same worker channel and awaits a tokio oneshot.
   - The worker stays sync (no internal tokio runtime); async is purely a
     caller-side ergonomic.
   - Cancellation: dropping the future drops the oneshot receiver; the worker
     discards the result when it finishes processing (no panic; logged).
 
 Tests (`async_*.rs`, only run with `--features tokio`):
-  - `async_step_into.rs`: `step_into_async().await` equals `step_into()`.
+  - `async_step_into.rs`: `step_into_async().await` equals `step_into()` for
+    `DebugRunResultView`.
   - `async_concurrent.rs`: 5 spawned tasks concurrent; serialized at worker.
   - `async_cancellation.rs`: drop the future; next sync command on the same
     handle still works; worker not poisoned.
-  - `async_event_stream.rs`: tokio broadcast Receiver compatible.
+  - `async_event_stream.rs`: tokio wrapper receives the same sequenced events
+    as the sync receiver.
 
 Evidence:
   - All async tests green with `--features tokio`.
@@ -809,8 +952,10 @@ Goal:
 Design:
   - `attach_debug_session` returns `Err(DebugAttachError)` if the compile /
     prepare fails; no worker is left running.
-  - `handle.detach()` consumes `self`, sends a Shutdown command, joins the
-    worker, returns `Ok(())` (or the underlying detach error).
+  - `handle.detach()` consumes one handle clone, sends a Shutdown command, and
+    joins the worker only when it owns the last strong reference. If other
+    clones exist it returns `DebugError::OutstandingHandles { count }` rather
+    than pretending the session is detached.
   - Last `Arc<HandleInner>` drop triggers Shutdown automatically (idempotent).
   - In-flight commands when Shutdown arrives return
     `Err(SessionAlreadyDetached)`.
@@ -821,7 +966,8 @@ Design:
 Tests (`lifecycle_*.rs` from B02, implemented):
   - `lifecycle_attach_failure.rs`: bad manifest -> error; no worker thread
     leaks (verified via thread count delta).
-  - `lifecycle_explicit_detach.rs`: detach() joins cleanly.
+  - `lifecycle_explicit_detach.rs`: detach() joins cleanly when called on the
+    last handle clone; returns `OutstandingHandles` when clones remain.
   - `lifecycle_drop_implicit_detach.rs`: dropping all handles joins worker.
   - `lifecycle_drop_with_command_in_flight.rs`: in-flight command returns
     SessionAlreadyDetached without panic.
@@ -890,7 +1036,8 @@ Tests:
   - Criterion benches publishable in CI.
 
 Evidence:
-  - Benchmark numbers committed under `target/criterion/`.
+  - Benchmark summaries committed under `docs/evidence/oxvba-debug/benchmarks/`.
+    Raw `target/criterion/` output remains build output and is not committed.
 
 Closure:
   - [ ] Stress tests stable in CI (3 runs without flake).
@@ -908,8 +1055,8 @@ Goal:
      `oxide-wf81` follow-up. "From `oxvba_host::DebugSession` to
      `oxvba_debug::DebugSessionHandle` step by step." Maps each existing
      OxIde adapter helper to its new handle method; retires
-     stepPlan/breakpointPlan/watchExpressions; removes OxIde's line
-     mapping (now in `oxvba-debug`).
+     stepPlan/breakpointPlan/watchExpressions; removes OxIde's line-mapping
+     copy (now compiler-emitted and consumed through `oxvba-debug`).
 
   2. `docs/HANDOFF_OXVBA_DAP_FROM_DEBUG_HANDLE.md` - for the future
      `oxvba-dap` workset. "Build a DAP server on top of `DebugSessionHandle`."
@@ -932,9 +1079,8 @@ Type: Acceptance
 
 Goal:
   The two reference scenarios (DAP-style flow and OxIde cockpit flow) run
-  end-to-end against a freshly-published `oxvba-debug`; all B02-B13 tests
-  green; the design doc, test catalog, and downstream handoffs are
-  finalized.
+  end-to-end against the implemented `oxvba-debug`; all B02-B13 tests green;
+  the design doc, test catalog, and downstream handoffs are finalized.
 
 Design:
   - `scenarios_dap_style_flow.rs`: scenario A from the test catalog.
@@ -943,14 +1089,14 @@ Design:
     Windows + Linux CI.
   - Write `docs/HANDOFF_OXVBA_DEBUG_HANDLE_v1.md` summarizing what shipped,
     what's deferred (DAP, OxIde migration, future features), and the
-    backward-compat re-export deprecation timeline.
+    source-migration path from old `oxvba-host` debugger imports.
 
 Tests:
   - Both scenario tests green.
   - Full crate test matrix green on Windows + Linux.
 
 Evidence:
-  - `target/oxvba-debug-acceptance.{txt,json}`.
+  - `docs/evidence/oxvba-debug/acceptance.{txt,json}`.
   - `docs/HANDOFF_OXVBA_DEBUG_HANDLE_v1.md`.
 
 Closure:
@@ -977,14 +1123,20 @@ Closure:
 
 ## Backward compatibility
 
-For one release after this workset lands:
-- `oxvba-host::debugger::*` re-exports all moved types with
-  `#[deprecated(note = "use oxvba_debug::*")]`.
-- Direct `Engine::prepare_debug_session` continues to work for power users
-  who want raw stateful access.
-- The legacy raw API and the new handle API coexist.
+This workset deliberately changes the crate ownership boundary instead of
+preserving the old imports by re-export:
 
-After one release, the deprecated re-exports are removed; `oxvba_debug` is
+- `oxvba-host` does **not** depend on `oxvba-debug`; therefore
+  `oxvba-host::debugger::*` re-exports are not available.
+- Direct raw access moves from `Engine::prepare_debug_session(&manifest)` to
+  `oxvba_debug::prepare_debug_session_core(Arc<Engine>, manifest, config)`.
+- Consumer-facing integrations should prefer
+  `oxvba_debug::attach_debug_session(...)` and `DebugSessionHandle`.
+- Existing in-repo tests and downstream handoff docs must migrate imports in
+  the same workset cycle so no required follow-up is left only in chat.
+
+The compatibility guarantee is semantic, not import-path compatibility: the
+moved core must preserve current debugger behavior while making `oxvba-debug`
 the single public debug surface.
 
 ## Out-of-scope (anchored here to avoid scope creep)
