@@ -1,9 +1,32 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B09. Claim: sessions initialize/tear down independently
+use oxvba_debug::{DebugAttachConfig, DebugComApartment};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn multiple_sessions_have_independent_apartments() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let first = support_handle::attach_with_config(
+        support_handle::call_manifest(),
+        DebugAttachConfig {
+            com_apartment: DebugComApartment::None,
+            ..DebugAttachConfig::default()
+        },
+    );
+    let second = support_handle::attach_with_config(
+        support_handle::call_manifest(),
+        DebugAttachConfig {
+            com_apartment: DebugComApartment::Mta,
+            ..DebugAttachConfig::default()
+        },
+    );
+    assert_eq!(
+        first.handle.report_worker_apartment().unwrap().configured,
+        DebugComApartment::None
+    );
+    assert_eq!(
+        second.handle.report_worker_apartment().unwrap().configured,
+        DebugComApartment::Mta
+    );
+    first.handle.detach().expect("detach first");
+    second.handle.detach().expect("detach second");
 }

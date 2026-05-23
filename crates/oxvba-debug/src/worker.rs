@@ -9,6 +9,7 @@ use oxvba_hal::{HostOutputChannel, install_thread_output_tap};
 use oxvba_host::{DirectHostDebugSessionId, Engine};
 
 use crate::{
+    com_apartment::DebugComApartmentGuard,
     command::{CommandReply, DebugCommand},
     config::DebugAttachConfig,
     core::{DebugCoreRunResult, DebugEvaluationRequest, DebugSessionCore, DebugSessionError},
@@ -38,7 +39,7 @@ pub struct DebugWorkerAttach {
 pub(crate) fn spawn_debug_worker(
     engine: Arc<Engine>,
     manifest: ProjectManifest,
-    _config: DebugAttachConfig,
+    config: DebugAttachConfig,
     events: DebugEventHub,
 ) -> Result<DebugWorkerAttach, DebugAttachError> {
     let (commands_tx, commands_rx) = crossbeam_channel::unbounded();
@@ -46,6 +47,16 @@ pub(crate) fn spawn_debug_worker(
     let join = thread::Builder::new()
         .name(format!("oxvba-debug:{}", manifest.project_name))
         .spawn(move || {
+            let apartment = match DebugComApartmentGuard::initialize(config.com_apartment) {
+                Ok(apartment) => apartment,
+                Err(message) => {
+                    let _ = ready_tx.send(Err(DebugAttachError::WorkerFailed {
+                        stage: "com_initialize",
+                        message,
+                    }));
+                    return;
+                }
+            };
             let runtime = match engine.compile_and_prepare_session(&manifest) {
                 Ok(runtime) => runtime,
                 Err(diagnostic) => {
@@ -88,7 +99,7 @@ pub(crate) fn spawn_debug_worker(
                 publisher.close();
                 return;
             }
-            run_command_loop(&mut core, commands_rx, &mut publisher);
+            run_command_loop(&mut core, commands_rx, &mut publisher, &apartment);
             publisher.close();
         })
         .map_err(|err| DebugAttachError::WorkerFailed {
@@ -120,9 +131,10 @@ fn run_command_loop(
     core: &mut DebugSessionCore,
     commands: Receiver<DebugCommand>,
     publisher: &mut DebugEventPublisher,
+    apartment: &DebugComApartmentGuard,
 ) {
     while let Ok(command) = commands.recv() {
-        if handle_command(core, command, publisher) {
+        if handle_command(core, command, publisher, apartment) {
             break;
         }
     }
@@ -132,6 +144,7 @@ fn handle_command(
     core: &mut DebugSessionCore,
     command: DebugCommand,
     publisher: &mut DebugEventPublisher,
+    apartment: &DebugComApartmentGuard,
 ) -> bool {
     match command {
         DebugCommand::Start(reply) => reply_run(reply, core.start_variants(), publisher, false),
@@ -299,6 +312,10 @@ fn handle_command(
         } => {
             let result = evaluate_on_worker(core, frame, expression);
             let _ = reply.send(result);
+            false
+        }
+        DebugCommand::ReportWorkerApartment(reply) => {
+            let _ = reply.send(Ok(apartment.report()));
             false
         }
         DebugCommand::Shutdown(reply) => {

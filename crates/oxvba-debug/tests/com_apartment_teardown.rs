@@ -1,9 +1,38 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B09. Claim: shutdown uninitializes COM best-effort
+use oxvba_debug::{DebugAttachConfig, DebugComApartment, DebugError};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn com_uninitialize_runs_on_worker_shutdown() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach_with_config(
+        support_handle::call_manifest(),
+        DebugAttachConfig {
+            com_apartment: DebugComApartment::None,
+            ..DebugAttachConfig::default()
+        },
+    );
+    let before = attach
+        .handle
+        .report_worker_apartment()
+        .expect("before detach");
+    assert_eq!(before.configured, DebugComApartment::None);
+    attach.handle.detach().expect("detach");
+
+    let attach = support_handle::attach_with_config(
+        support_handle::call_manifest(),
+        DebugAttachConfig {
+            com_apartment: DebugComApartment::None,
+            ..DebugAttachConfig::default()
+        },
+    );
+    let clone = attach.handle.clone();
+    let err = attach
+        .handle
+        .detach()
+        .expect_err("outstanding clone blocks shutdown");
+    assert!(matches!(err, DebugError::OutstandingHandles { .. }));
+    clone
+        .detach()
+        .expect("clone can detach after original consumed");
 }

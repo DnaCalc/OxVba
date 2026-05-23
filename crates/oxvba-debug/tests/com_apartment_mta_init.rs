@@ -1,9 +1,29 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B09. Claim: Windows worker initializes MTA and reports from worker thread
+use oxvba_debug::{DebugAttachConfig, DebugComApartment, DebugWorkerApartmentKind};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn worker_reports_mta_when_configured_mta() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let config = DebugAttachConfig {
+        com_apartment: DebugComApartment::Mta,
+        ..DebugAttachConfig::default()
+    };
+    let attach = support_handle::attach_with_config(support_handle::call_manifest(), config);
+    let report = attach
+        .handle
+        .report_worker_apartment()
+        .expect("apartment report");
+    assert_eq!(report.configured, DebugComApartment::Mta);
+    #[cfg(target_os = "windows")]
+    {
+        assert!(report.initialized_by_worker);
+        assert_eq!(report.observed, DebugWorkerApartmentKind::Mta);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        assert!(!report.initialized_by_worker);
+        assert_eq!(report.observed, DebugWorkerApartmentKind::None);
+    }
+    attach.handle.detach().expect("detach");
 }

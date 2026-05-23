@@ -25,6 +25,7 @@ use oxvba_host::Engine;
 
 use crate::{events::DebugEventHub, worker::spawn_debug_worker};
 
+pub use com_apartment::{DebugWorkerApartmentKind, DebugWorkerApartmentReport};
 pub use config::{
     DebugAttachConfig, DebugComApartment, DebugCoreConfig, DebugEventChannelMode,
     DebugOutputCaptureMode, DebugStartMode,

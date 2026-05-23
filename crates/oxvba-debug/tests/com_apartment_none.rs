@@ -1,9 +1,22 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B09. Claim: `None` path makes no COM call and works on non-Windows
+use oxvba_debug::{DebugAttachConfig, DebugComApartment, DebugWorkerApartmentKind};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn none_mode_does_not_initialize_com_and_runs_cross_platform() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let config = DebugAttachConfig {
+        com_apartment: DebugComApartment::None,
+        ..DebugAttachConfig::default()
+    };
+    let attach = support_handle::attach_with_config(support_handle::call_manifest(), config);
+    let report = attach
+        .handle
+        .report_worker_apartment()
+        .expect("apartment report");
+    assert_eq!(report.configured, DebugComApartment::None);
+    assert!(!report.initialized_by_worker);
+    assert_eq!(report.observed, DebugWorkerApartmentKind::None);
+    attach.handle.start().expect("debugger still runs");
+    attach.handle.detach().expect("detach");
 }

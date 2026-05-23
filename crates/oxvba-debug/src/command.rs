@@ -2,6 +2,7 @@ use crossbeam_channel::Sender;
 use oxvba_host::{DirectHostBreakpointId, DirectHostStackFrameId, DirectHostWatchId};
 
 use crate::{
+    com_apartment::DebugWorkerApartmentReport,
     errors::DebugError,
     views::{
         DebugBreakpointView, DebugFrameView, DebugPauseView, DebugRunResultView, DebugValueView,
@@ -60,5 +61,6 @@ pub enum DebugCommand {
         expression: String,
         reply: CommandReply<DebugValueView>,
     },
+    ReportWorkerApartment(CommandReply<DebugWorkerApartmentReport>),
     Shutdown(CommandReply<()>),
 }

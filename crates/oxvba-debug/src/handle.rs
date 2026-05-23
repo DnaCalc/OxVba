@@ -9,6 +9,7 @@ use oxvba_host::{
 };
 
 use crate::{
+    com_apartment::DebugWorkerApartmentReport,
     command::{CommandReply, DebugCommand},
     errors::DebugError,
     events::{DebugEventHub, DebugEventReceiver},
@@ -165,6 +166,10 @@ impl DebugSessionHandle {
 
     pub fn subscribe(&self) -> DebugEventReceiver {
         self.inner.events.subscribe()
+    }
+
+    pub fn report_worker_apartment(&self) -> Result<DebugWorkerApartmentReport, DebugError> {
+        self.request(DebugCommand::ReportWorkerApartment)
     }
 
     pub fn session_id(&self) -> &DirectHostDebugSessionId {
