@@ -27,13 +27,16 @@ pub use config::{
     DebugAttachConfig, DebugComApartment, DebugCoreConfig, DebugEventChannelMode,
     DebugOutputCaptureMode, DebugStartMode,
 };
-pub use core::{DebugCoreRunResult, DebugSessionCore};
+pub use core::{
+    DebugBreakpointBindingStatus, DebugBreakpointRecord, DebugBreakpointUnresolvedReason,
+    DebugCoreRunResult, DebugEvaluationRequest, DebugFrameValueKind, DebugFrameVariant,
+    DebugFrameVariantValue, DebugPauseState, DebugSessionCommandStatus, DebugSessionCore,
+    DebugSessionError, DebugVariantEvaluationResult, DebugVariantPauseState, DebugWatchEvaluation,
+    DebugWatchEvaluationStatus, DebugWatchRecord, HostDebugVariantRunResult,
+};
 pub use errors::{DebugAttachError, DebugError};
 pub use events::{DebugEvent, DebugEventReceiver};
 pub use handle::{DebugSessionAttach, DebugSessionHandle};
-pub use records::{
-    DebugBreakpointRecord, DebugEvaluationRequest, DebugSessionCommandStatus, DebugWatchRecord,
-};
 pub use views::{
     DebugBreakpointView, DebugExitView, DebugFrameView, DebugModuleView, DebugPauseView,
     DebugRunResultView, DebugSourceLocationView, DebugStopReasonView, DebugValueView,
@@ -48,9 +51,12 @@ pub fn prepare_debug_session_core(
     _manifest: ProjectManifest,
     _config: DebugCoreConfig,
 ) -> Result<DebugSessionCore, DebugAttachError> {
-    Err(DebugAttachError::Unsupported(
-        "DebugSessionCore is introduced by B03",
-    ))
+    let runtime = _engine
+        .compile_and_prepare_session(&_manifest)
+        .map_err(|diagnostic| DebugAttachError::Prepare {
+            message: diagnostic.to_string(),
+        })?;
+    Ok(DebugSessionCore::new(_engine, _manifest, runtime))
 }
 
 /// Attach to a debug session through the consumer-facing handle.

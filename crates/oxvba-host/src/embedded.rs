@@ -769,22 +769,6 @@ impl<'engine> EmbeddedRunSession<'engine> {
         )
     }
 
-    pub fn into_debug_session(self) -> crate::DebugSession<'engine> {
-        let Self {
-            engine,
-            runtime_session_id,
-            workspace,
-            runtime,
-            ..
-        } = self;
-        crate::DebugSession::from_embedded_runtime_session(
-            engine,
-            workspace.manifest,
-            runtime,
-            runtime_session_id,
-        )
-    }
-
     pub fn reset_runtime(
         &mut self,
         request: &EmbeddedResetRequest,
@@ -1612,7 +1596,7 @@ mod tests {
     }
 
     #[test]
-    fn embedded_run_session_attaches_immediate_and_debug_with_stable_ids() {
+    fn embedded_run_session_attaches_immediate_with_stable_ids() {
         let engine = Engine::new(HostConfig::default());
         let host = EmbeddedBuildRunHost::new(&engine);
         let workspace = EmbeddedWorkspaceSnapshot::new(
@@ -1637,16 +1621,9 @@ mod tests {
         );
         assert!(immediate.command_status().evaluate.is_available());
 
-        let debug_run = host
+        let _debug_run = host
             .run_project(&EmbeddedRunRequest::with_request_id(workspace, "run:debug"))
-            .expect("debug run");
-        let runtime_id = debug_run.runtime_session_id().clone();
-        let mut debug = debug_run.into_debug_session();
-        assert_eq!(debug.runtime_session_id(), Some(&runtime_id));
-        assert_eq!(debug.debug_session_id().as_str(), "debug:runtime:run:debug");
-        assert!(!debug.command_status().evaluate.is_available());
-        let _ = debug.start_variants().expect("debug start");
-        assert!(debug.command_status().evaluate.is_available());
+            .expect("debug runtime preparation remains available to oxvba-debug");
     }
 
     #[test]

@@ -1,12 +1,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use oxvba_debug::{
+    DebugBreakpointBindingStatus, DebugCoreConfig, DebugWatchEvaluationStatus,
+    HostDebugVariantRunResult, prepare_debug_session_core,
+};
 use oxvba_host::{
-    DebugBreakpointBindingStatus, DebugWatchEvaluationStatus, DirectHostCapabilityStatus,
-    DirectHostCommandStatus, EmbeddedBuildRequest, EmbeddedBuildRunHost, EmbeddedBuildStatus,
-    EmbeddedExecutionSourcePolicy, EmbeddedRunRequest, EmbeddedRunStatus, EmbeddedWorkspaceInput,
-    Engine, HostConfig, ImmediateEvaluationRequest, ImmediateVariantEvaluationOutput,
+    DirectHostCapabilityStatus, DirectHostCommandStatus, EmbeddedBuildRequest,
+    EmbeddedBuildRunHost, EmbeddedBuildStatus, EmbeddedExecutionSourcePolicy, EmbeddedRunRequest,
+    EmbeddedRunStatus, EmbeddedWorkspaceInput, Engine, HostConfig, ImmediateEvaluationRequest,
+    ImmediateVariantEvaluationOutput,
 };
 use oxvba_languageservice::HostWorkspaceSession;
 use oxvba_project::{ComProjectSelectionStatus, ComSelectionService};
@@ -42,8 +47,8 @@ fn dnaoxide_thin_slice_hello_overlay_build_run_immediate_debug_watch_breakpoint(
     assert!(module.has_workspace_overlay);
     assert!(module.document_version > 1);
 
-    let engine = Engine::new(HostConfig::default());
-    let build_run_host = EmbeddedBuildRunHost::new(&engine);
+    let engine = Arc::new(Engine::new(HostConfig::default()));
+    let build_run_host = EmbeddedBuildRunHost::new(engine.as_ref());
     let workspace_input = EmbeddedWorkspaceInput::workspace_overlay(project_file.clone());
     let snapshot = workspace
         .prepare_embedded_workspace_snapshot(&workspace_input)
@@ -96,7 +101,12 @@ fn dnaoxide_thin_slice_hello_overlay_build_run_immediate_debug_watch_breakpoint(
     let debug_run_session = build_run_host
         .run_project(&debug_run_request)
         .expect("debug runtime session should be ready");
-    let mut debug = debug_run_session.into_debug_session();
+    let mut debug = prepare_debug_session_core(
+        engine.clone(),
+        debug_run_session.manifest().clone(),
+        DebugCoreConfig::default(),
+    )
+    .expect("debug session should prepare");
     let watch = debug.add_watch("y");
     assert!(watch.watch_id.as_str().contains(":watch:1"));
     assert!(matches!(
@@ -131,7 +141,7 @@ fn dnaoxide_thin_slice_hello_overlay_build_run_immediate_debug_watch_breakpoint(
     assert!(!disabled_breakpoint.enabled);
 
     let paused_at_entry = debug.start_variants().expect("debug start should pause");
-    let oxvba_host::HostDebugVariantRunResult::Paused(entry_pause) = paused_at_entry else {
+    let HostDebugVariantRunResult::Paused(entry_pause) = paused_at_entry else {
         panic!("expected entry pause");
     };
     assert_eq!(format!("{:?}", entry_pause.stop.reason), "Entry");
@@ -145,7 +155,7 @@ fn dnaoxide_thin_slice_hello_overlay_build_run_immediate_debug_watch_breakpoint(
     let stepped = debug
         .step_into_variants()
         .expect("debug step into should pause");
-    let oxvba_host::HostDebugVariantRunResult::Paused(callee_pause) = stepped else {
+    let HostDebugVariantRunResult::Paused(callee_pause) = stepped else {
         panic!("expected callee pause");
     };
     let current_frame = callee_pause.frames.last().expect("current debug frame");

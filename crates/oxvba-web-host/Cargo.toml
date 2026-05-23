@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+oxvba-debug.workspace = true
 oxvba-host = { workspace = true, optional = true }
 oxvba-languageservice = { path = "../oxvba-languageservice", default-features = false }
 serde.workspace = true

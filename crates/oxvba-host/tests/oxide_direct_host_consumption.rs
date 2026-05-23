@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
 use oxvba_host::{
-    DebugEvaluationRequest, Engine, HostConfig, HostDebugVariantRunResult,
-    ImmediateEvaluationRequest, ImmediateSession, ImmediateVariantEvaluationOutput,
+    Engine, HostConfig, ImmediateEvaluationRequest, ImmediateSession,
+    ImmediateVariantEvaluationOutput,
 };
-use oxvba_runtime::{VarType, Variant};
-use oxvba_vm::DebugStopReason;
+use oxvba_runtime::VarType;
 
 fn make_manifest(source: &str) -> ProjectManifest {
     ProjectManifest {
@@ -71,49 +70,4 @@ End Function
     assert!(snapshot.iter().any(|value| {
         value.vtype() == VarType::String && value.as_bstr() == Some("alpha".into())
     }));
-}
-
-#[test]
-fn oxide_direct_debug_seam_consumes_variant_pause_and_eval_without_cli_lsp_or_placeholder() {
-    let manifest = make_manifest(
-        "Sub Main()\n\
-         Call Foo(4)\n\
-         End Sub\n\
-         \n\
-         Sub Foo(ByVal y As Long)\n\
-         Dim z As Long\n\
-         z = y + 1\n\
-         End Sub",
-    );
-    let engine = Engine::new(HostConfig::default());
-    let mut debug = engine
-        .prepare_debug_session(&manifest)
-        .expect("debug session");
-
-    let HostDebugVariantRunResult::Paused(entry_pause) =
-        debug.start_variants().expect("entry pause")
-    else {
-        panic!("expected entry pause");
-    };
-    assert_eq!(entry_pause.stop.reason, DebugStopReason::Entry);
-    assert_eq!(entry_pause.frames.len(), 1);
-
-    let HostDebugVariantRunResult::Paused(callee_pause) =
-        debug.step_into_variants().expect("callee pause")
-    else {
-        panic!("expected callee pause");
-    };
-    assert_eq!(callee_pause.stop.reason, DebugStopReason::Step);
-    assert_eq!(callee_pause.frames.len(), 2);
-    let current = callee_pause.frames.last().expect("current frame");
-    assert!(current.procedure_name.eq_ignore_ascii_case("Foo"));
-    assert!(current.values.iter().any(|value| {
-        value.name.eq_ignore_ascii_case("y") && value.variant_value.as_i32() == Some(4)
-    }));
-
-    let evaluated = debug
-        .evaluate_variant(&DebugEvaluationRequest::new("? y"))
-        .expect("paused y evaluation");
-    assert_eq!(evaluated.value.variant_value, Variant::from_i32(4));
-    assert_eq!(evaluated.value.display_text, "4");
 }

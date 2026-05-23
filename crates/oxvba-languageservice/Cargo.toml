@@ -13,6 +13,7 @@ oxvba-host = { workspace = true, optional = true }
 oxvba-project = { workspace = true, optional = true }
 
 [dev-dependencies]
+oxvba-debug.workspace = true
 oxvba-runtime.workspace = true
 
 [features]

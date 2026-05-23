@@ -1,6 +1,5 @@
 //! oxvba-host: engine orchestration and host integration scaffolding.
 
-pub mod debugger;
 pub mod direct_host;
 pub mod embedded;
 pub mod engine;
@@ -10,13 +9,6 @@ pub mod native_ready_runner;
 pub mod project;
 pub mod runner;
 
-pub use debugger::{
-    DebugBreakpointBindingStatus, DebugBreakpointRecord, DebugBreakpointUnresolvedReason,
-    DebugEvaluationRequest, DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue,
-    DebugSession, DebugSessionCommandStatus, DebugSessionError, DebugVariantEvaluationResult,
-    DebugVariantPauseState, DebugWatchEvaluation, DebugWatchEvaluationStatus, DebugWatchRecord,
-    HostDebugVariantRunResult,
-};
 pub use direct_host::{
     DirectHostBreakpointId, DirectHostBuildRequestId, DirectHostCapability,
     DirectHostCapabilityKind, DirectHostCapabilityStatus, DirectHostCommandStatus,

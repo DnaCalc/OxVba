@@ -1,9 +1,26 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_core/mod.rs"]
+mod support_core;
 
-/// Owner: B03. Claim: step-into semantics preserved
+use oxvba_debug::HostDebugVariantRunResult;
+use oxvba_vm::DebugStopReason;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn core_step_into_advances_to_next_statement() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let manifest = support_core::call_manifest();
+    let mut session = support_core::prepare(&manifest);
+    let _ = session.start_variants().expect("entry pause");
+    let HostDebugVariantRunResult::Paused(pause) = session.step_into_variants().expect("step into")
+    else {
+        panic!("expected step pause");
+    };
+    assert_eq!(pause.stop.reason, DebugStopReason::Step);
+    assert_eq!(
+        pause
+            .frames
+            .last()
+            .expect("current frame")
+            .procedure_name
+            .to_ascii_lowercase(),
+        "foo"
+    );
 }

@@ -397,11 +397,19 @@ impl ProjectRuntimeSession {
         &self.compiled.procedure_runtime_metadata
     }
 
-    pub(crate) fn vm(&self) -> &Vm {
+    /// Low-level VM access for the external debug core.
+    ///
+    /// This is intentionally a narrow runtime-preparation seam for
+    /// `oxvba-debug`; general hosts should prefer the higher-level host APIs.
+    pub fn debug_vm(&self) -> &Vm {
         &self.vm
     }
 
-    pub(crate) fn vm_mut(&mut self) -> &mut Vm {
+    /// Mutable low-level VM access for the external debug core.
+    ///
+    /// This is intentionally a narrow runtime-preparation seam for
+    /// `oxvba-debug`; general hosts should prefer the higher-level host APIs.
+    pub fn debug_vm_mut(&mut self) -> &mut Vm {
         &mut self.vm
     }
 }

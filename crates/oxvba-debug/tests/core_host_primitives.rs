@@ -1,9 +1,11 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_core/mod.rs"]
+mod support_core;
 
-/// Owner: B03. Claim: `oxvba-host` exposes only the narrow required primitives
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn host_debug_runtime_primitives_cover_core_needs() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let manifest = support_core::call_manifest();
+    let mut runtime = support_core::prepared_runtime(&manifest);
+    assert!(!runtime.compiled().bytecode.instructions.is_empty());
+    assert!(runtime.debug_vm().debug_snapshot().is_none());
+    runtime.debug_vm_mut().debug_set_breakpoints(Vec::new());
 }

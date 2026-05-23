@@ -1,9 +1,21 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_core/mod.rs"]
+mod support_core;
 
-/// Owner: B03. Claim: step-over semantics preserved
+use oxvba_debug::HostDebugVariantRunResult;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn core_step_over_preserves_call_depth_policy() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let manifest = support_core::call_manifest();
+    let mut session = support_core::prepare(&manifest);
+    let _ = session.start_variants().expect("entry pause");
+    let result = session.step_over_variants().expect("step over");
+    match result {
+        HostDebugVariantRunResult::Paused(pause) => {
+            assert!(
+                pause.frames.len() <= 1,
+                "step-over should not expose a deeper current stack"
+            );
+        }
+        HostDebugVariantRunResult::Completed => {}
+    }
 }

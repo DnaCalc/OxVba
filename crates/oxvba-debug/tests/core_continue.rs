@@ -1,9 +1,13 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_core/mod.rs"]
+mod support_core;
 
-/// Owner: B03. Claim: continue semantics match old host debugger
+use oxvba_debug::HostDebugVariantRunResult;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn core_continue_runs_to_completion() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let manifest = support_core::make_manifest("Sub Main()\nDim x As Long\nx = 1\nEnd Sub");
+    let mut session = support_core::prepare(&manifest);
+    let _ = session.start_variants().expect("entry pause");
+    let result = session.continue_execution_variants().expect("continue");
+    assert!(matches!(result, HostDebugVariantRunResult::Completed));
 }

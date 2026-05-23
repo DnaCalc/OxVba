@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
-use oxvba_host::{
-    DebugEvaluationRequest, DebugFrameValueKind, Engine, HostConfig, HostDebugVariantRunResult,
+use oxvba_debug::{
+    DebugCoreConfig, DebugEvaluationRequest, DebugFrameValueKind, HostDebugVariantRunResult,
+    prepare_debug_session_core,
 };
+use oxvba_host::{Engine, HostConfig};
 use oxvba_runtime::Variant;
 use oxvba_vm::DebugStopReason;
+use std::sync::Arc;
 
 fn make_manifest(source: &str) -> ProjectManifest {
     ProjectManifest {
@@ -33,10 +36,10 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
          z = y + 1\n\
          End Sub",
     );
-    let engine = Engine::new(HostConfig::default());
-    let mut session = engine
-        .prepare_debug_session(&manifest)
-        .expect("debug session should prepare");
+    let engine = Arc::new(Engine::new(HostConfig::default()));
+    let mut session =
+        prepare_debug_session_core(engine, manifest.clone(), DebugCoreConfig::default())
+            .expect("debug session should prepare");
 
     let mut transcript = Vec::<String>::new();
 
@@ -124,10 +127,10 @@ fn direct_host_debug_harness_reports_pause_frames_and_evaluation_transcript() {
 #[test]
 fn direct_host_debug_harness_reports_completed_session_without_pause_state() {
     let manifest = make_manifest("Sub Main()\nEnd Sub");
-    let engine = Engine::new(HostConfig::default());
-    let mut session = engine
-        .prepare_debug_session(&manifest)
-        .expect("debug session should prepare");
+    let engine = Arc::new(Engine::new(HostConfig::default()));
+    let mut session =
+        prepare_debug_session_core(engine, manifest.clone(), DebugCoreConfig::default())
+            .expect("debug session should prepare");
 
     let result = session
         .start_variants()

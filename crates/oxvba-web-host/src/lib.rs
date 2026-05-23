@@ -1,6 +1,9 @@
 #[cfg(feature = "native-host")]
-use oxvba_host::{
+use oxvba_debug::{
     DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
+};
+#[cfg(feature = "native-host")]
+use oxvba_host::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind,
     ImmediateVariantEvaluationOutput, ImmediateVariantValueProjection,
 };
@@ -489,8 +492,10 @@ mod browser_contract_tests {
 #[cfg(test)]
 #[cfg(feature = "native-host")]
 mod tests {
-    use oxvba_host::{
+    use oxvba_debug::{
         DebugFrameValueKind, DebugFrameVariant, DebugFrameVariantValue, DebugVariantPauseState,
+    };
+    use oxvba_host::{
         DirectHostSourceSpanStatus, DirectHostSourceUnavailableReason, DirectHostStackFrameId,
         ImmediateVariantEvaluationOutput,
     };
