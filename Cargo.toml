@@ -8,6 +8,7 @@ members = [
     "crates/oxvba-jit",
     "crates/oxvba-com",
     "crates/oxvba-host",
+    "crates/oxvba-debug",
     "crates/oxvba-cli",
     "crates/oxvba-launcher",
     "crates/oxvba-project",
@@ -35,6 +36,7 @@ oxvba-vm = { path = "crates/oxvba-vm" }
 oxvba-jit = { path = "crates/oxvba-jit" }
 oxvba-com = { path = "crates/oxvba-com" }
 oxvba-host = { path = "crates/oxvba-host" }
+oxvba-debug = { path = "crates/oxvba-debug" }
 oxvba-project = { path = "crates/oxvba-project" }
 oxvba-build = { path = "crates/oxvba-build" }
 oxvba-languageservice = { path = "crates/oxvba-languageservice" }
