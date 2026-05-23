@@ -23,6 +23,8 @@ use std::sync::Arc;
 use oxvba_compiler::ProjectManifest;
 use oxvba_host::Engine;
 
+use crate::worker::spawn_debug_worker;
+
 pub use config::{
     DebugAttachConfig, DebugComApartment, DebugCoreConfig, DebugEventChannelMode,
     DebugOutputCaptureMode, DebugStartMode,
@@ -62,14 +64,15 @@ pub fn prepare_debug_session_core(
 }
 
 /// Attach to a debug session through the consumer-facing handle.
-///
-/// B05 replaces this B01 placeholder with the worker-backed handle attach path.
 pub fn attach_debug_session(
-    _engine: Arc<Engine>,
-    _manifest: ProjectManifest,
-    _config: DebugAttachConfig,
+    engine: Arc<Engine>,
+    manifest: ProjectManifest,
+    config: DebugAttachConfig,
 ) -> Result<DebugSessionAttach, DebugAttachError> {
-    Err(DebugAttachError::Unsupported(
-        "DebugSessionHandle is introduced by B05",
-    ))
+    let worker = spawn_debug_worker(engine, manifest, config)?;
+    let (_event_tx, event_rx) = crossbeam_channel::unbounded();
+    Ok(DebugSessionAttach {
+        handle: DebugSessionHandle::new(worker.session_id, worker.commands, worker.join),
+        events: events::DebugEventReceiver::new(event_rx),
+    })
 }

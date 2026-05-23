@@ -1,0 +1,49 @@
+#![allow(dead_code)]
+
+use std::{collections::BTreeMap, sync::Arc};
+
+use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
+use oxvba_debug::{
+    DebugAttachConfig, DebugSessionAttach, DebugSessionHandle, attach_debug_session,
+};
+use oxvba_host::{Engine, HostConfig};
+
+pub fn make_manifest(source: &str) -> ProjectManifest {
+    ProjectManifest {
+        project_name: "DebugHandleCatalog".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            module_unit_from_source("Module1", ModuleKind::Procedural, source)
+                .expect("module unit"),
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+pub fn call_manifest() -> ProjectManifest {
+    make_manifest(
+        "Sub Main()\n\
+         Call Foo(4)\n\
+         End Sub\n\
+         \n\
+         Sub Foo(ByVal y As Long)\n\
+         Dim z As Long\n\
+         z = y + 1\n\
+         End Sub",
+    )
+}
+
+pub fn attach(manifest: ProjectManifest) -> DebugSessionAttach {
+    attach_debug_session(
+        Arc::new(Engine::new(HostConfig::default())),
+        manifest,
+        DebugAttachConfig::default(),
+    )
+    .expect("debug handle attach")
+}
+
+pub fn attach_handle() -> DebugSessionHandle {
+    attach(call_manifest()).handle
+}

@@ -1,9 +1,15 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: update watch works through worker
+use oxvba_host::DirectHostWatchId;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_update_watch_changes_expression() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let watch = handle.add_watch("y").expect("add watch");
+    let updated = handle
+        .update_watch(&DirectHostWatchId::new(watch.id), "z")
+        .expect("update watch");
+    assert_eq!(updated.expression, "z");
+    handle.detach().expect("detach");
 }

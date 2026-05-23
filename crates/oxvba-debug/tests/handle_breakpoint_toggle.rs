@@ -1,9 +1,21 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: enable/disable affects stops
+use oxvba_debug::DebugRunResultView;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_set_breakpoint_enabled_toggles_real_binding() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let breakpoint = handle
+        .set_source_breakpoint("Module1", 5, false)
+        .expect("set disabled breakpoint");
+    assert!(!breakpoint.enabled);
+    let enabled = handle
+        .set_breakpoint_enabled(&breakpoint.id.into(), true)
+        .expect("enable breakpoint");
+    assert!(enabled.enabled);
+    let _ = handle.start().expect("entry pause");
+    let hit = handle.continue_execution().expect("continue to breakpoint");
+    assert!(matches!(hit, DebugRunResultView::Paused(_)));
+    handle.detach().expect("detach");
 }

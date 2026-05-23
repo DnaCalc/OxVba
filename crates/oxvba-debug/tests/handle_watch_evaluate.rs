@@ -1,9 +1,21 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: evaluate watches returns projected values
+use oxvba_debug::{DebugValueKindView, DebugWatchStatusView};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_evaluate_watches_returns_current_values() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let _watch = handle.add_watch("y").expect("add watch");
+    let _ = handle.start().expect("entry pause");
+    let _ = handle.step_into().expect("callee pause");
+    let watches = handle.evaluate_watches().expect("evaluate watches");
+    assert_eq!(watches.len(), 1);
+    assert_eq!(watches[0].status, DebugWatchStatusView::Evaluated);
+    assert_eq!(watches[0].value.as_ref().expect("value").display_text, "4");
+    assert_eq!(
+        watches[0].value.as_ref().expect("value").kind,
+        DebugValueKindView::Scalar
+    );
+    handle.detach().expect("detach");
 }

@@ -1,9 +1,16 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: attach constructs worker-owned core and returns usable handle
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attach_returns_handle_and_initial_receiver() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    assert!(
+        attach
+            .handle
+            .session_id()
+            .as_str()
+            .contains("DebugHandleCatalog")
+    );
+    let _events = attach.events;
+    attach.handle.detach().expect("detach cleanly");
 }

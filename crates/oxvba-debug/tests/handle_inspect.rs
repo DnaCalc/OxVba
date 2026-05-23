@@ -1,9 +1,36 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: inspect commands work when paused
+use oxvba_debug::DebugValueKindView;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_current_pause_stack_locals_and_evaluate_work() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let _ = handle.start().expect("entry pause");
+    let _ = handle.step_into().expect("callee pause");
+
+    let pause = handle
+        .current_pause()
+        .expect("current pause")
+        .expect("paused");
+    let frames = handle.stack_frames().expect("stack frames");
+    assert_eq!(frames, pause.frames);
+    let current = frames.last().expect("current frame");
+    assert!(current.name.to_ascii_lowercase().contains("foo"));
+
+    let locals = handle
+        .frame_locals(&current.id.clone().into())
+        .expect("locals");
+    assert!(
+        locals
+            .iter()
+            .any(|value| value.name.as_deref() == Some("y"))
+    );
+
+    let y = handle
+        .evaluate(Some(&current.id.clone().into()), "y")
+        .expect("evaluate y");
+    assert_eq!(y.display_text, "4");
+    assert_eq!(y.kind, DebugValueKindView::Scalar);
+    handle.detach().expect("detach");
 }

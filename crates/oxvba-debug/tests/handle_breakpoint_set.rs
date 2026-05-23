@@ -1,9 +1,19 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: source breakpoint set uses real binding semantics
+use oxvba_debug::DebugBreakpointBindingStatusView;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_set_source_breakpoint_binds_real_line() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let breakpoint = handle
+        .set_source_breakpoint("Module1", 6, true)
+        .expect("set breakpoint");
+    assert_eq!(breakpoint.module, "Module1");
+    assert_eq!(breakpoint.file_line, 6);
+    assert_eq!(
+        breakpoint.binding_status,
+        DebugBreakpointBindingStatusView::Bound
+    );
+    handle.detach().expect("detach");
 }

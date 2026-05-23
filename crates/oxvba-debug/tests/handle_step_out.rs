@@ -1,9 +1,17 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B05. Claim: step-out command marshals and projects correctly
+use oxvba_debug::DebugRunResultView;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn handle_step_out_matches_core_flow() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let handle = support_handle::attach_handle();
+    let _ = handle.start().expect("entry pause");
+    let _ = handle.step_into().expect("callee pause");
+    let result = handle.step_out().expect("step out");
+    assert!(matches!(
+        result,
+        DebugRunResultView::Paused(_) | DebugRunResultView::Exited(_)
+    ));
+    handle.detach().expect("detach");
 }
