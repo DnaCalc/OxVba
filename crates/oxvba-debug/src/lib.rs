@@ -38,9 +38,11 @@ pub use errors::{DebugAttachError, DebugError};
 pub use events::{DebugEvent, DebugEventReceiver};
 pub use handle::{DebugSessionAttach, DebugSessionHandle};
 pub use views::{
-    DebugBreakpointView, DebugExitView, DebugFrameView, DebugModuleView, DebugPauseView,
-    DebugRunResultView, DebugSourceLocationView, DebugStopReasonView, DebugValueView,
-    DebugWatchView,
+    DebugBreakpointBindingStatusView, DebugBreakpointView, DebugExitView, DebugFrameView,
+    DebugModuleView, DebugPauseView, DebugRunResultView, DebugSourceLocationView,
+    DebugStopReasonView, DebugValueKindView, DebugValueView, DebugWatchStatusView, DebugWatchView,
+    breakpoint_view_from_core, frame_view_from_core, pause_view_from_core,
+    run_result_view_from_core, value_view_from_core, watch_view_from_core,
 };
 
 /// Prepare the raw, stateful debugger core.
