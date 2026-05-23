@@ -1,7 +1,7 @@
 # Workset: OxVba Debug Handle Architecture (`oxvba-debug` crate)
 
 Date: 2026-05-23
-Status: planned
+Status: complete
 Source handoff: `../OxIde/docs/HANDOFF_W391_DEBUGGER_COCKPIT.md` (W391 review,
 F1 / oxide-wf81 blocker); follow-up to `WORKSET_2026-05-07_DNAOXIDE_FULL_SCOPE_HOST_INTEGRATION_SUPPORT.md`.
 Downstream consumers (planned): DnaOxIde (`OxIde/oxide-wf81`), `oxvba-dap`
