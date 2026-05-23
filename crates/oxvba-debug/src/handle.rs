@@ -3,7 +3,7 @@ use std::{
     thread,
 };
 
-use crossbeam_channel::{Sender, bounded, unbounded};
+use crossbeam_channel::{Sender, bounded};
 use oxvba_host::{
     DirectHostBreakpointId, DirectHostDebugSessionId, DirectHostStackFrameId, DirectHostWatchId,
 };
@@ -11,7 +11,7 @@ use oxvba_host::{
 use crate::{
     command::{CommandReply, DebugCommand},
     errors::DebugError,
-    events::DebugEventReceiver,
+    events::{DebugEventHub, DebugEventReceiver},
     views::{
         DebugBreakpointView, DebugFrameView, DebugPauseView, DebugRunResultView, DebugValueView,
         DebugWatchView,
@@ -23,6 +23,7 @@ struct HandleInner {
     session_id: DirectHostDebugSessionId,
     commands: Sender<DebugCommand>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
+    events: DebugEventHub,
 }
 
 /// Consumer-facing debug handle.
@@ -39,12 +40,14 @@ impl DebugSessionHandle {
         session_id: DirectHostDebugSessionId,
         commands: Sender<DebugCommand>,
         worker: thread::JoinHandle<()>,
+        events: DebugEventHub,
     ) -> Self {
         Self {
             inner: Arc::new(HandleInner {
                 session_id,
                 commands,
                 worker: Mutex::new(Some(worker)),
+                events,
             }),
         }
     }
@@ -161,8 +164,7 @@ impl DebugSessionHandle {
     }
 
     pub fn subscribe(&self) -> DebugEventReceiver {
-        let (_tx, rx) = unbounded();
-        DebugEventReceiver::new(rx)
+        self.inner.events.subscribe()
     }
 
     pub fn session_id(&self) -> &DirectHostDebugSessionId {

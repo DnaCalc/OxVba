@@ -1,9 +1,15 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B06. Claim: subscriber drop is safe
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn dropping_subscriber_does_not_poison_worker() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let subscriber = attach.handle.subscribe();
+    drop(subscriber);
+    let breakpoint = attach
+        .handle
+        .set_source_breakpoint("Module1", 5, true)
+        .expect("set breakpoint after subscriber drop");
+    assert_eq!(breakpoint.file_line, 5);
+    attach.handle.detach().expect("detach");
 }

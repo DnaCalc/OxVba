@@ -1,9 +1,23 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B06. Claim: later subscribers receive future events only
+use crossbeam_channel::TryRecvError;
+use oxvba_debug::DebugEvent;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn late_subscriber_does_not_receive_replay() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let late = attach.handle.subscribe();
+    assert_eq!(late.try_recv(), Err(TryRecvError::Empty));
+
+    let breakpoint = attach
+        .handle
+        .set_source_breakpoint("Module1", 5, true)
+        .expect("set breakpoint");
+    let event = late.recv().expect("future breakpoint event");
+    assert!(matches!(
+        event,
+        DebugEvent::BreakpointChanged { breakpoint: observed, .. } if observed.id == breakpoint.id
+    ));
+    attach.handle.detach().expect("detach");
 }

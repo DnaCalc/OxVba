@@ -7,11 +7,13 @@ use oxvba_host::{DirectHostDebugSessionId, Engine};
 use crate::{
     command::{CommandReply, DebugCommand},
     config::DebugAttachConfig,
-    core::{DebugEvaluationRequest, DebugSessionCore, DebugSessionError},
+    core::{DebugCoreRunResult, DebugEvaluationRequest, DebugSessionCore, DebugSessionError},
     errors::{DebugAttachError, DebugError},
+    events::{DebugBreakpointChangeKind, DebugEvent, DebugEventHub},
     views::{
-        DebugRunResultView, breakpoint_view_from_core, frame_view_from_core, pause_view_from_core,
-        run_result_view_from_core, value_view_from_core, watch_view_from_core,
+        DebugExitView, DebugModuleView, DebugRunResultView, breakpoint_view_from_core,
+        frame_view_from_core, pause_view_from_core, run_result_view_from_core,
+        value_view_from_core, watch_view_from_core,
     },
 };
 
@@ -29,10 +31,11 @@ pub struct DebugWorkerAttach {
     pub join: thread::JoinHandle<()>,
 }
 
-pub fn spawn_debug_worker(
+pub(crate) fn spawn_debug_worker(
     engine: Arc<Engine>,
     manifest: ProjectManifest,
     _config: DebugAttachConfig,
+    events: DebugEventHub,
 ) -> Result<DebugWorkerAttach, DebugAttachError> {
     let (commands_tx, commands_rx) = crossbeam_channel::unbounded();
     let (ready_tx, ready_rx) = bounded(1);
@@ -50,10 +53,28 @@ pub fn spawn_debug_worker(
             };
             let mut core = DebugSessionCore::new(engine, manifest, runtime);
             let session_id = core.debug_session_id().clone();
+            let mut publisher = DebugEventPublisher::new(events, session_id.as_str().to_string());
+            for module in core.manifest().modules.iter() {
+                publisher.publish(DebugEvent::ModuleLoaded {
+                    seq: 0,
+                    session_id: String::new(),
+                    module: DebugModuleView {
+                        name: module.module_name.clone(),
+                        path: None,
+                    },
+                });
+            }
+            publisher.publish(DebugEvent::ThreadStarted {
+                seq: 0,
+                session_id: String::new(),
+                thread_id: 1,
+            });
             if ready_tx.send(Ok(session_id)).is_err() {
+                publisher.close();
                 return;
             }
-            run_command_loop(&mut core, commands_rx);
+            run_command_loop(&mut core, commands_rx, &mut publisher);
+            publisher.close();
         })
         .map_err(|err| DebugAttachError::WorkerFailed {
             stage: "spawn",
@@ -80,21 +101,35 @@ pub fn spawn_debug_worker(
     }
 }
 
-fn run_command_loop(core: &mut DebugSessionCore, commands: Receiver<DebugCommand>) {
+fn run_command_loop(
+    core: &mut DebugSessionCore,
+    commands: Receiver<DebugCommand>,
+    publisher: &mut DebugEventPublisher,
+) {
     while let Ok(command) = commands.recv() {
-        if handle_command(core, command) {
+        if handle_command(core, command, publisher) {
             break;
         }
     }
 }
 
-fn handle_command(core: &mut DebugSessionCore, command: DebugCommand) -> bool {
+fn handle_command(
+    core: &mut DebugSessionCore,
+    command: DebugCommand,
+    publisher: &mut DebugEventPublisher,
+) -> bool {
     match command {
-        DebugCommand::Start(reply) => reply_run(reply, core.start_variants()),
-        DebugCommand::StepInto(reply) => reply_run(reply, core.step_into_variants()),
-        DebugCommand::StepOver(reply) => reply_run(reply, core.step_over_variants()),
-        DebugCommand::StepOut(reply) => reply_run(reply, core.step_out_variants()),
-        DebugCommand::Continue(reply) => reply_run(reply, core.continue_execution_variants()),
+        DebugCommand::Start(reply) => reply_run(reply, core.start_variants(), publisher, false),
+        DebugCommand::StepInto(reply) => {
+            reply_run(reply, core.step_into_variants(), publisher, true)
+        }
+        DebugCommand::StepOver(reply) => {
+            reply_run(reply, core.step_over_variants(), publisher, true)
+        }
+        DebugCommand::StepOut(reply) => reply_run(reply, core.step_out_variants(), publisher, true),
+        DebugCommand::Continue(reply) => {
+            reply_run(reply, core.continue_execution_variants(), publisher, true)
+        }
         DebugCommand::SetSourceBreakpoint {
             module,
             file_line,
@@ -108,7 +143,14 @@ fn handle_command(core: &mut DebugSessionCore, command: DebugCommand) -> bool {
                 core.set_breakpoint_enabled(&record.breakpoint_id, enabled)
                     .unwrap_or(record)
             };
-            let _ = reply.send(Ok(breakpoint_view_from_core(&record)));
+            let view = breakpoint_view_from_core(&record);
+            publisher.publish(DebugEvent::BreakpointChanged {
+                seq: 0,
+                session_id: String::new(),
+                change: DebugBreakpointChangeKind::Added,
+                breakpoint: view.clone(),
+            });
+            let _ = reply.send(Ok(view));
             false
         }
         DebugCommand::SetBreakpointEnabled { id, enabled, reply } => {
@@ -116,14 +158,31 @@ fn handle_command(core: &mut DebugSessionCore, command: DebugCommand) -> bool {
                 .set_breakpoint_enabled(&id, enabled)
                 .map(|record| breakpoint_view_from_core(&record))
                 .ok_or(DebugError::UnknownBreakpoint(id));
+            if let Ok(view) = &result {
+                publisher.publish(DebugEvent::BreakpointChanged {
+                    seq: 0,
+                    session_id: String::new(),
+                    change: DebugBreakpointChangeKind::Changed,
+                    breakpoint: view.clone(),
+                });
+            }
             let _ = reply.send(result);
             false
         }
         DebugCommand::ClearSourceBreakpoint { id, reply } => {
-            let result = core
-                .clear_source_breakpoint(&id)
+            let removed = core.clear_source_breakpoint(&id);
+            let result = removed
+                .as_ref()
                 .map(|_| ())
                 .ok_or(DebugError::UnknownBreakpoint(id));
+            if let Some(record) = removed {
+                publisher.publish(DebugEvent::BreakpointChanged {
+                    seq: 0,
+                    session_id: String::new(),
+                    change: DebugBreakpointChangeKind::Removed,
+                    breakpoint: breakpoint_view_from_core(&record),
+                });
+            }
             let _ = reply.send(result);
             false
         }
@@ -236,13 +295,39 @@ fn handle_command(core: &mut DebugSessionCore, command: DebugCommand) -> bool {
 
 fn reply_run(
     reply: CommandReply<DebugRunResultView>,
-    result: Result<crate::core::DebugCoreRunResult, DebugSessionError>,
+    result: Result<DebugCoreRunResult, DebugSessionError>,
+    publisher: &mut DebugEventPublisher,
+    continued: bool,
 ) -> bool {
-    let _ = reply.send(
-        result
-            .map(|result| run_result_view_from_core(&result))
-            .map_err(debug_error_from_core),
-    );
+    if continued {
+        publisher.publish(DebugEvent::Continued {
+            seq: 0,
+            session_id: String::new(),
+            all_threads_continued: true,
+        });
+    }
+    let projected = result.map(|result| {
+        let view = run_result_view_from_core(&result);
+        match &view {
+            DebugRunResultView::Paused(pause) => publisher.publish(DebugEvent::Stopped {
+                seq: 0,
+                session_id: String::new(),
+                reason: pause.reason.clone(),
+                thread_id: Some(1),
+                frame_id: pause.frame_id.clone(),
+                location: pause.current_location.clone(),
+            }),
+            DebugRunResultView::Exited(DebugExitView { exit_code }) => {
+                publisher.publish(DebugEvent::Exited {
+                    seq: 0,
+                    session_id: String::new(),
+                    exit_code: *exit_code,
+                })
+            }
+        }
+        view
+    });
+    let _ = reply.send(projected.map_err(debug_error_from_core));
     false
 }
 
@@ -271,6 +356,89 @@ fn evaluate_on_worker(
             },
             other => debug_error_from_core(other),
         })
+}
+
+#[derive(Debug)]
+struct DebugEventPublisher {
+    hub: DebugEventHub,
+    session_id: String,
+    next_seq: u64,
+}
+
+impl DebugEventPublisher {
+    fn new(hub: DebugEventHub, session_id: String) -> Self {
+        Self {
+            hub,
+            session_id,
+            next_seq: 1,
+        }
+    }
+
+    fn publish(&mut self, event: DebugEvent) {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.hub.publish(self.with_envelope(event, seq));
+    }
+
+    fn close(&self) {
+        self.hub.close();
+    }
+
+    fn with_envelope(&self, event: DebugEvent, seq: u64) -> DebugEvent {
+        match event {
+            DebugEvent::Stopped {
+                reason,
+                thread_id,
+                frame_id,
+                location,
+                ..
+            } => DebugEvent::Stopped {
+                seq,
+                session_id: self.session_id.clone(),
+                reason,
+                thread_id,
+                frame_id,
+                location,
+            },
+            DebugEvent::Output { channel, text, .. } => DebugEvent::Output {
+                seq,
+                session_id: self.session_id.clone(),
+                channel,
+                text,
+            },
+            DebugEvent::Continued {
+                all_threads_continued,
+                ..
+            } => DebugEvent::Continued {
+                seq,
+                session_id: self.session_id.clone(),
+                all_threads_continued,
+            },
+            DebugEvent::Exited { exit_code, .. } => DebugEvent::Exited {
+                seq,
+                session_id: self.session_id.clone(),
+                exit_code,
+            },
+            DebugEvent::BreakpointChanged {
+                change, breakpoint, ..
+            } => DebugEvent::BreakpointChanged {
+                seq,
+                session_id: self.session_id.clone(),
+                change,
+                breakpoint,
+            },
+            DebugEvent::ModuleLoaded { module, .. } => DebugEvent::ModuleLoaded {
+                seq,
+                session_id: self.session_id.clone(),
+                module,
+            },
+            DebugEvent::ThreadStarted { thread_id, .. } => DebugEvent::ThreadStarted {
+                seq,
+                session_id: self.session_id.clone(),
+                thread_id,
+            },
+        }
+    }
 }
 
 fn debug_error_from_core(err: DebugSessionError) -> DebugError {

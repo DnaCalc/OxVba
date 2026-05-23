@@ -36,10 +36,17 @@ pub fn call_manifest() -> ProjectManifest {
 }
 
 pub fn attach(manifest: ProjectManifest) -> DebugSessionAttach {
+    attach_with_config(manifest, DebugAttachConfig::default())
+}
+
+pub fn attach_with_config(
+    manifest: ProjectManifest,
+    config: DebugAttachConfig,
+) -> DebugSessionAttach {
     attach_debug_session(
         Arc::new(Engine::new(HostConfig::default())),
         manifest,
-        DebugAttachConfig::default(),
+        config,
     )
     .expect("debug handle attach")
 }

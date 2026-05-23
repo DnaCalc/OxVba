@@ -23,7 +23,7 @@ use std::sync::Arc;
 use oxvba_compiler::ProjectManifest;
 use oxvba_host::Engine;
 
-use crate::worker::spawn_debug_worker;
+use crate::{events::DebugEventHub, worker::spawn_debug_worker};
 
 pub use config::{
     DebugAttachConfig, DebugComApartment, DebugCoreConfig, DebugEventChannelMode,
@@ -37,7 +37,9 @@ pub use core::{
     DebugWatchEvaluationStatus, DebugWatchRecord, HostDebugVariantRunResult,
 };
 pub use errors::{DebugAttachError, DebugError};
-pub use events::{DebugEvent, DebugEventReceiver};
+pub use events::{
+    DebugEvent, DebugEventDelivery, DebugEventLag, DebugEventReceiver, DebugEventRecvError,
+};
 pub use handle::{DebugSessionAttach, DebugSessionHandle};
 pub use views::{
     DebugBreakpointBindingStatusView, DebugBreakpointView, DebugExitView, DebugFrameView,
@@ -69,10 +71,11 @@ pub fn attach_debug_session(
     manifest: ProjectManifest,
     config: DebugAttachConfig,
 ) -> Result<DebugSessionAttach, DebugAttachError> {
-    let worker = spawn_debug_worker(engine, manifest, config)?;
-    let (_event_tx, event_rx) = crossbeam_channel::unbounded();
+    let events = DebugEventHub::new(config.event_channel);
+    let initial_events = events.subscribe();
+    let worker = spawn_debug_worker(engine, manifest, config, events.clone())?;
     Ok(DebugSessionAttach {
-        handle: DebugSessionHandle::new(worker.session_id, worker.commands, worker.join),
-        events: events::DebugEventReceiver::new(event_rx),
+        handle: DebugSessionHandle::new(worker.session_id, worker.commands, worker.join, events),
+        events: initial_events,
     })
 }

@@ -1,9 +1,16 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B07. Claim: primary thread event is emitted
+use oxvba_debug::DebugEvent;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attach_emits_primary_thread_started() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let _module = attach.events.recv().expect("module loaded");
+    let thread = attach.events.recv().expect("thread started");
+    assert!(matches!(
+        thread,
+        DebugEvent::ThreadStarted { thread_id: 1, .. }
+    ));
+    attach.handle.detach().expect("detach");
 }

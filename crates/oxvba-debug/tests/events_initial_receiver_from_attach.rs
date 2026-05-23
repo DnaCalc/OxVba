@@ -1,9 +1,17 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B06. Claim: attach receiver sees startup events emitted after subscription
+use oxvba_debug::DebugEvent;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn initial_receiver_observes_startup_events() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let first = attach.events.recv().expect("startup module event");
+    let second = attach.events.recv().expect("startup thread event");
+    assert!(matches!(first, DebugEvent::ModuleLoaded { .. }));
+    assert!(matches!(second, DebugEvent::ThreadStarted { .. }));
+    assert_eq!(first.seq(), 1);
+    assert_eq!(second.seq(), 2);
+    assert_eq!(first.session_id(), attach.handle.session_id().as_str());
+    attach.handle.detach().expect("detach");
 }

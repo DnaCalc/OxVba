@@ -1,9 +1,26 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B06. Claim: event emitted before reply and sequence ordering proves it
+use oxvba_debug::DebugEvent;
+use oxvba_host::DirectHostBreakpointId;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn event_seq_precedes_command_response_for_state_change() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let receiver = attach.handle.subscribe();
+    let breakpoint = attach
+        .handle
+        .set_source_breakpoint("Module1", 5, true)
+        .expect("set breakpoint");
+    let add_event = receiver.recv().expect("add event");
+    assert!(matches!(add_event, DebugEvent::BreakpointChanged { .. }));
+
+    let id = DirectHostBreakpointId::new(breakpoint.id);
+    attach
+        .handle
+        .set_breakpoint_enabled(&id, false)
+        .expect("toggle breakpoint");
+    let change_event = receiver.recv().expect("change event");
+    assert!(change_event.seq() > add_event.seq());
+    attach.handle.detach().expect("detach");
 }
