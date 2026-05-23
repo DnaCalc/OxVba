@@ -192,7 +192,7 @@ Required check: `cargo test -p oxvba-debug --features tokio async_`.
 | `property_random_sequences.rs` | `random_handle_command_sequences_do_not_panic_deadlock_or_return_untyped_errors` | proptest safety invariants for random valid command sequences |
 | `property_snapshot.rs` | `canonical_sequence_event_and_view_log_matches_snapshot` | fixed sequence serialized baseline catches semantic drift |
 
-Evidence file: committed snapshot under `crates/oxvba-debug/tests/snapshots/`.
+Evidence file: committed snapshot under `crates/oxvba-debug/tests/snapshots/`. Snapshot mismatch is a regression sentinel for observable debug protocol drift; update the baseline only alongside an intentional event/view contract change and matching review notes.
 
 ## B13 - concurrency, stress, and benchmarks
 

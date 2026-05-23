@@ -35,6 +35,30 @@ pub fn call_manifest() -> ProjectManifest {
     )
 }
 
+pub fn multi_module_manifest() -> ProjectManifest {
+    ProjectManifest {
+        project_name: "DebugHandleCatalog".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            module_unit_from_source(
+                "Module1",
+                ModuleKind::Procedural,
+                "Sub Main()\nCall Foo(4)\nEnd Sub",
+            )
+            .expect("module1"),
+            module_unit_from_source(
+                "Module2",
+                ModuleKind::Procedural,
+                "Sub Foo(ByVal y As Long)\nDim z As Long\nz = y + 1\nEnd Sub",
+            )
+            .expect("module2"),
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
 pub fn attach(manifest: ProjectManifest) -> DebugSessionAttach {
     attach_with_config(manifest, DebugAttachConfig::default())
 }
