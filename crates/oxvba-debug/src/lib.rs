@@ -38,7 +38,8 @@ pub use core::{
 };
 pub use errors::{DebugAttachError, DebugError};
 pub use events::{
-    DebugEvent, DebugEventDelivery, DebugEventLag, DebugEventReceiver, DebugEventRecvError,
+    DebugBreakpointChangeKind, DebugEvent, DebugEventDelivery, DebugEventLag, DebugEventReceiver,
+    DebugEventRecvError, DebugOutputChannel,
 };
 pub use handle::{DebugSessionAttach, DebugSessionHandle};
 pub use views::{

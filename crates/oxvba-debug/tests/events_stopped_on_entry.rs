@@ -1,9 +1,20 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B07. Claim: entry pause emits `Stopped(Entry)`
+use oxvba_debug::{DebugEvent, DebugStopReasonView};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn attach_stop_on_entry_emits_stopped_entry() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let receiver = attach.handle.subscribe();
+    let _ = attach.handle.start().expect("start");
+    let stopped = receiver.recv().expect("stopped event");
+    assert!(matches!(
+        stopped,
+        DebugEvent::Stopped {
+            reason: DebugStopReasonView::Entry,
+            ..
+        }
+    ));
+    attach.handle.detach().expect("detach");
 }

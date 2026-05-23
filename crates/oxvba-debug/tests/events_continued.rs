@@ -1,9 +1,24 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B07. Claim: resume emits `Continued` in order
+use oxvba_debug::DebugEvent;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn continue_emits_continued_before_stop_or_exit() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let receiver = attach.handle.subscribe();
+    let _ = attach.handle.start().expect("start");
+    let stopped = receiver.recv().expect("entry stopped");
+    assert!(matches!(stopped, DebugEvent::Stopped { .. }));
+
+    let _ = attach.handle.continue_execution().expect("continue");
+    let continued = receiver.recv().expect("continued event");
+    let terminal = receiver.recv().expect("terminal event");
+    assert!(matches!(continued, DebugEvent::Continued { .. }));
+    assert!(matches!(
+        terminal,
+        DebugEvent::Stopped { .. } | DebugEvent::Exited { .. }
+    ));
+    assert!(continued.seq() < terminal.seq());
+    attach.handle.detach().expect("detach");
 }

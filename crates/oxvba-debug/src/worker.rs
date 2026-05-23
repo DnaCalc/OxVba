@@ -1,7 +1,11 @@
-use std::{sync::Arc, thread};
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 use oxvba_compiler::ProjectManifest;
+use oxvba_hal::{HostOutputChannel, install_thread_output_tap};
 use oxvba_host::{DirectHostDebugSessionId, Engine};
 
 use crate::{
@@ -9,7 +13,7 @@ use crate::{
     config::DebugAttachConfig,
     core::{DebugCoreRunResult, DebugEvaluationRequest, DebugSessionCore, DebugSessionError},
     errors::{DebugAttachError, DebugError},
-    events::{DebugBreakpointChangeKind, DebugEvent, DebugEventHub},
+    events::{DebugBreakpointChangeKind, DebugEvent, DebugEventHub, DebugOutputChannel},
     views::{
         DebugExitView, DebugModuleView, DebugRunResultView, breakpoint_view_from_core,
         frame_view_from_core, pause_view_from_core, run_result_view_from_core,
@@ -53,7 +57,18 @@ pub(crate) fn spawn_debug_worker(
             };
             let mut core = DebugSessionCore::new(engine, manifest, runtime);
             let session_id = core.debug_session_id().clone();
-            let mut publisher = DebugEventPublisher::new(events, session_id.as_str().to_string());
+            let output_tap = Arc::new(Mutex::new(Vec::new()));
+            let tap_buffer = output_tap.clone();
+            let _output_tap_guard = install_thread_output_tap(Arc::new(
+                move |channel: HostOutputChannel, text: &str| {
+                    tap_buffer
+                        .lock()
+                        .expect("debug output tap buffer poisoned")
+                        .push((channel, text.to_string()));
+                },
+            ));
+            let mut publisher =
+                DebugEventPublisher::new(events, session_id.as_str().to_string(), output_tap);
             for module in core.manifest().modules.iter() {
                 publisher.publish(DebugEvent::ModuleLoaded {
                     seq: 0,
@@ -308,6 +323,9 @@ fn reply_run(
     }
     let projected = result.map(|result| {
         let view = run_result_view_from_core(&result);
+        if continued {
+            publisher.publish_pending_outputs();
+        }
         match &view {
             DebugRunResultView::Paused(pause) => publisher.publish(DebugEvent::Stopped {
                 seq: 0,
@@ -363,14 +381,20 @@ struct DebugEventPublisher {
     hub: DebugEventHub,
     session_id: String,
     next_seq: u64,
+    output_tap: Arc<Mutex<Vec<(HostOutputChannel, String)>>>,
 }
 
 impl DebugEventPublisher {
-    fn new(hub: DebugEventHub, session_id: String) -> Self {
+    fn new(
+        hub: DebugEventHub,
+        session_id: String,
+        output_tap: Arc<Mutex<Vec<(HostOutputChannel, String)>>>,
+    ) -> Self {
         Self {
             hub,
             session_id,
             next_seq: 1,
+            output_tap,
         }
     }
 
@@ -382,6 +406,24 @@ impl DebugEventPublisher {
 
     fn close(&self) {
         self.hub.close();
+    }
+
+    fn publish_pending_outputs(&mut self) {
+        let outputs = {
+            let mut outputs = self
+                .output_tap
+                .lock()
+                .expect("debug output tap buffer poisoned");
+            std::mem::take(&mut *outputs)
+        };
+        for (channel, text) in outputs {
+            self.publish(DebugEvent::Output {
+                seq: 0,
+                session_id: String::new(),
+                channel: debug_output_channel(channel),
+                text,
+            });
+        }
     }
 
     fn with_envelope(&self, event: DebugEvent, seq: u64) -> DebugEvent {
@@ -438,6 +480,14 @@ impl DebugEventPublisher {
                 thread_id,
             },
         }
+    }
+}
+
+fn debug_output_channel(channel: HostOutputChannel) -> DebugOutputChannel {
+    match channel {
+        HostOutputChannel::Stdout => DebugOutputChannel::Stdout,
+        HostOutputChannel::Stderr => DebugOutputChannel::Stderr,
+        HostOutputChannel::Host => DebugOutputChannel::Host,
     }
 }
 

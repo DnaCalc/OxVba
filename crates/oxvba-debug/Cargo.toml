@@ -14,6 +14,7 @@ bench = ["dep:criterion"]
 
 [dependencies]
 oxvba-host.workspace = true
+oxvba-hal.workspace = true
 oxvba-vm.workspace = true
 oxvba-runtime.workspace = true
 oxvba-compiler.workspace = true

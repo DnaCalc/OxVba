@@ -1,9 +1,25 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B07. Claim: completion emits `Exited`
+use oxvba_debug::DebugEvent;
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn completion_emits_exited() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::make_manifest(
+        "Sub Main()\nDim x As Long\nx = 1\nEnd Sub",
+    ));
+    let receiver = attach.handle.subscribe();
+    let _ = attach.handle.start().expect("start");
+    let _entry = receiver.recv().expect("entry stopped");
+    let _ = attach.handle.continue_execution().expect("continue");
+    let _continued = receiver.recv().expect("continued");
+    let exited = receiver.recv().expect("exited");
+    assert!(matches!(
+        exited,
+        DebugEvent::Exited {
+            exit_code: None,
+            ..
+        }
+    ));
+    attach.handle.detach().expect("detach");
 }

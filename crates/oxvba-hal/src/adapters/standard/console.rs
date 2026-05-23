@@ -7,6 +7,7 @@ use std::{
 use crate::{
     error::{HalError, HalResult},
     model::CapabilityId,
+    output_tap::{HostOutputChannel, emit_thread_output_tap},
     traits::ConsoleHal,
 };
 use oxvba_runtime::Variant;
@@ -91,6 +92,7 @@ impl ConsoleHal for StandardHostServices {
             return Err(self.unsupported(capability, "print_line"));
         }
         let text = self.variant_to_display_text(&data);
+        emit_thread_output_tap(HostOutputChannel::Stdout, &text);
         if let Some(callbacks) = self.callbacks.as_ref()
             && callbacks.on_console_print(&text)
         {

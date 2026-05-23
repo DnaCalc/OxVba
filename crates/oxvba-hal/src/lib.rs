@@ -7,6 +7,7 @@ pub mod dynamic_bridge;
 pub mod error;
 pub mod journal;
 pub mod model;
+pub mod output_tap;
 pub mod project;
 pub mod traits;
 
@@ -17,6 +18,9 @@ pub use model::{
     HalProfileId, HalRuntimeClass, HostPolicy, HostPolicyPreset, UiVirtualizationMode,
     UnsupportedFeatureMode, WasmRuntimeClass, host_backed_mode_active,
     host_backed_profile_matches_host,
+};
+pub use output_tap::{
+    HostOutputChannel, HostOutputTap, ThreadOutputTapGuard, install_thread_output_tap,
 };
 pub use project::{
     HostExtensionModuleChange, InMemoryProjectCatalog, ProjectCallbackError, ProjectCallbackResult,

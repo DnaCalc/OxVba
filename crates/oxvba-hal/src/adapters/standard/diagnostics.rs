@@ -1,4 +1,9 @@
-use crate::{error::HalResult, model::CapabilityId, traits::DiagnosticsHal};
+use crate::{
+    error::HalResult,
+    model::CapabilityId,
+    output_tap::{HostOutputChannel, emit_thread_output_tap},
+    traits::DiagnosticsHal,
+};
 use oxvba_runtime::Variant;
 
 use super::StandardHostServices;
@@ -26,6 +31,7 @@ impl DiagnosticsHal for StandardHostServices {
             return Err(self.unsupported(capability, "debug_print"));
         }
         let text = self.variant_to_display_text(&text);
+        emit_thread_output_tap(HostOutputChannel::Host, &text);
         if let Some(callbacks) = self.callbacks.as_ref() {
             callbacks.on_debug_print(&text);
             return Ok(Variant::from_i32(0));

@@ -1,9 +1,28 @@
-// Auto-generated B02 catalog stubs from docs/spec/OXVBA_DEBUG_TEST_CATALOG.md.
-// Later beads remove #[ignore] and implement their owned tests.
+#[path = "support_handle/mod.rs"]
+mod support_handle;
 
-/// Owner: B07. Claim: breakpoint hit emits `Stopped(Breakpoint)`
+use oxvba_debug::{DebugEvent, DebugStopReasonView};
+
 #[test]
-#[ignore = "catalog stub implemented by owning oxvba-debug bead"]
 fn continue_to_breakpoint_emits_stopped_breakpoint() {
-    unimplemented!("catalog stub implemented by owning oxvba-debug bead");
+    let attach = support_handle::attach(support_handle::call_manifest());
+    let receiver = attach.handle.subscribe();
+    let _ = attach
+        .handle
+        .set_source_breakpoint("Module1", 5, true)
+        .expect("breakpoint");
+    let _bp_event = receiver.recv().expect("breakpoint changed");
+    let _ = attach.handle.start().expect("start");
+    let _entry = receiver.recv().expect("entry stopped");
+    let _ = attach.handle.continue_execution().expect("continue");
+    let _continued = receiver.recv().expect("continued");
+    let stopped = receiver.recv().expect("breakpoint stopped");
+    assert!(matches!(
+        stopped,
+        DebugEvent::Stopped {
+            reason: DebugStopReasonView::Breakpoint,
+            ..
+        }
+    ));
+    attach.handle.detach().expect("detach");
 }
