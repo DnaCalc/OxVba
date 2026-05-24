@@ -34,12 +34,8 @@ pub use embedded::{
     EmbeddedRunStartedEvent, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
-    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
-    HostUdfArgumentDescriptor, HostUdfCallContext, HostUdfCallableMetadata,
-    HostUdfCapabilityConstraints, HostUdfCatalog, HostUdfFunctionDescriptor,
-    HostUdfInvocationTarget, HostUdfInvokeResult, HostUdfRegistrationIdentity,
-    HostUdfTypeMapEvidence, HostUdfTypedInvokeResult, HostUdfTypedParameterDescriptor,
-    HostUdfTypedSignature, HostUdfTypedValue, PhaseDiagnostic, ProjectRuntimeSession,
+    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
+    ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,

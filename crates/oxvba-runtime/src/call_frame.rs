@@ -102,7 +102,7 @@ pub enum RuntimeCallSource {
     ExternalComDispatch,
     ExternalComVTable,
     EventSink,
-    HostUdf,
+    HostCallable,
     Unknown,
 }
 
@@ -362,12 +362,12 @@ mod tests {
         let error = RuntimeCallError::new(
             438,
             "object does not support member",
-            RuntimeCallSource::HostUdf,
+            RuntimeCallSource::HostCallable,
         )
         .with_argument_index(1);
         assert_eq!(error.code, 438);
         assert_eq!(error.argument_index, Some(1));
-        assert_eq!(error.source, RuntimeCallSource::HostUdf);
+        assert_eq!(error.source, RuntimeCallSource::HostCallable);
         assert_eq!(error.message, "object does not support member");
     }
 }

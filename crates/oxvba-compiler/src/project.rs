@@ -9372,7 +9372,7 @@ mod tests {
     }
 
     #[test]
-    fn reflect_project_does_not_synthesize_host_udf_policy_fields() {
+    fn reflect_project_does_not_synthesize_host_policy_fields() {
         let manifest = base_manifest();
         let reflection_debug = format!("{:#?}", reflect_project(&manifest)).to_ascii_lowercase();
 
