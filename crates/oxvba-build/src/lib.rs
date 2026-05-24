@@ -13,5 +13,6 @@ pub mod idl;
 pub mod manifest;
 pub mod registration;
 pub mod typelib_gen;
+pub mod wrapper_plan;
 pub mod xll;
 pub mod xloper;
