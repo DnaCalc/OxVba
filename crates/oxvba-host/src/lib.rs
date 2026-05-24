@@ -62,6 +62,8 @@ pub use runner::{
     RuntimeProfileId, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 pub use vba_host::{
-    HostDiagnostic, HostDiagnosticPhase, LoadedVbaProject, PreparedVbaProject, ProjectFile,
-    ProjectFileSet, ProjectModuleText, ProjectSource, VbaHost, VbaHostOptions,
+    HostCallContext, HostCaller, HostContextObservations, HostContextValue, HostDiagnostic,
+    HostDiagnosticPhase, InvocationResult, LoadedVbaProject, PreparedVbaProject, ProjectFile,
+    ProjectFileSet, ProjectModuleText, ProjectSource, TypedInvocationResult, TypedValue, VbaHost,
+    VbaHostOptions,
 };

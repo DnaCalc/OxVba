@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use oxvba_compiler::{
-    ModuleKind, OxBundle, ProjectKind, ProjectManifest, ProjectReflection, compile_project,
-    module_unit_from_source,
+    ModuleKind, OxBundle, ProjectKind, ProjectManifest, ProjectReflection, VbaType,
+    compile_project, module_unit_from_source,
 };
 use oxvba_runtime::Variant;
 
@@ -56,7 +56,66 @@ pub enum HostDiagnosticPhase {
     Load,
     Compile,
     Prepare,
+    ValidateCall,
     Runtime,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HostCallContext {
+    pub caller: Option<HostCaller>,
+    pub locale_id: Option<u32>,
+    pub metadata: BTreeMap<String, HostContextValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostCaller {
+    pub source_system: String,
+    pub display_text: Option<String>,
+    pub stable_id: Option<String>,
+    pub metadata: BTreeMap<String, HostContextValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HostContextValue {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    StringList(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypedValue {
+    Empty,
+    Integer(i16),
+    Long(i32),
+    LongLong(i64),
+    Single(f32),
+    Double(f64),
+    Boolean(bool),
+    String(String),
+    Variant(Variant),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostContextObservations {
+    pub caller_source_system: Option<String>,
+    pub locale_id: Option<u32>,
+    pub metadata_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvocationResult {
+    pub value: Variant,
+    pub conversion_lane: String,
+    pub context_observations: HostContextObservations,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedInvocationResult {
+    pub value: TypedValue,
+    pub conversion_lane: String,
+    pub context_observations: HostContextObservations,
 }
 
 pub struct LoadedVbaProject {
@@ -74,6 +133,7 @@ enum LoadedProjectSource {
 pub struct PreparedVbaProject {
     engine: Engine,
     session: ProjectRuntimeSession,
+    last_context_observations: Option<HostContextObservations>,
 }
 
 impl VbaHost {
@@ -218,13 +278,129 @@ impl LoadedVbaProject {
             }
         }
         .map_err(HostDiagnostic::from_phase_diagnostic)?;
-        Ok(PreparedVbaProject { engine, session })
+        Ok(PreparedVbaProject {
+            engine,
+            session,
+            last_context_observations: None,
+        })
     }
 }
 
 impl PreparedVbaProject {
     pub fn reflection(&self) -> &ProjectReflection {
         self.session.project_reflection()
+    }
+
+    pub fn last_context_observations(&self) -> Option<&HostContextObservations> {
+        self.last_context_observations.as_ref()
+    }
+
+    pub fn invoke_callable_variant(
+        &mut self,
+        callable_id: &str,
+        context: HostCallContext,
+        args: &[Variant],
+    ) -> Result<InvocationResult, HostDiagnostic> {
+        let (module_name, procedure_name, expected_arity) = self.resolve_callable(callable_id)?;
+        if args.len() != expected_arity {
+            return Err(HostDiagnostic::new(
+                HostDiagnosticPhase::ValidateCall,
+                "HOST-CALL-ARITY".to_string(),
+                format!(
+                    "callable `{callable_id}` expects {expected_arity} arguments, got {}",
+                    args.len()
+                ),
+            ));
+        }
+        let observations = observe_context(&context);
+        self.last_context_observations = Some(observations.clone());
+        let value = self.invoke_by_name_variant(&module_name, &procedure_name, args)?;
+        Ok(InvocationResult {
+            value,
+            conversion_lane: "VariantPositional".to_string(),
+            context_observations: observations,
+        })
+    }
+
+    pub fn invoke_callable_typed(
+        &mut self,
+        callable_id: &str,
+        context: HostCallContext,
+        args: &[TypedValue],
+    ) -> Result<TypedInvocationResult, HostDiagnostic> {
+        let procedure = self
+            .reflection()
+            .procedures
+            .iter()
+            .find(|procedure| procedure.callable_id == callable_id)
+            .cloned()
+            .ok_or_else(|| {
+                HostDiagnostic::new(
+                    HostDiagnosticPhase::ValidateCall,
+                    "HOST-CALL-NOT-FOUND".to_string(),
+                    format!("callable not found: {callable_id}"),
+                )
+            })?;
+        if args.len() != procedure.signature.parameters.len() {
+            return Err(HostDiagnostic::new(
+                HostDiagnosticPhase::ValidateCall,
+                "HOST-CALL-ARITY".to_string(),
+                format!(
+                    "callable `{callable_id}` expects {} arguments, got {}",
+                    procedure.signature.parameters.len(),
+                    args.len()
+                ),
+            ));
+        }
+        let mut variants = Vec::with_capacity(args.len());
+        for (index, (arg, param)) in args
+            .iter()
+            .zip(procedure.signature.parameters.iter())
+            .enumerate()
+        {
+            variants.push(typed_value_to_variant(
+                arg,
+                param.value_type.as_ref().map(|ty| &ty.normalized),
+                callable_id,
+                index,
+            )?);
+        }
+        let invocation = self.invoke_callable_variant(callable_id, context, &variants)?;
+        let return_type = procedure
+            .signature
+            .return_type
+            .as_ref()
+            .map(|ty| &ty.normalized);
+        let value = variant_to_typed_value(invocation.value, return_type, callable_id)?;
+        Ok(TypedInvocationResult {
+            value,
+            conversion_lane: "TypedScalarFirstTier".to_string(),
+            context_observations: invocation.context_observations,
+        })
+    }
+
+    fn resolve_callable(
+        &self,
+        callable_id: &str,
+    ) -> Result<(String, String, usize), HostDiagnostic> {
+        self.reflection()
+            .procedures
+            .iter()
+            .find(|procedure| procedure.callable_id == callable_id)
+            .map(|procedure| {
+                (
+                    procedure.module_name.clone(),
+                    procedure.procedure_name.clone(),
+                    procedure.signature.parameters.len(),
+                )
+            })
+            .ok_or_else(|| {
+                HostDiagnostic::new(
+                    HostDiagnosticPhase::ValidateCall,
+                    "HOST-CALL-NOT-FOUND".to_string(),
+                    format!("callable not found: {callable_id}"),
+                )
+            })
     }
 
     pub fn invoke_by_name_variant(
@@ -237,6 +413,84 @@ impl PreparedVbaProject {
             .invoke_procedure_with_variants(&mut self.session, module_name, procedure_name, args)
             .map_err(HostDiagnostic::from_phase_diagnostic)
     }
+}
+
+fn observe_context(context: &HostCallContext) -> HostContextObservations {
+    HostContextObservations {
+        caller_source_system: context
+            .caller
+            .as_ref()
+            .map(|caller| caller.source_system.clone()),
+        locale_id: context.locale_id,
+        metadata_keys: context.metadata.keys().cloned().collect(),
+    }
+}
+
+fn typed_value_to_variant(
+    value: &TypedValue,
+    expected: Option<&VbaType>,
+    callable_id: &str,
+    index: usize,
+) -> Result<Variant, HostDiagnostic> {
+    match (value, expected) {
+        (TypedValue::Variant(value), _) => Ok(value.clone()),
+        (TypedValue::Long(value), Some(VbaType::Long) | None) => Ok(Variant::from_i32(*value)),
+        (TypedValue::Integer(value), Some(VbaType::Integer) | None) => {
+            Ok(Variant::from_i16(*value))
+        }
+        (TypedValue::LongLong(value), Some(VbaType::LongLong) | None) => {
+            Ok(Variant::from_i64(*value))
+        }
+        (TypedValue::Single(value), Some(VbaType::Single) | None) => Ok(Variant::from_f32(*value)),
+        (TypedValue::Double(value), Some(VbaType::Double) | None) => Ok(Variant::from_f64(*value)),
+        (TypedValue::Boolean(value), Some(VbaType::Boolean) | None) => {
+            Ok(Variant::from_bool(*value))
+        }
+        (TypedValue::String(value), Some(VbaType::String) | None) => {
+            Ok(Variant::from_string(value.clone()))
+        }
+        (TypedValue::Empty, _) => Ok(Variant::empty()),
+        (_, Some(expected)) => Err(HostDiagnostic::new(
+            HostDiagnosticPhase::ValidateCall,
+            "HOST-CALL-TYPE".to_string(),
+            format!(
+                "callable `{callable_id}` argument {index} is not admitted by TypedScalarFirstTier for expected type {expected:?}"
+            ),
+        )),
+    }
+}
+
+fn variant_to_typed_value(
+    value: Variant,
+    expected: Option<&VbaType>,
+    callable_id: &str,
+) -> Result<TypedValue, HostDiagnostic> {
+    match expected {
+        Some(VbaType::Long) => value.as_i32().map(TypedValue::Long),
+        Some(VbaType::Integer) => value.as_i16().map(TypedValue::Integer),
+        Some(VbaType::LongLong) => value.as_i64().map(TypedValue::LongLong),
+        Some(VbaType::Single) => value.as_f32().map(TypedValue::Single),
+        Some(VbaType::Double) => value.as_f64().map(TypedValue::Double),
+        Some(VbaType::Boolean) => value.as_bool().map(TypedValue::Boolean),
+        Some(VbaType::String) => value.as_bstr().map(|value| TypedValue::String(value.to_string())),
+        Some(VbaType::Variant) | None => Some(TypedValue::Variant(value)),
+        Some(other) => {
+            return Err(HostDiagnostic::new(
+                HostDiagnosticPhase::ValidateCall,
+                "HOST-CALL-RETURN-TYPE".to_string(),
+                format!(
+                    "callable `{callable_id}` return type {other:?} is not admitted by TypedScalarFirstTier"
+                ),
+            ));
+        }
+    }
+    .ok_or_else(|| {
+        HostDiagnostic::new(
+            HostDiagnosticPhase::Runtime,
+            "HOST-CALL-RETURN-CONVERSION".to_string(),
+            format!("callable `{callable_id}` return value did not match declared type"),
+        )
+    })
 }
 
 impl HostDiagnostic {

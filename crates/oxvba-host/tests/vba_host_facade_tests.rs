@@ -2,7 +2,8 @@ use std::fs;
 
 use oxvba_compiler::{ModuleKind, OxBundle, ProjectKind, ProjectManifest, compile_project};
 use oxvba_host::{
-    ProjectFile, ProjectFileSet, ProjectModuleText, ProjectSource, VbaHost, VbaHostOptions,
+    HostCallContext, HostCaller, HostContextValue, HostDiagnosticPhase, ProjectFile,
+    ProjectFileSet, ProjectModuleText, ProjectSource, TypedValue, VbaHost, VbaHostOptions,
 };
 use oxvba_runtime::{Variant, bstr::BStr};
 
@@ -35,6 +36,105 @@ fn vba_host_loads_in_memory_reflects_before_prepare_and_invokes_after_prepare() 
         .invoke_by_name_variant("Math", "Add", &[Variant::from_i32(2), Variant::from_i32(5)])
         .expect("invoke");
     assert_eq!(result, Variant::from_i32(7));
+}
+
+#[test]
+fn vba_host_invokes_by_callable_id_with_context_observation_and_typed_lane() {
+    let host = VbaHost::default();
+    let loaded = host
+        .load_project(ProjectSource::ModuleTexts(vec![ProjectModuleText {
+            name_hint: Some("Math".to_string()),
+            kind_hint: None,
+            text: "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\nAdd = a + b\nEnd Function".to_string(),
+        }]))
+        .expect("load");
+    let callable_id = loaded.reflection().procedures[0].callable_id.clone();
+    let mut prepared = loaded.prepare().expect("prepare");
+    let mut metadata = std::collections::BTreeMap::new();
+    metadata.insert(
+        "trace".to_string(),
+        HostContextValue::String("abc".to_string()),
+    );
+    let context = HostCallContext {
+        caller: Some(HostCaller {
+            source_system: "test-harness".to_string(),
+            display_text: Some("A1".to_string()),
+            stable_id: Some("cell-a1".to_string()),
+            metadata: Default::default(),
+        }),
+        locale_id: Some(1033),
+        metadata,
+    };
+
+    let variant_result = prepared
+        .invoke_callable_variant(
+            &callable_id,
+            context.clone(),
+            &[Variant::from_i32(2), Variant::from_i32(3)],
+        )
+        .expect("variant callable invoke");
+    assert_eq!(variant_result.value, Variant::from_i32(5));
+    assert_eq!(variant_result.conversion_lane, "VariantPositional");
+    assert_eq!(
+        variant_result
+            .context_observations
+            .caller_source_system
+            .as_deref(),
+        Some("test-harness")
+    );
+    assert_eq!(
+        prepared.last_context_observations().unwrap().locale_id,
+        Some(1033)
+    );
+
+    let typed_result = prepared
+        .invoke_callable_typed(
+            &callable_id,
+            context,
+            &[TypedValue::Long(4), TypedValue::Long(6)],
+        )
+        .expect("typed callable invoke");
+    assert_eq!(typed_result.value, TypedValue::Long(10));
+    assert_eq!(typed_result.conversion_lane, "TypedScalarFirstTier");
+}
+
+#[test]
+fn vba_host_callable_invocation_reports_structured_diagnostics() {
+    let host = VbaHost::default();
+    let loaded = host
+        .load_project(ProjectSource::ModuleTexts(vec![ProjectModuleText {
+            name_hint: Some("Math".to_string()),
+            kind_hint: None,
+            text: "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\nAdd = a + b\nEnd Function".to_string(),
+        }]))
+        .expect("load");
+    let callable_id = loaded.reflection().procedures[0].callable_id.clone();
+    let mut prepared = loaded.prepare().expect("prepare");
+
+    let arity = prepared
+        .invoke_callable_variant(
+            &callable_id,
+            HostCallContext::default(),
+            &[Variant::from_i32(1)],
+        )
+        .expect_err("arity diagnostic");
+    assert_eq!(arity.phase, HostDiagnosticPhase::ValidateCall);
+    assert_eq!(arity.code, "HOST-CALL-ARITY");
+
+    let type_error = prepared
+        .invoke_callable_typed(
+            &callable_id,
+            HostCallContext::default(),
+            &[TypedValue::String("bad".to_string()), TypedValue::Long(1)],
+        )
+        .expect_err("type diagnostic");
+    assert_eq!(type_error.phase, HostDiagnosticPhase::ValidateCall);
+    assert_eq!(type_error.code, "HOST-CALL-TYPE");
+
+    let missing = prepared
+        .invoke_callable_variant("missing", HostCallContext::default(), &[])
+        .expect_err("missing diagnostic");
+    assert_eq!(missing.code, "HOST-CALL-NOT-FOUND");
 }
 
 #[test]
