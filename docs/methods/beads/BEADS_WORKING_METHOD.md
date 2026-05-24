@@ -435,7 +435,11 @@ The minimal execution loop is:
 2. choose one bead
 3. mark it in progress
 4. do the work
-5. close it or split follow-up work
+5. run the relevant checks
+6. run a fresh-eyes review: hunt for blunders, mistakes, oversights, omissions, logical gaps, misconceptions, hidden assumptions, regressions, and bugs
+7. fix any material review findings, rerun checks, and repeat fresh-eyes review until clean
+8. close it or split/file follow-up work
+9. commit the resulting code/docs/evidence and bead closure state
 
 When a workset or epic lacks a believable ready path, add a rollout bead before trying to continue execution informally.
 

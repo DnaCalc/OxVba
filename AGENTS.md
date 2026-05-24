@@ -19,6 +19,8 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - For tool-heavy work, state the intended action briefly, execute it, then verify the outcome. Do not add long progress narratives that compete with the bead/workset truth surfaces.
 - Before finalizing a cycle, check:
   - the requested outcome is satisfied or explicitly blocked,
+  - relevant checks have run,
+  - fresh-eyes review has actively looked for blunders, mistakes, oversights, omissions, logical gaps, misconceptions, hidden assumptions, regressions, and bugs,
   - compatibility/parity claims are backed by tests or evidence,
   - docs and bead state reflect the same truth,
   - no required follow-up is left only in chat.
@@ -34,7 +36,7 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Active mode is `AutoRun`.
 - End of a work cycle means immediately continue to the next cycle.
 - Do not stop at checkpoints unless explicitly instructed by the user.
-- Keep repeating: implement -> docs update -> checks -> commit -> push -> continue.
+- Keep repeating: implement -> docs update -> checks -> fresh-eyes review -> close bead when satisfied -> commit closure state -> push -> continue.
 - Accidental interim chat responses are non-blocking events; they do not reset or pause AutoRun.
 - If an interim response is sent by mistake, immediately resume execution without waiting for additional user confirmation.
 

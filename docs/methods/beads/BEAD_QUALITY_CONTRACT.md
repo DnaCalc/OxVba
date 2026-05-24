@@ -21,11 +21,12 @@ long procedural script.
 
 Every executable bead should identify:
 1. one reviewable outcome,
-2. completion evidence,
+2. the smallest useful acceptance check or completion evidence,
 3. its parent epic,
 4. any required dependency relationship,
-5. for validation/conformance work, the canonical matrix or matrix rows it advances.
-6. whether it is primarily a `delivery` bead or a `support` bead.
+5. touched truth surfaces such as specs, worksets, validation matrices, or evidence docs,
+6. for validation/conformance work, the canonical matrix or matrix rows it advances,
+7. whether it is primarily a `delivery` bead or a `support` bead.
 
 ## Outcome Rule
 
@@ -89,8 +90,14 @@ When an epic is new or has drifted:
 ## Closure Rule
 
 At bead finish, exactly one of these should be true:
-1. the stated outcome and evidence are satisfied, so the bead closes,
+1. the stated outcome and evidence are satisfied, relevant checks have run, fresh-eyes review is clean, and the bead closes,
 2. the bead uncovered required follow-up or blocking work, and that work is added as new beads before any closure claim.
+
+Fresh-eyes review is mandatory before closure. Re-read, re-run, or use the changed surface as if new and actively look for blunders, mistakes, oversights, omissions, logical gaps, misconceptions, hidden assumptions, regressions, and bugs. If review finds a material issue, fix it, rerun the relevant checks, and repeat review until clean. Feature/UX-visible beads need a click-through or use-path pass when possible; infrastructure/doctrine/docs beads need a careful read-through against intent.
+
+Commit rule:
+- In this repo, because bead state is exported to `.beads/issues.jsonl`, the normal bead commit happens after closure and includes code/docs/evidence plus the bead closure state.
+- If a checkpoint commit is needed before closure, make a final follow-up commit for the closure state before moving on.
 
 Additional closure guard:
 - If a `support` bead reveals remaining capability work, it must leave behind the next `delivery` bead or a believable delivery-ready path.
@@ -100,6 +107,7 @@ Additional closure guard:
 
 Do not:
 - close a bead because “enough progress” happened,
+- close a bead before checks and fresh-eyes review are clean,
 - leave required follow-up work only in chat or commit messages,
 - silently widen a bead until it becomes a mini-workset,
 - use a rollout bead as a substitute for real child beads.

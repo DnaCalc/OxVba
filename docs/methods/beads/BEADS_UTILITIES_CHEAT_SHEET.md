@@ -49,6 +49,7 @@ Use it to:
 Use it to:
 - review bead-state changes,
 - commit `.beads/` with code changes,
+- commit after bead closure so the final bead state travels with the code/docs/evidence outcome,
 - and preserve the history of planning and execution together.
 
 The important idea is:
@@ -80,8 +81,12 @@ br ready
 br show <id>
 br update <id> --status in_progress
 # do the work
-br close <id> --reason "Completed"
+# run relevant checks
+# run fresh-eyes review for blunders, omissions, logical gaps, regressions, bugs
+# fix/recheck/re-review until clean; file out-of-scope work as beads
+br close <id> --reason "Completed; checks + fresh-eyes review clean"
 git status
+git commit
 ```
 
 ## Optional Supporting Utilities

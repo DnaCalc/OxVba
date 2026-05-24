@@ -56,8 +56,10 @@ Worksets remain the high-level execution unit, but active work must proceed thro
 
 Bead running operation: use the current agent session to inspect ready beads,
 work one unblocked bead, update code/docs/evidence/bead state, run targeted
-checks, commit, push, and continue under AutoRun until the configured terminal
-gate is reached or all remaining progress is blocked.
+checks, run a fresh-eyes review, close the bead only when the outcome is truly
+satisfied, commit the resulting code/docs/evidence/bead-truth change, push, and
+continue under AutoRun until the configured terminal gate is reached or all
+remaining progress is blocked.
 
 Method references:
 - `docs/methods/beads/BEADS_WORKING_METHOD.md`
@@ -71,7 +73,7 @@ Binding rules:
 - The first execution epic for a workset should be a workset-initiation / rollout epic when the epic structure itself still needs to be created or refreshed.
 - Beads are the unit of executable progress: one reviewable outcome with explicit completion evidence.
 - The ready bead set, not narrative momentum, is the default chooser for what is worked next.
-- A bead may be closed only when its stated outcome and completion evidence are both satisfied.
+- A bead may be closed only when its stated outcome and completion evidence are both satisfied and the fresh-eyes review for the final implementation round is clean.
 - If a bead exposes uncovered required work, that work must be captured as one or more new beads before the current bead is closed.
 - Workset progress summaries do not substitute for bead closure evidence.
 - A workset may not be described as complete while any required child bead remains open or while any required uncovered follow-up work is still only described narratively.
@@ -104,12 +106,13 @@ Rollout rules:
 Bead quality contract:
 - Every executable bead should identify:
   - one reviewable outcome,
-  - completion evidence,
+  - the smallest useful acceptance check or completion evidence,
   - parent epic,
+  - touched truth surfaces such as specs, worksets, validation matrices, or evidence docs,
   - and, for validation or conformance work, the canonical matrix or matrix rows it advances.
 - Use `docs/methods/beads/BEAD_QUALITY_CONTRACT.md` and `docs/templates/WORKSET_EPIC_BEAD_ROLLOUT_TEMPLATE.md` when creating or refreshing workset rollout.
 - For repo project-scope work, every bead should also make clear whether it is a `delivery` bead or a `support` bead.
-- Bead descriptions should be concise enough for startup use: outcome, evidence, dependencies, and residual/blocker behavior are more important than exhaustive procedure.
+- Bead descriptions should be concise enough for startup use: outcome, evidence, dependencies, acceptance check, and residual/blocker behavior are more important than exhaustive procedure.
 
 Subset-labeling rules:
 - Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.
@@ -128,6 +131,17 @@ Residual-scope rules:
   - and an open bead path for the remaining delivery work or a rollout bead that creates that delivery path.
 - Documentation-only clarification of a bounded slice does not satisfy residual-scope tracking for remaining accepted work.
 - If no such owner or bead path exists, the residual tracking is incomplete and must be repaired before the area is considered execution-clean.
+
+Fresh-eyes review and bead closure rules:
+- Every implementation round for a bead must end with relevant checks and a fresh-eyes review before the bead can close.
+- Fresh-eyes means re-reading, re-running, or using the changed surface as if new and actively hunting for: blunders, mistakes, oversights, omissions, logical gaps, misconceptions, hidden assumptions, regressions, and bugs.
+- Feature or UX-visible beads need a click-through/use-path pass when a runnable surface exists.
+- Infrastructure, doctrine, and docs beads need a careful read-through against the stated intent and touched truth surfaces.
+- If fresh-eyes review finds a material issue, fix it, rerun the relevant checks, and repeat fresh-eyes review until no material issue remains.
+- File any out-of-scope defect or newly uncovered required work as a bead before closing the current bead.
+- Never weaken, delete, or skip a real check merely to close a bead; a wrong or flaky check is itself work that must be fixed or tracked.
+- Close reasons should name the decisive check, observation, or fresh-eyes result, not repeat a long ceremonial checklist.
+- In this repo, because bead state is exported to `.beads/issues.jsonl`, the normal commit for a bead lands after bead closure and includes the final code/docs/evidence plus the bead close/update state. If a pre-closure checkpoint commit is necessary for safety, make a final follow-up commit for the bead closure state before moving on.
 
 ### 3.3 External Boundary Ownership Doctrine
 
