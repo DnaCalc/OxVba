@@ -5,6 +5,7 @@ Owner: Codex
 Status: planned
 Bead root: `bd-sg5h`
 Sequencing: after the next WrappedComServer workset reaches its reopened direct-host build gate.
+Refinement: superseded/refined by `docs/worksets/WORKSET_2026-05-24_HOST_PROJECT_CALLABLE_REFLECTION_AND_WRAPPER_GENERATION_REWORK.md`, which reframes this topic around neutral host project reflection, host-owned UDF policy, and generic build-time wrapper generation.
 
 ## Purpose
 
