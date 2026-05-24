@@ -12,9 +12,11 @@ pub mod typecheck;
 use thiserror::Error;
 
 pub use bundle::{
-    BundleComClassDescriptor, BundleComEventDescriptor, BundleComInterfaceDescriptor,
-    BundleComMemberDescriptor, BundleComParamDescriptor, BundleHostCallDescriptor,
-    ComClassExportEntry, DescriptorInventory, OxBundle,
+    BundleCallableDescriptor, BundleComClassDescriptor, BundleComEventDescriptor,
+    BundleComInterfaceDescriptor, BundleComMemberDescriptor, BundleComParamDescriptor,
+    BundleDescriptorInventoryError, BundleProcedureAnnotation, BundleProcedureParameterDescriptor,
+    BundleProcedureSignature, BundleVbaTypeDescriptor, ComClassExportEntry, DescriptorInventory,
+    OxBundle,
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{

@@ -34,6 +34,16 @@ fn make_compiled_project(
         event_dispatch_bindings: Vec::new(),
         project_com_withevents_routes: Vec::new(),
         project_dynamic_objects: dynamic_objects,
+        project_reflection: oxvba_compiler::ProjectReflection {
+            identity: oxvba_compiler::ProjectIdentity {
+                project_name: String::new(),
+                project_id: String::new(),
+                source_fingerprint: String::new(),
+            },
+            modules: Vec::new(),
+            procedures: Vec::new(),
+            capabilities: Vec::new(),
+        },
     }
 }
 

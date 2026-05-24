@@ -11,8 +11,12 @@ use rkyv::{Archive, Deserialize, Serialize};
 use crate::bytecode::Bytecode;
 use crate::emit::ProcedureRuntimeMetadata;
 use crate::project::{
-    HostProcedureExport, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicObjectRoute, ProjectEventDispatchBinding,
+    CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
+    ModuleKind, ModuleVisibility, PassingMode, ProcedureAnnotation, ProcedureDescriptor,
+    ProcedureKind, ProcedureParameterDescriptor, ProcedureSignature, ProcedureVisibility,
+    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicObjectRoute,
+    ProjectEventDispatchBinding, ProjectIdentity, ProjectReflection, RuntimeProcedureRoute,
+    VbaType, VbaTypeDescriptor,
 };
 
 /// Magic header bytes for the OxBundle binary format.
@@ -43,7 +47,7 @@ pub struct ExportInventory {
 pub struct DescriptorInventory {
     pub com_classes: Vec<BundleComClassDescriptor>,
     pub com_events: Vec<BundleComEventDescriptor>,
-    pub host_calls: Vec<BundleHostCallDescriptor>,
+    pub callables: Vec<BundleCallableDescriptor>,
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
@@ -110,26 +114,57 @@ pub struct BundleComEventDescriptor {
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
-pub struct BundleHostCallDescriptor {
-    pub stable_host_call_id: String,
-    pub project_name: String,
+pub struct BundleCallableDescriptor {
+    pub callable_id: String,
+    pub project_id: String,
+    pub module_id: String,
     pub module_name: String,
     pub procedure_name: String,
-    pub kind: crate::project::ExportKind,
-    pub selection_policy: String,
-    pub category: Option<String>,
-    pub description: Option<String>,
-    pub argument_descriptions: Vec<Option<String>>,
-    pub volatile: bool,
-    pub dependency_policy: String,
-    pub side_effect_policy: String,
-    pub thread_safety_policy: String,
-    pub allowed_contexts: Vec<String>,
-    pub entry_pc: usize,
+    pub kind: String,
+    pub is_public: bool,
+    pub is_option_private: bool,
+    pub is_class_member: bool,
+    pub signature: BundleProcedureSignature,
+    pub entry_pc: Option<usize>,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
-    pub param_types: Vec<crate::bytecode::DeclareParamType>,
-    pub return_type: Option<crate::bytecode::DeclareParamType>,
+    pub descriptor_fingerprint: String,
+    pub annotations: Vec<BundleProcedureAnnotation>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleProcedureSignature {
+    pub parameters: Vec<BundleProcedureParameterDescriptor>,
+    pub return_type: Option<BundleVbaTypeDescriptor>,
+    pub calling_shape: String,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleProcedureParameterDescriptor {
+    pub name: Option<String>,
+    pub passing_mode: String,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<i32>,
+    pub value_type: Option<BundleVbaTypeDescriptor>,
+    pub source_type_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleVbaTypeDescriptor {
+    pub normalized: String,
+    pub source_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+pub struct BundleProcedureAnnotation {
+    pub name: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BundleDescriptorInventoryError {
+    Unavailable,
 }
 
 /// Toolchain fingerprint for cache invalidation.
@@ -208,6 +243,74 @@ impl OxBundle {
             dynamic_object_routes: None,
             descriptor_inventory: None,
         }
+    }
+
+    pub fn callable_descriptors(
+        &self,
+    ) -> Result<&[BundleCallableDescriptor], BundleDescriptorInventoryError> {
+        self.descriptor_inventory
+            .as_ref()
+            .map(|inventory| inventory.callables.as_slice())
+            .ok_or(BundleDescriptorInventoryError::Unavailable)
+    }
+
+    pub fn project_reflection(&self) -> Result<ProjectReflection, BundleDescriptorInventoryError> {
+        let callables = self.callable_descriptors()?;
+        let project_name = self
+            .manifest_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.project_name.clone())
+            .or_else(|| {
+                callables
+                    .first()
+                    .map(|callable| callable.project_id.clone())
+            })
+            .unwrap_or_default();
+        let project_id = callables
+            .first()
+            .map(|callable| callable.project_id.clone())
+            .unwrap_or_else(|| project_name.to_ascii_lowercase());
+        let mut modules = BTreeMap::<String, ModuleDescriptor>::new();
+        let mut procedures = Vec::new();
+        let mut capabilities = Vec::new();
+        for callable in callables {
+            modules
+                .entry(callable.module_id.clone())
+                .or_insert_with(|| ModuleDescriptor {
+                    module_id: callable.module_id.clone(),
+                    project_id: callable.project_id.clone(),
+                    name: callable.module_name.clone(),
+                    kind: if callable.is_class_member {
+                        ModuleKind::Class
+                    } else {
+                        ModuleKind::Procedural
+                    },
+                    visibility: ModuleVisibility {
+                        option_private_module: callable.is_option_private,
+                        vb_exposed: false,
+                        vb_creatable: false,
+                    },
+                    source_fingerprint: String::new(),
+                    source_span: None,
+                });
+            procedures.push(procedure_descriptor_from_bundle_callable(callable));
+            capabilities.push(CallableCapability {
+                callable_id: callable.callable_id.clone(),
+                invocable_in_prepared_session: callable.entry_pc.is_some(),
+                supported_invocation_lanes: vec![InvocationLane::VariantPositional],
+                unsupported_reasons: Vec::new(),
+            });
+        }
+        Ok(ProjectReflection {
+            identity: ProjectIdentity {
+                project_name,
+                project_id,
+                source_fingerprint: String::new(),
+            },
+            modules: modules.into_values().collect(),
+            procedures,
+            capabilities,
+        })
     }
 
     /// Create a bundle from a `CompiledProject`, populating v2 metadata fields.
@@ -377,21 +480,20 @@ fn descriptor_inventory_from_compiled_project(
     com_events.sort_by(|lhs, rhs| lhs.stable_event_id.cmp(&rhs.stable_event_id));
     com_events.dedup_by(|lhs, rhs| lhs.stable_event_id == rhs.stable_event_id);
 
-    let host_calls = compiled
-        .host_exports
+    let callables = compiled
+        .project_reflection
+        .procedures
         .iter()
-        .map(|export| {
-            host_call_descriptor_from_export(export, &compiled.procedure_runtime_metadata)
-        })
+        .map(bundle_callable_descriptor_from_procedure)
         .collect::<Vec<_>>();
 
-    if com_classes.is_empty() && com_events.is_empty() && host_calls.is_empty() {
+    if com_classes.is_empty() && com_events.is_empty() && callables.is_empty() {
         None
     } else {
         Some(DescriptorInventory {
             com_classes,
             com_events,
-            host_calls,
+            callables,
         })
     }
 }
@@ -526,78 +628,231 @@ fn event_descriptor_from_withevents_route(
     }
 }
 
-fn host_call_descriptor_from_export(
-    export: &HostProcedureExport,
-    metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> BundleHostCallDescriptor {
-    let procedure_metadata = metadata
-        .get(&format!(
-            "{}.{}",
-            export.module_name.to_ascii_lowercase(),
-            export.procedure_name.to_ascii_lowercase()
-        ))
-        .or_else(|| {
-            metadata.values().find(|candidate| {
-                candidate
-                    .module_name
-                    .eq_ignore_ascii_case(&export.module_name)
-                    && candidate
-                        .procedure_name
-                        .eq_ignore_ascii_case(&export.procedure_name)
+fn procedure_descriptor_from_bundle_callable(
+    callable: &BundleCallableDescriptor,
+) -> ProcedureDescriptor {
+    ProcedureDescriptor {
+        callable_id: callable.callable_id.clone(),
+        project_id: callable.project_id.clone(),
+        module_id: callable.module_id.clone(),
+        module_name: callable.module_name.clone(),
+        procedure_name: callable.procedure_name.clone(),
+        kind: procedure_kind_from_name(&callable.kind),
+        visibility: ProcedureVisibility {
+            is_public: callable.is_public,
+            is_option_private: callable.is_option_private,
+            is_class_member: callable.is_class_member,
+        },
+        signature: ProcedureSignature {
+            parameters: callable
+                .signature
+                .parameters
+                .iter()
+                .map(|param| ProcedureParameterDescriptor {
+                    name: param.name.clone(),
+                    passing_mode: passing_mode_from_name(&param.passing_mode),
+                    optional: param.optional,
+                    param_array: param.param_array,
+                    default_value: param.default_value,
+                    value_type: param
+                        .value_type
+                        .as_ref()
+                        .map(vba_type_descriptor_from_bundle),
+                    source_type_text: param.source_type_text.clone(),
+                })
+                .collect(),
+            return_type: callable
+                .signature
+                .return_type
+                .as_ref()
+                .map(vba_type_descriptor_from_bundle),
+            calling_shape: calling_shape_from_name(&callable.signature.calling_shape),
+        },
+        runtime_route: callable.entry_pc.map(|entry_pc| RuntimeProcedureRoute {
+            entry_pc,
+            param_slots: callable.param_slots.clone(),
+            return_slot: callable.return_slot,
+        }),
+        source_span: None,
+        descriptor_fingerprint: callable.descriptor_fingerprint.clone(),
+        annotations: callable
+            .annotations
+            .iter()
+            .map(|annotation| ProcedureAnnotation {
+                name: annotation.name.clone(),
+                value: annotation.value.clone(),
             })
-        });
-    let argument_descriptions = procedure_metadata
-        .map(argument_descriptions_from_metadata)
-        .unwrap_or_default();
-    BundleHostCallDescriptor {
-        stable_host_call_id: stable_id([
-            "host-call",
-            &export.project_name,
-            &export.module_name,
-            &export.procedure_name,
-            &format!("{:?}", export.kind),
-        ]),
-        project_name: export.project_name.clone(),
-        module_name: export.module_name.clone(),
-        procedure_name: export.procedure_name.clone(),
-        kind: export.kind,
-        selection_policy: "public-procedural-functions".to_string(),
-        category: None,
-        description: None,
-        argument_descriptions,
-        volatile: false,
-        dependency_policy: "explicit-arguments-only".to_string(),
-        side_effect_policy: "no-host-side-effects".to_string(),
-        thread_safety_policy: "single-threaded-vba-compatible".to_string(),
-        allowed_contexts: vec![
-            "worksheet-cell".to_string(),
-            "host-formula-evaluator".to_string(),
-        ],
-        entry_pc: procedure_metadata.map(|meta| meta.entry_pc).unwrap_or(0),
-        param_slots: procedure_metadata
-            .map(|meta| meta.param_slots.clone())
-            .unwrap_or_default(),
-        return_slot: procedure_metadata.and_then(|meta| meta.return_slot),
-        param_types: procedure_metadata
-            .map(|meta| meta.param_types.clone())
-            .unwrap_or_default(),
-        return_type: procedure_metadata.and_then(|meta| meta.return_type),
+            .collect(),
     }
 }
 
-fn argument_descriptions_from_metadata(meta: &ProcedureRuntimeMetadata) -> Vec<Option<String>> {
-    meta.param_slots
-        .iter()
-        .map(|param_slot| {
-            meta.slots
+fn bundle_callable_descriptor_from_procedure(
+    procedure: &ProcedureDescriptor,
+) -> BundleCallableDescriptor {
+    let runtime_route = procedure.runtime_route.as_ref();
+    BundleCallableDescriptor {
+        callable_id: procedure.callable_id.clone(),
+        project_id: procedure.project_id.clone(),
+        module_id: procedure.module_id.clone(),
+        module_name: procedure.module_name.clone(),
+        procedure_name: procedure.procedure_name.clone(),
+        kind: procedure_kind_name(procedure.kind).to_string(),
+        is_public: procedure.visibility.is_public,
+        is_option_private: procedure.visibility.is_option_private,
+        is_class_member: procedure.visibility.is_class_member,
+        signature: BundleProcedureSignature {
+            parameters: procedure
+                .signature
+                .parameters
                 .iter()
-                .find(|slot| slot.slot == *param_slot)
-                .and_then(|slot| {
-                    let name = slot.name.trim();
-                    (!name.is_empty()).then(|| name.to_string())
+                .map(|param| BundleProcedureParameterDescriptor {
+                    name: param.name.clone(),
+                    passing_mode: passing_mode_name(param.passing_mode).to_string(),
+                    optional: param.optional,
+                    param_array: param.param_array,
+                    default_value: param.default_value,
+                    value_type: param.value_type.as_ref().map(bundle_vba_type_descriptor),
+                    source_type_text: param.source_type_text.clone(),
                 })
-        })
-        .collect()
+                .collect(),
+            return_type: procedure
+                .signature
+                .return_type
+                .as_ref()
+                .map(bundle_vba_type_descriptor),
+            calling_shape: calling_shape_name(procedure.signature.calling_shape).to_string(),
+        },
+        entry_pc: runtime_route.map(|route| route.entry_pc),
+        param_slots: runtime_route
+            .map(|route| route.param_slots.clone())
+            .unwrap_or_default(),
+        return_slot: runtime_route.and_then(|route| route.return_slot),
+        descriptor_fingerprint: procedure.descriptor_fingerprint.clone(),
+        annotations: procedure
+            .annotations
+            .iter()
+            .map(|annotation| BundleProcedureAnnotation {
+                name: annotation.name.clone(),
+                value: annotation.value.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn vba_type_descriptor_from_bundle(ty: &BundleVbaTypeDescriptor) -> VbaTypeDescriptor {
+    VbaTypeDescriptor {
+        normalized: vba_type_from_name(&ty.normalized),
+        source_text: ty.source_text.clone(),
+    }
+}
+
+fn bundle_vba_type_descriptor(ty: &crate::project::VbaTypeDescriptor) -> BundleVbaTypeDescriptor {
+    BundleVbaTypeDescriptor {
+        normalized: vba_type_name(&ty.normalized).to_string(),
+        source_text: ty.source_text.clone(),
+    }
+}
+
+fn procedure_kind_from_name(name: &str) -> ProcedureKind {
+    match name {
+        "Sub" => ProcedureKind::Sub,
+        "Function" => ProcedureKind::Function,
+        "PropertyGet" => ProcedureKind::PropertyGet,
+        "PropertyLet" => ProcedureKind::PropertyLet,
+        "PropertySet" => ProcedureKind::PropertySet,
+        "Event" => ProcedureKind::Event,
+        _ => ProcedureKind::Sub,
+    }
+}
+
+fn procedure_kind_name(kind: ProcedureKind) -> &'static str {
+    match kind {
+        ProcedureKind::Sub => "Sub",
+        ProcedureKind::Function => "Function",
+        ProcedureKind::PropertyGet => "PropertyGet",
+        ProcedureKind::PropertyLet => "PropertyLet",
+        ProcedureKind::PropertySet => "PropertySet",
+        ProcedureKind::Event => "Event",
+    }
+}
+
+fn calling_shape_from_name(name: &str) -> CallingShape {
+    match name {
+        "PropertyAccessor" => CallingShape::PropertyAccessor,
+        "EventHandler" => CallingShape::EventHandler,
+        _ => CallingShape::Procedure,
+    }
+}
+
+fn calling_shape_name(shape: CallingShape) -> &'static str {
+    match shape {
+        CallingShape::Procedure => "Procedure",
+        CallingShape::PropertyAccessor => "PropertyAccessor",
+        CallingShape::EventHandler => "EventHandler",
+    }
+}
+
+fn passing_mode_from_name(name: &str) -> PassingMode {
+    match name {
+        "ByVal" => PassingMode::ByVal,
+        "ByRef" => PassingMode::ByRef,
+        _ => PassingMode::Unknown,
+    }
+}
+
+fn passing_mode_name(mode: PassingMode) -> &'static str {
+    match mode {
+        PassingMode::ByVal => "ByVal",
+        PassingMode::ByRef => "ByRef",
+        PassingMode::Unknown => "Unknown",
+    }
+}
+
+fn vba_type_from_name(name: &str) -> VbaType {
+    match name {
+        "Variant" => VbaType::Variant,
+        "Boolean" => VbaType::Boolean,
+        "Byte" => VbaType::Byte,
+        "Integer" => VbaType::Integer,
+        "Long" => VbaType::Long,
+        "LongLong" => VbaType::LongLong,
+        "LongPtr" => VbaType::LongPtr,
+        "Single" => VbaType::Single,
+        "Double" => VbaType::Double,
+        "Currency" => VbaType::Currency,
+        "Date" => VbaType::Date,
+        "String" => VbaType::String,
+        "Object" => VbaType::Object,
+        "Array" => VbaType::Array,
+        "Any" => VbaType::Any,
+        "Unknown" => VbaType::Unknown,
+        user_defined if user_defined.starts_with("UserDefined:") => {
+            VbaType::UserDefined(user_defined[12..].to_string())
+        }
+        _ => VbaType::Unknown,
+    }
+}
+
+fn vba_type_name(ty: &VbaType) -> String {
+    match ty {
+        VbaType::Variant => "Variant".to_string(),
+        VbaType::Boolean => "Boolean".to_string(),
+        VbaType::Byte => "Byte".to_string(),
+        VbaType::Integer => "Integer".to_string(),
+        VbaType::Long => "Long".to_string(),
+        VbaType::LongLong => "LongLong".to_string(),
+        VbaType::LongPtr => "LongPtr".to_string(),
+        VbaType::Single => "Single".to_string(),
+        VbaType::Double => "Double".to_string(),
+        VbaType::Currency => "Currency".to_string(),
+        VbaType::Date => "Date".to_string(),
+        VbaType::String => "String".to_string(),
+        VbaType::Object => "Object".to_string(),
+        VbaType::Array => "Array".to_string(),
+        VbaType::UserDefined(name) => format!("UserDefined:{name}"),
+        VbaType::Any => "Any".to_string(),
+        VbaType::Unknown => "Unknown".to_string(),
+    }
 }
 
 fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
@@ -888,6 +1143,113 @@ mod tests {
     }
 
     #[test]
+    fn legacy_bundle_reports_callable_inventory_unavailable() {
+        let bundle = sample_bundle();
+        assert_eq!(
+            bundle
+                .callable_descriptors()
+                .expect_err("no descriptor inventory"),
+            BundleDescriptorInventoryError::Unavailable
+        );
+    }
+
+    #[test]
+    fn source_reflection_and_bundle_callable_inventory_match() {
+        let manifest = crate::project::ProjectManifest {
+            project_name: "MatchProj".to_string(),
+            project_kind: crate::project::ProjectKind::Library,
+            modules: vec![crate::project::ModuleUnit {
+                module_name: "Main".to_string(),
+                module_kind: crate::project::ModuleKind::Procedural,
+                attributes: crate::project::ModuleAttributes {
+                    vb_name: "Main".to_string(),
+                    ..Default::default()
+                },
+                source: "Public Function Add(ByVal a As Long, ByVal b As Double) As Double\nAdd = a + b\nEnd Function\nPrivate Sub Hidden()\nEnd Sub".to_string(),
+            }],
+            references: vec![],
+            reference_projects: vec![],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = crate::compile_project(&manifest).expect("compile");
+        let bundle = OxBundle::from_compiled_project(&compiled, "MatchProj");
+        let callables = bundle.callable_descriptors().expect("callables");
+
+        assert_eq!(
+            callables.len(),
+            compiled.project_reflection.procedures.len()
+        );
+        for procedure in &compiled.project_reflection.procedures {
+            let bundled = callables
+                .iter()
+                .find(|candidate| candidate.callable_id == procedure.callable_id)
+                .expect("matching bundled callable");
+            assert_eq!(bundled.module_name, procedure.module_name);
+            assert_eq!(bundled.procedure_name, procedure.procedure_name);
+            assert_eq!(
+                bundled.descriptor_fingerprint,
+                procedure.descriptor_fingerprint
+            );
+            assert_eq!(
+                bundled.signature.parameters.len(),
+                procedure.signature.parameters.len()
+            );
+            assert_eq!(
+                bundled
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .map(|ty| ty.normalized.as_str()),
+                procedure
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .map(|ty| vba_type_name(&ty.normalized))
+                    .as_deref()
+            );
+        }
+    }
+
+    #[test]
+    fn descriptor_fingerprint_changes_when_signature_changes() {
+        fn add_fingerprint(source: &str) -> String {
+            let manifest = crate::project::ProjectManifest {
+                project_name: "FingerprintProj".to_string(),
+                project_kind: crate::project::ProjectKind::Library,
+                modules: vec![crate::project::ModuleUnit {
+                    module_name: "Main".to_string(),
+                    module_kind: crate::project::ModuleKind::Procedural,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Main".to_string(),
+                        ..Default::default()
+                    },
+                    source: source.to_string(),
+                }],
+                references: vec![],
+                reference_projects: vec![],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = crate::compile_project(&manifest).expect("compile");
+            let bundle = OxBundle::from_compiled_project(&compiled, "FingerprintProj");
+            bundle
+                .callable_descriptors()
+                .expect("callables")
+                .iter()
+                .find(|callable| callable.procedure_name == "add")
+                .expect("add callable")
+                .descriptor_fingerprint
+                .clone()
+        }
+
+        let first =
+            add_fingerprint("Public Function Add(a As Long) As Long\nAdd = a\nEnd Function");
+        let second =
+            add_fingerprint("Public Function Add(a As Double) As Double\nAdd = a\nEnd Function");
+        assert_ne!(first, second);
+    }
+
+    #[test]
     fn from_compiled_project_persists_descriptor_inventory() {
         let manifest = crate::project::ProjectManifest {
             project_name: "DescriptorProj".to_string(),
@@ -936,39 +1298,47 @@ mod tests {
         );
         assert!(
             inventory
-                .host_calls
+                .callables
                 .iter()
                 .any(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd")
                     && call.param_slots.len() == 2)
         );
         let host_add = inventory
-            .host_calls
+            .callables
             .iter()
             .find(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd"))
-            .expect("HostAdd host-call descriptor");
-        assert_eq!(host_add.kind, ExportKind::Function);
-        assert!(!host_add.stable_host_call_id.is_empty());
-        assert_eq!(host_add.selection_policy, "public-procedural-functions");
+            .expect("HostAdd callable descriptor");
+        assert_eq!(host_add.kind, "Function");
+        assert!(!host_add.callable_id.is_empty());
+        assert!(host_add.is_public);
+        assert!(!host_add.is_class_member);
+        assert_eq!(host_add.signature.parameters.len(), 2);
+        assert_eq!(host_add.signature.parameters[0].name.as_deref(), Some("a"));
         assert_eq!(
-            host_add.argument_descriptions,
-            vec![Some("a".to_string()), Some("b".to_string())]
-        );
-        assert!(!host_add.volatile);
-        assert_eq!(host_add.dependency_policy, "explicit-arguments-only");
-        assert_eq!(host_add.side_effect_policy, "no-host-side-effects");
-        assert_eq!(
-            host_add.thread_safety_policy,
-            "single-threaded-vba-compatible"
+            host_add.signature.parameters[0]
+                .value_type
+                .as_ref()
+                .map(|ty| ty.normalized.as_str()),
+            Some("Long")
         );
         assert_eq!(
-            host_add.allowed_contexts,
-            vec![
-                "worksheet-cell".to_string(),
-                "host-formula-evaluator".to_string()
-            ]
+            host_add
+                .signature
+                .return_type
+                .as_ref()
+                .map(|ty| ty.normalized.as_str()),
+            Some("Long")
         );
-        assert_eq!(host_add.param_types.len(), 2);
-        assert!(host_add.return_type.is_some());
+        let descriptor_debug = format!("{host_add:#?}").to_ascii_lowercase();
+        for forbidden in [
+            "selection_policy",
+            "volatile",
+            "worksheet",
+            "thread_safety",
+            "formula",
+        ] {
+            assert!(!descriptor_debug.contains(forbidden));
+        }
 
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
@@ -981,25 +1351,19 @@ mod tests {
             inventory.com_classes[0].stable_class_id
         );
         assert_eq!(
-            restored_inventory.host_calls.len(),
-            inventory.host_calls.len()
+            restored_inventory.callables.len(),
+            inventory.callables.len()
         );
         let restored_host_add = restored_inventory
-            .host_calls
+            .callables
             .iter()
             .find(|call| call.procedure_name.eq_ignore_ascii_case("HostAdd"))
-            .expect("restored HostAdd host-call descriptor");
+            .expect("restored HostAdd callable descriptor");
+        assert_eq!(restored_host_add.callable_id, host_add.callable_id);
         assert_eq!(
-            restored_host_add.selection_policy,
-            host_add.selection_policy
+            restored_host_add.descriptor_fingerprint,
+            host_add.descriptor_fingerprint
         );
-        assert_eq!(
-            restored_host_add.argument_descriptions,
-            host_add.argument_descriptions
-        );
-        assert_eq!(
-            restored_host_add.allowed_contexts,
-            host_add.allowed_contexts
-        );
+        assert_eq!(restored_host_add.signature.parameters.len(), 2);
     }
 }

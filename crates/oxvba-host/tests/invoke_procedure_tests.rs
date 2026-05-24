@@ -57,6 +57,29 @@ fn make_module(name: &str, source: &str) -> ModuleUnit {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn bundle_prepared_session_consumes_callable_descriptor_inventory() {
+    let source = "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\nAdd = a + b\nEnd Function\n";
+    let manifest = make_manifest(vec![make_module("Mod1", source)]);
+    let compiled = compile_project(&manifest).expect("compile");
+    let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
+
+    let engine = Engine::default();
+    let session = engine
+        .compile_and_prepare_session_from_bundle(&bundle)
+        .expect("prepare from bundle");
+
+    let reflection = session.project_reflection();
+    let add = reflection
+        .procedures
+        .iter()
+        .find(|procedure| procedure.procedure_name == "add")
+        .expect("Add descriptor from bundle inventory");
+    assert_eq!(add.module_name, "Mod1");
+    assert_eq!(add.signature.parameters.len(), 2);
+    assert_eq!(add.runtime_route.as_ref().unwrap().param_slots.len(), 2);
+}
+
+#[test]
 fn invoke_sub_no_return() {
     let source = "Public Sub DoWork()\nEnd Sub\n";
     let manifest = make_manifest(vec![make_module("Mod1", source)]);

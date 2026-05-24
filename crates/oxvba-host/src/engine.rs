@@ -317,6 +317,12 @@ pub struct ProjectRuntimeSession {
     vm: Vm,
 }
 
+impl ProjectRuntimeSession {
+    pub fn project_reflection(&self) -> &oxvba_compiler::ProjectReflection {
+        &self.compiled.project_reflection
+    }
+}
+
 const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
 
 fn entry_procedure_runtime_metadata(
@@ -1630,6 +1636,23 @@ impl Engine {
             dispatcher.apply_bindings(bindings);
         }
         self.preflight_host_sensitive_support(&bundle.bytecode)?;
+        let project_reflection =
+            bundle
+                .project_reflection()
+                .unwrap_or_else(|_| oxvba_compiler::ProjectReflection {
+                    identity: oxvba_compiler::ProjectIdentity {
+                        project_name: bundle
+                            .manifest_snapshot
+                            .as_ref()
+                            .map(|snapshot| snapshot.project_name.clone())
+                            .unwrap_or_default(),
+                        project_id: String::new(),
+                        source_fingerprint: String::new(),
+                    },
+                    modules: Vec::new(),
+                    procedures: Vec::new(),
+                    capabilities: Vec::new(),
+                });
         let compiled = CompiledProject {
             bytecode: bundle.bytecode.clone(),
             procedure_runtime_metadata: bundle.procedure_metadata.clone(),
@@ -1644,6 +1667,7 @@ impl Engine {
             event_dispatch_bindings: bundle.event_dispatch_bindings.clone().unwrap_or_default(),
             project_com_withevents_routes: bundle.com_withevents_routes.clone().unwrap_or_default(),
             project_dynamic_objects: bundle.dynamic_object_routes.clone().unwrap_or_default(),
+            project_reflection,
         };
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());

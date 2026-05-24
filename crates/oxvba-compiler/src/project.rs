@@ -313,6 +313,7 @@ pub struct CompiledProject {
     pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
     pub project_com_withevents_routes: Vec<ProjectComWithEventsRoute>,
     pub project_dynamic_objects: Vec<ProjectDynamicObjectRoute>,
+    pub project_reflection: ProjectReflection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -912,6 +913,37 @@ pub fn reflect_project(manifest: &ProjectManifest) -> ProjectReflection {
     }
 }
 
+fn attach_runtime_routes_to_reflection(
+    reflection: &mut ProjectReflection,
+    metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) {
+    for procedure in &mut reflection.procedures {
+        let meta = metadata
+            .get(&format!(
+                "{}.{}",
+                procedure.module_name.to_ascii_lowercase(),
+                procedure.procedure_name.to_ascii_lowercase()
+            ))
+            .or_else(|| {
+                metadata.values().find(|candidate| {
+                    candidate
+                        .module_name
+                        .eq_ignore_ascii_case(&procedure.module_name)
+                        && candidate
+                            .procedure_name
+                            .eq_ignore_ascii_case(&procedure.procedure_name)
+                })
+            });
+        if let Some(meta) = meta {
+            procedure.runtime_route = Some(RuntimeProcedureRoute {
+                entry_pc: meta.entry_pc,
+                param_slots: meta.param_slots.clone(),
+                return_slot: meta.return_slot,
+            });
+        }
+    }
+}
+
 fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
     match std::env::var("OXVBA_PMR_LOWERING")
         .ok()
@@ -1012,6 +1044,8 @@ fn compile_project_with_strategy(
         .replace("__OxVbaEarlyInvoke", "DispatchInvoke")
         .replace("__oxvbaearlyinvoke", "dispatchinvoke");
     let source_maps = build_compiler_source_map(manifest, &procedure_runtime_metadata);
+    let mut project_reflection = reflect_project(manifest);
+    attach_runtime_routes_to_reflection(&mut project_reflection, &procedure_runtime_metadata);
     Ok(CompiledProject {
         bytecode,
         procedure_runtime_metadata,
@@ -1022,6 +1056,7 @@ fn compile_project_with_strategy(
         event_dispatch_bindings,
         project_com_withevents_routes,
         project_dynamic_objects,
+        project_reflection,
     })
 }
 
