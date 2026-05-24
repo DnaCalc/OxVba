@@ -22,12 +22,17 @@ pub use emit::{
     bound_type_to_declare_param_type,
 };
 pub use project::{
-    CompiledProject, CompilerLineMapping, CompilerModuleSourceMap, CompilerSourceLineKind,
-    CompilerSourceMap, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
+    CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
+    CompilerModuleSourceMap, CompilerSourceLineKind, CompilerSourceMap, ExportKind,
+    HostProcedureExport, InvocationLane, ModuleAttributes, ModuleDescriptor, ModuleKind,
+    ModuleUnit, ModuleVisibility, PassingMode, ProcedureAnnotation, ProcedureDescriptor,
+    ProcedureKind, ProcedureParameterDescriptor, ProcedureSignature, ProcedureVisibility,
     ProjectComWithEventsRoute, ProjectCompileError, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ProjectEventDispatchBinding, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
-    ReferencedProjectManifest, compile_project, module_unit_from_source,
+    ProjectEventDispatchBinding, ProjectIdentity, ProjectKind, ProjectManifest, ProjectReference,
+    ProjectReflection, ReferenceKind, ReferencedProjectManifest, RuntimeProcedureRoute, SourceSpan,
+    UnsupportedReason, VbaType, VbaTypeDescriptor, compile_project, module_unit_from_source,
+    reflect_project,
 };
 
 #[derive(Debug, Error)]

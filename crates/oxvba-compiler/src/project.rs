@@ -315,6 +315,170 @@ pub struct CompiledProject {
     pub project_dynamic_objects: Vec<ProjectDynamicObjectRoute>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReflection {
+    pub identity: ProjectIdentity,
+    pub modules: Vec<ModuleDescriptor>,
+    pub procedures: Vec<ProcedureDescriptor>,
+    pub capabilities: Vec<CallableCapability>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectIdentity {
+    pub project_name: String,
+    pub project_id: String,
+    pub source_fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleDescriptor {
+    pub module_id: String,
+    pub project_id: String,
+    pub name: String,
+    pub kind: ModuleKind,
+    pub visibility: ModuleVisibility,
+    pub source_fingerprint: String,
+    pub source_span: Option<SourceSpan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleVisibility {
+    pub option_private_module: bool,
+    pub vb_exposed: bool,
+    pub vb_creatable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureDescriptor {
+    pub callable_id: String,
+    pub project_id: String,
+    pub module_id: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub kind: ProcedureKind,
+    pub visibility: ProcedureVisibility,
+    pub signature: ProcedureSignature,
+    pub runtime_route: Option<RuntimeProcedureRoute>,
+    pub source_span: Option<SourceSpan>,
+    pub descriptor_fingerprint: String,
+    pub annotations: Vec<ProcedureAnnotation>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcedureKind {
+    Sub,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+    Event,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureVisibility {
+    pub is_public: bool,
+    pub is_option_private: bool,
+    pub is_class_member: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureSignature {
+    pub parameters: Vec<ProcedureParameterDescriptor>,
+    pub return_type: Option<VbaTypeDescriptor>,
+    pub calling_shape: CallingShape,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureParameterDescriptor {
+    pub name: Option<String>,
+    pub passing_mode: PassingMode,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<i32>,
+    pub value_type: Option<VbaTypeDescriptor>,
+    pub source_type_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassingMode {
+    ByVal,
+    ByRef,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VbaTypeDescriptor {
+    pub normalized: VbaType,
+    pub source_text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VbaType {
+    Variant,
+    Boolean,
+    Byte,
+    Integer,
+    Long,
+    LongLong,
+    LongPtr,
+    Single,
+    Double,
+    Currency,
+    Date,
+    String,
+    Object,
+    Array,
+    UserDefined(String),
+    Any,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallingShape {
+    Procedure,
+    PropertyAccessor,
+    EventHandler,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeProcedureRoute {
+    pub entry_pc: usize,
+    pub param_slots: Vec<usize>,
+    pub return_slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceSpan {
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureAnnotation {
+    pub name: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallableCapability {
+    pub callable_id: String,
+    pub invocable_in_prepared_session: bool,
+    pub supported_invocation_lanes: Vec<InvocationLane>,
+    pub unsupported_reasons: Vec<UnsupportedReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvocationLane {
+    VariantPositional,
+    TypedScalarFirstTier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedReason {
+    pub code: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProjectLoweringStrategy {
     ModuleAwareBindPlan,
@@ -648,6 +812,104 @@ pub fn module_unit_from_source(
 
 pub fn compile_project(manifest: &ProjectManifest) -> Result<CompiledProject, ProjectCompileError> {
     compile_project_with_strategy(manifest, selected_project_lowering_strategy())
+}
+
+pub fn reflect_project(manifest: &ProjectManifest) -> ProjectReflection {
+    let project_id = normalize_identifier(&manifest.project_name);
+    let mut modules = Vec::new();
+    let mut procedures = Vec::new();
+    let mut capabilities = Vec::new();
+
+    for module in &manifest.modules {
+        let module_id = descriptor_module_id(&project_id, &module.module_name);
+        modules.push(ModuleDescriptor {
+            module_id: module_id.clone(),
+            project_id: project_id.clone(),
+            name: module.module_name.clone(),
+            kind: module.module_kind,
+            visibility: ModuleVisibility {
+                option_private_module: module.attributes.option_private_module,
+                vb_exposed: module.attributes.vb_exposed,
+                vb_creatable: module.attributes.vb_creatable,
+            },
+            source_fingerprint: stable_fingerprint(&module.source),
+            source_span: Some(SourceSpan {
+                start_line: 1,
+                end_line: module.source.lines().count().max(1),
+            }),
+        });
+
+        let member_attributes = collect_member_attributes(&module.source);
+        for (line_index, line) in normalize_source_lines(&module.source)
+            .into_iter()
+            .enumerate()
+        {
+            let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) else {
+                continue;
+            };
+            let params = neutral_signature_params(&line);
+            let return_type = procedure_signature_return_type(&line, kind).map(vba_type_descriptor);
+            let callable_id = descriptor_callable_id(&project_id, &module.module_name, &name, kind);
+            let descriptor = ProcedureDescriptor {
+                callable_id: callable_id.clone(),
+                project_id: project_id.clone(),
+                module_id: module_id.clone(),
+                module_name: module.module_name.clone(),
+                procedure_name: name.clone(),
+                kind: neutral_procedure_kind(kind),
+                visibility: ProcedureVisibility {
+                    is_public,
+                    is_option_private: module.attributes.option_private_module,
+                    is_class_member: module.module_kind == ModuleKind::Class,
+                },
+                signature: ProcedureSignature {
+                    parameters: params,
+                    return_type,
+                    calling_shape: neutral_calling_shape(kind),
+                },
+                runtime_route: None,
+                source_span: Some(SourceSpan {
+                    start_line: line_index + 1,
+                    end_line: line_index + 1,
+                }),
+                descriptor_fingerprint: stable_fingerprint(&format!(
+                    "{}\n{}\n{}\n{}",
+                    project_id, module.module_name, name, line
+                )),
+                annotations: member_attributes
+                    .get(&name)
+                    .map(neutral_member_annotations)
+                    .unwrap_or_default(),
+            };
+            let supported_invocation_lanes =
+                if matches!(kind, ProcedureDeclKind::Function | ProcedureDeclKind::Sub) {
+                    vec![
+                        InvocationLane::VariantPositional,
+                        InvocationLane::TypedScalarFirstTier,
+                    ]
+                } else {
+                    vec![InvocationLane::VariantPositional]
+                };
+            capabilities.push(CallableCapability {
+                callable_id,
+                invocable_in_prepared_session: true,
+                supported_invocation_lanes,
+                unsupported_reasons: Vec::new(),
+            });
+            procedures.push(descriptor);
+        }
+    }
+
+    ProjectReflection {
+        identity: ProjectIdentity {
+            project_name: manifest.project_name.clone(),
+            project_id: project_id.clone(),
+            source_fingerprint: stable_fingerprint(&manifest_source_fingerprint_input(manifest)),
+        },
+        modules,
+        procedures,
+        capabilities,
+    }
 }
 
 fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
@@ -8586,6 +8848,163 @@ fn split_signature_args(payload: &str) -> Option<Vec<&str>> {
     Some(parts)
 }
 
+fn descriptor_module_id(project_id: &str, module_name: &str) -> String {
+    format!("{project_id}::{}", normalize_identifier(module_name))
+}
+
+fn descriptor_callable_id(
+    project_id: &str,
+    module_name: &str,
+    procedure_name: &str,
+    kind: ProcedureDeclKind,
+) -> String {
+    format!(
+        "{project_id}::{}::{}::{:?}",
+        normalize_identifier(module_name),
+        normalize_identifier(procedure_name),
+        neutral_procedure_kind(kind)
+    )
+}
+
+fn stable_fingerprint(input: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn manifest_source_fingerprint_input(manifest: &ProjectManifest) -> String {
+    let mut input = String::new();
+    input.push_str(&manifest.project_name);
+    input.push('\n');
+    for module in &manifest.modules {
+        input.push_str(&module.module_name);
+        input.push('\n');
+        input.push_str(&format!("{:?}", module.module_kind));
+        input.push('\n');
+        input.push_str(&module.source);
+        input.push('\n');
+    }
+    input
+}
+
+fn neutral_procedure_kind(kind: ProcedureDeclKind) -> ProcedureKind {
+    match kind {
+        ProcedureDeclKind::Sub => ProcedureKind::Sub,
+        ProcedureDeclKind::Function => ProcedureKind::Function,
+        ProcedureDeclKind::PropertyGet => ProcedureKind::PropertyGet,
+        ProcedureDeclKind::PropertyLet => ProcedureKind::PropertyLet,
+        ProcedureDeclKind::PropertySet => ProcedureKind::PropertySet,
+    }
+}
+
+fn neutral_calling_shape(kind: ProcedureDeclKind) -> CallingShape {
+    match kind {
+        ProcedureDeclKind::PropertyGet
+        | ProcedureDeclKind::PropertyLet
+        | ProcedureDeclKind::PropertySet => CallingShape::PropertyAccessor,
+        ProcedureDeclKind::Sub | ProcedureDeclKind::Function => CallingShape::Procedure,
+    }
+}
+
+fn vba_type_descriptor(ty: crate::bytecode::DeclareParamType) -> VbaTypeDescriptor {
+    VbaTypeDescriptor {
+        normalized: match ty {
+            crate::bytecode::DeclareParamType::Integer => VbaType::Integer,
+            crate::bytecode::DeclareParamType::Long => VbaType::Long,
+            crate::bytecode::DeclareParamType::LongLong => VbaType::LongLong,
+            crate::bytecode::DeclareParamType::LongPtr => VbaType::LongPtr,
+            crate::bytecode::DeclareParamType::Byte => VbaType::Byte,
+            crate::bytecode::DeclareParamType::Single => VbaType::Single,
+            crate::bytecode::DeclareParamType::Double => VbaType::Double,
+            crate::bytecode::DeclareParamType::Currency => VbaType::Currency,
+            crate::bytecode::DeclareParamType::Date => VbaType::Date,
+            crate::bytecode::DeclareParamType::String => VbaType::String,
+            crate::bytecode::DeclareParamType::Boolean => VbaType::Boolean,
+            crate::bytecode::DeclareParamType::Variant => VbaType::Variant,
+            crate::bytecode::DeclareParamType::Any => VbaType::Any,
+        },
+        source_text: Some(format!("{:?}", ty)),
+    }
+}
+
+fn neutral_member_annotations(attrs: &MemberAttributes) -> Vec<ProcedureAnnotation> {
+    let mut annotations = Vec::new();
+    if let Some(value) = attrs.vb_user_mem_id {
+        annotations.push(ProcedureAnnotation {
+            name: "VB_UserMemId".to_string(),
+            value: Some(value.to_string()),
+        });
+    }
+    if let Some(value) = attrs.vb_member_flags {
+        annotations.push(ProcedureAnnotation {
+            name: "VB_MemberFlags".to_string(),
+            value: Some(value.to_string()),
+        });
+    }
+    annotations
+}
+
+fn neutral_signature_params(line: &str) -> Vec<ProcedureParameterDescriptor> {
+    let Some(dynamic_params) = procedure_signature_params(line) else {
+        return Vec::new();
+    };
+    let raw_args = procedure_signature_raw_args(line).unwrap_or_default();
+    dynamic_params
+        .into_iter()
+        .enumerate()
+        .map(|(idx, param)| {
+            let raw = raw_args.get(idx).map(String::as_str).unwrap_or_default();
+            let value_type = parse_procedure_signature_param_type(raw).map(vba_type_descriptor);
+            let source_type_text = source_type_text(raw);
+            ProcedureParameterDescriptor {
+                name: Some(param.name),
+                passing_mode: passing_mode(raw),
+                optional: param.optional,
+                param_array: param.param_array,
+                default_value: param.default_value,
+                value_type,
+                source_type_text,
+            }
+        })
+        .collect()
+}
+
+fn procedure_signature_raw_args(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    let open = trimmed.find('(')?;
+    let close = find_matching_paren(trimmed, open)?;
+    let payload = trimmed[open + 1..close].trim();
+    if payload.is_empty() {
+        return Some(Vec::new());
+    }
+    split_signature_args(payload).map(|args| args.into_iter().map(ToString::to_string).collect())
+}
+
+fn passing_mode(raw: &str) -> PassingMode {
+    let token = raw.trim();
+    if token.to_ascii_lowercase().starts_with("byval ")
+        || token.to_ascii_lowercase().starts_with("optional byval ")
+    {
+        PassingMode::ByVal
+    } else if token.to_ascii_lowercase().starts_with("byref ")
+        || token.to_ascii_lowercase().starts_with("optional byref ")
+    {
+        PassingMode::ByRef
+    } else {
+        PassingMode::Unknown
+    }
+}
+
+fn source_type_text(raw: &str) -> Option<String> {
+    let (_, rhs) = split_keyword_ascii_ci(raw, " as ")?;
+    let type_text = rhs.split('=').next().unwrap_or(rhs).trim();
+    if type_text.is_empty() {
+        None
+    } else {
+        Some(type_text.to_string())
+    }
+}
+
 fn parse_procedure_signature_param(raw: &str) -> Option<ProjectDynamicParamRoute> {
     let mut token = raw.trim();
     if token.is_empty() {
@@ -8754,13 +9173,14 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExportKind, ModuleAttributes, ModuleKind, PROJECTED_TYPELIB_REFERENCE_MARKER,
-        ProjectComWithEventsRoute, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
-        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
-        ReferencedProjectManifest, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project,
+        CallingShape, ExportKind, InvocationLane, ModuleAttributes, ModuleKind,
+        PROJECTED_TYPELIB_REFERENCE_MARKER, PassingMode, ProcedureKind, ProjectComWithEventsRoute,
+        ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy,
+        ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest,
+        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, VbaType, compile_project,
         compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
         project_imported_typelib_reference, projected_typelib_reference_provenance,
-        validate_compiled_project_contract, withevents_binding_token,
+        reflect_project, validate_compiled_project_contract, withevents_binding_token,
     };
     use crate::{
         Instruction,
@@ -8782,6 +9202,158 @@ mod tests {
             references: Vec::new(),
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn reflect_project_projects_neutral_module_and_procedure_descriptors() {
+        let math = module_unit_from_source(
+            "MathModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MathModule\"\nOption Private Module\nPublic Function Add(ByVal leftValue As Double, ByRef rightValue As Long) As Double\nEnd Function\nPrivate Sub Hidden(Optional flag As Boolean = 1)\nEnd Sub",
+        )
+        .expect("math module parses");
+        let class = module_unit_from_source(
+            "Worker",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Worker\"\nAttribute VB_Exposed = True\nPublic Property Get Name() As String\nEnd Property\nPrivate Function Internal() As Long\nEnd Function",
+        )
+        .expect("class module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![math, class],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let reflection = reflect_project(&manifest);
+
+        assert_eq!(reflection.identity.project_name, "ProjectA");
+        assert_eq!(reflection.modules.len(), 2);
+        let math_module = reflection
+            .modules
+            .iter()
+            .find(|module| module.name == "MathModule")
+            .expect("math module descriptor");
+        assert_eq!(math_module.kind, ModuleKind::Procedural);
+        assert!(math_module.visibility.option_private_module);
+        let worker_module = reflection
+            .modules
+            .iter()
+            .find(|module| module.name == "Worker")
+            .expect("class module descriptor");
+        assert_eq!(worker_module.kind, ModuleKind::Class);
+        assert!(worker_module.visibility.vb_exposed);
+
+        let add = reflection
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name == "add")
+            .expect("Add descriptor");
+        assert_eq!(add.kind, ProcedureKind::Function);
+        assert!(add.visibility.is_public);
+        assert!(add.visibility.is_option_private);
+        assert!(!add.visibility.is_class_member);
+        assert_eq!(add.signature.calling_shape, CallingShape::Procedure);
+        assert_eq!(
+            add.signature.return_type.as_ref().unwrap().normalized,
+            VbaType::Double
+        );
+        assert_eq!(add.signature.parameters.len(), 2);
+        assert_eq!(
+            add.signature.parameters[0].name.as_deref(),
+            Some("leftvalue")
+        );
+        assert_eq!(add.signature.parameters[0].passing_mode, PassingMode::ByVal);
+        assert_eq!(
+            add.signature.parameters[0]
+                .value_type
+                .as_ref()
+                .unwrap()
+                .normalized,
+            VbaType::Double
+        );
+        assert_eq!(
+            add.signature.parameters[0].source_type_text.as_deref(),
+            Some("Double")
+        );
+        assert_eq!(add.signature.parameters[1].passing_mode, PassingMode::ByRef);
+        assert_eq!(
+            add.signature.parameters[1]
+                .value_type
+                .as_ref()
+                .unwrap()
+                .normalized,
+            VbaType::Long
+        );
+
+        let hidden = reflection
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name == "hidden")
+            .expect("Hidden descriptor");
+        assert_eq!(hidden.kind, ProcedureKind::Sub);
+        assert!(!hidden.visibility.is_public);
+        assert_eq!(hidden.signature.parameters[0].name.as_deref(), Some("flag"));
+        assert!(hidden.signature.parameters[0].optional);
+        assert_eq!(hidden.signature.parameters[0].default_value, Some(1));
+
+        let name = reflection
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name == "name")
+            .expect("Name property descriptor");
+        assert_eq!(name.kind, ProcedureKind::PropertyGet);
+        assert_eq!(name.signature.calling_shape, CallingShape::PropertyAccessor);
+        assert!(name.visibility.is_class_member);
+
+        let internal = reflection
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name == "internal")
+            .expect("private class function descriptor");
+        assert_eq!(internal.kind, ProcedureKind::Function);
+        assert!(!internal.visibility.is_public);
+        assert!(internal.visibility.is_class_member);
+
+        let capability = reflection
+            .capabilities
+            .iter()
+            .find(|capability| capability.callable_id == add.callable_id)
+            .expect("Add capability");
+        assert!(capability.invocable_in_prepared_session);
+        assert!(
+            capability
+                .supported_invocation_lanes
+                .contains(&InvocationLane::VariantPositional)
+        );
+        assert!(
+            capability
+                .supported_invocation_lanes
+                .contains(&InvocationLane::TypedScalarFirstTier)
+        );
+    }
+
+    #[test]
+    fn reflect_project_does_not_synthesize_host_udf_policy_fields() {
+        let manifest = base_manifest();
+        let reflection_debug = format!("{:#?}", reflect_project(&manifest)).to_ascii_lowercase();
+
+        for forbidden in [
+            "udf",
+            "worksheet",
+            "volatile",
+            "registry",
+            "thread_safety",
+            "formula",
+            "selection_policy",
+        ] {
+            assert!(
+                !reflection_debug.contains(forbidden),
+                "neutral reflection leaked forbidden policy token {forbidden}"
+            );
         }
     }
 
