@@ -8,6 +8,7 @@ pub mod immediate;
 pub mod native_ready_runner;
 pub mod project;
 pub mod runner;
+pub mod udf_policy_example;
 pub mod vba_host;
 
 pub use direct_host::{
@@ -56,6 +57,11 @@ pub use project::{
 pub use runner::{
     PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
     RuntimeProfileId, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+};
+pub use udf_policy_example::{
+    AdmittedUdf, RejectedUdfCandidate, UdfAdmissionPolicy, UdfAdmissionReport,
+    W093CallableMetadata, W093Capability, W093InvocationTarget, W093RegistrationRequest,
+    W093SourceIdentity,
 };
 pub use vba_host::{
     HostCallContext, HostCaller, HostContextObservations, HostContextValue, HostDiagnostic,
