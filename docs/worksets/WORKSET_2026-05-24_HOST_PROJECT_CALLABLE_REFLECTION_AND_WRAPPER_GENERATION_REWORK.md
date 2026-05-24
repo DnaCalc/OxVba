@@ -29,6 +29,23 @@ This workset defines and implements two related but separate hosting modes:
    native-library exports, COM wrappers, and future XLL registration glue. XLL is
    a special instance of generic wrapper generation, not the foundation.
 
+## First-Pass Development / No-Compatibility Rule
+
+This workset is a first-pass boundary correction. The target end state is a
+clean, legacy-free, compatibility-free codebase and doc set for this topic.
+
+Binding rules:
+
+- Delete old-shape `HostUdf*`, UDF-specific, adapter, shim, bridge, option, and
+  compatibility code that is deprecated by this rework.
+- Do not preserve legacy API names as wrappers unless a later user instruction
+  explicitly requests a compatibility layer.
+- Do not carry deprecated terminology in final docs except in audit/evidence
+  sections that explain what was removed.
+- Use git history for archeology; do not keep old code paths for archeology.
+- New tests should assert the absence of deprecated public surfaces where
+  practical, not adapter equivalence.
+
 ## Non-Goals
 
 - Do not implement formula binding, formula name precedence, or worksheet recalc
@@ -37,8 +54,7 @@ This workset defines and implements two related but separate hosting modes:
   wrapper-generation substrate later.
 - Do not make compiler metadata decide which procedures are UDFs.
 - Do not introduce a second DnaOneCalc-local comprehensive function registry.
-- Do not remove existing compatibility surfaces before adapters and migration
-  tests are in place.
+- Do not add compatibility shims for the old host-UDF API shape.
 
 ## Boundary Principles
 
@@ -254,24 +270,23 @@ substrate:
 XLL-specific implementation is out of scope except for ensuring the substrate can
 represent a future XLL generation plan.
 
-## Migration From Current Host-UDF Code
+## Removal Of Current Host-UDF Code
 
-Current surfaces to migrate or adapt:
+Current old-shape surfaces to remove or replace directly:
 
-- `HostUdfCatalog` -> neutral callable/reflection catalog or compatibility
-  adapter.
-- `HostUdfFunctionDescriptor` -> `ProcedureDescriptor` plus optional host policy
-  overlay.
-- `HostUdfCallContext` -> `HostCallContext`.
-- `invoke_host_udf_with_variants` -> neutral `invoke_callable_with_variants`.
-- `host_udf_typed_signature` / `invoke_host_udf_typed` -> neutral typed
-  signature/invoke lanes.
-- `BundleHostCallDescriptor` -> neutral `BundleCallableDescriptor` or equivalent
-  descriptor-inventory entry.
+- Delete `HostUdfCatalog` in favor of a neutral callable/reflection catalog.
+- Delete `HostUdfFunctionDescriptor` in favor of `ProcedureDescriptor` plus
+  optional host-owned policy examples outside compiler/runtime.
+- Delete `HostUdfCallContext` in favor of `HostCallContext`.
+- Delete `invoke_host_udf_with_variants` in favor of neutral
+  `invoke_callable_with_variants`.
+- Delete `host_udf_typed_signature` / `invoke_host_udf_typed` in favor of neutral
+  typed signature/invoke lanes.
+- Replace `BundleHostCallDescriptor` with neutral `BundleCallableDescriptor` or
+  equivalent descriptor-inventory entry.
 
-Compatibility is acceptable during the transition, but new tests should assert
-that legacy UDF-named APIs are adapters over the neutral model, not separate
-policy engines.
+No compatibility adapter is required or desired. Any temporary bridge used
+inside a single commit series must be removed before the owning bead closes.
 
 ## Implementation Phases
 
@@ -279,9 +294,10 @@ policy engines.
 
 - Inventory all `HostUdf*`, `host-call`, `UDF`, `XLL`, and wrapper-generation
   references in compiler/runtime/host/build crates.
-- Classify each item as neutral fact, host policy, wrapper policy, compatibility
-  adapter, or misplaced code.
-- Publish a migration table listing what moves, what renames, and what remains.
+- Classify each item as neutral fact, host policy, wrapper policy, removal
+  target, or misplaced code.
+- Publish a removal/replacement table listing what is deleted, what is renamed,
+  and what remains.
 
 ### Phase 1 — Neutral descriptor model
 
@@ -289,7 +305,7 @@ policy engines.
 - Ensure compiler and bundle descriptor inventory carry only neutral facts.
 - Preserve explicit source/project annotations but do not synthesize worksheet or
   registry policy.
-- Add compatibility projections for existing descriptor consumers.
+- Delete old descriptor projections that duplicate or conflict with the neutral model.
 
 ### Phase 2 — In-process `VbaHost` project API
 
@@ -316,7 +332,7 @@ policy engines.
 - Prepared sessions from bundles should consume descriptor inventory when
   present.
 - Older bundles without descriptor inventory should produce an explicit
-  unavailable/compatibility state rather than silently inventing policy.
+  descriptor-unavailable state rather than silently inventing policy.
 - Source-loaded projects and bundle-loaded projects should project equivalent
   neutral reflection facts when descriptor inventory is available.
 
@@ -333,10 +349,9 @@ policy engines.
 
 - Provide an example/helper outside compiler/runtime that maps neutral public
   functions to a host-owned UDF admission set.
-- Keep OxFunc W093 compatibility through DTO projection, but do not implement
+- Keep OxFunc W093 alignment through neutral DTO projection, but do not implement
   registry mutation or formula precedence in OxVba.
-- Mark current UDF-named APIs as compatibility adapters or migrate tests to
-  neutral names.
+- Delete current UDF-named APIs and migrate tests to neutral names.
 
 ### Phase 7 — Validation matrix and evidence refresh
 
@@ -475,16 +490,18 @@ Rows:
 - No DnaOneCalc-local function mirror or formula precedence decision is created
   in OxVba.
 
-### Suite J — Compatibility and deprecation
+### Suite J — Legacy removal and clean surface
 
-Purpose: keep current users/tests working during refactor.
+Purpose: prove the final code/doc surface is legacy-free for this topic.
 
 Rows:
 
-- Existing `HostUdf*` APIs either continue through adapters or are replaced with
-  documented migration errors.
-- Existing PH-0011 tests are migrated to neutral API names.
-- Evidence docs state which old claims are superseded.
+- Deprecated `HostUdf*` public APIs, old options, shims, bridges, and docs are
+  removed rather than adapted.
+- Existing PH-0011 tests are rewritten to neutral API names.
+- Evidence docs state which old claims are superseded and removed.
+- Searches for old-shape terminology pass with only allowed audit/evidence
+  references.
 - Governance and validation matrices point at the new neutral boundary.
 
 ## Evidence Artifacts
@@ -501,25 +518,36 @@ Expected evidence files:
 - `docs/evidence/host_callable/DNA_CALC_HOST_CONSUMPTION.md`
 - refreshed PH-0011 matrix artifact.
 
-## Candidate Bead Rollout
+## Bead Rollout
 
-Before implementation, create/roll out child beads roughly as follows:
+Created child beads under `bd-hjys`:
 
-1. Audit current host-UDF and wrapper boundary leakage.
-2. Design neutral descriptor and host API contract.
-3. Implement neutral project reflection descriptors.
-4. Persist and consume bundle descriptor inventory as callable truth.
-5. Introduce `VbaHost` load/reflect/prepare facade.
-6. Implement neutral variant and typed callable invocation.
-7. Migrate `HostUdf*` APIs to adapters or neutral replacements.
-8. Add host-defined UDF policy example and W093 projection tests.
-9. Implement generic wrapper-generation plan abstractions.
-10. Add generated introspection-printer/reflection-caller EXE example.
-11. Refactor WrappedNativeLibrary to consume wrapper plans.
-12. Add COM/future-XLL substrate checks.
-13. Add DnaOneCalc/OxIde-style host consumption tests.
-14. Refresh PH-0011 and evidence matrix.
-15. Terminal audit, governance, and compatibility cleanup.
+1. `bd-hjys.1` � Audit host-UDF and wrapper boundary leakage.
+2. `bd-hjys.2` � Design neutral callable descriptor and VbaHost API contract.
+3. `bd-hjys.3` � Implement neutral project reflection descriptors.
+4. `bd-hjys.4` � Make bundle descriptor inventory callable source of truth.
+5. `bd-hjys.5` � Introduce VbaHost load reflect prepare facade.
+6. `bd-hjys.6` � Implement neutral callable invocation and context delivery.
+7. `bd-hjys.7` � Delete HostUdf APIs and migrate tests to neutral replacements.
+8. `bd-hjys.8` � Add host-owned UDF policy example and W093 projection.
+9. `bd-hjys.9` � Implement generic wrapper generation plan abstractions.
+10. `bd-hjys.10` � Generate introspection-printer and reflection-caller EXE wrapper.
+11. `bd-hjys.11` � Refactor WrappedNativeLibrary over wrapper plans.
+12. `bd-hjys.12` � Align COM wrapper and future XLL substrate with wrapper plans.
+13. `bd-hjys.13` � Add DNA Calc host consumption examples.
+14. `bd-hjys.14` � Refresh PH-0011 matrix and hosting evidence.
+15. `bd-hjys.15` � Terminal audit for host callable reflection rework.
+
+Dependency shape:
+
+- `bd-hjys.1` gates `bd-hjys.2`.
+- `bd-hjys.2` gates descriptor/API implementation and wrapper-plan design.
+- `bd-hjys.3` gates bundle truth, host facade, runtime invocation, and wrapper plans.
+- `bd-hjys.5` gates runtime context delivery and DNA Calc host examples.
+- `bd-hjys.6` gates legacy HostUdf removal, wrapper invocation examples, and native wrapper refactor.
+- `bd-hjys.9` gates generated wrapper examples, native wrapper refactor, and COM/future-XLL substrate checks.
+- `bd-hjys.14` depends on generated wrapper, native wrapper, COM/future-XLL, and DNA Calc evidence.
+- `bd-hjys.15` depends on the PH-0011/evidence refresh.
 
 ## Terminal Condition
 
