@@ -11,6 +11,7 @@ pub mod dll;
 pub mod exe;
 pub mod idl;
 pub mod manifest;
+pub mod reflection_exe;
 pub mod registration;
 pub mod typelib_gen;
 pub mod wrapper_plan;
