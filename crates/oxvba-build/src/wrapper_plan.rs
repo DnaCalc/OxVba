@@ -1,4 +1,4 @@
-use oxvba_compiler::{ProcedureDescriptor, ProcedureKind, ProjectReflection, VbaType};
+use oxvba_compiler::{OxBundle, ProcedureDescriptor, ProcedureKind, ProjectReflection, VbaType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectReflectionInput {
@@ -85,6 +85,102 @@ pub struct WrapperPlanDiagnostic {
     pub code: String,
     pub message: String,
     pub callable_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FutureXllRegistrationPlaceholder {
+    pub callable_id: String,
+    pub registration_name: String,
+    pub type_text_placeholder: String,
+    pub execution_deferred: bool,
+    pub excel_registration_deferred: bool,
+}
+
+pub fn com_server_plan_from_bundle(
+    project_name: impl Into<String>,
+    bundle: &OxBundle,
+) -> Result<WrapperGenerationPlan, WrapperPlanDiagnostic> {
+    let project_name = project_name.into();
+    let reflection = bundle
+        .project_reflection()
+        .map_err(|_| WrapperPlanDiagnostic {
+            code: "WRAPPER-COM-DESCRIPTOR-INVENTORY-UNAVAILABLE".to_string(),
+            message: "COM wrapper plan requires bundle descriptor inventory".to_string(),
+            callable_id: None,
+        })?;
+    let callable_ids = reflection
+        .procedures
+        .iter()
+        .map(|procedure| procedure.callable_id.clone())
+        .collect::<Vec<_>>();
+    Ok(WrapperGenerationPlan {
+        plan_id: format!("com-server:{project_name}"),
+        input: ProjectReflectionInput {
+            project_name,
+            reflection,
+        },
+        output_kind: WrapperOutputKind::ComServer,
+        callable_selection: CallableSelectionPlan::ExplicitCallableIds(callable_ids),
+        conversion_lanes: vec![WrapperConversionLane::variant_positional()],
+        diagnostics_policy: WrapperDiagnosticsPolicy {
+            lane: "com-wrapper-diagnostics".to_string(),
+            include_descriptor_identity: true,
+            fail_on_unsupported_callable: true,
+        },
+        argument_parser: Some(ArgumentParserPlan {
+            parser_kind: ArgumentParserKind::ComDispatch,
+            accepts_named_arguments: true,
+            emits_host_context: true,
+        }),
+    })
+}
+
+pub fn future_xll_plan_from_reflection(
+    project_name: impl Into<String>,
+    reflection: ProjectReflection,
+) -> (WrapperGenerationPlan, Vec<FutureXllRegistrationPlaceholder>) {
+    let project_name = project_name.into();
+    let placeholders = reflection
+        .procedures
+        .iter()
+        .filter(|procedure| {
+            procedure.kind == ProcedureKind::Function
+                && procedure.visibility.is_public
+                && !procedure.visibility.is_class_member
+        })
+        .map(|procedure| FutureXllRegistrationPlaceholder {
+            callable_id: procedure.callable_id.clone(),
+            registration_name: procedure.procedure_name.clone(),
+            type_text_placeholder: "<future-xll-type-text>".to_string(),
+            execution_deferred: true,
+            excel_registration_deferred: true,
+        })
+        .collect::<Vec<_>>();
+    let callable_ids = placeholders
+        .iter()
+        .map(|placeholder| placeholder.callable_id.clone())
+        .collect::<Vec<_>>();
+    let plan = WrapperGenerationPlan {
+        plan_id: format!("future-xll:{project_name}"),
+        input: ProjectReflectionInput {
+            project_name,
+            reflection,
+        },
+        output_kind: WrapperOutputKind::FutureXll,
+        callable_selection: CallableSelectionPlan::ExplicitCallableIds(callable_ids),
+        conversion_lanes: vec![WrapperConversionLane::typed_scalar_first_tier()],
+        diagnostics_policy: WrapperDiagnosticsPolicy {
+            lane: "future-xll-diagnostics".to_string(),
+            include_descriptor_identity: true,
+            fail_on_unsupported_callable: false,
+        },
+        argument_parser: Some(ArgumentParserPlan {
+            parser_kind: ArgumentParserKind::XllOper,
+            accepts_named_arguments: false,
+            emits_host_context: true,
+        }),
+    };
+    (plan, placeholders)
 }
 
 impl WrapperGenerationPlan {
@@ -271,5 +367,89 @@ mod tests {
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].procedure_name, "add");
         assert_eq!(diagnostics[0].code, "WRAPPER-NO-CONVERSION-LANE");
+    }
+}
+
+#[cfg(test)]
+mod substrate_alignment_tests {
+    use super::*;
+    use oxvba_compiler::{
+        ModuleKind, OxBundle, ProjectKind, ProjectManifest, compile_project,
+        module_unit_from_source,
+    };
+
+    fn compiled_bundle() -> (ProjectReflection, OxBundle) {
+        let manifest = ProjectManifest {
+            project_name: "Substrate".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source(
+                    "Main",
+                    ModuleKind::Procedural,
+                    "Public Function Add(a As Long) As Long\nAdd = a\nEnd Function",
+                )
+                .unwrap(),
+                module_unit_from_source(
+                    "Widget",
+                    ModuleKind::Class,
+                    "Public Function ClassAdd(a As Long) As Long\nClassAdd = a\nEnd Function",
+                )
+                .unwrap(),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: Default::default(),
+        };
+        let compiled = compile_project(&manifest).unwrap();
+        let reflection = compiled.project_reflection.clone();
+        let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
+        (reflection, bundle)
+    }
+
+    #[test]
+    fn com_server_plan_uses_bundle_descriptor_inventory() {
+        let (source_reflection, bundle) = compiled_bundle();
+        let plan = com_server_plan_from_bundle("Substrate", &bundle).unwrap();
+        assert_eq!(plan.output_kind, WrapperOutputKind::ComServer);
+        assert_eq!(
+            plan.input.reflection.procedures.len(),
+            source_reflection.procedures.len()
+        );
+        assert_eq!(
+            plan.input.reflection.procedures[0].descriptor_fingerprint,
+            bundle.project_reflection().unwrap().procedures[0].descriptor_fingerprint
+        );
+        assert_eq!(
+            plan.argument_parser.as_ref().unwrap().parser_kind,
+            ArgumentParserKind::ComDispatch
+        );
+    }
+
+    #[test]
+    fn future_xll_plan_represents_placeholders_and_defers_execution() {
+        let (reflection, _) = compiled_bundle();
+        let (plan, placeholders) = future_xll_plan_from_reflection("Substrate", reflection);
+        assert_eq!(plan.output_kind, WrapperOutputKind::FutureXll);
+        assert_eq!(plan.conversion_lanes[0].lane_id, "TypedScalarFirstTier");
+        assert_eq!(
+            plan.argument_parser.as_ref().unwrap().parser_kind,
+            ArgumentParserKind::XllOper
+        );
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].registration_name, "add");
+        assert_eq!(
+            placeholders[0].type_text_placeholder,
+            "<future-xll-type-text>"
+        );
+        assert!(placeholders[0].execution_deferred);
+        assert!(placeholders[0].excel_registration_deferred);
+    }
+
+    #[test]
+    fn com_plan_reports_missing_descriptor_inventory() {
+        let (_, bundle) = compiled_bundle();
+        let legacy_like = OxBundle::new(bundle.bytecode.clone(), bundle.procedure_metadata.clone());
+        let err = com_server_plan_from_bundle("Substrate", &legacy_like).unwrap_err();
+        assert_eq!(err.code, "WRAPPER-COM-DESCRIPTOR-INVENTORY-UNAVAILABLE");
     }
 }
