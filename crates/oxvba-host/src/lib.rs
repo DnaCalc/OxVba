@@ -8,6 +8,7 @@ pub mod immediate;
 pub mod native_ready_runner;
 pub mod project;
 pub mod runner;
+pub mod vba_host;
 
 pub use direct_host::{
     DirectHostBreakpointId, DirectHostBuildRequestId, DirectHostCapability,
@@ -59,4 +60,8 @@ pub use project::{
 pub use runner::{
     PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
     RuntimeProfileId, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+};
+pub use vba_host::{
+    HostDiagnostic, HostDiagnosticPhase, LoadedVbaProject, PreparedVbaProject, ProjectFile,
+    ProjectFileSet, ProjectModuleText, ProjectSource, VbaHost, VbaHostOptions,
 };
