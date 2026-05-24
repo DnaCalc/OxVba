@@ -1,0 +1,9 @@
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>EngineeringMath</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="EngineeringMath.bas" />
+  </ItemGroup>
+</Project>
