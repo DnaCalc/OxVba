@@ -80,6 +80,8 @@ pub struct BundleComMemberDescriptor {
     pub is_default_member: bool,
     pub visible_param_count: usize,
     pub params: Vec<BundleComParamDescriptor>,
+    pub param_types: Vec<crate::bytecode::DeclareParamType>,
+    pub return_type: Option<crate::bytecode::DeclareParamType>,
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
@@ -468,6 +470,8 @@ fn com_class_descriptor_from_route(route: &ProjectDynamicObjectRoute) -> BundleC
                         default_value: param.default_value,
                     })
                     .collect(),
+                param_types: member.param_types.clone(),
+                return_type: member.return_type,
                 entry_pc: member.entry_pc,
                 param_slots: member.param_slots.clone(),
                 return_slot: member.return_slot,

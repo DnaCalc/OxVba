@@ -96,7 +96,15 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: i32) -> String {
     );
 
     let params: Vec<String> = (0..member.param_count)
-        .map(|i| format!("[in] VARIANT arg{i}"))
+        .map(|i| {
+            let ty = member
+                .param_types
+                .get(i)
+                .copied()
+                .map(idl_type_for_declare_param)
+                .unwrap_or("VARIANT");
+            format!("[in] {ty} arg{i}")
+        })
         .collect();
 
     let mut attr_parts = vec![format!("id({dispid})")];
@@ -116,7 +124,11 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: i32) -> String {
 
     if is_function {
         format!(
-            "        {attr} HRESULT {name}({params}[out, retval] VARIANT* pRetVal);\n",
+            "        {attr} HRESULT {name}({params}[out, retval] {retval_type}* pRetVal);\n",
+            retval_type = member
+                .return_type
+                .map(idl_type_for_declare_param)
+                .unwrap_or("VARIANT"),
             params = if params.is_empty() {
                 String::new()
             } else {
@@ -125,6 +137,26 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: i32) -> String {
         )
     } else {
         format!("        {attr} HRESULT {name}({});\n", params.join(", "))
+    }
+}
+
+fn idl_type_for_declare_param(param_type: oxvba_compiler::DeclareParamType) -> &'static str {
+    match param_type {
+        oxvba_compiler::DeclareParamType::Integer => "short",
+        oxvba_compiler::DeclareParamType::Long => "long",
+        oxvba_compiler::DeclareParamType::Single => "float",
+        oxvba_compiler::DeclareParamType::Double => "double",
+        oxvba_compiler::DeclareParamType::Currency => "CY",
+        oxvba_compiler::DeclareParamType::Date => "DATE",
+        oxvba_compiler::DeclareParamType::String => "BSTR",
+        oxvba_compiler::DeclareParamType::Boolean => "VARIANT_BOOL",
+        oxvba_compiler::DeclareParamType::Byte => "unsigned char",
+        oxvba_compiler::DeclareParamType::LongLong | oxvba_compiler::DeclareParamType::LongPtr => {
+            "hyper"
+        }
+        oxvba_compiler::DeclareParamType::Variant | oxvba_compiler::DeclareParamType::Any => {
+            "VARIANT"
+        }
     }
 }
 
@@ -178,6 +210,11 @@ mod tests {
                     member_name: "Add".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 2,
+                    param_types: vec![
+                        oxvba_compiler::DeclareParamType::Double,
+                        oxvba_compiler::DeclareParamType::Double,
+                    ],
+                    return_type: Some(oxvba_compiler::DeclareParamType::Double),
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -186,6 +223,8 @@ mod tests {
                     member_name: "Clear".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -198,7 +237,7 @@ mod tests {
         assert!(idl.contains("interface ICalculator : IDispatch"));
         assert!(idl.contains("coclass Calculator"));
         assert!(idl.contains("HRESULT Add"));
-        assert!(idl.contains("[out, retval] VARIANT* pRetVal"));
+        assert!(idl.contains("[in] double arg0, [in] double arg1, [out, retval] double* pRetVal"));
         assert!(idl.contains("HRESULT Clear()"));
     }
 
@@ -245,6 +284,8 @@ mod tests {
                     member_name: "Value".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: Some(0),
                     member_flags: None,
                     is_default_member: true,
@@ -253,6 +294,8 @@ mod tests {
                     member_name: "NewEnum".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: Some(-4),
                     member_flags: Some(0x40),
                     is_default_member: false,

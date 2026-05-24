@@ -2023,7 +2023,7 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 
 #[cfg(test)]
 mod tests {
-    use oxvba_compiler::{ProjectDynamicMemberKind, ProjectDynamicMemberRoute};
+    use oxvba_compiler::{DeclareParamType, ProjectDynamicMemberKind, ProjectDynamicMemberRoute};
     use oxvba_runtime::{ObjectRef, RuntimeCallKind, RuntimeCallSelector, Variant};
 
     use super::Engine;
@@ -2039,6 +2039,8 @@ mod tests {
             kind,
             visible_param_count: 1,
             params: Vec::new(),
+            param_types: vec![DeclareParamType::Variant],
+            return_type: Some(DeclareParamType::Variant),
             entry_pc: 10,
             param_slots: vec![0, 1],
             return_slot: Some(2),

@@ -1354,21 +1354,38 @@ unsafe fn extract_members_from_typeinfo(
             parameter_names.push(pname);
         }
 
-        // Extract parameter types and optional flags.
+        // Extract parameter types and optional flags. Dual interfaces commonly
+        // encode the language-level return value as a final [out, retval] T*
+        // parameter while the ABI return is HRESULT; expose that as return_type
+        // and do not count it as a callable input parameter.
         let mut parameter_types = Vec::new();
         let mut parameter_optional = Vec::new();
+        let mut retval_return_type = None;
         let optional_count = u32::try_from(fd.cparams_opt.max(0)).unwrap_or(0);
         let optional_start = cparams.saturating_sub(optional_count);
         for p in 0..cparams {
             let param_desc = &*fd.lprgelemdescparam.add(p as usize);
+            let flags = param_desc.paramdesc.wparamflags;
             let vt = param_desc.tdesc.vt;
-            let is_byref = (param_desc.paramdesc.wparamflags & 0x0002) != 0; // PARAMFLAG_FOUT
+            if (flags & 0x0008) != 0 {
+                let retval_type = if vt == VT_PTR && param_desc.tdesc.union_field != 0 {
+                    let inner = &*(param_desc.tdesc.union_field as *const TYPEDESC);
+                    typedesc_to_param_type(ptinfo, inner, false)
+                } else if vt == VT_USERDEFINED {
+                    typedesc_to_param_type(ptinfo, &param_desc.tdesc, false)
+                } else {
+                    vt_to_param_type(vt, false)
+                };
+                retval_return_type = Some(retval_type);
+                continue;
+            }
+            let is_byref = (flags & 0x0002) != 0; // PARAMFLAG_FOUT
             let param_type = if vt == VT_PTR || vt == VT_USERDEFINED {
                 typedesc_to_param_type(ptinfo, &param_desc.tdesc, is_byref)
             } else {
                 vt_to_param_type(vt, is_byref)
             };
-            let is_optional = (param_desc.paramdesc.wparamflags & 0x0010) != 0 // PARAMFLAG_FOPT
+            let is_optional = (flags & 0x0010) != 0 // PARAMFLAG_FOPT
                 || p >= optional_start;
             parameter_types.push(param_type);
             parameter_optional.push(is_optional);
@@ -1376,18 +1393,24 @@ unsafe fn extract_members_from_typeinfo(
 
         // Extract return type
         let ret_vt = fd.elemdescfunc.tdesc.vt;
-        let return_type = if ret_vt == VT_VOID || ret_vt == VT_HRESULT {
-            None
-        } else {
-            Some(typedesc_to_param_type(
-                ptinfo,
-                &fd.elemdescfunc.tdesc,
-                false,
-            ))
-        };
+        let return_type = retval_return_type.or_else(|| {
+            if ret_vt == VT_VOID || ret_vt == VT_HRESULT {
+                None
+            } else {
+                Some(typedesc_to_param_type(
+                    ptinfo,
+                    &fd.elemdescfunc.tdesc,
+                    false,
+                ))
+            }
+        });
+
+        if parameter_names.len() > parameter_types.len() {
+            parameter_names.truncate(parameter_types.len());
+        }
 
         let invoke_kind = invkind_to_member_invoke_kind(invkind);
-        let requires_argument = cparams > 0
+        let requires_argument = !parameter_types.is_empty()
             || matches!(
                 invoke_kind,
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef

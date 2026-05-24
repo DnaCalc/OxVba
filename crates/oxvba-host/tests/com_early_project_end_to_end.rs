@@ -770,6 +770,44 @@ End Function
         "expected wrapped COM server TypeLib {}",
         server_tlb_path.display()
     );
+
+    let tlb_identity = oxvba_com::TypeLibResolvedIdentity {
+        reference_name: "MyCalcServer".to_string(),
+        requested_coclass: Some("MyCalc".to_string()),
+        importlib: server_tlb_path.to_string_lossy().to_string(),
+        libid: None,
+        major_version: 1,
+        minor_version: 0,
+        lcid: None,
+        cache_key: "wrapped-com-server-imycalc-signature".to_string(),
+    };
+    let raw_tlib = oxvba_com::windows_typelib_loader::load_typelib_from_path(
+        &server_tlb_path.to_string_lossy(),
+    )
+    .expect("load generated wrapped COM server typelib");
+    let tlb_metadata =
+        oxvba_com::windows_typelib_loader::build_metadata_blob_from_typelib(raw_tlib, tlb_identity)
+            .expect("read generated wrapped COM server typelib metadata");
+    unsafe { oxvba_com::windows_typelib_loader::release_typelib(raw_tlib) };
+    let add_them = tlb_metadata
+        .members
+        .iter()
+        .find(|member| member.name.eq_ignore_ascii_case("AddThem"))
+        .expect("generated typelib should expose AddThem");
+    assert_eq!(
+        add_them.parameter_types,
+        vec![
+            oxvba_com::TypeLibParamType::Double,
+            oxvba_com::TypeLibParamType::Double,
+        ],
+        "AddThem should expose two Double inputs, not generic VARIANTs"
+    );
+    assert_eq!(
+        add_them.return_type,
+        Some(oxvba_com::TypeLibParamType::Double),
+        "AddThem should expose a Double retval, not a generic VARIANT"
+    );
+
     let registration_guard =
         RegisteredComServerGuard::register(server_dll_path.clone()).expect("register DLL");
 

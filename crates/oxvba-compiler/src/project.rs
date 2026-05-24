@@ -214,6 +214,8 @@ pub struct ProjectDynamicMemberRoute {
     pub kind: ProjectDynamicMemberKind,
     pub visible_param_count: usize,
     pub params: Vec<ProjectDynamicParamRoute>,
+    pub param_types: Vec<crate::bytecode::DeclareParamType>,
+    pub return_type: Option<crate::bytecode::DeclareParamType>,
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
@@ -584,6 +586,8 @@ struct ProcedureDecl {
     member_flags: Option<u32>,
     is_default_member: bool,
     params: Vec<ProjectDynamicParamRoute>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
     param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
@@ -1958,6 +1962,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
         for line in normalize_source_lines(&module.source) {
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
                 let params = procedure_signature_params(&line).unwrap_or_default();
+                let param_types = procedure_signature_param_types(&line).unwrap_or_default();
+                let return_type = procedure_signature_return_type(&line, kind);
                 let param_count = params.len();
                 let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name, kind);
                 procedures.push(ProcedureDecl {
@@ -1977,6 +1983,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         .get(&name)
                         .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                     params,
+                    param_types,
+                    return_type,
                     param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
@@ -2011,6 +2019,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             for line in normalize_source_lines(&module.source) {
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(&line) {
                     let params = procedure_signature_params(&line).unwrap_or_default();
+                    let param_types = procedure_signature_param_types(&line).unwrap_or_default();
+                    let return_type = procedure_signature_return_type(&line, kind);
                     let param_count = params.len();
                     let lowered_name =
                         lowered_proc_symbol(&project_name, &module_name, &name, kind);
@@ -2031,6 +2041,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                             .get(&name)
                             .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                         params,
+                        param_types,
+                        return_type,
                         param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
@@ -6851,6 +6863,8 @@ fn build_project_dynamic_object_routes(
                         kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
                         params: decl.params.clone(),
+                        param_types: procedure_declared_param_types(decl, metadata),
+                        return_type: decl.return_type.or(metadata.return_type),
                         entry_pc: metadata.entry_pc,
                         param_slots: metadata.param_slots.clone(),
                         return_slot: metadata.return_slot,
@@ -6894,6 +6908,8 @@ fn build_project_dynamic_object_routes(
                                 kind: decl.kind.dynamic_member_kind(),
                                 visible_param_count: decl.param_count,
                                 params: decl.params.clone(),
+                                param_types: procedure_declared_param_types(decl, metadata),
+                                return_type: decl.return_type.or(metadata.return_type),
                                 entry_pc: metadata.entry_pc,
                                 param_slots: metadata.param_slots.clone(),
                                 return_slot: metadata.return_slot,
@@ -8466,6 +8482,17 @@ fn parse_procedure_signature_line(line: &str) -> Option<(String, ProcedureDeclKi
     Some((name, kind, is_public))
 }
 
+fn procedure_declared_param_types(
+    decl: &ProcedureDecl,
+    metadata: &ProcedureRuntimeMetadata,
+) -> Vec<crate::bytecode::DeclareParamType> {
+    if decl.param_types.len() == decl.param_count {
+        decl.param_types.clone()
+    } else {
+        metadata.param_types.clone()
+    }
+}
+
 fn procedure_signature_params(line: &str) -> Option<Vec<ProjectDynamicParamRoute>> {
     let trimmed = line.trim();
     let open = trimmed.find('(')?;
@@ -8481,6 +8508,44 @@ fn procedure_signature_params(line: &str) -> Option<Vec<ProjectDynamicParamRoute
         params.push(parse_procedure_signature_param(arg)?);
     }
     Some(params)
+}
+
+fn procedure_signature_param_types(line: &str) -> Option<Vec<crate::bytecode::DeclareParamType>> {
+    let trimmed = line.trim();
+    let open = trimmed.find('(')?;
+    let close = find_matching_paren(trimmed, open)?;
+    let payload = trimmed[open + 1..close].trim();
+    if payload.is_empty() {
+        return Some(Vec::new());
+    }
+
+    split_signature_args(payload)?
+        .into_iter()
+        .map(parse_procedure_signature_param_type)
+        .collect()
+}
+
+fn procedure_signature_return_type(
+    line: &str,
+    kind: ProcedureDeclKind,
+) -> Option<crate::bytecode::DeclareParamType> {
+    if !kind.has_return_value() {
+        return None;
+    }
+    let trimmed = line.trim();
+    let tail = if let Some(open) = trimmed.find('(') {
+        let close = find_matching_paren(trimmed, open)?;
+        &trimmed[close + 1..]
+    } else {
+        trimmed
+    };
+    parse_as_type(tail).or_else(|| {
+        trimmed
+            .split_ascii_whitespace()
+            .nth(1)
+            .and_then(|name| split_type_char(name).1)
+            .and_then(type_char_to_declare_param_type)
+    })
 }
 
 fn split_signature_args(payload: &str) -> Option<Vec<&str>> {
@@ -8564,6 +8629,80 @@ fn parse_procedure_signature_param(raw: &str) -> Option<ProjectDynamicParamRoute
         optional,
         param_array,
         default_value,
+    })
+}
+
+fn parse_procedure_signature_param_type(raw: &str) -> Option<crate::bytecode::DeclareParamType> {
+    let mut token = raw.trim();
+    let mut lower = token.to_ascii_lowercase();
+
+    if lower.starts_with("optional ") {
+        token = token[9..].trim();
+        lower = token.to_ascii_lowercase();
+    }
+    if lower.starts_with("paramarray ") {
+        token = token[11..].trim();
+        lower = token.to_ascii_lowercase();
+    }
+    if lower.starts_with("byval ") || lower.starts_with("byref ") {
+        token = token[6..].trim();
+    }
+    let decl_text = token
+        .split_once('=')
+        .map(|(lhs, _)| lhs.trim())
+        .unwrap_or(token);
+    if let Some(param_type) = parse_as_type(decl_text) {
+        return Some(param_type);
+    }
+    let name_token = decl_text.split_ascii_whitespace().next()?;
+    split_type_char(name_token)
+        .1
+        .and_then(type_char_to_declare_param_type)
+        .or(Some(crate::bytecode::DeclareParamType::Variant))
+}
+
+fn parse_as_type(text: &str) -> Option<crate::bytecode::DeclareParamType> {
+    let mut tokens = text.split_ascii_whitespace().peekable();
+    while let Some(token) = tokens.next() {
+        if token.eq_ignore_ascii_case("as") {
+            let type_name = tokens.next()?;
+            return declare_param_type_from_name(type_name);
+        }
+    }
+    None
+}
+
+fn declare_param_type_from_name(type_name: &str) -> Option<crate::bytecode::DeclareParamType> {
+    let normalized = type_name
+        .trim_end_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .to_ascii_lowercase();
+    Some(match normalized.as_str() {
+        "integer" => crate::bytecode::DeclareParamType::Integer,
+        "long" => crate::bytecode::DeclareParamType::Long,
+        "single" => crate::bytecode::DeclareParamType::Single,
+        "double" => crate::bytecode::DeclareParamType::Double,
+        "currency" => crate::bytecode::DeclareParamType::Currency,
+        "date" => crate::bytecode::DeclareParamType::Date,
+        "string" => crate::bytecode::DeclareParamType::String,
+        "boolean" => crate::bytecode::DeclareParamType::Boolean,
+        "byte" => crate::bytecode::DeclareParamType::Byte,
+        "longlong" => crate::bytecode::DeclareParamType::LongLong,
+        "longptr" => crate::bytecode::DeclareParamType::LongPtr,
+        "variant" | "object" => crate::bytecode::DeclareParamType::Variant,
+        _ => return None,
+    })
+}
+
+fn type_char_to_declare_param_type(ch: char) -> Option<crate::bytecode::DeclareParamType> {
+    Some(match ch {
+        '%' => crate::bytecode::DeclareParamType::Integer,
+        '&' => crate::bytecode::DeclareParamType::Long,
+        '^' => crate::bytecode::DeclareParamType::LongLong,
+        '!' => crate::bytecode::DeclareParamType::Single,
+        '#' => crate::bytecode::DeclareParamType::Double,
+        '$' => crate::bytecode::DeclareParamType::String,
+        '@' => crate::bytecode::DeclareParamType::Currency,
+        _ => return None,
     })
 }
 

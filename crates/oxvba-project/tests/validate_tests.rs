@@ -319,6 +319,8 @@ fn com_class_exported_when_exposed_and_creatable() {
                     default_value: None,
                 },
             ],
+            param_types: vec![DeclareParamType::Double, DeclareParamType::Double],
+            return_type: Some(DeclareParamType::Double),
             entry_pc: 0,
             param_slots: vec![1, 2],
             return_slot: Some(3),
@@ -342,6 +344,14 @@ fn com_class_exported_when_exposed_and_creatable() {
         ProjectDynamicMemberKind::Function
     );
     assert_eq!(descriptors[0].members[0].param_count, 2);
+    assert_eq!(
+        descriptors[0].members[0].param_types,
+        vec![DeclareParamType::Double, DeclareParamType::Double]
+    );
+    assert_eq!(
+        descriptors[0].members[0].return_type,
+        Some(DeclareParamType::Double)
+    );
 }
 
 #[test]
@@ -429,6 +439,8 @@ fn com_class_with_multiple_members() {
                 kind: ProjectDynamicMemberKind::PropertyGet,
                 visible_param_count: 0,
                 params: Vec::new(),
+                param_types: Vec::new(),
+                return_type: None,
                 entry_pc: 0,
                 param_slots: Vec::new(),
                 return_slot: Some(0),
@@ -448,6 +460,8 @@ fn com_class_with_multiple_members() {
                     param_array: false,
                     default_value: None,
                 }],
+                param_types: vec![DeclareParamType::Variant],
+                return_type: None,
                 entry_pc: 10,
                 param_slots: vec![1],
                 return_slot: None,
@@ -462,6 +476,8 @@ fn com_class_with_multiple_members() {
                 kind: ProjectDynamicMemberKind::Method,
                 visible_param_count: 0,
                 params: Vec::new(),
+                param_types: Vec::new(),
+                return_type: None,
                 entry_pc: 20,
                 param_slots: Vec::new(),
                 return_slot: None,
@@ -739,6 +755,8 @@ fn com_class_export_preserves_dispatch_metadata() {
                 kind: ProjectDynamicMemberKind::PropertyGet,
                 visible_param_count: 0,
                 params: Vec::new(),
+                param_types: Vec::new(),
+                return_type: None,
                 entry_pc: 0,
                 param_slots: Vec::new(),
                 return_slot: Some(0),
@@ -753,6 +771,8 @@ fn com_class_export_preserves_dispatch_metadata() {
                 kind: ProjectDynamicMemberKind::PropertyGet,
                 visible_param_count: 0,
                 params: Vec::new(),
+                param_types: Vec::new(),
+                return_type: None,
                 entry_pc: 1,
                 param_slots: Vec::new(),
                 return_slot: Some(0),

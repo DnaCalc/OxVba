@@ -98,7 +98,17 @@ mod ffi {
     // VARENUM (VT_*)
     #[allow(dead_code)]
     pub const VT_VOID: u16 = 24;
+    pub const VT_I2: u16 = 2;
+    pub const VT_I4: u16 = 3;
+    pub const VT_R4: u16 = 4;
+    pub const VT_R8: u16 = 5;
+    pub const VT_CY: u16 = 6;
+    pub const VT_DATE: u16 = 7;
+    pub const VT_BSTR: u16 = 8;
+    pub const VT_BOOL: u16 = 11;
     pub const VT_VARIANT: u16 = 12;
+    pub const VT_UI1: u16 = 17;
+    pub const VT_I8: u16 = 20;
     pub const VT_HRESULT: u16 = 25;
     pub const VT_PTR: u16 = 26;
 
@@ -782,12 +792,17 @@ fn add_dispatch_members(
 
         let mut param_descs: Vec<ElemDesc> = Vec::with_capacity(total_params);
 
-        // [in] VARIANT parameters
-        for _ in 0..member.param_count {
+        // [in] parameters preserve the compiler's VBA scalar metadata where available.
+        for pi in 0..member.param_count {
             param_descs.push(ElemDesc {
                 tdesc: TypeDesc {
                     union_field: 0,
-                    vt: VT_VARIANT,
+                    vt: member
+                        .param_types
+                        .get(pi)
+                        .copied()
+                        .map(declare_param_type_to_vartype)
+                        .unwrap_or(VT_VARIANT),
                 },
                 paramdesc: ParamDesc {
                     pparamdescex: std::ptr::null_mut(),
@@ -796,11 +811,15 @@ fn add_dispatch_members(
             });
         }
 
-        // [out, retval] VARIANT* parameter for functions
-        // We need a stable TypeDesc for VT_PTR to point to
+        // [out, retval] T* parameter for functions. Dual interfaces expose HRESULT
+        // at the ABI level and the VBA return type through this retval pointer.
+        // Keep the pointee TypeDesc stable until AddFuncDesc returns.
         let mut retval_pointee = TypeDesc {
             union_field: 0,
-            vt: VT_VARIANT,
+            vt: member
+                .return_type
+                .map(declare_param_type_to_vartype)
+                .unwrap_or(VT_VARIANT),
         };
         if is_function {
             param_descs.push(ElemDesc {
@@ -890,6 +909,28 @@ fn add_dispatch_members(
 }
 
 #[cfg(target_os = "windows")]
+fn declare_param_type_to_vartype(param_type: oxvba_compiler::DeclareParamType) -> u16 {
+    use ffi::*;
+    match param_type {
+        oxvba_compiler::DeclareParamType::Integer => VT_I2,
+        oxvba_compiler::DeclareParamType::Long => VT_I4,
+        oxvba_compiler::DeclareParamType::Single => VT_R4,
+        oxvba_compiler::DeclareParamType::Double => VT_R8,
+        oxvba_compiler::DeclareParamType::Currency => VT_CY,
+        oxvba_compiler::DeclareParamType::Date => VT_DATE,
+        oxvba_compiler::DeclareParamType::String => VT_BSTR,
+        oxvba_compiler::DeclareParamType::Boolean => VT_BOOL,
+        oxvba_compiler::DeclareParamType::Byte => VT_UI1,
+        oxvba_compiler::DeclareParamType::LongLong | oxvba_compiler::DeclareParamType::LongPtr => {
+            VT_I8
+        }
+        oxvba_compiler::DeclareParamType::Variant | oxvba_compiler::DeclareParamType::Any => {
+            VT_VARIANT
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn member_function_flags(member: &oxvba_project::DispatchMemberInfo) -> u16 {
     let mut flags = 0;
     if member.is_restricted() {
@@ -969,6 +1010,11 @@ mod tests {
                     member_name: "Add".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 2,
+                    param_types: vec![
+                        oxvba_compiler::DeclareParamType::Variant,
+                        oxvba_compiler::DeclareParamType::Variant,
+                    ],
+                    return_type: None,
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -977,6 +1023,8 @@ mod tests {
                     member_name: "Clear".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -985,6 +1033,8 @@ mod tests {
                     member_name: "Value".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -1051,6 +1101,8 @@ mod tests {
                     member_name: "DoAlpha".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 1,
+                    param_types: vec![oxvba_compiler::DeclareParamType::Variant],
+                    return_type: None,
                     dispatch_id: None,
                     member_flags: None,
                     is_default_member: false,
@@ -1066,6 +1118,8 @@ mod tests {
                         member_name: "DoBeta".to_string(),
                         kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                         param_count: 0,
+                        param_types: Vec::new(),
+                        return_type: None,
                         dispatch_id: None,
                         member_flags: None,
                         is_default_member: false,
@@ -1074,6 +1128,8 @@ mod tests {
                         member_name: "Name".to_string(),
                         kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                         param_count: 0,
+                        param_types: Vec::new(),
+                        return_type: None,
                         dispatch_id: None,
                         member_flags: None,
                         is_default_member: false,
@@ -1123,6 +1179,8 @@ mod tests {
                     member_name: "Value".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: Some(0),
                     member_flags: None,
                     is_default_member: true,
@@ -1131,6 +1189,8 @@ mod tests {
                     member_name: "NewEnum".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    param_types: Vec::new(),
+                    return_type: None,
                     dispatch_id: Some(-4),
                     member_flags: Some(0x40),
                     is_default_member: false,
@@ -1179,6 +1239,8 @@ mod tests {
                 member_name: "Fire".to_string(),
                 kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                 param_count: 0,
+                param_types: Vec::new(),
+                return_type: None,
                 dispatch_id: Some(1),
                 member_flags: None,
                 is_default_member: false,
