@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 Owner: Codex
-Status: planned
+Status: complete
 Bead root: `bd-hjys`
 Related current epic: `bd-sg5h` — Host program design and UDF rework
 Supersedes/refines: `docs/worksets/WORKSET_2026-05-10_HOST_PROGRAM_DESIGN_AND_UDF_REWORK.md`
