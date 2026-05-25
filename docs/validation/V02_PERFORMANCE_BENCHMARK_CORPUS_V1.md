@@ -60,7 +60,7 @@ not a VBA performance comparison result.
 
 Allowed V0.2 language:
 
-- "OxVba has a reproducible benchmark corpus and artifact schema for VM/JIT and
+- "OxVba has a reproducible benchmark corpus and artifact schema for VM and
   selected host-facing workloads."
 - "VBA comparison rows are captured when a Windows Excel/VBA host is available."
 - "Performance trends are interpreted with explicit noise and host boundaries."

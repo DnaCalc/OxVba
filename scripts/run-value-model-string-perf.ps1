@@ -4,7 +4,7 @@ param(
     [string]$OutputRoot = "docs/evidence/value_model_migration",
     [string]$RunId = "",
     [int]$Iterations = 3,
-    [string[]]$Backend = @("vm", "jit"),
+    [string[]]$Backend = @("vm"),
     [string[]]$IncludeWorkload = @(),
     [string[]]$ExcludeWorkload = @(),
     [switch]$KeepWorktrees
@@ -352,8 +352,8 @@ try {
 
     $selectedBackends = @($Backend | ForEach-Object { $_.ToLowerInvariant() } | Select-Object -Unique)
     foreach ($backendName in $selectedBackends) {
-        if ($backendName -notin @("vm", "jit")) {
-            throw "run-value-model-string-perf: unsupported backend '$backendName'"
+        if ($backendName -ne "vm") {
+            throw "run-value-model-string-perf: backend '$backendName' is disabled; use vm until the JIT v2 design lands"
         }
     }
 
@@ -419,9 +419,6 @@ try {
                 for ($iteration = 1; $iteration -le $Iterations; $iteration++) {
                     Add-Content -Path $logPath -Value ("## Iteration {0}" -f $iteration)
                     $command = @("cargo", "run", "-q", "-p", "oxvba-cli", "--", "run", $workload.source_path, "--dump-values")
-                    if ($backendName -eq "jit") {
-                        $command += "--jit"
-                    }
                     $elapsedMs = Invoke-PerfCommand -WorkingDirectory $side.worktree -Command $command -LogPath $logPath -CargoTargetDir $sideTargetDir
                     Add-Content -Path $logPath -Value ("elapsed_ms={0}" -f $elapsedMs)
                     Add-Content -Path $logPath -Value ""

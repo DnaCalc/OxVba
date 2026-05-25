@@ -22,7 +22,8 @@ use oxvba_hal::{
     },
     traits::HostServices,
 };
-use oxvba_jit::JitEngine;
+#[cfg(feature = "jit")]
+use oxvba_jit::JIT_NOT_IMPLEMENTED_MESSAGE;
 use oxvba_runtime::{
     ObjectRef, RuntimeCallArgument, RuntimeCallContext, RuntimeCallFrame, RuntimeCallKind,
     RuntimeCallResult, RuntimeCallSelector, RuntimeCallSource, RuntimeInterfaceId, Variant,
@@ -108,13 +109,10 @@ impl std::error::Error for PhaseDiagnostic {}
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
     pub enable_jit: bool,
-    pub root_object_name: Option<String>,
 }
 
 pub struct Engine {
     config: HostConfig,
-    jit: JitEngine,
-    root_objects: HashMap<String, String>,
     event_dispatcher: Mutex<EventDispatcher>,
     com_subscription_handlers: Mutex<HashMap<ComSubscriptionToken, String>>,
     runtime_profile: RuntimeProfileId,
@@ -294,8 +292,6 @@ impl Engine {
         let host_callbacks = None;
         Self {
             config,
-            jit: JitEngine,
-            root_objects: HashMap::new(),
             event_dispatcher: Mutex::new(EventDispatcher::default()),
             com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
@@ -358,8 +354,6 @@ impl Engine {
         let runtime_profile = RuntimeProfileId::default_for_hal_profile(HalProfileId::Null);
         Self {
             config,
-            jit: JitEngine,
-            root_objects: HashMap::new(),
             event_dispatcher: Mutex::new(EventDispatcher::default()),
             com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
@@ -420,14 +414,6 @@ impl Engine {
 
     pub fn hal_descriptor(&self) -> HalDescriptor {
         self.host_services.descriptor()
-    }
-
-    pub fn register_root_object(&mut self, name: impl Into<String>, type_name: impl Into<String>) {
-        self.root_objects.insert(name.into(), type_name.into());
-    }
-
-    pub fn has_root_object(&self, name: &str) -> bool {
-        self.root_objects.contains_key(name)
     }
 
     pub fn subscribe_host_event_handler(
@@ -1076,21 +1062,16 @@ impl Engine {
         self.preflight_host_sensitive_support(&bytecode)?;
         let snapshot_bytecode = full_snapshot_bytecode(&bytecode);
         if self.config.enable_jit {
-            self.jit
-                .compile_function("main")
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            let all_slots = self
-                .jit
-                .execute_and_snapshot_variants_with_host(
-                    &snapshot_bytecode,
-                    self.host_services.clone(),
-                )
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            return Ok(project_visible_snapshot(
-                &all_slots,
-                &procedure_runtime_metadata,
-                bytecode.user_slot_count,
-            ));
+            #[cfg(feature = "jit")]
+            {
+                return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            }
+            #[cfg(not(feature = "jit"))]
+            {
+                return Err(PhaseDiagnostic::runtime(
+                    "JIT execution requested but the `jit` feature is not enabled",
+                ));
+            }
         }
 
         let all_slots =
@@ -1114,14 +1095,16 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         if self.config.enable_jit {
-            self.jit
-                .compile_function("main")
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            // Project snapshots need procedure metadata filtering over the
-            // full slot file. The direct JIT bytecode APIs expose only raw
-            // user-slot snapshots, so project execution falls back to the VM
-            // until the JIT has a project-visible snapshot boundary.
-            return self.execute_compiled_project_with_variant_snapshot_vm(&compiled);
+            #[cfg(feature = "jit")]
+            {
+                return Err(PhaseDiagnostic::runtime(JIT_NOT_IMPLEMENTED_MESSAGE));
+            }
+            #[cfg(not(feature = "jit"))]
+            {
+                return Err(PhaseDiagnostic::runtime(
+                    "JIT execution requested but the `jit` feature is not enabled",
+                ));
+            }
         }
 
         self.execute_compiled_project_with_variant_snapshot_vm(&compiled)

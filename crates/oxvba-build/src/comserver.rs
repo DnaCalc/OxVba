@@ -1069,7 +1069,6 @@ impl OxVbaDispatchInstance {
             .map_err(|_| E_OUTOFMEMORY)?;
         let engine = Rc::new(Engine::new(HostConfig {
             enable_jit: false,
-            root_object_name: None,
         }));
         let mut session = engine
             .compile_and_prepare_session_from_bundle(&bundle)

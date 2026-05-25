@@ -74,7 +74,6 @@ The `Engine` struct in `crates/oxvba-host/src/engine.rs` is the primary embeddin
 pub struct Engine {
     config: HostConfig,
     jit: JitEngine,
-    root_objects: HashMap<String, String>,
     runtime_profile: RuntimeProfileId,
     host_services: Arc<dyn HostServices>,
 }
@@ -84,13 +83,11 @@ Public API surface:
 
 | Method | Purpose |
 |--------|---------|
-| `Engine::new(config)` | Create engine with `HostConfig` (JIT toggle, root object name) |
+| `Engine::new(config)` | Create engine with `HostConfig` (JIT toggle) |
 | `set_runtime_profile(profile)` | Set runtime profile (e.g., `WindowsHeadless`, `LinuxStdio`) |
 | `set_host_policy(policy)` | Set full host policy |
 | `set_host_policy_preset(preset)` | Set policy by preset name |
 | `set_unsupported_feature_mode(mode)` | Configure unsupported feature handling |
-| `register_root_object(name, type_name)` | Register a host-provided root object by name |
-| `has_root_object(name)` | Check if root object is registered |
 | `execute_source_with_snapshot_phased(source)` | Compile and run single source, return slot values + phase diagnostics |
 | `execute_project_with_snapshot_phased(manifest)` | Compile and run a full project manifest |
 

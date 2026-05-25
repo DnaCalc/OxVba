@@ -41,7 +41,7 @@ try {
     $results = @()
     $backendArgs = @()
     if ($Backend -eq "jit") {
-        $backendArgs += "--jit"
+        throw "The JIT backend is disabled pending the JIT v2 design; use -Backend vm."
     }
 
     Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object {
@@ -70,7 +70,7 @@ try {
 
         $output = ""
         try {
-            $output = & cargo run -q -p oxvba-cli -- run $_.FullName --dump-values @backendArgs 2>$null | Out-String
+            $output = & cargo run -q -p oxvba-cli --bin oxvba-cli -- run $_.FullName --dump-values @backendArgs 2>$null | Out-String
         }
         catch {
             $status = "error"

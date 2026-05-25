@@ -151,10 +151,7 @@ mod windows_registered_com_lane {
     }
 
     fn run_registered_lane_source(source: &str) -> Vec<Variant> {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
             .execute_source_with_variant_snapshot_phased(source)
@@ -480,10 +477,7 @@ End Sub
 
     #[test]
     fn registered_class_not_registered_is_reported_with_stable_label() {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         let err = engine
             .execute_source_with_variant_snapshot_phased(
@@ -524,10 +518,7 @@ End Sub
             return;
         }
 
-        let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         let source = format!(
             "Sub Main()\nDim obj\n{}\nEnd Sub\n",
@@ -553,10 +544,7 @@ End Sub
 
     #[test]
     fn registered_event_unsubscribe_unknown_subscription_has_stable_error_shape() {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
 
         let err = engine
@@ -584,10 +572,7 @@ End Sub
             return;
         }
 
-        let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         let source = format!(
             "Sub Main()\nDim obj\n{}\nEnd Sub\n",

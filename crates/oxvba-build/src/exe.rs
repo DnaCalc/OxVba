@@ -25,7 +25,6 @@ fn main() {{
 
     let config = HostConfig {{
         enable_jit: false,
-        root_object_name: Some("Application".to_string()),
     }};
     let engine = Engine::new(config);
 

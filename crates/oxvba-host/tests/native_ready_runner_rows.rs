@@ -59,11 +59,12 @@ End Sub
         .iter()
         .find(|row| row.backend == "jit")
         .expect("jit row");
-    assert_eq!(jit.exit_status, 0);
-    assert!(jit.fallback_used);
-    assert_eq!(jit.fallback_reason, "project-visible-snapshot-vm-fallback");
-    assert!(jit.result_digest.starts_with("fnv1a64:"));
-    assert_eq!(jit.result_digest, vm.result_digest);
+    assert_eq!(jit.exit_status, 78);
+    assert_eq!(jit.diagnostic_code, "JIT-NOT-IMPLEMENTED");
+    assert!(!jit.fallback_used);
+    assert_eq!(jit.fallback_reason, "not-applicable");
+    assert_eq!(jit.result_kind, "not-implemented");
+    assert!(jit.result_digest.is_empty());
 }
 
 #[test]
@@ -96,7 +97,7 @@ End Sub
     assert!(
         row_lines
             .iter()
-            .any(|line| line.contains(",true,project-visible-snapshot-vm-fallback,")),
+            .any(|line| line.contains(",78,JIT-NOT-IMPLEMENTED,false,not-applicable,")),
         "csv={csv}"
     );
 }

@@ -24,12 +24,9 @@ fn example_direct_file_top_level_mainline_executes() {
         "    value = value + 1\n",
         "End Sub\n",
     );
-    let values = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    })
-    .execute_source_with_variant_snapshot(source)
-    .expect("direct-file example should execute");
+    let values = Engine::new(HostConfig { enable_jit: false })
+        .execute_source_with_variant_snapshot(source)
+        .expect("direct-file example should execute");
     assert_eq!(values[0].as_i32(), Some(42));
 }
 
@@ -67,12 +64,9 @@ fn example_basproj_exe_with_explicit_entrypoint_executes() {
 
     let loaded =
         oxvba_project::load_basproj(&temp_root.join("ProjectA.basproj")).expect("load basproj");
-    let values = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    })
-    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-    .expect("basproj example should execute");
+    let values = Engine::new(HostConfig { enable_jit: false })
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("basproj example should execute");
     assert!(
         values.is_empty(),
         "explicit-entry project example should execute with the current empty snapshot slot shape: {values:?}"
@@ -113,12 +107,9 @@ fn example_convention_directory_top_level_mainline_executes() {
         &temp_root,
     )
     .expect("load convention project");
-    Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    })
-    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-    .expect("convention example should execute");
+    Engine::new(HostConfig { enable_jit: false })
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("convention example should execute");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }
@@ -139,12 +130,9 @@ fn example_vbp_sub_main_executes() {
     .expect("write vbp");
 
     let loaded = oxvba_project::load_vbp(&temp_root.join("Project1.vbp")).expect("load vbp");
-    let values = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    })
-    .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-    .expect("vbp example should execute");
+    let values = Engine::new(HostConfig { enable_jit: false })
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("vbp example should execute");
     assert!(
         values.is_empty(),
         "VBP Sub Main example should execute with the current empty snapshot slot shape: {values:?}"

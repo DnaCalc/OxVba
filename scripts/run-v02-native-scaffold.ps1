@@ -66,21 +66,15 @@ try {
 
     $rows += Invoke-NativeGate `
         -GateId "NATIVE-V02-G002" `
-        -Area "jit_supported_subset" `
+        -Area "jit_placeholder" `
         -ObligationIds "NATIVE-V02-O003;NATIVE-V02-O007" `
-        -Arguments @("test", "-p", "oxvba-jit", "supports_subset_bytecode_path", "--lib", "--", "--nocapture")
-
-    $rows += Invoke-NativeGate `
-        -GateId "NATIVE-V02-G003" `
-        -Area "jit_vm_fallback" `
-        -ObligationIds "NATIVE-V02-O003;NATIVE-V02-O007" `
-        -Arguments @("test", "-p", "oxvba-jit", "falls_back_for_unsupported_error_state_bytecode", "--lib", "--", "--nocapture")
+        -Arguments @("test", "-p", "oxvba-jit", "jit_api_reports_not_implemented", "--lib", "--", "--nocapture")
 
     $rows += [PSCustomObject]@{
         run_id = $resolvedRunId
         timestamp_utc = $timestampUtc
         host_os = $hostOs
-        gate_id = "NATIVE-V02-G004"
+        gate_id = "NATIVE-V02-G003"
         area = "artifact_provenance"
         obligation_ids = "NATIVE-V02-O010"
         status = "pass"

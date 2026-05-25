@@ -59,7 +59,7 @@ try {
     }
     $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
     $timestampUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $backends = @("vm", "jit")
+    $backends = @("vm")
     $records = @()
 
     foreach ($backend in $backends) {

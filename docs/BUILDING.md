@@ -11,7 +11,7 @@ cargo check --workspace
 cargo test --workspace
 ```
 
-## JIT-specific testing
+## Disabled JIT skeleton check
 ```powershell
 cargo test -p oxvba-jit
 ```
@@ -33,4 +33,4 @@ cargo kani --workspace
 ```
 
 ## Current state
-The repository is in active implementation. All crates compile, the interpreter covers 152 instructions, the JIT backend has full instruction parity (155 mapping entries), and the test suite has 2025+ tests with zero failures.
+The repository is in active implementation. The interpreter is the current executable truth, and the old JIT implementation has been replaced by a disabled API skeleton pending a JIT v2 design.

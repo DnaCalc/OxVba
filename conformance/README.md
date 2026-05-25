@@ -20,7 +20,6 @@ prerequisites:
 
 ```powershell
 ./scripts/run-conformance.ps1 -Backend vm
-./scripts/run-conformance.ps1 -Backend jit
 ```
 
 Host/COM-sensitive fixtures remain cataloged in `tests_manifest.csv` as

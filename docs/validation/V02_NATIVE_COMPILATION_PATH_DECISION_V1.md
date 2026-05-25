@@ -11,11 +11,11 @@ V0.2 uses a staged hybrid native-compilation path:
 - The primary V0.2 product target is a wrapper-hosted compiled artifact. The
   artifact embeds an `.oxb` bundle and uses generated Rust shims for executable,
   DLL, COM server, or XLL surfaces where those shims are explicitly validated.
-- Cranelift remains the primary execution accelerator inside the OxVba runtime
-  host. It may execute supported bytecode subsets, but V0.2 does not claim a
-  standalone direct native-image or full AOT compilation pipeline.
-- Unsupported or failing JIT paths must continue to fall back to VM execution
-  with the same observable runtime semantics.
+- The previous Cranelift JIT prototype has been purged. `oxvba-jit` remains as
+  a not-implemented crate/API boundary for the future JIT v2 design, but V0.2
+  does not claim active JIT execution.
+- Unsupported JIT requests fail explicitly rather than falling back to VM
+  execution.
 
 ## Product Boundary
 
@@ -24,9 +24,8 @@ In scope for V0.2:
 - wrapper-generated executable shims that embed compiled `.oxb` bundles
 - wrapper-generated DLL, COM server, and XLL source surfaces where validation
   proves the generated ABI skeleton and packaging boundary
-- Cranelift-backed execution as an internal acceleration path for supported
-  bytecode
-- VM fallback as the correctness boundary for unsupported bytecode
+- VM execution as the correctness boundary
+- disabled JIT placeholder reporting for future-runner schema continuity
 
 Out of scope for V0.2:
 
@@ -34,7 +33,7 @@ Out of scope for V0.2:
 - full direct AOT lowering for all VBA semantics
 - claiming complete Office COM, XLL, or Windows registration parity from shim
   source generation alone
-- replacing VM fallback with a JIT-only execution contract
+- claiming JIT execution, acceleration, or VM fallback behavior
 
 ## Rationale
 
@@ -44,11 +43,11 @@ shipping-shaped native artifact path because it can be validated as packaging
 and ABI surface work without pretending every VBA semantic has been lowered to
 machine code.
 
-`oxvba-jit` already owns a Cranelift execution lane, but its public execution
-contract is subset support plus fallback. The engine attempts the retained
-RtSlot Cranelift path and falls back to the VM interpreter when a bytecode
-shape is unsupported or execution fails. That makes Cranelift an accelerator,
-not the V0.2 product packaging boundary.
+The removed `oxvba-jit` prototype attempted a retained-`Variant` RtSlot
+Cranelift path and silently fell back to the VM interpreter. That made public
+JIT evidence ambiguous, so the current contract is deliberately smaller:
+`oxvba-jit` reports not implemented until a new JIT v2 design can provide
+typed IR, explicit backend status, and non-silent fallback/deopt semantics.
 
 Direct native image output is deferred because it needs separate closure on:
 

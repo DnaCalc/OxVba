@@ -163,7 +163,6 @@ where
                 .expect("failed to deserialize embedded bundle");
             let mut engine = Engine::new(HostConfig {{
                 enable_jit: false,
-                root_object_name: Some("Application".to_string()),
             }});
             let mut host_policy = engine.host_policy().clone();
             host_policy.deterministic_mode = false;

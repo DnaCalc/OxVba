@@ -698,7 +698,7 @@ The honest user-facing expectation today is:
 
 | Area | What to expect |
 |---|---|
-| Core language/runtime | broad VBA-style execution through one compiler/VM/JIT pipeline; exact support is bounded by the validation matrices rather than by blanket "full parity" language |
+| Core language/runtime | broad VBA-style execution through one compiler/VM pipeline; exact support is bounded by the validation matrices rather than by blanket "full parity" language |
 | Project startup | deterministic supported subset across direct-file runs, convention-mode directories, `.basproj`, and bounded `.vbp` execution |
 | Windows COM | active and tested bounded early-bound and late-bound subsets on Windows |
 | Imported component oddities | some historical Excel VBIDE import/export quirks are explicitly bounded to Excel behavior, not claimed as OxVBA parity targets |
@@ -727,7 +727,7 @@ OxVBA is deliberately broader than Excel VBA in several ways.
 - direct execution of a single `.bas` file
 - convention-mode directory execution without an Office host or VBA project container
 - top-level executable statements in program/script lanes
-- one engine shared across VM and JIT execution paths
+- one engine shared across the VM execution path and future execution-engine surfaces
 
 ### Project model
 
@@ -746,7 +746,7 @@ OxVBA is deliberately broader than Excel VBA in several ways.
 ### Runtime/build model
 
 - build `.oxb` bundles from the same targets you run
-- JIT is a first-class execution option
+- JIT v1 is disabled pending a replacement design
 - native export metadata exists in the project model
 - `Library`, `Addin`, `ComServer`, and `ComExe` are part of the project/output vocabulary
 
@@ -765,7 +765,7 @@ That does not mean every extended surface is already feature-complete. It means 
 Runs a single module file directly.
 
 Key options:
-- `--jit`
+- `--jit` (currently reports an explicit disabled-backend diagnostic)
 - `--dump-slots`
 - `--dump-values`
 - `--dump-bootstrap`
@@ -787,7 +787,7 @@ Examples:
 
 ```powershell
 oxvba run hello.bas
-oxvba run values.bas --jit --dump-values
+oxvba run values.bas --dump-values
 oxvba run hello.bas --dump-bootstrap
 oxvba run empty.bas --policy strict-ci --allow-dynamic-link false
 ```
@@ -811,7 +811,7 @@ oxvba run-project .
 oxvba run-project .\FinanceTools.basproj
 oxvba run-project .\legacy\Project1.vbp
 oxvba run-project .\app --entry Startup.Boot
-oxvba run-project . --profile windows-stdio --jit
+oxvba run-project . --profile windows-stdio
 oxvba run-project .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
 ```
 

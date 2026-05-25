@@ -253,10 +253,8 @@ fn run_imported_com_newenum_foreach(enable_jit: bool) -> Variant {
         )],
     );
 
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
     engine
@@ -286,10 +284,8 @@ fn run_imported_com_newenum_foreach_bundle(enable_jit: bool) -> Variant {
 
     let compiled = compile_project(&manifest).unwrap();
     let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine
         .compile_and_prepare_session_from_bundle(&bundle)
@@ -309,26 +305,26 @@ fn invoke_function_foreach_over_imported_com_newenum_executes() {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn invoke_function_foreach_over_imported_com_newenum_vm_jit_snapshots_match() {
+fn invoke_function_foreach_over_imported_com_newenum_vm_repeat_snapshots_match() {
     let vm = run_imported_com_newenum_foreach(false);
-    let jit = run_imported_com_newenum_foreach(true);
+    let repeat = run_imported_com_newenum_foreach(true);
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported COM NewEnum direct session invocation"
+        vm, repeat,
+        "VM repeat snapshots should match for imported COM NewEnum direct session invocation"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn invoke_function_foreach_over_imported_com_newenum_bundle_vm_jit_snapshots_match() {
+fn invoke_function_foreach_over_imported_com_newenum_bundle_vm_repeat_snapshots_match() {
     let vm = run_imported_com_newenum_foreach_bundle(false);
-    let jit = run_imported_com_newenum_foreach_bundle(true);
+    let repeat = run_imported_com_newenum_foreach_bundle(true);
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported COM NewEnum bundle session invocation"
+        vm, repeat,
+        "VM repeat snapshots should match for imported COM NewEnum bundle session invocation"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
@@ -351,10 +347,8 @@ fn run_registered_testdispatch_foreach(enable_jit: bool) -> Variant {
         ),
     )]);
 
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
     engine
@@ -382,10 +376,8 @@ fn run_registered_testdispatch_foreach_bundle(enable_jit: bool) -> Variant {
 
     let compiled = compile_project(&manifest).unwrap();
     let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine
         .compile_and_prepare_session_from_bundle(&bundle)
@@ -405,26 +397,26 @@ fn invoke_function_foreach_over_registered_testdispatch_executes() {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn invoke_function_foreach_over_registered_testdispatch_vm_jit_snapshots_match() {
+fn invoke_function_foreach_over_registered_testdispatch_vm_repeat_snapshots_match() {
     let vm = run_registered_testdispatch_foreach(false);
-    let jit = run_registered_testdispatch_foreach(true);
+    let repeat = run_registered_testdispatch_foreach(true);
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for registered OxVba.TestDispatch direct session invocation"
+        vm, repeat,
+        "VM repeat snapshots should match for registered OxVba.TestDispatch direct session invocation"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn invoke_function_foreach_over_registered_testdispatch_bundle_vm_jit_snapshots_match() {
+fn invoke_function_foreach_over_registered_testdispatch_bundle_vm_repeat_snapshots_match() {
     let vm = run_registered_testdispatch_foreach_bundle(false);
-    let jit = run_registered_testdispatch_foreach_bundle(true);
+    let repeat = run_registered_testdispatch_foreach_bundle(true);
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for registered OxVba.TestDispatch bundle session invocation"
+        vm, repeat,
+        "VM repeat snapshots should match for registered OxVba.TestDispatch bundle session invocation"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }

@@ -3,8 +3,7 @@
 ## Changes
 
 - `crates/oxvba-build/src/xll.rs`
-  - generated shims now create the engine with `root_object_name = "Application"`;
-  - first session creation calls `try_bind_excel_application_root`;
+  - generated shims now call `try_bind_excel_application_root` on first session creation;
   - Windows shims acquire the running Excel object with `CLSIDFromProgID` + `GetActiveObject`, query `IDispatch`, release the intermediate `IUnknown`, and bind the retained dispatch pointer into the engine;
   - non-Windows shims trace unavailability and continue.
 - `crates/oxvba-host/src/engine.rs`

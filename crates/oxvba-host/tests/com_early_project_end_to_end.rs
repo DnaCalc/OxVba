@@ -80,10 +80,8 @@ fn run_project_windows_hosted_with_policy(
     enable_jit: bool,
     policy: HostPolicy,
 ) -> Vec<Variant> {
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(policy);
     canonicalize_snapshot(
         engine
@@ -94,10 +92,8 @@ fn run_project_windows_hosted_with_policy(
 
 #[cfg(target_os = "windows")]
 fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool) -> String {
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let _ = enable_jit;
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
         .execute_project_with_variant_snapshot_phased(manifest)
@@ -183,10 +179,7 @@ Attribute Value.VB_UserMemId = 0
     assert_eq!(value.dispatch_id, 0);
     assert!(value.is_default_member);
     assert_eq!(value.arity, 0);
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let out = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("project should execute");
@@ -375,10 +368,7 @@ End Property
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let out = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("pure OxVba interface receiver project should execute");
@@ -925,7 +915,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_imported_newenum_foreach_vm_jit_snapshots_match() {
+fn early_bound_project_imported_newenum_foreach_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -941,10 +931,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported COM NewEnum/IEnumVARIANT For Each transport"
+        vm, repeat,
+        "VM repeat snapshots should match for imported COM NewEnum/IEnumVARIANT For Each transport"
     );
 }
 
@@ -1308,7 +1298,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_registered_testdispatch_foreach_vm_jit_snapshots_match() {
+fn early_bound_project_registered_testdispatch_foreach_vm_repeat_snapshots_match() {
     if !registered_testdispatch_available() {
         return;
     }
@@ -1329,10 +1319,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for registered OxVba.TestDispatch For Each transport"
+        vm, repeat,
+        "VM repeat snapshots should match for registered OxVba.TestDispatch For Each transport"
     );
 }
 
@@ -2474,7 +2464,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_vm_jit_snapshots_match_for_subset() {
+fn early_bound_project_vm_repeat_snapshots_match_for_subset() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2493,10 +2483,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for early-binding subset"
+        vm, repeat,
+        "VM repeat snapshots should match for early-binding subset"
     );
 }
 
@@ -2529,7 +2519,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_call_statement_subset_vm_jit_snapshots_match() {
+fn early_bound_project_call_statement_subset_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2547,10 +2537,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported Call-form positional member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported Call-form positional member invokes"
     );
 }
 
@@ -2582,7 +2572,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_named_argument_call_statements_vm_jit_snapshots_match() {
+fn early_bound_project_named_argument_call_statements_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2598,10 +2588,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported Call-form named-argument member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported Call-form named-argument member invokes"
     );
 }
 
@@ -2634,7 +2624,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_no_paren_call_statement_subset_vm_jit_snapshots_match() {
+fn early_bound_project_no_paren_call_statement_subset_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2652,10 +2642,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported no-paren Call-form positional member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported no-paren Call-form positional member invokes"
     );
 }
 
@@ -2687,7 +2677,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_no_paren_named_argument_call_statements_vm_jit_snapshots_match() {
+fn early_bound_project_no_paren_named_argument_call_statements_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2703,10 +2693,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported no-paren Call-form named-argument member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported no-paren Call-form named-argument member invokes"
     );
 }
 
@@ -2739,7 +2729,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_statement_context_subset_vm_jit_snapshots_match() {
+fn early_bound_project_statement_context_subset_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2757,10 +2747,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported statement-context positional member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported statement-context positional member invokes"
     );
 }
 
@@ -2792,7 +2782,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_named_argument_statement_context_vm_jit_snapshots_match() {
+fn early_bound_project_named_argument_statement_context_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2808,10 +2798,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported statement-context named-argument member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported statement-context named-argument member invokes"
     );
 }
 
@@ -2842,7 +2832,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_no_paren_statement_context_subset_vm_jit_snapshots_match() {
+fn early_bound_project_no_paren_statement_context_subset_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2858,10 +2848,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported no-paren statement-context positional member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported no-paren statement-context positional member invokes"
     );
 }
 
@@ -2893,7 +2883,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_no_paren_named_argument_statement_context_vm_jit_snapshots_match() {
+fn early_bound_project_no_paren_named_argument_statement_context_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -2909,10 +2899,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported no-paren statement-context named-argument member invokes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported no-paren statement-context named-argument member invokes"
     );
 }
 
@@ -2930,20 +2920,20 @@ End Sub
     );
 
     let vm = run_project_windows_hosted_error(&manifest, false);
-    let jit = run_project_windows_hosted_error(&manifest, true);
+    let repeat = run_project_windows_hosted_error(&manifest, true);
     assert!(
         vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
-            && jit.contains(
+            && repeat.contains(
                 "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
             ),
-        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        "expected stable imported exception prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
     assert!(
         vm.contains("excep_source=\"OxVba.TestDispatch\"")
             && vm.contains("excep_description=\"controlled dispatch exception\"")
-            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
-            && jit.contains("excep_description=\"controlled dispatch exception\""),
-        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+            && repeat.contains("excep_source=\"OxVba.TestDispatch\"")
+            && repeat.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
 }
 
@@ -2961,20 +2951,20 @@ End Sub
     );
 
     let vm = run_project_windows_hosted_error(&manifest, false);
-    let jit = run_project_windows_hosted_error(&manifest, true);
+    let repeat = run_project_windows_hosted_error(&manifest, true);
     assert!(
         vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
-            && jit.contains(
+            && repeat.contains(
                 "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
             ),
-        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        "expected stable imported exception prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
     assert!(
         vm.contains("excep_source=\"OxVba.TestDispatch\"")
             && vm.contains("excep_description=\"controlled dispatch exception\"")
-            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
-            && jit.contains("excep_description=\"controlled dispatch exception\""),
-        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+            && repeat.contains("excep_source=\"OxVba.TestDispatch\"")
+            && repeat.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
 }
 
@@ -2993,20 +2983,20 @@ End Sub
     );
 
     let vm = run_project_windows_hosted_error(&manifest, false);
-    let jit = run_project_windows_hosted_error(&manifest, true);
+    let repeat = run_project_windows_hosted_error(&manifest, true);
     assert!(
         vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
-            && jit.contains(
+            && repeat.contains(
                 "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
             ),
-        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        "expected stable imported exception prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
     assert!(
         vm.contains("excep_source=\"OxVba.TestDispatch\"")
             && vm.contains("excep_description=\"controlled dispatch exception\"")
-            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
-            && jit.contains("excep_description=\"controlled dispatch exception\""),
-        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+            && repeat.contains("excep_source=\"OxVba.TestDispatch\"")
+            && repeat.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
 }
 
@@ -3025,20 +3015,20 @@ End Sub
     );
 
     let vm = run_project_windows_hosted_error(&manifest, false);
-    let jit = run_project_windows_hosted_error(&manifest, true);
+    let repeat = run_project_windows_hosted_error(&manifest, true);
     assert!(
         vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
-            && jit.contains(
+            && repeat.contains(
                 "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
             ),
-        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        "expected stable imported exception prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
     assert!(
         vm.contains("excep_source=\"OxVba.TestDispatch\"")
             && vm.contains("excep_description=\"controlled dispatch exception\"")
-            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
-            && jit.contains("excep_description=\"controlled dispatch exception\""),
-        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+            && repeat.contains("excep_source=\"OxVba.TestDispatch\"")
+            && repeat.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM repeat, got vm={vm:?} repeat={repeat:?}"
     );
 }
 
@@ -3054,10 +3044,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("unsupported member shape should fail at compile-time");
@@ -3104,7 +3091,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_property_put_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_property_put_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3121,10 +3108,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported property-put assignment subset"
+        vm, repeat,
+        "VM repeat snapshots should match for imported property-put assignment subset"
     );
 }
 
@@ -3154,7 +3141,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_named_argument_property_put_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_named_argument_property_put_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3168,10 +3155,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported named-argument property-put assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported named-argument property-put assignment syntax"
     );
 }
 
@@ -3213,7 +3200,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_named_argument_property_putref_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_named_argument_property_putref_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3230,10 +3217,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported named-argument property-putref assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported named-argument property-putref assignment syntax"
     );
 }
 
@@ -3300,7 +3287,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_zero_arg_method_read_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_zero_arg_method_read_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3315,16 +3302,16 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported zero-arg method read-assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported zero-arg method read-assignment syntax"
     );
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_zero_arg_property_get_read_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_zero_arg_property_get_read_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3340,10 +3327,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported zero-arg property-get read-assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported zero-arg property-get read-assignment syntax"
     );
 }
 
@@ -3380,8 +3367,8 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_parenthesized_zero_arg_property_get_read_assignment_vm_jit_snapshots_match()
-{
+fn early_bound_project_parenthesized_zero_arg_property_get_read_assignment_vm_repeat_snapshots_match()
+ {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3397,10 +3384,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported parenthesized zero-arg property-get read-assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported parenthesized zero-arg property-get read-assignment syntax"
     );
 }
 
@@ -3462,7 +3449,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_object_property_get_read_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_object_property_get_read_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3489,10 +3476,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported object-valued property-get read-assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported object-valued property-get read-assignment syntax"
     );
 }
 
@@ -3554,7 +3541,8 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_parenthesized_object_property_get_read_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_parenthesized_object_property_get_read_assignment_vm_repeat_snapshots_match()
+{
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3581,10 +3569,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for parenthesized imported object-valued property-get read-assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for parenthesized imported object-valued property-get read-assignment syntax"
     );
 }
 
@@ -3645,16 +3633,16 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_same_object_identity(
         &vm,
         &[1, 2, 3, 4],
         "VM imported repeated object-result identity",
     );
     assert_same_object_identity(
-        &jit,
+        &repeat,
         &[1, 2, 3, 4],
-        "JIT imported repeated object-result identity",
+        "repeat imported repeated object-result identity",
     );
 }
 
@@ -3697,7 +3685,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_named_argument_calls_vm_jit_snapshots_match() {
+fn early_bound_project_named_argument_calls_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3714,10 +3702,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported named-argument calls"
+        vm, repeat,
+        "VM repeat snapshots should match for imported named-argument calls"
     );
 }
 
@@ -3760,7 +3748,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_explicit_let_named_argument_calls_vm_jit_snapshots_match() {
+fn early_bound_project_explicit_let_named_argument_calls_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3777,10 +3765,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for explicit Let imported named-argument calls"
+        vm, repeat,
+        "VM repeat snapshots should match for explicit Let imported named-argument calls"
     );
 }
 
@@ -3830,7 +3818,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_explicit_let_positional_calls_vm_jit_snapshots_match() {
+fn early_bound_project_explicit_let_positional_calls_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3849,16 +3837,16 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for explicit Let imported positional calls"
+        vm, repeat,
+        "VM repeat snapshots should match for explicit Let imported positional calls"
     );
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_object_result_member_calls_vm_jit_snapshots_match() {
+fn early_bound_project_object_result_member_calls_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -3877,10 +3865,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported object-result member calls"
+        vm, repeat,
+        "VM repeat snapshots should match for imported object-result member calls"
     );
 }
 
@@ -3999,7 +3987,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_zero_arg_object_result_assignment_intents_without_parentheses_vm_jit_snapshots_match()
+fn early_bound_project_zero_arg_object_result_assignment_intents_without_parentheses_vm_repeat_snapshots_match()
  {
     let manifest = manifest_with_typelib(
         r#"
@@ -4027,16 +4015,16 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported zero-arg object-result assignment intents without parentheses"
+        vm, repeat,
+        "VM repeat snapshots should match for imported zero-arg object-result assignment intents without parentheses"
     );
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_object_result_assignment_intents_vm_jit_snapshots_match() {
+fn early_bound_project_object_result_assignment_intents_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -4063,10 +4051,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported object-result assignment-intent lanes"
+        vm, repeat,
+        "VM repeat snapshots should match for imported object-result assignment-intent lanes"
     );
 }
 
@@ -4083,10 +4071,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing member should fail at compile-time");
@@ -4136,7 +4121,7 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_property_putref_assignment_vm_jit_snapshots_match() {
+fn early_bound_project_property_putref_assignment_vm_repeat_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -4153,10 +4138,10 @@ End Sub
     );
 
     let vm = run_project_windows_hosted(&manifest, false);
-    let jit = run_project_windows_hosted(&manifest, true);
+    let repeat = run_project_windows_hosted(&manifest, true);
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for imported property-putref assignment syntax"
+        vm, repeat,
+        "VM repeat snapshots should match for imported property-putref assignment syntax"
     );
 }
 
@@ -4172,10 +4157,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong property-put arity should fail at compile-time");
@@ -4201,10 +4183,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong-arity member should fail at compile-time");
@@ -4230,10 +4209,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong default-member arity should fail at compile-time");
@@ -4281,10 +4257,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4325,10 +4298,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4345,10 +4315,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4365,10 +4332,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4399,10 +4363,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4432,10 +4393,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4466,10 +4424,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4500,10 +4455,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4532,10 +4484,7 @@ Public Event Changed(ByVal value As OxVba.TestDispatch)
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4564,10 +4513,7 @@ Public Event Changed(ByVal value As TestDispatch)
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4597,10 +4543,7 @@ End Function
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4631,10 +4574,7 @@ End Sub
         conditional_constants: std::collections::BTreeMap::new(),
     };
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("should compile");
@@ -4653,10 +4593,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing default member should fail at compile-time");
@@ -4681,10 +4618,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous default member should fail at compile-time");
@@ -4709,10 +4643,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong zero-arg no-paren Call default-member arity should fail");
@@ -4737,10 +4668,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong zero-arg no-paren statement default-member arity should fail");
@@ -4765,10 +4693,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing no-paren Call default member should fail");
@@ -4792,10 +4717,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing no-paren statement default member should fail");
@@ -4820,10 +4742,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous no-paren Call default member should fail");
@@ -4847,10 +4766,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous no-paren statement default member should fail");
@@ -4875,10 +4791,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong parenthesized Call default-member arity should fail");
@@ -4904,10 +4817,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("wrong parenthesized statement default-member arity should fail");
@@ -4933,10 +4843,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing parenthesized Call default member should fail");
@@ -4960,10 +4867,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("missing parenthesized statement default member should fail");
@@ -4988,10 +4892,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous parenthesized Call default member should fail");
@@ -5016,10 +4917,7 @@ End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect_err("ambiguous parenthesized statement default member should fail");

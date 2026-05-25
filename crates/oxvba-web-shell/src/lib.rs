@@ -114,10 +114,7 @@ impl Default for WebShellSession {
 impl WebShellSession {
     pub fn new() -> Self {
         Self {
-            engine: Engine::new(HostConfig {
-                enable_jit: false,
-                root_object_name: None,
-            }),
+            engine: Engine::new(HostConfig { enable_jit: false }),
             workspace_path: None,
             workspace_session: None,
             loaded_project: None,

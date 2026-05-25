@@ -5,10 +5,7 @@ mod windows_native_declare_string_e2e {
     use oxvba_runtime::Variant;
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
             .execute_source_with_variant_snapshot(source)

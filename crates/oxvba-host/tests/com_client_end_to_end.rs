@@ -52,10 +52,8 @@ mod windows_com_e2e {
     }
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let _ = enable_jit;
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         canonicalize_snapshot(
             engine
@@ -65,10 +63,8 @@ mod windows_com_e2e {
     }
 
     fn run_windows_host_backed_error(source: &str, enable_jit: bool) -> String {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let _ = enable_jit;
+        let mut engine = Engine::new(HostConfig { enable_jit: false });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
             .execute_source_with_variant_snapshot_phased(source)
@@ -90,16 +86,16 @@ mod windows_com_e2e {
         }
     }
 
-    fn assert_snapshots_equivalent(vm: &[Variant], jit: &[Variant], context: &str) {
+    fn assert_snapshots_equivalent(vm: &[Variant], repeat: &[Variant], context: &str) {
         assert_eq!(
             vm.len(),
-            jit.len(),
-            "VM/JIT snapshot length diverged on {context}: vm={vm:?} jit={jit:?}"
+            repeat.len(),
+            "VM repeat snapshot length diverged on {context}: vm={vm:?} repeat={repeat:?}"
         );
-        for (index, (lhs, rhs)) in vm.iter().zip(jit.iter()).enumerate() {
+        for (index, (lhs, rhs)) in vm.iter().zip(repeat.iter()).enumerate() {
             assert!(
                 variants_equivalent(lhs, rhs),
-                "VM/JIT snapshots diverged on {context} at index {index}: vm={vm:?} jit={jit:?}"
+                "VM repeat snapshots diverged on {context} at index {index}: vm={vm:?} repeat={repeat:?}"
             );
         }
     }
@@ -162,10 +158,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on property put/putref path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on property put/putref path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -212,10 +208,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on multi-arg COM path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on multi-arg COM path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -268,10 +264,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on named indexed property put path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on named indexed property put path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -310,10 +306,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_ERROR/VT_NULL roundtrip path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_ERROR/VT_NULL roundtrip path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -340,10 +336,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on natural named default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on natural named default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -365,10 +361,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on natural positional default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on natural positional default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -390,10 +386,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on named default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on named default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -415,10 +411,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on positional default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on positional default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -458,10 +454,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on integer VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on integer VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -549,10 +545,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed integer/bool/string SAFEARRAY path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed integer/bool/string SAFEARRAY path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -695,10 +691,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on bool/string VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on bool/string VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -729,10 +725,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on empty/null/error VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on empty/null/error VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -768,10 +764,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on float VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on float VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -807,10 +803,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed float SAFEARRAY path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed float SAFEARRAY path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -872,10 +868,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on currency VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on currency VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -897,10 +893,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed currency SAFEARRAY path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed currency SAFEARRAY path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -932,10 +928,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on decimal VARIANT result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on decimal VARIANT result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -957,10 +953,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed decimal SAFEARRAY path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed decimal SAFEARRAY path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -998,8 +994,8 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
-        assert_snapshots_equivalent(&vm, &jit, "object-result COM path");
+        let repeat = run_windows_host_backed(source, true);
+        assert_snapshots_equivalent(&vm, &repeat, "object-result COM path");
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert!(expect_object_handle(&vm[1]).raw() >= 20_001);
         assert!(expect_object_handle(&vm[2]).raw() >= 20_001);
@@ -1033,10 +1029,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
-        assert_snapshots_equivalent(&vm, &jit, "repeated object-result identity");
+        let repeat = run_windows_host_backed(source, true);
+        assert_snapshots_equivalent(&vm, &repeat, "repeated object-result identity");
         assert_same_object_identity(&vm, &[1, 2, 3, 4], "VM repeated object-result identity");
-        assert_same_object_identity(&jit, &[1, 2, 3, 4], "JIT repeated object-result identity");
+        assert_same_object_identity(&repeat, &[1, 2, 3, 4], "Repeated VM object-result identity");
     }
 
     #[test]
@@ -1069,10 +1065,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on scalar-argument classifier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on scalar-argument classifier path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1132,10 +1128,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on float/currency/decimal argument classifier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on float/currency/decimal argument classifier path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1177,10 +1173,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on object-argument classifier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on object-argument classifier path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1204,10 +1200,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on ParamArray COM forwarding path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on ParamArray COM forwarding path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[0],
@@ -1228,10 +1224,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on array-argument classifier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on array-argument classifier path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1253,10 +1249,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on object-array classifier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on object-array classifier path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1278,10 +1274,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on dispatch-array result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on dispatch-array result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         let array = vm[1]
@@ -1310,10 +1306,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed dispatch-array result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed dispatch-array result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         let array = vm[1]
@@ -1347,10 +1343,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on typed unknown-array result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on typed unknown-array result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         let array = vm[1]
@@ -1384,10 +1380,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on multidim typed array path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on multidim typed array path: vm={vm:?} repeat={repeat:?}"
         );
         let array = vm[1]
             .as_safearray()
@@ -1409,10 +1405,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on multidim variant array path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on multidim variant array path: vm={vm:?} repeat={repeat:?}"
         );
         let array = vm[1]
             .as_safearray()
@@ -1434,18 +1430,18 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-arg-error;hresult=0x80020005;arg_err=1;")
-                && jit.contains("com-dispatch-arg-error;hresult=0x80020005;arg_err=1;"),
-            "expected stable type-mismatch arg_err surface across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("com-dispatch-arg-error;hresult=0x80020005;arg_err=1;"),
+            "expected stable type-mismatch arg_err surface across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IDispatch::Invoke(method dispid=")
                 && vm.contains("failed with HRESULT 0x80020005 (arg_err=1)")
-                && jit.contains("IDispatch::Invoke(method dispid=")
-                && jit.contains("failed with HRESULT 0x80020005 (arg_err=1)"),
-            "expected raw invoke arg_err detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("IDispatch::Invoke(method dispid=")
+                && repeat.contains("failed with HRESULT 0x80020005 (arg_err=1)"),
+            "expected raw invoke arg_err detail across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1461,24 +1457,24 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
-                && jit.contains(
+                && repeat.contains(
                     "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
                 ),
-            "expected stable exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected stable exception prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("excep_source=\"OxVba.TestDispatch\"")
                 && vm.contains("excep_description=\"controlled dispatch exception\"")
-                && jit.contains("excep_source=\"OxVba.TestDispatch\"")
-                && jit.contains("excep_description=\"controlled dispatch exception\""),
-            "expected EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("excep_source=\"OxVba.TestDispatch\"")
+                && repeat.contains("excep_description=\"controlled dispatch exception\""),
+            "expected EXCEPINFO source/description across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
-            !vm.contains("arg_err=") && !jit.contains("arg_err="),
-            "exception path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+            !vm.contains("arg_err=") && !repeat.contains("arg_err="),
+            "exception path should not synthesize arg_err, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1494,22 +1490,22 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-member-not-found;hresult=0x80020003;")
-                && jit.contains("com-dispatch-member-not-found;hresult=0x80020003;"),
-            "expected stable member-not-found adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("com-dispatch-member-not-found;hresult=0x80020003;"),
+            "expected stable member-not-found adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IDispatch::Invoke(")
                 && vm.contains("failed with HRESULT 0x80020003")
-                && jit.contains("IDispatch::Invoke(")
-                && jit.contains("failed with HRESULT 0x80020003"),
-            "expected raw member-not-found detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("IDispatch::Invoke(")
+                && repeat.contains("failed with HRESULT 0x80020003"),
+            "expected raw member-not-found detail across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
-            !vm.contains("arg_err=") && !jit.contains("arg_err="),
-            "member-not-found path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+            !vm.contains("arg_err=") && !repeat.contains("arg_err="),
+            "member-not-found path should not synthesize arg_err, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1525,22 +1521,22 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-bad-param-count;hresult=0x8002000E;")
-                && jit.contains("com-dispatch-bad-param-count;hresult=0x8002000E;"),
-            "expected stable bad-param-count adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("com-dispatch-bad-param-count;hresult=0x8002000E;"),
+            "expected stable bad-param-count adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IDispatch::Invoke(method dispid=")
                 && vm.contains("failed with HRESULT 0x8002000E")
-                && jit.contains("IDispatch::Invoke(method dispid=")
-                && jit.contains("failed with HRESULT 0x8002000E"),
-            "expected raw bad-param-count detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("IDispatch::Invoke(method dispid=")
+                && repeat.contains("failed with HRESULT 0x8002000E"),
+            "expected raw bad-param-count detail across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
-            !vm.contains("arg_err=") && !jit.contains("arg_err="),
-            "bad-param-count path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+            !vm.contains("arg_err=") && !repeat.contains("arg_err="),
+            "bad-param-count path should not synthesize arg_err, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1556,22 +1552,22 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-param-not-found;hresult=0x80020004;")
-                && jit.contains("com-dispatch-param-not-found;hresult=0x80020004;"),
-            "expected stable param-not-found adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("com-dispatch-param-not-found;hresult=0x80020004;"),
+            "expected stable param-not-found adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IDispatch::Invoke(")
                 && vm.contains("failed with HRESULT 0x80020004")
-                && jit.contains("IDispatch::Invoke(")
-                && jit.contains("failed with HRESULT 0x80020004"),
-            "expected raw param-not-found detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("IDispatch::Invoke(")
+                && repeat.contains("failed with HRESULT 0x80020004"),
+            "expected raw param-not-found detail across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
-            !vm.contains("arg_err=") && !jit.contains("arg_err="),
-            "param-not-found path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+            !vm.contains("arg_err=") && !repeat.contains("arg_err="),
+            "param-not-found path should not synthesize arg_err, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1589,16 +1585,16 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
             vm.contains("com-dispatch-unknown-name;hresult=0x80020006;")
-                && jit.contains("com-dispatch-unknown-name;hresult=0x80020006;"),
-            "expected stable unknown-name adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("com-dispatch-unknown-name;hresult=0x80020006;"),
+            "expected stable unknown-name adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006")
-                && jit.contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006"),
-            "expected raw unknown-name detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+                && repeat.contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006"),
+            "expected raw unknown-name detail across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -1620,10 +1616,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on runtime string member dispatch path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on runtime string member dispatch path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1666,10 +1662,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on runtime string named-member dispatch path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on runtime string named-member dispatch path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1716,10 +1712,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on runtime string property put/putref path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on runtime string property put/putref path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1776,10 +1772,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on runtime string indexed property put/putref path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on runtime string indexed property put/putref path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1836,10 +1832,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on runtime string value/default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on runtime string value/default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1892,10 +1888,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on call-form runtime string default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on call-form runtime string default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1933,10 +1929,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on named call-form runtime string default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on named call-form runtime string default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -1974,10 +1970,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on statement-context named runtime string default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on statement-context named runtime string default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2015,10 +2011,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on statement-context positional runtime string default-member path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on statement-context positional runtime string default-member path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2050,27 +2046,27 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+            vm.contains("runtime error: 53053") && repeat.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002")
-                && jit
+                && repeat
                     .contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002"),
-            "expected bounded non-IDispatch VT_UNKNOWN diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded non-IDispatch VT_UNKNOWN diagnostic across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
-                && jit.contains(
+                && repeat.contains("com-dispatch-no-interface;hresult=0x80004002;")
+                && repeat.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
     }
     #[test]
@@ -2085,27 +2081,27 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+            vm.contains("runtime error: 53053") && repeat.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002")
-                && jit
+                && repeat
                     .contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002"),
-            "expected bounded non-IDispatch VT_UNKNOWN array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded non-IDispatch VT_UNKNOWN array diagnostic across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
-                && jit.contains(
+                && repeat.contains("com-dispatch-no-interface;hresult=0x80004002;")
+                && repeat.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
     }
 
@@ -2121,27 +2117,27 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
+        let repeat = run_windows_host_backed_error(source, true);
         assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+            vm.contains("runtime error: 53053") && repeat.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002")
-                && jit
+                && repeat
                     .contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002"),
-            "expected bounded non-IDispatch VT_VARIANT-array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded non-IDispatch VT_VARIANT-array diagnostic across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
         assert!(
             vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
-                && jit.contains(
+                && repeat.contains("com-dispatch-no-interface;hresult=0x80004002;")
+                && repeat.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+            "expected bounded adapter fault prefix across VM repeat, got vm={vm:?} repeat={repeat:?}"
         );
     }
     #[test]
@@ -2156,10 +2152,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UI4 I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UI4 I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[1],
@@ -2183,10 +2179,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UI4 array I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UI4 array I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[2],
@@ -2207,10 +2203,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UINT I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UINT I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[1],
@@ -2234,10 +2230,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UINT array I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UINT array I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[2],
@@ -2258,10 +2254,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_I8 I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_I8 I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[1],
@@ -2282,10 +2278,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_I8 array I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_I8 array I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         let array = vm[1]
             .as_safearray()
@@ -2311,10 +2307,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UI8 I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UI8 I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[1],
@@ -2338,10 +2334,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on VT_UI8 array I64 carrier path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on VT_UI8 array I64 carrier path: vm={vm:?} repeat={repeat:?}"
         );
         assert_eq!(
             vm[2],
@@ -2372,10 +2368,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on wide scalar argument normalization path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on wide scalar argument normalization path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2417,10 +2413,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on wide variant-array element normalization path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on wide variant-array element normalization path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2484,10 +2480,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on BYREF Long result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on BYREF Long result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2509,10 +2505,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on BYREF Long array result path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on BYREF Long array result path: vm={vm:?} repeat={repeat:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -2588,7 +2584,7 @@ End Sub
 "#,
             false,
         );
-        let jit_err = run_windows_host_backed_error(
+        let repeat_err = run_windows_host_backed_error(
             r#"
 Sub Main()
 Dim obj
@@ -2600,7 +2596,7 @@ End Sub
             true,
         );
         // Verify the rich ExcepInfo fields appear in the error message.
-        for (label, err) in [("VM", &vm_err), ("JIT", &jit_err)] {
+        for (label, err) in [("VM", &vm_err), ("repeat", &repeat_err)] {
             assert!(
                 err.contains("excep_help_file=\"OxVba.TestDispatch.hlp\""),
                 "{label} error should contain help_file, got: {err}"
@@ -2623,7 +2619,7 @@ End Sub
         let jit_resume = run_windows_host_backed(source, true);
         assert_eq!(
             vm_resume, jit_resume,
-            "VM/JIT snapshots diverged on rich exception resume path"
+            "VM repeat snapshots diverged on rich exception resume path"
         );
         assert!(
             vm_resume[2].as_i32() != Some(0),
@@ -2654,7 +2650,7 @@ End Sub
     }
 
     #[test]
-    fn createobject_dispatchinvoke_vm_jit_snapshots_match() {
+    fn createobject_dispatchinvoke_vm_repeat_snapshots_match() {
         let source = r#"
 Sub Main()
 Dim obj
@@ -2667,15 +2663,15 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on controlled COM success path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on controlled COM success path: vm={vm:?} repeat={repeat:?}"
         );
     }
 
     #[test]
-    fn resume_next_com_failure_vm_jit_snapshots_match() {
+    fn resume_next_com_failure_vm_repeat_snapshots_match() {
         let source = r#"
 Sub Main()
 Dim obj
@@ -2691,10 +2687,10 @@ End Sub
 "#;
 
         let vm = run_windows_host_backed(source, false);
-        let jit = run_windows_host_backed(source, true);
+        let repeat = run_windows_host_backed(source, true);
         assert_eq!(
-            vm, jit,
-            "VM/JIT snapshots diverged on COM failure/resume-next path: vm={vm:?} jit={jit:?}"
+            vm, repeat,
+            "VM repeat snapshots diverged on COM failure/resume-next path: vm={vm:?} repeat={repeat:?}"
         );
     }
 }

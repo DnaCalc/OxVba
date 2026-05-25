@@ -8,7 +8,8 @@ Workspace crates and current roles:
   `BStr`, `ObjectRef`, `SAFEARRAY`, and related semantic carriers.
 - `oxvba-compiler`: resolve/typecheck/project lowering and bytecode emission.
 - `oxvba-vm`: register-slot interpreter over `Variant` values.
-- `oxvba-jit`: Cranelift-backed JIT subset with fallback to VM behavior.
+- `oxvba-jit`: placeholder crate boundary for a future JIT v2 design; current
+  APIs report not implemented and do not fall back to VM execution.
 - `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core.
 - `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services,
   COM wire translation, runtime state/metadata, and the compiler-facing COM
@@ -24,8 +25,8 @@ High-level execution path:
 - source/project inputs enter through `oxvba-host` or `oxvba-cli`;
 - `oxvba-compiler` emits `Bytecode` directly;
 - `oxvba-vm` executes compiled code over `Variant` register slots;
-- `oxvba-jit` covers a supported subset and falls back to VM behavior for
-  unsupported operations or project-visible snapshot paths;
+- `oxvba-jit` is disabled pending a new design and must not be used as
+  compatibility or performance evidence;
 - wrapper EXE/library paths package compiled OxVba artifacts and dispatch
   through the existing runtime lanes rather than emitting direct native code;
 - `oxvba-hal` provides profile/policy-governed host services;
@@ -39,7 +40,7 @@ corpus, runner schema, and real native-facing IR decision.
 
 ## Current Value Truth
 
-`Variant` is the canonical execution and snapshot carrier for VM/JIT/host
+`Variant` is the canonical execution and snapshot carrier for VM/host
 coordination. `RuntimeValue` has been removed from active Rust source; any
 remaining mentions are historical docs/evidence or recovery notes, not active
 runtime architecture.
@@ -89,7 +90,7 @@ provisionally named `NativeProcIr`, with:
 - diagnostics and source/bytecode mapping;
 - lowering evidence from current bytecode or compiler semantic state.
 
-Until that exists, bytecode plus VM/JIT behavior is the executable truth.
+Until that exists, bytecode plus VM behavior is the executable truth.
 
 ## COM And Host Truth
 
@@ -124,7 +125,8 @@ Near-term architectural work is intentionally ordered before direct native AOT:
   while keeping native UDT ABI materialization as a separate future layer;
 - build a correctness corpus that exposes numeric, coercion, error-state, array,
   and UDT skeletons;
-- standardize VM/JIT/wrapper runner results before comparing native artifacts;
+- standardize VM/wrapper runner results before comparing native artifacts, with
+  JIT rows limited to explicit disabled-placeholder status until JIT v2 lands;
 - only then introduce direct native compilation and a real native-facing IR or
   direct bytecode-to-native path.
 

@@ -238,27 +238,6 @@ try {
             }
         }
         @{
-            id = "conformance_jit"
-            summary_artifact = "correctness/conformance_jit.csv"
-            invoke = {
-                param($worktree, $sideRoot)
-                $laneDir = Join-Path $sideRoot "correctness"
-                if (-not (Test-Path $laneDir)) { New-Item -ItemType Directory -Path $laneDir -Force | Out-Null }
-                $artifact = Join-Path $laneDir "conformance_jit.csv"
-                $log = Join-Path $laneDir "conformance_jit.log.txt"
-                $scriptPath = Join-Path $worktree "scripts/run-conformance.ps1"
-                $parameters = [ordered]@{
-                    Backend = "jit"
-                    ResultsPath = $artifact
-                }
-                if ($ConformanceIncludePattern -and $ConformanceIncludePattern.Count -gt 0) {
-                    $parameters["IncludePattern"] = @($ConformanceIncludePattern)
-                }
-                Invoke-LoggedScript -WorktreePath $worktree -ScriptPath $scriptPath -Parameters $parameters -LogPath $log
-                return @{ artifact = $artifact; log = $log }
-            }
-        }
-        @{
             id = "matrix_gate"
             summary_artifact = "correctness/matrix_latest.csv"
             invoke = {

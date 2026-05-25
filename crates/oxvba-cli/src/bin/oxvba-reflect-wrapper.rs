@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf, process};
 
 use oxvba_build::reflection_exe::ReflectionExeWrapper;
-use oxvba_compiler::{compile_project, OxBundle};
+use oxvba_compiler::{OxBundle, compile_project};
 
 fn main() {
     if let Err(err) = run() {
@@ -14,7 +14,10 @@ fn run() -> Result<(), String> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.len() < 2 || args[0] == "--help" || args[0] == "-h" {
         print_usage();
-        return if args.first().is_some_and(|arg| arg == "--help" || arg == "-h") {
+        return if args
+            .first()
+            .is_some_and(|arg| arg == "--help" || arg == "-h")
+        {
             Ok(())
         } else {
             Err("missing project path or command".to_string())
@@ -31,8 +34,12 @@ fn run() -> Result<(), String> {
     let bytes = bundle
         .serialize_to_bytes()
         .map_err(|err| format!("failed to serialize bundle: {err}"))?;
-    let mut wrapper = ReflectionExeWrapper::from_bundle_bytes(&bytes)
-        .map_err(|err| format!("failed to prepare reflection wrapper: {}: {}", err.code, err.message))?;
+    let mut wrapper = ReflectionExeWrapper::from_bundle_bytes(&bytes).map_err(|err| {
+        format!(
+            "failed to prepare reflection wrapper: {}: {}",
+            err.code, err.message
+        )
+    })?;
     let output = wrapper.run(&command_args);
     if !output.stdout.is_empty() {
         println!("{}", output.stdout);

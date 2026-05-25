@@ -34,10 +34,7 @@ fn contains_value(snapshot: &[Variant], expected: Variant) {
 
 fn assert_vm_jit_contains(manifest: &ProjectManifest, expected: Variant) {
     for enable_jit in [false, true] {
-        let engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit });
         let snapshot = engine
             .execute_project_with_variant_snapshot_phased(manifest)
             .unwrap_or_else(|err| {
@@ -199,14 +196,8 @@ End Sub
         )],
     );
 
-    let vm = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
-    let jit = Engine::new(HostConfig {
-        enable_jit: true,
-        root_object_name: None,
-    });
+    let vm = Engine::new(HostConfig { enable_jit: false });
+    let jit = Engine::new(HostConfig { enable_jit: true });
 
     let vm_snapshot = vm
         .execute_project_with_variant_snapshot_phased(&manifest)
@@ -263,14 +254,8 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
     source.push_str("End Sub\n");
 
     let manifest = source_project("ScaleLinear", vec![proc_module("MainModule", &source)]);
-    let vm = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
-    let jit = Engine::new(HostConfig {
-        enable_jit: true,
-        root_object_name: None,
-    });
+    let vm = Engine::new(HostConfig { enable_jit: false });
+    let jit = Engine::new(HostConfig { enable_jit: true });
 
     let vm_snapshot = vm
         .execute_project_with_variant_snapshot_phased(&manifest)

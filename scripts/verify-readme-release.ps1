@@ -68,7 +68,7 @@ valueOut = 41
     Invoke-Checked "README hello run" $OxvbaExe @("run", $helloPath) @("Hello from OxVBA")
     Invoke-Checked "README hello explicit profile" $OxvbaExe @("run", $helloPath, "--profile", "windows-stdio") @("Hello from OxVBA")
     Invoke-Checked "README hello explicit runtime class" $OxvbaExe @("run", $helloPath, "--runtime-class", "windows-stdio") @("Hello from OxVBA")
-    Invoke-Checked "README values jit dump" $OxvbaExe @("run", $valuesPath, "--jit", "--dump-values")
+    Invoke-Checked "README values dump" $OxvbaExe @("run", $valuesPath, "--dump-values")
     Invoke-Checked "README hello dump bootstrap" $OxvbaExe @("run", $helloPath, "--dump-bootstrap") @("BOOTSTRAP:")
     Invoke-Checked "README strict policy example" $OxvbaExe @("run", $emptyPath, "--policy", "strict-ci", "--allow-dynamic-link", "false")
 
@@ -283,7 +283,7 @@ End Function
 '@
     Invoke-Checked "README init from convention" $OxvbaExe @("init", $legacyTool, "--from-convention") @("captured convention project")
     Invoke-Checked "README run init app" $OxvbaExe @("run-project", $demoApp)
-    Invoke-Checked "README run-project explicit profile jit" $OxvbaExe @("run-project", $demoApp, "--profile", "windows-stdio", "--jit")
+    Invoke-Checked "README run-project explicit profile" $OxvbaExe @("run-project", $demoApp, "--profile", "windows-stdio")
 
     $distDir = Join-Path $workspace "dist"
     New-Item -ItemType Directory -Force -Path $distDir | Out-Null

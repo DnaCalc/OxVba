@@ -51,10 +51,7 @@ fn compile_and_prepare_session_does_not_run_loaded_entry_shim() {
         "End Function\n"
     ));
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let mut session = engine
         .compile_and_prepare_session(&loaded.manifest)
         .expect("session prep should succeed");
@@ -78,10 +75,7 @@ fn compile_and_prepare_session_from_bundle_does_not_run_loaded_entry_shim() {
     let compiled = compile_project(&loaded.manifest).expect("project should compile");
     let bundle = OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let mut session = engine
         .compile_and_prepare_session_from_bundle(&bundle)
         .expect("bundle session prep should succeed");

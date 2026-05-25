@@ -51,10 +51,7 @@ impl HostCallbacks for ConsoleCallbacks {
 }
 
 fn engine_with_console(enable_jit: bool, callbacks: Arc<dyn HostCallbacks>) -> Engine {
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let mut engine = Engine::new(HostConfig { enable_jit });
     engine.set_runtime_profile(RuntimeProfileId::WindowsStdio);
     engine.set_host_callbacks(Some(callbacks));
     engine
@@ -146,10 +143,7 @@ fn basproj_exe_honors_explicit_entry_point_over_sub_main_fallback() {
 
     let loaded = oxvba_project::load_basproj(&basproj_path).expect("basproj should load");
     assert_eq!(loaded.entry_point.as_deref(), Some("StartupModule.Boot"));
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("explicit entrypoint should execute instead of Sub Main fallback");
@@ -299,10 +293,7 @@ fn vbp_exe_honors_explicit_startup_procedure() {
 
     let loaded = oxvba_project::vbp::load_vbp(&vbp_path).expect("vbp should load");
     assert_eq!(loaded.entry_point.as_deref(), Some("Startup.Boot"));
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("explicit Startup=Module.Procedure should execute");
@@ -326,10 +317,7 @@ fn vbp_exe_sub_main_fallback_executes_supported_project() {
 
     let loaded = oxvba_project::vbp::load_vbp(&vbp_path).expect("vbp should load");
     assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let snapshot = engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("Sub Main fallback project should execute");
@@ -417,10 +405,7 @@ fn vbp_exe_resolves_project_reference_to_referenced_vbp_project() {
         "LibScale"
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("vbp project reference graph should execute");

@@ -130,19 +130,41 @@ pub fn produce_native_ready_vm_jit_rows(
 ) -> Result<Vec<NativeReadyRunnerRow>, PhaseDiagnostic> {
     let vm_run =
         execute_project_backend(manifest, false, config.iterations, config.warmup_iterations)?;
-    let jit_run =
-        execute_project_backend(manifest, true, config.iterations, config.warmup_iterations)?;
 
     Ok(vec![
         row_from_run(config, "vm", false, "not-applicable", vm_run),
-        row_from_run(
-            config,
-            "jit",
-            true,
-            "project-visible-snapshot-vm-fallback",
-            jit_run,
-        ),
+        jit_not_implemented_row(config),
     ])
+}
+
+fn jit_not_implemented_row(config: &NativeReadyRunnerConfig) -> NativeReadyRunnerRow {
+    NativeReadyRunnerRow {
+        run_id: format!("{}-jit", config.run_id_prefix),
+        timestamp_utc: config.timestamp_utc.clone(),
+        host_os: config.host_os.clone(),
+        target_arch: config.target_arch.clone(),
+        workload_id: config.workload_id.clone(),
+        workload_name: config.workload_name.clone(),
+        source_path: config.source_path.clone(),
+        backend: "jit".to_string(),
+        artifact_kind: "none".to_string(),
+        artifact_path: String::new(),
+        artifact_size_bytes: 0,
+        mode: config.mode.clone(),
+        iterations: 0,
+        warmup_iterations: 0,
+        mean_ms: 0.0,
+        min_ms: 0.0,
+        max_ms: 0.0,
+        exit_status: 78,
+        diagnostic_code: "JIT-NOT-IMPLEMENTED".to_string(),
+        fallback_used: false,
+        fallback_reason: "not-applicable".to_string(),
+        result_kind: "not-implemented".to_string(),
+        result_digest: String::new(),
+        claim_boundary: "JIT v1 has been purged; this row records the disabled placeholder only"
+            .to_string(),
+    }
 }
 
 fn row_from_run(
@@ -199,10 +221,7 @@ fn execute_project_backend(
     iterations: u32,
     warmup_iterations: u32,
 ) -> Result<BackendRun, PhaseDiagnostic> {
-    let engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit });
 
     for _ in 0..warmup_iterations {
         let _ = engine.execute_project_with_variant_snapshot_phased(manifest)?;

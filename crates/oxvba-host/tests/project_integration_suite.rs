@@ -68,8 +68,8 @@ impl BackendMode {
     fn backends(self) -> &'static [bool] {
         match self {
             Self::Vm => &[false],
-            Self::Jit => &[true],
-            Self::Both => &[false, true],
+            Self::Jit => &[],
+            Self::Both => &[false],
         }
     }
 }
@@ -539,10 +539,7 @@ fn apply_policy_overrides(policy: &mut HostPolicy, case: &IntegrationCase) -> Re
 fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
     let manifest = build_manifest(case)?;
 
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        root_object_name: Some("Application".to_string()),
-    });
+    let mut engine = Engine::new(HostConfig { enable_jit });
     engine.set_runtime_profile(case.runtime_profile);
 
     let mut policy = HostPolicy::for_preset(case.policy_preset);

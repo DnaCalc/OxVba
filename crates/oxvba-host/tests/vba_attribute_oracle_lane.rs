@@ -38,10 +38,7 @@ mod windows_vba_attribute_oracle_lane {
             &temp_root,
         )
         .map_err(|err| err.to_string())?;
-        let engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit: false });
         let mut session = engine
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;

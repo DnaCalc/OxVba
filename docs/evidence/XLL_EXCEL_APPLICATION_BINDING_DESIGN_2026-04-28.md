@@ -6,7 +6,7 @@ Give XLL-hosted OxVba code a real Excel root `Application` object without using 
 
 ## Design
 
-- Generated XLL shims set `HostConfig.root_object_name = Some("Application")` and lazily try to bind the running Excel application when the first runtime session is created.
+- Generated XLL shims lazily try to bind the running Excel application when the first runtime session is created via `try_bind_excel_application_root`.
 - The Windows acquisition path is:
   - `CoInitializeEx(..., COINIT_APARTMENTTHREADED)`
   - `CLSIDFromProgID("Excel.Application")`

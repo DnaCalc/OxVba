@@ -305,7 +305,6 @@ fn run_project(args: Vec<String>) {
 
     let config = HostConfig {
         enable_jit: parsed.enable_jit,
-        root_object_name: Some(loaded.default_root_object.clone()),
     };
     let mut engine = Engine::new(config);
 
@@ -1035,10 +1034,7 @@ fn run_immediate(args: Vec<String>) {
         std::process::exit(2);
     });
 
-    let config = HostConfig {
-        enable_jit: false,
-        root_object_name: Some(loaded.default_root_object.clone()),
-    };
+    let config = HostConfig { enable_jit: false };
     let mut engine = Engine::new(config);
     let resolved =
         resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
@@ -2809,7 +2805,6 @@ fn run_execute(cli_args: Vec<String>) {
     let args = parse_run_args_from(cli_args);
     let config = HostConfig {
         enable_jit: args.as_ref().map(|a| a.enable_jit).unwrap_or(false),
-        root_object_name: Some("Application".to_string()),
     };
     let mut engine = Engine::new(config);
     if let Some(run_args) = args.as_ref() {
@@ -3766,10 +3761,7 @@ End Function
             .expect("directory convention mode should load");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
 
-        let engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit: false });
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("convention-mode Sub Main project should execute");
@@ -3778,7 +3770,7 @@ End Function
     }
 
     #[test]
-    fn run_project_directory_convention_mode_jit_preserves_project_visible_snapshot() {
+    fn run_project_directory_convention_mode_jit_reports_not_implemented() {
         let temp_root = unique_temp_dir("oxvba_cli_convention_project_jit_snapshot");
         std::fs::write(
             temp_root.join("Main.bas"),
@@ -3793,15 +3785,15 @@ End Function
         let loaded = load_run_project_target(Some(temp_root.clone()))
             .expect("directory convention mode should load");
 
-        let engine = Engine::new(HostConfig {
-            enable_jit: true,
-            root_object_name: None,
-        });
-        let snapshot = engine
+        let engine = Engine::new(HostConfig { enable_jit: true });
+        let err = engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .expect("JIT-enabled convention project should execute");
-        assert_eq!(snapshot.len(), 1);
-        assert_eq!(snapshot[0].as_i32(), Some(42));
+            .expect_err("JIT-requested convention project should report disabled backend");
+        assert!(
+            err.message().contains("JIT execution is not implemented"),
+            "unexpected diagnostic: {}",
+            err.message()
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
@@ -3884,10 +3876,7 @@ End Function
             Some("ScriptModule.__OxVbaTopLevelMainline")
         );
 
-        let engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit: false });
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("convention-mode top-level mainline project should execute");
@@ -4021,10 +4010,7 @@ End Function
             .expect("entry override should succeed");
         assert_eq!(loaded.entry_point.as_deref(), Some("Startup.Boot"));
 
-        let engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit: false });
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .expect("overridden startup procedure should execute");

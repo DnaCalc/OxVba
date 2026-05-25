@@ -8,6 +8,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    if ($Backend -eq "jit") {
+        throw "run-basic-examples: backend 'jit' is disabled pending the JIT v2 design; use -Backend vm."
+    }
+
     $examplesDir = "examples/basic"
     $expectedFile = Join-Path $examplesDir "expected.csv"
     $projectExpectedFile = Join-Path $examplesDir "projects/expected.csv"
@@ -23,9 +27,6 @@ try {
     }
 
     $backendArgs = @()
-    if ($Backend -eq "jit") {
-        $backendArgs += "--jit"
-    }
 
     $expected = Import-Csv $expectedFile
     foreach ($row in $expected) {
@@ -34,7 +35,7 @@ try {
             throw "Missing example source: $source"
         }
 
-        $output = & cargo run -q -p oxvba-cli -- run $source --dump-values @backendArgs 2>$null | Out-String
+        $output = & cargo run -q -p oxvba-cli --bin oxvba-cli -- run $source --dump-values @backendArgs 2>$null | Out-String
         if ($LASTEXITCODE -ne 0) {
             throw "Example failed: $($row.file)"
         }
@@ -57,7 +58,7 @@ try {
             throw "Missing project example: $source"
         }
 
-        $output = & cargo run -q -p oxvba-cli -- run-project $source --dump-values @backendArgs 2>$null | Out-String
+        $output = & cargo run -q -p oxvba-cli --bin oxvba-cli -- run-project $source --dump-values @backendArgs 2>$null | Out-String
         if ($LASTEXITCODE -ne 0) {
             throw "Project example failed: $($row.path)"
         }

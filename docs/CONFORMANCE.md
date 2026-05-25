@@ -59,7 +59,6 @@ Current corpus includes:
 ```powershell
 ./scripts/run-smoke.ps1
 ./scripts/run-conformance.ps1
-./scripts/run-conformance.ps1 -Backend jit
 ./scripts/run-project-integration-suite.ps1
 ./scripts/run-project-integration-suite.ps1 -CasePattern INTP-005
 ./scripts/run-com-early-conformance.ps1 -IncludeFormalLane
@@ -94,7 +93,7 @@ Project integration lane:
 Late-bound `IDispatch` V0.2 matrix:
 - Supported and unsupported rows are recorded in
   [V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_SUPPORTED_MATRIX_2026-04-27.md).
-- Controlled COM VM/JIT/host evidence for those rows is recorded in
+- Controlled COM VM/host evidence for those rows is recorded in historical
   [V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md](/C:/Work/DnaCalc/OxVba/docs/evidence/v0_2/V02_IDISPATCH_CONTROLLED_COM_VM_JIT_HOST_EVIDENCE_2026-04-27.md).
 - Unsupported rows must remain explicit; architecture prose does not count as
   implementation evidence.
@@ -109,10 +108,9 @@ Date-string parsing V0.2 policy:
 ## Declared Profile Scope (Current Gate)
 - Profile id: `mvp-profile-v620` (VBA 7.1 + Windows Office COM compliance ladder terminal gate)
 - Platform: Windows x64
-- Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
+- Backends: `vm`; `jit` is planned and currently reports an explicit disabled-backend diagnostic.
 - Required matrix cells:
   - `windows/x64/vm`
-  - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
 - `docs/evidence/profiles/<version>/matrix_latest.csv`

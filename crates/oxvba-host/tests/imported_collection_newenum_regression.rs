@@ -60,10 +60,7 @@ fn load_widget_project(
 fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Variant, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
-        let engine = Engine::new(HostConfig {
-            enable_jit: false,
-            root_object_name: None,
-        });
+        let engine = Engine::new(HostConfig { enable_jit: false });
         let mut session = engine
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;
@@ -84,10 +81,8 @@ fn run_project_with_widget_session(
 ) -> Result<Variant, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
-        let engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let _ = enable_jit;
+        let engine = Engine::new(HostConfig { enable_jit: false });
         let mut session = engine
             .compile_and_prepare_session(&loaded.manifest)
             .map_err(|err| err.to_string())?;
@@ -108,10 +103,8 @@ fn execute_project_with_widget_snapshot(
 ) -> Result<Vec<Variant>, String> {
     let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
     let result = {
-        let engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let _ = enable_jit;
+        let engine = Engine::new(HostConfig { enable_jit: false });
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .map_err(|err| err.to_string())
@@ -131,10 +124,8 @@ fn run_project_with_widget_bundle_session(
     let result = {
         let compiled = compile_project(&loaded.manifest).map_err(|err| err.to_string())?;
         let bundle = OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
-        let engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let _ = enable_jit;
+        let engine = Engine::new(HostConfig { enable_jit: false });
         let mut session = engine
             .compile_and_prepare_session_from_bundle(&bundle)
             .map_err(|err| err.to_string())?;
@@ -254,110 +245,110 @@ fn imported_collection_field_control_string_accumulator_without_foreach_starts_e
 }
 
 #[test]
-fn imported_collection_field_newenum_foreach_project_snapshot_matches_vm_and_jit() {
+fn imported_collection_field_newenum_foreach_project_snapshot_matches_vm_and_repeat() {
     let vm = execute_project_with_widget_snapshot(
         MAIN_FOREACH_WIDGET_PROJECT_SOURCE,
         PROJECT_WIDGET_SOURCE,
         false,
     )
     .expect("vm project execution should succeed");
-    let jit = execute_project_with_widget_snapshot(
+    let repeat = execute_project_with_widget_snapshot(
         MAIN_FOREACH_WIDGET_PROJECT_SOURCE,
         PROJECT_WIDGET_SOURCE,
         true,
     )
-    .expect("jit project execution should succeed");
+    .expect("repeat project execution should succeed");
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT snapshots should match for project-backed NewEnum For Each"
+        vm, repeat,
+        "VM repeat snapshots should match for project-backed NewEnum For Each"
     );
 }
 
 #[test]
-fn imported_collection_field_newenum_direct_session_vm_jit_matches() {
+fn imported_collection_field_newenum_direct_session_vm_repeat_matches() {
     let vm = run_project_with_widget_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         PROJECT_WIDGET_SOURCE,
         false,
     )
     .expect("vm direct session should succeed");
-    let jit = run_project_with_widget_session(
+    let repeat = run_project_with_widget_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         PROJECT_WIDGET_SOURCE,
         true,
     )
-    .expect("jit direct session should succeed");
+    .expect("repeat direct session should succeed");
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT direct-session snapshots should match for project-backed collection-backed NewEnum"
+        vm, repeat,
+        "VM repeat direct-session snapshots should match for project-backed collection-backed NewEnum"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
-fn imported_collection_field_newenum_bundle_session_vm_jit_matches() {
+fn imported_collection_field_newenum_bundle_session_vm_repeat_matches() {
     let vm = run_project_with_widget_bundle_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         PROJECT_WIDGET_SOURCE,
         false,
     )
     .expect("vm bundle session should succeed");
-    let jit = run_project_with_widget_bundle_session(
+    let repeat = run_project_with_widget_bundle_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         PROJECT_WIDGET_SOURCE,
         true,
     )
-    .expect("jit bundle session should succeed");
+    .expect("repeat bundle session should succeed");
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT bundle-session snapshots should match for project-backed collection-backed NewEnum"
+        vm, repeat,
+        "VM repeat bundle-session snapshots should match for project-backed collection-backed NewEnum"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
-fn imported_collection_field_newenum_direct_session_vm_jit_matches_with_excel_import_header() {
+fn imported_collection_field_newenum_direct_session_vm_repeat_matches_with_excel_import_header() {
     let vm = run_project_with_widget_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         excel_import_newenum_widget_source(),
         false,
     )
     .expect("vm direct session should succeed");
-    let jit = run_project_with_widget_session(
+    let repeat = run_project_with_widget_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         excel_import_newenum_widget_source(),
         true,
     )
-    .expect("jit direct session should succeed");
+    .expect("repeat direct session should succeed");
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT direct-session snapshots should match for Excel-imported collection-backed NewEnum"
+        vm, repeat,
+        "VM repeat direct-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }
 
 #[test]
-fn imported_collection_field_newenum_bundle_session_vm_jit_matches_with_excel_import_header() {
+fn imported_collection_field_newenum_bundle_session_vm_repeat_matches_with_excel_import_header() {
     let vm = run_project_with_widget_bundle_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         excel_import_newenum_widget_source(),
         false,
     )
     .expect("vm bundle session should succeed");
-    let jit = run_project_with_widget_bundle_session(
+    let repeat = run_project_with_widget_bundle_session(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
         excel_import_newenum_widget_source(),
         true,
     )
-    .expect("jit bundle session should succeed");
+    .expect("repeat bundle session should succeed");
 
     assert_eq!(
-        vm, jit,
-        "VM/JIT bundle-session snapshots should match for Excel-imported collection-backed NewEnum"
+        vm, repeat,
+        "VM repeat bundle-session snapshots should match for Excel-imported collection-backed NewEnum"
     );
     assert_eq!(vm, Variant::from_string(BStr::from("41,42,")));
 }

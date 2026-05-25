@@ -961,6 +961,8 @@ fn execute_wrapped_com_server_build(
         .arg("--quiet")
         .arg("-p")
         .arg("oxvba-cli")
+        .arg("--bin")
+        .arg("oxvba-cli")
         .arg("--")
         .arg("build")
         .arg(&workspace_arg)
@@ -982,7 +984,7 @@ fn execute_wrapped_com_server_build(
             fs::write(
                 path,
                 format!(
-                    "command: cargo run --quiet -p oxvba-cli -- build {} -o {}\nstatus: {}\n\nstdout:\n{}\n\nstderr:\n{}\n",
+                    "command: cargo run --quiet -p oxvba-cli --bin oxvba-cli -- build {} -o {}\nstatus: {}\n\nstdout:\n{}\n\nstderr:\n{}\n",
                     workspace_arg,
                     dll_arg,
                     output.status,

@@ -471,7 +471,21 @@ fn invoke_m1_native(
     Ok((result, writeback_values))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_arch = "wasm32")]
+fn invoke_m1_native(
+    host: &StandardHostServices,
+    _descriptor: &DynLinkDescriptorView<'_>,
+    _args: &[Variant],
+) -> HalResult<(Variant, Vec<Variant>)> {
+    Err(HalError::adapter_fault(
+        host.profile,
+        CapabilityId::DynamicLinking,
+        "invoke_symbol",
+        "native DLL invocation is not supported on WebAssembly targets",
+    ))
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
 fn invoke_m1_native(
     host: &StandardHostServices,
     descriptor: &DynLinkDescriptorView<'_>,
@@ -637,7 +651,7 @@ impl NativeByRefStorage {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
 fn marshal_variant_to_ffi_unix(
     value: &Variant,
     param_type: &str,

@@ -58,15 +58,9 @@ try {
 
     $workloads = @(
         @{ name = "conformance_vm"; backend = "vm"; include = @() },
-        @{ name = "conformance_jit"; backend = "jit"; include = @() },
         @{
             name = "subset_err_string_financial_vm"
             backend = "vm"
-            include = @("err_*", "string_*", "financial_*", "coercion_*", "stdlib_error_*", "stdlib_random_financial_expansion.bas")
-        },
-        @{
-            name = "subset_err_string_financial_jit"
-            backend = "jit"
             include = @("err_*", "string_*", "financial_*", "coercion_*", "stdlib_error_*", "stdlib_random_financial_expansion.bas")
         }
     )

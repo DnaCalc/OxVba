@@ -34,10 +34,7 @@ fn sqliteforexcel_core64_normalized_basproj_moves_past_compile_frontiers_to_runt
         sqlite_fixture_root().join("Core64Normalized/SQLiteForExcelCore64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite core fixture should load");
 
-    let mut engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
@@ -151,10 +148,7 @@ fn sqliteforexcel_demo64_normalized_basproj_now_reaches_runtime_boundary_after_c
         sqlite_fixture_root().join("Demo64Normalized/SQLiteForExcelDemo64Normalized.basproj");
     let loaded = load_basproj(&basproj_path).expect("sqlite demo fixture should load");
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
+    let engine = Engine::new(HostConfig { enable_jit: false });
     let err = engine
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect_err("sqlite demo fixture should currently fail at runtime");
@@ -178,10 +172,7 @@ fn sqliteforexcel_bounded_normalized_demo_completes_in_vm_and_jit() {
     let loaded = load_basproj(&basproj_path).expect("bounded sqlite demo fixture should load");
 
     for enable_jit in [false, true] {
-        let mut engine = Engine::new(HostConfig {
-            enable_jit,
-            root_object_name: None,
-        });
+        let mut engine = Engine::new(HostConfig { enable_jit });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)

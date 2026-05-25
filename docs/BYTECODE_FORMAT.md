@@ -68,7 +68,7 @@ Representative examples:
 Current bytecode is:
 - register-slot based
 - interpreted by `oxvba-vm`
-- optionally mirrored through `oxvba-jit` for supported subsets
+- the executable baseline future native/JIT lanes must match
 
 Current slots are not a stable ABI. They are compiler/runtime implementation details.
 
