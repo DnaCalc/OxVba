@@ -265,13 +265,18 @@ mod tests {
             .iter()
             .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("Test"))
             .expect("Test procedure identity evidence should be present");
-        assert_eq!(test_identity.module_name, test_metadata.module_name);
+        let expected_module_name = if test_metadata.module_name.trim().is_empty() {
+            "<anonymous>".to_string()
+        } else {
+            test_metadata.module_name.clone()
+        };
+        assert_eq!(test_identity.module_name, expected_module_name);
         assert_eq!(test_identity.entry_pc, test_metadata.entry_pc);
         assert_eq!(
             test_identity.procedure_id,
             format!(
                 "proc:{}::{}@pc:{}",
-                test_metadata.module_name, test_metadata.procedure_name, test_metadata.entry_pc
+                expected_module_name, test_metadata.procedure_name, test_metadata.entry_pc
             )
         );
 

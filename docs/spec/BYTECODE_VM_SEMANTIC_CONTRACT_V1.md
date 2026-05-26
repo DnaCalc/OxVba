@@ -109,8 +109,8 @@ Expected code surfaces for the metadata/evidence batch:
   return shape.
 - `crates/oxvba-host/src/engine.rs`: host execution paths that must pass the
   same package views into the VM.
-- `conformance/jit_v2` or a new package-strengthening fixture area: VM-runnable
-  descriptor/evidence tests.
+- `conformance/jit_v2` and `conformance/vm_package/identity_seed`:
+  VM-runnable descriptor/evidence tests.
 
 ## Do Not Change In First Batch
 

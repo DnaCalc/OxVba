@@ -12,6 +12,9 @@ Conformance assets comparing OxVBA behavior to Office VBA.
   known-failing, and value-oracle-pending rows remain tracked outside that gate.
 - `divergences/`: divergence/regression fixtures (can be open or closed records).
 - `integration/`: tracked multi-module/multi-project integration catalog + fixtures for `oxvba-host` project-manifest execution.
+- `vm_package/`: executable semantic package strengthening fixtures. These are
+  focused VM/package evidence lanes and are not part of the default basic
+  language gate.
 
 ## Basic Language Gate
 
@@ -28,4 +31,12 @@ Host/COM-sensitive fixtures remain cataloged in `tests_manifest.csv` as
 ```powershell
 cargo test -p oxvba-com --quiet
 cargo test -p oxvba-host --test project_integration_suite --quiet
+```
+
+## VM Package Evidence Fixtures
+
+Run the VMR-01 identity seed fixtures with:
+
+```powershell
+cargo test -p oxvba-vm --test package_identity_fixtures -- --nocapture
 ```

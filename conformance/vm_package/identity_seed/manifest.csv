@@ -1,0 +1,3 @@
+id,file,expected_values,expected_procedures
+VMR01_MAIN_SCALAR,vmr01_identity_main_scalar.bas,i32:7|i32:12,Main
+VMR01_TYPED_FUNCTION,vmr01_identity_typed_function.bas,string:kg,Main|Test

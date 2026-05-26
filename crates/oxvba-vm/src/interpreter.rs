@@ -191,12 +191,17 @@ pub struct VmProcedureIdentityEvidence {
 
 impl VmProcedureIdentityEvidence {
     fn from_metadata(metadata: &ProcedureRuntimeMetadata) -> Self {
+        let module_name = if metadata.module_name.trim().is_empty() {
+            "<anonymous>".to_string()
+        } else {
+            metadata.module_name.clone()
+        };
         Self {
             procedure_id: format!(
                 "proc:{}::{}@pc:{}",
-                metadata.module_name, metadata.procedure_name, metadata.entry_pc
+                module_name, metadata.procedure_name, metadata.entry_pc
             ),
-            module_name: metadata.module_name.clone(),
+            module_name,
             procedure_name: metadata.procedure_name.clone(),
             entry_pc: metadata.entry_pc,
         }
