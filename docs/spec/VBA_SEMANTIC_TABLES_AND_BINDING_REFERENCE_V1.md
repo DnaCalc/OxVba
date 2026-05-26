@@ -202,8 +202,8 @@ attempting full table coverage at once:
   Optional with default, Optional missing `Variant`, and empty/non-empty
   `ParamArray`. The VMR-04 package fixture now covers these as descriptor
   evidence, with ByVal declared-type call-entry coercion and Optional missing
-  `Variant` explicitly classified as current runtime/VM limitations for
-  behavior.
+  `Variant` explicitly classified in the completion-map VMR-04 call-gap ledger
+  before behavior-changing follow-up.
 - Lifecycle seed: primitive, `Variant`, `BStr`, `SafeArray`, `ObjectRef`, and
   UDTs containing primitive, `String`, and `Variant` fields.
 - Object/member seed: `Set` object assignment, `Nothing`, default member in

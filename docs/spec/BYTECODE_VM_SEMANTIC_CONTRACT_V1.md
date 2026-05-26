@@ -242,6 +242,17 @@ default local value. The fixture records those behaviors as VM/runtime
 limitations to resolve before descriptor-driven call binding or JIT lowering
 can claim full call-coercion or Optional-missing parity.
 
+The authoritative VMR-04 call-gap ledger is the
+`VMR-04 Call Fixture Gap Classification` section in
+[`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md).
+Behavior-affecting call work must cite that ledger, add any missing fixture row
+it needs, and keep ByRef expression temporaries, ByVal call-entry coercion,
+Optional missing state, ParamArray packing, and COM/native/export projections
+separate. In particular, the ByVal `Long` to declared-`Double` gap is a
+compiler/VM call-binding limitation with existing primitive carriers, while the
+omitted Optional `Variant` gap also requires a first-class missing-argument
+value state before `IsMissing` or call-entry introspection can claim parity.
+
 ## Strengthening Rule
 
 When a VM-runnable fixture exposes a semantic gap, classify it before changing

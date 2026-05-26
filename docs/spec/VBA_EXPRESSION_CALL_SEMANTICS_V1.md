@@ -385,9 +385,11 @@ Open follow-up:
 - extend VM-runnable fixtures beyond the VMR-04 seed, which now covers ByRef
   alias versus ByRef expression temp, Optional default metadata, Optional
   `Variant` missing-policy metadata, and empty/non-empty ParamArray shape;
-- classify and then fix or defer current call runtime limitations: ByVal
-  declared-type call-entry coercion is not yet proved by VM behavior, and
-  Optional `Variant` descriptor metadata records `VariantMissingError448` while
-  current VM lowering still materializes a default local value;
+- use the VMR-04 call-gap ledger in
+  `EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` before changing call
+  execution. That ledger currently classifies ByRef expression no-writeback as
+  oracle/test work, ByVal declared-type call-entry coercion as a VM call-binding
+  limitation plus missing coercion metadata, and omitted Optional `Variant` as
+  a VM/runtime value-state limitation;
 - add remaining fixtures for `Property Let`/`Set` value-param behavior and
   object default-member binding.

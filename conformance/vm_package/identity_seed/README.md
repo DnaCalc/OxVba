@@ -39,3 +39,8 @@ Double value, and the Optional `Variant` descriptor says the missing policy is
 `VariantMissingError448` while current VM lowering still materializes a default
 local observed by the fixture as `VarType=2`. Those gaps are not treated as
 VBA-compatible call-coercion or missing-argument behavior.
+
+The durable classification for those call-shape gaps lives in
+`docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under
+`VMR-04 Call Fixture Gap Classification`. Keep this fixture README descriptive;
+do not use it as the owner for behavior-changing call-binding decisions.
