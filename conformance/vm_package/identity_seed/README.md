@@ -40,6 +40,15 @@ Double value, and the Optional `Variant` descriptor says the missing policy is
 local observed by the fixture as `VarType=2`. Those gaps are not treated as
 VBA-compatible call-coercion or missing-argument behavior.
 
+`VMR04_BYREF_EXPRESSION_FORMS` narrows the ByRef expression evidence to
+currently VM-runnable source forms: direct variable alias/writeback,
+statement-level parenthesized force-ByVal, arithmetic expression temporary,
+literal temporary, and function-result temporary. Property/default-member
+result forms are not claimed by this seed because the current same-module
+property call path does not compile as a callable procedure in this fixture
+shape; that residual remains classified with the object/default-member call
+descriptor work.
+
 The durable classification for those call-shape gaps lives in
 `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under
 `VMR-04 Call Fixture Gap Classification`. Keep this fixture README descriptive;
