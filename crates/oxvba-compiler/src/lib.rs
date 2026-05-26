@@ -20,9 +20,10 @@ pub use bundle::{
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
+    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, VbaTypeId,
-    bound_type_to_declare_param_type,
+    ProcedureSignatureDescriptor, RuntimeCarrierKind, SlotInitialState, SlotRole,
+    SlotTypeDescriptor, VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -127,8 +128,9 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        Bytecode, Instruction, ProcedureRuntimeSlotKind, RuntimeCarrierKind, SlotInitialState,
-        SlotRole, VbaTypeId, compile, compile_with_runtime_metadata,
+        Bytecode, Instruction, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+        ProcedureRuntimeSlotKind, RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId,
+        compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -452,6 +454,92 @@ mod tests {
         );
         assert_eq!(temporary.initial_state, SlotInitialState::CompilerDefined);
         assert_eq!(temporary.carrier, RuntimeCarrierKind::Unknown);
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_projects_first_signature_descriptor_view() {
+        let source = "Sub Main()\n\
+                      End Sub\n\
+                      Sub Capture(ByRef target As Long, Optional ByVal value As Long = 7)\n\
+                      End Sub\n\
+                      Sub Pack(ByRef target As Variant, ParamArray items() As Variant)\n\
+                      End Sub\n\
+                      Function Echo(ByVal text As String) As String\n\
+                      Echo = text\n\
+                      End Function\n\
+                      Property Get Value() As Long\n\
+                      Value = 1\n\
+                      End Property\n\
+                      Property Let Value(ByRef newValue As Long)\n\
+                      End Property";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+
+        let capture = metadata
+            .get("capture")
+            .expect("Capture metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(capture.kind, ProcedureKindDescriptor::Sub);
+        assert_eq!(capture.return_type, None);
+        assert_eq!(capture.parameters.len(), 2);
+        assert_eq!(capture.parameters[0].name, "target");
+        assert_eq!(capture.parameters[0].role, ParameterRole::Positional);
+        assert_eq!(
+            capture.parameters[0].passing_mode,
+            ParameterPassingMode::ByRef
+        );
+        assert_eq!(capture.parameters[0].declared_type, VbaTypeId::Long);
+        assert_eq!(capture.parameters[1].name, "value");
+        assert_eq!(capture.parameters[1].role, ParameterRole::Optional);
+        assert_eq!(
+            capture.parameters[1].passing_mode,
+            ParameterPassingMode::ByVal
+        );
+        assert_eq!(capture.parameters[1].default_value, Some(7));
+
+        let pack = metadata
+            .get("pack")
+            .expect("Pack metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(pack.parameters[1].name, "items");
+        assert_eq!(pack.parameters[1].role, ParameterRole::ParamArray);
+        assert_eq!(pack.parameters[1].passing_mode, ParameterPassingMode::ByVal);
+        assert_eq!(pack.parameters[1].declared_type, VbaTypeId::Array);
+
+        let echo = metadata
+            .get("echo")
+            .expect("Echo metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(echo.kind, ProcedureKindDescriptor::Function);
+        assert_eq!(echo.return_type, Some(VbaTypeId::String));
+        assert_eq!(echo.return_slot, metadata["echo"].return_slot);
+        assert_eq!(echo.parameters[0].passing_mode, ParameterPassingMode::ByVal);
+        assert_eq!(echo.parameters[0].declared_type, VbaTypeId::String);
+
+        let property_get = metadata
+            .get("property_get_value")
+            .expect("Property Get metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(property_get.kind, ProcedureKindDescriptor::PropertyGet);
+        assert_eq!(property_get.return_type, Some(VbaTypeId::Long));
+        assert_eq!(property_get.property_group.as_deref(), Some("value"));
+
+        let property_let = metadata
+            .get("property_let_value")
+            .expect("Property Let metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(property_let.kind, ProcedureKindDescriptor::PropertyLet);
+        assert_eq!(property_let.return_type, None);
+        assert_eq!(property_let.property_group.as_deref(), Some("value"));
+        assert_eq!(
+            property_let.parameters[0].role,
+            ParameterRole::PropertyValue
+        );
+        assert_eq!(
+            property_let.parameters[0].passing_mode,
+            ParameterPassingMode::ByRef,
+            "first signature descriptor records the current parsed mechanism; later VMR-03 rows own property value ByVal runtime semantics"
+        );
     }
 
     #[test]

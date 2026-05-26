@@ -139,6 +139,55 @@ pub struct ProcedureRuntimeMetadata {
     pub return_slot: Option<usize>,
     pub param_types: Vec<DeclareParamType>,
     pub return_type: Option<DeclareParamType>,
+    pub signature: ProcedureSignatureDescriptor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProcedureSignatureDescriptor {
+    pub procedure_name: String,
+    pub kind: ProcedureKindDescriptor,
+    pub parameters: Vec<ParameterDescriptor>,
+    pub return_type: Option<VbaTypeId>,
+    pub return_slot: Option<usize>,
+    pub property_group: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ProcedureKindDescriptor {
+    Unknown,
+    Sub,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ParameterDescriptor {
+    pub index: usize,
+    pub name: String,
+    pub slot: Option<usize>,
+    pub role: ParameterRole,
+    pub passing_mode: ParameterPassingMode,
+    pub declared_type: VbaTypeId,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ParameterRole {
+    Positional,
+    Optional,
+    ParamArray,
+    PropertyValue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ParameterPassingMode {
+    Unknown,
+    ByRef,
+    ByVal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -349,6 +398,10 @@ impl ProcedureRuntimeSlotMetadata {
 }
 
 impl ProcedureRuntimeMetadata {
+    pub fn procedure_signature_descriptor(&self) -> ProcedureSignatureDescriptor {
+        self.signature.clone()
+    }
+
     pub fn slot_type_descriptors(&self) -> Vec<SlotTypeDescriptor> {
         self.slots
             .iter()
@@ -383,6 +436,78 @@ impl ProcedureRuntimeMetadata {
             | ProcedureRuntimeSlotKind::CompilerGenerated => VbaTypeId::Unknown,
         }
     }
+}
+
+pub(crate) fn legacy_procedure_signature_descriptor(
+    procedure_name: &str,
+    param_slots: &[usize],
+    param_types: &[DeclareParamType],
+    return_slot: Option<usize>,
+    return_type: Option<DeclareParamType>,
+    slots: &[ProcedureRuntimeSlotMetadata],
+) -> ProcedureSignatureDescriptor {
+    let slot_names = slots
+        .iter()
+        .map(|slot| (slot.slot, slot.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let parameters = param_slots
+        .iter()
+        .enumerate()
+        .map(|(index, slot)| {
+            let declared_type = param_types
+                .get(index)
+                .copied()
+                .map(VbaTypeId::from)
+                .unwrap_or(VbaTypeId::Unknown);
+            ParameterDescriptor {
+                index,
+                name: slot_names
+                    .get(slot)
+                    .cloned()
+                    .unwrap_or_else(|| format!("arg{index}")),
+                slot: Some(*slot),
+                role: ParameterRole::Positional,
+                passing_mode: ParameterPassingMode::Unknown,
+                declared_type,
+                optional: false,
+                param_array: false,
+                default_value: None,
+            }
+        })
+        .collect();
+    ProcedureSignatureDescriptor {
+        procedure_name: procedure_name.to_string(),
+        kind: legacy_procedure_kind(procedure_name, return_slot),
+        parameters,
+        return_type: return_type.map(VbaTypeId::from),
+        return_slot,
+        property_group: property_group_name(procedure_name),
+    }
+}
+
+fn legacy_procedure_kind(
+    procedure_name: &str,
+    return_slot: Option<usize>,
+) -> ProcedureKindDescriptor {
+    if procedure_name.starts_with("property_get_") {
+        ProcedureKindDescriptor::PropertyGet
+    } else if procedure_name.starts_with("property_let_") {
+        ProcedureKindDescriptor::PropertyLet
+    } else if procedure_name.starts_with("property_set_") {
+        ProcedureKindDescriptor::PropertySet
+    } else if return_slot.is_some() {
+        ProcedureKindDescriptor::Function
+    } else {
+        ProcedureKindDescriptor::Sub
+    }
+}
+
+fn property_group_name(procedure_name: &str) -> Option<String> {
+    procedure_name
+        .strip_prefix("property_get_")
+        .or_else(|| procedure_name.strip_prefix("property_let_"))
+        .or_else(|| procedure_name.strip_prefix("property_set_"))
+        .map(ToString::to_string)
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
@@ -433,6 +558,75 @@ fn runtime_carrier_from_bound_type(ty: BoundType) -> RuntimeCarrierKind {
         RuntimeCarrierKind::Decimal96VariantSubtype
     } else {
         RuntimeCarrierKind::for_declared_type(vba_type_id_from_bound_type(ty))
+    }
+}
+
+fn procedure_signature_kind(
+    proc_name: &str,
+    return_slot: Option<usize>,
+) -> ProcedureKindDescriptor {
+    legacy_procedure_kind(proc_name, return_slot)
+}
+
+fn build_procedure_signature_descriptor(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+    return_slot: Option<usize>,
+) -> ProcedureSignatureDescriptor {
+    let kind = procedure_signature_kind(&proc.name, return_slot);
+    let property_value_index = if matches!(
+        kind,
+        ProcedureKindDescriptor::PropertyLet | ProcedureKindDescriptor::PropertySet
+    ) {
+        proc.params.len().checked_sub(1)
+    } else {
+        None
+    };
+    let parameters = proc
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, param)| {
+            let role = if param.param_array {
+                ParameterRole::ParamArray
+            } else if Some(index) == property_value_index {
+                ParameterRole::PropertyValue
+            } else if param.optional {
+                ParameterRole::Optional
+            } else {
+                ParameterRole::Positional
+            };
+            ParameterDescriptor {
+                index,
+                name: param.name.clone(),
+                slot: proc_slots.get(&param.name).copied(),
+                role,
+                passing_mode: if param.by_ref {
+                    ParameterPassingMode::ByRef
+                } else {
+                    ParameterPassingMode::ByVal
+                },
+                declared_type: vba_type_id_from_bound_type(param.ty),
+                optional: param.optional,
+                param_array: param.param_array,
+                default_value: param.default_value,
+            }
+        })
+        .collect();
+    ProcedureSignatureDescriptor {
+        procedure_name: proc.name.clone(),
+        kind,
+        parameters,
+        return_type: if matches!(
+            kind,
+            ProcedureKindDescriptor::Function | ProcedureKindDescriptor::PropertyGet
+        ) {
+            Some(vba_type_id_from_bound_type(proc.return_type))
+        } else {
+            None
+        },
+        return_slot,
+        property_group: property_group_name(&proc.name),
     }
 }
 
@@ -613,6 +807,15 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
     instructions.push(Instruction::ClearErr);
     instructions.push(Instruction::Halt);
+    let entry_return_slot = proc_slots[entry_idx]
+        .get(&procedures[entry_idx].name)
+        .or_else(|| {
+            procedures[entry_idx]
+                .name
+                .strip_prefix("property_get_")
+                .and_then(|base| proc_slots[entry_idx].get(base))
+        })
+        .copied();
     procedure_runtime_metadata.insert(
         procedures[entry_idx].name.to_ascii_lowercase(),
         ProcedureRuntimeMetadata {
@@ -634,21 +837,18 @@ pub fn emit_bytecode_with_runtime_metadata(
                 .iter()
                 .filter_map(|param| proc_slots[entry_idx].get(&param.name).copied())
                 .collect(),
-            return_slot: proc_slots[entry_idx]
-                .get(&procedures[entry_idx].name)
-                .or_else(|| {
-                    procedures[entry_idx]
-                        .name
-                        .strip_prefix("property_get_")
-                        .and_then(|base| proc_slots[entry_idx].get(base))
-                })
-                .copied(),
+            return_slot: entry_return_slot,
             param_types: procedures[entry_idx]
                 .params
                 .iter()
                 .map(|param| declare_param_type_from_bound_type(param.ty))
                 .collect(),
             return_type: procedure_return_declare_type(&procedures[entry_idx]),
+            signature: build_procedure_signature_descriptor(
+                &procedures[entry_idx],
+                &proc_slots[entry_idx],
+                entry_return_slot,
+            ),
         },
     );
 
@@ -705,6 +905,14 @@ pub fn emit_bytecode_with_runtime_metadata(
         }
         instructions.push(Instruction::ClearErr);
         instructions.push(Instruction::Return);
+        let return_slot = proc_slots[idx]
+            .get(&proc.name)
+            .or_else(|| {
+                proc.name
+                    .strip_prefix("property_get_")
+                    .and_then(|base| proc_slots[idx].get(base))
+            })
+            .copied();
         procedure_runtime_metadata.insert(
             proc.name.to_ascii_lowercase(),
             ProcedureRuntimeMetadata {
@@ -726,20 +934,18 @@ pub fn emit_bytecode_with_runtime_metadata(
                     .iter()
                     .filter_map(|param| proc_slots[idx].get(&param.name).copied())
                     .collect(),
-                return_slot: proc_slots[idx]
-                    .get(&proc.name)
-                    .or_else(|| {
-                        proc.name
-                            .strip_prefix("property_get_")
-                            .and_then(|base| proc_slots[idx].get(base))
-                    })
-                    .copied(),
+                return_slot,
                 param_types: proc
                     .params
                     .iter()
                     .map(|param| declare_param_type_from_bound_type(param.ty))
                     .collect(),
                 return_type: procedure_return_declare_type(proc),
+                signature: build_procedure_signature_descriptor(
+                    proc,
+                    &proc_slots[idx],
+                    return_slot,
+                ),
             },
         );
     }

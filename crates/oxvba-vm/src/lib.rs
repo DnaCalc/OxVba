@@ -119,9 +119,10 @@ fn default_host_services() -> Arc<dyn HostServices> {
 mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
-        DeclareParamType, OxBundle, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-        ProjectDynamicObjectRoute, RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId,
-        compile, compile_with_runtime_metadata,
+        DeclareParamType, OxBundle, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+        ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+        RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId, compile,
+        compile_with_runtime_metadata,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -388,6 +389,60 @@ mod tests {
                 .iter()
                 .any(|descriptor| descriptor.role == SlotRole::Temporary),
             "temporary descriptors should survive to VM package setup"
+        );
+    }
+
+    #[test]
+    fn execution_package_exposes_procedure_signature_descriptor_view() {
+        let source = "Sub Main()\n\
+                      End Sub\n\
+                      Function Test(ByVal dbl As Double, ByRef str As String) As Variant\n\
+                      Test = str\n\
+                      End Function\n\
+                      Property Let Value(ByRef newValue As Long)\n\
+                      End Property";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let signatures_by_proc = package.procedure_signature_descriptors();
+        let test_signature = signatures_by_proc
+            .get("test")
+            .expect("Test signature descriptor should be exposed");
+        assert_eq!(test_signature.kind, ProcedureKindDescriptor::Function);
+        assert_eq!(test_signature.return_type, Some(VbaTypeId::Variant));
+        assert_eq!(test_signature.parameters.len(), 2);
+        assert_eq!(test_signature.parameters[0].name, "dbl");
+        assert_eq!(
+            test_signature.parameters[0].passing_mode,
+            ParameterPassingMode::ByVal
+        );
+        assert_eq!(
+            test_signature.parameters[0].declared_type,
+            VbaTypeId::Double
+        );
+        assert_eq!(test_signature.parameters[1].name, "str");
+        assert_eq!(
+            test_signature.parameters[1].passing_mode,
+            ParameterPassingMode::ByRef
+        );
+        assert_eq!(
+            test_signature.parameters[1].declared_type,
+            VbaTypeId::String
+        );
+
+        let property_signature = signatures_by_proc
+            .get("property_let_value")
+            .expect("Property Let signature descriptor should be exposed");
+        assert_eq!(
+            property_signature.kind,
+            ProcedureKindDescriptor::PropertyLet
+        );
+        assert_eq!(property_signature.property_group.as_deref(), Some("value"));
+        assert_eq!(
+            property_signature.parameters[0].role,
+            ParameterRole::PropertyValue
         );
     }
 

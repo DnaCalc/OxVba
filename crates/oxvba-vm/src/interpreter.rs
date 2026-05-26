@@ -11,8 +11,9 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     Bytecode, Instruction, OxBundle, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, SlotTypeDescriptor,
+    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    SlotTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -178,6 +179,15 @@ impl<'a> VmExecutionPackage<'a> {
         self.procedure_metadata
             .iter()
             .map(|(name, metadata)| (name.clone(), metadata.slot_type_descriptors()))
+            .collect()
+    }
+
+    pub fn procedure_signature_descriptors(
+        &self,
+    ) -> BTreeMap<String, ProcedureSignatureDescriptor> {
+        self.procedure_metadata
+            .iter()
+            .map(|(name, metadata)| (name.clone(), metadata.procedure_signature_descriptor()))
             .collect()
     }
 }

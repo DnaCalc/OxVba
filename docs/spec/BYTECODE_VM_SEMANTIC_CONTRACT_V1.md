@@ -165,9 +165,10 @@ project, bundle, and callable-session VM execution paths. Existing snapshot APIs
 remain value-only compatibility surfaces, while package-identity variants expose
 the recorded VM package identity for evidence and future JIT gates.
 
-This is package identity plus first slot descriptor evidence only. Signature
-descriptor, expression/call descriptor, lifecycle, interop, and host-policy
-evidence remain future rows under the strengthening sequence above.
+This is package identity plus first slot descriptor evidence only. The first
+signature descriptor view is now loaded as package metadata, but signature
+comparison evidence, expression/call descriptor, lifecycle, interop, and
+host-policy evidence remain future rows under the strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -181,7 +182,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v4 carries those facts and upgrades older v1/v2/v3 metadata
+`OxBundle` format v5 carries those facts and upgrades older v3/v4 metadata
 into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -194,6 +195,17 @@ snapshots for primitive scalar, `String`/`BStr`, declared `Variant`, and the
 current VM-runnable UDT field-alias shape. Nominal UDT aggregate descriptors,
 field offsets, and cleanup obligations remain future VMR-05 evidence and are
 not inferred from these flattened aliases.
+
+Current VMR-03 seed surface is a metadata view, not call-binding behavior:
+`ProcedureRuntimeMetadata::procedure_signature_descriptor` and
+`VmExecutionPackage::procedure_signature_descriptors` expose
+`ProcedureSignatureDescriptor` rows for procedure kind, parameter order, slots,
+declared parameter types, parsed ByRef/ByVal mode, Optional/default literals,
+ParamArray marker, return type, return slot, and property group where current
+compiler metadata knows them. `OxBundle` format v5 carries those facts and
+upgrades v4 bundles with `Unknown` parameter passing mode where v4 had no
+serialized ByRef/ByVal fact. VM call execution does not consume these
+descriptors yet.
 
 ## Strengthening Rule
 

@@ -583,13 +583,17 @@ Current implementation anchors:
   `ProcedureRuntimeSlotMetadata`; `SlotTypeDescriptor` view with provisional
   `VbaTypeId`, `SlotInitialState`, and `RuntimeCarrierKind` enums populated
   for parameters, locals, return slots, compiler-generated fixed-array element
-  slots, and temporary slots.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v4 serializes the
-  populated slot metadata and upgrades v1/v2/v3 bundles into the current
-  descriptor shape.
+  slots, and temporary slots; first `ProcedureSignatureDescriptor` and
+  `ParameterDescriptor` view for procedure kind, parsed parameter mode,
+  Optional/default, ParamArray, return type, and property group.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v5 serializes the
+  populated slot and first signature metadata and upgrades v1/v2/v3/v4 bundles
+  into the current descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
-  current descriptor view without changing slot execution, and
+  current slot descriptor view and
+  `VmExecutionPackage::procedure_signature_descriptors` exposes the first
+  signature descriptor view without changing slot or call execution; and
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests and
   descriptor rows.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
@@ -599,6 +603,10 @@ Current implementation anchors:
 Known development gaps:
 
 - no central `VbaTypeId`/descriptor registry exists yet;
+- `ProcedureSignatureDescriptor` is a first package view, but source
+  mechanism-vs-defaulted ByRef, missing optional argument state, implicit `Me`,
+  full property value ByVal runtime semantics, signature descriptor ids/digests,
+  and call-comparison evidence remain incomplete;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT
   nominal identity, aggregate UDT field offsets, object/class/interface ids,

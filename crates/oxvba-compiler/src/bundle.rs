@@ -11,6 +11,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use crate::bytecode::Bytecode;
 use crate::emit::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    legacy_procedure_signature_descriptor,
 };
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
@@ -24,7 +25,7 @@ use crate::project::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 4;
+const FORMAT_VERSION: u32 = 5;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -240,6 +241,22 @@ struct LegacyOxBundleV3 {
     descriptor_inventory: Option<DescriptorInventory>,
 }
 
+/// v4 bundle layout before procedure signature descriptors were added to
+/// `ProcedureRuntimeMetadata`.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV4 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV4>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyProcedureRuntimeSlotMetadata {
     name: String,
@@ -265,7 +282,101 @@ struct LegacyProcedureRuntimeMetadata {
 
 impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
     fn from(legacy: LegacyProcedureRuntimeMetadata) -> Self {
-        let mut metadata = ProcedureRuntimeMetadata {
+        let module_name = legacy.module_name;
+        let procedure_name = legacy.procedure_name;
+        let entry_pc = legacy.entry_pc;
+        let source_line_start = legacy.source_line_start;
+        let source_line_end = legacy.source_line_end;
+        let statement_line_numbers = legacy.statement_line_numbers;
+        let statement_entry_pcs = legacy.statement_entry_pcs;
+        let param_slots = legacy.param_slots;
+        let return_slot = legacy.return_slot;
+        let param_types = legacy.param_types;
+        let return_type = legacy.return_type;
+        let legacy_type_metadata = ProcedureRuntimeMetadata {
+            module_name: module_name.clone(),
+            procedure_name: procedure_name.clone(),
+            entry_pc,
+            source_line_start,
+            source_line_end,
+            statement_line_numbers: statement_line_numbers.clone(),
+            statement_entry_pcs: statement_entry_pcs.clone(),
+            slots: Vec::new(),
+            param_slots: param_slots.clone(),
+            return_slot,
+            param_types: param_types.clone(),
+            return_type,
+            signature: legacy_procedure_signature_descriptor(
+                &procedure_name,
+                &param_slots,
+                &param_types,
+                return_slot,
+                return_type,
+                &[],
+            ),
+        };
+        let slots = legacy
+            .slots
+            .into_iter()
+            .map(|slot| {
+                let declared_type =
+                    legacy_type_metadata.legacy_declared_type_for_slot(slot.slot, slot.kind);
+                ProcedureRuntimeSlotMetadata::new(slot.name, slot.slot, slot.kind, declared_type)
+            })
+            .collect::<Vec<_>>();
+        let signature = legacy_procedure_signature_descriptor(
+            &procedure_name,
+            &param_slots,
+            &param_types,
+            return_slot,
+            return_type,
+            &slots,
+        );
+        ProcedureRuntimeMetadata {
+            module_name,
+            procedure_name,
+            entry_pc,
+            source_line_start,
+            source_line_end,
+            statement_line_numbers,
+            statement_entry_pcs,
+            slots,
+            param_slots,
+            return_slot,
+            param_types,
+            return_type,
+            signature,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadataV4 {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<ProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+}
+
+impl From<LegacyProcedureRuntimeMetadataV4> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadataV4) -> Self {
+        let signature = legacy_procedure_signature_descriptor(
+            &legacy.procedure_name,
+            &legacy.param_slots,
+            &legacy.param_types,
+            legacy.return_slot,
+            legacy.return_type,
+            &legacy.slots,
+        );
+        ProcedureRuntimeMetadata {
             module_name: legacy.module_name,
             procedure_name: legacy.procedure_name,
             entry_pc: legacy.entry_pc,
@@ -273,21 +384,13 @@ impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
             source_line_end: legacy.source_line_end,
             statement_line_numbers: legacy.statement_line_numbers,
             statement_entry_pcs: legacy.statement_entry_pcs,
-            slots: Vec::new(),
+            slots: legacy.slots,
             param_slots: legacy.param_slots,
             return_slot: legacy.return_slot,
             param_types: legacy.param_types,
             return_type: legacy.return_type,
-        };
-        metadata.slots = legacy
-            .slots
-            .into_iter()
-            .map(|slot| {
-                let declared_type = metadata.legacy_declared_type_for_slot(slot.slot, slot.kind);
-                ProcedureRuntimeSlotMetadata::new(slot.name, slot.slot, slot.kind, declared_type)
-            })
-            .collect();
-        metadata
+            signature,
+        }
     }
 }
 
@@ -481,9 +584,10 @@ impl OxBundle {
 
         // Read version.
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version != 1 && version != 2 && version != 3 && version != 4 {
+        if version != 1 && version != 2 && version != 3 && version != 4 && version != FORMAT_VERSION
+        {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, or 4)"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, or {FORMAT_VERSION})"
             ));
         }
 
@@ -536,6 +640,26 @@ impl OxBundle {
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
                 procedure_metadata: upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+            })
+        } else if version == 4 {
+            let legacy: LegacyOxBundleV4 =
+                rkyv::from_bytes::<LegacyOxBundleV4, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v4: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy
+                    .procedure_metadata
+                    .into_iter()
+                    .map(|(name, metadata)| (name, metadata.into()))
+                    .collect(),
                 manifest_snapshot: legacy.manifest_snapshot,
                 export_inventory: legacy.export_inventory,
                 source_hashes: legacy.source_hashes,
@@ -962,7 +1086,10 @@ fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
 mod tests {
     use super::*;
     use crate::bytecode::{Bytecode, DeclareParamType, Instruction};
-    use crate::emit::{RuntimeCarrierKind, SlotInitialState, VbaTypeId};
+    use crate::emit::{
+        ParameterPassingMode, ProcedureKindDescriptor, RuntimeCarrierKind, SlotInitialState,
+        VbaTypeId,
+    };
     use crate::project::ExportKind;
 
     fn sample_bundle() -> OxBundle {
@@ -996,6 +1123,7 @@ mod tests {
                 return_slot: None,
                 param_types: vec![],
                 return_type: None,
+                signature: legacy_procedure_signature_descriptor("Main", &[], &[], None, None, &[]),
             },
         );
         OxBundle::new(bytecode, metadata)
@@ -1028,11 +1156,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_4() {
+    fn header_version_is_5() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -1187,6 +1315,90 @@ mod tests {
         assert_eq!(slot.declared_type, VbaTypeId::Long);
         assert_eq!(slot.initial_state, SlotInitialState::CallerProvided);
         assert_eq!(slot.carrier, RuntimeCarrierKind::I32);
+    }
+
+    #[test]
+    fn v4_backward_compat_synthesizes_signature_descriptors() {
+        let bytecode = Bytecode {
+            instructions: vec![Instruction::Halt],
+            external_call_descriptors: vec![],
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+        let mut procedure_metadata = BTreeMap::new();
+        procedure_metadata.insert(
+            "Add".to_string(),
+            LegacyProcedureRuntimeMetadataV4 {
+                module_name: "Math".to_string(),
+                procedure_name: "Add".to_string(),
+                entry_pc: 0,
+                source_line_start: 1,
+                source_line_end: 3,
+                statement_line_numbers: vec![2],
+                statement_entry_pcs: vec![1],
+                slots: vec![
+                    ProcedureRuntimeSlotMetadata::new(
+                        "a".to_string(),
+                        0,
+                        ProcedureRuntimeSlotKind::Parameter,
+                        VbaTypeId::Long,
+                    ),
+                    ProcedureRuntimeSlotMetadata::new(
+                        "b".to_string(),
+                        1,
+                        ProcedureRuntimeSlotKind::Parameter,
+                        VbaTypeId::Double,
+                    ),
+                    ProcedureRuntimeSlotMetadata::new(
+                        "Add".to_string(),
+                        2,
+                        ProcedureRuntimeSlotKind::ReturnValue,
+                        VbaTypeId::Double,
+                    ),
+                ],
+                param_slots: vec![0, 1],
+                return_slot: Some(2),
+                param_types: vec![DeclareParamType::Long, DeclareParamType::Double],
+                return_type: Some(DeclareParamType::Double),
+            },
+        );
+        let legacy = LegacyOxBundleV4 {
+            bytecode,
+            procedure_metadata,
+            manifest_snapshot: None,
+            export_inventory: None,
+            source_hashes: None,
+            toolchain_fingerprint: None,
+            event_dispatch_bindings: None,
+            com_withevents_routes: None,
+            dynamic_object_routes: None,
+            descriptor_inventory: None,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v4");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&4u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v4");
+        let signature = &restored.procedure_metadata["Add"].signature;
+        assert_eq!(signature.kind, ProcedureKindDescriptor::Function);
+        assert_eq!(signature.return_type, Some(VbaTypeId::Double));
+        assert_eq!(signature.return_slot, Some(2));
+        assert_eq!(signature.parameters.len(), 2);
+        assert_eq!(signature.parameters[0].name, "a");
+        assert_eq!(signature.parameters[0].declared_type, VbaTypeId::Long);
+        assert_eq!(
+            signature.parameters[0].passing_mode,
+            ParameterPassingMode::Unknown,
+            "v4 did not serialize ByRef/ByVal, so upgraded signature keeps that gap explicit"
+        );
+        assert_eq!(signature.parameters[1].name, "b");
+        assert_eq!(signature.parameters[1].declared_type, VbaTypeId::Double);
     }
 
     #[test]
