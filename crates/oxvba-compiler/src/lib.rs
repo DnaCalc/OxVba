@@ -359,8 +359,10 @@ mod tests {
     fn procedure_runtime_metadata_projects_first_slot_type_descriptor_view() {
         let source = "Function Combine(ByVal amount As Double, suffix As String) As Variant\n\
                       Dim localValue As Long\n\
+                      Dim values(0 To 1) As Long\n\
                       localValue = 7\n\
-                      Combine = CStr(amount) & suffix\n\
+                      values(0) = localValue\n\
+                      Combine = CStr(amount + localValue) & suffix\n\
                       End Function";
         let (_bytecode, metadata) =
             compile_with_runtime_metadata(source).expect("compile should succeed");
@@ -421,13 +423,35 @@ mod tests {
             })
             .expect("local descriptor should be present");
         assert_eq!(local.role, SlotRole::Local);
+        assert_eq!(local.declared_type, VbaTypeId::Long);
+        assert_eq!(local.initial_state, SlotInitialState::ScalarZero);
+        assert_eq!(local.carrier, RuntimeCarrierKind::I32);
+
+        let generated = descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor.role == SlotRole::CompilerGenerated
+                    && descriptor
+                        .name
+                        .as_deref()
+                        .is_some_and(|name| name.eq_ignore_ascii_case("values_0"))
+            })
+            .expect("fixed-array element descriptor should be compiler-generated");
+        assert_eq!(generated.declared_type, VbaTypeId::Long);
+        assert_eq!(generated.initial_state, SlotInitialState::ScalarZero);
+        assert_eq!(generated.carrier, RuntimeCarrierKind::I32);
+
+        let temporary = descriptors
+            .iter()
+            .find(|descriptor| descriptor.role == SlotRole::Temporary)
+            .expect("expression temporary descriptor should be present");
         assert_eq!(
-            local.declared_type,
+            temporary.declared_type,
             VbaTypeId::Unknown,
-            "local declared types are intentionally left unknown until descriptor population"
+            "temporary declared types are intentionally unknown until expression typing is preserved"
         );
-        assert_eq!(local.initial_state, SlotInitialState::Unknown);
-        assert_eq!(local.carrier, RuntimeCarrierKind::Unknown);
+        assert_eq!(temporary.initial_state, SlotInitialState::CompilerDefined);
+        assert_eq!(temporary.carrier, RuntimeCarrierKind::Unknown);
     }
 
     #[test]

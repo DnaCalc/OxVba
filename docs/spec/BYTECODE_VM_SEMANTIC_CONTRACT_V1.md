@@ -177,6 +177,15 @@ and carrier hint. Facts the current compiler metadata cannot yet preserve are
 reported as `Unknown`; they are not treated as `Variant` by default and are not
 JIT-ready until later VMR-02 evidence fills them.
 
+The populated VMR-02 compiler/package pass now records descriptor facts on
+`ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
+compiler-generated fixed-array element slots, and expression temporaries.
+`OxBundle` format v4 carries those facts and upgrades older v1/v2/v3 metadata
+into the current descriptor shape. This remains metadata-only: VM slot storage,
+helper choice, and runtime behavior do not consume these descriptors yet.
+Host/project value snapshots continue to exclude `Temporary` descriptor rows so
+metadata enrichment does not make compiler scratch slots user-visible.
+
 ## Strengthening Rule
 
 When a VM-runnable fixture exposes a semantic gap, classify it before changing

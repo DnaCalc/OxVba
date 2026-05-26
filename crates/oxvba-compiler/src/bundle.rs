@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bytecode::Bytecode;
-use crate::emit::ProcedureRuntimeMetadata;
+use crate::emit::{
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+};
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
     ModuleKind, ModuleVisibility, PassingMode, ProcedureAnnotation, ProcedureDescriptor,
@@ -22,7 +24,7 @@ use crate::project::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: u32 = 4;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -184,14 +186,14 @@ pub struct ComClassExportEntry {
     pub description: Option<String>,
 }
 
-/// Compiled bytecode bundle — the unit of persistence (format v2).
+/// Compiled bytecode bundle — the unit of persistence.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 pub struct OxBundle {
     /// Compiled bytecode (instructions, slot counts, external call descriptors).
     pub bytecode: Bytecode,
     /// Per-procedure metadata (entry points, parameter slots, return slots).
     pub procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
-    /// v2 fields — all optional for backward compat with v1 bundles.
+    /// Optional fields added across bundle format revisions.
     pub manifest_snapshot: Option<ManifestSnapshot>,
     pub export_inventory: Option<ExportInventory>,
     pub source_hashes: Option<BTreeMap<String, [u8; 32]>>,
@@ -206,14 +208,14 @@ pub struct OxBundle {
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyOxBundleV1 {
     bytecode: Bytecode,
-    procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
 }
 
 /// v2 bundle layout for backward-compatible deserialization.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyOxBundleV2 {
     bytecode: Bytecode,
-    procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
     manifest_snapshot: Option<ManifestSnapshot>,
     export_inventory: Option<ExportInventory>,
     source_hashes: Option<BTreeMap<String, [u8; 32]>>,
@@ -221,6 +223,81 @@ struct LegacyOxBundleV2 {
     event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
     com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
     dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+}
+
+/// v3 bundle layout for backward-compatible deserialization.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV3 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeSlotMetadata {
+    name: String,
+    slot: usize,
+    kind: ProcedureRuntimeSlotKind,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadata {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<LegacyProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+}
+
+impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadata) -> Self {
+        let mut metadata = ProcedureRuntimeMetadata {
+            module_name: legacy.module_name,
+            procedure_name: legacy.procedure_name,
+            entry_pc: legacy.entry_pc,
+            source_line_start: legacy.source_line_start,
+            source_line_end: legacy.source_line_end,
+            statement_line_numbers: legacy.statement_line_numbers,
+            statement_entry_pcs: legacy.statement_entry_pcs,
+            slots: Vec::new(),
+            param_slots: legacy.param_slots,
+            return_slot: legacy.return_slot,
+            param_types: legacy.param_types,
+            return_type: legacy.return_type,
+        };
+        metadata.slots = legacy
+            .slots
+            .into_iter()
+            .map(|slot| {
+                let declared_type = metadata.legacy_declared_type_for_slot(slot.slot, slot.kind);
+                ProcedureRuntimeSlotMetadata::new(slot.name, slot.slot, slot.kind, declared_type)
+            })
+            .collect();
+        metadata
+    }
+}
+
+fn upgrade_legacy_procedure_metadata(
+    metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
+) -> BTreeMap<String, ProcedureRuntimeMetadata> {
+    metadata
+        .into_iter()
+        .map(|(name, metadata)| (name, metadata.into()))
+        .collect()
 }
 
 impl OxBundle {
@@ -391,8 +468,7 @@ impl OxBundle {
 
     /// Deserialize a bundle from bytes produced by `serialize_to_bytes`.
     ///
-    /// Accepts format versions 1 and 2. Version 1 bundles are upgraded to v2
-    /// with all new fields set to `None`.
+    /// Accepts legacy format versions and upgrades missing fields.
     pub fn deserialize_from_bytes(data: &[u8]) -> Result<Self, String> {
         if data.len() < HEADER_SIZE {
             return Err("bundle too short for header".to_string());
@@ -405,9 +481,9 @@ impl OxBundle {
 
         // Read version.
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version != 1 && version != 2 && version != 3 {
+        if version != 1 && version != 2 && version != 3 && version != 4 {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, or 3)"
+                "unsupported bundle version {version} (expected 1, 2, 3, or 4)"
             ));
         }
 
@@ -433,14 +509,17 @@ impl OxBundle {
             let legacy: LegacyOxBundleV1 =
                 rkyv::from_bytes::<LegacyOxBundleV1, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v1: {e}"))?;
-            Ok(OxBundle::new(legacy.bytecode, legacy.procedure_metadata))
+            Ok(OxBundle::new(
+                legacy.bytecode,
+                upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
+            ))
         } else if version == 2 {
             let legacy: LegacyOxBundleV2 =
                 rkyv::from_bytes::<LegacyOxBundleV2, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v2: {e}"))?;
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
-                procedure_metadata: legacy.procedure_metadata,
+                procedure_metadata: upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
                 manifest_snapshot: legacy.manifest_snapshot,
                 export_inventory: legacy.export_inventory,
                 source_hashes: legacy.source_hashes,
@@ -449,6 +528,22 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: None,
+            })
+        } else if version == 3 {
+            let legacy: LegacyOxBundleV3 =
+                rkyv::from_bytes::<LegacyOxBundleV3, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v3: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
             })
         } else {
             let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
@@ -866,7 +961,8 @@ fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bytecode::{Bytecode, Instruction};
+    use crate::bytecode::{Bytecode, DeclareParamType, Instruction};
+    use crate::emit::{RuntimeCarrierKind, SlotInitialState, VbaTypeId};
     use crate::project::ExportKind;
 
     fn sample_bundle() -> OxBundle {
@@ -890,7 +986,12 @@ mod tests {
                 source_line_end: 1,
                 statement_line_numbers: vec![1],
                 statement_entry_pcs: vec![1],
-                slots: vec![],
+                slots: vec![ProcedureRuntimeSlotMetadata::new(
+                    "x".to_string(),
+                    0,
+                    ProcedureRuntimeSlotKind::Local,
+                    VbaTypeId::Variant,
+                )],
                 param_slots: vec![],
                 return_slot: None,
                 param_types: vec![],
@@ -927,11 +1028,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_3() {
+    fn header_version_is_4() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
@@ -1027,6 +1128,65 @@ mod tests {
             Some("LegacyV2")
         );
         assert!(restored.descriptor_inventory.is_none());
+    }
+
+    #[test]
+    fn v3_backward_compat_upgrades_slot_descriptors() {
+        let bytecode = Bytecode {
+            instructions: vec![Instruction::Halt],
+            external_call_descriptors: vec![],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+        let mut procedure_metadata = BTreeMap::new();
+        procedure_metadata.insert(
+            "Main".to_string(),
+            LegacyProcedureRuntimeMetadata {
+                module_name: "Main".to_string(),
+                procedure_name: "Main".to_string(),
+                entry_pc: 0,
+                source_line_start: 1,
+                source_line_end: 1,
+                statement_line_numbers: vec![1],
+                statement_entry_pcs: vec![1],
+                slots: vec![LegacyProcedureRuntimeSlotMetadata {
+                    name: "arg".to_string(),
+                    slot: 0,
+                    kind: ProcedureRuntimeSlotKind::Parameter,
+                }],
+                param_slots: vec![0],
+                return_slot: None,
+                param_types: vec![DeclareParamType::Long],
+                return_type: None,
+            },
+        );
+        let legacy = LegacyOxBundleV3 {
+            bytecode,
+            procedure_metadata,
+            manifest_snapshot: None,
+            export_inventory: None,
+            source_hashes: None,
+            toolchain_fingerprint: None,
+            event_dispatch_bindings: None,
+            com_withevents_routes: None,
+            dynamic_object_routes: None,
+            descriptor_inventory: None,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v3");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&3u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v3");
+        let slot = &restored.procedure_metadata["Main"].slots[0];
+        assert_eq!(slot.declared_type, VbaTypeId::Long);
+        assert_eq!(slot.initial_state, SlotInitialState::CallerProvided);
+        assert_eq!(slot.carrier, RuntimeCarrierKind::I32);
     }
 
     #[test]

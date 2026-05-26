@@ -580,8 +580,13 @@ Current implementation anchors:
   `VbaTypeDescriptor`, procedure/class/export metadata, and imported COM
   descriptors.
 - `crates/oxvba-compiler/src/emit.rs`: current `ProcedureRuntimeMetadata` and
-  `ProcedureRuntimeSlotMetadata`; first `SlotTypeDescriptor` view with
-  provisional `VbaTypeId`, `SlotInitialState`, and `RuntimeCarrierKind` enums.
+  `ProcedureRuntimeSlotMetadata`; `SlotTypeDescriptor` view with provisional
+  `VbaTypeId`, `SlotInitialState`, and `RuntimeCarrierKind` enums populated
+  for parameters, locals, return slots, compiler-generated fixed-array element
+  slots, and temporary slots.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v4 serializes the
+  populated slot metadata and upgrades v1/v2/v3 bundles into the current
+  descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
   current descriptor view without changing slot execution.
@@ -589,9 +594,11 @@ Current implementation anchors:
 Known development gaps:
 
 - no central `VbaTypeId`/descriptor registry exists yet;
-- `ProcedureRuntimeSlotMetadata` can now project a first descriptor view, but
-  local, temporary, compiler-generated, array, UDT, object, fixed-string, and
-  full carrier facts remain incomplete or explicitly `Unknown`;
+- `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
+  expression temporary declared types, richer array shape/provenance, UDT
+  nominal identity, object/class/interface ids, fixed-string details, cleanup
+  obligations, and full carrier layout facts remain incomplete or explicitly
+  `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;

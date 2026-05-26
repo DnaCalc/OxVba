@@ -952,6 +952,7 @@ impl Vm {
                 ProcedureRuntimeSlotKind::Parameter
                     | ProcedureRuntimeSlotKind::Local
                     | ProcedureRuntimeSlotKind::ReturnValue
+                    | ProcedureRuntimeSlotKind::CompilerGenerated
             ) {
                 self.write_variant_slot(slot.slot, Variant::empty())?;
             }

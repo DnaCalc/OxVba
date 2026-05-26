@@ -183,6 +183,7 @@ fn project_visible_snapshot<T: Clone>(
             if matches!(
                 slot.kind,
                 oxvba_compiler::ProcedureRuntimeSlotKind::ReturnValue
+                    | oxvba_compiler::ProcedureRuntimeSlotKind::Temporary
             ) {
                 continue;
             }

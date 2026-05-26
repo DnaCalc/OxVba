@@ -111,6 +111,8 @@ pub enum ProcedureRuntimeSlotKind {
     Parameter,
     Local,
     ReturnValue,
+    Temporary,
+    CompilerGenerated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -118,6 +120,9 @@ pub struct ProcedureRuntimeSlotMetadata {
     pub name: String,
     pub slot: usize,
     pub kind: ProcedureRuntimeSlotKind,
+    pub declared_type: VbaTypeId,
+    pub initial_state: SlotInitialState,
+    pub carrier: RuntimeCarrierKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -191,6 +196,8 @@ impl From<ProcedureRuntimeSlotKind> for SlotRole {
             ProcedureRuntimeSlotKind::Parameter => Self::Parameter,
             ProcedureRuntimeSlotKind::Local => Self::Local,
             ProcedureRuntimeSlotKind::ReturnValue => Self::ReturnValue,
+            ProcedureRuntimeSlotKind::Temporary => Self::Temporary,
+            ProcedureRuntimeSlotKind::CompilerGenerated => Self::CompilerGenerated,
         }
     }
 }
@@ -267,8 +274,8 @@ impl SlotInitialState {
     pub fn for_slot(role: SlotRole, declared_type: VbaTypeId) -> Self {
         match role {
             SlotRole::Parameter => Self::CallerProvided,
-            SlotRole::Temporary | SlotRole::CompilerGenerated => Self::CompilerDefined,
-            SlotRole::Local | SlotRole::ReturnValue => {
+            SlotRole::Temporary => Self::CompilerDefined,
+            SlotRole::Local | SlotRole::ReturnValue | SlotRole::CompilerGenerated => {
                 Self::default_for_declared_type(declared_type)
             }
         }
@@ -295,26 +302,65 @@ impl SlotInitialState {
     }
 }
 
+impl ProcedureRuntimeSlotMetadata {
+    pub fn new(
+        name: String,
+        slot: usize,
+        kind: ProcedureRuntimeSlotKind,
+        declared_type: VbaTypeId,
+    ) -> Self {
+        Self::new_with_carrier(
+            name,
+            slot,
+            kind,
+            declared_type,
+            RuntimeCarrierKind::for_declared_type(declared_type),
+        )
+    }
+
+    pub fn new_with_carrier(
+        name: String,
+        slot: usize,
+        kind: ProcedureRuntimeSlotKind,
+        declared_type: VbaTypeId,
+        carrier: RuntimeCarrierKind,
+    ) -> Self {
+        let role = SlotRole::from(kind);
+        Self {
+            name,
+            slot,
+            kind,
+            declared_type,
+            initial_state: SlotInitialState::for_slot(role, declared_type),
+            carrier,
+        }
+    }
+
+    pub fn slot_type_descriptor(&self) -> SlotTypeDescriptor {
+        SlotTypeDescriptor {
+            slot: self.slot,
+            name: Some(self.name.clone()),
+            role: SlotRole::from(self.kind),
+            declared_type: self.declared_type,
+            initial_state: self.initial_state,
+            carrier: self.carrier.clone(),
+        }
+    }
+}
+
 impl ProcedureRuntimeMetadata {
     pub fn slot_type_descriptors(&self) -> Vec<SlotTypeDescriptor> {
         self.slots
             .iter()
-            .map(|slot| {
-                let role = SlotRole::from(slot.kind);
-                let declared_type = self.declared_type_for_slot(slot.slot, slot.kind);
-                SlotTypeDescriptor {
-                    slot: slot.slot,
-                    name: Some(slot.name.clone()),
-                    role,
-                    declared_type,
-                    initial_state: SlotInitialState::for_slot(role, declared_type),
-                    carrier: RuntimeCarrierKind::for_declared_type(declared_type),
-                }
-            })
+            .map(ProcedureRuntimeSlotMetadata::slot_type_descriptor)
             .collect()
     }
 
-    fn declared_type_for_slot(&self, slot: usize, kind: ProcedureRuntimeSlotKind) -> VbaTypeId {
+    pub(crate) fn legacy_declared_type_for_slot(
+        &self,
+        slot: usize,
+        kind: ProcedureRuntimeSlotKind,
+    ) -> VbaTypeId {
         match kind {
             ProcedureRuntimeSlotKind::Parameter => self
                 .param_slots
@@ -332,7 +378,9 @@ impl ProcedureRuntimeMetadata {
                     VbaTypeId::Unknown
                 }
             }
-            ProcedureRuntimeSlotKind::Local => VbaTypeId::Unknown,
+            ProcedureRuntimeSlotKind::Local
+            | ProcedureRuntimeSlotKind::Temporary
+            | ProcedureRuntimeSlotKind::CompilerGenerated => VbaTypeId::Unknown,
         }
     }
 }
@@ -357,6 +405,34 @@ fn declare_param_type_from_bound_type(ty: BoundType) -> DeclareParamType {
         BoundType::Variant | BoundType::Array | BoundType::Object | BoundType::Decimal => {
             DeclareParamType::Variant
         }
+    }
+}
+
+fn vba_type_id_from_bound_type(ty: BoundType) -> VbaTypeId {
+    match ty {
+        BoundType::Integer => VbaTypeId::Integer,
+        BoundType::Long => VbaTypeId::Long,
+        BoundType::LongLong => VbaTypeId::LongLong,
+        BoundType::LongPtr => VbaTypeId::LongPtr,
+        BoundType::Byte => VbaTypeId::Byte,
+        BoundType::Single => VbaTypeId::Single,
+        BoundType::Double => VbaTypeId::Double,
+        BoundType::Currency => VbaTypeId::Currency,
+        BoundType::Date => VbaTypeId::Date,
+        BoundType::String => VbaTypeId::String,
+        BoundType::Boolean => VbaTypeId::Boolean,
+        BoundType::Variant => VbaTypeId::Variant,
+        BoundType::Object => VbaTypeId::Object,
+        BoundType::Array => VbaTypeId::Array,
+        BoundType::Decimal => VbaTypeId::Variant,
+    }
+}
+
+fn runtime_carrier_from_bound_type(ty: BoundType) -> RuntimeCarrierKind {
+    if ty == BoundType::Decimal {
+        RuntimeCarrierKind::Decimal96VariantSubtype
+    } else {
+        RuntimeCarrierKind::for_declared_type(vba_type_id_from_bound_type(ty))
     }
 }
 
@@ -496,6 +572,7 @@ pub fn emit_bytecode_with_runtime_metadata(
     }
     let mut entry_statement_entry_pcs = Vec::new();
     proc_exit_stack.push(Vec::new());
+    let entry_temp_start = temps.next_temp_slot();
     with_current_proc_name(&procedures[entry_idx].name, || {
         emit_stmt_list(
             &procedures[entry_idx].body,
@@ -517,6 +594,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             &mut entry_statement_entry_pcs,
         );
     });
+    let entry_temp_slots = temps.slots_allocated_since(entry_temp_start);
     if let Some(name) = class_terminate_proc {
         let patch_idx = instructions.len();
         instructions.push(Instruction::CallProc {
@@ -549,6 +627,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &procedures[entry_idx],
                 &proc_slots[entry_idx],
                 proc_meta[&procedures[entry_idx].name].return_slot,
+                &entry_temp_slots,
             ),
             param_slots: procedures[entry_idx]
                 .params
@@ -593,6 +672,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         emit_declared_string_initializers(proc, &proc_slots[idx], &mut instructions);
         let mut statement_entry_pcs = Vec::new();
         proc_exit_stack.push(Vec::new());
+        let proc_temp_start = temps.next_temp_slot();
         with_current_proc_name(&proc.name, || {
             emit_stmt_list(
                 &proc.body,
@@ -614,6 +694,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &mut statement_entry_pcs,
             );
         });
+        let proc_temp_slots = temps.slots_allocated_since(proc_temp_start);
         let proc_exit_target = instructions.len();
         if let Some(exit_patches) = proc_exit_stack.pop() {
             for patch in exit_patches {
@@ -638,6 +719,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     proc,
                     &proc_slots[idx],
                     proc_meta[&proc.name].return_slot,
+                    &proc_temp_slots,
                 ),
                 param_slots: proc
                     .params
@@ -713,6 +795,7 @@ fn build_runtime_slot_metadata(
     proc: &BoundProcedure,
     proc_slots: &HashMap<String, usize>,
     return_slot: Option<usize>,
+    temp_slots: &[usize],
 ) -> Vec<ProcedureRuntimeSlotMetadata> {
     let return_name = proc
         .name
@@ -743,14 +826,31 @@ fn build_runtime_slot_metadata(
             && (proc.name.eq_ignore_ascii_case(name) || name.eq_ignore_ascii_case(&return_name))
         {
             ProcedureRuntimeSlotKind::ReturnValue
+        } else if is_compiler_generated_array_element_slot(proc, name) {
+            ProcedureRuntimeSlotKind::CompilerGenerated
         } else {
             ProcedureRuntimeSlotKind::Local
         };
-        slots.push(ProcedureRuntimeSlotMetadata {
-            name: name.clone(),
+        let bound_type = proc
+            .declaration_types
+            .get(name.as_str())
+            .copied()
+            .unwrap_or(BoundType::Variant);
+        slots.push(ProcedureRuntimeSlotMetadata::new_with_carrier(
+            name.clone(),
             slot,
             kind,
-        });
+            vba_type_id_from_bound_type(bound_type),
+            runtime_carrier_from_bound_type(bound_type),
+        ));
+    }
+    for slot in temp_slots {
+        slots.push(ProcedureRuntimeSlotMetadata::new(
+            format!("__temp{slot}"),
+            *slot,
+            ProcedureRuntimeSlotKind::Temporary,
+            VbaTypeId::Unknown,
+        ));
     }
     slots.sort_by(|lhs, rhs| {
         lhs.slot
@@ -758,6 +858,17 @@ fn build_runtime_slot_metadata(
             .then_with(|| lhs.name.cmp(&rhs.name))
     });
     slots
+}
+
+fn is_compiler_generated_array_element_slot(proc: &BoundProcedure, name: &str) -> bool {
+    proc.array_descriptors
+        .iter()
+        .filter(|(_, descriptor)| !descriptor.dynamic)
+        .any(|(array_name, _)| {
+            let prefix = format!("{array_name}_");
+            name.strip_prefix(&prefix)
+                .is_some_and(|suffix| suffix.parse::<usize>().is_ok())
+        })
 }
 
 fn emit_declared_string_initializers(
@@ -4306,10 +4417,18 @@ impl TempSlotAllocator {
         }
     }
 
+    fn next_temp_slot(&self) -> usize {
+        self.next_temp
+    }
+
     fn alloc_temp(&mut self) -> usize {
         let slot = self.next_temp;
         self.next_temp += 1;
         slot
+    }
+
+    fn slots_allocated_since(&self, start: usize) -> Vec<usize> {
+        (start..self.next_temp).collect()
     }
 
     fn total_slots(&self) -> usize {

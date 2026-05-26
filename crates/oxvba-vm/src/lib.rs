@@ -292,7 +292,9 @@ mod tests {
     #[test]
     fn execution_package_exposes_slot_type_descriptor_view() {
         let source = "Function Test(dbl As Double, str As String) As Variant\n\
-                      Test = CStr(dbl) & str\n\
+                      Dim localValue As Long\n\
+                      localValue = 3\n\
+                      Test = CStr(dbl + localValue) & str\n\
                       End Function";
         let (bytecode, metadata) =
             compile_with_runtime_metadata(source).expect("compile should succeed");
@@ -345,6 +347,27 @@ mod tests {
         assert_eq!(return_value.declared_type, VbaTypeId::Variant);
         assert_eq!(return_value.initial_state, SlotInitialState::Empty);
         assert_eq!(return_value.carrier, RuntimeCarrierKind::Variant);
+
+        let local = test_descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("localValue"))
+            })
+            .expect("local descriptor should be present");
+        assert_eq!(local.role, SlotRole::Local);
+        assert_eq!(local.declared_type, VbaTypeId::Long);
+        assert_eq!(local.initial_state, SlotInitialState::ScalarZero);
+        assert_eq!(local.carrier, RuntimeCarrierKind::I32);
+
+        assert!(
+            test_descriptors
+                .iter()
+                .any(|descriptor| descriptor.role == SlotRole::Temporary),
+            "temporary descriptors should survive to VM package setup"
+        );
     }
 
     #[test]
