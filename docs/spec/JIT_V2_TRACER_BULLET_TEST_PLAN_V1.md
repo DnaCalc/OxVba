@@ -67,7 +67,7 @@ or error facts the tracer consumes.
 If the VM can run the source but cannot expose the required package facts, the
 gap is `metadata-missing`. If the VM cannot run the source, classify the reason
 as `test-shortcoming`, `VM-limitation`, `runtime-limitation`, or
-`interop-limitation` before the tracer is treated as JIT-ready.
+`interop-limitation` before the tracer is treated as executable-JIT-ready.
 
 ## Fixture Manifest
 

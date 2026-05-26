@@ -47,6 +47,24 @@ Out of scope:
 - declaring a semantic area complete without VM evidence or an explicit
   deferred/oracle classification.
 
+## Bead Rollout
+
+Execution bead parent: `bd-iave` (`Executable semantic package VM
+strengthening`).
+
+The rollout maps this workset into:
+
+- `bd-iave.2`: completion map and gap classification;
+- `bd-iave.3` through `bd-iave.7`: VMR-01 through VMR-05 metadata/evidence
+  delivery slices;
+- `bd-iave.8`: semantic table and binding seeds;
+- `bd-iave.9`: VMR-06 behavior-affecting metadata consumption;
+- `bd-iave.10`: JIT readiness package evidence gates.
+
+The first active execution path is still metadata/evidence first. VMR-06 beads
+must not start until their descriptor fixtures and gap classifications are in
+place.
+
 ## Review Findings And Repairs
 
 This review found four unclear areas and repairs them in the referenced docs:

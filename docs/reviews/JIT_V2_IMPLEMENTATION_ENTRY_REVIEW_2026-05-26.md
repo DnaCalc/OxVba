@@ -59,17 +59,22 @@ passes for that tracer's required surfaces.
 
 ## Tracer-Bullet Readiness
 
+`Ready` here means the fixture and design intent are present for later work. It
+does not mean executable JIT work may consume missing package facts. Executable
+tracer work remains blocked until the VM strengthening workset records the
+package evidence named for that tracer.
+
 | Tracer | Entry status | Residual before tracer closure |
 |---|---|---|
-| TB01 Primitive typed scalar loop | Ready for first executable slice | Needs declared carrier evidence, `ProcLoweringIr` verifier output, CLIF verifier output, and VM/JIT projected snapshot equality after code exists. |
-| TB02 UDT struct field/copy | Ready for first UDT layout slice | Needs UDT descriptor/field-offset evidence, copy-independence evidence, cleanup/deopt materialization, and VM/JIT projected field snapshot equality. |
-| TB03 Error routing | Ready after helper/error frame cut | Needs failing helper evidence, `Err` state equality, and resume target equality. |
-| TB04 BSTR lifetime | Ready after cleanup stack/helper cut | Needs allocation/release counters and branch/failure/deopt cleanup evidence. |
-| TB05 SAFEARRAY | Ready with VM seed for store, index, For Each, and bounds metadata | Runtime bounds-error fixture/evidence is still required before TB05 can close. |
-| TB06 Late-bound COM | Ready with hosted VM seed | Future JIT evidence still needs HRESULT, EXCEPINFO, ArgErr, named/default member handling, and object identity comparison. |
-| TB07 Early-bound COM | Ready with hosted VM seed | Future JIT evidence still needs descriptor digest and dispatch/vtable parity evidence. |
-| TB08 Native Declare | Ready with hosted Windows native VM seed | Current VM seed covers scalar, BSTR pointer, SAFEARRAY buffer pointer, Variant cell pointer, and scalar ByRef writeback; general Automation `Variant`/`SAFEARRAY` declared-parameter ABI support remains a future tracer-closure gap. |
-| TB09 Exported callable | Ready with VM internal projection seed | External inbound/outbound ABI projection evidence is still required before TB09 can close. |
+| TB01 Primitive typed scalar loop | Fixture/design ready; executable work blocked on package slot/carrier evidence | Needs declared carrier evidence, `ProcLoweringIr` verifier output, CLIF verifier output, and VM/JIT projected snapshot equality after code exists. |
+| TB02 UDT struct field/copy | Fixture/design ready; executable work blocked on UDT descriptor evidence | Needs UDT descriptor/field-offset evidence, copy-independence evidence, cleanup/deopt materialization, and VM/JIT projected field snapshot equality. |
+| TB03 Error routing | Fixture/design ready; executable work blocked on error-frame package evidence | Needs failing helper evidence, `Err` state equality, and resume target equality. |
+| TB04 BSTR lifetime | Fixture/design ready; executable work blocked on cleanup/lifetime package evidence | Needs allocation/release counters and branch/failure/deopt cleanup evidence. |
+| TB05 SAFEARRAY | VM seed exists for store, index, For Each, and bounds metadata; executable work blocked on array package evidence | Runtime bounds-error fixture/evidence is still required before TB05 can close. |
+| TB06 Late-bound COM | Hosted VM seed exists; executable work blocked on COM descriptor evidence | Future JIT evidence still needs HRESULT, EXCEPINFO, ArgErr, named/default member handling, and object identity comparison. |
+| TB07 Early-bound COM | Hosted VM seed exists; executable work blocked on typelib/COM descriptor evidence | Future JIT evidence still needs descriptor digest and dispatch/vtable parity evidence. |
+| TB08 Native Declare | Hosted Windows native VM seed exists; executable work blocked on native descriptor evidence | Current VM seed covers scalar, BSTR pointer, SAFEARRAY buffer pointer, Variant cell pointer, and scalar ByRef writeback; general Automation `Variant`/`SAFEARRAY` declared-parameter ABI support remains a future tracer-closure gap. |
+| TB09 Exported callable | Internal VM projection seed exists; executable work blocked on export descriptor evidence | External inbound/outbound ABI projection evidence is still required before TB09 can close. |
 
 ## Implementation-Entry Checklist
 
@@ -77,9 +82,10 @@ passes for that tracer's required surfaces.
   design, semantic contract/fact pack, helper ABI catalog, `ProcLoweringIr`,
   differential harness, validation matrices, fixture set, and VM seed runner are
   cross-linked.
-- The first implementation cut has a bounded path:
+- The first support-scaffolding implementation cut has a bounded path:
   support query -> `ProcLoweringIr` data model -> verifier -> helper manifest ->
-  harness unavailable rows -> Cranelift module setup -> TB01/TB02 execution.
+  harness unavailable rows -> Cranelift module setup. TB01/TB02 execution
+  starts only after their VM/package evidence gates pass.
 - `oxvba-jit` remains a disabled public boundary and still reports not
   implemented.
 - `./scripts/run-jit-v2-tracer-fixtures.ps1` is the planning-stage guard for

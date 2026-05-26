@@ -165,9 +165,11 @@ Current planning artifacts:
   that expose the hardest semantic risks early.
 
 The current planning package is the implementation-entry baseline for the first
-JIT v2 workset. The implementation-entry review records the P0/P1 decisions and
-review gate results. This workset remains planning-only: it is permission to
-start the first implementation cut, not evidence that JIT execution exists.
+JIT v2 support-scaffolding workset. The implementation-entry review records the
+P0/P1 decisions and review gate results. This workset remains planning-only: it
+is permission to start support-query, `ProcLoweringIr`, verifier, helper
+manifest, and harness-unavailable scaffolding, not permission for executable
+tracer work and not evidence that JIT execution exists.
 
 ## Execution Epics
 
