@@ -21,6 +21,7 @@ pub use bundle::{
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, VbaTypeId,
     bound_type_to_declare_param_type,
 };
 pub use project::{
@@ -126,7 +127,8 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        Bytecode, Instruction, ProcedureRuntimeSlotKind, compile, compile_with_runtime_metadata,
+        Bytecode, Instruction, ProcedureRuntimeSlotKind, RuntimeCarrierKind, SlotInitialState,
+        SlotRole, VbaTypeId, compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -351,6 +353,81 @@ mod tests {
             slot.name.eq_ignore_ascii_case("addone")
                 && slot.kind == ProcedureRuntimeSlotKind::ReturnValue
         }));
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_projects_first_slot_type_descriptor_view() {
+        let source = "Function Combine(ByVal amount As Double, suffix As String) As Variant\n\
+                      Dim localValue As Long\n\
+                      localValue = 7\n\
+                      Combine = CStr(amount) & suffix\n\
+                      End Function";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let combine = metadata
+            .get("combine")
+            .expect("function metadata should be present");
+        let descriptors = combine.slot_type_descriptors();
+
+        let amount = descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("amount"))
+            })
+            .expect("amount parameter descriptor should be present");
+        assert_eq!(amount.role, SlotRole::Parameter);
+        assert_eq!(amount.declared_type, VbaTypeId::Double);
+        assert_eq!(amount.initial_state, SlotInitialState::CallerProvided);
+        assert_eq!(amount.carrier, RuntimeCarrierKind::F64);
+
+        let suffix = descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("suffix"))
+            })
+            .expect("suffix parameter descriptor should be present");
+        assert_eq!(suffix.role, SlotRole::Parameter);
+        assert_eq!(suffix.declared_type, VbaTypeId::String);
+        assert_eq!(suffix.initial_state, SlotInitialState::CallerProvided);
+        assert_eq!(suffix.carrier, RuntimeCarrierKind::BStr);
+
+        let return_value = descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("Combine"))
+            })
+            .expect("function return descriptor should be present");
+        assert_eq!(return_value.role, SlotRole::ReturnValue);
+        assert_eq!(return_value.declared_type, VbaTypeId::Variant);
+        assert_eq!(return_value.initial_state, SlotInitialState::Empty);
+        assert_eq!(return_value.carrier, RuntimeCarrierKind::Variant);
+
+        let local = descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("localValue"))
+            })
+            .expect("local descriptor should be present");
+        assert_eq!(local.role, SlotRole::Local);
+        assert_eq!(
+            local.declared_type,
+            VbaTypeId::Unknown,
+            "local declared types are intentionally left unknown until descriptor population"
+        );
+        assert_eq!(local.initial_state, SlotInitialState::Unknown);
+        assert_eq!(local.carrier, RuntimeCarrierKind::Unknown);
     }
 
     #[test]

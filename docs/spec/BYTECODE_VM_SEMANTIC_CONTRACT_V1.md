@@ -168,6 +168,15 @@ This is identity evidence only. Slot descriptor, signature descriptor,
 expression/call descriptor, lifecycle, interop, and host-policy evidence remain
 future rows under the strengthening sequence above.
 
+Current VMR-02 seed surface is a metadata view, not execution behavior:
+`ProcedureRuntimeMetadata::slot_type_descriptors` and
+`VmExecutionPackage::slot_type_descriptors` expose `SlotTypeDescriptor` rows for
+the procedure slots known today. The first view preserves slot index, optional
+name, role, known parameter/return declared type, initial-state classification,
+and carrier hint. Facts the current compiler metadata cannot yet preserve are
+reported as `Unknown`; they are not treated as `Variant` by default and are not
+JIT-ready until later VMR-02 evidence fills them.
+
 ## Strengthening Rule
 
 When a VM-runnable fixture exposes a semantic gap, classify it before changing

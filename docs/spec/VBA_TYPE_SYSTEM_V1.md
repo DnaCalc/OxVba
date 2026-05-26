@@ -520,6 +520,8 @@ pub enum SlotRole {
 }
 
 pub enum SlotInitialState {
+    Unknown,
+    CallerProvided,
     Empty,
     ScalarZero,
     False,
@@ -531,6 +533,7 @@ pub enum SlotInitialState {
 }
 
 pub enum RuntimeCarrierKind {
+    Unknown,
     Variant,
     Boolean,
     I16,
@@ -555,6 +558,12 @@ This is a target package model, not an immediate storage mandate. The VM may
 continue executing retained `Variant` slots while exposing declared type and
 carrier metadata for evidence and future lowering.
 
+`Unknown` is a temporary package-strengthening state for metadata that current
+compiler/runtime surfaces do not yet preserve. It is not a type-system answer
+and must be treated as unsupported by JIT/native entry gates. `CallerProvided`
+is the initial state for parameter slots before call-binding descriptors define
+the exact argument source, aliasing, and writeback behavior.
+
 ## Current Code Anchors And Gaps
 
 Current implementation anchors:
@@ -571,15 +580,18 @@ Current implementation anchors:
   `VbaTypeDescriptor`, procedure/class/export metadata, and imported COM
   descriptors.
 - `crates/oxvba-compiler/src/emit.rs`: current `ProcedureRuntimeMetadata` and
-  `ProcedureRuntimeSlotMetadata`.
+  `ProcedureRuntimeSlotMetadata`; first `SlotTypeDescriptor` view with
+  provisional `VbaTypeId`, `SlotInitialState`, and `RuntimeCarrierKind` enums.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
-  metadata loading.
+  metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
+  current descriptor view without changing slot execution.
 
 Known development gaps:
 
 - no central `VbaTypeId`/descriptor registry exists yet;
-- `ProcedureRuntimeSlotMetadata` does not yet carry declared type, initial
-  state, or runtime carrier;
+- `ProcedureRuntimeSlotMetadata` can now project a first descriptor view, but
+  local, temporary, compiler-generated, array, UDT, object, fixed-string, and
+  full carrier facts remain incomplete or explicitly `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;

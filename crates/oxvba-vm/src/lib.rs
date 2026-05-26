@@ -120,7 +120,8 @@ mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
         DeclareParamType, OxBundle, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-        ProjectDynamicObjectRoute, compile, compile_with_runtime_metadata,
+        ProjectDynamicObjectRoute, RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId,
+        compile, compile_with_runtime_metadata,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -286,6 +287,64 @@ mod tests {
             vm.package_identity_evidence().is_none(),
             "raw bytecode execution must not leave stale package identity evidence"
         );
+    }
+
+    #[test]
+    fn execution_package_exposes_slot_type_descriptor_view() {
+        let source = "Function Test(dbl As Double, str As String) As Variant\n\
+                      Test = CStr(dbl) & str\n\
+                      End Function";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let descriptors_by_proc = package.slot_type_descriptors();
+        let test_descriptors = descriptors_by_proc
+            .get("test")
+            .expect("Test procedure descriptors should be exposed");
+
+        let dbl = test_descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("dbl"))
+            })
+            .expect("dbl parameter descriptor should be present");
+        assert_eq!(dbl.role, SlotRole::Parameter);
+        assert_eq!(dbl.declared_type, VbaTypeId::Double);
+        assert_eq!(dbl.initial_state, SlotInitialState::CallerProvided);
+        assert_eq!(dbl.carrier, RuntimeCarrierKind::F64);
+
+        let str_param = test_descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("str"))
+            })
+            .expect("str parameter descriptor should be present");
+        assert_eq!(str_param.role, SlotRole::Parameter);
+        assert_eq!(str_param.declared_type, VbaTypeId::String);
+        assert_eq!(str_param.initial_state, SlotInitialState::CallerProvided);
+        assert_eq!(str_param.carrier, RuntimeCarrierKind::BStr);
+
+        let return_value = test_descriptors
+            .iter()
+            .find(|descriptor| {
+                descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("Test"))
+            })
+            .expect("return descriptor should be present");
+        assert_eq!(return_value.role, SlotRole::ReturnValue);
+        assert_eq!(return_value.declared_type, VbaTypeId::Variant);
+        assert_eq!(return_value.initial_state, SlotInitialState::Empty);
+        assert_eq!(return_value.carrier, RuntimeCarrierKind::Variant);
     }
 
     #[test]

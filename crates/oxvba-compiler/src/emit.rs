@@ -106,7 +106,7 @@ fn current_proc_meta(proc_meta: &HashMap<String, EmitProcMeta>) -> Option<&EmitP
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum ProcedureRuntimeSlotKind {
     Parameter,
     Local,
@@ -134,6 +134,207 @@ pub struct ProcedureRuntimeMetadata {
     pub return_slot: Option<usize>,
     pub param_types: Vec<DeclareParamType>,
     pub return_type: Option<DeclareParamType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum VbaTypeId {
+    Unknown,
+    Boolean,
+    Byte,
+    Integer,
+    Long,
+    LongLong,
+    LongPtr,
+    Single,
+    Double,
+    Currency,
+    Date,
+    String,
+    Variant,
+    Object,
+    Array,
+    InteropAny,
+}
+
+impl From<DeclareParamType> for VbaTypeId {
+    fn from(value: DeclareParamType) -> Self {
+        match value {
+            DeclareParamType::Boolean => Self::Boolean,
+            DeclareParamType::Byte => Self::Byte,
+            DeclareParamType::Integer => Self::Integer,
+            DeclareParamType::Long => Self::Long,
+            DeclareParamType::LongLong => Self::LongLong,
+            DeclareParamType::LongPtr => Self::LongPtr,
+            DeclareParamType::Single => Self::Single,
+            DeclareParamType::Double => Self::Double,
+            DeclareParamType::Currency => Self::Currency,
+            DeclareParamType::Date => Self::Date,
+            DeclareParamType::String => Self::String,
+            DeclareParamType::Variant => Self::Variant,
+            DeclareParamType::Any => Self::InteropAny,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum SlotRole {
+    Parameter,
+    Local,
+    ReturnValue,
+    Temporary,
+    CompilerGenerated,
+}
+
+impl From<ProcedureRuntimeSlotKind> for SlotRole {
+    fn from(value: ProcedureRuntimeSlotKind) -> Self {
+        match value {
+            ProcedureRuntimeSlotKind::Parameter => Self::Parameter,
+            ProcedureRuntimeSlotKind::Local => Self::Local,
+            ProcedureRuntimeSlotKind::ReturnValue => Self::ReturnValue,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum SlotInitialState {
+    Unknown,
+    CallerProvided,
+    Empty,
+    ScalarZero,
+    False,
+    EmptyString,
+    Nothing,
+    UnallocatedArray,
+    UdtDefault,
+    CompilerDefined,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum RuntimeCarrierKind {
+    Unknown,
+    Variant,
+    Boolean,
+    I16,
+    U8,
+    I32,
+    I64,
+    PointerSizedInteger,
+    F32,
+    F64,
+    Currency,
+    Date,
+    BStr,
+    Decimal96VariantSubtype,
+    ObjectRef,
+    SafeArray,
+    UdtFields { descriptor: String },
+    BindingHandleInternal,
+}
+
+impl RuntimeCarrierKind {
+    pub fn for_declared_type(declared_type: VbaTypeId) -> Self {
+        match declared_type {
+            VbaTypeId::Unknown | VbaTypeId::InteropAny => Self::Unknown,
+            VbaTypeId::Boolean => Self::Boolean,
+            VbaTypeId::Byte => Self::U8,
+            VbaTypeId::Integer => Self::I16,
+            VbaTypeId::Long => Self::I32,
+            VbaTypeId::LongLong => Self::I64,
+            VbaTypeId::LongPtr => Self::PointerSizedInteger,
+            VbaTypeId::Single => Self::F32,
+            VbaTypeId::Double => Self::F64,
+            VbaTypeId::Currency => Self::Currency,
+            VbaTypeId::Date => Self::Date,
+            VbaTypeId::String => Self::BStr,
+            VbaTypeId::Variant => Self::Variant,
+            VbaTypeId::Object => Self::ObjectRef,
+            VbaTypeId::Array => Self::SafeArray,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct SlotTypeDescriptor {
+    pub slot: usize,
+    pub name: Option<String>,
+    pub role: SlotRole,
+    pub declared_type: VbaTypeId,
+    pub initial_state: SlotInitialState,
+    pub carrier: RuntimeCarrierKind,
+}
+
+impl SlotInitialState {
+    pub fn for_slot(role: SlotRole, declared_type: VbaTypeId) -> Self {
+        match role {
+            SlotRole::Parameter => Self::CallerProvided,
+            SlotRole::Temporary | SlotRole::CompilerGenerated => Self::CompilerDefined,
+            SlotRole::Local | SlotRole::ReturnValue => {
+                Self::default_for_declared_type(declared_type)
+            }
+        }
+    }
+
+    fn default_for_declared_type(declared_type: VbaTypeId) -> Self {
+        match declared_type {
+            VbaTypeId::Unknown | VbaTypeId::InteropAny => Self::Unknown,
+            VbaTypeId::Variant => Self::Empty,
+            VbaTypeId::Boolean => Self::False,
+            VbaTypeId::Byte
+            | VbaTypeId::Integer
+            | VbaTypeId::Long
+            | VbaTypeId::LongLong
+            | VbaTypeId::LongPtr
+            | VbaTypeId::Single
+            | VbaTypeId::Double
+            | VbaTypeId::Currency
+            | VbaTypeId::Date => Self::ScalarZero,
+            VbaTypeId::String => Self::EmptyString,
+            VbaTypeId::Object => Self::Nothing,
+            VbaTypeId::Array => Self::UnallocatedArray,
+        }
+    }
+}
+
+impl ProcedureRuntimeMetadata {
+    pub fn slot_type_descriptors(&self) -> Vec<SlotTypeDescriptor> {
+        self.slots
+            .iter()
+            .map(|slot| {
+                let role = SlotRole::from(slot.kind);
+                let declared_type = self.declared_type_for_slot(slot.slot, slot.kind);
+                SlotTypeDescriptor {
+                    slot: slot.slot,
+                    name: Some(slot.name.clone()),
+                    role,
+                    declared_type,
+                    initial_state: SlotInitialState::for_slot(role, declared_type),
+                    carrier: RuntimeCarrierKind::for_declared_type(declared_type),
+                }
+            })
+            .collect()
+    }
+
+    fn declared_type_for_slot(&self, slot: usize, kind: ProcedureRuntimeSlotKind) -> VbaTypeId {
+        match kind {
+            ProcedureRuntimeSlotKind::Parameter => self
+                .param_slots
+                .iter()
+                .position(|candidate| *candidate == slot)
+                .and_then(|index| self.param_types.get(index).copied())
+                .map(VbaTypeId::from)
+                .unwrap_or(VbaTypeId::Unknown),
+            ProcedureRuntimeSlotKind::ReturnValue => {
+                if self.return_slot == Some(slot) {
+                    self.return_type
+                        .map(VbaTypeId::from)
+                        .unwrap_or(VbaTypeId::Unknown)
+                } else {
+                    VbaTypeId::Unknown
+                }
+            }
+            ProcedureRuntimeSlotKind::Local => VbaTypeId::Unknown,
+        }
+    }
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {

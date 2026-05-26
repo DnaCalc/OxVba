@@ -12,7 +12,7 @@ use oxvba_com::{
 use oxvba_compiler::{
     Bytecode, Instruction, OxBundle, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, SlotTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -172,6 +172,13 @@ impl<'a> VmExecutionPackage<'a> {
             user_slot_count: self.bytecode.user_slot_count,
             procedures,
         }
+    }
+
+    pub fn slot_type_descriptors(&self) -> BTreeMap<String, Vec<SlotTypeDescriptor>> {
+        self.procedure_metadata
+            .iter()
+            .map(|(name, metadata)| (name.clone(), metadata.slot_type_descriptors()))
+            .collect()
     }
 }
 
