@@ -95,6 +95,15 @@ Current fixture statuses:
 - `export-boundary-planned`: source is not yet VM-runnable and is primarily for
   inbound/outbound export projection tests.
 
+The tracer matrix separates VM seed status from package readiness:
+
+- `current_status` is only the current VM seed/run shape.
+- `package_fact_gap_kinds` carries the completion-map gap labels that block
+  executable JIT entry.
+- `package_fact_readiness` summarizes which required package facts are present
+  only as VM behavior, missing metadata, missing evidence, or incomplete
+  interop projection.
+
 ## Tracer Bullet Assertions
 
 ### TB01 Primitive Typed Scalar Loop

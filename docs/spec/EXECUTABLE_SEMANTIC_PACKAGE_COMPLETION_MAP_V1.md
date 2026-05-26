@@ -110,6 +110,26 @@ package descriptor and VM evidence requirements are both satisfied.
 | Host capability policy | host requirement descriptors | HAL `HostPolicy`; `CapabilityId`; host services; deterministic unsupported diagnostics | Host policy exists at runtime; digestable package capability requirements are missing. | `implemented-runtime-only` | HAL / host / package | Add digestable host capability requirements and unsupported diagnostics to package evidence. |
 | Evidence schema | VM/JIT/package evidence | `scripts/run-jit-v2-tracer-fixtures.ps1`; `crates/oxvba-host/tests/jit_v2_tracer_vm_seed.rs`; VM snapshot helpers | VM seed fixtures and retained snapshots exist; descriptor/package digest evidence is not yet emitted. | `test-shortcoming` | VM evidence / conformance | Record descriptor digests, package fact usage, and boundary observations in VM evidence. |
 
+## Tracer Bullet Package Fact Readiness
+
+`VM seed status` records what can run under the current VM. `Package fact gap
+kinds` records why the tracer is not yet executable-JIT-ready. The tracer
+matrix at
+[`../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`](../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv)
+must carry the same gap labels.
+
+| Tracer | VM seed status | Required package facts | Package fact gap kinds | Readiness classification |
+|---|---|---|---|---|
+| TB01 Primitive typed scalar loop | `vm-ready` | package/procedure identity; slot descriptors for `Long`, `Double`, and `Boolean`; primitive carrier/layout descriptors; operator/coercion rows; loop PC/source maps; descriptor evidence | `metadata-missing`; `test-shortcoming` | VM source and retained snapshots run, but declared primitive carrier facts, stable procedure/bytecode digests, operator/coercion descriptor ids, and descriptor evidence are not package-owned yet. |
+| TB02 UDT struct field/copy | `vm-ready` | UDT descriptor id; nominal type identity; field order, offsets, and carriers; whole-copy semantics; field cleanup/deopt maps; descriptor evidence | `metadata-missing`; `test-shortcoming` | VM source and projected field snapshots run, but UDT field carriers, offsets, cleanup obligations, and descriptor digests are not yet a package contract. |
+| TB03 Error routing Resume Next | `vm-ready` | error/resume maps; resume target PC; failing helper/error descriptor; `Err` state evidence; deopt snapshot fields | `implemented-runtime-only`; `metadata-missing`; `test-shortcoming` | VM error behavior exists, but package-level error maps, helper failure descriptors, and evidence fields are missing. |
+| TB04 BSTR lifetime | `vm-ready` | declared string slot descriptors; BSTR carrier/layout facts; concat/Len helper descriptors; branch/failure/deopt cleanup maps; lifetime counters | `metadata-missing`; `test-shortcoming` | VM string behavior runs, but fixed/variable string descriptor detail, cleanup obligations, and lifetime evidence are not package-owned. |
+| TB05 SAFEARRAY For Each and bounds | `vm-ready-bounds-followup` | array shape/bounds descriptors; Option Base provenance; element carrier/lifetime maps; bounds-error evidence; SAFEARRAY ownership evidence | `metadata-missing`; `test-shortcoming` | VM positive subset runs for store/index/For Each and bounds metadata. Runtime bounds-error evidence and package array descriptors remain required before closure. |
+| TB06 Late-bound COM Resume Next | `vm-ready-hosted` | COM object descriptor; selector/default-member/named-arg descriptors; HRESULT/EXCEPINFO/ArgErr projection; `ObjectRef` identity; host capability requirement | `interop-limitation`; `metadata-missing`; `test-shortcoming` | Hosted VM seed runs against controlled COM, but COM package descriptors and boundary evidence are not unified enough for executable JIT entry. |
+| TB07 Early-bound COM typelib | `vm-ready-hosted` | typelib/reference descriptor; imported class/interface/member identity; dispatch-vtable strategy; argument/return projection; `ObjectRef` identity evidence | `interop-limitation`; `metadata-missing`; `test-shortcoming` | Hosted project seed runs with the OxVba typelib reference, but early-bound COM descriptors and strategy evidence are not yet package-owned. |
+| TB08 Native Declare shared ABI | `vm-ready-native-hosted` | native ABI descriptor digest; scalar/BSTR/Variant/SAFEARRAY parameter projection; ByRef writeback policy; cleanup buffers; host dynamic-link policy | `interop-limitation`; `metadata-missing`; `test-shortcoming` | Current VM/native seed covers the implemented host-backed subset. General Automation `Variant` and `SAFEARRAY` declared-parameter ABI support remains a real interop limitation. |
+| TB09 Exported callable projection | `vm-ready-export-followup` | inbound ABI projection descriptor; return projection; ByRef writeback policy; cleanup/error return policy; unsupported-shape diagnostics | `interop-limitation`; `metadata-missing`; `test-shortcoming` | Internal callable seed runs, but external inbound/outbound export projection is not a first-class VM/package descriptor yet. |
+
 ## VM Rework Readiness Slices
 
 The first VM rework should move from evidence and metadata toward behavior
