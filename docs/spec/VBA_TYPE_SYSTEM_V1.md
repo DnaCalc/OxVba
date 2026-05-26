@@ -589,7 +589,9 @@ Current implementation anchors:
   descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
-  current descriptor view without changing slot execution.
+  current descriptor view without changing slot execution, and
+  `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests and
+  descriptor rows.
 
 Known development gaps:
 

@@ -194,6 +194,8 @@ pub struct VmProcedureIdentityEvidence {
     pub module_name: String,
     pub procedure_name: String,
     pub entry_pc: usize,
+    pub slot_descriptor_digest: String,
+    pub slot_descriptors: Vec<SlotTypeDescriptor>,
 }
 
 impl VmProcedureIdentityEvidence {
@@ -203,6 +205,8 @@ impl VmProcedureIdentityEvidence {
         } else {
             metadata.module_name.clone()
         };
+        let slot_descriptors = metadata.slot_type_descriptors();
+        let slot_descriptor_digest = digest_debug("slot-descriptors", &slot_descriptors);
         Self {
             procedure_id: format!(
                 "proc:{}::{}@pc:{}",
@@ -211,6 +215,8 @@ impl VmProcedureIdentityEvidence {
             module_name,
             procedure_name: metadata.procedure_name.clone(),
             entry_pc: metadata.entry_pc,
+            slot_descriptor_digest,
+            slot_descriptors,
         }
     }
 }

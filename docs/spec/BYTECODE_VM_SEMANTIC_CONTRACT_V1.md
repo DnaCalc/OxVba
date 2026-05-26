@@ -157,7 +157,8 @@ Current VMR-01 seed evidence in `oxvba-vm` is
 - package origin (`in-memory` package view or `OxBundle`);
 - package digest and bytecode digest;
 - package slot count and user slot count;
-- per-procedure id, module name, procedure name, and entry PC.
+- per-procedure id, module name, procedure name, entry PC, slot descriptor
+  digest, and slot descriptor rows.
 
 `oxvba-host` now threads the same evidence through package-backed source,
 project, bundle, and callable-session VM execution paths. Existing snapshot APIs
@@ -185,6 +186,9 @@ into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
 metadata enrichment does not make compiler scratch slots user-visible.
+The VM package evidence now reports descriptor roles, declared type ids, initial
+states, and carrier hints per procedure while retained value snapshots remain
+unchanged.
 
 ## Strengthening Rule
 

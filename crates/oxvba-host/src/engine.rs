@@ -1615,6 +1615,24 @@ End Function
                 .iter()
                 .all(|procedure| procedure.procedure_id.contains("@pc:"))
         );
+        let test_identity = package_snapshot
+            .package_identity
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("Test"))
+            .expect("Test descriptor evidence should be present");
+        assert!(test_identity.slot_descriptor_digest.starts_with("fnv1a64:"));
+        assert!(
+            test_identity
+                .slot_descriptors
+                .iter()
+                .any(|descriptor| descriptor
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("dbl"))
+                    && descriptor.declared_type == oxvba_compiler::VbaTypeId::Double),
+            "host package identity should expose parameter descriptor evidence"
+        );
     }
 
     #[test]

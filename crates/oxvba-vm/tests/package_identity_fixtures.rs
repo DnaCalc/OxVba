@@ -159,6 +159,23 @@ fn vmr01_identity_seed_fixtures_emit_identity_and_values() {
                 row.id,
                 procedure.procedure_id
             );
+            assert!(
+                procedure.slot_descriptor_digest.starts_with("fnv1a64:"),
+                "{} slot descriptor digest should be explicit for {}: {}",
+                row.id,
+                procedure.procedure_name,
+                procedure.slot_descriptor_digest
+            );
+            assert!(
+                procedure
+                    .slot_descriptors
+                    .iter()
+                    .all(|descriptor| descriptor.name.is_some()),
+                "{} descriptor evidence should preserve slot names for {}: {:?}",
+                row.id,
+                procedure.procedure_name,
+                procedure.slot_descriptors
+            );
         }
 
         println!(

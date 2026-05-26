@@ -280,6 +280,27 @@ mod tests {
                 expected_module_name, test_metadata.procedure_name, test_metadata.entry_pc
             )
         );
+        assert!(test_identity.slot_descriptor_digest.starts_with("fnv1a64:"));
+        assert!(
+            test_identity
+                .slot_descriptors
+                .iter()
+                .any(|descriptor| descriptor.role == SlotRole::Parameter
+                    && descriptor.declared_type == VbaTypeId::Double
+                    && descriptor.initial_state == SlotInitialState::CallerProvided
+                    && descriptor.carrier == RuntimeCarrierKind::F64),
+            "descriptor evidence should report the Double parameter facts"
+        );
+        assert!(
+            test_identity
+                .slot_descriptors
+                .iter()
+                .any(|descriptor| descriptor.role == SlotRole::ReturnValue
+                    && descriptor.declared_type == VbaTypeId::Variant
+                    && descriptor.initial_state == SlotInitialState::Empty
+                    && descriptor.carrier == RuntimeCarrierKind::Variant),
+            "descriptor evidence should report the Variant return slot facts"
+        );
 
         vm.execute(&bytecode)
             .expect("raw bytecode execution should still succeed");
