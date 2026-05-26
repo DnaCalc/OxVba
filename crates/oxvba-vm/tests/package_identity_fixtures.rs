@@ -14,6 +14,7 @@ struct FixtureRow {
     expected_values: String,
     expected_procedures: Vec<String>,
     expected_descriptor_tokens: Vec<String>,
+    expected_call_observation_tokens: Vec<String>,
 }
 
 fn repo_root() -> PathBuf {
@@ -40,8 +41,8 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                5,
-                "identity fixture manifest row should have 5 columns: {line}"
+                6,
+                "identity fixture manifest row should have 6 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
@@ -49,6 +50,11 @@ fn fixture_rows() -> Vec<FixtureRow> {
                 expected_values: columns[2].to_string(),
                 expected_procedures: columns[3].split('|').map(|name| name.to_string()).collect(),
                 expected_descriptor_tokens: columns[4]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_call_observation_tokens: columns[5]
                     .split(';')
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
@@ -154,6 +160,41 @@ fn slot_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String
     tokens.join("|")
 }
 
+fn signature_call_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .signature_call_evidence
+        .iter()
+        .flat_map(|call| {
+            call.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}",
+                    call.procedure_name.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn signature_call_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .signature_call_evidence
+        .iter()
+        .map(|call| {
+            format!(
+                "{}@{}={}",
+                call.procedure_name.to_ascii_lowercase(),
+                call.call_pc,
+                call.signature_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -193,6 +234,16 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 row.id,
                 expected_descriptor,
                 descriptor_tokens
+            );
+        }
+        let signature_call_tokens = signature_call_observation_tokens(evidence);
+        for expected_observation in &row.expected_call_observation_tokens {
+            assert!(
+                signature_call_tokens.contains(expected_observation),
+                "{} call/signature evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_observation,
+                signature_call_tokens
             );
         }
         assert_eq!(sorted_procedure_names(evidence), {
@@ -235,9 +286,30 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 procedure.slot_descriptors
             );
         }
+        for call in &evidence.signature_call_evidence {
+            assert!(
+                call.procedure_id.starts_with("proc:"),
+                "{} signature/call evidence should retain procedure identity: {}",
+                row.id,
+                call.procedure_id
+            );
+            assert!(
+                call.signature_descriptor_digest.starts_with("fnv1a64:")
+                    || call.signature_descriptor_digest == "missing",
+                "{} signature/call evidence should carry a descriptor digest or missing marker: {:?}",
+                row.id,
+                call
+            );
+            assert!(
+                !call.observations.is_empty(),
+                "{} signature/call evidence should classify each observed call: {:?}",
+                row.id,
+                call
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} slot_descriptors={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} slot_descriptors={} signature_call_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -247,7 +319,9 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             sorted_procedure_names(evidence).join("|"),
             procedure_identity_tokens(evidence),
             slot_descriptor_digest_tokens(evidence),
-            descriptor_tokens.join("|")
+            signature_call_digest_tokens(evidence),
+            descriptor_tokens.join("|"),
+            signature_call_tokens.join("|")
         );
     }
 }

@@ -196,7 +196,7 @@ current VM-runnable UDT field-alias shape. Nominal UDT aggregate descriptors,
 field offsets, and cleanup obligations remain future VMR-05 evidence and are
 not inferred from these flattened aliases.
 
-Current VMR-03 seed surface is a metadata view, not call-binding behavior:
+Current VMR-03 seed surface is metadata/evidence, not call-binding behavior:
 `ProcedureRuntimeMetadata::procedure_signature_descriptor` and
 `VmExecutionPackage::procedure_signature_descriptors` expose
 `ProcedureSignatureDescriptor` rows for procedure kind, parameter order, slots,
@@ -209,6 +209,16 @@ bundles with `Unknown` source mechanism where v5 lacked that distinction, and
 upgrades v4 bundles with `Unknown` parameter passing mode where v4 had no
 serialized ByRef/ByVal fact. VM call execution does not consume these
 descriptors yet.
+
+The VMR-03 package evidence now also compares current `CallProc` lowering with
+signature metadata for VM-runnable seed calls. `VmPackageIdentityEvidence`
+includes signature/call observation rows that classify existing ByVal
+no-copyback, ByRef copyback, Optional default materialization, ParamArray
+packing, property value ByVal no-copyback, and function return-slot copyout.
+These rows are evidence over current bytecode shape and value snapshots; they
+are not a substitute for future `CallSiteDescriptor` and
+`ArgumentBindingDescriptor` metadata, and they must not be treated as proof that
+the VM consumes signature descriptors for call binding.
 
 ## Strengthening Rule
 

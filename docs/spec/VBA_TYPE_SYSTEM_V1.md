@@ -597,11 +597,14 @@ Current implementation anchors:
   current slot descriptor view and
   `VmExecutionPackage::procedure_signature_descriptors` exposes the first
   signature descriptor view without changing slot or call execution; and
-  `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests and
-  descriptor rows.
+  `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
+  descriptor rows, and signature/call observation rows for current seed
+  `CallProc` lowering compared with signature metadata.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
-  declared `Variant`, and the current flattened UDT field-alias shape.
+  declared `Variant`, the current flattened UDT field-alias shape, and VMR-03
+  call observations for ByVal, ByRef, Optional default, ParamArray, property
+  value, and return copyout behavior.
 
 Known development gaps:
 
@@ -609,7 +612,7 @@ Known development gaps:
 - `ProcedureSignatureDescriptor` now carries the first call-relevant source
   and resolved parameter facts, missing optional state, ParamArray shape,
   implicit `Me`, and property value ByVal semantics, but signature descriptor
-  ids/digests, call-site descriptors, and VM call-comparison evidence remain
+  ids, call-site descriptors, and descriptor-driven VM call behavior remain
   incomplete;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT

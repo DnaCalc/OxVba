@@ -19,7 +19,7 @@ use oxvba_runtime::Variant;
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
     DebugStopReason, Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin,
-    VmProcedureIdentityEvidence,
+    VmProcedureIdentityEvidence, VmSignatureCallEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {

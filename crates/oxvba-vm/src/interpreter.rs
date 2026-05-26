@@ -10,10 +10,11 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, OxBundle, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    Bytecode, Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    SlotTypeDescriptor,
+    ResolvedParameterMechanism, SlotTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -165,6 +166,8 @@ impl<'a> VmExecutionPackage<'a> {
             .values()
             .map(VmProcedureIdentityEvidence::from_metadata)
             .collect();
+        let signature_call_evidence =
+            collect_signature_call_evidence(self.bytecode, self.procedure_metadata);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -172,6 +175,7 @@ impl<'a> VmExecutionPackage<'a> {
             slot_count: self.bytecode.slot_count,
             user_slot_count: self.bytecode.user_slot_count,
             procedures,
+            signature_call_evidence,
         }
     }
 
@@ -239,6 +243,236 @@ pub struct VmPackageIdentityEvidence {
     pub slot_count: usize,
     pub user_slot_count: usize,
     pub procedures: Vec<VmProcedureIdentityEvidence>,
+    pub signature_call_evidence: Vec<VmSignatureCallEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmSignatureCallEvidence {
+    pub call_pc: usize,
+    pub procedure_id: String,
+    pub procedure_name: String,
+    pub target_pc: usize,
+    pub signature_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+const CALL_EVIDENCE_LOOKBACK: usize = 32;
+const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
+
+fn collect_signature_call_evidence(
+    bytecode: &Bytecode,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSignatureCallEvidence> {
+    let metadata_by_entry_pc = procedure_metadata
+        .values()
+        .map(|metadata| (metadata.entry_pc, metadata))
+        .collect::<BTreeMap<_, _>>();
+    let mut evidence = Vec::new();
+    for (call_pc, instruction) in bytecode.instructions.iter().enumerate() {
+        let Instruction::CallProc { target_pc, .. } = instruction else {
+            continue;
+        };
+        let Some(metadata) = metadata_by_entry_pc.get(target_pc).copied() else {
+            evidence.push(VmSignatureCallEvidence {
+                call_pc,
+                procedure_id: format!("proc:<unknown>@pc:{target_pc}"),
+                procedure_name: "<unknown>".to_string(),
+                target_pc: *target_pc,
+                signature_descriptor_digest: "missing".to_string(),
+                observations: vec!["mismatch:target-metadata-missing".to_string()],
+            });
+            continue;
+        };
+        let module_name = if metadata.module_name.trim().is_empty() {
+            "<anonymous>".to_string()
+        } else {
+            metadata.module_name.clone()
+        };
+        let signature = metadata.procedure_signature_descriptor();
+        evidence.push(VmSignatureCallEvidence {
+            call_pc,
+            procedure_id: format!(
+                "proc:{}::{}@pc:{}",
+                module_name, metadata.procedure_name, metadata.entry_pc
+            ),
+            procedure_name: metadata.procedure_name.clone(),
+            target_pc: *target_pc,
+            signature_descriptor_digest: digest_debug("signature-descriptor", &signature),
+            observations: signature_call_observations(bytecode, call_pc, metadata, &signature),
+        });
+    }
+    evidence
+}
+
+fn signature_call_observations(
+    bytecode: &Bytecode,
+    call_pc: usize,
+    metadata: &ProcedureRuntimeMetadata,
+    signature: &ProcedureSignatureDescriptor,
+) -> Vec<String> {
+    let mut observations = Vec::new();
+    observations.push(format!(
+        "descriptor:kind={:?}:params={}:return_slot={:?}",
+        signature.kind,
+        signature.parameters.len(),
+        signature.return_slot
+    ));
+    if signature.parameters.len() == metadata.param_slots.len() {
+        observations.push("match:param-count".to_string());
+    } else {
+        observations.push(format!(
+            "mismatch:param-count:signature={}:metadata={}",
+            signature.parameters.len(),
+            metadata.param_slots.len()
+        ));
+    }
+    if signature.return_slot == metadata.return_slot {
+        observations.push("match:return-slot".to_string());
+    } else {
+        observations.push(format!(
+            "mismatch:return-slot:signature={:?}:metadata={:?}",
+            signature.return_slot, metadata.return_slot
+        ));
+    }
+
+    for parameter in &signature.parameters {
+        observations.extend(parameter_call_observations(bytecode, call_pc, parameter));
+    }
+    if let Some(return_slot) = signature.return_slot {
+        if post_call_copy_from_slot(bytecode, call_pc, return_slot) {
+            observations.push("return:copy-observed".to_string());
+        } else {
+            observations.push("gap:return-copy-not-observed".to_string());
+        }
+    }
+    observations
+}
+
+fn parameter_call_observations(
+    bytecode: &Bytecode,
+    call_pc: usize,
+    parameter: &ParameterDescriptor,
+) -> Vec<String> {
+    let name = parameter.name.to_ascii_lowercase();
+    let Some(slot) = parameter.slot else {
+        return vec![format!("param:{name}:mismatch:slot-missing")];
+    };
+    let has_copyback = post_call_copy_from_slot(bytecode, call_pc, slot);
+    let mut observations = Vec::new();
+    match parameter.resolved_mechanism {
+        ResolvedParameterMechanism::ByRef => {
+            if has_copyback {
+                observations.push(format!("param:{name}:byref-copyback-observed"));
+            } else {
+                observations.push(format!("param:{name}:gap:byref-copyback-not-observed"));
+            }
+        }
+        ResolvedParameterMechanism::ByVal => {
+            if has_copyback {
+                observations.push(format!("param:{name}:mismatch:byval-copyback-observed"));
+            } else {
+                observations.push(format!("param:{name}:byval-no-copyback"));
+            }
+        }
+        ResolvedParameterMechanism::PropertyValueByVal => {
+            if has_copyback {
+                observations.push(format!(
+                    "param:{name}:mismatch:property-value-copyback-observed"
+                ));
+            } else {
+                observations.push(format!("param:{name}:property-value-byval-no-copyback"));
+            }
+        }
+        ResolvedParameterMechanism::Unknown | ResolvedParameterMechanism::EventSignatureOnly => {
+            observations.push(format!(
+                "param:{name}:gap:resolved-mechanism={:?}",
+                parameter.resolved_mechanism
+            ));
+        }
+    }
+    if parameter.param_array {
+        if recent_pre_call_array_literal_to_slot(bytecode, call_pc, slot) {
+            observations.push(format!("param:{name}:paramarray-pack-observed"));
+        } else {
+            observations.push(format!("param:{name}:gap:paramarray-pack-not-observed"));
+        }
+    }
+    if let OptionalParameterDescriptor::Optional {
+        default_value: OptionalDefaultValue::ExplicitI32(default_value),
+        ..
+    } = &parameter.optional_descriptor
+    {
+        if recent_pre_call_explicit_i32_to_slot(bytecode, call_pc, slot, *default_value) {
+            observations.push(format!("param:{name}:optional-default-i32-observed"));
+        } else {
+            observations.push(format!(
+                "param:{name}:gap:optional-default-i32-not-observed"
+            ));
+        }
+    }
+    observations
+}
+
+fn post_call_copy_from_slot(bytecode: &Bytecode, call_pc: usize, slot: usize) -> bool {
+    bytecode
+        .instructions
+        .iter()
+        .skip(call_pc + 1)
+        .take(CALL_EVIDENCE_COPY_LIMIT)
+        .take_while(|instruction| matches!(instruction, Instruction::CopySlot { .. }))
+        .any(|instruction| matches!(instruction, Instruction::CopySlot { src, .. } if *src == slot))
+}
+
+fn recent_pre_call_array_literal_to_slot(bytecode: &Bytecode, call_pc: usize, slot: usize) -> bool {
+    recent_pre_call_instruction(
+        bytecode,
+        call_pc,
+        |instruction| matches!(instruction, Instruction::IntrinsicArrayLiteral { dst, .. } if *dst == slot),
+    )
+}
+
+fn recent_pre_call_explicit_i32_to_slot(
+    bytecode: &Bytecode,
+    call_pc: usize,
+    slot: usize,
+    value: i32,
+) -> bool {
+    recent_pre_call_instruction(
+        bytecode,
+        call_pc,
+        |instruction| matches!(instruction, Instruction::LoadConstI32 { slot: dst, value: actual } if *dst == slot && *actual == value),
+    )
+}
+
+fn recent_pre_call_instruction(
+    bytecode: &Bytecode,
+    call_pc: usize,
+    mut matches_instruction: impl FnMut(&Instruction) -> bool,
+) -> bool {
+    let mut index = call_pc;
+    let lower_bound = call_pc.saturating_sub(CALL_EVIDENCE_LOOKBACK);
+    while index > lower_bound {
+        index -= 1;
+        let instruction = &bytecode.instructions[index];
+        if matches_instruction(instruction) {
+            return true;
+        }
+        if is_call_evidence_boundary(instruction) {
+            break;
+        }
+    }
+    false
+}
+
+fn is_call_evidence_boundary(instruction: &Instruction) -> bool {
+    matches!(
+        instruction,
+        Instruction::CallProc { .. }
+            | Instruction::Return
+            | Instruction::Halt
+            | Instruction::Jump { .. }
+            | Instruction::JumpIfZero { .. }
+    )
 }
 
 const FNV1A64_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
