@@ -1,0 +1,7 @@
+id,file,status,values
+TB01,tb01_primitive_scalar_loop.bas,ok,i32:11|i32:30|i32:3|f64:1.5|f64:45|bool:true
+TB02,tb02_udt_struct_fields.bas,ok,empty|i32:7|i32:9|empty|i32:10|i32:9|i32:19|i32:17
+TB03,tb03_error_resume_next.bas,ok,i32:0|i32:11|i32:10|i32:0|empty
+TB04,tb04_bstr_lifetime_concat_len.bas,ok,"string:""alpha""|string:""alpha-beta""|i32:10"
+TB05,tb05_safearray_foreach_bounds.bas,ok,"empty|i32:2|i32:3|i32:5|array:SafeArray { dimensions: 1, len: 3, element_vartype: 0x000C, bounds: Some([SafeArrayBound { count: 3, lower: 0 }]), elements: Some([Variant { vtype: Long, reserved1: 0, reserved2: 0, reserved3: 0, data: [2, 0, 0, 0, 0, 0, 0, 0] }, Variant { vtype: Long, reserved1: 0, reserved2: 0, reserved3: 0, data: [3, 0, 0, 0, 0, 0, 0, 0] }, Variant { vtype: Long, reserved1: 0, reserved2: 0, reserved3: 0, data: [5, 0, 0, 0, 0, 0, 0, 0] }]) }|i32:5|i32:2|i32:5|i32:0|i32:2|i32:10"
+TB09,tb09_exported_callable_projection.bas,ok,i32:6|i32:13

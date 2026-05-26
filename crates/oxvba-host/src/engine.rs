@@ -28,7 +28,7 @@ use oxvba_runtime::{
     ObjectRef, RuntimeCallArgument, RuntimeCallContext, RuntimeCallFrame, RuntimeCallKind,
     RuntimeCallResult, RuntimeCallSelector, RuntimeCallSource, RuntimeInterfaceId, Variant,
 };
-use oxvba_vm::{Vm, execute_and_snapshot_variants_with_host};
+use oxvba_vm::{Vm, VmExecutionPackage, execute_and_snapshot_variants_with_host};
 
 use crate::{
     direct_host::{DirectHostIssue, DirectHostIssueKind},
@@ -680,10 +680,11 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
-        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        vm.execute(&compiled.bytecode)
+        let package =
+            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession { compiled, vm })
     }
@@ -708,7 +709,9 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
-        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        let package =
+            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        vm.load_execution_package_metadata(&package);
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         Ok(ProjectRuntimeSession { compiled, vm })
@@ -1115,10 +1118,11 @@ impl Engine {
         compiled: &CompiledProject,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         let mut vm = Vm::new(self.host_services.clone());
-        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        vm.execute(&compiled.bytecode)
+        let package =
+            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         let all_slots = vm.snapshot_variants(compiled.bytecode.slot_count);
         Ok(project_visible_snapshot(
@@ -1176,7 +1180,8 @@ impl Engine {
             project_reflection,
         };
         let mut vm = Vm::new(self.host_services.clone());
-        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        let package = VmExecutionPackage::from_bundle(bundle);
+        vm.load_execution_package_metadata(&package);
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         Ok(ProjectRuntimeSession { compiled, vm })
@@ -1193,14 +1198,14 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&bundle.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
-        vm.set_project_procedure_runtime_metadata(bundle.procedure_metadata.clone());
         if let Some(ref routes) = bundle.com_withevents_routes {
             vm.set_project_com_withevents_routes(routes.clone());
         }
         if let Some(ref routes) = bundle.dynamic_object_routes {
             vm.set_project_dynamic_objects(routes.clone());
         }
-        vm.execute(&bundle.bytecode)
+        let package = VmExecutionPackage::from_bundle(bundle);
+        vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         Ok(vm.snapshot_variants(bundle.bytecode.user_slot_count))
     }

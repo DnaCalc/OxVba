@@ -19,8 +19,9 @@
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
 | Testing | [`TESTING.md`](TESTING.md) | Test lanes, current coverage, and next testing milestones. |
 | Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Current architecture snapshot and near-term evolution notes. |
-| IR Design | [`IR_DESIGN.md`](IR_DESIGN.md) | Current truth for the historical HIR/MIR/CFG scaffold and native-facing IR decision boundary. |
+| IR Design | [`IR_DESIGN.md`](IR_DESIGN.md) | Current truth for the historical HIR/MIR/CFG scaffold and procedure-lowering IR decision boundary. |
 | Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status, executable-truth boundary, and planned evolution. |
+| Executable Semantic Package | [`spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md) | Working-draft target for the shared bytecode-plus-metadata package consumed by VM, JIT, wrappers, and future native lanes. |
 | VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
 | Conformance Evidence Layout | [`evidence/conformance/README.md`](evidence/conformance/README.md) | Active vs historical conformance artifact boundaries and governance scope. |
@@ -28,6 +29,13 @@
 | Integration Deferred Notes | [`evidence/conformance/PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md`](evidence/conformance/PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md) | Deferred/unclear integration topics linked to `ODG`/`CCT` tracking and active-limit coverage. |
 | Foundation Spec Reference | [`FOUNDATION_SPEC_REFERENCE.md`](FOUNDATION_SPEC_REFERENCE.md) | Canonical external specification source map in `../Foundation/reference` (no local vendored VBA spec snapshots). |
 | Spec Drafts Index | [`spec/README.md`](spec/README.md) | Early-stage design/contract drafts that prepare future normative specs. |
+| VBA Type System v1 | [`spec/VBA_TYPE_SYSTEM_V1.md`](spec/VBA_TYPE_SYSTEM_V1.md) | Authoritative working reference for declared types, value states, runtime carriers, object/class/interface/COM descriptors, and Decimal-as-Variant-subtype policy. |
+| VBA Expression and Call Semantics v1 | [`spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md) | Working reference for expression classification, Let/Set coercion, operator behavior, property assignment, procedure call binding, Optional/ParamArray, and ByRef/ByVal semantics. |
+| Executable Semantic Package v1 | [`spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md) | Working-draft target for the IL-style executable package boundary shared by VM and JIT. |
+| Executable Semantic Package Completion Map v1 | [`spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md) | Working map of package facts to current implementation locations, gap kinds, owners, and next actions. |
+| Bytecode and VM Semantic Contract v1 | [`spec/BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](spec/BYTECODE_VM_SEMANTIC_CONTRACT_V1.md) | Bytecode semantic catalog shape, VM package consumption contract, and VM evidence schema for package strengthening. |
+| VBA Semantic Tables and Binding Reference v1 | [`spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md) | Coercion/operator table plan plus call-site, lifecycle/cleanup, and object/member binding reference. |
+| Executable Semantic Package VM Strengthening Workset | [`worksets/WORKSET_2026-05-26_EXECUTABLE_SEMANTIC_PACKAGE_VM_STRENGTHENING.md`](worksets/WORKSET_2026-05-26_EXECUTABLE_SEMANTIC_PACKAGE_VM_STRENGTHENING.md) | Planned workset for making bytecode, metadata, VM consumption, and VM evidence satisfy the package semantic model before JIT implementation. |
 | Native-Ready Value Substrate v1 | [`spec/NATIVE_READY_VALUE_SUBSTRATE_V1.md`](spec/NATIVE_READY_VALUE_SUBSTRATE_V1.md) | Working-draft value/type substrate target for Variant-native execution, numeric semantics, UDT descriptors, and native ABI boundaries. |
 | Native-Ready Runner/Benchmark Schema v1 | [`spec/NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md`](spec/NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md) | Working-draft correctness/perf result schema for VM, JIT, wrapper, and future native runners. |
 | HAL Design Draft | [`spec/HAL_DESIGN_DRAFT.md`](spec/HAL_DESIGN_DRAFT.md) | Host Abstraction Layer scope, principles, profile targets, and staged spec-run plan. |

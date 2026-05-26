@@ -45,6 +45,15 @@ Important current carrier truth:
   and must not be used for new conformance gates
 - retained `VALUES:` snapshots are the basic-language conformance oracle
 
+### Package-oriented execution entry
+
+The VM keeps bytecode-only APIs for compatibility, but also exposes
+`VmExecutionPackage`: a borrowed package view over `Bytecode` plus
+`ProcedureRuntimeMetadata`. Package execution and package snapshot helpers load
+procedure metadata before running the same interpreter path. This is the first
+small VM-side step toward the executable semantic package boundary shared by
+future VM/JIT differential harnesses.
+
 ### Call stack and register-window frames
 
 Procedure calls use a `Vec<(usize, ErrorFrame)>` call stack:

@@ -11,6 +11,9 @@ Authoritative current implementation:
 
 This document describes the current in-memory bytecode model. It is not a frozen binary serialization spec.
 It is also not a native object format or a direct PE/ELF emission contract.
+For the next execution-layer evolution, bytecode is the control stream inside
+the complete executable semantic package described in
+[`spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md).
 
 ## Current Representation
 
@@ -68,15 +71,19 @@ Representative examples:
 Current bytecode is:
 - register-slot based
 - interpreted by `oxvba-vm`
-- the executable baseline future native/JIT lanes must match
+- the control-stream baseline future VM/JIT/native lanes must match as part of
+  the complete executable semantic package
 
 Current slots are not a stable ABI. They are compiler/runtime implementation details.
 
-For native-readiness planning, bytecode is the authoritative executable model
-and the baseline that future direct native lanes must match. A direct native
-compiler may lower from bytecode or from a future real native-facing procedure
-IR, but the current bytecode document does not claim a direct AOT/native-image
-pipeline.
+For native-readiness planning, bytecode plus VM behavior is the current
+executable model and the baseline that future direct native lanes must match.
+The next target is not a parallel typed JIT path; it is a complete executable
+semantic package that carries bytecode together with the declared type,
+descriptor, error, source-map, host, and interop metadata required by both VM
+and JIT. A direct native compiler may lower from that package through a future
+real procedure-lowering IR, but the current bytecode document does not claim a
+direct AOT/native-image pipeline.
 
 ## Stability Boundary
 
@@ -96,6 +103,8 @@ Not yet stable:
 Planned evolution remains:
 - clearer bytecode authority boundary versus future serialized form
 - tighter documentation of instruction families and invariants
+- growth of `OxBundle` or its successor into the complete executable semantic
+  package shared by VM, JIT, wrappers, and future native lanes
 - eventual stable serialization only after the instruction surface and calling conventions settle
 - shared runner/correctness schema before bytecode behavior is compared with
   future native artifacts

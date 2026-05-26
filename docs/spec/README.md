@@ -11,6 +11,12 @@ Status model:
 - `stable-draft`: implementation-linked and evidence-backed; still not final normative text.
 
 Current draft set:
+- [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md) (`working-draft`, authoritative reference): declared types, runtime value states, carriers, object/class/interface/COM descriptors, Decimal-as-Variant-subtype policy, and package slot descriptor target.
+- [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md) (`working-draft`): expression classification, Let/Set coercion, operator semantics, assignment/property behavior, call binding, Optional/ParamArray, and ByRef/ByVal package descriptors.
+- [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md) (`working-draft`): shared bytecode-plus-metadata execution package target for VM, JIT, wrappers, and future native lanes.
+- [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md) (`working-draft`): package fact-to-implementation map and gap taxonomy across bytecode, metadata, VM, runtime, COM/native, and evidence surfaces.
+- [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md) (`working-draft`): bytecode family semantic catalog shape, VM package consumption contract, and VM evidence schema.
+- [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md) (`working-draft`): machine-readable coercion/operator/call binding, slot lifecycle/cleanup, and object/member binding table plan.
 - [`NATIVE_READY_VALUE_SUBSTRATE_V1.md`](NATIVE_READY_VALUE_SUBSTRATE_V1.md) (`working-draft`): canonical native-ready value/type substrate target for `Variant`, exact numeric carriers, UDT descriptors, and ABI materialization boundaries.
 - [`NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md`](NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md) (`working-draft`): shared correctness/performance result schema for VM, JIT, wrapper, and future native runners.
 - [`HAL_DESIGN_DRAFT.md`](HAL_DESIGN_DRAFT.md) (`design-draft`): scope, principles, profile targets, and staged design plan for the Host Abstraction Layer.

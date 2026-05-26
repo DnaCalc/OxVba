@@ -9,7 +9,7 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    Bytecode, Instruction, OxBundle, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
     ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     bytecode::{
@@ -126,6 +126,28 @@ pub enum DebugRunResult {
 pub struct DebugRuntimeSnapshot {
     pub last_pause: Option<DebugStop>,
     pub activation_entry_pcs: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VmExecutionPackage<'a> {
+    pub bytecode: &'a Bytecode,
+    pub procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
+}
+
+impl<'a> VmExecutionPackage<'a> {
+    pub fn new(
+        bytecode: &'a Bytecode,
+        procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
+    ) -> Self {
+        Self {
+            bytecode,
+            procedure_metadata,
+        }
+    }
+
+    pub fn from_bundle(bundle: &'a OxBundle) -> Self {
+        Self::new(&bundle.bytecode, &bundle.procedure_metadata)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,6 +522,10 @@ impl Vm {
         self.procedure_runtime_metadata = metadata;
     }
 
+    pub fn load_execution_package_metadata(&mut self, package: &VmExecutionPackage<'_>) {
+        self.set_project_procedure_runtime_metadata(package.procedure_metadata.clone());
+    }
+
     pub fn set_project_com_withevents_routes(&mut self, routes: Vec<ProjectComWithEventsRoute>) {
         self.project_com_withevents_routes.clear();
         for route in routes {
@@ -611,6 +637,19 @@ impl Vm {
         self.execute_with_typed_fastpaths(bytecode, self.typed_fastpaths_default)
     }
 
+    pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
+        self.execute_package_with_typed_fastpaths(package, self.typed_fastpaths_default)
+    }
+
+    pub fn execute_package_with_typed_fastpaths(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
+        self.load_execution_package_metadata(package);
+        self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths)
+    }
+
     pub fn execute_with_typed_fastpaths(
         &mut self,
         bytecode: &Bytecode,
@@ -648,6 +687,17 @@ impl Vm {
             self.typed_fastpaths_default,
             true,
         )
+    }
+
+    pub fn invoke_package_procedure_with_i32_args(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[i32],
+    ) -> Result<(), String> {
+        self.load_execution_package_metadata(package);
+        self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args)
     }
 
     pub fn invoke_procedure_with_variants(
@@ -730,6 +780,17 @@ impl Vm {
                 }
             }
         }
+    }
+
+    pub fn invoke_package_procedure_with_variants(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[Variant],
+    ) -> Result<(), String> {
+        self.load_execution_package_metadata(package);
+        self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args)
     }
 
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {

@@ -1,0 +1,230 @@
+# JIT v2 Differential Harness v1
+
+Status: `planning-harness`
+Date: 2026-05-26
+Owning workset:
+[`../worksets/WORKSET_2026-05-26_JIT_V2_CRANELIFT_PLANNING_STAGE.md`](../worksets/WORKSET_2026-05-26_JIT_V2_CRANELIFT_PLANNING_STAGE.md)
+Tracer plan:
+[`JIT_V2_TRACER_BULLET_TEST_PLAN_V1.md`](JIT_V2_TRACER_BULLET_TEST_PLAN_V1.md)
+Executable semantic package:
+[`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
+Expression/call semantics:
+[`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
+
+## Purpose
+
+Define the harness that proves JIT v2 behavior against the VM. The harness is
+the semantic oracle for tracer bullets and future JIT expansion. It must run
+the same executable semantic package through both engines.
+
+## Command Shape
+
+Future CLI shape:
+
+```text
+oxvba jit-v2-diff --fixture <path> --backend-pair vm,jit --target windows-x86_64 --emit <dir>
+```
+
+Planning-stage VM seed runner:
+
+```text
+./scripts/run-jit-v2-tracer-fixtures.ps1
+```
+
+The planning-stage runner verifies only current VM-ready fixture seeds. It does
+not claim JIT execution.
+
+## Inputs
+
+Harness input record:
+
+```text
+fixture_id
+fixture_path
+source_kind
+host_profile
+host_policy
+target_triple
+debug_policy
+helper_abi_version
+package_digest
+expected_status
+expected_vm_values
+descriptor_requirements
+declared_carrier_requirements
+expression_call_requirements
+```
+
+Fixture ids come from `conformance/jit_v2/tracer_bullets/manifest.csv`.
+Expected VM seed values come from
+`conformance/jit_v2/tracer_bullets/expected_vm_values.csv`.
+
+## Execution Model
+
+For each fixture:
+
+1. Compile source/project to the executable semantic package.
+2. Run VM from that package with deterministic host policy and capture baseline
+   evidence.
+3. Ask JIT support query for the same target/policy.
+4. If JIT unavailable, record unavailable diagnostic and stop unless the test
+   requires JIT execution.
+5. If JIT supported, compile the same package procedure to `ProcLoweringIr`.
+6. Run `ProcLoweringIr` verifier.
+7. Lower to CLIF and run Cranelift verifier.
+8. Execute JIT.
+9. Compare evidence against VM baseline.
+
+The harness may produce VM reference rows before JIT exists, but cannot mark a
+JIT tracer bullet passed until native code executed and evidence matched.
+
+## Evidence Schema
+
+Sidecar JSON fields:
+
+```text
+run_id
+timestamp_utc
+fixture_id
+fixture_path
+target_triple
+backend
+status
+diagnostic_code
+bytecode_digest
+package_digest
+helper_abi_version
+descriptor_digest
+vm_snapshot
+declared_carrier_layout
+expression_call_descriptors
+err_state
+cleanup_state
+byref_state
+interop_observations
+proc_lowering_ir_verifier
+cranelift_verifier
+clif_artifact_path
+source_map_artifact_path
+duration_ms
+claim_boundary
+```
+
+CSV rows should stay compatible with `NATIVE_READY_RUNNER_SCHEMA_HEADER` where
+possible. Extra details go in JSON sidecars.
+
+## Comparison Rules
+
+### Slot Snapshots And Declared Carriers
+
+Compare declared carrier/layout evidence and VM-compatible materialized
+snapshots, not display text alone. Display digests are acceptable only after
+structured values were collected.
+
+Required exact matches:
+
+- declared carrier kind for primitive and UDT slots;
+- UDT descriptor id, field offsets, and field carrier kinds where in scope;
+- carrier tag;
+- scalar payload;
+- string payload;
+- error code;
+- object identity token where observable;
+- SAFEARRAY rank/bounds/element payload where in scope.
+
+### Error state
+
+Compare:
+
+- `Err.Number`;
+- `Err.Description`;
+- `Err.Source`;
+- pending error PC where observable;
+- selected resume target;
+- final execution status.
+
+### Cleanup state
+
+For cleanup-sensitive bullets, compare counters or structured logs:
+
+- allocations;
+- releases;
+- ownership transfers;
+- cancelled writebacks;
+- committed writebacks;
+- deopt cleanup transfers.
+
+### COM/native observations
+
+Compare descriptor and boundary evidence:
+
+- descriptor digest;
+- member selector;
+- named/default member use;
+- HRESULT/EXCEPINFO/ArgErr;
+- host policy capability result;
+- object identity observation;
+- ByRef writeback results.
+
+## Diagnostic Codes
+
+Required JIT harness diagnostics:
+
+- `JIT-TARGET-UNAVAILABLE`
+- `JIT-BACKEND-DISABLED`
+- `JIT-DEBUG-POLICY-DISABLED`
+- `JIT-UNSUPPORTED-BYTECODE`
+- `JIT-PROC-LOWERING-IR-VERIFY-FAIL`
+- `JIT-CLIF-VERIFY-FAIL`
+- `JIT-DEOPT-REQUESTED`
+- `JIT-HELPER-FAULT`
+- `JIT-COM-FAILURE`
+- `JIT-NATIVE-CALL-FAILURE`
+- `JIT-DIFF-MISMATCH`
+
+`JIT-NOT-IMPLEMENTED` remains valid for the current placeholder but should be
+retired from positive tracer-bullet evidence after support query lands.
+
+## Artifact Layout
+
+Recommended output layout:
+
+```text
+docs/evidence/jit_v2/<run_id>/
+  manifest.json
+  vm/<fixture_id>.json
+  jit/<fixture_id>.json
+  ir/<fixture_id>.proc_lowering_ir.txt
+  ir/<fixture_id>.proc_lowering_ir.json
+  clif/<fixture_id>.clif
+  logs/<fixture_id>.stdout.log
+  logs/<fixture_id>.stderr.log
+```
+
+Evidence artifacts should be generated by implementation worksets, not by this
+planning workset.
+
+## Planning-Stage VM Seed Runner
+
+`scripts/run-jit-v2-tracer-fixtures.ps1` verifies that fixture statuses whose
+source is host-independent currently execute through the CLI VM and match
+`expected_vm_values.csv`. Fixtures marked `vm-ready-hosted` or
+`vm-ready-native-hosted` are validated by
+`cargo test -p oxvba-host --test jit_v2_tracer_vm_seed`.
+
+It intentionally skips:
+
+- non-VM-runnable `export-boundary-planned` fixtures;
+- any future status not explicitly marked VM-runnable.
+
+The runner is a guard for fixture drift. It is not JIT evidence.
+
+## Acceptance Gate
+
+Before first JIT implementation:
+
+- VM seed runner passes;
+- harness schema is referenced from the workset;
+- every tracer bullet matrix row names expected evidence;
+- JIT unavailable diagnostics are distinct from VM fallback;
+- implementation workset has a place to store sidecar evidence.

@@ -8,7 +8,7 @@ pub mod semantics;
 
 use std::sync::Arc;
 
-use oxvba_compiler::Bytecode;
+use oxvba_compiler::{Bytecode, OxBundle};
 use oxvba_hal::{
     adapters::builder::HostBuilder,
     model::{HostPolicy, native_host_profile},
@@ -18,7 +18,7 @@ use oxvba_runtime::Variant;
 
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
-    DebugStopReason, Vm,
+    DebugStopReason, Vm, VmExecutionPackage,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -33,6 +33,21 @@ pub fn execute_and_snapshot_variants(bytecode: &Bytecode) -> Result<Vec<Variant>
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
 }
 
+/// Package-oriented retained value-model snapshot API.
+pub fn execute_package_and_snapshot_variants(
+    package: &VmExecutionPackage<'_>,
+) -> Result<Vec<Variant>, String> {
+    let mut vm = Vm::new(default_host_services());
+    vm.execute_package(package)?;
+    Ok(vm.snapshot_variants(package.bytecode.user_slot_count))
+}
+
+/// OxBundle-backed retained value-model snapshot API.
+pub fn execute_bundle_and_snapshot_variants(bundle: &OxBundle) -> Result<Vec<Variant>, String> {
+    let package = VmExecutionPackage::from_bundle(bundle);
+    execute_package_and_snapshot_variants(&package)
+}
+
 /// Retained value-model snapshot API with typed-fastpath selection.
 pub fn execute_and_snapshot_variants_with_typed_fastpaths(
     bytecode: &Bytecode,
@@ -41,6 +56,16 @@ pub fn execute_and_snapshot_variants_with_typed_fastpaths(
     let mut vm = Vm::new(default_host_services());
     vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
+}
+
+/// Package-oriented retained value-model snapshot API with typed-fastpath selection.
+pub fn execute_package_and_snapshot_variants_with_typed_fastpaths(
+    package: &VmExecutionPackage<'_>,
+    typed_fastpaths: bool,
+) -> Result<Vec<Variant>, String> {
+    let mut vm = Vm::new(default_host_services());
+    vm.execute_package_with_typed_fastpaths(package, typed_fastpaths)?;
+    Ok(vm.snapshot_variants(package.bytecode.user_slot_count))
 }
 
 pub fn execute_with_host(
@@ -59,6 +84,16 @@ pub fn execute_and_snapshot_variants_with_host(
     let mut vm = Vm::new(host_services);
     vm.execute(bytecode)?;
     Ok(vm.snapshot_variants(bytecode.user_slot_count))
+}
+
+/// Package-oriented host-backed retained value-model snapshot API.
+pub fn execute_package_and_snapshot_variants_with_host(
+    package: &VmExecutionPackage<'_>,
+    host_services: Arc<dyn HostServices>,
+) -> Result<Vec<Variant>, String> {
+    let mut vm = Vm::new(host_services);
+    vm.execute_package(package)?;
+    Ok(vm.snapshot_variants(package.bytecode.user_slot_count))
 }
 
 /// Retained value-model host-backed snapshot API with typed-fastpath selection.
@@ -83,7 +118,8 @@ fn default_host_services() -> Arc<dyn HostServices> {
 mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
-        ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, compile,
+        DeclareParamType, OxBundle, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+        ProjectDynamicObjectRoute, compile, compile_with_runtime_metadata,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -91,7 +127,10 @@ mod tests {
 
     use oxvba_hal::model::native_host_profile;
 
-    use super::{Vm, default_host_services, execute_and_snapshot_variants};
+    use super::{
+        Vm, VmExecutionPackage, default_host_services, execute_and_snapshot_variants,
+        execute_bundle_and_snapshot_variants, execute_package_and_snapshot_variants,
+    };
 
     #[test]
     fn default_host_services_follow_native_host_profile() {
@@ -108,6 +147,76 @@ mod tests {
 
         assert_eq!(variants.len(), 1);
         assert_eq!(variants, vec![Variant::from_string(BStr::from("ABC"))]);
+    }
+
+    #[test]
+    fn execution_package_snapshot_matches_bytecode_snapshot() {
+        let source = "Function Test(dbl As Double, str As String) As Variant\n\
+                      Test = str\n\
+                      End Function\n\
+                      Sub Main()\n\
+                      Dim observed\n\
+                      observed = Test(2.5, \"kg\")\n\
+                      End Sub";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let test_metadata = metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Test"))
+            .expect("function metadata should be present");
+        assert_eq!(
+            test_metadata.param_types,
+            vec![DeclareParamType::Double, DeclareParamType::String]
+        );
+        assert_eq!(test_metadata.return_type, Some(DeclareParamType::Variant));
+
+        let bundle = OxBundle::new(bytecode.clone(), metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let bytecode_snapshot =
+            execute_and_snapshot_variants(&bytecode).expect("bytecode snapshot");
+        let package_snapshot =
+            execute_package_and_snapshot_variants(&package).expect("package snapshot");
+        let bundle_snapshot =
+            execute_bundle_and_snapshot_variants(&bundle).expect("bundle snapshot");
+
+        assert_eq!(package_snapshot, bytecode_snapshot);
+        assert_eq!(bundle_snapshot, bytecode_snapshot);
+    }
+
+    #[test]
+    fn execution_package_invocation_loads_procedure_metadata() {
+        let source = "Function Test(dbl As Double, str As String) As Variant\n\
+                      Test = str\n\
+                      End Function";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let test_metadata = metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Test"))
+            .expect("function metadata should be present")
+            .clone();
+        let bundle = OxBundle::new(bytecode, metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let mut vm = Vm::new(default_host_services());
+        vm.invoke_package_procedure_with_variants(
+            &package,
+            test_metadata.entry_pc,
+            &test_metadata.param_slots,
+            &[
+                Variant::from_f64(2.5),
+                Variant::from_string(BStr::from("kg")),
+            ],
+        )
+        .expect("package-backed function invocation should succeed");
+
+        let return_slot = test_metadata.return_slot.expect("function return slot");
+        let snapshot = vm.snapshot_variants(bundle.bytecode.slot_count);
+        assert_eq!(
+            snapshot[return_slot],
+            Variant::from_string(BStr::from("kg"))
+        );
     }
 
     #[test]
