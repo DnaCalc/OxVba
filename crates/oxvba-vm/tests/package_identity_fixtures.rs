@@ -15,6 +15,7 @@ struct FixtureRow {
     expected_procedures: Vec<String>,
     expected_descriptor_tokens: Vec<String>,
     expected_call_observation_tokens: Vec<String>,
+    expected_call_descriptor_tokens: Vec<String>,
 }
 
 fn repo_root() -> PathBuf {
@@ -41,8 +42,8 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                6,
-                "identity fixture manifest row should have 6 columns: {line}"
+                7,
+                "identity fixture manifest row should have 7 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
@@ -55,6 +56,11 @@ fn fixture_rows() -> Vec<FixtureRow> {
                     .map(|token| token.trim().to_string())
                     .collect(),
                 expected_call_observation_tokens: columns[5]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_call_descriptor_tokens: columns[6]
                     .split(';')
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
@@ -195,6 +201,43 @@ fn signature_call_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String 
     tokens.join("|")
 }
 
+fn call_site_descriptor_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .call_site_evidence
+        .iter()
+        .flat_map(|call| {
+            call.observations.iter().map(move |observation| {
+                format!(
+                    "{}->{}:{}",
+                    call.caller_procedure_name.to_ascii_lowercase(),
+                    call.target_name.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn call_site_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .call_site_evidence
+        .iter()
+        .map(|call| {
+            format!(
+                "{}->{}@{}={}",
+                call.caller_procedure_name.to_ascii_lowercase(),
+                call.target_name.to_ascii_lowercase(),
+                call.call_pc,
+                call.call_site_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -244,6 +287,16 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 row.id,
                 expected_observation,
                 signature_call_tokens
+            );
+        }
+        let call_site_tokens = call_site_descriptor_observation_tokens(evidence);
+        for expected_call_descriptor in &row.expected_call_descriptor_tokens {
+            assert!(
+                call_site_tokens.contains(expected_call_descriptor),
+                "{} call-site descriptor evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_call_descriptor,
+                call_site_tokens
             );
         }
         assert_eq!(sorted_procedure_names(evidence), {
@@ -307,9 +360,29 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 call
             );
         }
+        for call_site in &evidence.call_site_evidence {
+            assert!(
+                call_site.call_site_id.starts_with("callsite:"),
+                "{} call-site descriptor evidence should retain call-site identity: {}",
+                row.id,
+                call_site.call_site_id
+            );
+            assert!(
+                call_site.call_site_descriptor_digest.starts_with("fnv1a64:"),
+                "{} call-site descriptor digest should be explicit: {:?}",
+                row.id,
+                call_site
+            );
+            assert!(
+                !call_site.observations.is_empty(),
+                "{} call-site descriptor evidence should classify each descriptor: {:?}",
+                row.id,
+                call_site
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} slot_descriptors={} signature_call_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -320,8 +393,10 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             procedure_identity_tokens(evidence),
             slot_descriptor_digest_tokens(evidence),
             signature_call_digest_tokens(evidence),
+            call_site_descriptor_digest_tokens(evidence),
             descriptor_tokens.join("|"),
-            signature_call_tokens.join("|")
+            signature_call_tokens.join("|"),
+            call_site_tokens.join("|")
         );
     }
 }

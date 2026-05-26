@@ -12,7 +12,8 @@ cargo test -p oxvba-vm --test package_identity_fixtures -- --nocapture
 The test output prints value snapshots plus package digest, bytecode digest,
 slot counts, procedure identity fields, per-procedure slot descriptor digests,
 slot descriptor tokens, signature descriptor digests for observed `CallProc`
-targets, and signature/call observation tokens for each fixture.
+targets, signature/call observation tokens, call-site descriptor digests, and
+call-site descriptor observation tokens for each fixture.
 
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
 and the current VM-runnable UDT field-alias shape. They do not claim nominal
@@ -27,3 +28,14 @@ bytecode lowering, not descriptor-driven call execution. Seed
 `CallSiteDescriptor` and `ArgumentBindingDescriptor` rows now exist in package
 metadata for top-level project calls; full expression/COM/native call-site
 coverage and descriptor-driven VM behavior remain later work.
+
+The VMR-04 row adds dedicated call-site descriptor evidence for ByRef variable
+alias/writeback, ByRef expression temporary/no-writeback, a ByVal `Long` to
+declared-`Double` call shape, explicit Optional default materialization,
+Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
+packs. It intentionally records two current VM limitations: the ByVal
+declared-`Double` callee observes `VarType=2` at entry instead of a coerced
+Double value, and the Optional `Variant` descriptor says the missing policy is
+`VariantMissingError448` while current VM lowering still materializes a default
+local observed by the fixture as `VarType=2`. Those gaps are not treated as
+VBA-compatible call-coercion or missing-argument behavior.

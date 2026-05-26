@@ -10,11 +10,12 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    Bytecode, CallSiteDescriptor, Instruction, OptionalDefaultValue, OptionalParameterDescriptor,
-    OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, SlotTypeDescriptor,
+    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, Bytecode, CallSiteDescriptor,
+    Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle, ParameterDescriptor,
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
+    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
+    SlotTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -168,6 +169,7 @@ impl<'a> VmExecutionPackage<'a> {
             .collect();
         let signature_call_evidence =
             collect_signature_call_evidence(self.bytecode, self.procedure_metadata);
+        let call_site_evidence = collect_call_site_descriptor_evidence(self.procedure_metadata);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -176,6 +178,7 @@ impl<'a> VmExecutionPackage<'a> {
             user_slot_count: self.bytecode.user_slot_count,
             procedures,
             signature_call_evidence,
+            call_site_evidence,
         }
     }
 
@@ -251,6 +254,7 @@ pub struct VmPackageIdentityEvidence {
     pub user_slot_count: usize,
     pub procedures: Vec<VmProcedureIdentityEvidence>,
     pub signature_call_evidence: Vec<VmSignatureCallEvidence>,
+    pub call_site_evidence: Vec<VmCallSiteDescriptorEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,8 +267,136 @@ pub struct VmSignatureCallEvidence {
     pub observations: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmCallSiteDescriptorEvidence {
+    pub call_site_id: String,
+    pub caller_procedure_name: String,
+    pub call_pc: usize,
+    pub target_name: String,
+    pub call_site_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
+
+fn collect_call_site_descriptor_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmCallSiteDescriptorEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata.call_sites.iter().map(|call_site| {
+                VmCallSiteDescriptorEvidence {
+                    call_site_id: call_site.call_site_id.clone(),
+                    caller_procedure_name: metadata.procedure_name.clone(),
+                    call_pc: call_site.call_pc,
+                    target_name: call_site.target_name.clone(),
+                    call_site_descriptor_digest: digest_debug("call-site-descriptor", call_site),
+                    observations: call_site_descriptor_observations(call_site),
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.caller_procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.caller_procedure_name.to_ascii_lowercase())
+            .then(left.call_pc.cmp(&right.call_pc))
+            .then(left.target_name.cmp(&right.target_name))
+    });
+    evidence
+}
+
+fn call_site_descriptor_observations(call_site: &CallSiteDescriptor) -> Vec<String> {
+    let mut observations = Vec::new();
+    observations.push(format!(
+        "target-kind:{}",
+        debug_token(&call_site.target_kind)
+    ));
+    observations.push(if call_site.target_entry_pc.is_some() {
+        "target-entry-known".to_string()
+    } else {
+        "target-entry-missing".to_string()
+    });
+    observations.push(format!(
+        "default-member-policy:{}",
+        debug_token(&call_site.default_member_policy)
+    ));
+    for argument in &call_site.arguments {
+        observations.extend(call_site_argument_observations(argument));
+    }
+    if let Some(return_value) = &call_site.return_value {
+        observations.push(if return_value.copyout_required {
+            "return:copyout-required".to_string()
+        } else {
+            "return:no-copyout".to_string()
+        });
+        if return_value.assign_target_slot.is_some() {
+            observations.push("return:assign-target-known".to_string());
+        }
+    }
+    observations
+}
+
+fn call_site_argument_observations(argument: &ArgumentBindingDescriptor) -> Vec<String> {
+    let name = argument
+        .parameter_name
+        .as_deref()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| format!("arg{}", argument.argument_index));
+    let mut observations = vec![
+        format!("arg:{name}:source={}", debug_token(&argument.source_kind)),
+        format!("arg:{name}:expr={}", debug_token(&argument.expression_kind)),
+        format!("arg:{name}:binding={}", debug_token(&argument.binding_kind)),
+    ];
+    if argument.force_byval {
+        observations.push(format!("arg:{name}:force-byval"));
+    }
+    if argument.source_slot.is_some() {
+        observations.push(format!("arg:{name}:source-slot-known"));
+    }
+    if argument.parameter_slot.is_some() {
+        observations.push(format!("arg:{name}:parameter-slot-known"));
+    }
+    if argument
+        .writeback
+        .as_ref()
+        .is_some_and(|writeback| writeback.required)
+    {
+        observations.push(format!("arg:{name}:writeback-required"));
+    }
+    if let Some(default_value) = &argument.optional_default {
+        observations.push(format!(
+            "arg:{name}:optional-default={}",
+            optional_default_token(default_value)
+        ));
+    }
+    if let Some(param_array) = &argument.param_array {
+        observations.push(format!(
+            "arg:{name}:paramarray-count={}",
+            param_array.element_count
+        ));
+    }
+    if argument.binding_kind == ArgumentBindingKindDescriptor::ByRefExpressionTemp {
+        observations.push(format!("arg:{name}:no-writeback-temp"));
+    }
+    observations
+}
+
+fn optional_default_token(default_value: &OptionalDefaultValue) -> String {
+    match default_value {
+        OptionalDefaultValue::Unknown => "unknown".to_string(),
+        OptionalDefaultValue::ExplicitI32(value) => format!("i32-{value}"),
+        OptionalDefaultValue::DeclaredTypeDefault => "declared-type-default".to_string(),
+        OptionalDefaultValue::VariantMissingError448 => "variant-missing-error-448".to_string(),
+        OptionalDefaultValue::ImplementationDefined => "implementation-defined".to_string(),
+    }
+}
+
+fn debug_token(value: &impl Debug) -> String {
+    format!("{value:?}").to_ascii_lowercase()
+}
 
 fn collect_signature_call_evidence(
     bytecode: &Bytecode,

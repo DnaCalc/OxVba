@@ -50,7 +50,7 @@ Rows can start at family granularity and split when semantics diverge.
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Full UDT descriptor missing. |
-| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Call-site descriptors missing. |
+| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Descriptor and VM evidence missing. |
 | Error flow | `On Error`, Err state, resume target maps | use package error maps and snapshot Err state | Runtime exists; package maps incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
@@ -225,10 +225,22 @@ Current VMR-04 seed surface is package metadata, not call-binding behavior:
 with `ArgumentBindingDescriptor` children for top-level project procedure call
 sites. The seed rows represent target kind, call PC, target entry PC after
 patching, named/positional/omitted/ParamArray argument source shape, ByRef
-alias/writeback, ByVal copy, Optional default, ParamArray pack, fixed-array
-materialization, default-member fallback policy, and return copyout. The VM
-exposes these rows through `VmExecutionPackage::call_site_descriptors`, but VM
-call execution still follows the existing bytecode lowering.
+alias/writeback, ByRef expression temporary/no-writeback, ByVal copy, Optional
+default, ParamArray pack, fixed-array materialization, default-member fallback
+policy, and return copyout. The VM exposes these rows through
+`VmExecutionPackage::call_site_descriptors`, and
+`VmPackageIdentityEvidence::call_site_evidence` records descriptor digests plus
+observation tokens for the VM-runnable call fixtures, but VM call execution
+still follows the existing bytecode lowering.
+
+The VMR-04 fixture evidence also classifies current limitations: ByVal
+declared-type call-entry coercion is not yet VM-compatible for the observed
+`Long` to declared-`Double` shape, and Optional `Variant` without an explicit
+default is described by package metadata as a missing-argument policy
+(`VariantMissingError448`) while current VM lowering still materializes a
+default local value. The fixture records those behaviors as VM/runtime
+limitations to resolve before descriptor-driven call binding or JIT lowering
+can claim full call-coercion or Optional-missing parity.
 
 ## Strengthening Rule
 

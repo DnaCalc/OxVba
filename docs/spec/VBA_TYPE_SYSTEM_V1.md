@@ -599,13 +599,18 @@ Current implementation anchors:
   signature descriptor view; `VmExecutionPackage::call_site_descriptors`
   exposes seed call-site rows without changing slot or call execution; and
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
-  descriptor rows, and signature/call observation rows for current seed
-  `CallProc` lowering compared with signature metadata.
+  descriptor rows, signature/call observation rows for current seed `CallProc`
+  lowering compared with signature metadata, and call-site descriptor evidence
+  rows for the first VMR-04 fixtures.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
   declared `Variant`, the current flattened UDT field-alias shape, and VMR-03
   call observations for ByVal, ByRef, Optional default, ParamArray, property
-  value, and return copyout behavior.
+  value, and return copyout behavior. VMR-04 fixture rows add call-site
+  descriptor evidence for ByRef alias/writeback, ByRef expression temp,
+  ByVal copy with a declared-`Double` call-entry coercion gap, Optional default,
+  Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
+  shape.
 
 Known development gaps:
 
@@ -616,11 +621,14 @@ Known development gaps:
   ids, complete call-site coverage, and descriptor-driven VM call behavior
   remain incomplete;
 - `CallSiteDescriptor` and `ArgumentBindingDescriptor` now represent the first
-  top-level project call sites with ByRef alias/writeback, ByVal copy,
-  Optional/default, named/omitted, ParamArray, fixed-array materialization,
-  default-member fallback policy, and return copyout facts, but expression-call
-  coverage, external Declare/COM call coverage, canonical descriptor ids, and
-  descriptor-driven VM behavior remain incomplete;
+  top-level project call sites with ByRef alias/writeback, ByRef expression
+  temporary/no-writeback, ByVal copy, Optional/default and Optional `Variant`
+  missing-policy metadata, named/omitted, ParamArray, fixed-array
+  materialization, default-member fallback policy, property value ByVal
+  classification, and return copyout facts. Expression-call coverage outside
+  current direct lowering, external Declare/COM call coverage, canonical
+  descriptor ids, descriptor-driven VM behavior, true ByVal call-entry
+  coercion, and true Optional-missing runtime behavior remain incomplete;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT
   nominal identity, aggregate UDT field offsets, object/class/interface ids,

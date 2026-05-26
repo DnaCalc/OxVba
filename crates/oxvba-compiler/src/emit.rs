@@ -224,6 +224,7 @@ pub enum ArgumentBindingKindDescriptor {
     OptionalDefault,
     ParamArrayPack,
     FixedArrayMaterialized,
+    ByRefExpressionTemp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -3134,6 +3135,7 @@ fn emit_early_call(
             &param_array_element_slots,
             &fixed_array_materializations,
             assign_target,
+            slot_map,
         ));
     }
 
@@ -3167,10 +3169,16 @@ fn build_early_call_site_descriptor(
     param_array_element_slots: &HashMap<usize, Vec<usize>>,
     fixed_array_materializations: &HashMap<usize, Vec<usize>>,
     assign_target: Option<usize>,
+    slot_map: &HashMap<String, usize>,
 ) -> CallSiteDescriptor {
     let mut arguments = Vec::new();
+    let target_kind = call_target_kind_for_procedure(target_name, meta.return_slot);
     for (idx, param) in meta.params.iter().enumerate() {
         let parameter_slot = meta.slots.get(param.name.as_str()).copied();
+        let property_value_byval = matches!(
+            target_kind,
+            CallTargetKindDescriptor::PropertyLet | CallTargetKindDescriptor::PropertySet
+        ) && idx + 1 == meta.params.len();
         if param.param_array {
             let element_slots = param_array_element_slots
                 .get(&idx)
@@ -3236,9 +3244,20 @@ fn build_early_call_site_descriptor(
             ArgumentBindingKindDescriptor::FixedArrayMaterialized
         } else if byref_writeback.is_some() {
             ArgumentBindingKindDescriptor::ByRefAlias
+        } else if property_value_byval {
+            ArgumentBindingKindDescriptor::ByValCopy
+        } else if param.by_ref {
+            ArgumentBindingKindDescriptor::ByRefExpressionTemp
         } else {
             ArgumentBindingKindDescriptor::ByValCopy
         };
+        let source_slot = byref_writeback
+            .as_ref()
+            .and_then(|writeback| writeback.caller_slot)
+            .or_else(|| match &mapped_arg.arg.expr {
+                BoundExpr::Var(var_name) => slot_map.get(var_name.as_str()).copied(),
+                _ => None,
+            });
         arguments.push(ArgumentBindingDescriptor {
             argument_index: idx,
             source_index: Some(mapped_arg.source_index),
@@ -3250,9 +3269,7 @@ fn build_early_call_site_descriptor(
             expression_kind: argument_expression_kind(&mapped_arg.arg.expr),
             binding_kind,
             force_byval: mapped_arg.arg.force_byval,
-            source_slot: byref_writeback
-                .as_ref()
-                .and_then(|writeback| writeback.caller_slot),
+            source_slot,
             writeback: byref_writeback,
             optional_default: None,
             param_array: fixed_array_materializations.get(&idx).map(|element_slots| {
@@ -3280,7 +3297,7 @@ fn build_early_call_site_descriptor(
         caller_procedure_name: current_proc_name.to_string(),
         call_pc,
         target_name: target_name.to_string(),
-        target_kind: call_target_kind_for_procedure(target_name, meta.return_slot),
+        target_kind,
         target_entry_pc: None,
         default_member_policy: DefaultMemberPolicyDescriptor::NotApplicable,
         arguments,

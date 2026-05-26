@@ -200,7 +200,10 @@ attempting full table coverage at once:
   `Long`, `Double`, `String`, Boolean, `Variant`, `Null`, and `Empty`.
 - Call seed: ByVal scalar, ByRef scalar alias, ByRef expression temporary,
   Optional with default, Optional missing `Variant`, and empty/non-empty
-  `ParamArray`.
+  `ParamArray`. The VMR-04 package fixture now covers these as descriptor
+  evidence, with ByVal declared-type call-entry coercion and Optional missing
+  `Variant` explicitly classified as current runtime/VM limitations for
+  behavior.
 - Lifecycle seed: primitive, `Variant`, `BStr`, `SafeArray`, `ObjectRef`, and
   UDTs containing primitive, `String`, and `Variant` fields.
 - Object/member seed: `Set` object assignment, `Nothing`, default member in
