@@ -35,8 +35,8 @@ pub use embedded::{
     EmbeddedRunStartedEvent, EmbeddedRunStatus, EmbeddedWorkspaceInput, EmbeddedWorkspaceSnapshot,
 };
 pub use engine::{
-    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig, PhaseDiagnostic,
-    ProjectRuntimeSession,
+    ComEventCallbackVariantDispatch, DiagnosticPhase, Engine, HostConfig,
+    HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic, ProjectRuntimeSession,
 };
 pub use immediate::{
     ImmediateDisplayStyle, ImmediateEvaluationRequest, ImmediateInputKind, ImmediateResetKind,

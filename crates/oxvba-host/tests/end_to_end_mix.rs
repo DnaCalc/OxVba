@@ -32,16 +32,24 @@ fn contains_value(snapshot: &[Variant], expected: Variant) {
     );
 }
 
-fn assert_vm_jit_contains(manifest: &ProjectManifest, expected: Variant) {
-    for enable_jit in [false, true] {
-        let engine = Engine::new(HostConfig { enable_jit });
-        let snapshot = engine
-            .execute_project_with_variant_snapshot_phased(manifest)
-            .unwrap_or_else(|err| {
-                panic!("execution should succeed for enable_jit={enable_jit}: {err}")
-            });
-        contains_value(&snapshot, expected.clone());
-    }
+fn assert_jit_unavailable(manifest: &ProjectManifest) {
+    let err = Engine::new(HostConfig { enable_jit: true })
+        .execute_project_with_variant_snapshot_phased(manifest)
+        .expect_err("JIT request should not silently fall back to VM execution");
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+    assert!(
+        err.message().contains("JIT execution"),
+        "unexpected JIT unavailable diagnostic: {err}"
+    );
+}
+
+fn assert_vm_contains_and_jit_unavailable(manifest: &ProjectManifest, expected: Variant) {
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let snapshot = engine
+        .execute_project_with_variant_snapshot_phased(manifest)
+        .expect("VM execution should succeed");
+    contains_value(&snapshot, expected);
+    assert_jit_unavailable(manifest);
 }
 
 #[test]
@@ -73,7 +81,7 @@ End Sub
         )],
     );
 
-    assert_vm_jit_contains(&manifest, Variant::from_i32(4_321));
+    assert_vm_contains_and_jit_unavailable(&manifest, Variant::from_i32(4_321));
 }
 
 #[test]
@@ -101,7 +109,7 @@ End Sub
         )],
     );
 
-    assert_vm_jit_contains(&manifest, Variant::from_i32(97));
+    assert_vm_contains_and_jit_unavailable(&manifest, Variant::from_i32(97));
 }
 
 #[test]
@@ -172,7 +180,7 @@ End Sub
 }
 
 #[test]
-fn e2e_edge_dynamic_multidim_runtime_redim_vm_jit_parity() {
+fn e2e_edge_dynamic_multidim_runtime_redim_runs_on_vm_and_rejects_jit() {
     let manifest = source_project(
         "EdgeDynamicRuntimeArray",
         vec![proc_module(
@@ -196,21 +204,12 @@ End Sub
         )],
     );
 
-    let vm = Engine::new(HostConfig { enable_jit: false });
-    let jit = Engine::new(HostConfig { enable_jit: true });
-
-    let vm_snapshot = vm
+    let vm_snapshot = Engine::new(HostConfig { enable_jit: false })
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("vm execution should succeed");
-    let jit_snapshot = jit
-        .execute_project_with_variant_snapshot_phased(&manifest)
-        .expect("jit execution should succeed");
 
-    assert_eq!(
-        vm_snapshot, jit_snapshot,
-        "vm/jit snapshots diverged on dynamic multidimensional runtime arrays"
-    );
     contains_value(&vm_snapshot, Variant::from_i32(26));
+    assert_jit_unavailable(&manifest);
 }
 
 #[test]
@@ -245,7 +244,7 @@ End Sub
 }
 
 #[test]
-fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
+fn e2e_scaling_pressure_large_linear_statement_block_runs_on_vm_and_rejects_jit() {
     let mut source = String::from("Option Explicit\nPublic Sub Main()\nDim x As Long\nx = 0\n");
     let iterations = 4_000usize;
     for _ in 0..iterations {
@@ -254,25 +253,16 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
     source.push_str("End Sub\n");
 
     let manifest = source_project("ScaleLinear", vec![proc_module("MainModule", &source)]);
-    let vm = Engine::new(HostConfig { enable_jit: false });
-    let jit = Engine::new(HostConfig { enable_jit: true });
-
-    let vm_snapshot = vm
+    let vm_snapshot = Engine::new(HostConfig { enable_jit: false })
         .execute_project_with_variant_snapshot_phased(&manifest)
         .expect("vm execution should succeed");
-    let jit_snapshot = jit
-        .execute_project_with_variant_snapshot_phased(&manifest)
-        .expect("jit execution should succeed");
 
-    assert_eq!(
-        vm_snapshot, jit_snapshot,
-        "vm/jit snapshots diverged under large linear pressure"
-    );
     assert_eq!(
         vm_snapshot.first(),
         Some(&Variant::from_i32(iterations as i32)),
         "linear pressure case should converge to increment count"
     );
+    assert_jit_unavailable(&manifest);
 }
 
 #[test]

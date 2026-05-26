@@ -78,12 +78,11 @@ fn engine_with_profile(
 
 #[test]
 fn console_print_and_input_execute_on_windows_stdio_profile() {
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&[
-            "42,hello there",
-            "rest of line",
-        ]));
-        let source = "Sub Main()\n\
+    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&[
+        "42,hello there",
+        "rest of line",
+    ]));
+    let source = "Sub Main()\n\
             Dim a\n\
             Dim b\n\
             Dim c\n\
@@ -92,68 +91,58 @@ fn console_print_and_input_execute_on_windows_stdio_profile() {
             Line Input c\n\
             Debug.Print \"trace\"\n\
             End Sub";
-        let values = engine_with_profile(
-            RuntimeProfileId::WindowsStdio,
-            enable_jit,
-            callbacks.clone(),
-        )
+    let values = engine_with_profile(RuntimeProfileId::WindowsStdio, false, callbacks.clone())
         .execute_source_with_variant_snapshot(source)
         .expect("console stdio execution should succeed");
-        assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
-        assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
-        assert_eq!(
-            values,
-            vec![
-                Variant::from_i32(42),
-                Variant::from_string(BStr::from("hello there")),
-                Variant::from_string(BStr::from("rest of line")),
-            ],
-            "windows stdio host should preserve console/debug behavior for enable_jit={enable_jit}"
-        );
-    }
+    assert_eq!(callbacks.console_output(), vec!["hello".to_string()]);
+    assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
+    assert_eq!(
+        values,
+        vec![
+            Variant::from_i32(42),
+            Variant::from_string(BStr::from("hello there")),
+            Variant::from_string(BStr::from("rest of line")),
+        ],
+        "windows stdio host should preserve console/debug behavior on the VM backend"
+    );
 }
 
 #[test]
-fn debug_print_executes_on_windows_stdio_profile_for_vm_and_jit() {
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        let source = "Sub Main()\nDebug.Print \"trace\"\nEnd Sub";
-        let values = engine_with_profile(
-            RuntimeProfileId::WindowsStdio,
-            enable_jit,
-            callbacks.clone(),
-        )
+fn debug_print_executes_on_windows_stdio_profile_for_vm() {
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    let source = "Sub Main()\nDebug.Print \"trace\"\nEnd Sub";
+    let values = engine_with_profile(RuntimeProfileId::WindowsStdio, false, callbacks.clone())
         .execute_source_with_variant_snapshot(source)
         .expect("debug-print execution should succeed");
-        assert_eq!(values, Vec::<Variant>::new());
-        assert_eq!(
-            callbacks.debug_output(),
-            vec!["trace".to_string()],
-            "windows stdio host should preserve Debug.Print behavior for enable_jit={enable_jit}"
-        );
-        assert_eq!(callbacks.console_output(), Vec::<String>::new());
-    }
+    assert_eq!(values, Vec::<Variant>::new());
+    assert_eq!(callbacks.debug_output(), vec!["trace".to_string()]);
+    assert_eq!(callbacks.console_output(), Vec::<String>::new());
 }
 
 #[test]
-fn debug_print_multiple_exprs_executes_on_windows_stdio_profile_for_vm_and_jit() {
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        let source = "Sub Main()\nOn Error Resume Next\nError 9\nDebug.Print \"trace\", Err.LastDllError\nEnd Sub";
-        engine_with_profile(
-            RuntimeProfileId::WindowsStdio,
-            enable_jit,
-            callbacks.clone(),
-        )
+fn debug_print_multiple_exprs_executes_on_windows_stdio_profile_for_vm() {
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    let source = "Sub Main()\nOn Error Resume Next\nError 9\nDebug.Print \"trace\", Err.LastDllError\nEnd Sub";
+    engine_with_profile(RuntimeProfileId::WindowsStdio, false, callbacks.clone())
         .execute_source(source)
         .expect("multi-expr debug-print execution should succeed");
-        assert_eq!(
-            callbacks.debug_output(),
-            vec!["trace\t0".to_string()],
-            "windows stdio host should preserve multi-expr Debug.Print behavior for enable_jit={enable_jit}"
-        );
-        assert_eq!(callbacks.console_output(), Vec::<String>::new());
-    }
+    assert_eq!(callbacks.debug_output(), vec!["trace\t0".to_string()]);
+    assert_eq!(callbacks.console_output(), Vec::<String>::new());
+}
+
+#[test]
+fn windows_stdio_profile_reports_jit_unavailable_without_vm_fallback() {
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    let source = "Sub Main()\nDebug.Print \"trace\"\nEnd Sub";
+    let err = engine_with_profile(RuntimeProfileId::WindowsStdio, true, callbacks.clone())
+        .execute_source_with_variant_snapshot(source)
+        .expect_err("JIT request should not silently fall back to VM execution");
+    assert!(
+        err.contains("JIT execution"),
+        "unexpected JIT unavailable diagnostic: {err}"
+    );
+    assert_eq!(callbacks.debug_output(), Vec::<String>::new());
+    assert_eq!(callbacks.console_output(), Vec::<String>::new());
 }
 
 #[test]

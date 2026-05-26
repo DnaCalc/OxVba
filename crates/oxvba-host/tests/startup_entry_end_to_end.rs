@@ -57,6 +57,18 @@ fn engine_with_console(enable_jit: bool, callbacks: Arc<dyn HostCallbacks>) -> E
     engine
 }
 
+fn assert_project_jit_unavailable(manifest: &oxvba_compiler::ProjectManifest) {
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    let err = engine_with_console(true, callbacks.clone())
+        .execute_project_with_variant_snapshot_phased(manifest)
+        .expect_err("JIT request should not silently fall back to VM execution");
+    assert!(
+        err.message().contains("JIT execution"),
+        "unexpected JIT unavailable diagnostic: {err}"
+    );
+    assert_eq!(callbacks.console_output(), Vec::<String>::new());
+}
+
 #[test]
 fn basproj_exe_executes_unique_top_level_mainline() {
     let temp_root = unique_temp_dir("oxvba_host_top_level_mainline");
@@ -91,17 +103,12 @@ fn basproj_exe_executes_unique_top_level_mainline() {
         loaded.entry_point.as_deref(),
         Some("ScriptModule.__OxVbaTopLevelMainline")
     );
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .expect("project execution should succeed");
-        assert_eq!(
-            callbacks.console_output(),
-            vec!["42".to_string()],
-            "top-level basproj mainline should preserve console-observable result for enable_jit={enable_jit}"
-        );
-    }
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    engine_with_console(false, callbacks.clone())
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("project execution should succeed");
+    assert_eq!(callbacks.console_output(), vec!["42".to_string()]);
+    assert_project_jit_unavailable(&loaded.manifest);
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }
@@ -181,21 +188,19 @@ fn basproj_exe_top_level_mainline_shares_option_private_module_state_with_helper
     .expect("write basproj");
 
     let loaded = oxvba_project::load_basproj(&basproj_path).expect("basproj should load");
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .expect("project execution should succeed with module-scope state preserved");
-        assert_eq!(
-            callbacks.console_output(),
-            vec![
-                "pre=41".to_string(),
-                "bump=42".to_string(),
-                "post=42".to_string()
-            ],
-            "Option Private/module-state top-level basproj should share module-scope state across helper procedures for enable_jit={enable_jit}"
-        );
-    }
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    engine_with_console(false, callbacks.clone())
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("project execution should succeed with module-scope state preserved");
+    assert_eq!(
+        callbacks.console_output(),
+        vec![
+            "pre=41".to_string(),
+            "bump=42".to_string(),
+            "post=42".to_string()
+        ],
+    );
+    assert_project_jit_unavailable(&loaded.manifest);
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }
@@ -254,17 +259,12 @@ fn basproj_exe_top_level_mainline_preserves_mixed_module_scope_declarations() {
     .expect("write basproj");
 
     let loaded = oxvba_project::load_basproj(&basproj_path).expect("basproj should load");
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .expect("project execution should succeed with mixed module declarations preserved");
-        assert_eq!(
-            callbacks.console_output(),
-            vec!["42".to_string()],
-            "mixed module-scope declarations should survive top-level basproj lowering for enable_jit={enable_jit}"
-        );
-    }
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    engine_with_console(false, callbacks.clone())
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("project execution should succeed with mixed module declarations preserved");
+    assert_eq!(callbacks.console_output(), vec!["42".to_string()]);
+    assert_project_jit_unavailable(&loaded.manifest);
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }
@@ -351,17 +351,12 @@ fn vbp_exe_unique_top_level_mainline_executes_supported_project() {
         loaded.entry_point.as_deref(),
         Some("ScriptModule.__OxVbaTopLevelMainline")
     );
-    for enable_jit in [false, true] {
-        let callbacks = Arc::new(ConsoleCallbacks::default());
-        engine_with_console(enable_jit, callbacks.clone())
-            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .expect("top-level mainline vbp project should execute");
-        assert_eq!(
-            callbacks.console_output(),
-            vec!["42".to_string()],
-            "top-level VBP mainline should preserve console-observable result for enable_jit={enable_jit}"
-        );
-    }
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    engine_with_console(false, callbacks.clone())
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("top-level mainline vbp project should execute");
+    assert_eq!(callbacks.console_output(), vec!["42".to_string()]);
+    assert_project_jit_unavailable(&loaded.manifest);
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }

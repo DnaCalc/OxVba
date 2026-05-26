@@ -543,6 +543,8 @@ fn run_wrapped_com_server_build(
         .arg("--quiet")
         .arg("-p")
         .arg("oxvba-cli")
+        .arg("--bin")
+        .arg("oxvba-cli")
         .arg("--")
         .arg("build")
         .arg(server_basproj_path)

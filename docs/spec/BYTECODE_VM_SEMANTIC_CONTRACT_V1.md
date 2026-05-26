@@ -159,6 +159,11 @@ Current VMR-01 seed evidence in `oxvba-vm` is
 - package slot count and user slot count;
 - per-procedure id, module name, procedure name, and entry PC.
 
+`oxvba-host` now threads the same evidence through package-backed source,
+project, bundle, and callable-session VM execution paths. Existing snapshot APIs
+remain value-only compatibility surfaces, while package-identity variants expose
+the recorded VM package identity for evidence and future JIT gates.
+
 This is identity evidence only. Slot descriptor, signature descriptor,
 expression/call descriptor, lifecycle, interop, and host-policy evidence remain
 future rows under the strengthening sequence above.

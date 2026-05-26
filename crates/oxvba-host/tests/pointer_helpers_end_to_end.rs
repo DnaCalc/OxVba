@@ -5,12 +5,27 @@ mod windows_pointer_helper_e2e {
     use oxvba_runtime::{Decimal96, Variant};
     use windows_sys::Win32::Foundation::SysStringLen;
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<Variant> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Option<Vec<Variant>> {
+        if enable_jit {
+            let mut engine = Engine::new(HostConfig { enable_jit });
+            engine.set_host_policy(HostPolicy::interactive_dev());
+            let err = engine
+                .execute_source_with_variant_snapshot(source)
+                .expect_err("JIT request should not silently fall back to VM execution");
+            assert!(
+                err.contains("JIT execution"),
+                "unexpected JIT unavailable diagnostic: {err}"
+            );
+            return None;
+        }
+
         let mut engine = Engine::new(HostConfig { enable_jit });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine
-            .execute_source_with_variant_snapshot(source)
-            .expect("pointer helper probe should execute")
+        Some(
+            engine
+                .execute_source_with_variant_snapshot(source)
+                .expect("pointer helper probe should execute"),
+        )
     }
 
     fn expect_i64(value: &Variant) -> i64 {
@@ -24,7 +39,7 @@ mod windows_pointer_helper_e2e {
     }
 
     #[test]
-    fn strptr_supports_wide_native_call_in_vm_and_jit() {
+    fn strptr_supports_wide_native_call_in_vm_and_rejects_jit() {
         let source = r#"
 Private Declare PtrSafe Function wcslen Lib "ucrtbase" Alias "wcslen" (ByVal textPtr As LongPtr) As LongPtr
 
@@ -37,7 +52,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert_eq!(snapshot.len(), 2);
             assert!(
                 expect_i64(&snapshot[0]) != 0,
@@ -52,7 +69,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_supports_scalar_pointer_value_in_vm_and_jit() {
+    fn varptr_supports_scalar_pointer_value_in_vm_and_rejects_jit() {
         let source = r#"
 
 Sub Main()
@@ -64,7 +81,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert_eq!(snapshot.len(), 2);
             assert_eq!(snapshot[0], Variant::from_i32(42));
             assert!(
@@ -75,7 +94,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_supports_byte_buffer_native_read_in_vm_and_jit() {
+    fn varptr_supports_byte_buffer_native_read_in_vm_and_rejects_jit() {
         let source = r#"
 Private Declare PtrSafe Function strlen Lib "ucrtbase" Alias "strlen" (ByVal textPtr As LongPtr) As LongPtr
 
@@ -93,7 +112,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let pointer = snapshot
                 .iter()
                 .find_map(Variant::as_i64)
@@ -115,7 +136,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_supports_static_byte_buffer_native_read_in_vm_and_jit() {
+    fn varptr_supports_static_byte_buffer_native_read_in_vm_and_rejects_jit() {
         let source = r#"
 Private Declare PtrSafe Function strlen Lib "ucrtbase" Alias "strlen" (ByVal textPtr As LongPtr) As LongPtr
 
@@ -132,7 +153,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let pointer = snapshot
                 .iter()
                 .find_map(Variant::as_i64)
@@ -154,7 +177,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_supports_byte_buffer_parameter_native_read_in_vm_and_jit() {
+    fn varptr_supports_byte_buffer_parameter_native_read_in_vm_and_rejects_jit() {
         let source = r#"
 Private Declare PtrSafe Function strlen Lib "ucrtbase" Alias "strlen" (ByVal textPtr As LongPtr) As LongPtr
 
@@ -173,7 +196,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert_eq!(
                 snapshot
                     .iter()
@@ -187,7 +212,7 @@ End Sub
     }
 
     #[test]
-    fn fixed_byte_array_parameter_preserves_runtime_bounds_in_vm_and_jit() {
+    fn fixed_byte_array_parameter_preserves_runtime_bounds_in_vm_and_rejects_jit() {
         let source = r#"
 Private Sub MeasureBounds(ByRef value() As Byte, ByRef lowerValue As Long, ByRef upperValue As Long)
     lowerValue = LBound(value)
@@ -203,7 +228,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(2)),
                 "UBound on a fixed array passed to a regular array parameter should be 2 for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -212,7 +239,7 @@ End Sub
     }
 
     #[test]
-    fn fixed_byte_array_parameter_preserves_lbound_and_span_in_vm_and_jit() {
+    fn fixed_byte_array_parameter_preserves_lbound_and_span_in_vm_and_rejects_jit() {
         let source = r#"
 Private Sub MeasureBounds(ByRef value() As Byte, ByRef lowerValue As Long, ByRef upperValue As Long, ByRef spanValue As Long)
     lowerValue = LBound(value)
@@ -230,7 +257,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(0)),
                 "LBound on a fixed array passed to a regular array parameter should be 0 for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -247,7 +276,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_exposes_byte_buffer_contents_to_runtime_registry_in_vm_and_jit() {
+    fn varptr_exposes_byte_buffer_contents_to_runtime_registry_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim buf() As Byte
@@ -261,7 +290,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let pointer = snapshot
                 .iter()
                 .find_map(non_zero_i64)
@@ -281,7 +312,7 @@ End Sub
     }
 
     #[test]
-    fn dynamic_byte_array_direct_indexing_preserves_byte_values_in_vm_and_jit() {
+    fn dynamic_byte_array_direct_indexing_preserves_byte_values_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim buf() As Byte
@@ -299,7 +330,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.iter().any(|value| value.as_u8() == Some(90)),
                 "direct dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -316,7 +349,7 @@ End Sub
     }
 
     #[test]
-    fn runtime_sized_byte_array_native_writeback_and_index_reads_work_in_vm_and_jit() {
+    fn runtime_sized_byte_array_native_writeback_and_index_reads_work_in_vm_and_rejects_jit() {
         let source = r#"
 Private Declare PtrSafe Sub RtlMoveMemory Lib "kernel32" (ByVal pDest As LongPtr, ByVal pSource As LongPtr, ByVal length As Long)
 
@@ -347,7 +380,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(121)),
                 "runtime-sized byte-array indexed loop sum should be 121 for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -362,7 +397,7 @@ End Sub
     }
 
     #[test]
-    fn dynamic_byte_array_function_return_assignment_preserves_byte_values_in_vm_and_jit() {
+    fn dynamic_byte_array_function_return_assignment_preserves_byte_values_in_vm_and_rejects_jit() {
         let source = r#"
 Private Function MakeBuf() As Byte()
     Dim buf() As Byte
@@ -386,7 +421,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.iter().any(|value| value.as_u8() == Some(90)),
                 "returned dynamic-array index 0 should be 90 for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -403,7 +440,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_string_variable_exposes_bstr_container_cell_in_vm_and_jit() {
+    fn varptr_string_variable_exposes_bstr_container_cell_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim textValue As String
@@ -414,7 +451,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let pointer = snapshot
                 .iter()
                 .find_map(non_zero_i64)
@@ -434,7 +473,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_variable_exposes_variant_container_in_vm_and_jit() {
+    fn varptr_variant_variable_exposes_variant_container_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -445,7 +484,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let pointer = snapshot
                 .iter()
                 .find_map(non_zero_i64)
@@ -458,7 +499,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_scalar_variable_exposes_scalar_variant_container_in_vm_and_jit() {
+    fn varptr_variant_scalar_variable_exposes_scalar_variant_container_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -469,7 +510,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let Some(value) = snapshot.last().and_then(non_zero_i64) else {
                 panic!(
                     "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
@@ -481,7 +524,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_decimal_variable_exposes_decimal_variant_container_in_vm_and_jit() {
+    fn varptr_variant_decimal_variable_exposes_decimal_variant_container_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim obj As Object
@@ -494,7 +537,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.contains(&Variant::from_decimal96(Decimal96::from_parts(
                     123_450, 0, 0, 3, true
@@ -512,7 +557,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_wide_i64_variable_exposes_vt_i8_container_in_vm_and_jit() {
+    fn varptr_variant_wide_i64_variable_exposes_vt_i8_container_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim obj As Object
@@ -525,7 +570,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert!(
                 snapshot.contains(&Variant::from_i64(5_000_000_000)),
                 "snapshot should preserve the wide I64 Variant payload for enable_jit={enable_jit}; snapshot={snapshot:?}"
@@ -541,7 +588,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_object_container_exposes_vt_unknown_in_vm_and_jit() {
+    fn varptr_variant_object_container_exposes_vt_unknown_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -552,7 +599,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let Some(value) = snapshot.last().and_then(non_zero_i64) else {
                 panic!(
                     "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
@@ -564,7 +613,7 @@ End Sub
     }
 
     #[test]
-    fn varptr_variant_array_container_exposes_variant_safearray_in_vm_and_jit() {
+    fn varptr_variant_array_container_exposes_variant_safearray_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim value As Variant
@@ -575,7 +624,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             let Some(value) = snapshot.last().and_then(non_zero_i64) else {
                 panic!(
                     "snapshot should end with the non-zero VarPtr(Variant) result for enable_jit={enable_jit}, got {:?}; snapshot={snapshot:?}",
@@ -587,7 +638,7 @@ End Sub
     }
 
     #[test]
-    fn objptr_is_stable_for_same_object_in_vm_and_jit() {
+    fn objptr_is_stable_for_same_object_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim obj As Object
@@ -600,7 +651,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert_eq!(snapshot.len(), 3);
             let first = expect_i64(&snapshot[1]);
             let second = expect_i64(&snapshot[2]);
@@ -616,7 +669,7 @@ End Sub
     }
 
     #[test]
-    fn objptr_accepts_object_valued_variant_in_vm_and_jit() {
+    fn objptr_accepts_object_valued_variant_in_vm_and_rejects_jit() {
         let source = r#"
 Sub Main()
     Dim obj As Object
@@ -631,7 +684,9 @@ End Sub
 "#;
 
         for enable_jit in [false, true] {
-            let snapshot = run_windows_host_backed(source, enable_jit);
+            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+                continue;
+            };
             assert_eq!(snapshot.len(), 4);
             let first = expect_i64(&snapshot[2]);
             let second = expect_i64(&snapshot[3]);
@@ -655,7 +710,8 @@ Sub Main()
 End Sub
 "#;
 
-        let snapshot = run_windows_host_backed(source, false);
+        let snapshot =
+            run_windows_host_backed(source, false).expect("VM pointer helper should run");
         assert_eq!(snapshot.len(), 2);
         assert_eq!(expect_i64(&snapshot[1]), 0);
     }

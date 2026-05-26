@@ -28,7 +28,7 @@ use oxvba_runtime::{
     ObjectRef, RuntimeCallArgument, RuntimeCallContext, RuntimeCallFrame, RuntimeCallKind,
     RuntimeCallResult, RuntimeCallSelector, RuntimeCallSource, RuntimeInterfaceId, Variant,
 };
-use oxvba_vm::{Vm, VmExecutionPackage, execute_and_snapshot_variants_with_host};
+use oxvba_vm::{Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin};
 
 use crate::{
     direct_host::{DirectHostIssue, DirectHostIssueKind},
@@ -133,12 +133,19 @@ pub struct ComEventCallbackVariantDispatch {
 pub struct ProjectRuntimeSession {
     compiled: CompiledProject,
     vm: Vm,
+    package_origin: VmPackageOrigin,
 }
 
 impl ProjectRuntimeSession {
     pub fn project_reflection(&self) -> &oxvba_compiler::ProjectReflection {
         &self.compiled.project_reflection
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostVariantSnapshotWithPackageIdentity {
+    pub values: Vec<Variant>,
+    pub package_identity: VmPackageIdentityEvidence,
 }
 
 const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
@@ -188,10 +195,10 @@ fn project_visible_snapshot<T: Clone>(
     all_slots[..fallback_count.min(all_slots.len())].to_vec()
 }
 
-fn full_snapshot_bytecode(bytecode: &Bytecode) -> Bytecode {
-    let mut snapshot_bytecode = bytecode.clone();
-    snapshot_bytecode.user_slot_count = snapshot_bytecode.slot_count;
-    snapshot_bytecode
+fn recorded_package_identity(vm: &Vm) -> Result<VmPackageIdentityEvidence, PhaseDiagnostic> {
+    vm.package_identity_evidence()
+        .cloned()
+        .ok_or_else(|| PhaseDiagnostic::runtime("VM package identity evidence was not recorded"))
 }
 
 impl ProjectRuntimeSession {
@@ -207,6 +214,14 @@ impl ProjectRuntimeSession {
 
     pub fn compiled(&self) -> &CompiledProject {
         &self.compiled
+    }
+
+    pub fn package_origin(&self) -> VmPackageOrigin {
+        self.package_origin
+    }
+
+    pub fn package_identity_evidence(&self) -> Option<&VmPackageIdentityEvidence> {
+        self.vm.package_identity_evidence()
     }
 
     /// Retained value-model slot read.
@@ -285,6 +300,26 @@ fn build_host_services(
 }
 
 impl Engine {
+    fn invoke_session_package_procedure_with_variants(
+        session: &mut ProjectRuntimeSession,
+        entry_pc: usize,
+        param_slots: &[usize],
+        args: &[Variant],
+    ) -> Result<(), PhaseDiagnostic> {
+        let ProjectRuntimeSession {
+            compiled,
+            vm,
+            package_origin,
+        } = session;
+        let package = VmExecutionPackage {
+            bytecode: &compiled.bytecode,
+            procedure_metadata: &compiled.procedure_runtime_metadata,
+            package_origin: *package_origin,
+        };
+        vm.invoke_package_procedure_with_variants(&package, entry_pc, param_slots, args)
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
     pub fn new(config: HostConfig) -> Self {
         let runtime_profile = RuntimeProfileId::default_for_hal_profile(native_host_profile());
         let mut policy = HostPolicy::deterministic_runtime();
@@ -518,15 +553,12 @@ impl Engine {
                     resolved_symbol, expected_arity, actual_arity
                 )));
             }
-            runtime
-                .vm
-                .invoke_procedure_with_variants(
-                    &runtime.compiled.bytecode,
-                    metadata.entry_pc,
-                    &metadata.param_slots,
-                    actual_args.as_slice(),
-                )
-                .map_err(PhaseDiagnostic::runtime)?;
+            Self::invoke_session_package_procedure_with_variants(
+                runtime,
+                metadata.entry_pc,
+                &metadata.param_slots,
+                actual_args.as_slice(),
+            )?;
         }
         Ok(true)
     }
@@ -686,7 +718,11 @@ impl Engine {
             VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
-        Ok(ProjectRuntimeSession { compiled, vm })
+        Ok(ProjectRuntimeSession {
+            compiled,
+            vm,
+            package_origin: VmPackageOrigin::InMemory,
+        })
     }
 
     /// Compile a project manifest and prepare a runtime session.
@@ -714,7 +750,11 @@ impl Engine {
         vm.load_execution_package_metadata(&package);
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        Ok(ProjectRuntimeSession { compiled, vm })
+        Ok(ProjectRuntimeSession {
+            compiled,
+            vm,
+            package_origin: VmPackageOrigin::InMemory,
+        })
     }
 
     /// Invoke a specific procedure by module and name with exact Variant args.
@@ -751,15 +791,12 @@ impl Engine {
             )));
         }
 
-        session
-            .vm
-            .invoke_procedure_with_variants(
-                &session.compiled.bytecode,
-                metadata.entry_pc,
-                &metadata.param_slots,
-                args,
-            )
-            .map_err(PhaseDiagnostic::runtime)?;
+        Self::invoke_session_package_procedure_with_variants(
+            session,
+            metadata.entry_pc,
+            &metadata.param_slots,
+            args,
+        )?;
 
         // Read return value from return_slot if present
         match metadata.return_slot {
@@ -809,15 +846,12 @@ impl Engine {
             } else {
                 vec![Variant::from_object_ref(object.clone())]
             };
-            session
-                .vm
-                .invoke_procedure_with_variants(
-                    &session.compiled.bytecode,
-                    metadata.entry_pc,
-                    &metadata.param_slots,
-                    &init_args,
-                )
-                .map_err(PhaseDiagnostic::runtime)?;
+            Self::invoke_session_package_procedure_with_variants(
+                session,
+                metadata.entry_pc,
+                &metadata.param_slots,
+                &init_args,
+            )?;
         }
 
         Ok(object)
@@ -986,15 +1020,12 @@ impl Engine {
             visible_args
         };
 
-        session
-            .vm
-            .invoke_procedure_with_variants(
-                &session.compiled.bytecode,
-                member_route.entry_pc,
-                &member_route.param_slots,
-                &full_args,
-            )
-            .map_err(PhaseDiagnostic::runtime)?;
+        Self::invoke_session_package_procedure_with_variants(
+            session,
+            member_route.entry_pc,
+            &member_route.param_slots,
+            &full_args,
+        )?;
 
         match member_route.return_slot {
             Some(slot) => Ok(RuntimeCallResult::value(session.read_variant_slot(slot))
@@ -1032,15 +1063,12 @@ impl Engine {
                 resolved_symbol, expected_arity, callback_arity
             )));
         }
-        runtime
-            .vm
-            .invoke_procedure_with_variants(
-                &runtime.compiled.bytecode,
-                metadata.entry_pc,
-                &metadata.param_slots,
-                callback.args.as_slice(),
-            )
-            .map_err(PhaseDiagnostic::runtime)
+        Self::invoke_session_package_procedure_with_variants(
+            runtime,
+            metadata.entry_pc,
+            &metadata.param_slots,
+            callback.args.as_slice(),
+        )
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
@@ -1060,10 +1088,18 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        Ok(self
+            .execute_source_with_variant_snapshot_and_package_identity_phased(source)?
+            .values)
+    }
+
+    pub fn execute_source_with_variant_snapshot_and_package_identity_phased(
+        &self,
+        source: &str,
+    ) -> Result<HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic> {
         let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata(source)
             .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         self.preflight_host_sensitive_support(&bytecode)?;
-        let snapshot_bytecode = full_snapshot_bytecode(&bytecode);
         if self.config.enable_jit {
             #[cfg(feature = "jit")]
             {
@@ -1077,20 +1113,36 @@ impl Engine {
             }
         }
 
-        let all_slots =
-            execute_and_snapshot_variants_with_host(&snapshot_bytecode, self.host_services.clone())
-                .map_err(PhaseDiagnostic::runtime)?;
-        Ok(project_visible_snapshot(
+        let mut vm = Vm::new(self.host_services.clone());
+        let package = VmExecutionPackage::new(&bytecode, &procedure_runtime_metadata);
+        vm.execute_package(&package)
+            .map_err(PhaseDiagnostic::runtime)?;
+        let package_identity = recorded_package_identity(&vm)?;
+        let all_slots = vm.snapshot_variants(bytecode.slot_count);
+        let values = project_visible_snapshot(
             &all_slots,
             &procedure_runtime_metadata,
             bytecode.user_slot_count,
-        ))
+        );
+        Ok(HostVariantSnapshotWithPackageIdentity {
+            values,
+            package_identity,
+        })
     }
 
     pub fn execute_project_with_variant_snapshot_phased(
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        Ok(self
+            .execute_project_with_variant_snapshot_and_package_identity_phased(manifest)?
+            .values)
+    }
+
+    pub fn execute_project_with_variant_snapshot_and_package_identity_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic> {
         let compiled =
             compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
@@ -1116,7 +1168,7 @@ impl Engine {
     fn execute_compiled_project_with_variant_snapshot_vm(
         &self,
         compiled: &CompiledProject,
-    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+    ) -> Result<HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic> {
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
@@ -1124,12 +1176,17 @@ impl Engine {
             VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
+        let package_identity = recorded_package_identity(&vm)?;
         let all_slots = vm.snapshot_variants(compiled.bytecode.slot_count);
-        Ok(project_visible_snapshot(
+        let values = project_visible_snapshot(
             &all_slots,
             &compiled.procedure_runtime_metadata,
             compiled.bytecode.user_slot_count,
-        ))
+        );
+        Ok(HostVariantSnapshotWithPackageIdentity {
+            values,
+            package_identity,
+        })
     }
 
     /// Prepare a runtime session from a deserialized OxBundle (no recompilation).
@@ -1184,13 +1241,26 @@ impl Engine {
         vm.load_execution_package_metadata(&package);
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        Ok(ProjectRuntimeSession { compiled, vm })
+        Ok(ProjectRuntimeSession {
+            compiled,
+            vm,
+            package_origin: VmPackageOrigin::OxBundle,
+        })
     }
 
     pub fn execute_bundle_with_variant_snapshot(
         &self,
         bundle: &oxvba_compiler::OxBundle,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        Ok(self
+            .execute_bundle_with_variant_snapshot_and_package_identity(bundle)?
+            .values)
+    }
+
+    pub fn execute_bundle_with_variant_snapshot_and_package_identity(
+        &self,
+        bundle: &oxvba_compiler::OxBundle,
+    ) -> Result<HostVariantSnapshotWithPackageIdentity, PhaseDiagnostic> {
         if let Some(ref bindings) = bundle.event_dispatch_bindings
             && let Ok(mut dispatcher) = self.event_dispatcher.lock()
         {
@@ -1207,7 +1277,12 @@ impl Engine {
         let package = VmExecutionPackage::from_bundle(bundle);
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
-        Ok(vm.snapshot_variants(bundle.bytecode.user_slot_count))
+        let package_identity = recorded_package_identity(&vm)?;
+        let values = vm.snapshot_variants(bundle.bytecode.user_slot_count);
+        Ok(HostVariantSnapshotWithPackageIdentity {
+            values,
+            package_identity,
+        })
     }
 
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
@@ -1403,10 +1478,38 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 
 #[cfg(test)]
 mod tests {
-    use oxvba_compiler::{DeclareParamType, ProjectDynamicMemberKind, ProjectDynamicMemberRoute};
+    use oxvba_compiler::{
+        DeclareParamType, ModuleKind, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+        ProjectKind, ProjectManifest, module_unit_from_source,
+    };
     use oxvba_runtime::{ObjectRef, RuntimeCallKind, RuntimeCallSelector, Variant};
+    use oxvba_vm::{VmPackageIdentityEvidence, VmPackageOrigin};
 
-    use super::Engine;
+    use super::{Engine, HostConfig};
+
+    fn manifest_from_source(source: &str) -> ProjectManifest {
+        ProjectManifest {
+            project_name: "HostIdentityEvidence".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("MainModule", ModuleKind::Procedural, source)
+                    .expect("test module should parse"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn sorted_procedure_names(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+        let mut names = evidence
+            .procedures
+            .iter()
+            .map(|procedure| procedure.procedure_name.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
 
     fn member_route(kind: ProjectDynamicMemberKind) -> ProjectDynamicMemberRoute {
         ProjectDynamicMemberRoute {
@@ -1452,5 +1555,133 @@ mod tests {
             Some(42)
         );
         assert_eq!(frame.receiver.as_ref().map(ObjectRef::raw), Some(88));
+    }
+
+    #[test]
+    fn source_snapshot_path_records_package_identity_without_behavior_drift() {
+        let source = r#"
+Sub Main()
+    Dim Result As Variant
+    Result = Test(2.5, "kg")
+End Sub
+
+Function Test(dbl As Double, str As String) As Variant
+    Test = CStr(dbl) & str
+End Function
+"#;
+        let engine = Engine::new(HostConfig { enable_jit: false });
+
+        let legacy_snapshot = engine
+            .execute_source_with_variant_snapshot_phased(source)
+            .expect("source snapshot should execute");
+        let package_snapshot = engine
+            .execute_source_with_variant_snapshot_and_package_identity_phased(source)
+            .expect("package-backed source snapshot should execute");
+
+        assert_eq!(package_snapshot.values, legacy_snapshot);
+        assert!(
+            package_snapshot
+                .values
+                .iter()
+                .any(|value| value.as_bstr().is_some()),
+            "source snapshot should still contain the computed string value: {:?}",
+            package_snapshot.values
+        );
+        assert_eq!(
+            package_snapshot.package_identity.package_origin,
+            VmPackageOrigin::InMemory
+        );
+        assert!(
+            package_snapshot
+                .package_identity
+                .package_digest
+                .starts_with("fnv1a64:")
+        );
+        assert!(
+            package_snapshot
+                .package_identity
+                .bytecode_digest
+                .starts_with("fnv1a64:")
+        );
+        assert_eq!(
+            sorted_procedure_names(&package_snapshot.package_identity),
+            vec!["main".to_string(), "test".to_string()]
+        );
+        assert!(
+            package_snapshot
+                .package_identity
+                .procedures
+                .iter()
+                .all(|procedure| procedure.procedure_id.contains("@pc:"))
+        );
+    }
+
+    #[test]
+    fn project_and_callable_session_paths_preserve_package_identity() {
+        let source = r#"
+Sub Main()
+    Dim Observed As Long
+    Observed = AddOne(41)
+End Sub
+
+Function AddOne(value As Long) As Long
+    AddOne = value + 1
+End Function
+"#;
+        let manifest = manifest_from_source(source);
+        let engine = Engine::new(HostConfig { enable_jit: false });
+
+        let legacy_project_snapshot = engine
+            .execute_project_with_variant_snapshot_phased(&manifest)
+            .expect("project snapshot should execute");
+        let package_project_snapshot = engine
+            .execute_project_with_variant_snapshot_and_package_identity_phased(&manifest)
+            .expect("package-backed project snapshot should execute");
+
+        assert_eq!(package_project_snapshot.values, legacy_project_snapshot);
+        assert_eq!(
+            package_project_snapshot.package_identity.package_origin,
+            VmPackageOrigin::InMemory
+        );
+        assert_eq!(
+            sorted_procedure_names(&package_project_snapshot.package_identity),
+            vec!["addone".to_string(), "main".to_string()]
+        );
+        assert!(
+            package_project_snapshot
+                .package_identity
+                .procedures
+                .iter()
+                .any(
+                    |procedure| procedure.module_name.eq_ignore_ascii_case("MainModule")
+                        && procedure.procedure_name.eq_ignore_ascii_case("AddOne")
+                )
+        );
+
+        let mut session = engine
+            .compile_and_prepare_session(&manifest)
+            .expect("callable session should prepare");
+        assert_eq!(session.package_origin(), VmPackageOrigin::InMemory);
+        assert!(
+            session.package_identity_evidence().is_none(),
+            "preparation alone should not claim an executed package identity"
+        );
+        let result = engine
+            .invoke_procedure_with_variants(
+                &mut session,
+                "MainModule",
+                "AddOne",
+                &[Variant::from_i32(41)],
+            )
+            .expect("callable procedure should execute");
+        assert_eq!(result, Variant::from_i32(42));
+        let session_identity = session
+            .package_identity_evidence()
+            .expect("callable invocation should record package identity");
+        assert_eq!(session_identity.package_origin, VmPackageOrigin::InMemory);
+        assert_eq!(
+            sorted_procedure_names(session_identity),
+            vec!["addone".to_string(), "main".to_string()]
+        );
     }
 }

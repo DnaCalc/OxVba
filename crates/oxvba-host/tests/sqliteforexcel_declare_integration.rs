@@ -167,20 +167,23 @@ fn sqliteforexcel_demo_module_sources_direct_compile_now_succeeds_after_compile_
 
 #[cfg(target_os = "windows")]
 #[test]
-fn sqliteforexcel_bounded_normalized_demo_completes_in_vm_and_jit() {
+fn sqliteforexcel_bounded_normalized_demo_completes_in_vm_and_rejects_jit() {
     let basproj_path = sqlite_bounded_demo_basproj();
     let loaded = load_basproj(&basproj_path).expect("bounded sqlite demo fixture should load");
 
-    for enable_jit in [false, true] {
-        let mut engine = Engine::new(HostConfig { enable_jit });
-        engine.set_host_policy(HostPolicy::interactive_dev());
-        engine
-            .execute_project_with_variant_snapshot_phased(&loaded.manifest)
-            .unwrap_or_else(|err| {
-                panic!(
-                    "bounded sqlite demo fixture should complete for enable_jit={enable_jit}: {}",
-                    err
-                )
-            });
-    }
+    let mut vm = Engine::new(HostConfig { enable_jit: false });
+    vm.set_host_policy(HostPolicy::interactive_dev());
+    vm.execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect("bounded sqlite demo fixture should complete on the VM backend");
+
+    let mut jit = Engine::new(HostConfig { enable_jit: true });
+    jit.set_host_policy(HostPolicy::interactive_dev());
+    let err = jit
+        .execute_project_with_variant_snapshot_phased(&loaded.manifest)
+        .expect_err("JIT request should not silently fall back to VM execution");
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+    assert!(
+        err.message().contains("JIT execution"),
+        "unexpected JIT unavailable diagnostic: {err}"
+    );
 }
