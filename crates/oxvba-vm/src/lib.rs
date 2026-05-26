@@ -121,8 +121,8 @@ mod tests {
     use oxvba_compiler::{
         DeclareParamType, OxBundle, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
-        RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId, compile,
-        compile_with_runtime_metadata,
+        ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
+        SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -419,6 +419,14 @@ mod tests {
             ParameterPassingMode::ByVal
         );
         assert_eq!(
+            test_signature.parameters[0].source_mechanism,
+            SourceParameterMechanism::ExplicitByVal
+        );
+        assert_eq!(
+            test_signature.parameters[0].resolved_mechanism,
+            ResolvedParameterMechanism::ByVal
+        );
+        assert_eq!(
             test_signature.parameters[0].declared_type,
             VbaTypeId::Double
         );
@@ -426,6 +434,14 @@ mod tests {
         assert_eq!(
             test_signature.parameters[1].passing_mode,
             ParameterPassingMode::ByRef
+        );
+        assert_eq!(
+            test_signature.parameters[1].source_mechanism,
+            SourceParameterMechanism::ExplicitByRef
+        );
+        assert_eq!(
+            test_signature.parameters[1].resolved_mechanism,
+            ResolvedParameterMechanism::ByRef
         );
         assert_eq!(
             test_signature.parameters[1].declared_type,
@@ -443,6 +459,10 @@ mod tests {
         assert_eq!(
             property_signature.parameters[0].role,
             ParameterRole::PropertyValue
+        );
+        assert_eq!(
+            property_signature.parameters[0].resolved_mechanism,
+            ResolvedParameterMechanism::PropertyValueByVal
         );
     }
 

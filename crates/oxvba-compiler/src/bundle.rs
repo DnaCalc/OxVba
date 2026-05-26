@@ -10,8 +10,11 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bytecode::Bytecode;
 use crate::emit::{
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    legacy_procedure_signature_descriptor,
+    OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
+    ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode, ParameterRole,
+    ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
+    SourceParameterMechanism, VbaTypeId, legacy_procedure_signature_descriptor,
 };
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
@@ -25,7 +28,7 @@ use crate::project::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 5;
+const FORMAT_VERSION: u32 = 6;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -257,6 +260,22 @@ struct LegacyOxBundleV4 {
     descriptor_inventory: Option<DescriptorInventory>,
 }
 
+/// v5 bundle layout before call-relevant signature descriptor fields were
+/// added to `ProcedureSignatureDescriptor` and `ParameterDescriptor`.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV5 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV5>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyProcedureRuntimeSlotMetadata {
     name: String,
@@ -391,6 +410,149 @@ impl From<LegacyProcedureRuntimeMetadataV4> for ProcedureRuntimeMetadata {
             return_type: legacy.return_type,
             signature,
         }
+    }
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadataV5 {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<ProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+    signature: LegacyProcedureSignatureDescriptorV5,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureSignatureDescriptorV5 {
+    procedure_name: String,
+    kind: ProcedureKindDescriptor,
+    parameters: Vec<LegacyParameterDescriptorV5>,
+    return_type: Option<VbaTypeId>,
+    return_slot: Option<usize>,
+    property_group: Option<String>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyParameterDescriptorV5 {
+    index: usize,
+    name: String,
+    slot: Option<usize>,
+    role: ParameterRole,
+    passing_mode: ParameterPassingMode,
+    declared_type: VbaTypeId,
+    optional: bool,
+    param_array: bool,
+    default_value: Option<i32>,
+}
+
+impl From<LegacyProcedureRuntimeMetadataV5> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadataV5) -> Self {
+        ProcedureRuntimeMetadata {
+            module_name: legacy.module_name,
+            procedure_name: legacy.procedure_name,
+            entry_pc: legacy.entry_pc,
+            source_line_start: legacy.source_line_start,
+            source_line_end: legacy.source_line_end,
+            statement_line_numbers: legacy.statement_line_numbers,
+            statement_entry_pcs: legacy.statement_entry_pcs,
+            slots: legacy.slots,
+            param_slots: legacy.param_slots,
+            return_slot: legacy.return_slot,
+            param_types: legacy.param_types,
+            return_type: legacy.return_type,
+            signature: upgrade_v5_signature_descriptor(legacy.signature),
+        }
+    }
+}
+
+fn upgrade_v5_signature_descriptor(
+    legacy: LegacyProcedureSignatureDescriptorV5,
+) -> ProcedureSignatureDescriptor {
+    let kind = legacy.kind;
+    let parameters = legacy
+        .parameters
+        .into_iter()
+        .map(|param| upgrade_v5_parameter_descriptor(kind, param))
+        .collect();
+    ProcedureSignatureDescriptor {
+        procedure_name: legacy.procedure_name,
+        kind,
+        parameters,
+        return_type: legacy.return_type,
+        return_slot: legacy.return_slot,
+        property_group: legacy.property_group,
+        implicit_current_object: None,
+    }
+}
+
+fn upgrade_v5_parameter_descriptor(
+    kind: ProcedureKindDescriptor,
+    legacy: LegacyParameterDescriptorV5,
+) -> ParameterDescriptor {
+    let resolved_mechanism = if matches!(
+        (kind, legacy.role),
+        (
+            ProcedureKindDescriptor::PropertyLet | ProcedureKindDescriptor::PropertySet,
+            ParameterRole::PropertyValue
+        )
+    ) {
+        ResolvedParameterMechanism::PropertyValueByVal
+    } else {
+        match legacy.passing_mode {
+            ParameterPassingMode::ByRef => ResolvedParameterMechanism::ByRef,
+            ParameterPassingMode::ByVal => ResolvedParameterMechanism::ByVal,
+            ParameterPassingMode::Unknown => ResolvedParameterMechanism::Unknown,
+        }
+    };
+    let optional_descriptor = if legacy.optional {
+        let (default_value, missing_state) = match legacy.default_value {
+            Some(value) => (
+                OptionalDefaultValue::ExplicitI32(value),
+                OptionalMissingStatePolicy::AssignDefaultLocal,
+            ),
+            None if legacy.declared_type == VbaTypeId::Variant => (
+                OptionalDefaultValue::VariantMissingError448,
+                OptionalMissingStatePolicy::PreserveMissingArgumentState,
+            ),
+            None => (
+                OptionalDefaultValue::DeclaredTypeDefault,
+                OptionalMissingStatePolicy::AssignDefaultLocal,
+            ),
+        };
+        OptionalParameterDescriptor::Optional {
+            default_value,
+            missing_state,
+        }
+    } else {
+        OptionalParameterDescriptor::Required
+    };
+    let param_array_descriptor = legacy.param_array.then_some(ParamArrayDescriptor {
+        element_type: VbaTypeId::Variant,
+        array_lower_bound: 0,
+        empty_upper_bound: -1,
+    });
+    ParameterDescriptor {
+        index: legacy.index,
+        name: legacy.name,
+        slot: legacy.slot,
+        role: legacy.role,
+        source_mechanism: SourceParameterMechanism::Unknown,
+        resolved_mechanism,
+        passing_mode: legacy.passing_mode,
+        declared_type: legacy.declared_type,
+        optional: legacy.optional,
+        param_array: legacy.param_array,
+        default_value: legacy.default_value,
+        optional_descriptor,
+        param_array_descriptor,
     }
 }
 
@@ -584,10 +746,15 @@ impl OxBundle {
 
         // Read version.
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version != 1 && version != 2 && version != 3 && version != 4 && version != FORMAT_VERSION
+        if version != 1
+            && version != 2
+            && version != 3
+            && version != 4
+            && version != 5
+            && version != FORMAT_VERSION
         {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, or {FORMAT_VERSION})"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, or {FORMAT_VERSION})"
             ));
         }
 
@@ -653,6 +820,26 @@ impl OxBundle {
             let legacy: LegacyOxBundleV4 =
                 rkyv::from_bytes::<LegacyOxBundleV4, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v4: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy
+                    .procedure_metadata
+                    .into_iter()
+                    .map(|(name, metadata)| (name, metadata.into()))
+                    .collect(),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+            })
+        } else if version == 5 {
+            let legacy: LegacyOxBundleV5 =
+                rkyv::from_bytes::<LegacyOxBundleV5, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v5: {e}"))?;
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
                 procedure_metadata: legacy
@@ -1087,7 +1274,8 @@ mod tests {
     use super::*;
     use crate::bytecode::{Bytecode, DeclareParamType, Instruction};
     use crate::emit::{
-        ParameterPassingMode, ProcedureKindDescriptor, RuntimeCarrierKind, SlotInitialState,
+        OptionalParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+        ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SourceParameterMechanism,
         VbaTypeId,
     };
     use crate::project::ExportKind;
@@ -1156,11 +1344,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_5() {
+    fn header_version_is_6() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
     }
 
     #[test]
@@ -1399,6 +1587,92 @@ mod tests {
         );
         assert_eq!(signature.parameters[1].name, "b");
         assert_eq!(signature.parameters[1].declared_type, VbaTypeId::Double);
+    }
+
+    #[test]
+    fn v5_backward_compat_upgrades_call_relevant_signature_shape() {
+        let bytecode = Bytecode {
+            instructions: vec![Instruction::Halt],
+            external_call_descriptors: vec![],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+        let mut procedure_metadata = BTreeMap::new();
+        procedure_metadata.insert(
+            "property_let_value".to_string(),
+            LegacyProcedureRuntimeMetadataV5 {
+                module_name: "Widget".to_string(),
+                procedure_name: "property_let_value".to_string(),
+                entry_pc: 0,
+                source_line_start: 1,
+                source_line_end: 3,
+                statement_line_numbers: vec![2],
+                statement_entry_pcs: vec![1],
+                slots: vec![ProcedureRuntimeSlotMetadata::new(
+                    "newValue".to_string(),
+                    0,
+                    ProcedureRuntimeSlotKind::Parameter,
+                    VbaTypeId::Long,
+                )],
+                param_slots: vec![0],
+                return_slot: None,
+                param_types: vec![DeclareParamType::Long],
+                return_type: None,
+                signature: LegacyProcedureSignatureDescriptorV5 {
+                    procedure_name: "property_let_value".to_string(),
+                    kind: ProcedureKindDescriptor::PropertyLet,
+                    parameters: vec![LegacyParameterDescriptorV5 {
+                        index: 0,
+                        name: "newValue".to_string(),
+                        slot: Some(0),
+                        role: ParameterRole::PropertyValue,
+                        passing_mode: ParameterPassingMode::ByRef,
+                        declared_type: VbaTypeId::Long,
+                        optional: false,
+                        param_array: false,
+                        default_value: None,
+                    }],
+                    return_type: None,
+                    return_slot: None,
+                    property_group: Some("value".to_string()),
+                },
+            },
+        );
+        let legacy = LegacyOxBundleV5 {
+            bytecode,
+            procedure_metadata,
+            manifest_snapshot: None,
+            export_inventory: None,
+            source_hashes: None,
+            toolchain_fingerprint: None,
+            event_dispatch_bindings: None,
+            com_withevents_routes: None,
+            dynamic_object_routes: None,
+            descriptor_inventory: None,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v5");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&5u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v5");
+        let signature = &restored.procedure_metadata["property_let_value"].signature;
+        let param = &signature.parameters[0];
+        assert_eq!(param.source_mechanism, SourceParameterMechanism::Unknown);
+        assert_eq!(
+            param.resolved_mechanism,
+            ResolvedParameterMechanism::PropertyValueByVal
+        );
+        assert_eq!(
+            param.optional_descriptor,
+            OptionalParameterDescriptor::Required
+        );
+        assert!(signature.implicit_current_object.is_none());
     }
 
     #[test]

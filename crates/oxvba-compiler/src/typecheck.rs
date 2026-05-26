@@ -1954,7 +1954,9 @@ mod tests {
         can_assign_to, classify_call_mode, coercion_result_label, comparison_result_label,
         intrinsic_argument_target_type, intrinsic_result_type, join_types,
     };
-    use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
+    use crate::resolve::{
+        BoundCallArg, BoundExpr, BoundParam, BoundParamSourceMechanism, BoundType,
+    };
 
     #[test]
     fn join_numeric_promotes_to_wider_type() {
@@ -2273,6 +2275,7 @@ mod tests {
             "work".to_string(),
             vec![BoundParam {
                 name: "x".to_string(),
+                source_mechanism: BoundParamSourceMechanism::ExplicitByVal,
                 by_ref: false,
                 param_array: false,
                 optional: false,
@@ -2300,6 +2303,7 @@ mod tests {
             "work".to_string(),
             vec![BoundParam {
                 name: "x".to_string(),
+                source_mechanism: BoundParamSourceMechanism::ExplicitByVal,
                 by_ref: false,
                 param_array: false,
                 optional: false,

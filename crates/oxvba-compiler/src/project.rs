@@ -9220,6 +9220,7 @@ mod tests {
     use crate::{
         Instruction,
         bytecode::{ComMemberSelectorDescriptor, ProjectMemberCallKind},
+        emit::{ParameterRole, ResolvedParameterMechanism, SourceParameterMechanism, VbaTypeId},
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -9390,6 +9391,62 @@ mod tests {
                 "neutral reflection leaked forbidden policy token {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn compile_project_marks_hidden_class_receiver_as_implicit_current_object() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch(ByVal value As Long)\nEnd Sub",
+        )
+        .expect("class module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project compile should succeed");
+        let signature = compiled
+            .procedure_runtime_metadata
+            .values()
+            .find(|metadata| {
+                metadata.module_name.eq_ignore_ascii_case("widget")
+                    && metadata.procedure_name.eq_ignore_ascii_case("touch")
+            })
+            .expect("class method metadata should be decorated")
+            .procedure_signature_descriptor();
+        let receiver = signature
+            .implicit_current_object
+            .as_ref()
+            .expect("class method should expose implicit Me descriptor");
+
+        assert_eq!(receiver.declared_type, VbaTypeId::Object);
+        assert_eq!(receiver.accessible_name, "Me");
+        assert!(!receiver.assignable);
+        assert_eq!(
+            signature.parameters[0].role,
+            ParameterRole::ImplicitCurrentObject
+        );
+        assert_eq!(
+            signature.parameters[0].source_mechanism,
+            SourceParameterMechanism::ImplementationInjected,
+            "class lowering injects the hidden receiver; it is not a user source parameter"
+        );
+        assert_eq!(
+            signature.parameters[0].resolved_mechanism,
+            ResolvedParameterMechanism::ByVal
+        );
     }
 
     #[test]

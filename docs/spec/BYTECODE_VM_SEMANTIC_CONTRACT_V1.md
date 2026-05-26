@@ -182,7 +182,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v5 carries those facts and upgrades older v3/v4 metadata
+`OxBundle` format v6 carries those facts and upgrades older v3/v4/v5 metadata
 into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -200,9 +200,12 @@ Current VMR-03 seed surface is a metadata view, not call-binding behavior:
 `ProcedureRuntimeMetadata::procedure_signature_descriptor` and
 `VmExecutionPackage::procedure_signature_descriptors` expose
 `ProcedureSignatureDescriptor` rows for procedure kind, parameter order, slots,
-declared parameter types, parsed ByRef/ByVal mode, Optional/default literals,
-ParamArray marker, return type, return slot, and property group where current
-compiler metadata knows them. `OxBundle` format v5 carries those facts and
+declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
+where known, resolved mechanism, Optional/default/missing policy, ParamArray
+shape, return type, return slot, property group, property value ByVal
+semantics, and class hidden-receiver/`Me` metadata where current compiler
+metadata knows them. `OxBundle` format v6 carries those facts, upgrades v5
+bundles with `Unknown` source mechanism where v5 lacked that distinction, and
 upgrades v4 bundles with `Unknown` parameter passing mode where v4 had no
 serialized ByRef/ByVal fact. VM call execution does not consume these
 descriptors yet.

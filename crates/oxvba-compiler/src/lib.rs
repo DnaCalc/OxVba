@@ -20,10 +20,12 @@ pub use bundle::{
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
-    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    ProcedureSignatureDescriptor, RuntimeCarrierKind, SlotInitialState, SlotRole,
-    SlotTypeDescriptor, VbaTypeId, bound_type_to_declare_param_type,
+    ImplicitCurrentObjectDescriptor, OptionalDefaultValue, OptionalMissingStatePolicy,
+    OptionalParameterDescriptor, ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode,
+    ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
+    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
+    VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -128,9 +130,10 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        Bytecode, Instruction, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-        ProcedureRuntimeSlotKind, RuntimeCarrierKind, SlotInitialState, SlotRole, VbaTypeId,
-        compile, compile_with_runtime_metadata,
+        Bytecode, Instruction, OptionalDefaultValue, OptionalMissingStatePolicy,
+        OptionalParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+        ProcedureRuntimeSlotKind, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
+        SlotRole, SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -460,7 +463,9 @@ mod tests {
     fn procedure_runtime_metadata_projects_first_signature_descriptor_view() {
         let source = "Sub Main()\n\
                       End Sub\n\
-                      Sub Capture(ByRef target As Long, Optional ByVal value As Long = 7)\n\
+                      Sub Capture(target As Long, ByRef alias As Long, Optional ByVal value As Long = 7)\n\
+                      End Sub\n\
+                      Sub Maybe(Optional ByVal arg As Variant)\n\
                       End Sub\n\
                       Sub Pack(ByRef target As Variant, ParamArray items() As Variant)\n\
                       End Sub\n\
@@ -481,21 +486,61 @@ mod tests {
             .procedure_signature_descriptor();
         assert_eq!(capture.kind, ProcedureKindDescriptor::Sub);
         assert_eq!(capture.return_type, None);
-        assert_eq!(capture.parameters.len(), 2);
+        assert_eq!(capture.parameters.len(), 3);
         assert_eq!(capture.parameters[0].name, "target");
         assert_eq!(capture.parameters[0].role, ParameterRole::Positional);
         assert_eq!(
             capture.parameters[0].passing_mode,
             ParameterPassingMode::ByRef
         );
+        assert_eq!(
+            capture.parameters[0].source_mechanism,
+            SourceParameterMechanism::Omitted
+        );
+        assert_eq!(
+            capture.parameters[0].resolved_mechanism,
+            ResolvedParameterMechanism::ByRef
+        );
         assert_eq!(capture.parameters[0].declared_type, VbaTypeId::Long);
-        assert_eq!(capture.parameters[1].name, "value");
-        assert_eq!(capture.parameters[1].role, ParameterRole::Optional);
+        assert_eq!(capture.parameters[1].name, "alias");
+        assert_eq!(
+            capture.parameters[1].source_mechanism,
+            SourceParameterMechanism::ExplicitByRef
+        );
         assert_eq!(
             capture.parameters[1].passing_mode,
+            ParameterPassingMode::ByRef
+        );
+        assert_eq!(capture.parameters[2].name, "value");
+        assert_eq!(capture.parameters[2].role, ParameterRole::Optional);
+        assert_eq!(
+            capture.parameters[2].source_mechanism,
+            SourceParameterMechanism::ExplicitByVal
+        );
+        assert_eq!(
+            capture.parameters[2].passing_mode,
             ParameterPassingMode::ByVal
         );
-        assert_eq!(capture.parameters[1].default_value, Some(7));
+        assert_eq!(capture.parameters[2].default_value, Some(7));
+        assert_eq!(
+            capture.parameters[2].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::ExplicitI32(7),
+                missing_state: OptionalMissingStatePolicy::AssignDefaultLocal,
+            }
+        );
+
+        let maybe = metadata
+            .get("maybe")
+            .expect("Maybe metadata should be present")
+            .procedure_signature_descriptor();
+        assert_eq!(
+            maybe.parameters[0].optional_descriptor,
+            OptionalParameterDescriptor::Optional {
+                default_value: OptionalDefaultValue::VariantMissingError448,
+                missing_state: OptionalMissingStatePolicy::PreserveMissingArgumentState,
+            }
+        );
 
         let pack = metadata
             .get("pack")
@@ -505,6 +550,13 @@ mod tests {
         assert_eq!(pack.parameters[1].role, ParameterRole::ParamArray);
         assert_eq!(pack.parameters[1].passing_mode, ParameterPassingMode::ByVal);
         assert_eq!(pack.parameters[1].declared_type, VbaTypeId::Array);
+        assert_eq!(
+            pack.parameters[1]
+                .param_array_descriptor
+                .as_ref()
+                .map(|descriptor| (descriptor.element_type, descriptor.array_lower_bound)),
+            Some((VbaTypeId::Variant, 0))
+        );
 
         let echo = metadata
             .get("echo")
@@ -538,7 +590,15 @@ mod tests {
         assert_eq!(
             property_let.parameters[0].passing_mode,
             ParameterPassingMode::ByRef,
-            "first signature descriptor records the current parsed mechanism; later VMR-03 rows own property value ByVal runtime semantics"
+            "legacy passing_mode still reports parsed source mechanism"
+        );
+        assert_eq!(
+            property_let.parameters[0].source_mechanism,
+            SourceParameterMechanism::ExplicitByRef
+        );
+        assert_eq!(
+            property_let.parameters[0].resolved_mechanism,
+            ResolvedParameterMechanism::PropertyValueByVal
         );
     }
 

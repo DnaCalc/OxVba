@@ -15,8 +15,8 @@ use crate::{
     },
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
-        BoundExpr, BoundExternalDecl, BoundModule, BoundParam, BoundProcedure, BoundStmt,
-        BoundType, CompareOp,
+        BoundExpr, BoundExternalDecl, BoundModule, BoundParam, BoundParamSourceMechanism,
+        BoundProcedure, BoundStmt, BoundType, CompareOp,
     },
 };
 
@@ -150,6 +150,7 @@ pub struct ProcedureSignatureDescriptor {
     pub return_type: Option<VbaTypeId>,
     pub return_slot: Option<usize>,
     pub property_group: Option<String>,
+    pub implicit_current_object: Option<ImplicitCurrentObjectDescriptor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -168,11 +169,15 @@ pub struct ParameterDescriptor {
     pub name: String,
     pub slot: Option<usize>,
     pub role: ParameterRole,
+    pub source_mechanism: SourceParameterMechanism,
+    pub resolved_mechanism: ResolvedParameterMechanism,
     pub passing_mode: ParameterPassingMode,
     pub declared_type: VbaTypeId,
     pub optional: bool,
     pub param_array: bool,
     pub default_value: Option<i32>,
+    pub optional_descriptor: OptionalParameterDescriptor,
+    pub param_array_descriptor: Option<ParamArrayDescriptor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -181,6 +186,7 @@ pub enum ParameterRole {
     Optional,
     ParamArray,
     PropertyValue,
+    ImplicitCurrentObject,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -188,6 +194,65 @@ pub enum ParameterPassingMode {
     Unknown,
     ByRef,
     ByVal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum SourceParameterMechanism {
+    Unknown,
+    Omitted,
+    ExplicitByRef,
+    ExplicitByVal,
+    ImplementationInjected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ResolvedParameterMechanism {
+    Unknown,
+    ByRef,
+    ByVal,
+    PropertyValueByVal,
+    EventSignatureOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum OptionalParameterDescriptor {
+    Required,
+    Optional {
+        default_value: OptionalDefaultValue,
+        missing_state: OptionalMissingStatePolicy,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum OptionalDefaultValue {
+    Unknown,
+    ExplicitI32(i32),
+    DeclaredTypeDefault,
+    VariantMissingError448,
+    ImplementationDefined,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum OptionalMissingStatePolicy {
+    Unknown,
+    AssignDefaultLocal,
+    PreserveMissingArgumentState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ParamArrayDescriptor {
+    pub element_type: VbaTypeId,
+    pub array_lower_bound: i32,
+    pub empty_upper_bound: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ImplicitCurrentObjectDescriptor {
+    pub declared_type: VbaTypeId,
+    pub mechanism: ResolvedParameterMechanism,
+    pub accessible_name: String,
+    pub assignable: bool,
+    pub slot: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -467,11 +532,15 @@ pub(crate) fn legacy_procedure_signature_descriptor(
                     .unwrap_or_else(|| format!("arg{index}")),
                 slot: Some(*slot),
                 role: ParameterRole::Positional,
+                source_mechanism: SourceParameterMechanism::Unknown,
+                resolved_mechanism: ResolvedParameterMechanism::Unknown,
                 passing_mode: ParameterPassingMode::Unknown,
                 declared_type,
                 optional: false,
                 param_array: false,
                 default_value: None,
+                optional_descriptor: OptionalParameterDescriptor::Required,
+                param_array_descriptor: None,
             }
         })
         .collect();
@@ -482,6 +551,7 @@ pub(crate) fn legacy_procedure_signature_descriptor(
         return_type: return_type.map(VbaTypeId::from),
         return_slot,
         property_group: property_group_name(procedure_name),
+        implicit_current_object: None,
     }
 }
 
@@ -568,10 +638,71 @@ fn procedure_signature_kind(
     legacy_procedure_kind(proc_name, return_slot)
 }
 
+fn is_hidden_current_object_param(param: &BoundParam) -> bool {
+    param.name.eq_ignore_ascii_case("__oxvba_this_instance")
+}
+
+fn source_mechanism_from_bound(value: BoundParamSourceMechanism) -> SourceParameterMechanism {
+    match value {
+        BoundParamSourceMechanism::Omitted => SourceParameterMechanism::Omitted,
+        BoundParamSourceMechanism::ExplicitByRef => SourceParameterMechanism::ExplicitByRef,
+        BoundParamSourceMechanism::ExplicitByVal => SourceParameterMechanism::ExplicitByVal,
+    }
+}
+
+fn resolved_mechanism_for_param(
+    kind: ProcedureKindDescriptor,
+    role: ParameterRole,
+    param: &BoundParam,
+) -> ResolvedParameterMechanism {
+    if matches!(
+        (kind, role),
+        (
+            ProcedureKindDescriptor::PropertyLet | ProcedureKindDescriptor::PropertySet,
+            ParameterRole::PropertyValue
+        )
+    ) {
+        ResolvedParameterMechanism::PropertyValueByVal
+    } else if param.by_ref {
+        ResolvedParameterMechanism::ByRef
+    } else {
+        ResolvedParameterMechanism::ByVal
+    }
+}
+
+fn optional_descriptor_for_param(param: &BoundParam) -> OptionalParameterDescriptor {
+    if !param.optional {
+        return OptionalParameterDescriptor::Required;
+    }
+    let default_value = match param.default_value {
+        Some(value) => OptionalDefaultValue::ExplicitI32(value),
+        None if param.ty == BoundType::Variant => OptionalDefaultValue::VariantMissingError448,
+        None => OptionalDefaultValue::DeclaredTypeDefault,
+    };
+    let missing_state = if param.default_value.is_none() && param.ty == BoundType::Variant {
+        OptionalMissingStatePolicy::PreserveMissingArgumentState
+    } else {
+        OptionalMissingStatePolicy::AssignDefaultLocal
+    };
+    OptionalParameterDescriptor::Optional {
+        default_value,
+        missing_state,
+    }
+}
+
+fn param_array_descriptor_for_param(param: &BoundParam) -> Option<ParamArrayDescriptor> {
+    param.param_array.then_some(ParamArrayDescriptor {
+        element_type: VbaTypeId::Variant,
+        array_lower_bound: 0,
+        empty_upper_bound: -1,
+    })
+}
+
 fn build_procedure_signature_descriptor(
     proc: &BoundProcedure,
     proc_slots: &HashMap<String, usize>,
     return_slot: Option<usize>,
+    is_class_module: bool,
 ) -> ProcedureSignatureDescriptor {
     let kind = procedure_signature_kind(&proc.name, return_slot);
     let property_value_index = if matches!(
@@ -587,7 +718,10 @@ fn build_procedure_signature_descriptor(
         .iter()
         .enumerate()
         .map(|(index, param)| {
-            let role = if param.param_array {
+            let slot = proc_slots.get(&param.name).copied();
+            let role = if is_class_module && index == 0 && is_hidden_current_object_param(param) {
+                ParameterRole::ImplicitCurrentObject
+            } else if param.param_array {
                 ParameterRole::ParamArray
             } else if Some(index) == property_value_index {
                 ParameterRole::PropertyValue
@@ -596,11 +730,19 @@ fn build_procedure_signature_descriptor(
             } else {
                 ParameterRole::Positional
             };
+            let source_mechanism = if role == ParameterRole::ImplicitCurrentObject {
+                SourceParameterMechanism::ImplementationInjected
+            } else {
+                source_mechanism_from_bound(param.source_mechanism)
+            };
+            let resolved_mechanism = resolved_mechanism_for_param(kind, role, param);
             ParameterDescriptor {
                 index,
                 name: param.name.clone(),
-                slot: proc_slots.get(&param.name).copied(),
+                slot,
                 role,
+                source_mechanism,
+                resolved_mechanism,
                 passing_mode: if param.by_ref {
                     ParameterPassingMode::ByRef
                 } else {
@@ -610,9 +752,26 @@ fn build_procedure_signature_descriptor(
                 optional: param.optional,
                 param_array: param.param_array,
                 default_value: param.default_value,
+                optional_descriptor: optional_descriptor_for_param(param),
+                param_array_descriptor: param_array_descriptor_for_param(param),
             }
         })
         .collect();
+    let implicit_current_object = proc
+        .params
+        .first()
+        .filter(|param| is_class_module && is_hidden_current_object_param(param))
+        .map(|param| ImplicitCurrentObjectDescriptor {
+            declared_type: VbaTypeId::Object,
+            mechanism: if param.by_ref {
+                ResolvedParameterMechanism::ByRef
+            } else {
+                ResolvedParameterMechanism::ByVal
+            },
+            accessible_name: "Me".to_string(),
+            assignable: false,
+            slot: proc_slots.get(&param.name).copied(),
+        });
     ProcedureSignatureDescriptor {
         procedure_name: proc.name.clone(),
         kind,
@@ -627,6 +786,7 @@ fn build_procedure_signature_descriptor(
         },
         return_slot,
         property_group: property_group_name(&proc.name),
+        implicit_current_object,
     }
 }
 
@@ -848,6 +1008,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &procedures[entry_idx],
                 &proc_slots[entry_idx],
                 entry_return_slot,
+                module.is_class_module,
             ),
         },
     );
@@ -945,6 +1106,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     proc,
                     &proc_slots[idx],
                     return_slot,
+                    module.is_class_module,
                 ),
             },
         );

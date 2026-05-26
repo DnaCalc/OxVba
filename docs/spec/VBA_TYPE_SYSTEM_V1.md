@@ -404,6 +404,7 @@ pub enum SourceParameterMechanism {
     Omitted,
     ExplicitByRef,
     ExplicitByVal,
+    ImplementationInjected,
 }
 
 pub enum ResolvedParameterMechanism {
@@ -585,9 +586,11 @@ Current implementation anchors:
   for parameters, locals, return slots, compiler-generated fixed-array element
   slots, and temporary slots; first `ProcedureSignatureDescriptor` and
   `ParameterDescriptor` view for procedure kind, parsed parameter mode,
-  Optional/default, ParamArray, return type, and property group.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v5 serializes the
-  populated slot and first signature metadata and upgrades v1/v2/v3/v4 bundles
+  source/resolved parameter mechanism, Optional/default/missing policy,
+  ParamArray shape, return type, property group, property value ByVal
+  semantics, and class hidden-receiver metadata.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v6 serializes the
+  populated slot and signature metadata and upgrades v1/v2/v3/v4/v5 bundles
   into the current descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
@@ -603,10 +606,11 @@ Current implementation anchors:
 Known development gaps:
 
 - no central `VbaTypeId`/descriptor registry exists yet;
-- `ProcedureSignatureDescriptor` is a first package view, but source
-  mechanism-vs-defaulted ByRef, missing optional argument state, implicit `Me`,
-  full property value ByVal runtime semantics, signature descriptor ids/digests,
-  and call-comparison evidence remain incomplete;
+- `ProcedureSignatureDescriptor` now carries the first call-relevant source
+  and resolved parameter facts, missing optional state, ParamArray shape,
+  implicit `Me`, and property value ByVal semantics, but signature descriptor
+  ids/digests, call-site descriptors, and VM call-comparison evidence remain
+  incomplete;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT
   nominal identity, aggregate UDT field offsets, object/class/interface ids,

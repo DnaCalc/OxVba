@@ -337,11 +337,19 @@ pub struct BoundArrayDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundParam {
     pub name: String,
+    pub source_mechanism: BoundParamSourceMechanism,
     pub by_ref: bool,
     pub param_array: bool,
     pub optional: bool,
     pub default_value: Option<i32>,
     pub ty: BoundType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundParamSourceMechanism {
+    Omitted,
+    ExplicitByRef,
+    ExplicitByVal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1705,17 +1713,25 @@ pub fn parse_proc_signature(
                     token = token[11..].trim();
                 }
                 let lower = token.to_ascii_lowercase();
-                let (by_ref, remainder) = if param_array {
+                let (source_mechanism, by_ref, remainder) = if param_array {
                     if lower.starts_with("byval ") || lower.starts_with("byref ") {
                         return None;
                     }
-                    (false, token)
+                    (BoundParamSourceMechanism::Omitted, false, token)
                 } else if lower.starts_with("byval ") {
-                    (false, token[6..].trim())
+                    (
+                        BoundParamSourceMechanism::ExplicitByVal,
+                        false,
+                        token[6..].trim(),
+                    )
                 } else if lower.starts_with("byref ") {
-                    (true, token[6..].trim())
+                    (
+                        BoundParamSourceMechanism::ExplicitByRef,
+                        true,
+                        token[6..].trim(),
+                    )
                 } else {
-                    (true, token)
+                    (BoundParamSourceMechanism::Omitted, true, token)
                 };
                 let (decl_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
                 {
@@ -1775,6 +1791,7 @@ pub fn parse_proc_signature(
                 };
                 params.push(BoundParam {
                     name: param_name,
+                    source_mechanism,
                     by_ref,
                     param_array,
                     optional,
