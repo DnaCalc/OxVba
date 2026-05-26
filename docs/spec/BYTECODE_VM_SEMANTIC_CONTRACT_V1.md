@@ -151,6 +151,18 @@ The snapshot can continue to materialize observable values as retained
 `Variant` evidence, but descriptor digests must prove that primitive, UDT,
 array, object, and call-site metadata were preserved in the package.
 
+Current VMR-01 seed evidence in `oxvba-vm` is
+`VmPackageIdentityEvidence`. It records:
+
+- package origin (`in-memory` package view or `OxBundle`);
+- package digest and bytecode digest;
+- package slot count and user slot count;
+- per-procedure id, module name, procedure name, and entry PC.
+
+This is identity evidence only. Slot descriptor, signature descriptor,
+expression/call descriptor, lifecycle, interop, and host-policy evidence remain
+future rows under the strengthening sequence above.
+
 ## Strengthening Rule
 
 When a VM-runnable fixture exposes a semantic gap, classify it before changing

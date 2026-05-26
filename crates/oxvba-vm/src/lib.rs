@@ -18,7 +18,8 @@ use oxvba_runtime::Variant;
 
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
-    DebugStopReason, Vm, VmExecutionPackage,
+    DebugStopReason, Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin,
+    VmProcedureIdentityEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -216,6 +217,69 @@ mod tests {
         assert_eq!(
             snapshot[return_slot],
             Variant::from_string(BStr::from("kg"))
+        );
+        assert_eq!(
+            vm.package_identity_evidence(),
+            Some(&package.identity_evidence())
+        );
+    }
+
+    #[test]
+    fn execution_package_records_identity_evidence_without_snapshot_drift() {
+        let source = "Function Test(dbl As Double, str As String) As Variant\n\
+                      Test = str\n\
+                      End Function\n\
+                      Sub Main()\n\
+                      Dim observed\n\
+                      observed = Test(2.5, \"kg\")\n\
+                      End Sub";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let test_metadata = metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Test"))
+            .expect("function metadata should be present")
+            .clone();
+        let bundle = OxBundle::new(bytecode.clone(), metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let bytecode_snapshot =
+            execute_and_snapshot_variants(&bytecode).expect("bytecode snapshot");
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package(&package)
+            .expect("package-backed execution should succeed");
+        let package_snapshot = vm.snapshot_variants(package.bytecode.user_slot_count);
+        let evidence = vm
+            .package_identity_evidence()
+            .expect("package identity evidence should be recorded");
+
+        assert_eq!(package_snapshot, bytecode_snapshot);
+        assert_eq!(evidence.package_origin, super::VmPackageOrigin::OxBundle);
+        assert!(evidence.package_digest.starts_with("fnv1a64:"));
+        assert!(evidence.bytecode_digest.starts_with("fnv1a64:"));
+        assert_ne!(evidence.package_digest, evidence.bytecode_digest);
+        assert_eq!(evidence.slot_count, package.bytecode.slot_count);
+        assert_eq!(evidence.user_slot_count, package.bytecode.user_slot_count);
+        let test_identity = evidence
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("Test"))
+            .expect("Test procedure identity evidence should be present");
+        assert_eq!(test_identity.module_name, test_metadata.module_name);
+        assert_eq!(test_identity.entry_pc, test_metadata.entry_pc);
+        assert_eq!(
+            test_identity.procedure_id,
+            format!(
+                "proc:{}::{}@pc:{}",
+                test_metadata.module_name, test_metadata.procedure_name, test_metadata.entry_pc
+            )
+        );
+
+        vm.execute(&bytecode)
+            .expect("raw bytecode execution should still succeed");
+        assert!(
+            vm.package_identity_evidence().is_none(),
+            "raw bytecode execution must not leave stale package identity evidence"
         );
     }
 

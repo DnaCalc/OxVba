@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, VecDeque},
+    fmt::Debug,
     sync::Arc,
 };
 
@@ -132,6 +133,7 @@ pub struct DebugRuntimeSnapshot {
 pub struct VmExecutionPackage<'a> {
     pub bytecode: &'a Bytecode,
     pub procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
+    pub package_origin: VmPackageOrigin,
 }
 
 impl<'a> VmExecutionPackage<'a> {
@@ -142,12 +144,107 @@ impl<'a> VmExecutionPackage<'a> {
         Self {
             bytecode,
             procedure_metadata,
+            package_origin: VmPackageOrigin::InMemory,
         }
     }
 
     pub fn from_bundle(bundle: &'a OxBundle) -> Self {
-        Self::new(&bundle.bytecode, &bundle.procedure_metadata)
+        Self {
+            bytecode: &bundle.bytecode,
+            procedure_metadata: &bundle.procedure_metadata,
+            package_origin: VmPackageOrigin::OxBundle,
+        }
     }
+
+    pub fn identity_evidence(&self) -> VmPackageIdentityEvidence {
+        let bytecode_digest = digest_debug("bytecode", self.bytecode);
+        let package_digest = digest_package(&bytecode_digest, self.procedure_metadata);
+        let procedures = self
+            .procedure_metadata
+            .values()
+            .map(VmProcedureIdentityEvidence::from_metadata)
+            .collect();
+        VmPackageIdentityEvidence {
+            package_origin: self.package_origin,
+            package_digest,
+            bytecode_digest,
+            slot_count: self.bytecode.slot_count,
+            user_slot_count: self.bytecode.user_slot_count,
+            procedures,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmPackageOrigin {
+    InMemory,
+    OxBundle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmProcedureIdentityEvidence {
+    pub procedure_id: String,
+    pub module_name: String,
+    pub procedure_name: String,
+    pub entry_pc: usize,
+}
+
+impl VmProcedureIdentityEvidence {
+    fn from_metadata(metadata: &ProcedureRuntimeMetadata) -> Self {
+        Self {
+            procedure_id: format!(
+                "proc:{}::{}@pc:{}",
+                metadata.module_name, metadata.procedure_name, metadata.entry_pc
+            ),
+            module_name: metadata.module_name.clone(),
+            procedure_name: metadata.procedure_name.clone(),
+            entry_pc: metadata.entry_pc,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmPackageIdentityEvidence {
+    pub package_origin: VmPackageOrigin,
+    pub package_digest: String,
+    pub bytecode_digest: String,
+    pub slot_count: usize,
+    pub user_slot_count: usize,
+    pub procedures: Vec<VmProcedureIdentityEvidence>,
+}
+
+const FNV1A64_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn update_fnv1a64(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(FNV1A64_PRIME);
+    }
+}
+
+fn finish_fnv1a64(hash: u64) -> String {
+    format!("fnv1a64:{hash:016x}")
+}
+
+fn digest_debug<T: Debug>(label: &str, value: &T) -> String {
+    let mut hash = FNV1A64_OFFSET;
+    update_fnv1a64(&mut hash, label.as_bytes());
+    update_fnv1a64(&mut hash, b"\0");
+    update_fnv1a64(&mut hash, format!("{value:#?}").as_bytes());
+    finish_fnv1a64(hash)
+}
+
+fn digest_package(
+    bytecode_digest: &str,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> String {
+    let mut hash = FNV1A64_OFFSET;
+    update_fnv1a64(&mut hash, b"package\0bytecode\0");
+    update_fnv1a64(&mut hash, bytecode_digest.as_bytes());
+    update_fnv1a64(&mut hash, b"\0procedure-metadata\0");
+    update_fnv1a64(&mut hash, format!("{procedure_metadata:#?}").as_bytes());
+    finish_fnv1a64(hash)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,6 +316,7 @@ pub struct Vm {
     last_error_source: Option<String>,
     rnd_state: u32,
     debug_runtime: Option<DebugRuntimeState>,
+    last_package_identity_evidence: Option<VmPackageIdentityEvidence>,
 }
 
 const FIN_MAX_ITERS: usize = 60;
@@ -267,6 +365,7 @@ impl Vm {
             last_error_source: None,
             rnd_state: 0x50000,
             debug_runtime: None,
+            last_package_identity_evidence: None,
         }
     }
 
@@ -358,6 +457,10 @@ impl Vm {
                 }
             })
             .collect()
+    }
+
+    pub fn package_identity_evidence(&self) -> Option<&VmPackageIdentityEvidence> {
+        self.last_package_identity_evidence.as_ref()
     }
 
     pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
@@ -553,6 +656,7 @@ impl Vm {
     }
 
     pub fn debug_start(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+        self.last_package_identity_evidence = None;
         self.reset_execution_state(bytecode.slot_count, false);
         let mut state = self.debug_runtime.take().unwrap_or(DebugRuntimeState {
             current_pc: 0,
@@ -646,8 +750,11 @@ impl Vm {
         package: &VmExecutionPackage<'_>,
         typed_fastpaths: bool,
     ) -> Result<(), String> {
+        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
-        self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths)
+        let result = self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths);
+        self.last_package_identity_evidence = Some(identity_evidence);
+        result
     }
 
     pub fn execute_with_typed_fastpaths(
@@ -655,6 +762,7 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
     ) -> Result<(), String> {
+        self.last_package_identity_evidence = None;
         self.reset_execution_state(bytecode.slot_count, false);
         self.execute_loop(bytecode, 0, 0, typed_fastpaths, false)
     }
@@ -666,6 +774,7 @@ impl Vm {
         arg_slots: &[usize],
         args: &[i32],
     ) -> Result<(), String> {
+        self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
             return Err(format!(
                 "argument shape mismatch: {} slots for {} values",
@@ -696,8 +805,12 @@ impl Vm {
         arg_slots: &[usize],
         args: &[i32],
     ) -> Result<(), String> {
+        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
-        self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args)
+        let result =
+            self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args);
+        self.last_package_identity_evidence = Some(identity_evidence);
+        result
     }
 
     pub fn invoke_procedure_with_variants(
@@ -707,6 +820,7 @@ impl Vm {
         arg_slots: &[usize],
         args: &[Variant],
     ) -> Result<(), String> {
+        self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
             return Err(format!(
                 "argument shape mismatch: {} slots for {} values",
@@ -789,8 +903,12 @@ impl Vm {
         arg_slots: &[usize],
         args: &[Variant],
     ) -> Result<(), String> {
+        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
-        self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args)
+        let result =
+            self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args);
+        self.last_package_identity_evidence = Some(identity_evidence);
+        result
     }
 
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
