@@ -13,6 +13,7 @@ struct FixtureRow {
     file: String,
     expected_values: String,
     expected_procedures: Vec<String>,
+    expected_descriptor_tokens: Vec<String>,
 }
 
 fn repo_root() -> PathBuf {
@@ -39,14 +40,19 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                4,
-                "identity fixture manifest row should have 4 columns: {line}"
+                5,
+                "identity fixture manifest row should have 5 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
                 file: columns[1].to_string(),
                 expected_values: columns[2].to_string(),
                 expected_procedures: columns[3].split('|').map(|name| name.to_string()).collect(),
+                expected_descriptor_tokens: columns[4]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
             }
         })
         .collect()
@@ -106,8 +112,50 @@ fn procedure_identity_tokens(evidence: &VmPackageIdentityEvidence) -> String {
     tokens.join("|")
 }
 
+fn slot_descriptor_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .procedures
+        .iter()
+        .flat_map(|procedure| {
+            procedure.slot_descriptors.iter().map(move |descriptor| {
+                format!(
+                    "{}:{}:{:?}:{:?}:{:?}:{:?}",
+                    procedure.procedure_name.to_ascii_lowercase(),
+                    descriptor
+                        .name
+                        .as_deref()
+                        .unwrap_or("<unnamed>")
+                        .to_ascii_lowercase(),
+                    descriptor.role,
+                    descriptor.declared_type,
+                    descriptor.initial_state,
+                    descriptor.carrier
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn slot_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .procedures
+        .iter()
+        .map(|procedure| {
+            format!(
+                "{}={}",
+                procedure.procedure_name.to_ascii_lowercase(),
+                procedure.slot_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 #[test]
-fn vmr01_identity_seed_fixtures_emit_identity_and_values() {
+fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
         let source = std::fs::read_to_string(fixture_root().join(&row.file))
             .unwrap_or_else(|err| panic!("failed to read identity fixture `{}`: {err}", row.file));
@@ -137,6 +185,16 @@ fn vmr01_identity_seed_fixtures_emit_identity_and_values() {
         assert!(evidence.bytecode_digest.starts_with("fnv1a64:"));
         assert_eq!(evidence.slot_count, package.bytecode.slot_count);
         assert_eq!(evidence.user_slot_count, package.bytecode.user_slot_count);
+        let descriptor_tokens = slot_descriptor_tokens(evidence);
+        for expected_descriptor in &row.expected_descriptor_tokens {
+            assert!(
+                descriptor_tokens.contains(expected_descriptor),
+                "{} descriptor evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_descriptor,
+                descriptor_tokens
+            );
+        }
         assert_eq!(sorted_procedure_names(evidence), {
             let mut expected = row
                 .expected_procedures
@@ -179,7 +237,7 @@ fn vmr01_identity_seed_fixtures_emit_identity_and_values() {
         }
 
         println!(
-            "VMR01_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} slot_descriptors={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -187,7 +245,9 @@ fn vmr01_identity_seed_fixtures_emit_identity_and_values() {
             evidence.slot_count,
             evidence.user_slot_count,
             sorted_procedure_names(evidence).join("|"),
-            procedure_identity_tokens(evidence)
+            procedure_identity_tokens(evidence),
+            slot_descriptor_digest_tokens(evidence),
+            descriptor_tokens.join("|")
         );
     }
 }

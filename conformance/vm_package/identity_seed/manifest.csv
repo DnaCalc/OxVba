@@ -1,3 +1,5 @@
-id,file,expected_values,expected_procedures
-VMR01_MAIN_SCALAR,vmr01_identity_main_scalar.bas,i32:7|i32:12,Main
-VMR01_TYPED_FUNCTION,vmr01_identity_typed_function.bas,string:kg,Main|Test
+id,file,expected_values,expected_procedures,expected_descriptor_tokens
+VMR01_MAIN_SCALAR,vmr01_identity_main_scalar.bas,i32:7|i32:12,Main,main:x:Local:Long:ScalarZero:I32;main:y:Local:Long:ScalarZero:I32
+VMR01_TYPED_FUNCTION,vmr01_identity_typed_function.bas,string:kg,Main|Test,main:observed:Local:Variant:Empty:Variant;test:dbl:Parameter:Double:CallerProvided:F64;test:str:Parameter:String:CallerProvided:BStr;test:test:ReturnValue:Variant:Empty:Variant
+VMR02_PRIMITIVE_STRING_VARIANT,vmr02_descriptor_primitive_string_variant.bas,i32:4|f64:2.5|bool:true|string:ok|string:ok,Main,main:count:Local:Long:ScalarZero:I32;main:scale:Local:Double:ScalarZero:F64;main:ready:Local:Boolean:False:Boolean;main:label:Local:String:EmptyString:BStr;main:observed:Local:Variant:Empty:Variant
+VMR02_UDT_FIELD_SLOTS,vmr02_descriptor_udt_field_slots.bas,empty|i32:7|i32:9|string:pt|empty|i32:8|i32:9|string:pt|i32:17,Main,main:p:Local:Variant:Empty:Variant;main:p_x:Local:Long:ScalarZero:I32;main:p_y:Local:Long:ScalarZero:I32;main:p_caption:Local:String:EmptyString:BStr;main:q:Local:Variant:Empty:Variant;main:q_x:Local:Long:ScalarZero:I32;main:q_y:Local:Long:ScalarZero:I32;main:q_caption:Local:String:EmptyString:BStr;main:total:Local:Long:ScalarZero:I32

@@ -165,9 +165,9 @@ project, bundle, and callable-session VM execution paths. Existing snapshot APIs
 remain value-only compatibility surfaces, while package-identity variants expose
 the recorded VM package identity for evidence and future JIT gates.
 
-This is identity evidence only. Slot descriptor, signature descriptor,
-expression/call descriptor, lifecycle, interop, and host-policy evidence remain
-future rows under the strengthening sequence above.
+This is package identity plus first slot descriptor evidence only. Signature
+descriptor, expression/call descriptor, lifecycle, interop, and host-policy
+evidence remain future rows under the strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -189,6 +189,11 @@ metadata enrichment does not make compiler scratch slots user-visible.
 The VM package evidence now reports descriptor roles, declared type ids, initial
 states, and carrier hints per procedure while retained value snapshots remain
 unchanged.
+The package identity seed fixtures now assert descriptor tokens and value
+snapshots for primitive scalar, `String`/`BStr`, declared `Variant`, and the
+current VM-runnable UDT field-alias shape. Nominal UDT aggregate descriptors,
+field offsets, and cleanup obligations remain future VMR-05 evidence and are
+not inferred from these flattened aliases.
 
 ## Strengthening Rule
 

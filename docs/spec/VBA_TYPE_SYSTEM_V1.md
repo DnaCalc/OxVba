@@ -592,15 +592,18 @@ Current implementation anchors:
   current descriptor view without changing slot execution, and
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests and
   descriptor rows.
+- `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
+  value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
+  declared `Variant`, and the current flattened UDT field-alias shape.
 
 Known development gaps:
 
 - no central `VbaTypeId`/descriptor registry exists yet;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT
-  nominal identity, object/class/interface ids, fixed-string details, cleanup
-  obligations, and full carrier layout facts remain incomplete or explicitly
-  `Unknown`;
+  nominal identity, aggregate UDT field offsets, object/class/interface ids,
+  fixed-string details, cleanup obligations, and full carrier layout facts
+  remain incomplete or explicitly `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
