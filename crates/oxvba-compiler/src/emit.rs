@@ -140,6 +140,112 @@ pub struct ProcedureRuntimeMetadata {
     pub param_types: Vec<DeclareParamType>,
     pub return_type: Option<DeclareParamType>,
     pub signature: ProcedureSignatureDescriptor,
+    pub call_sites: Vec<CallSiteDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CallSiteDescriptor {
+    pub call_site_id: String,
+    pub caller_procedure_name: String,
+    pub call_pc: usize,
+    pub target_name: String,
+    pub target_kind: CallTargetKindDescriptor,
+    pub target_entry_pc: Option<usize>,
+    pub default_member_policy: DefaultMemberPolicyDescriptor,
+    pub arguments: Vec<ArgumentBindingDescriptor>,
+    pub return_value: Option<CallReturnDescriptor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CallTargetKindDescriptor {
+    Unknown,
+    Procedure,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+    ExternalDeclare,
+    LateBoundDefaultMember,
+    DispatchInvoke,
+    EarlyBoundCom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum DefaultMemberPolicyDescriptor {
+    Unknown,
+    NotApplicable,
+    ExplicitMember,
+    DefaultMemberFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ArgumentBindingDescriptor {
+    pub argument_index: usize,
+    pub source_index: Option<usize>,
+    pub source_name: Option<String>,
+    pub parameter_index: Option<usize>,
+    pub parameter_name: Option<String>,
+    pub parameter_slot: Option<usize>,
+    pub source_kind: ArgumentSourceKindDescriptor,
+    pub expression_kind: ArgumentExpressionKindDescriptor,
+    pub binding_kind: ArgumentBindingKindDescriptor,
+    pub force_byval: bool,
+    pub source_slot: Option<usize>,
+    pub writeback: Option<ArgumentWritebackDescriptor>,
+    pub optional_default: Option<OptionalDefaultValue>,
+    pub param_array: Option<ParamArrayBindingDescriptor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ArgumentSourceKindDescriptor {
+    Unknown,
+    Positional,
+    Named,
+    Omitted,
+    ParamArrayPack,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ArgumentExpressionKindDescriptor {
+    Unknown,
+    Variable,
+    Literal,
+    Expression,
+    IntrinsicCall,
+    ProcedureCall,
+    ArrayBuffer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ArgumentBindingKindDescriptor {
+    Unknown,
+    ByRefAlias,
+    ByValCopy,
+    OptionalDefault,
+    ParamArrayPack,
+    FixedArrayMaterialized,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ArgumentWritebackDescriptor {
+    pub caller_slot: Option<usize>,
+    pub parameter_slot: Option<usize>,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ParamArrayBindingDescriptor {
+    pub element_count: usize,
+    pub element_slots: Vec<usize>,
+    pub lower_bound: i32,
+    pub empty_upper_bound: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CallReturnDescriptor {
+    pub return_slot: Option<usize>,
+    pub assign_target_slot: Option<usize>,
+    pub copyout_required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -638,6 +744,54 @@ fn procedure_signature_kind(
     legacy_procedure_kind(proc_name, return_slot)
 }
 
+fn call_target_kind_for_procedure(
+    proc_name: &str,
+    return_slot: Option<usize>,
+) -> CallTargetKindDescriptor {
+    match procedure_signature_kind(proc_name, return_slot) {
+        ProcedureKindDescriptor::Sub => CallTargetKindDescriptor::Procedure,
+        ProcedureKindDescriptor::Function => CallTargetKindDescriptor::Function,
+        ProcedureKindDescriptor::PropertyGet => CallTargetKindDescriptor::PropertyGet,
+        ProcedureKindDescriptor::PropertyLet => CallTargetKindDescriptor::PropertyLet,
+        ProcedureKindDescriptor::PropertySet => CallTargetKindDescriptor::PropertySet,
+        ProcedureKindDescriptor::Unknown => CallTargetKindDescriptor::Unknown,
+    }
+}
+
+fn argument_source_kind(arg: &BoundCallArg) -> ArgumentSourceKindDescriptor {
+    if arg.name.is_some() {
+        ArgumentSourceKindDescriptor::Named
+    } else {
+        ArgumentSourceKindDescriptor::Positional
+    }
+}
+
+fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescriptor {
+    match expr {
+        BoundExpr::Var(_) => ArgumentExpressionKindDescriptor::Variable,
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_) => ArgumentExpressionKindDescriptor::Literal,
+        BoundExpr::IntrinsicCall { .. } => ArgumentExpressionKindDescriptor::IntrinsicCall,
+        BoundExpr::ProcCall { .. } => ArgumentExpressionKindDescriptor::ProcedureCall,
+        BoundExpr::VarPtrArrayBuffer(_) => ArgumentExpressionKindDescriptor::ArrayBuffer,
+        BoundExpr::AddConst { .. }
+        | BoundExpr::SubConst { .. }
+        | BoundExpr::BinaryOp { .. }
+        | BoundExpr::CompareOp { .. }
+        | BoundExpr::UnaryOp { .. } => ArgumentExpressionKindDescriptor::Expression,
+    }
+}
+
+fn optional_default_value_for_param(param: &BoundParam) -> OptionalDefaultValue {
+    match param.default_value {
+        Some(value) => OptionalDefaultValue::ExplicitI32(value),
+        None if param.ty == BoundType::Variant => OptionalDefaultValue::VariantMissingError448,
+        None => OptionalDefaultValue::DeclaredTypeDefault,
+    }
+}
+
 fn is_hidden_current_object_param(param: &BoundParam) -> bool {
     param.name.eq_ignore_ascii_case("__oxvba_this_instance")
 }
@@ -925,6 +1079,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         call_patches.push((patch_idx, name));
     }
     let mut entry_statement_entry_pcs = Vec::new();
+    let mut entry_call_sites = Vec::new();
     proc_exit_stack.push(Vec::new());
     let entry_temp_start = temps.next_temp_slot();
     with_current_proc_name(&procedures[entry_idx].name, || {
@@ -946,6 +1101,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             &procedures[entry_idx].name,
             &mut proc_labels,
             &mut entry_statement_entry_pcs,
+            &mut entry_call_sites,
         );
     });
     let entry_temp_slots = temps.slots_allocated_since(entry_temp_start);
@@ -1010,6 +1166,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 entry_return_slot,
                 module.is_class_module,
             ),
+            call_sites: entry_call_sites,
         },
     );
 
@@ -1032,6 +1189,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         }
         emit_declared_string_initializers(proc, &proc_slots[idx], &mut instructions);
         let mut statement_entry_pcs = Vec::new();
+        let mut call_sites = Vec::new();
         proc_exit_stack.push(Vec::new());
         let proc_temp_start = temps.next_temp_slot();
         with_current_proc_name(&proc.name, || {
@@ -1053,6 +1211,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &proc.name,
                 &mut proc_labels,
                 &mut statement_entry_pcs,
+                &mut call_sites,
             );
         });
         let proc_temp_slots = temps.slots_allocated_since(proc_temp_start);
@@ -1108,6 +1267,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     return_slot,
                     module.is_class_module,
                 ),
+                call_sites,
             },
         );
     }
@@ -1121,6 +1281,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         {
             *target_pc = target;
             *project_member = project_member_call_descriptor_for_proc_name(&proc_name);
+            patch_call_site_target_pc(&mut procedure_runtime_metadata, patch_idx, target);
         }
     }
 
@@ -1239,6 +1400,20 @@ fn is_compiler_generated_array_element_slot(proc: &BoundProcedure, name: &str) -
         })
 }
 
+fn patch_call_site_target_pc(
+    procedure_runtime_metadata: &mut BTreeMap<String, ProcedureRuntimeMetadata>,
+    call_pc: usize,
+    target_pc: usize,
+) {
+    for metadata in procedure_runtime_metadata.values_mut() {
+        for call_site in &mut metadata.call_sites {
+            if call_site.call_pc == call_pc {
+                call_site.target_entry_pc = Some(target_pc);
+            }
+        }
+    }
+}
+
 fn emit_declared_string_initializers(
     proc: &BoundProcedure,
     proc_slots: &HashMap<String, usize>,
@@ -1345,6 +1520,7 @@ fn emit_stmt_list(
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
     statement_entry_pcs: &mut Vec<usize>,
+    call_site_descriptors: &mut Vec<CallSiteDescriptor>,
 ) {
     for stmt in stmts {
         emit_stmt(
@@ -1365,6 +1541,7 @@ fn emit_stmt_list(
             current_proc_name,
             proc_labels,
             statement_entry_pcs,
+            call_site_descriptors,
         );
     }
 }
@@ -1388,6 +1565,7 @@ fn emit_stmt(
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
     statement_entry_pcs: &mut Vec<usize>,
+    call_site_descriptors: &mut Vec<CallSiteDescriptor>,
 ) {
     statement_entry_pcs.push(instructions.len());
     match stmt {
@@ -1603,6 +1781,7 @@ fn emit_stmt(
                 current_proc_name,
                 proc_labels,
                 statement_entry_pcs,
+                call_site_descriptors,
             );
             if else_body.is_empty() {
                 let target = instructions.len();
@@ -1634,6 +1813,7 @@ fn emit_stmt(
                     current_proc_name,
                     proc_labels,
                     statement_entry_pcs,
+                    call_site_descriptors,
                 );
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
@@ -1759,6 +1939,7 @@ fn emit_stmt(
                     current_proc_name,
                     proc_labels,
                     statement_entry_pcs,
+                    call_site_descriptors,
                 );
                 instructions.push(Instruction::AddSlots {
                     dst: var_slot,
@@ -1837,6 +2018,7 @@ fn emit_stmt(
                         current_proc_name,
                         proc_labels,
                         statement_entry_pcs,
+                        call_site_descriptors,
                     );
                     instructions.push(Instruction::Jump {
                         target_pc: loop_start,
@@ -1877,6 +2059,7 @@ fn emit_stmt(
                             current_proc_name,
                             proc_labels,
                             statement_entry_pcs,
+                            call_site_descriptors,
                         );
                     }
                 }
@@ -2008,6 +2191,7 @@ fn emit_stmt(
                 current_proc_name,
                 proc_labels,
                 statement_entry_pcs,
+                call_site_descriptors,
             );
 
             emit_cond_into(
@@ -2204,6 +2388,7 @@ fn emit_stmt(
                     current_proc_name,
                     proc_labels,
                     statement_entry_pcs,
+                    call_site_descriptors,
                 );
                 let end_patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
@@ -2232,6 +2417,7 @@ fn emit_stmt(
                 current_proc_name,
                 proc_labels,
                 statement_entry_pcs,
+                call_site_descriptors,
             );
             let end_target = instructions.len();
             for patch in end_patches {
@@ -2272,6 +2458,8 @@ fn emit_stmt(
                 proc_meta,
                 external_decls,
                 None,
+                Some(&mut *call_site_descriptors),
+                Some(current_proc_name),
             ) {
                 let _ = emit_late_bound_default_member_call(
                     name,
@@ -2284,6 +2472,8 @@ fn emit_stmt(
                     proc_meta,
                     external_decls,
                     None,
+                    Some(&mut *call_site_descriptors),
+                    Some(current_proc_name),
                 );
             }
         }
@@ -2318,6 +2508,8 @@ fn emit_stmt(
                         proc_meta,
                         external_decls,
                         Some(value_slot),
+                        Some(&mut *call_site_descriptors),
+                        Some(current_proc_name),
                     ) {
                         let _ = emit_late_bound_default_member_call(
                             name,
@@ -2330,6 +2522,8 @@ fn emit_stmt(
                             proc_meta,
                             external_decls,
                             Some(value_slot),
+                            Some(&mut *call_site_descriptors),
+                            Some(current_proc_name),
                         );
                     }
                     instructions.push(Instruction::ValidateRuntimeAssignment {
@@ -2354,6 +2548,8 @@ fn emit_stmt(
                     proc_meta,
                     external_decls,
                     Some(target_slot),
+                    Some(&mut *call_site_descriptors),
+                    Some(current_proc_name),
                 ) {
                     let _ = emit_late_bound_default_member_call(
                         name,
@@ -2366,6 +2562,8 @@ fn emit_stmt(
                         proc_meta,
                         external_decls,
                         Some(target_slot),
+                        Some(&mut *call_site_descriptors),
+                        Some(current_proc_name),
                     );
                 }
             }
@@ -2793,6 +2991,8 @@ fn emit_early_call(
     proc_meta: &HashMap<String, EmitProcMeta>,
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
+    call_site_descriptors: Option<&mut Vec<CallSiteDescriptor>>,
+    current_proc_name: Option<&str>,
 ) -> bool {
     if name.eq_ignore_ascii_case("dispatchinvoke")
         || name.eq_ignore_ascii_case("__OxVbaEarlyInvoke")
@@ -2832,6 +3032,8 @@ fn emit_early_call(
     };
 
     let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
+    let mut param_array_element_slots: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut fixed_array_materializations: HashMap<usize, Vec<usize>> = HashMap::new();
     let arg_mapping = map_call_args_for_emit(args, &meta.params);
     for (idx, param) in meta.params.iter().enumerate() {
         let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
@@ -2839,10 +3041,10 @@ fn emit_early_call(
         };
         if param.param_array {
             let mut values = Vec::new();
-            for arg in &arg_mapping.extras {
+            for mapped_arg in &arg_mapping.extras {
                 let value_slot = temps.alloc_temp();
                 emit_expr_into(
-                    &arg.expr,
+                    &mapped_arg.arg.expr,
                     compare_mode,
                     value_slot,
                     slot_map,
@@ -2854,18 +3056,20 @@ fn emit_early_call(
                 );
                 values.push(value_slot);
             }
+            param_array_element_slots.insert(idx, values.clone());
             instructions.push(Instruction::IntrinsicArrayLiteral {
                 dst: param_slot,
                 values,
             });
             continue;
         }
-        let Some(arg) = arg_mapping.fixed.get(idx).and_then(|arg| *arg) else {
+        let Some(mapped_arg) = arg_mapping.fixed.get(idx).and_then(|arg| *arg) else {
             if param.optional {
                 emit_optional_default(param, param_slot, instructions);
             }
             continue;
         };
+        let arg = mapped_arg.arg;
 
         if param.ty == BoundType::Array
             && let BoundExpr::Var(var_name) = &arg.expr
@@ -2874,6 +3078,7 @@ fn emit_early_call(
             if !element_slots.is_empty() {
                 // Fixed-array callers still lower through alias element slots; materialize
                 // the current payload into the callee's regular-array slot.
+                fixed_array_materializations.insert(idx, element_slots.clone());
                 instructions.push(Instruction::IntrinsicArrayLiteral {
                     dst: param_slot,
                     values: element_slots,
@@ -2916,6 +3121,21 @@ fn emit_early_call(
         project_member: None,
     });
     call_patches.push((patch_idx, name.to_string()));
+    if let (Some(call_site_descriptors), Some(current_proc_name)) =
+        (call_site_descriptors, current_proc_name)
+    {
+        call_site_descriptors.push(build_early_call_site_descriptor(
+            current_proc_name,
+            patch_idx,
+            name,
+            meta,
+            &arg_mapping,
+            &byref_copyback,
+            &param_array_element_slots,
+            &fixed_array_materializations,
+            assign_target,
+        ));
+    }
 
     for (dst_slot, src_slot) in byref_copyback {
         if dst_slot != src_slot {
@@ -2934,6 +3154,138 @@ fn emit_early_call(
     }
 
     true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_early_call_site_descriptor(
+    current_proc_name: &str,
+    call_pc: usize,
+    target_name: &str,
+    meta: &EmitProcMeta,
+    arg_mapping: &EmitCallArgMapping<'_>,
+    byref_copyback: &[(usize, usize)],
+    param_array_element_slots: &HashMap<usize, Vec<usize>>,
+    fixed_array_materializations: &HashMap<usize, Vec<usize>>,
+    assign_target: Option<usize>,
+) -> CallSiteDescriptor {
+    let mut arguments = Vec::new();
+    for (idx, param) in meta.params.iter().enumerate() {
+        let parameter_slot = meta.slots.get(param.name.as_str()).copied();
+        if param.param_array {
+            let element_slots = param_array_element_slots
+                .get(&idx)
+                .cloned()
+                .unwrap_or_default();
+            arguments.push(ArgumentBindingDescriptor {
+                argument_index: idx,
+                source_index: arg_mapping.extras.first().map(|arg| arg.source_index),
+                source_name: None,
+                parameter_index: Some(idx),
+                parameter_name: Some(param.name.clone()),
+                parameter_slot,
+                source_kind: ArgumentSourceKindDescriptor::ParamArrayPack,
+                expression_kind: ArgumentExpressionKindDescriptor::Expression,
+                binding_kind: ArgumentBindingKindDescriptor::ParamArrayPack,
+                force_byval: false,
+                source_slot: None,
+                writeback: None,
+                optional_default: None,
+                param_array: Some(ParamArrayBindingDescriptor {
+                    element_count: element_slots.len(),
+                    element_slots,
+                    lower_bound: 0,
+                    empty_upper_bound: -1,
+                }),
+            });
+            continue;
+        }
+
+        let Some(mapped_arg) = arg_mapping.fixed.get(idx).and_then(|arg| *arg) else {
+            arguments.push(ArgumentBindingDescriptor {
+                argument_index: idx,
+                source_index: None,
+                source_name: None,
+                parameter_index: Some(idx),
+                parameter_name: Some(param.name.clone()),
+                parameter_slot,
+                source_kind: ArgumentSourceKindDescriptor::Omitted,
+                expression_kind: ArgumentExpressionKindDescriptor::Unknown,
+                binding_kind: ArgumentBindingKindDescriptor::OptionalDefault,
+                force_byval: false,
+                source_slot: None,
+                writeback: None,
+                optional_default: Some(optional_default_value_for_param(param)),
+                param_array: None,
+            });
+            continue;
+        };
+
+        let byref_writeback = parameter_slot.and_then(|param_slot| {
+            byref_copyback
+                .iter()
+                .find(|(_, copyback_param_slot)| *copyback_param_slot == param_slot)
+                .map(
+                    |(caller_slot, copyback_param_slot)| ArgumentWritebackDescriptor {
+                        caller_slot: Some(*caller_slot),
+                        parameter_slot: Some(*copyback_param_slot),
+                        required: true,
+                    },
+                )
+        });
+        let binding_kind = if fixed_array_materializations.contains_key(&idx) {
+            ArgumentBindingKindDescriptor::FixedArrayMaterialized
+        } else if byref_writeback.is_some() {
+            ArgumentBindingKindDescriptor::ByRefAlias
+        } else {
+            ArgumentBindingKindDescriptor::ByValCopy
+        };
+        arguments.push(ArgumentBindingDescriptor {
+            argument_index: idx,
+            source_index: Some(mapped_arg.source_index),
+            source_name: mapped_arg.arg.name.clone(),
+            parameter_index: Some(idx),
+            parameter_name: Some(param.name.clone()),
+            parameter_slot,
+            source_kind: argument_source_kind(mapped_arg.arg),
+            expression_kind: argument_expression_kind(&mapped_arg.arg.expr),
+            binding_kind,
+            force_byval: mapped_arg.arg.force_byval,
+            source_slot: byref_writeback
+                .as_ref()
+                .and_then(|writeback| writeback.caller_slot),
+            writeback: byref_writeback,
+            optional_default: None,
+            param_array: fixed_array_materializations.get(&idx).map(|element_slots| {
+                ParamArrayBindingDescriptor {
+                    element_count: element_slots.len(),
+                    element_slots: element_slots.clone(),
+                    lower_bound: 0,
+                    empty_upper_bound: -1,
+                }
+            }),
+        });
+    }
+
+    let return_value = meta.return_slot.map(|return_slot| CallReturnDescriptor {
+        return_slot: Some(return_slot),
+        assign_target_slot: assign_target,
+        copyout_required: assign_target.is_some_and(|dst| dst != return_slot),
+    });
+    CallSiteDescriptor {
+        call_site_id: format!(
+            "callsite:{}@pc:{}",
+            current_proc_name.to_ascii_lowercase(),
+            call_pc
+        ),
+        caller_procedure_name: current_proc_name.to_string(),
+        call_pc,
+        target_name: target_name.to_string(),
+        target_kind: call_target_kind_for_procedure(target_name, meta.return_slot),
+        target_entry_pc: None,
+        default_member_policy: DefaultMemberPolicyDescriptor::NotApplicable,
+        arguments,
+        return_value,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3202,6 +3554,8 @@ fn emit_late_bound_default_member_call(
     proc_meta: &HashMap<String, EmitProcMeta>,
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
+    call_site_descriptors: Option<&mut Vec<CallSiteDescriptor>>,
+    current_proc_name: Option<&str>,
 ) -> bool {
     let Some(object_slot) = slot_map.get(name).copied() else {
         return false;
@@ -3212,6 +3566,7 @@ fn emit_late_bound_default_member_call(
         value: 0,
     });
     let mut invoke_args = Vec::with_capacity(args.len());
+    let mut arg_slots = Vec::with_capacity(args.len());
     for arg in args {
         let arg_slot = temps.alloc_temp();
         emit_expr_into(
@@ -3229,8 +3584,10 @@ fn emit_late_bound_default_member_call(
             slot: Some(arg_slot),
             name: arg.name.clone(),
         });
+        arg_slots.push(arg_slot);
     }
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
+    let call_pc = instructions.len();
     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
         dst,
         object: object_slot,
@@ -3239,7 +3596,70 @@ fn emit_late_bound_default_member_call(
         early_bound: false,
         com_member: None,
     });
+    if let (Some(call_site_descriptors), Some(current_proc_name)) =
+        (call_site_descriptors, current_proc_name)
+    {
+        call_site_descriptors.push(build_late_bound_default_member_call_site_descriptor(
+            current_proc_name,
+            call_pc,
+            name,
+            object_slot,
+            args,
+            &arg_slots,
+            Some(dst),
+        ));
+    }
     true
+}
+
+fn build_late_bound_default_member_call_site_descriptor(
+    current_proc_name: &str,
+    call_pc: usize,
+    target_name: &str,
+    _object_slot: usize,
+    args: &[BoundCallArg],
+    arg_slots: &[usize],
+    assign_target: Option<usize>,
+) -> CallSiteDescriptor {
+    let arguments = args
+        .iter()
+        .enumerate()
+        .map(|(idx, arg)| ArgumentBindingDescriptor {
+            argument_index: idx,
+            source_index: Some(idx),
+            source_name: arg.name.clone(),
+            parameter_index: None,
+            parameter_name: None,
+            parameter_slot: None,
+            source_kind: argument_source_kind(arg),
+            expression_kind: argument_expression_kind(&arg.expr),
+            binding_kind: ArgumentBindingKindDescriptor::ByValCopy,
+            force_byval: arg.force_byval,
+            source_slot: arg_slots.get(idx).copied(),
+            writeback: None,
+            optional_default: None,
+            param_array: None,
+        })
+        .collect();
+    CallSiteDescriptor {
+        call_site_id: format!(
+            "callsite:{}@pc:{}",
+            current_proc_name.to_ascii_lowercase(),
+            call_pc
+        ),
+        caller_procedure_name: current_proc_name.to_string(),
+        call_pc,
+        target_name: target_name.to_string(),
+        target_kind: CallTargetKindDescriptor::LateBoundDefaultMember,
+        target_entry_pc: None,
+        default_member_policy: DefaultMemberPolicyDescriptor::DefaultMemberFallback,
+        arguments,
+        return_value: Some(CallReturnDescriptor {
+            return_slot: assign_target,
+            assign_target_slot: assign_target,
+            copyout_required: false,
+        }),
+    }
 }
 
 fn emit_select_case_clause_match(
@@ -4571,6 +4991,8 @@ fn emit_expr_into(
                 proc_meta,
                 external_decls,
                 Some(dst),
+                None,
+                None,
             ) {
                 let _ = emit_late_bound_default_member_call(
                     name,
@@ -4583,6 +5005,8 @@ fn emit_expr_into(
                     proc_meta,
                     external_decls,
                     Some(dst),
+                    None,
+                    None,
                 );
             }
         }
@@ -4634,12 +5058,13 @@ fn map_call_args_for_emit<'a>(
 ) -> EmitCallArgMapping<'a> {
     let param_array_idx = params.iter().position(|p| p.param_array);
     let fixed_len = param_array_idx.unwrap_or(params.len());
-    let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
-    let mut extras: Vec<&BoundCallArg> = Vec::new();
+    let mut mapped: Vec<Option<MappedEmitCallArg<'a>>> = vec![None; params.len()];
+    let mut extras: Vec<MappedEmitCallArg<'a>> = Vec::new();
     let mut next_pos = 0usize;
     let mut seen_named = false;
 
-    for arg in args {
+    for (source_index, arg) in args.iter().enumerate() {
+        let mapped_arg = MappedEmitCallArg { source_index, arg };
         if let Some(name) = &arg.name {
             seen_named = true;
             if params
@@ -4654,14 +5079,14 @@ fn map_call_args_for_emit<'a>(
                 .position(|p| p.name.eq_ignore_ascii_case(name))
                 && mapped[idx].is_none()
             {
-                mapped[idx] = Some(arg);
+                mapped[idx] = Some(mapped_arg);
             }
             continue;
         }
 
         if seen_named {
             if param_array_idx.is_some() {
-                extras.push(arg);
+                extras.push(mapped_arg);
             }
             continue;
         }
@@ -4670,10 +5095,10 @@ fn map_call_args_for_emit<'a>(
             next_pos += 1;
         }
         if next_pos < fixed_len {
-            mapped[next_pos] = Some(arg);
+            mapped[next_pos] = Some(mapped_arg);
             next_pos += 1;
         } else if param_array_idx.is_some() {
-            extras.push(arg);
+            extras.push(mapped_arg);
         }
     }
 
@@ -4683,9 +5108,15 @@ fn map_call_args_for_emit<'a>(
     }
 }
 
+#[derive(Clone, Copy)]
+struct MappedEmitCallArg<'a> {
+    source_index: usize,
+    arg: &'a BoundCallArg,
+}
+
 struct EmitCallArgMapping<'a> {
-    fixed: Vec<Option<&'a BoundCallArg>>,
-    extras: Vec<&'a BoundCallArg>,
+    fixed: Vec<Option<MappedEmitCallArg<'a>>>,
+    extras: Vec<MappedEmitCallArg<'a>>,
 }
 
 fn reset_array_slots(

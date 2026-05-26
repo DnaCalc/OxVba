@@ -10,8 +10,8 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
-    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    Bytecode, CallSiteDescriptor, Instruction, OptionalDefaultValue, OptionalParameterDescriptor,
+    OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     ResolvedParameterMechanism, SlotTypeDescriptor,
@@ -192,6 +192,13 @@ impl<'a> VmExecutionPackage<'a> {
         self.procedure_metadata
             .iter()
             .map(|(name, metadata)| (name.clone(), metadata.procedure_signature_descriptor()))
+            .collect()
+    }
+
+    pub fn call_site_descriptors(&self) -> BTreeMap<String, Vec<CallSiteDescriptor>> {
+        self.procedure_metadata
+            .iter()
+            .map(|(name, metadata)| (name.clone(), metadata.call_sites.clone()))
             .collect()
     }
 }

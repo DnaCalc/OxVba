@@ -20,12 +20,16 @@ pub use bundle::{
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
+    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
+    ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, CallReturnDescriptor,
+    CallSiteDescriptor, CallTargetKindDescriptor, DefaultMemberPolicyDescriptor,
     ImplicitCurrentObjectDescriptor, OptionalDefaultValue, OptionalMissingStatePolicy,
-    OptionalParameterDescriptor, ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode,
-    ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
-    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
-    VbaTypeId, bound_type_to_declare_param_type,
+    OptionalParameterDescriptor, ParamArrayBindingDescriptor, ParamArrayDescriptor,
+    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    ProcedureSignatureDescriptor, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
+    SlotRole, SlotTypeDescriptor, SourceParameterMechanism, VbaTypeId,
+    bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -130,10 +134,12 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        Bytecode, Instruction, OptionalDefaultValue, OptionalMissingStatePolicy,
-        OptionalParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-        ProcedureRuntimeSlotKind, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
-        SlotRole, SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
+        ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, Bytecode,
+        CallTargetKindDescriptor, DefaultMemberPolicyDescriptor, Instruction, OptionalDefaultValue,
+        OptionalMissingStatePolicy, OptionalParameterDescriptor, ParameterPassingMode,
+        ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
+        ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
+        SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -599,6 +605,121 @@ mod tests {
         assert_eq!(
             property_let.parameters[0].resolved_mechanism,
             ResolvedParameterMechanism::PropertyValueByVal
+        );
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_projects_first_call_site_descriptor_view() {
+        let source = "Sub Main()\n\
+                      Dim x As Long\n\
+                      Dim y As Long\n\
+                      Dim observed As Long\n\
+                      x = 1\n\
+                      Call Touch(x)\n\
+                      Call Fill(target := y)\n\
+                      observed = Echo(x)\n\
+                      Call Capture(y, 5, 7)\n\
+                      End Sub\n\
+                      Sub Touch(ByRef value As Long)\n\
+                      value = value + 1\n\
+                      End Sub\n\
+                      Sub Fill(ByRef target As Long, Optional ByVal value As Long = 7)\n\
+                      target = value\n\
+                      End Sub\n\
+                      Function Echo(ByVal value As Long) As Long\n\
+                      Echo = value\n\
+                      End Function\n\
+                      Sub Capture(ByRef target As Long, ParamArray items() As Variant)\n\
+                      target = UBound(items)\n\
+                      End Sub";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let main = metadata
+            .get("main")
+            .expect("Main metadata should be present");
+        assert_eq!(main.call_sites.len(), 4);
+
+        let touch = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Touch"))
+            .expect("Touch call descriptor should be present");
+        assert!(touch.call_site_id.starts_with("callsite:main@pc:"));
+        assert_eq!(touch.target_kind, CallTargetKindDescriptor::Procedure);
+        assert!(touch.target_entry_pc.is_some());
+        assert_eq!(
+            touch.default_member_policy,
+            DefaultMemberPolicyDescriptor::NotApplicable
+        );
+        assert_eq!(
+            touch.arguments[0].binding_kind,
+            ArgumentBindingKindDescriptor::ByRefAlias
+        );
+        assert!(
+            touch.arguments[0]
+                .writeback
+                .as_ref()
+                .is_some_and(|w| w.required)
+        );
+
+        let fill = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Fill"))
+            .expect("Fill call descriptor should be present");
+        assert_eq!(fill.arguments[0].source_name.as_deref(), Some("target"));
+        assert_eq!(
+            fill.arguments[0].source_kind,
+            ArgumentSourceKindDescriptor::Named
+        );
+        assert_eq!(
+            fill.arguments[1].source_kind,
+            ArgumentSourceKindDescriptor::Omitted
+        );
+        assert_eq!(
+            fill.arguments[1].binding_kind,
+            ArgumentBindingKindDescriptor::OptionalDefault
+        );
+        assert_eq!(
+            fill.arguments[1].optional_default,
+            Some(OptionalDefaultValue::ExplicitI32(7))
+        );
+
+        let echo = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Echo"))
+            .expect("Echo call descriptor should be present");
+        assert_eq!(echo.target_kind, CallTargetKindDescriptor::Function);
+        assert!(
+            echo.return_value
+                .as_ref()
+                .is_some_and(|return_value| return_value.copyout_required)
+        );
+        assert_eq!(
+            echo.arguments[0].binding_kind,
+            ArgumentBindingKindDescriptor::ByValCopy
+        );
+
+        let capture = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Capture"))
+            .expect("Capture call descriptor should be present");
+        assert_eq!(
+            capture.arguments[1].source_kind,
+            ArgumentSourceKindDescriptor::ParamArrayPack
+        );
+        assert_eq!(
+            capture.arguments[1].binding_kind,
+            ArgumentBindingKindDescriptor::ParamArrayPack
+        );
+        assert_eq!(
+            capture.arguments[1]
+                .param_array
+                .as_ref()
+                .map(|param_array| param_array.element_count),
+            Some(2)
         );
     }
 

@@ -182,7 +182,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v6 carries those facts and upgrades older v3/v4/v5 metadata
+`OxBundle` format v7 carries those facts and upgrades older v3/v4/v5/v6 metadata
 into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -204,11 +204,11 @@ declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
 where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
-metadata knows them. `OxBundle` format v6 carries those facts, upgrades v5
-bundles with `Unknown` source mechanism where v5 lacked that distinction, and
-upgrades v4 bundles with `Unknown` parameter passing mode where v4 had no
-serialized ByRef/ByVal fact. VM call execution does not consume these
-descriptors yet.
+metadata knows them. `OxBundle` format v7 carries those facts, upgrades v6
+bundles with empty call-site rows, upgrades v5 bundles with `Unknown` source
+mechanism where v5 lacked that distinction, and upgrades v4 bundles with
+`Unknown` parameter passing mode where v4 had no serialized ByRef/ByVal fact.
+VM call execution does not consume these descriptors yet.
 
 The VMR-03 package evidence now also compares current `CallProc` lowering with
 signature metadata for VM-runnable seed calls. `VmPackageIdentityEvidence`
@@ -216,9 +216,19 @@ includes signature/call observation rows that classify existing ByVal
 no-copyback, ByRef copyback, Optional default materialization, ParamArray
 packing, property value ByVal no-copyback, and function return-slot copyout.
 These rows are evidence over current bytecode shape and value snapshots; they
-are not a substitute for future `CallSiteDescriptor` and
-`ArgumentBindingDescriptor` metadata, and they must not be treated as proof that
-the VM consumes signature descriptors for call binding.
+are not a substitute for the VMR-04 `CallSiteDescriptor` and
+`ArgumentBindingDescriptor` rows, and they must not be treated as proof that the
+VM consumes signature descriptors for call binding.
+
+Current VMR-04 seed surface is package metadata, not call-binding behavior:
+`ProcedureRuntimeMetadata::call_sites` carries first `CallSiteDescriptor` rows
+with `ArgumentBindingDescriptor` children for top-level project procedure call
+sites. The seed rows represent target kind, call PC, target entry PC after
+patching, named/positional/omitted/ParamArray argument source shape, ByRef
+alias/writeback, ByVal copy, Optional default, ParamArray pack, fixed-array
+materialization, default-member fallback policy, and return copyout. The VM
+exposes these rows through `VmExecutionPackage::call_site_descriptors`, but VM
+call execution still follows the existing bytecode lowering.
 
 ## Strengthening Rule
 

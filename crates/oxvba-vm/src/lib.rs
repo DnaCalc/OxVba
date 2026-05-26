@@ -119,6 +119,7 @@ fn default_host_services() -> Arc<dyn HostServices> {
 mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
+        ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, CallTargetKindDescriptor,
         DeclareParamType, OxBundle, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
@@ -463,6 +464,67 @@ mod tests {
         assert_eq!(
             property_signature.parameters[0].resolved_mechanism,
             ResolvedParameterMechanism::PropertyValueByVal
+        );
+    }
+
+    #[test]
+    fn execution_package_exposes_call_site_descriptor_view() {
+        let source = "Sub Main()\n\
+                      Dim target As Long\n\
+                      Dim observed As Long\n\
+                      target = 1\n\
+                      Call Fill(target := target)\n\
+                      observed = Echo(target)\n\
+                      End Sub\n\
+                      Sub Fill(ByRef target As Long, Optional ByVal value As Long = 7)\n\
+                      target = value\n\
+                      End Sub\n\
+                      Function Echo(ByVal value As Long) As Long\n\
+                      Echo = value\n\
+                      End Function";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let call_sites_by_proc = package.call_site_descriptors();
+        let main_call_sites = call_sites_by_proc
+            .get("main")
+            .expect("Main call-site descriptors should be exposed");
+        assert_eq!(main_call_sites.len(), 2);
+
+        let fill = main_call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Fill"))
+            .expect("Fill call descriptor should be present");
+        assert_eq!(fill.target_kind, CallTargetKindDescriptor::Procedure);
+        assert!(fill.target_entry_pc.is_some());
+        assert_eq!(
+            fill.arguments[0].source_kind,
+            ArgumentSourceKindDescriptor::Named
+        );
+        assert_eq!(
+            fill.arguments[0].binding_kind,
+            ArgumentBindingKindDescriptor::ByRefAlias
+        );
+        assert_eq!(
+            fill.arguments[1].source_kind,
+            ArgumentSourceKindDescriptor::Omitted
+        );
+        assert_eq!(
+            fill.arguments[1].binding_kind,
+            ArgumentBindingKindDescriptor::OptionalDefault
+        );
+
+        let echo = main_call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Echo"))
+            .expect("Echo call descriptor should be present");
+        assert_eq!(echo.target_kind, CallTargetKindDescriptor::Function);
+        assert!(
+            echo.return_value
+                .as_ref()
+                .is_some_and(|ret| ret.copyout_required)
         );
     }
 

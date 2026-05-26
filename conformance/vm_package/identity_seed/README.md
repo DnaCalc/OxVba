@@ -23,5 +23,7 @@ The VMR-03 row is VM-runnable evidence for current call lowering compared with
 procedure signature metadata. It observes ByVal no-copyback, ByRef copyback,
 Optional default materialization, ParamArray packing, property value ByVal
 semantics, and function return-slot copyout. This is evidence over existing
-bytecode lowering, not descriptor-driven call execution; formal
-`CallSiteDescriptor` and `ArgumentBindingDescriptor` rows remain VMR-04 work.
+bytecode lowering, not descriptor-driven call execution. Seed
+`CallSiteDescriptor` and `ArgumentBindingDescriptor` rows now exist in package
+metadata for top-level project calls; full expression/COM/native call-site
+coverage and descriptor-driven VM behavior remain later work.

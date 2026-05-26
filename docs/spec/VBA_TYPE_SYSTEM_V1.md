@@ -589,14 +589,15 @@ Current implementation anchors:
   source/resolved parameter mechanism, Optional/default/missing policy,
   ParamArray shape, return type, property group, property value ByVal
   semantics, and class hidden-receiver metadata.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v6 serializes the
-  populated slot and signature metadata and upgrades v1/v2/v3/v4/v5 bundles
-  into the current descriptor shape.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v7 serializes the
+  populated slot, signature, and seed call-site metadata and upgrades
+  v1/v2/v3/v4/v5/v6 bundles into the current descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
   current slot descriptor view and
   `VmExecutionPackage::procedure_signature_descriptors` exposes the first
-  signature descriptor view without changing slot or call execution; and
+  signature descriptor view; `VmExecutionPackage::call_site_descriptors`
+  exposes seed call-site rows without changing slot or call execution; and
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
   descriptor rows, and signature/call observation rows for current seed
   `CallProc` lowering compared with signature metadata.
@@ -612,8 +613,14 @@ Known development gaps:
 - `ProcedureSignatureDescriptor` now carries the first call-relevant source
   and resolved parameter facts, missing optional state, ParamArray shape,
   implicit `Me`, and property value ByVal semantics, but signature descriptor
-  ids, call-site descriptors, and descriptor-driven VM call behavior remain
-  incomplete;
+  ids, complete call-site coverage, and descriptor-driven VM call behavior
+  remain incomplete;
+- `CallSiteDescriptor` and `ArgumentBindingDescriptor` now represent the first
+  top-level project call sites with ByRef alias/writeback, ByVal copy,
+  Optional/default, named/omitted, ParamArray, fixed-array materialization,
+  default-member fallback policy, and return copyout facts, but expression-call
+  coverage, external Declare/COM call coverage, canonical descriptor ids, and
+  descriptor-driven VM behavior remain incomplete;
 - `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
   expression temporary declared types, richer array shape/provenance, UDT
   nominal identity, aggregate UDT field offsets, object/class/interface ids,
