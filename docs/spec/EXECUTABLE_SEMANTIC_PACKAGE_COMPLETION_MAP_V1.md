@@ -147,21 +147,23 @@ are intentionally ordered so a broad storage rewrite is not the first step.
 
 ## Outstanding Ambiguities Before VM Rework
 
-Resolve or explicitly classify these before behavior-affecting VM changes:
+The first VM batch may proceed because the P0 ownership questions below are
+either decided or explicitly tracked. These decisions permit metadata/evidence
+work only; behavior-affecting VM consumption still waits for the later VMR-06
+gate and fixture evidence.
 
-- Descriptor id ownership: decide whether ids are allocated by the compiler,
-  package builder, bundle serializer, or a shared semantic registry.
-- Carrier hint authority: decide whether first-pass carrier hints are
-  authoritative execution inputs or observational evidence fields.
-- Temporary slot modeling: define how compiler-generated temporaries receive
-  stable names, roles, initial states, and cleanup obligations.
-- In-memory package identity: define where package and descriptor digests live
-  when execution does not flow through a persisted `OxBundle`.
-- Partial resolver output: state which call-site and object/member descriptors
-  can be emitted before the resolver is fully complete, and how unknowns are
-  represented.
-- Compatibility decisions: distinguish intentional VBA-compatible behavior from
-  current implementation behavior before changing the VM to consume metadata.
+| Ambiguity | Disposition | Rule for the next VM batch | Residual owner / follow-up |
+|---|---|---|---|
+| Descriptor id ownership | Decided | The executable semantic package owns canonical descriptor ids and descriptor digests. Compiler/resolver/emit code may contribute source facts, and `OxBundle` may serialize them, but VM and JIT consumers do not allocate semantic ids. Provisional in-memory ids are allowed only as evidence fields until canonical package assembly exists. | VMR-01 records package/procedure/bytecode identity; VMR-02 introduces descriptor views with stable digest inputs. |
+| Carrier hint authority | Decided | First-pass carrier hints are observational evidence derived from declared type metadata. They must not drive slot storage, helper selection, typed lowering, or compatibility claims until a behavior-affecting VMR-06 bead promotes a specific descriptor use with fixture evidence. | VMR-02 captures declared type and carrier hint evidence; VMR-06 owns any future execution use. |
+| Temporary slot modeling | Decided | Compiler-generated slots must receive `SlotTypeDescriptor` rows with role `Temporary` or `CompilerGenerated`, stable slot index, synthetic name when no source name exists, declared type if known, initial state, carrier hint, and cleanup obligation. User-visible slots remain bounded by current `user_slot_count` snapshot rules. | VMR-02 descriptor population beads define the first synthetic naming and cleanup fields. |
+| In-memory package identity | Decided | A VM run that does not load a persisted `OxBundle` still records an in-memory package identity: package origin, bytecode digest, procedure identity, entry PC, slot counts, and descriptor digest set. The digest is evidence/cache correlation, not a public persistence format. | VMR-01 implements identity evidence for direct VM and host paths. |
+| Partial resolver output | Tracked | Partial or unknown semantic facts must be represented as explicit unknown/unsupported descriptor states with deterministic diagnostics. The VM may continue current behavior for metadata-only evidence, but JIT/native entry gates must treat unknown descriptor facts as unsupported rather than rediscovering them. | VMR-04 and VMR-05 split call-site, object/member, array, UDT, and COM descriptor unknowns as they become executable fixtures. |
+| Compatibility versus current behavior | Decided | Current VM behavior is executable truth for regression and differential evidence, but it is not automatically VBA compatibility truth. Any behavior-affecting metadata consumption must cite a spec/oracle/project decision when changing behavior; otherwise the package evidence records current behavior with the appropriate gap label. | Semantic table beads and future behavior beads must carry the authority row or oracle gate before closing parity language. |
+
+No P0 ambiguity remains for the metadata/evidence-only first VM batch. The
+tracked P1 details above are blockers only for the specific descriptor family
+or behavior-affecting bead that consumes them.
 
 ## First Rework Boundary
 

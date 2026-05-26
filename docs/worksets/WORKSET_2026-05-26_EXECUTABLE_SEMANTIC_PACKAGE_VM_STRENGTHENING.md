@@ -139,6 +139,8 @@ This review found four unclear areas and repairs them in the referenced docs:
 ## Acceptance Gates
 
 - The completion map has no unclassified rows for first-slice package facts.
+- The ambiguity ledger in the completion map has no P0 question blocking the
+  metadata/evidence-only first VM batch.
 - Bytecode family rows exist for the VM-runnable semantic seed fixtures.
 - VM evidence includes slot snapshots plus descriptor/package observations.
 - Coercion/operator/call/lifecycle/object rows exist for the initial seed
