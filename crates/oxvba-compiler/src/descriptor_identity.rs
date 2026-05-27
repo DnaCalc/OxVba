@@ -26,6 +26,8 @@ pub enum DescriptorFamily {
     ObjectType,
     Interop,
     Lifecycle,
+    CarrierLayout,
+    ValueState,
     TypeRegistry,
     DescriptorSet,
 }
@@ -44,6 +46,8 @@ impl DescriptorFamily {
             Self::ObjectType => "object-type",
             Self::Interop => "interop",
             Self::Lifecycle => "lifecycle",
+            Self::CarrierLayout => "carrier-layout",
+            Self::ValueState => "value-state",
             Self::TypeRegistry => "type-registry",
             Self::DescriptorSet => "descriptor-set",
         }

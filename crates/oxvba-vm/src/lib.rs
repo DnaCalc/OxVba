@@ -19,9 +19,10 @@ use oxvba_runtime::Variant;
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
-    VmDescriptorIdentityEvidence, VmExecutionPackage, VmInteropDescriptorEvidence,
-    VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin, VmProcedureIdentityEvidence,
-    VmProjectContextEvidence, VmSignatureCallEvidence,
+    VmCarrierLayoutEvidence, VmDescriptorIdentityEvidence, VmExecutionPackage,
+    VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
+    VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSignatureCallEvidence,
+    VmValueStateEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -375,6 +376,96 @@ mod tests {
             double_main.slot_descriptor_digest
         );
         assert_ne!(long_identity.package_digest, double_identity.package_digest);
+    }
+
+    #[test]
+    fn package_identity_exposes_carrier_layout_and_value_state_evidence() {
+        let source = "Type Point\n\
+                      X As Long\n\
+                      Label As String\n\
+                      End Type\n\
+                      Sub Main()\n\
+                      End Sub\n\
+                      Sub Probe(Optional ByVal marker As Variant, Optional ByVal amount As Long = 7)\n\
+                      Dim l As Long\n\
+                      Dim d As Double\n\
+                      Dim b As Boolean\n\
+                      Dim s As String\n\
+                      Dim v As Variant\n\
+                      Dim o As Object\n\
+                      Dim p As Point\n\
+                      Dim dec As Decimal\n\
+                      Debug.Print Empty\n\
+                      Debug.Print Null\n\
+                      Debug.Print CVErr(7)\n\
+                      Debug.Print vbNullString\n\
+                      dec = CDec(1)\n\
+                      Debug.Print dec\n\
+                      End Sub";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let evidence = VmExecutionPackage::new(&bytecode, &metadata).identity_evidence();
+
+        for carrier_key in [
+            "i32",
+            "f64",
+            "boolean",
+            "bstr",
+            "variant",
+            "object-ref",
+            "decimal96-variant-subtype",
+        ] {
+            assert!(
+                evidence
+                    .carrier_layout_evidence
+                    .iter()
+                    .any(|item| item.procedure_name.eq_ignore_ascii_case("Probe")
+                        && item.carrier_key == carrier_key),
+                "missing carrier evidence {carrier_key}"
+            );
+        }
+        assert!(
+            evidence.carrier_layout_evidence.iter().any(|item| item
+                .procedure_name
+                .eq_ignore_ascii_case("Probe")
+                && item
+                    .observations
+                    .iter()
+                    .any(|observation| observation
+                        == "note=declared-decimal-extension=variant-subtype")),
+            "decimal extension diagnostic evidence should be VM-visible"
+        );
+        for state in [
+            "empty",
+            "null",
+            "error",
+            "missingargument",
+            "omitteddefault",
+            "nothing",
+            "vbnullstring",
+            "decimalvariantsubtype",
+        ] {
+            assert!(
+                evidence
+                    .value_state_evidence
+                    .iter()
+                    .any(|item| item.procedure_name.eq_ignore_ascii_case("Probe")
+                        && item.state == state),
+                "missing value-state evidence {state}"
+            );
+        }
+        assert!(
+            evidence
+                .descriptor_identities
+                .iter()
+                .any(|identity| identity.family == "carrier-layout")
+        );
+        assert!(
+            evidence
+                .descriptor_identities
+                .iter()
+                .any(|identity| identity.family == "value-state")
+        );
     }
 
     #[test]

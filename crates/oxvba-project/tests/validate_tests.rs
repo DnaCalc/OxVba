@@ -109,6 +109,8 @@ fn make_runtime_metadata(
         array_shapes: Vec::new(),
         udt_types: Vec::new(),
         object_types: Vec::new(),
+        carrier_layouts: Vec::new(),
+        value_states: Vec::new(),
     }
 }
 

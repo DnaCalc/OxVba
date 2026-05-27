@@ -13,6 +13,7 @@ use crate::{
         RuntimeArrayElementType, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind,
         StringCompareMode,
     },
+    descriptor_identity::{DescriptorFamily, canonical_descriptor_id},
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
         BoundExpr, BoundExternalDecl, BoundModule, BoundParam, BoundParamSourceMechanism,
@@ -144,6 +145,65 @@ pub struct ProcedureRuntimeMetadata {
     pub array_shapes: Vec<ArrayShapeDescriptor>,
     pub udt_types: Vec<UdtTypeDescriptor>,
     pub object_types: Vec<ObjectTypeDescriptor>,
+    pub carrier_layouts: Vec<CarrierLayoutDescriptor>,
+    pub value_states: Vec<ValueStateDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CarrierLayoutDescriptor {
+    pub descriptor_id: String,
+    pub carrier: RuntimeCarrierKind,
+    pub carrier_key: String,
+    pub layout: CarrierLayoutKind,
+    pub storage_bits: Option<u16>,
+    pub native_frame_eligible: bool,
+    pub variant_compatible: bool,
+    pub com_variant_type: Option<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CarrierLayoutKind {
+    Unknown,
+    NativeScalar,
+    VariantPayload,
+    BStr,
+    ObjectRef,
+    SafeArray,
+    UdtFields,
+    InternalHandle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ValueStateDescriptor {
+    pub descriptor_id: String,
+    pub state: ValueStateKind,
+    pub source: ValueStateSource,
+    pub slot: Option<usize>,
+    pub pc: Option<usize>,
+    pub name: Option<String>,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ValueStateKind {
+    Empty,
+    Null,
+    Error,
+    MissingArgument,
+    OmittedDefault,
+    Nothing,
+    VbNullString,
+    DecimalVariantSubtype,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ValueStateSource {
+    SlotInitialState,
+    Instruction,
+    OptionalParameter,
+    IntrinsicConstant,
+    DeclaredTypeExtension,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -760,6 +820,14 @@ impl ProcedureRuntimeMetadata {
         self.object_types.clone()
     }
 
+    pub fn carrier_layout_descriptors(&self) -> Vec<CarrierLayoutDescriptor> {
+        self.carrier_layouts.clone()
+    }
+
+    pub fn value_state_descriptors(&self) -> Vec<ValueStateDescriptor> {
+        self.value_states.clone()
+    }
+
     pub(crate) fn legacy_declared_type_for_slot(
         &self,
         slot: usize,
@@ -1357,6 +1425,8 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &procedures[entry_idx],
                 &proc_slots[entry_idx],
             ),
+            carrier_layouts: Vec::new(),
+            value_states: Vec::new(),
         },
     );
 
@@ -1461,6 +1531,8 @@ pub fn emit_bytecode_with_runtime_metadata(
                 array_shapes: build_array_shape_descriptors(proc, &proc_slots[idx]),
                 udt_types: build_udt_type_descriptors(proc, &proc_slots[idx]),
                 object_types: build_object_type_descriptors(proc, &proc_slots[idx]),
+                carrier_layouts: Vec::new(),
+                value_states: Vec::new(),
             },
         );
     }
@@ -1501,6 +1573,12 @@ pub fn emit_bytecode_with_runtime_metadata(
             *target_pc = target;
         }
     }
+
+    decorate_runtime_metadata_descriptors(
+        &mut procedure_runtime_metadata,
+        &instructions,
+        &procedures,
+    );
 
     (
         Bytecode {
@@ -1595,6 +1673,762 @@ fn build_runtime_slot_metadata(
             .then_with(|| lhs.name.cmp(&rhs.name))
     });
     slots
+}
+
+fn decorate_runtime_metadata_descriptors(
+    metadata: &mut BTreeMap<String, ProcedureRuntimeMetadata>,
+    instructions: &[Instruction],
+    procedures: &[BoundProcedure],
+) {
+    let mut ranges = metadata
+        .iter()
+        .map(|(key, value)| (key.clone(), value.entry_pc))
+        .collect::<Vec<_>>();
+    ranges.sort_by(|left, right| left.1.cmp(&right.1).then(left.0.cmp(&right.0)));
+    for index in 0..ranges.len() {
+        let key = ranges[index].0.clone();
+        let start_pc = ranges[index].1;
+        let end_pc = ranges
+            .get(index + 1)
+            .map(|(_, entry_pc)| *entry_pc)
+            .unwrap_or(instructions.len());
+        let proc = procedures
+            .iter()
+            .find(|proc| proc.name.eq_ignore_ascii_case(&key));
+        let Some(metadata) = metadata.get_mut(&key) else {
+            continue;
+        };
+        metadata.carrier_layouts = build_carrier_layout_descriptors(&metadata.slots);
+        metadata.value_states =
+            build_value_state_descriptors(metadata, proc, instructions, start_pc, end_pc);
+    }
+}
+
+fn build_carrier_layout_descriptors(
+    slots: &[ProcedureRuntimeSlotMetadata],
+) -> Vec<CarrierLayoutDescriptor> {
+    let mut carriers = BTreeMap::<String, RuntimeCarrierKind>::new();
+    for slot in slots {
+        carriers
+            .entry(slot.carrier.registry_key())
+            .or_insert_with(|| slot.carrier.clone());
+    }
+    carriers
+        .into_values()
+        .map(carrier_layout_descriptor)
+        .collect()
+}
+
+fn carrier_layout_descriptor(carrier: RuntimeCarrierKind) -> CarrierLayoutDescriptor {
+    let carrier_key = carrier.registry_key();
+    let descriptor_id =
+        canonical_descriptor_id(DescriptorFamily::CarrierLayout, [carrier_key.as_str()]);
+    let mut notes = Vec::new();
+    let (layout, storage_bits, native_frame_eligible, variant_compatible, com_variant_type) =
+        match &carrier {
+            RuntimeCarrierKind::Unknown => (
+                CarrierLayoutKind::Unknown,
+                None,
+                false,
+                false,
+                None::<String>,
+            ),
+            RuntimeCarrierKind::Variant => (
+                CarrierLayoutKind::VariantPayload,
+                None,
+                false,
+                true,
+                Some("VT_VARIANT".to_string()),
+            ),
+            RuntimeCarrierKind::Boolean => (
+                CarrierLayoutKind::NativeScalar,
+                Some(16),
+                true,
+                true,
+                Some("VT_BOOL".to_string()),
+            ),
+            RuntimeCarrierKind::I16 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(16),
+                true,
+                true,
+                Some("VT_I2".to_string()),
+            ),
+            RuntimeCarrierKind::U8 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(8),
+                true,
+                true,
+                Some("VT_UI1".to_string()),
+            ),
+            RuntimeCarrierKind::I32 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(32),
+                true,
+                true,
+                Some("VT_I4".to_string()),
+            ),
+            RuntimeCarrierKind::I64 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(64),
+                true,
+                true,
+                Some("VT_I8".to_string()),
+            ),
+            RuntimeCarrierKind::PointerSizedInteger => (
+                CarrierLayoutKind::NativeScalar,
+                Some(usize::BITS as u16),
+                true,
+                true,
+                Some(if usize::BITS == 64 { "VT_I8" } else { "VT_I4" }.to_string()),
+            ),
+            RuntimeCarrierKind::F32 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(32),
+                true,
+                true,
+                Some("VT_R4".to_string()),
+            ),
+            RuntimeCarrierKind::F64 => (
+                CarrierLayoutKind::NativeScalar,
+                Some(64),
+                true,
+                true,
+                Some("VT_R8".to_string()),
+            ),
+            RuntimeCarrierKind::Currency => (
+                CarrierLayoutKind::NativeScalar,
+                Some(64),
+                true,
+                true,
+                Some("VT_CY".to_string()),
+            ),
+            RuntimeCarrierKind::Date => (
+                CarrierLayoutKind::NativeScalar,
+                Some(64),
+                true,
+                true,
+                Some("VT_DATE".to_string()),
+            ),
+            RuntimeCarrierKind::BStr => (
+                CarrierLayoutKind::BStr,
+                Some(usize::BITS as u16),
+                true,
+                true,
+                Some("VT_BSTR".to_string()),
+            ),
+            RuntimeCarrierKind::Decimal96VariantSubtype => {
+                notes.push("declared-decimal-extension=variant-subtype".to_string());
+                (
+                    CarrierLayoutKind::VariantPayload,
+                    Some(96),
+                    false,
+                    true,
+                    Some("VT_DECIMAL".to_string()),
+                )
+            }
+            RuntimeCarrierKind::ObjectRef => (
+                CarrierLayoutKind::ObjectRef,
+                Some(usize::BITS as u16),
+                true,
+                true,
+                Some("VT_DISPATCH-or-VT_UNKNOWN".to_string()),
+            ),
+            RuntimeCarrierKind::SafeArray => (
+                CarrierLayoutKind::SafeArray,
+                Some(usize::BITS as u16),
+                true,
+                true,
+                Some("VT_ARRAY".to_string()),
+            ),
+            RuntimeCarrierKind::UdtFields { descriptor } => {
+                notes.push(format!("udt-descriptor={descriptor}"));
+                (
+                    CarrierLayoutKind::UdtFields,
+                    None,
+                    true,
+                    false,
+                    None::<String>,
+                )
+            }
+            RuntimeCarrierKind::BindingHandleInternal => (
+                CarrierLayoutKind::InternalHandle,
+                Some(usize::BITS as u16),
+                false,
+                false,
+                None::<String>,
+            ),
+        };
+    CarrierLayoutDescriptor {
+        descriptor_id,
+        carrier,
+        carrier_key,
+        layout,
+        storage_bits,
+        native_frame_eligible,
+        variant_compatible,
+        com_variant_type,
+        notes,
+    }
+}
+
+fn build_value_state_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+    instructions: &[Instruction],
+    start_pc: usize,
+    end_pc: usize,
+) -> Vec<ValueStateDescriptor> {
+    let mut descriptors = Vec::new();
+    let mut ordinal = 0usize;
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    collect_slot_value_state_descriptors(metadata, &procedure_id, &mut ordinal, &mut descriptors);
+    collect_signature_value_state_descriptors(
+        metadata,
+        &procedure_id,
+        &mut ordinal,
+        &mut descriptors,
+    );
+    if let Some(proc) = proc {
+        collect_bound_value_state_descriptors(
+            proc,
+            metadata,
+            &procedure_id,
+            &mut ordinal,
+            &mut descriptors,
+        );
+    }
+    collect_instruction_value_state_descriptors(
+        instructions,
+        start_pc,
+        end_pc,
+        &procedure_id,
+        &mut ordinal,
+        &mut descriptors,
+    );
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+fn collect_slot_value_state_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    for slot in &metadata.slots {
+        match slot.initial_state {
+            SlotInitialState::Empty => descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::Empty,
+                ValueStateSource::SlotInitialState,
+                (Some(slot.slot), None, Some(slot.name.clone())),
+                "default-init:variant-empty".to_string(),
+                ordinal,
+            )),
+            SlotInitialState::Nothing => descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::Nothing,
+                ValueStateSource::SlotInitialState,
+                (Some(slot.slot), None, Some(slot.name.clone())),
+                "default-init:object-nothing".to_string(),
+                ordinal,
+            )),
+            SlotInitialState::Unknown
+            | SlotInitialState::CallerProvided
+            | SlotInitialState::ScalarZero
+            | SlotInitialState::False
+            | SlotInitialState::EmptyString
+            | SlotInitialState::UnallocatedArray
+            | SlotInitialState::UdtDefault
+            | SlotInitialState::CompilerDefined => {}
+        }
+        if slot.carrier == RuntimeCarrierKind::Decimal96VariantSubtype {
+            descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::DecimalVariantSubtype,
+                ValueStateSource::DeclaredTypeExtension,
+                (Some(slot.slot), None, Some(slot.name.clone())),
+                "declared-decimal-extension:variant-subtype".to_string(),
+                ordinal,
+            ));
+        }
+    }
+}
+
+fn collect_signature_value_state_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    for parameter in &metadata.signature.parameters {
+        let OptionalParameterDescriptor::Optional {
+            default_value,
+            missing_state,
+        } = &parameter.optional_descriptor
+        else {
+            continue;
+        };
+        match default_value {
+            OptionalDefaultValue::VariantMissingError448 => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::MissingArgument,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!("missing-state={missing_state:?}; default=VariantMissingError448"),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::Unknown => {}
+            OptionalDefaultValue::ExplicitI32(value) => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!("default=ExplicitI32({value}); missing-state={missing_state:?}"),
+                    ordinal,
+                ));
+            }
+            OptionalDefaultValue::DeclaredTypeDefault
+            | OptionalDefaultValue::ImplementationDefined => {
+                descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::OmittedDefault,
+                    ValueStateSource::OptionalParameter,
+                    (parameter.slot, None, Some(parameter.name.clone())),
+                    format!("default={default_value:?}; missing-state={missing_state:?}"),
+                    ordinal,
+                ));
+            }
+        }
+    }
+}
+
+fn collect_bound_value_state_descriptors(
+    proc: &BoundProcedure,
+    metadata: &ProcedureRuntimeMetadata,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    let slot_by_name = metadata
+        .slots
+        .iter()
+        .map(|slot| (slot.name.to_ascii_lowercase(), slot.slot))
+        .collect::<HashMap<_, _>>();
+    for stmt in &proc.body {
+        collect_stmt_value_states(stmt, &slot_by_name, procedure_id, ordinal, descriptors);
+    }
+}
+
+fn collect_stmt_value_states(
+    stmt: &BoundStmt,
+    slot_by_name: &HashMap<String, usize>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    match stmt {
+        BoundStmt::Assign { target, expr, .. } => collect_expr_value_states(
+            expr,
+            slot_by_name.get(&target.to_ascii_lowercase()).copied(),
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundStmt::AssignRuntimeArrayElement { indices, expr, .. } => {
+            for index in indices {
+                collect_expr_value_states(index, None, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::UdtAssign { .. } => {}
+        BoundStmt::MidAssign {
+            start,
+            count,
+            value,
+            ..
+        } => {
+            collect_expr_value_states(start, None, procedure_id, ordinal, descriptors);
+            if let Some(count) = count {
+                collect_expr_value_states(count, None, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_value_states(value, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_cond_value_states(cond, procedure_id, ordinal, descriptors);
+            for stmt in then_body.iter().chain(else_body.iter()) {
+                collect_stmt_value_states(stmt, slot_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ForRange {
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => {
+            collect_expr_value_states(start, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(end, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(step, None, procedure_id, ordinal, descriptors);
+            for stmt in body {
+                collect_stmt_value_states(stmt, slot_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ForEach {
+            items,
+            iterable,
+            body,
+            ..
+        } => {
+            for item in items {
+                collect_expr_value_states(item, None, procedure_id, ordinal, descriptors);
+            }
+            if let Some(iterable) = iterable {
+                collect_expr_value_states(iterable, None, procedure_id, ordinal, descriptors);
+            }
+            for stmt in body {
+                collect_stmt_value_states(stmt, slot_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ReDimRuntime { bounds, .. } => {
+            for bound in bounds {
+                collect_expr_value_states(
+                    &bound.upper_bound,
+                    None,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ReDim { .. }
+        | BoundStmt::Erase { .. }
+        | BoundStmt::ExitDo
+        | BoundStmt::ExitFor
+        | BoundStmt::OnErrorResumeNext
+        | BoundStmt::OnErrorGoto0
+        | BoundStmt::OnErrorGotoLabel { .. }
+        | BoundStmt::ResumeNext
+        | BoundStmt::Resume
+        | BoundStmt::ResumeLabel { .. }
+        | BoundStmt::RaiseError(_)
+        | BoundStmt::ErrClear
+        | BoundStmt::Label { .. }
+        | BoundStmt::GoTo { .. }
+        | BoundStmt::GoSub { .. }
+        | BoundStmt::Return
+        | BoundStmt::Beep
+        | BoundStmt::ExitProcedure
+        | BoundStmt::Unsupported { .. } => {}
+        BoundStmt::DoWhile {
+            cond,
+            body,
+            post_check: _,
+        } => {
+            collect_cond_value_states(cond, procedure_id, ordinal, descriptors);
+            for stmt in body {
+                collect_stmt_value_states(stmt, slot_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::RaiseEvent { args, .. }
+        | BoundStmt::Call { args, .. }
+        | BoundStmt::AssignFromCall { args, .. } => {
+            for arg in args {
+                collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_value_states(
+                        stmt,
+                        slot_by_name,
+                        procedure_id,
+                        ordinal,
+                        descriptors,
+                    );
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_value_states(stmt, slot_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::FileOpen {
+            path, file_number, ..
+        } => {
+            collect_expr_value_states(path, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::FileClose { file_number } => {
+            if let Some(file_number) = file_number {
+                collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::FileKill { path } => {
+            collect_expr_value_states(path, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::FilePrint { file_number, data } => {
+            collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(data, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::FileInput {
+            file_number,
+            targets: _,
+        } => {
+            collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::ConsolePrint { data } => {
+            collect_expr_value_states(data, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::ConsoleInput { targets: _ } | BoundStmt::ConsoleLineInput { target: _ } => {}
+        BoundStmt::FileWrite { file_number, data } => {
+            collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+            for item in data {
+                collect_expr_value_states(item, None, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::FileLineInput {
+            file_number,
+            target: _,
+        } => {
+            collect_expr_value_states(file_number, None, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::DebugPrint { data } => {
+            collect_expr_value_states(data, None, procedure_id, ordinal, descriptors);
+        }
+    }
+}
+
+fn collect_cond_value_states(
+    cond: &BoundCond,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    match cond {
+        BoundCond::Compare { lhs, rhs, .. } => {
+            collect_expr_value_states(lhs, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(rhs, None, procedure_id, ordinal, descriptors);
+        }
+        BoundCond::Truthy(expr) => {
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+        }
+        BoundCond::Not(inner) => {
+            collect_cond_value_states(inner, procedure_id, ordinal, descriptors)
+        }
+        BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
+            collect_cond_value_states(lhs, procedure_id, ordinal, descriptors);
+            collect_cond_value_states(rhs, procedure_id, ordinal, descriptors);
+        }
+    }
+}
+
+fn collect_expr_value_states(
+    expr: &BoundExpr,
+    slot: Option<usize>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    match expr {
+        BoundExpr::IntrinsicCall { name, args } => {
+            match name.as_str() {
+                "vbnullstring" if args.is_empty() => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::VbNullString,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=vbNullString".to_string(),
+                    ordinal,
+                )),
+                "__empty" if args.is_empty() => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::Empty,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=Empty".to_string(),
+                    ordinal,
+                )),
+                "__null" if args.is_empty() => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::Null,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=Null".to_string(),
+                    ordinal,
+                )),
+                "cverr" => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::Error,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=CVErr".to_string(),
+                    ordinal,
+                )),
+                "cdec" => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::DecimalVariantSubtype,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=CDec; payload=Decimal96 Variant subtype".to_string(),
+                    ordinal,
+                )),
+                _ => {}
+            }
+            for arg in args {
+                collect_expr_value_states(arg, None, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundExpr::ProcCall { args, .. } => {
+            for arg in args {
+                collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+            collect_expr_value_states(lhs, None, procedure_id, ordinal, descriptors);
+            collect_expr_value_states(rhs, None, procedure_id, ordinal, descriptors);
+        }
+        BoundExpr::UnaryOp { operand, .. } => {
+            collect_expr_value_states(operand, None, procedure_id, ordinal, descriptors);
+        }
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_)
+        | BoundExpr::Var(_)
+        | BoundExpr::VarPtrArrayBuffer(_)
+        | BoundExpr::AddConst { .. }
+        | BoundExpr::SubConst { .. } => {}
+    }
+}
+
+fn collect_instruction_value_state_descriptors(
+    instructions: &[Instruction],
+    start_pc: usize,
+    end_pc: usize,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ValueStateDescriptor>,
+) {
+    for (pc, instruction) in instructions
+        .iter()
+        .enumerate()
+        .take(end_pc.min(instructions.len()))
+        .skip(start_pc)
+    {
+        match instruction {
+            Instruction::LoadEmpty { slot } => descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::Empty,
+                ValueStateSource::Instruction,
+                (Some(*slot), Some(pc), None),
+                "opcode=LoadEmpty".to_string(),
+                ordinal,
+            )),
+            Instruction::LoadNull { slot } => descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::Null,
+                ValueStateSource::Instruction,
+                (Some(*slot), Some(pc), None),
+                "opcode=LoadNull".to_string(),
+                ordinal,
+            )),
+            Instruction::IntrinsicCVErr { dst, .. } => descriptors.push(value_state_descriptor(
+                procedure_id,
+                ValueStateKind::Error,
+                ValueStateSource::Instruction,
+                (Some(*dst), Some(pc), None),
+                "opcode=IntrinsicCVErr".to_string(),
+                ordinal,
+            )),
+            _ => {}
+        }
+    }
+}
+
+fn metadata_descriptor_owner_id(metadata: &ProcedureRuntimeMetadata) -> String {
+    let module_name = if metadata.module_name.trim().is_empty() {
+        "<anonymous>"
+    } else {
+        metadata.module_name.as_str()
+    };
+    let entry_pc = metadata.entry_pc.to_string();
+    canonical_descriptor_id(
+        DescriptorFamily::Procedure,
+        [
+            module_name,
+            metadata.procedure_name.as_str(),
+            entry_pc.as_str(),
+        ],
+    )
+}
+
+fn value_state_descriptor(
+    procedure_id: &str,
+    state: ValueStateKind,
+    source: ValueStateSource,
+    location: (Option<usize>, Option<usize>, Option<String>),
+    detail: String,
+    ordinal: &mut usize,
+) -> ValueStateDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let ordinal = current.to_string();
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::ValueState,
+        [
+            procedure_id,
+            value_state_kind_key(state),
+            value_state_source_key(source),
+            ordinal.as_str(),
+        ],
+    );
+    let (slot, pc, name) = location;
+    ValueStateDescriptor {
+        descriptor_id,
+        state,
+        source,
+        slot,
+        pc,
+        name,
+        detail,
+    }
+}
+
+fn value_state_kind_key(state: ValueStateKind) -> &'static str {
+    match state {
+        ValueStateKind::Empty => "empty",
+        ValueStateKind::Null => "null",
+        ValueStateKind::Error => "error",
+        ValueStateKind::MissingArgument => "missing-argument",
+        ValueStateKind::OmittedDefault => "omitted-default",
+        ValueStateKind::Nothing => "nothing",
+        ValueStateKind::VbNullString => "vbnullstring",
+        ValueStateKind::DecimalVariantSubtype => "decimal-variant-subtype",
+    }
+}
+
+fn value_state_source_key(source: ValueStateSource) -> &'static str {
+    match source {
+        ValueStateSource::SlotInitialState => "slot-initial-state",
+        ValueStateSource::Instruction => "instruction",
+        ValueStateSource::OptionalParameter => "optional-parameter",
+        ValueStateSource::IntrinsicConstant => "intrinsic-constant",
+        ValueStateSource::DeclaredTypeExtension => "declared-type-extension",
+    }
 }
 
 fn udt_descriptor_id_for_instance(proc: &BoundProcedure, name: &str) -> Option<String> {

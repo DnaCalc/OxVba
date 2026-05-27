@@ -12,13 +12,13 @@ use oxvba_com::{
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArrayShapeDescriptor, ArrayStorageKind, BundleProjectContext, Bytecode, CallSiteDescriptor,
-    CallTargetKindDescriptor, DescriptorFamily, DescriptorIdentity, Instruction,
-    ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    CallTargetKindDescriptor, CarrierLayoutDescriptor, DescriptorFamily, DescriptorIdentity,
+    Instruction, ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
     ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor,
-    UdtTypeDescriptor, VbaTypeId,
+    UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
@@ -202,6 +202,8 @@ impl<'a> VmExecutionPackage<'a> {
             collect_object_descriptor_evidence(self.procedure_metadata);
         let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
+        let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
+        let value_state_evidence = collect_value_state_evidence(self.procedure_metadata);
         let descriptor_identities = collect_descriptor_identity_evidence(
             self.bytecode,
             self.procedure_metadata,
@@ -222,6 +224,8 @@ impl<'a> VmExecutionPackage<'a> {
             object_descriptor_evidence,
             interop_descriptor_evidence,
             lifecycle_evidence,
+            carrier_layout_evidence,
+            value_state_evidence,
             descriptor_identities,
             project_context: self
                 .project_context
@@ -343,6 +347,8 @@ pub struct VmPackageIdentityEvidence {
     pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
     pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
     pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
+    pub carrier_layout_evidence: Vec<VmCarrierLayoutEvidence>,
+    pub value_state_evidence: Vec<VmValueStateEvidence>,
     pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
     pub project_context: Option<VmProjectContextEvidence>,
 }
@@ -553,6 +559,27 @@ pub struct VmLifecycleEvidence {
     pub observations: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmCarrierLayoutEvidence {
+    pub procedure_name: String,
+    pub carrier_key: String,
+    pub carrier_layout_descriptor_id: String,
+    pub carrier_layout_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmValueStateEvidence {
+    pub procedure_name: String,
+    pub value_state_descriptor_id: String,
+    pub value_state_descriptor_digest: String,
+    pub state: String,
+    pub source: String,
+    pub slot: Option<usize>,
+    pub pc: Option<usize>,
+    pub observations: Vec<String>,
+}
+
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
 const DESCRIPTOR_INTRINSIC_LOOKBACK: usize = 8;
@@ -625,6 +652,24 @@ fn collect_descriptor_identity_evidence(
                     DescriptorFamily::ObjectType,
                     object_type.descriptor_id.clone(),
                     object_type,
+                ),
+            ));
+        }
+        for carrier_layout in &metadata.carrier_layouts {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::CarrierLayout,
+                    carrier_layout.descriptor_id.clone(),
+                    carrier_layout,
+                ),
+            ));
+        }
+        for value_state in &metadata.value_states {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::ValueState,
+                    value_state.descriptor_id.clone(),
+                    value_state,
                 ),
             ));
         }
@@ -1053,6 +1098,107 @@ fn runtime_slot_lifecycle_token(slot: &RuntimeSlot) -> String {
         RuntimeSlot::Variant(value) => format!("variant-{}", debug_token(&value.vtype())),
         RuntimeSlot::BindingHandle(handle) => format!("binding-handle-{}", handle.raw()),
     }
+}
+
+fn collect_carrier_layout_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmCarrierLayoutEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .carrier_layouts
+                .iter()
+                .map(move |descriptor| VmCarrierLayoutEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    carrier_key: descriptor.carrier_key.clone(),
+                    carrier_layout_descriptor_id: descriptor.descriptor_id.clone(),
+                    carrier_layout_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::CarrierLayout,
+                        &descriptor.descriptor_id,
+                        descriptor,
+                    ),
+                    observations: carrier_layout_observations(descriptor),
+                })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.carrier_key.cmp(&right.carrier_key))
+    });
+    evidence
+}
+
+fn carrier_layout_observations(descriptor: &CarrierLayoutDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("carrier={}", descriptor.carrier_key),
+        format!("layout={}", debug_token(&descriptor.layout)),
+        format!("storage-bits={:?}", descriptor.storage_bits),
+        format!("native-frame-eligible={}", descriptor.native_frame_eligible),
+        format!("variant-compatible={}", descriptor.variant_compatible),
+    ];
+    if let Some(com_variant_type) = &descriptor.com_variant_type {
+        observations.push(format!("com-variant-type={com_variant_type}"));
+    }
+    observations.extend(descriptor.notes.iter().map(|note| format!("note={note}")));
+    observations
+}
+
+fn collect_value_state_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmValueStateEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .value_states
+                .iter()
+                .map(move |descriptor| VmValueStateEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    value_state_descriptor_id: descriptor.descriptor_id.clone(),
+                    value_state_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::ValueState,
+                        &descriptor.descriptor_id,
+                        descriptor,
+                    ),
+                    state: debug_token(&descriptor.state),
+                    source: debug_token(&descriptor.source),
+                    slot: descriptor.slot,
+                    pc: descriptor.pc,
+                    observations: value_state_observations(descriptor),
+                })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(
+                left.value_state_descriptor_id
+                    .cmp(&right.value_state_descriptor_id),
+            )
+    });
+    evidence
+}
+
+fn value_state_observations(descriptor: &ValueStateDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("state={}", debug_token(&descriptor.state)),
+        format!("source={}", debug_token(&descriptor.source)),
+        format!("detail={}", descriptor.detail),
+    ];
+    if let Some(slot) = descriptor.slot {
+        observations.push(format!("slot={slot}"));
+    }
+    if let Some(pc) = descriptor.pc {
+        observations.push(format!("pc={pc}"));
+    }
+    if let Some(name) = &descriptor.name {
+        observations.push(format!("name={}", name.to_ascii_lowercase()));
+    }
+    observations
 }
 
 fn collect_object_descriptor_evidence(

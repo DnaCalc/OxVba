@@ -33,17 +33,18 @@ pub use emit::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, ArrayBoundDescriptor,
     ArrayShapeDescriptor, ArrayStorageKind, CallReturnDescriptor, CallSiteDescriptor,
-    CallTargetKindDescriptor, DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor,
-    ObjectActivationDescriptor, ObjectDefaultMemberDescriptor, ObjectDescriptorSupport,
-    ObjectEventBindingDescriptor, ObjectInstanceDescriptor, ObjectTypeDescriptor,
-    ObjectTypeDescriptorKind, OptionalDefaultValue, OptionalMissingStatePolicy,
-    OptionalParameterDescriptor, ParamArrayBindingDescriptor, ParamArrayDescriptor,
-    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    ProcedureSignatureDescriptor, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
-    SlotRole, SlotTypeDescriptor, SourceParameterMechanism, UdtCleanupDescriptor,
-    UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor, UdtInstanceDescriptor,
-    UdtStorageKind, UdtTypeDescriptor, VbaTypeId, bound_type_to_declare_param_type,
+    CallTargetKindDescriptor, CarrierLayoutDescriptor, CarrierLayoutKind,
+    DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor, ObjectActivationDescriptor,
+    ObjectDefaultMemberDescriptor, ObjectDescriptorSupport, ObjectEventBindingDescriptor,
+    ObjectInstanceDescriptor, ObjectTypeDescriptor, ObjectTypeDescriptorKind, OptionalDefaultValue,
+    OptionalMissingStatePolicy, OptionalParameterDescriptor, ParamArrayBindingDescriptor,
+    ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode, ParameterRole,
+    ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
+    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
+    UdtCleanupDescriptor, UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor,
+    UdtInstanceDescriptor, UdtStorageKind, UdtTypeDescriptor, ValueStateDescriptor, ValueStateKind,
+    ValueStateSource, VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -153,7 +154,8 @@ mod tests {
         OptionalMissingStatePolicy, OptionalParameterDescriptor, ParameterPassingMode,
         ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
-        SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
+        SourceParameterMechanism, ValueStateKind, VbaTypeId, compile,
+        compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -477,6 +479,93 @@ mod tests {
         );
         assert_eq!(temporary.initial_state, SlotInitialState::CompilerDefined);
         assert_eq!(temporary.carrier, RuntimeCarrierKind::Unknown);
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_carries_typed_carriers_and_value_states() {
+        let source = "Type Point\n\
+                      X As Long\n\
+                      Label As String\n\
+                      End Type\n\
+                      Sub Main()\n\
+                      End Sub\n\
+                      Sub Probe(Optional ByVal marker As Variant, Optional ByVal amount As Long = 7)\n\
+                      Dim l As Long\n\
+                      Dim d As Double\n\
+                      Dim b As Boolean\n\
+                      Dim s As String\n\
+                      Dim v As Variant\n\
+                      Dim o As Object\n\
+                      Dim p As Point\n\
+                      Dim dec As Decimal\n\
+                      Debug.Print Empty\n\
+                      Debug.Print Null\n\
+                      Debug.Print CVErr(7)\n\
+                      Debug.Print vbNullString\n\
+                      dec = CDec(1)\n\
+                      Debug.Print dec\n\
+                      End Sub";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let probe = metadata.get("probe").unwrap_or_else(|| {
+            panic!(
+                "Probe metadata keys={:?}",
+                metadata.keys().cloned().collect::<Vec<_>>()
+            )
+        });
+
+        for carrier in [
+            RuntimeCarrierKind::I32,
+            RuntimeCarrierKind::F64,
+            RuntimeCarrierKind::Boolean,
+            RuntimeCarrierKind::BStr,
+            RuntimeCarrierKind::Variant,
+            RuntimeCarrierKind::ObjectRef,
+            RuntimeCarrierKind::Decimal96VariantSubtype,
+        ] {
+            assert!(
+                probe
+                    .carrier_layouts
+                    .iter()
+                    .any(|layout| layout.carrier == carrier),
+                "missing carrier layout {carrier:?}"
+            );
+        }
+        assert!(
+            probe
+                .carrier_layouts
+                .iter()
+                .any(|layout| matches!(layout.carrier, RuntimeCarrierKind::UdtFields { .. })),
+            "UDT aggregate carrier layout should be present"
+        );
+        assert!(
+            probe.carrier_layouts.iter().any(|layout| layout.carrier
+                == RuntimeCarrierKind::Decimal96VariantSubtype
+                && layout
+                    .notes
+                    .iter()
+                    .any(|note| note == "declared-decimal-extension=variant-subtype")),
+            "declared Decimal should be classified as the Decimal96 Variant subtype extension"
+        );
+
+        for state in [
+            ValueStateKind::Empty,
+            ValueStateKind::Null,
+            ValueStateKind::Error,
+            ValueStateKind::MissingArgument,
+            ValueStateKind::OmittedDefault,
+            ValueStateKind::Nothing,
+            ValueStateKind::VbNullString,
+            ValueStateKind::DecimalVariantSubtype,
+        ] {
+            assert!(
+                probe
+                    .value_states
+                    .iter()
+                    .any(|descriptor| descriptor.state == state),
+                "missing value-state descriptor {state:?}"
+            );
+        }
     }
 
     #[test]

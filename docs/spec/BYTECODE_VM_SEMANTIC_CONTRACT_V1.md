@@ -228,15 +228,22 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v11 carries those facts, preserves v10 through the
-compatibility reader, and upgrades older v3/v4/v5/v6/v7/v8/v9 metadata into the
-current descriptor shape. This remains metadata-only: VM slot storage,
-helper choice, and runtime behavior do not consume these descriptors yet.
+`OxBundle` format v12 also carries package-owned carrier layout descriptors
+and value-state descriptors derived from slot metadata, procedure signatures,
+bound intrinsics, and emitted value-state opcodes. The compatibility reader
+preserves v10/v11 bundles and upgrades older v3/v4/v5/v6/v7/v8/v9 metadata
+into the current descriptor shape with the new v12 descriptor vectors empty.
+This remains metadata/evidence-only: VM slot storage, helper choice, and
+runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
 metadata enrichment does not make compiler scratch slots user-visible.
 The VM package evidence now reports descriptor roles, declared type ids, initial
 states, and carrier hints per procedure while retained value snapshots remain
 unchanged.
+It also reports carrier-layout evidence for primitive, String/BSTR, Variant,
+object, UDT, and Decimal96 Variant-subtype carriers, and value-state evidence
+for Empty, Null, Error/CVErr, Nothing, missing optional arguments, omitted
+defaults, vbNullString, and Decimal as a Variant subtype extension.
 The package identity seed fixtures now assert descriptor tokens and value
 snapshots for primitive scalar, `String`/`BStr`, declared `Variant`, and the
 current VM-runnable UDT field-alias shape. UDT aggregate base slots now carry
