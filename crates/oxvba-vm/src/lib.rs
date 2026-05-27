@@ -743,11 +743,13 @@ mod tests {
 
         assert_eq!(context.project_name, "VmPkgCtx");
         assert!(context.modules.iter().any(|module| module.contains("Main")));
-        assert!(context
-            .module_compile_options
-            .iter()
-            .any(|module| module
-                == "Main:explicit=true:compare=Text:base=1:def=1:declares=1:ptrsafe=1:longptr=true:longlong=true"));
+        let main_compile_options = "Main:explicit=true:compare=Text:base=1:def=1:declares=1:ptrsafe=1:longptr=true:longlong=true:exposed=false:creatable=false:predeclared=false:global=false";
+        assert!(
+            context
+                .module_compile_options
+                .iter()
+                .any(|module| module == main_compile_options)
+        );
         assert!(
             context
                 .compile_context

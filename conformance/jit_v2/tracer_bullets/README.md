@@ -22,13 +22,15 @@ slot/carrier evidence for TB01; UDT descriptor plus selected layout/init and
 lifecycle evidence for TB02; package error-frame evidence for TB03; declared
 String/BSTR helper and selected slot/UDT cleanup evidence for TB04; and array
 descriptor, SAFEARRAY bounds, element lifetime, selected ownership evidence,
-and bounds-error follow-up evidence for TB05; COM boundary descriptor, object
-identity, projection, and cleanup evidence for TB06/TB07; native ABI,
-writeback, cleanup, and error-policy evidence for TB08; and exported-callable
-projection, cleanup/error policy, writeback, and unsupported-shape diagnostics
-for TB09. Remaining byte-offset/ABI layout, explicit cleanup/deopt execution,
-VM-runnable bounds-error and multi-rank coverage, COM/native/export projection,
-and verifier gaps must stay explicit until the JIT workset owns them.
+and bounds-error follow-up evidence for TB05; COM boundary descriptor, selected
+ObjectRef identity/lifecycle policy, imported COM WithEvents route identity,
+projection, and cleanup evidence for TB06/TB07; native ABI, writeback, cleanup,
+and error-policy evidence for TB08; and exported-callable projection,
+cleanup/error policy, writeback, and unsupported-shape diagnostics for TB09.
+Remaining byte-offset/ABI layout, explicit cleanup/deopt execution,
+VM-runnable bounds-error and multi-rank coverage, general COM/native/export
+projection, and verifier gaps must stay explicit until the JIT workset owns
+them.
 
 Authoritative test design:
 `docs/spec/JIT_V2_TRACER_BULLET_TEST_PLAN_V1.md`.

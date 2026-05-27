@@ -148,13 +148,16 @@ counters remain TB04 follow-up work.
 
 `VMR05_OBJECT_DESCRIPTOR_IDENTITY` is the first object descriptor fixture. It
 records a generic `Object` local with `Nothing` initial state and `ObjectRef`
-carrier evidence without changing the value snapshot, which still observes the
-current empty object slot state until object execution consumes descriptors.
-The companion project-level test in `package_identity_fixtures.rs` exercises
-the VM-capable route evidence for `Dim obj As New ThingImpl`, `Implements`
-interface aliases, and imported COM `WithEvents` route metadata. Default
-instances, `As New` slot activation policy, imported COM class/interface
-descriptors, and descriptor-driven object/member execution remain later work.
+carrier evidence plus selected `ObjectRef` slot lifecycle tokens without
+changing the value snapshot, which still observes the current empty object slot
+state until object execution consumes descriptors. The companion project-level
+test in `package_identity_fixtures.rs` exercises bundle-visible and
+VM-runtime-visible route evidence for `Dim obj As New ThingImpl`,
+default-member route identity, `Implements` interface descriptor ids, and
+imported COM `WithEvents` route metadata including handler guards and
+subscription cleanup policy. Default-instance execution, full imported COM
+class/interface descriptors, and descriptor-driven object/member execution
+remain later work.
 
 The durable classification for those call-shape gaps lives in
 `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under

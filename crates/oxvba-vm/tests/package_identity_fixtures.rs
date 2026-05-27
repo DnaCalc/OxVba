@@ -823,7 +823,7 @@ fn vm_project_object_descriptor_evidence_records_class_interface_and_com_witheve
     let impl_module = module_unit_from_source(
         "ThingImpl",
         ModuleKind::Class,
-        "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nEnd Sub",
+        "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPublic Property Get Value()\nValue = 7\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPrivate Sub IThing_Ping()\nEnd Sub",
     )
     .expect("implementation module should parse");
     let sink_module = module_unit_from_source(
@@ -855,6 +855,25 @@ fn vm_project_object_descriptor_evidence_records_class_interface_and_com_witheve
     );
 
     let package = VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+    let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
+    let package_route_evidence = VmExecutionPackage::from_bundle(&bundle).identity_evidence();
+    let package_route_tokens = object_descriptor_observation_tokens(&package_route_evidence);
+    for expected in [
+        "<package-routes>:thingimpl:activation=asnew-project-class",
+        "<package-routes>:thingimpl:default-member=hasdefaultmember",
+        "<package-routes>:thingimpl:default-member-target=value",
+        "<package-routes>:thingimpl:interface:ithing:kind=implemented",
+        "<package-routes>:thingimpl:object-identity-policy=stable-project-dynamic-object-handle",
+        "<package-routes>:oxvba.testeventserver:event-binding=withevents",
+        "<package-routes>:oxvba.testeventserver:imported-com-class=oxvba.testeventserver",
+        "<package-routes>:oxvba.testeventserver:subscription-policy=set-assignment-updates-owner",
+    ] {
+        assert!(
+            package_route_tokens.contains(&expected.to_string()),
+            "bundle package route object evidence should include `{expected}`; got: {package_route_tokens:?}"
+        );
+    }
+
     let mut vm = Vm::default();
     vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
     vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
@@ -867,8 +886,12 @@ fn vm_project_object_descriptor_evidence_records_class_interface_and_com_witheve
     for expected in [
         "<project-runtime>:thingimpl:descriptor-id=object-type:class:projecta:thingimpl",
         "<project-runtime>:thingimpl:kind=vbaclass",
+        "<project-runtime>:thingimpl:activation=asnew-project-class",
+        "<project-runtime>:thingimpl:default-member=hasdefaultmember",
+        "<project-runtime>:thingimpl:default-member-target=value",
         "<project-runtime>:thingimpl:interface:ithing:kind=implemented",
         "<project-runtime>:oxvba.testeventserver:kind=witheventsobject",
+        "<project-runtime>:oxvba.testeventserver:event-binding=withevents",
         "<project-runtime>:oxvba.testeventserver:event-source=oxvba.testeventserver",
         "<project-runtime>:oxvba.testeventserver:handler=pmr_projecta_sink_src_onvaluechanged",
     ] {

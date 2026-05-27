@@ -317,6 +317,8 @@ impl Engine {
             procedure_metadata: &compiled.procedure_runtime_metadata,
             package_origin: *package_origin,
             project_context: None,
+            dynamic_object_routes: Some(&compiled.project_dynamic_objects),
+            com_withevents_routes: Some(&compiled.project_com_withevents_routes),
         };
         vm.invoke_package_procedure_with_variants(&package, entry_pc, param_slots, args)
             .map_err(PhaseDiagnostic::runtime)

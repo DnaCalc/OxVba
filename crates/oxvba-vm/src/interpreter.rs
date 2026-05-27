@@ -144,6 +144,8 @@ pub struct VmExecutionPackage<'a> {
     pub bytecode: &'a Bytecode,
     pub procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
     pub project_context: Option<&'a BundleProjectContext>,
+    pub dynamic_object_routes: Option<&'a [ProjectDynamicObjectRoute]>,
+    pub com_withevents_routes: Option<&'a [ProjectComWithEventsRoute]>,
     pub package_origin: VmPackageOrigin,
 }
 
@@ -156,6 +158,8 @@ impl<'a> VmExecutionPackage<'a> {
             bytecode,
             procedure_metadata,
             project_context: None,
+            dynamic_object_routes: None,
+            com_withevents_routes: None,
             package_origin: VmPackageOrigin::InMemory,
         }
     }
@@ -165,6 +169,8 @@ impl<'a> VmExecutionPackage<'a> {
             bytecode: &bundle.bytecode,
             procedure_metadata: &bundle.procedure_metadata,
             project_context: bundle.project_context.as_ref(),
+            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
+            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
             package_origin: VmPackageOrigin::OxBundle,
         }
     }
@@ -200,8 +206,15 @@ impl<'a> VmExecutionPackage<'a> {
         let array_shape_evidence =
             collect_array_shape_evidence(self.procedure_metadata, runtime_slots);
         let udt_descriptor_evidence = collect_udt_descriptor_evidence(self.procedure_metadata);
-        let object_descriptor_evidence =
+        let package_route_object_descriptor_evidence =
+            collect_package_route_object_descriptor_evidence(
+                self.dynamic_object_routes,
+                self.com_withevents_routes,
+            );
+        let mut object_descriptor_evidence =
             collect_object_descriptor_evidence(self.procedure_metadata);
+        object_descriptor_evidence.extend(package_route_object_descriptor_evidence.clone());
+        sort_object_descriptor_evidence(&mut object_descriptor_evidence);
         let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
         let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
@@ -219,6 +232,7 @@ impl<'a> VmExecutionPackage<'a> {
             self.procedure_metadata,
             &interop_descriptor_evidence,
             &lifecycle_evidence,
+            &package_route_object_descriptor_evidence,
         );
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
@@ -438,7 +452,7 @@ impl VmProjectContextEvidence {
                 .iter()
                 .map(|module| {
                     format!(
-                        "{}:explicit={}:compare={}:base={}:def={}:declares={}:ptrsafe={}:longptr={}:longlong={}",
+                        "{}:explicit={}:compare={}:base={}:def={}:declares={}:ptrsafe={}:longptr={}:longlong={}:exposed={}:creatable={}:predeclared={}:global={}",
                         module.name,
                         module.option_explicit,
                         module.option_compare,
@@ -448,6 +462,10 @@ impl VmProjectContextEvidence {
                         module.ptrsafe_declare_count,
                         module.uses_long_ptr,
                         module.uses_long_long,
+                        module.vb_exposed,
+                        module.vb_creatable,
+                        module.vb_predeclared_id,
+                        module.vb_global_namespace,
                     )
                 })
                 .collect(),
@@ -621,6 +639,7 @@ fn collect_descriptor_identity_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
     interop_evidence: &[VmInteropDescriptorEvidence],
     lifecycle_evidence: &[VmLifecycleEvidence],
+    package_route_object_evidence: &[VmObjectDescriptorEvidence],
 ) -> Vec<VmDescriptorIdentityEvidence> {
     let mut identities = Vec::new();
     identities.push(VmDescriptorIdentityEvidence::from(
@@ -767,6 +786,13 @@ fn collect_descriptor_identity_evidence(
                 descriptor_digest: evidence.lifecycle_descriptor_digest.clone(),
             }),
     );
+    identities.extend(package_route_object_evidence.iter().map(|evidence| {
+        VmDescriptorIdentityEvidence {
+            family: DescriptorFamily::ObjectType.registry_key().to_string(),
+            descriptor_id: evidence.object_descriptor_id.clone(),
+            descriptor_digest: evidence.object_descriptor_digest.clone(),
+        }
+    }));
     identities.sort_by(|left, right| {
         left.family
             .cmp(&right.family)
@@ -1768,6 +1794,9 @@ fn object_descriptor_observations(descriptor: &ObjectTypeDescriptor) -> Vec<Stri
         format!("event-binding={}", debug_token(&descriptor.event_binding)),
         format!("default-member={}", debug_token(&descriptor.default_member)),
         format!("support={}", debug_token(&descriptor.support)),
+        "object-identity-policy=objectref-or-nothing".to_string(),
+        "lifecycle-id=LIFE-OBJECTREF".to_string(),
+        "set-policy=preserve-assigned-identity".to_string(),
     ];
     for instance in &descriptor.instances {
         observations.push(format!(
@@ -1793,6 +1822,43 @@ fn object_descriptor_observations(descriptor: &ObjectTypeDescriptor) -> Vec<Stri
     observations
 }
 
+fn collect_package_route_object_descriptor_evidence(
+    dynamic_object_routes: Option<&[ProjectDynamicObjectRoute]>,
+    com_withevents_routes: Option<&[ProjectComWithEventsRoute]>,
+) -> Vec<VmObjectDescriptorEvidence> {
+    let mut evidence = Vec::new();
+    for route in dynamic_object_routes.into_iter().flatten() {
+        let descriptor_id = project_dynamic_object_descriptor_id(route);
+        evidence.push(VmObjectDescriptorEvidence {
+            procedure_name: "<package-routes>".to_string(),
+            type_name: route.module_name.clone(),
+            object_descriptor_id: descriptor_id.clone(),
+            object_descriptor_digest: descriptor_digest_debug(
+                DescriptorFamily::ObjectType,
+                &descriptor_id,
+                route,
+            ),
+            observations: project_dynamic_object_observations(&descriptor_id, route, None),
+        });
+    }
+    for route in com_withevents_routes.into_iter().flatten() {
+        let descriptor_id = project_com_withevents_descriptor_id(route);
+        evidence.push(VmObjectDescriptorEvidence {
+            procedure_name: "<package-routes>".to_string(),
+            type_name: route.prog_id_name.clone(),
+            object_descriptor_id: descriptor_id.clone(),
+            object_descriptor_digest: descriptor_digest_debug(
+                DescriptorFamily::ObjectType,
+                &descriptor_id,
+                route,
+            ),
+            observations: project_com_withevents_observations(&descriptor_id, route),
+        });
+    }
+    sort_object_descriptor_evidence(&mut evidence);
+    evidence
+}
+
 fn collect_runtime_object_descriptor_evidence(
     project_dynamic_objects: &HashMap<i32, ProjectDynamicObjectState>,
     project_com_withevents_routes: &HashMap<i32, Vec<ProjectComWithEventsRoute>>,
@@ -1801,14 +1867,7 @@ fn collect_runtime_object_descriptor_evidence(
         .values()
         .map(|state| {
             let route = &state.route;
-            let descriptor_id = canonical_descriptor_id(
-                DescriptorFamily::ObjectType,
-                [
-                    "class",
-                    route.project_name.as_str(),
-                    route.module_name.as_str(),
-                ],
-            );
+            let descriptor_id = project_dynamic_object_descriptor_id(route);
             VmObjectDescriptorEvidence {
                 procedure_name: "<project-runtime>".to_string(),
                 type_name: route.module_name.clone(),
@@ -1818,21 +1877,17 @@ fn collect_runtime_object_descriptor_evidence(
                     &descriptor_id,
                     route,
                 ),
-                observations: project_dynamic_object_observations(&descriptor_id, state),
+                observations: project_dynamic_object_observations(
+                    &descriptor_id,
+                    route,
+                    Some(state.object.raw()),
+                ),
             }
         })
         .collect::<Vec<_>>();
     for routes in project_com_withevents_routes.values() {
         for route in routes {
-            let binding_token = route.binding_token.to_string();
-            let descriptor_id = canonical_descriptor_id(
-                DescriptorFamily::ObjectType,
-                [
-                    "com-withevents",
-                    route.prog_id_name.as_str(),
-                    binding_token.as_str(),
-                ],
-            );
+            let descriptor_id = project_com_withevents_descriptor_id(route);
             evidence.push(VmObjectDescriptorEvidence {
                 procedure_name: "<project-runtime>".to_string(),
                 type_name: route.prog_id_name.clone(),
@@ -1850,32 +1905,111 @@ fn collect_runtime_object_descriptor_evidence(
     evidence
 }
 
+fn project_dynamic_object_descriptor_id(route: &ProjectDynamicObjectRoute) -> String {
+    canonical_descriptor_id(
+        DescriptorFamily::ObjectType,
+        [
+            "class",
+            route.project_name.as_str(),
+            route.module_name.as_str(),
+        ],
+    )
+}
+
+fn project_com_withevents_descriptor_id(route: &ProjectComWithEventsRoute) -> String {
+    let binding_token = route.binding_token.to_string();
+    canonical_descriptor_id(
+        DescriptorFamily::ObjectType,
+        [
+            "com-withevents",
+            route.prog_id_name.as_str(),
+            binding_token.as_str(),
+        ],
+    )
+}
+
 fn project_dynamic_object_observations(
     descriptor_id: &str,
-    state: &ProjectDynamicObjectState,
+    route: &ProjectDynamicObjectRoute,
+    object_ref: Option<i32>,
 ) -> Vec<String> {
-    let route = &state.route;
+    let default_member_count = route
+        .members
+        .iter()
+        .filter(|member| member.is_default_member)
+        .count();
     let mut observations = vec![
         format!("descriptor-id={descriptor_id}"),
+        "source=ProjectDynamicObjectRoute".to_string(),
         "kind=vbaclass".to_string(),
         "carrier=objectref".to_string(),
-        "activation=hostprovided".to_string(),
+        format!(
+            "activation={}",
+            project_dynamic_activation_token(route.object_handle)
+        ),
         "event-binding=none".to_string(),
         "support=vmrunnablehosted".to_string(),
-        "default-member=metadata-missing".to_string(),
+        format!(
+            "default-member={}",
+            if default_member_count > 0 {
+                "hasdefaultmember"
+            } else {
+                "nodefaultmember"
+            }
+        ),
+        format!(
+            "default-member-policy={}",
+            match default_member_count {
+                0 => "none",
+                1 => "single-route",
+                _ => "ambiguous-diagnostic-required",
+            }
+        ),
         format!("project={}", route.project_name.to_ascii_lowercase()),
         format!("module={}", route.module_name.to_ascii_lowercase()),
         format!("class={}", route.module_name.to_ascii_lowercase()),
-        format!("object-ref={}", state.object.raw()),
+        format!("object-handle={}", route.object_handle),
+        "object-identity-policy=stable-project-dynamic-object-handle".to_string(),
+        "lifecycle-id=LIFE-OBJECTREF".to_string(),
+        "cleanup-policy=release-objectref-on-slot-drop".to_string(),
         format!(
             "interface:_{}:kind=dispatch",
             route.module_name.to_ascii_lowercase()
         ),
+        format!(
+            "interface:_{}:descriptor-id={}",
+            route.module_name.to_ascii_lowercase(),
+            canonical_descriptor_id(
+                DescriptorFamily::ObjectType,
+                [
+                    "interface",
+                    route.project_name.as_str(),
+                    route.module_name.as_str(),
+                    &format!("_{}", route.module_name),
+                ],
+            )
+        ),
     ];
+    if let Some(object_ref) = object_ref {
+        observations.push(format!("object-ref={object_ref}"));
+    }
     for interface in &route.implements_interfaces {
         observations.push(format!(
             "interface:{}:kind=implemented",
             interface.to_ascii_lowercase()
+        ));
+        observations.push(format!(
+            "interface:{}:descriptor-id={}",
+            interface.to_ascii_lowercase(),
+            canonical_descriptor_id(
+                DescriptorFamily::ObjectType,
+                [
+                    "interface",
+                    route.project_name.as_str(),
+                    route.module_name.as_str(),
+                    interface.as_str(),
+                ],
+            )
         ));
     }
     for member in &route.members {
@@ -1888,6 +2022,16 @@ fn project_dynamic_object_observations(
             "member:{member_name}:default={}",
             member.is_default_member
         ));
+        if member.is_default_member {
+            observations.push(format!("default-member-target={member_name}"));
+        }
+        observations.push(format!(
+            "member:{member_name}:lowered={}",
+            member.lowered_name.to_ascii_lowercase()
+        ));
+        observations.push(format!(
+            "member:{member_name}:dispatch-kind=project-dynamic-route"
+        ));
         if let Some(dispatch_id) = member.dispatch_id.or(member.known_dispatch_token) {
             observations.push(format!("member:{member_name}:dispatch-id={dispatch_id}"));
         }
@@ -1895,8 +2039,40 @@ fn project_dynamic_object_observations(
             "member:{member_name}:visible-param-count={}",
             member.visible_param_count
         ));
+        if let Some(return_type) = member.return_type {
+            observations.push(format!(
+                "member:{member_name}:return-type={}",
+                debug_token(&return_type)
+            ));
+        } else {
+            observations.push(format!("member:{member_name}:return-type=void"));
+        }
+        for param in &member.params {
+            let param_name = param.name.to_ascii_lowercase();
+            observations.push(format!(
+                "member:{member_name}:param:{param_name}:optional={}",
+                param.optional
+            ));
+            observations.push(format!(
+                "member:{member_name}:param:{param_name}:paramarray={}",
+                param.param_array
+            ));
+            if let Some(default_value) = param.default_value {
+                observations.push(format!(
+                    "member:{member_name}:param:{param_name}:default=i32-{default_value}"
+                ));
+            }
+        }
     }
     observations
+}
+
+fn project_dynamic_activation_token(object_handle: i32) -> &'static str {
+    match object_handle.cmp(&0) {
+        std::cmp::Ordering::Greater => "asnew-project-class",
+        std::cmp::Ordering::Equal => "default-instance",
+        std::cmp::Ordering::Less => "exported-library-class",
+    }
 }
 
 fn project_com_withevents_observations(
@@ -1905,15 +2081,33 @@ fn project_com_withevents_observations(
 ) -> Vec<String> {
     vec![
         format!("descriptor-id={descriptor_id}"),
+        "source=ProjectComWithEventsRoute".to_string(),
         "kind=witheventsobject".to_string(),
         "carrier=objectref".to_string(),
         "activation=hostprovided".to_string(),
+        "event-binding=withevents".to_string(),
+        "default-member=nodefaultmember".to_string(),
         "support=vmrunnablehosted".to_string(),
+        "object-identity-policy=preserve-source-objectref".to_string(),
+        "subscription-policy=set-assignment-updates-owner".to_string(),
+        "cleanup-policy=clear-owner-on-class-terminate".to_string(),
+        format!(
+            "imported-com-class={}",
+            route.prog_id_name.to_ascii_lowercase()
+        ),
         format!("event-source={}", route.prog_id_name.to_ascii_lowercase()),
         format!("binding-token={}", route.binding_token),
         format!("event-token={}", route.event_token),
         format!("event={}", route.event_name.to_ascii_lowercase()),
         format!("handler={}", route.handler_symbol.to_ascii_lowercase()),
+        format!(
+            "guard-zero={}",
+            route.guard_symbol_zero_arg.to_ascii_lowercase()
+        ),
+        format!(
+            "guard-one={}",
+            route.guard_symbol_one_arg.to_ascii_lowercase()
+        ),
     ]
 }
 

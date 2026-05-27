@@ -628,9 +628,9 @@ Current implementation anchors:
   rows for the first VMR-04 fixtures, plus array-shape and UDT descriptor
   evidence for VMR-05 fixtures; selected lifecycle evidence for descriptor-backed
   UDT owning-field cleanup; object descriptor evidence for generic object slots;
-  and runtime project evidence for VM-capable class/interface dynamic object
-  routes and imported COM `WithEvents` routes when those route tables are
-  supplied.
+  bundle-carried route evidence for VM-capable class/interface dynamic object
+  routes and imported COM `WithEvents` routes; and matching runtime route
+  evidence when those route tables are supplied to the VM.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
   declared `Variant`, the current flattened UDT field-alias/base-slot shape,
@@ -647,10 +647,13 @@ Current implementation anchors:
   descriptor consumption with a raw-bytecode base-slot limitation baseline, and
   UDT descriptor facts for nested UDTs, fixed strings, fixed array fields,
   aliases, cleanup ownership flags, selected lifecycle cleanup observations for
-  variable/fixed BSTR-owning UDT fields, and generic `Object` descriptor facts.
-  A companion project fixture asserts source-project class route identity,
-  implemented interface alias identity, and imported COM `WithEvents` route
-  identity for current VM-capable route tables.
+  variable/fixed BSTR-owning UDT fields, generic `Object` descriptor facts, and
+  selected `ObjectRef` slot lifecycle tokens. A companion project fixture
+  asserts bundle-visible and VM-runtime-visible source-project class route
+  identity, `As New` generated-handle activation policy, default-member route
+  identity, implemented interface descriptor ids, imported COM `WithEvents`
+  route identity, handler guards, and subscription/cleanup policy for current
+  VM-capable route tables.
 
 Known development gaps:
 
@@ -674,19 +677,21 @@ Known development gaps:
 - `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, `UdtTypeDescriptor`,
   and `ObjectTypeDescriptor` now carry first-pass slot, local array shape, UDT
   shape facts, generic object slot facts, selected array lifecycle evidence,
-  non-UDT String slot lifecycle evidence, and UDT recursive-init/layout-index
-  evidence, but expression temporary declared types, VM-runnable multi-rank and
-  bounds-error array evidence, aggregate UDT byte offsets/ABI layout,
-  descriptor-driven UDT copy/drop behavior, richer class/interface/imported-COM
-  descriptors, `As New` activation/default-instance policy, general
-  fixed-string behavior, helper lifetime counters, and full carrier layout
-  facts remain incomplete or explicitly `Unknown`; the first lifecycle/cleanup seed table
-  names current cleanup obligations for primitive, Variant/Decimal, BStr,
-  SafeArray, ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and
-  deopt state, and VM lifecycle evidence now asserts selected String, array,
-  SAFEARRAY, and UDT BSTR owning-field cleanup paths, but those rows are not
-  package-owned descriptors yet and explicit cleanup-stack execution remains
-  open;
+  non-UDT String slot lifecycle evidence, UDT recursive-init/layout-index
+  evidence, and selected bundle route evidence for source-project class
+  activation/default-member/interface identity plus imported COM `WithEvents`
+  route identity. Expression temporary declared types, VM-runnable multi-rank
+  and bounds-error array evidence, aggregate UDT byte offsets/ABI layout,
+  descriptor-driven UDT copy/drop behavior, default-instance execution policy,
+  full imported-COM type/member descriptors, general fixed-string behavior,
+  helper lifetime counters, and full carrier layout facts remain incomplete or
+  explicitly `Unknown`; the first lifecycle/cleanup seed table names current
+  cleanup obligations for primitive, Variant/Decimal, BStr, SafeArray,
+  ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and deopt
+  state, and VM lifecycle evidence now asserts selected String, array,
+  SAFEARRAY, UDT BSTR owning-field, and ObjectRef slot cleanup paths, but those
+  rows are not package-owned descriptors yet and explicit cleanup-stack
+  execution remains open;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
@@ -694,10 +699,10 @@ Known development gaps:
 - enum facts now have selected package name-binding rows, and UDT descriptors
   now emit recursive init plus descriptor layout-index evidence, but dedicated
   enum descriptors, UDT byte-offset/ABI layout descriptors, richer
-  object/class/interface descriptors, and COM imported type descriptors are not
-  yet unified behind one package type registry; the first object/member binding
-  seed table now names `Set`/`Nothing`, property accessors, default members,
-  class/interface routes, COM dispatch, early-bound COM, events, and
+  full object/class/interface descriptors, and COM imported type descriptors
+  are not yet unified behind one package type registry; the first object/member
+  binding seed table now names `Set`/`Nothing`, property accessors, default
+  members, class/interface routes, COM dispatch, early-bound COM, events, and
   `WithEvents` as binding rows, but those rows are not a package-owned member
   registry yet.
 

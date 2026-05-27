@@ -388,13 +388,17 @@ The VMR-05 object descriptor fixture adds `ObjectTypeDescriptor` evidence for
 the current object identity seed. Procedure metadata records generic
 `Object` locals as `Nothing`-initialized `ObjectRef` carriers, and VM evidence
 reports descriptor ids, object kind, activation/event/default-member policy,
-support classification, and slot instance observations. Runtime project
-evidence also records VM-capable source-project class routes, implemented
-interface aliases, and imported COM `WithEvents` route identities when the VM
-is supplied the compiled project route tables. This is still metadata/evidence
-only: descriptor-driven `As New` activation, default instances, imported COM
-class/interface descriptors, object lifetime cleanup, and object/member call
-binding remain incomplete.
+support classification, object identity policy, slot instance observations, and
+selected `LIFE-OBJECTREF-SLOT` lifecycle evidence. Bundle-carried route tables
+now also surface as package identity evidence for VM-capable source-project
+class routes, `As New` generated-handle activation, default-member route
+presence, implemented interface descriptor ids, and imported COM `WithEvents`
+route identities with handler guards and subscription/cleanup policy. Runtime
+project evidence records the same route facts when the VM is supplied the
+compiled project route tables. This is still metadata/evidence only:
+descriptor-driven object/member call binding, default-instance execution,
+full imported COM class/interface descriptors, and explicit object cleanup-stack
+execution remain incomplete.
 
 The VMR-05 interop descriptor fixture adds `VmInteropDescriptorEvidence` for
 the hosted TB06 through TB08 COM/native tracer seeds. VM evidence records COM

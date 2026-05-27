@@ -92,6 +92,14 @@ Current progress:
   `LBound`/`UBound` remains the selected VM consumption path; VM-runnable
   multi-rank/bounds-error, byte-offset UDT layout, helper-temp lifetime
   counters, and COM/native SAFEARRAY projection remain later gates.
+- `bd-tvmb.7` completed selected object/class/interface package evidence. Bundle
+  route tables now surface in VM package identity evidence for selected
+  source-project class routes, `As New` generated-handle activation, default
+  member route identity, implemented interface descriptor ids, imported COM
+  `WithEvents` route identity, handler guards, subscription cleanup policy, and
+  selected `ObjectRef` slot lifecycle tokens. Descriptor-driven object/member
+  call binding, default-instance execution, full imported COM type/member
+  descriptors, and explicit object cleanup-stack execution remain later gates.
 
 ## Reference Truth
 

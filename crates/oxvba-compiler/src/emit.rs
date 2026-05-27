@@ -5141,8 +5141,8 @@ fn collect_stmt_member_bindings(
             "preserve-assigned-object-identity-and-release-replaced-reference".to_string(),
             "not-applicable".to_string(),
             "incompatible-object-shapes-must-diagnose-or-runtime-error".to_string(),
-            "current-runtime-backed-not-package-owned".to_string(),
-            "metadata-package-descriptor; broader Set semantics remain open".to_string(),
+            "current-slot-policy-evidence-backed-subset".to_string(),
+            "metadata-package-descriptor; full binding descriptor remains open".to_string(),
             ordinal,
         )),
         BoundStmt::IfCond {
