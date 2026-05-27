@@ -500,6 +500,8 @@ Review gaps:
   [`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv);
   the first lifecycle/cleanup seed rows are checked in at
   [`../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv);
+  the first object/member binding seed rows are checked in at
+  [`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv);
   full truth-table extraction and canonical descriptor ids remain open;
 - `Array(...)` function lower-bound behavior needs explicit MS-VBAL plus Office
   oracle closure before specialization.
@@ -672,7 +674,11 @@ Known development gaps:
 - project reflection `VbaType` is useful but too coarse for package/JIT use;
 - enum descriptors, UDT offset/layout/lifecycle descriptors, richer
   object/class/interface descriptors, and COM imported type descriptors are not
-  yet unified behind one package type registry.
+  yet unified behind one package type registry; the first object/member binding
+  seed table now names `Set`/`Nothing`, property accessors, default members,
+  class/interface routes, COM dispatch, early-bound COM, events, and
+  `WithEvents` as binding rows, but those rows are not a package-owned member
+  registry yet.
 
 ## Implementation Direction
 

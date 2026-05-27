@@ -368,6 +368,7 @@ Review result for this draft:
 | Let-coercion | MS-VBAL 5.5.1, spec items `00185..00201`; seed table [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv) | `CoercionDescriptor { kind: Let }` | First helper-backed seed rows exist, but canonical descriptor ids and full truth table extraction remain incomplete. |
 | Set-coercion | MS-VBAL 5.5.2, spec items `00202..00206` | `CoercionDescriptor { kind: Set }` | Object/class/interface/COM conformance must stay descriptor-backed. |
 | Operators | MS-VBAL 5.6.9, spec items `00219..00246`; `Option Compare` segments `SEG-001565..001571`; seed table [`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv) | `OperatorSemanticsDescriptor` | First helper-backed seed rows exist, but canonical descriptor ids and full truth table extraction remain incomplete. |
+| Object/member binding | MS-VBAL Set/default-member/property/event anchors; seed table [`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv) | `ObjectMemberBindingDescriptor` and property/default-member/event descriptors | First binding seed rows exist for `Set`, `Nothing`, properties, default members, class/interface routes, COM dispatch, early-bound COM, and events, but canonical descriptor ids and VM member-binding consumption remain incomplete. |
 | Procedure signatures | MS-VBAL anchors `p:1418..1470`; `SEG-002047..002101` | `ProcedureSignatureDescriptor` and `ParameterDescriptor` | Existing metadata is useful but not full enough for package/JIT parity. |
 | Property signatures | MS-VBAL anchors `p:1482..1488`; `SEG-002107..002121` | property pairing and value-param descriptor | Property value-param ByVal runtime semantics must be explicit. |
 | Call-site mapping | MS-VBAL `SEG-002162..002189` | `CallSiteDescriptor` and `ArgumentBindingDescriptor` | ByRef alias/temp/default/ParamArray distinctions must not be inferred in JIT. |
@@ -380,6 +381,9 @@ Open follow-up:
   Let/Set truth table and bind rows to package `CoercionDescriptor` ids;
 - expand the first operator seed table into a compact MS-VBAL truth table for
   numeric, string, Null, Empty, Error/CVErr, object, and Variant rows;
+- expand the first object/member binding seed table into a package-owned
+  member registry with canonical descriptor ids, property/default-member
+  pairing, dispatch cache policy, event graph semantics, and VM evidence;
 - audit current compiler/VM metadata against the signature descriptors in
   `VBA_TYPE_SYSTEM_V1.md`;
 - extend VM-runnable fixtures beyond the VMR-04 seed, which now covers ByRef

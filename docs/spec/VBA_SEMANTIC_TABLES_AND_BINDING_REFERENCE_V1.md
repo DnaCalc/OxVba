@@ -210,8 +210,8 @@ attempting full table coverage at once:
   `SafeArray`, `ObjectRef`, UDT fields, ByRef temporaries, and COM/native
   boundary temporaries.
 - Object/member seed: `Set` object assignment, `Nothing`, default member in
-  `Let` context, `Property Get`/`Let`/`Set` shape, and late-bound dispatch
-  descriptor.
+  `Let` context, `Property Get`/`Let`/`Set` shape, class/interface dispatch,
+  late-bound dispatch, early-bound COM, events, and `WithEvents`.
 
 ## Coercion Seed Table v1
 
@@ -300,6 +300,33 @@ VM evidence records lifecycle observations and descriptor-backed cleanup maps
 exist. A later behavior-changing VM or JIT path may use these rows only after
 the row has a canonical descriptor id and its branch, return, error, helper
 failure, boundary, and deopt cleanup obligations are fixture-backed.
+
+## Object Member Binding Seed Table v1
+
+The first checked-in object and member binding seed table is:
+
+[`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv)
+
+This table records current descriptor/evidence rows for:
+
+- `Set` object assignment and `Nothing`;
+- class method and implemented-interface member routes;
+- `Property Get`, `Property Let`, and `Property Set` accessor groups;
+- default-member binding in `Let` contexts;
+- `As New`/activation policy evidence;
+- late-bound COM `IDispatch::Invoke`, including selector and named/default
+  argument shape;
+- early-bound COM dispatch and the still-open vtable strategy;
+- `WithEvents` subscription routes and event handler/`RaiseEvent` signature
+  binding.
+
+These rows deliberately separate core object/member semantics from COM wire
+projection. For example, `Set` assignment owns object identity and lifetime at
+the semantic layer, while late-bound COM dispatch rows are boundary projection
+facts over that object model. The current rows are not a complete member
+binding registry: descriptor ids, property/default-member pairing, dispatch
+cache invalidation, event graph semantics, COM result cleanup, and VM
+consumption remain open unless a row says otherwise.
 
 ## Minimum Table Artifact
 
