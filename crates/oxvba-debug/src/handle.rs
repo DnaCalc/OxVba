@@ -261,14 +261,14 @@ impl DebugSessionHandle {
 
 impl Drop for HandleInner {
     fn drop(&mut self) {
-        if let Ok(mut worker) = self.worker.lock() {
-            if worker.is_some() {
-                let (reply_tx, reply_rx) = bounded(1);
-                let _ = self.commands.send(DebugCommand::Shutdown(reply_tx));
-                let _ = reply_rx.recv();
-                if let Some(join) = worker.take() {
-                    let _ = join.join();
-                }
+        if let Ok(mut worker) = self.worker.lock()
+            && worker.is_some()
+        {
+            let (reply_tx, reply_rx) = bounded(1);
+            let _ = self.commands.send(DebugCommand::Shutdown(reply_tx));
+            let _ = reply_rx.recv();
+            if let Some(join) = worker.take() {
+                let _ = join.join();
             }
         }
     }

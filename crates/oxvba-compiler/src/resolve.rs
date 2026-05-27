@@ -6171,10 +6171,10 @@ fn build_udt_descriptors(
         for type_name in required_type_names.clone() {
             if let Some(fields) = udt_defs.get(&type_name) {
                 for field in fields {
-                    if let Some(nested_name) = &field.nested_udt_name {
-                        if udt_defs.contains_key(nested_name) {
-                            required_type_names.insert(nested_name.clone());
-                        }
+                    if let Some(nested_name) = &field.nested_udt_name
+                        && udt_defs.contains_key(nested_name)
+                    {
+                        required_type_names.insert(nested_name.clone());
                     }
                 }
             }

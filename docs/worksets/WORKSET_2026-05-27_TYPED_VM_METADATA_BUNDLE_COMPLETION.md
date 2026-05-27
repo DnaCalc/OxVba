@@ -1,6 +1,6 @@
 # Typed VM Metadata Bundle Completion Workset
 
-Status: `planned`
+Status: `in-progress`
 Date: 2026-05-27
 Scope owner: OxVBA compiler/VM/package/native-readiness
 
@@ -39,6 +39,16 @@ That work delivered the first executable-semantic-package foundation:
 
 That work intentionally did not claim a full lossless typed package, full VM
 semantic parity, complete interop descriptors, or JIT readiness.
+
+Current progress:
+
+- `bd-tvmb.1` has introduced package-owned descriptor identity helpers in the
+  compiler/package crate, a stable current `VbaTypeId` registry, canonical
+  descriptor digests, and VM-visible descriptor identity evidence for the
+  descriptor families reached by current package evidence. This is an identity
+  and evidence step only; downstream beads still own project/import, value
+  state, call, expression, aggregate, object, interop, error, cleanup, and
+  descriptor-driven execution closure.
 
 ## Reference Truth
 

@@ -127,7 +127,7 @@ pub struct LoadedVbaProject {
 
 enum LoadedProjectSource {
     Manifest(ProjectManifest),
-    Bundle(OxBundle),
+    Bundle(Box<OxBundle>),
 }
 
 pub struct PreparedVbaProject {
@@ -246,7 +246,7 @@ impl VbaHost {
             )
         })?;
         Ok(LoadedVbaProject {
-            source: LoadedProjectSource::Bundle(bundle),
+            source: LoadedProjectSource::Bundle(Box::new(bundle)),
             reflection,
             diagnostics: Vec::new(),
             options: self.options.clone(),

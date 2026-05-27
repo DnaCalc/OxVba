@@ -992,7 +992,7 @@ End Sub
         .expect("registered Scripting.Dictionary object should carry typelib descriptor metadata");
     assert!(
         dispatch.members.iter().any(|member| {
-            member.name.eq_ignore_ascii_case("Count") && member.is_default_member == false
+            member.name.eq_ignore_ascii_case("Count") && !member.is_default_member
         }),
         "Scripting.Dictionary descriptor should expose Count metadata"
     );

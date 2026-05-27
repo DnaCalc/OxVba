@@ -2,6 +2,7 @@
 
 pub mod bundle;
 pub mod bytecode;
+pub mod descriptor_identity;
 pub mod emit;
 pub mod lsp_support;
 pub mod optimize;
@@ -19,6 +20,11 @@ pub use bundle::{
     OxBundle,
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
+pub use descriptor_identity::{
+    DescriptorFamily, DescriptorIdentity, VbaTypeRegistryEntry, canonical_descriptor_id,
+    descriptor_digest_debug, descriptor_digest_from_fields, descriptor_identity_debug,
+    vba_type_registry,
+};
 pub use emit::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, ArrayBoundDescriptor,

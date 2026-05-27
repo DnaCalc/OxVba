@@ -18,9 +18,10 @@ use oxvba_runtime::Variant;
 
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
-    DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence, VmExecutionPackage,
-    VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
-    VmProcedureIdentityEvidence, VmSignatureCallEvidence,
+    DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
+    VmDescriptorIdentityEvidence, VmExecutionPackage, VmInteropDescriptorEvidence,
+    VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin, VmProcedureIdentityEvidence,
+    VmSignatureCallEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -283,7 +284,35 @@ mod tests {
                 expected_module_name, test_metadata.procedure_name, test_metadata.entry_pc
             )
         );
+        assert!(
+            test_identity
+                .procedure_descriptor_id
+                .starts_with("procedure:")
+        );
+        assert!(
+            test_identity
+                .procedure_descriptor_digest
+                .starts_with("fnv1a64:")
+        );
         assert!(test_identity.slot_descriptor_digest.starts_with("fnv1a64:"));
+        assert!(
+            evidence
+                .descriptor_identities
+                .iter()
+                .any(|identity| identity.family == "procedure"
+                    && identity.descriptor_id == test_identity.procedure_descriptor_id
+                    && identity.descriptor_digest == test_identity.procedure_descriptor_digest),
+            "package evidence should expose the canonical procedure descriptor identity"
+        );
+        assert!(
+            evidence
+                .descriptor_identities
+                .iter()
+                .any(|identity| identity.family == "slot"
+                    && identity.descriptor_id.starts_with("slot:")
+                    && identity.descriptor_digest.starts_with("fnv1a64:")),
+            "package evidence should expose canonical slot descriptor identities"
+        );
         assert!(
             test_identity
                 .slot_descriptors
@@ -311,6 +340,39 @@ mod tests {
             vm.package_identity_evidence().is_none(),
             "raw bytecode execution must not leave stale package identity evidence"
         );
+    }
+
+    #[test]
+    fn package_descriptor_digest_changes_when_slot_semantics_change() {
+        fn main_identity(source: &str) -> super::VmPackageIdentityEvidence {
+            let (bytecode, metadata) =
+                compile_with_runtime_metadata(source).expect("compile should succeed");
+            VmExecutionPackage::new(&bytecode, &metadata).identity_evidence()
+        }
+
+        let long_identity = main_identity("Sub Main()\nDim value As Long\nvalue = 1\nEnd Sub");
+        let double_identity = main_identity("Sub Main()\nDim value As Double\nvalue = 1\nEnd Sub");
+
+        let long_main = long_identity
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("long Main procedure evidence");
+        let double_main = double_identity
+            .procedures
+            .iter()
+            .find(|procedure| procedure.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("double Main procedure evidence");
+
+        assert_eq!(
+            long_main.procedure_descriptor_id,
+            double_main.procedure_descriptor_id
+        );
+        assert_ne!(
+            long_main.slot_descriptor_digest,
+            double_main.slot_descriptor_digest
+        );
+        assert_ne!(long_identity.package_digest, double_identity.package_digest);
     }
 
     #[test]

@@ -701,7 +701,7 @@ impl DebugSessionCore {
         DebugFrameVariantValue {
             name: slot.name.clone(),
             slot: slot.slot,
-            kind: project_slot_kind(slot.kind.clone()),
+            kind: project_slot_kind(slot.kind),
             display_text,
             variant_value,
         }
@@ -786,6 +786,9 @@ fn project_slot_kind(kind: ProcedureRuntimeSlotKind) -> DebugFrameValueKind {
         ProcedureRuntimeSlotKind::Parameter => DebugFrameValueKind::Parameter,
         ProcedureRuntimeSlotKind::Local => DebugFrameValueKind::Local,
         ProcedureRuntimeSlotKind::ReturnValue => DebugFrameValueKind::ReturnValue,
+        ProcedureRuntimeSlotKind::Temporary | ProcedureRuntimeSlotKind::CompilerGenerated => {
+            DebugFrameValueKind::Local
+        }
     }
 }
 

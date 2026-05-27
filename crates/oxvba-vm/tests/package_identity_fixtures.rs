@@ -865,7 +865,7 @@ fn vm_project_object_descriptor_evidence_records_class_interface_and_com_witheve
         .expect("project package evidence should be recorded");
     let tokens = object_descriptor_observation_tokens(evidence);
     for expected in [
-        "<project-runtime>:thingimpl:descriptor-id=class:projecta:thingimpl",
+        "<project-runtime>:thingimpl:descriptor-id=object-type:class:projecta:thingimpl",
         "<project-runtime>:thingimpl:kind=vbaclass",
         "<project-runtime>:thingimpl:interface:ithing:kind=implemented",
         "<project-runtime>:oxvba.testeventserver:kind=witheventsobject",

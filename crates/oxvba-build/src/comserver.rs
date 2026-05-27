@@ -426,11 +426,11 @@ fn vtable_member(class_index: usize, slot: i16) -> Option<&'static MemberDescrip
 }
 
 fn member_kind_from_dispatch_flags(flags: u16) -> u8 {
-    if flags & DISPATCH_PROPERTYPUTREF as u16 != 0 {
+    if flags & DISPATCH_PROPERTYPUTREF != 0 {
         MEMBER_KIND_PROPERTYSET
-    } else if flags & DISPATCH_PROPERTYPUT as u16 != 0 {
+    } else if flags & DISPATCH_PROPERTYPUT != 0 {
         MEMBER_KIND_PROPERTYLET
-    } else if flags & DISPATCH_PROPERTYGET as u16 != 0 {
+    } else if flags & DISPATCH_PROPERTYGET != 0 {
         MEMBER_KIND_PROPERTYGET
     } else {
         MEMBER_KIND_METHOD
@@ -1565,7 +1565,7 @@ unsafe fn fire_matching_event_sinks(
             event.dispid,
             std::ptr::null(),
             lcid,
-            DISPATCH_METHOD as u16,
+            DISPATCH_METHOD,
             (&mut disp_params as *mut DISPPARAMS).cast(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -2502,7 +2502,7 @@ mod tests {
                     typelib_ping_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD,
                     (&mut params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     (&mut result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
                     std::ptr::null_mut(),
@@ -2589,7 +2589,7 @@ mod tests {
                     fire_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD,
                     (&mut fire_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
@@ -2606,7 +2606,7 @@ mod tests {
                     fire_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD,
                     (&mut fire_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
@@ -2652,7 +2652,7 @@ mod tests {
                     typelib_value_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUT as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYPUT,
                     (&mut put_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
@@ -2674,7 +2674,7 @@ mod tests {
                     typelib_value_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
                     (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     (&mut value_result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
                     std::ptr::null_mut(),
@@ -2714,7 +2714,7 @@ mod tests {
                 typelib_child_dispid,
                 std::ptr::null(),
                 0,
-                windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                windows_sys::Win32::System::Com::DISPATCH_METHOD,
                 (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                 (&mut self_result as *mut windows_sys::Win32::System::Variant::VARIANT).cast(),
                 (&mut self_excep as *mut windows_sys::Win32::System::Com::EXCEPINFO).cast(),
@@ -2765,7 +2765,7 @@ mod tests {
                     typelib_numbers_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD,
                     (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                     (&mut numbers_result as *mut windows_sys::Win32::System::Variant::VARIANT)
                         .cast(),
@@ -2824,7 +2824,7 @@ mod tests {
                 typelib_boom_dispid,
                 std::ptr::null(),
                 0,
-                windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                windows_sys::Win32::System::Com::DISPATCH_METHOD,
                 (&mut get_params as *mut windows_sys::Win32::System::Com::DISPPARAMS).cast(),
                 std::ptr::null_mut(),
                 (&mut excep as *mut windows_sys::Win32::System::Com::EXCEPINFO).cast(),
@@ -2905,7 +2905,7 @@ mod tests {
                     typelib_ping_dispid,
                     std::ptr::null(),
                     0,
-                    windows_sys::Win32::System::Com::DISPATCH_METHOD as u16,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD,
                     (&mut cocreated_params as *mut windows_sys::Win32::System::Com::DISPPARAMS)
                         .cast(),
                     (&mut cocreated_result as *mut windows_sys::Win32::System::Variant::VARIANT)

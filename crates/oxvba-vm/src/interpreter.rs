@@ -12,16 +12,18 @@ use oxvba_com::{
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArrayShapeDescriptor, ArrayStorageKind, Bytecode, CallSiteDescriptor, CallTargetKindDescriptor,
-    Instruction, ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
-    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor,
-    UdtTypeDescriptor, VbaTypeId,
+    DescriptorFamily, DescriptorIdentity, Instruction, ObjectTypeDescriptor, OptionalDefaultValue,
+    OptionalParameterDescriptor, OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata,
+    ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor, ProjectComWithEventsRoute,
+    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+    ProjectDynamicParamRoute, ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor,
+    UdtFieldDescriptor, UdtTypeDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
     },
+    canonical_descriptor_id, descriptor_digest_debug, descriptor_digest_from_fields,
+    descriptor_identity_debug,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -169,7 +171,13 @@ impl<'a> VmExecutionPackage<'a> {
         &self,
         runtime_slots: &[RuntimeSlot],
     ) -> VmPackageIdentityEvidence {
-        let bytecode_digest = digest_debug("bytecode", self.bytecode);
+        let bytecode_descriptor_id =
+            canonical_descriptor_id(DescriptorFamily::Bytecode, ["instruction-stream"]);
+        let bytecode_digest = descriptor_digest_debug(
+            DescriptorFamily::Bytecode,
+            &bytecode_descriptor_id,
+            self.bytecode,
+        );
         let package_digest = digest_package(&bytecode_digest, self.procedure_metadata);
         let procedures = self
             .procedure_metadata
@@ -186,6 +194,12 @@ impl<'a> VmExecutionPackage<'a> {
             collect_object_descriptor_evidence(self.procedure_metadata);
         let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
+        let descriptor_identities = collect_descriptor_identity_evidence(
+            self.bytecode,
+            self.procedure_metadata,
+            &interop_descriptor_evidence,
+            &lifecycle_evidence,
+        );
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -200,6 +214,7 @@ impl<'a> VmExecutionPackage<'a> {
             object_descriptor_evidence,
             interop_descriptor_evidence,
             lifecycle_evidence,
+            descriptor_identities,
         }
     }
 
@@ -250,6 +265,8 @@ pub enum VmPackageOrigin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmProcedureIdentityEvidence {
     pub procedure_id: String,
+    pub procedure_descriptor_id: String,
+    pub procedure_descriptor_digest: String,
     pub module_name: String,
     pub procedure_name: String,
     pub entry_pc: usize,
@@ -265,12 +282,32 @@ impl VmProcedureIdentityEvidence {
             metadata.module_name.clone()
         };
         let slot_descriptors = metadata.slot_type_descriptors();
-        let slot_descriptor_digest = digest_debug("slot-descriptors", &slot_descriptors);
-        Self {
-            procedure_id: format!(
-                "proc:{}::{}@pc:{}",
-                module_name, metadata.procedure_name, metadata.entry_pc
+        let procedure_id = format!(
+            "proc:{}::{}@pc:{}",
+            module_name, metadata.procedure_name, metadata.entry_pc
+        );
+        let procedure_descriptor_id = procedure_descriptor_id(metadata);
+        let procedure_descriptor_digest = descriptor_digest_debug(
+            DescriptorFamily::Procedure,
+            &procedure_descriptor_id,
+            metadata,
+        );
+        let slot_descriptor_identities = slot_descriptors
+            .iter()
+            .map(|descriptor| slot_descriptor_identity(&procedure_descriptor_id, descriptor))
+            .collect::<Vec<_>>();
+        let slot_descriptor_digest = descriptor_digest_debug(
+            DescriptorFamily::DescriptorSet,
+            &canonical_descriptor_id(
+                DescriptorFamily::DescriptorSet,
+                [procedure_descriptor_id.as_str(), "slot-descriptors"],
             ),
+            &slot_descriptor_identities,
+        );
+        Self {
+            procedure_id,
+            procedure_descriptor_id,
+            procedure_descriptor_digest,
             module_name,
             procedure_name: metadata.procedure_name.clone(),
             entry_pc: metadata.entry_pc,
@@ -295,6 +332,14 @@ pub struct VmPackageIdentityEvidence {
     pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
     pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
     pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
+    pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmDescriptorIdentityEvidence {
+    pub family: String,
+    pub descriptor_id: String,
+    pub descriptor_digest: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +411,163 @@ const SELECTED_CALL_BYVAL_COERCION_ID: &str = "COERCE-CALL-BYVAL-DECLARED-TARGET
 const SELECTED_CALL_BYVAL_NUMERIC_WIDEN_ID: &str = "COERCE-LET-NUMERIC-WIDEN";
 const SELECTED_CALL_BYVAL_RUNTIME_HELPER_ID: &str = "oxvba_runtime::coerce_to";
 
+fn collect_descriptor_identity_evidence(
+    bytecode: &Bytecode,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    interop_evidence: &[VmInteropDescriptorEvidence],
+    lifecycle_evidence: &[VmLifecycleEvidence],
+) -> Vec<VmDescriptorIdentityEvidence> {
+    let mut identities = Vec::new();
+    identities.push(VmDescriptorIdentityEvidence::from(
+        descriptor_identity_debug(
+            DescriptorFamily::Bytecode,
+            canonical_descriptor_id(DescriptorFamily::Bytecode, ["instruction-stream"]),
+            bytecode,
+        ),
+    ));
+
+    for metadata in procedure_metadata.values() {
+        let procedure_id = procedure_descriptor_id(metadata);
+        identities.push(VmDescriptorIdentityEvidence::from(
+            descriptor_identity_debug(DescriptorFamily::Procedure, procedure_id.clone(), metadata),
+        ));
+        identities.push(VmDescriptorIdentityEvidence::from(
+            descriptor_identity_debug(
+                DescriptorFamily::ProcedureSignature,
+                signature_descriptor_id(&procedure_id),
+                &metadata.procedure_signature_descriptor(),
+            ),
+        ));
+        for slot_descriptor in metadata.slot_type_descriptors() {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                slot_descriptor_identity(&procedure_id, &slot_descriptor),
+            ));
+        }
+        for call_site in &metadata.call_sites {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::CallSite,
+                    call_site_descriptor_id(&procedure_id, call_site),
+                    call_site,
+                ),
+            ));
+        }
+        for array_shape in &metadata.array_shapes {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::ArrayShape,
+                    array_shape_descriptor_id(&procedure_id, array_shape),
+                    array_shape,
+                ),
+            ));
+        }
+        for udt_type in &metadata.udt_types {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::UdtType,
+                    udt_type.descriptor_id.clone(),
+                    udt_type,
+                ),
+            ));
+        }
+        for object_type in &metadata.object_types {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::ObjectType,
+                    object_type.descriptor_id.clone(),
+                    object_type,
+                ),
+            ));
+        }
+    }
+
+    identities.extend(
+        interop_evidence
+            .iter()
+            .map(|evidence| VmDescriptorIdentityEvidence {
+                family: DescriptorFamily::Interop.registry_key().to_string(),
+                descriptor_id: evidence.descriptor_id.clone(),
+                descriptor_digest: evidence.descriptor_digest.clone(),
+            }),
+    );
+    identities.extend(
+        lifecycle_evidence
+            .iter()
+            .map(|evidence| VmDescriptorIdentityEvidence {
+                family: DescriptorFamily::Lifecycle.registry_key().to_string(),
+                descriptor_id: evidence.cleanup_scope_id.clone(),
+                descriptor_digest: evidence.lifecycle_descriptor_digest.clone(),
+            }),
+    );
+    identities.sort_by(|left, right| {
+        left.family
+            .cmp(&right.family)
+            .then(left.descriptor_id.cmp(&right.descriptor_id))
+    });
+    identities
+}
+
+impl From<DescriptorIdentity> for VmDescriptorIdentityEvidence {
+    fn from(identity: DescriptorIdentity) -> Self {
+        Self {
+            family: identity.family.registry_key().to_string(),
+            descriptor_id: identity.descriptor_id,
+            descriptor_digest: identity.descriptor_digest,
+        }
+    }
+}
+
+fn procedure_descriptor_id(metadata: &ProcedureRuntimeMetadata) -> String {
+    let module_name = if metadata.module_name.trim().is_empty() {
+        "<anonymous>"
+    } else {
+        metadata.module_name.as_str()
+    };
+    let entry_pc = metadata.entry_pc.to_string();
+    canonical_descriptor_id(
+        DescriptorFamily::Procedure,
+        [
+            module_name,
+            metadata.procedure_name.as_str(),
+            entry_pc.as_str(),
+        ],
+    )
+}
+
+fn signature_descriptor_id(procedure_id: &str) -> String {
+    canonical_descriptor_id(DescriptorFamily::ProcedureSignature, [procedure_id])
+}
+
+fn slot_descriptor_id(procedure_id: &str, descriptor: &SlotTypeDescriptor) -> String {
+    let slot = descriptor.slot.to_string();
+    canonical_descriptor_id(DescriptorFamily::Slot, [procedure_id, slot.as_str()])
+}
+
+fn slot_descriptor_identity(
+    procedure_id: &str,
+    descriptor: &SlotTypeDescriptor,
+) -> DescriptorIdentity {
+    descriptor_identity_debug(
+        DescriptorFamily::Slot,
+        slot_descriptor_id(procedure_id, descriptor),
+        descriptor,
+    )
+}
+
+fn call_site_descriptor_id(procedure_id: &str, call_site: &CallSiteDescriptor) -> String {
+    canonical_descriptor_id(
+        DescriptorFamily::CallSite,
+        [procedure_id, call_site.call_site_id.as_str()],
+    )
+}
+
+fn array_shape_descriptor_id(procedure_id: &str, descriptor: &ArrayShapeDescriptor) -> String {
+    canonical_descriptor_id(
+        DescriptorFamily::ArrayShape,
+        [procedure_id, descriptor.name.as_str()],
+    )
+}
+
 fn collect_array_shape_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
     runtime_slots: &[RuntimeSlot],
@@ -373,13 +575,18 @@ fn collect_array_shape_evidence(
     let mut evidence = procedure_metadata
         .values()
         .flat_map(|metadata| {
+            let procedure_id = procedure_descriptor_id(metadata);
             metadata
                 .array_shapes
                 .iter()
                 .map(move |descriptor| VmArrayShapeEvidence {
                     procedure_name: metadata.procedure_name.clone(),
                     array_name: descriptor.name.clone(),
-                    array_shape_descriptor_digest: digest_debug("array-shape", descriptor),
+                    array_shape_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::ArrayShape,
+                        &array_shape_descriptor_id(&procedure_id, descriptor),
+                        descriptor,
+                    ),
                     observations: array_shape_observations(descriptor, runtime_slots),
                 })
         })
@@ -475,7 +682,11 @@ fn collect_udt_descriptor_evidence(
                     procedure_name: metadata.procedure_name.clone(),
                     type_name: descriptor.type_name.clone(),
                     udt_descriptor_id: descriptor.descriptor_id.clone(),
-                    udt_descriptor_digest: digest_debug("udt-descriptor", descriptor),
+                    udt_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::UdtType,
+                        &descriptor.descriptor_id,
+                        descriptor,
+                    ),
                     observations: udt_descriptor_observations(descriptor),
                 })
         })
@@ -574,7 +785,11 @@ fn collect_lifecycle_evidence(
                 .map(move |descriptor| VmLifecycleEvidence {
                     procedure_name: metadata.procedure_name.clone(),
                     cleanup_scope_id: format!("cleanup:{}", descriptor.descriptor_id),
-                    lifecycle_descriptor_digest: digest_debug("lifecycle-cleanup", descriptor),
+                    lifecycle_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::Lifecycle,
+                        &format!("cleanup:{}", descriptor.descriptor_id),
+                        descriptor,
+                    ),
                     observations: udt_lifecycle_observations(descriptor, runtime_slots),
                 })
         })
@@ -704,7 +919,11 @@ fn collect_object_descriptor_evidence(
                     procedure_name: metadata.procedure_name.clone(),
                     type_name: descriptor.type_name.clone(),
                     object_descriptor_id: descriptor.descriptor_id.clone(),
-                    object_descriptor_digest: digest_debug("object-descriptor", descriptor),
+                    object_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::ObjectType,
+                        &descriptor.descriptor_id,
+                        descriptor,
+                    ),
                     observations: object_descriptor_observations(descriptor),
                 })
         })
@@ -756,32 +975,47 @@ fn collect_runtime_object_descriptor_evidence(
         .values()
         .map(|state| {
             let route = &state.route;
-            let descriptor_id = format!(
-                "class:{}:{}",
-                route.project_name.to_ascii_lowercase(),
-                route.module_name.to_ascii_lowercase()
+            let descriptor_id = canonical_descriptor_id(
+                DescriptorFamily::ObjectType,
+                [
+                    "class",
+                    route.project_name.as_str(),
+                    route.module_name.as_str(),
+                ],
             );
             VmObjectDescriptorEvidence {
                 procedure_name: "<project-runtime>".to_string(),
                 type_name: route.module_name.clone(),
                 object_descriptor_id: descriptor_id.clone(),
-                object_descriptor_digest: digest_debug("project-dynamic-object", route),
+                object_descriptor_digest: descriptor_digest_debug(
+                    DescriptorFamily::ObjectType,
+                    &descriptor_id,
+                    route,
+                ),
                 observations: project_dynamic_object_observations(&descriptor_id, state),
             }
         })
         .collect::<Vec<_>>();
     for routes in project_com_withevents_routes.values() {
         for route in routes {
-            let descriptor_id = format!(
-                "com-withevents:{}:{}",
-                route.prog_id_name.to_ascii_lowercase(),
-                route.binding_token
+            let binding_token = route.binding_token.to_string();
+            let descriptor_id = canonical_descriptor_id(
+                DescriptorFamily::ObjectType,
+                [
+                    "com-withevents",
+                    route.prog_id_name.as_str(),
+                    binding_token.as_str(),
+                ],
             );
             evidence.push(VmObjectDescriptorEvidence {
                 procedure_name: "<project-runtime>".to_string(),
                 type_name: route.prog_id_name.clone(),
                 object_descriptor_id: descriptor_id.clone(),
-                object_descriptor_digest: digest_debug("project-com-withevents-route", route),
+                object_descriptor_digest: descriptor_digest_debug(
+                    DescriptorFamily::ObjectType,
+                    &descriptor_id,
+                    route,
+                ),
                 observations: project_com_withevents_observations(&descriptor_id, route),
             });
         }
@@ -875,8 +1109,12 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
             let descriptor_id = format!("native:{}", descriptor.descriptor_id);
             VmInteropDescriptorEvidence {
                 interop_kind: "native-declare".to_string(),
-                descriptor_id,
-                descriptor_digest: digest_debug("native-declare-descriptor", descriptor),
+                descriptor_id: descriptor_id.clone(),
+                descriptor_digest: descriptor_digest_debug(
+                    DescriptorFamily::Interop,
+                    &descriptor_id,
+                    descriptor,
+                ),
                 observations: external_call_descriptor_observations(descriptor),
             }
         })
@@ -885,10 +1123,19 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
     for (pc, instruction) in bytecode.instructions.iter().enumerate() {
         match instruction {
             Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
+                let pc_part = format!("pc-{pc}");
+                let descriptor_id = canonical_descriptor_id(
+                    DescriptorFamily::Interop,
+                    ["com-createobject", pc_part.as_str()],
+                );
                 evidence.push(VmInteropDescriptorEvidence {
                     interop_kind: "com-createobject".to_string(),
-                    descriptor_id: format!("com-createobject@pc:{pc}"),
-                    descriptor_digest: digest_debug("com-createobject-instruction", instruction),
+                    descriptor_id: descriptor_id.clone(),
+                    descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::Interop,
+                        &descriptor_id,
+                        instruction,
+                    ),
                     observations: vec![
                         "kind=com-createobject".to_string(),
                         "boundary=host-com-activation".to_string(),
@@ -906,10 +1153,19 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
                 early_bound,
                 com_member,
             } => {
+                let pc_part = format!("pc-{pc}");
+                let descriptor_id = canonical_descriptor_id(
+                    DescriptorFamily::Interop,
+                    ["com-dispatch", pc_part.as_str()],
+                );
                 evidence.push(VmInteropDescriptorEvidence {
                     interop_kind: "com-dispatch-invoke".to_string(),
-                    descriptor_id: format!("com-dispatch@pc:{pc}"),
-                    descriptor_digest: digest_debug("com-dispatch-instruction", instruction),
+                    descriptor_id: descriptor_id.clone(),
+                    descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::Interop,
+                        &descriptor_id,
+                        instruction,
+                    ),
                     observations: com_dispatch_instruction_observations(
                         *dst,
                         *object,
@@ -927,10 +1183,20 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
                 args,
                 writeback_slots,
             } => {
+                let descriptor_ref = descriptor_id.to_string();
+                let pc_part = format!("pc-{pc}");
+                let package_descriptor_id = canonical_descriptor_id(
+                    DescriptorFamily::Interop,
+                    ["native-invoke", descriptor_ref.as_str(), pc_part.as_str()],
+                );
                 evidence.push(VmInteropDescriptorEvidence {
                     interop_kind: "native-invoke".to_string(),
-                    descriptor_id: format!("native-invoke:{descriptor_id}@pc:{pc}"),
-                    descriptor_digest: digest_debug("native-invoke-instruction", instruction),
+                    descriptor_id: package_descriptor_id.clone(),
+                    descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::Interop,
+                        &package_descriptor_id,
+                        instruction,
+                    ),
                     observations: native_invoke_instruction_observations(
                         *dst,
                         *descriptor_id,
@@ -1110,7 +1376,11 @@ fn collect_call_site_descriptor_evidence(
                     caller_procedure_name: metadata.procedure_name.clone(),
                     call_pc: call_site.call_pc,
                     target_name: call_site.target_name.clone(),
-                    call_site_descriptor_digest: digest_debug("call-site-descriptor", call_site),
+                    call_site_descriptor_digest: descriptor_digest_debug(
+                        DescriptorFamily::CallSite,
+                        &call_site_descriptor_id(&procedure_descriptor_id(metadata), call_site),
+                        call_site,
+                    ),
                     observations: call_site_descriptor_observations(
                         call_site,
                         metadata,
@@ -1258,7 +1528,7 @@ fn selected_long_to_double_byval_call_entry_slots(
             parameter.slot == Some(parameter_slot)
                 && argument
                     .parameter_index
-                    .map_or(true, |index| parameter.index == index)
+                    .is_none_or(|index| parameter.index == index)
         })?;
     if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal
         || parameter.declared_type != VbaTypeId::Double
@@ -1332,6 +1602,7 @@ fn collect_signature_call_evidence(
             metadata.module_name.clone()
         };
         let signature = metadata.procedure_signature_descriptor();
+        let procedure_descriptor_id = procedure_descriptor_id(metadata);
         evidence.push(VmSignatureCallEvidence {
             call_pc,
             procedure_id: format!(
@@ -1340,7 +1611,11 @@ fn collect_signature_call_evidence(
             ),
             procedure_name: metadata.procedure_name.clone(),
             target_pc: *target_pc,
-            signature_descriptor_digest: digest_debug("signature-descriptor", &signature),
+            signature_descriptor_digest: descriptor_digest_debug(
+                DescriptorFamily::ProcedureSignature,
+                &signature_descriptor_id(&procedure_descriptor_id),
+                &signature,
+            ),
             observations: signature_call_observations(bytecode, call_pc, metadata, &signature),
         });
     }
@@ -1518,38 +1793,18 @@ fn is_call_evidence_boundary(instruction: &Instruction) -> bool {
     )
 }
 
-const FNV1A64_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
-
-fn update_fnv1a64(hash: &mut u64, bytes: &[u8]) {
-    for byte in bytes {
-        *hash ^= u64::from(*byte);
-        *hash = hash.wrapping_mul(FNV1A64_PRIME);
-    }
-}
-
-fn finish_fnv1a64(hash: u64) -> String {
-    format!("fnv1a64:{hash:016x}")
-}
-
-fn digest_debug<T: Debug>(label: &str, value: &T) -> String {
-    let mut hash = FNV1A64_OFFSET;
-    update_fnv1a64(&mut hash, label.as_bytes());
-    update_fnv1a64(&mut hash, b"\0");
-    update_fnv1a64(&mut hash, format!("{value:#?}").as_bytes());
-    finish_fnv1a64(hash)
-}
-
 fn digest_package(
     bytecode_digest: &str,
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
 ) -> String {
-    let mut hash = FNV1A64_OFFSET;
-    update_fnv1a64(&mut hash, b"package\0bytecode\0");
-    update_fnv1a64(&mut hash, bytecode_digest.as_bytes());
-    update_fnv1a64(&mut hash, b"\0procedure-metadata\0");
-    update_fnv1a64(&mut hash, format!("{procedure_metadata:#?}").as_bytes());
-    finish_fnv1a64(hash)
+    descriptor_digest_from_fields(
+        DescriptorFamily::Package,
+        &canonical_descriptor_id(DescriptorFamily::Package, ["vm-execution-package"]),
+        [
+            ("bytecode_digest", bytecode_digest.to_string()),
+            ("procedure_metadata", format!("{procedure_metadata:#?}")),
+        ],
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

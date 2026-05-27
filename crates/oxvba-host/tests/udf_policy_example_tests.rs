@@ -90,8 +90,10 @@ fn changing_host_policy_changes_admission_without_changing_descriptors() {
     let default_report = UdfAdmissionPolicy::default().admit(loaded.reflection());
     assert!(default_report.admitted.is_empty());
 
-    let mut permissive = UdfAdmissionPolicy::default();
-    permissive.allow_option_private_modules = true;
+    let permissive = UdfAdmissionPolicy {
+        allow_option_private_modules: true,
+        ..Default::default()
+    };
     let permissive_report = permissive.admit(loaded.reflection());
     assert_eq!(permissive_report.admitted.len(), 1);
     assert_eq!(

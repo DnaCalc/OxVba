@@ -20,6 +20,12 @@ tokens, plus selected lifecycle cleanup observation tokens for owning fields.
 The object rows also print object descriptor digests and object descriptor
 observation tokens.
 
+The VM evidence also emits canonical descriptor identity rows sourced from the
+compiler/package descriptor identity helpers, including bytecode, procedure,
+signature, slot, call-site, array-shape, UDT, object, interop, and lifecycle
+families reached by these fixtures. These rows are package identity evidence;
+they do not imply broader descriptor-driven VM execution.
+
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
 and the current VM-runnable UDT field-alias shape. The UDT base slots now carry
 `UdtFields` carrier hints, but execution still uses the existing flattened

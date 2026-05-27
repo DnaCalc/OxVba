@@ -424,15 +424,15 @@ pub fn validate_host_project_settings_edits(
                     .map(str::trim)
                     .filter(|part| !part.is_empty())
                 {
-                    if let Some((key, raw_value)) = part.split_once('=') {
-                        if key.trim().is_empty() || raw_value.trim().parse::<i32>().is_err() {
-                            issues.push(settings_issue(
-                                edit_index,
-                                "DefineConstants",
-                                "define constants must use Name or Name=<integer> entries separated by semicolons",
-                            ));
-                            break;
-                        }
+                    if let Some((key, raw_value)) = part.split_once('=')
+                        && (key.trim().is_empty() || raw_value.trim().parse::<i32>().is_err())
+                    {
+                        issues.push(settings_issue(
+                            edit_index,
+                            "DefineConstants",
+                            "define constants must use Name or Name=<integer> entries separated by semicolons",
+                        ));
+                        break;
                     }
                 }
             }

@@ -183,8 +183,18 @@ Current VMR-01 seed evidence in `oxvba-vm` is
 - package origin (`in-memory` package view or `OxBundle`);
 - package digest and bytecode digest;
 - package slot count and user slot count;
-- per-procedure id, module name, procedure name, entry PC, slot descriptor
-  digest, and slot descriptor rows.
+- per-procedure id, package-owned procedure descriptor id/digest, module name,
+  procedure name, entry PC, slot descriptor digest, and slot descriptor rows;
+- package-owned descriptor identity rows for bytecode, procedures, procedure
+  signatures, slots, call sites, array shapes, UDTs, object routes, interop
+  descriptors, and lifecycle descriptors reached by current evidence.
+
+Canonical descriptor identity helpers live in
+`crates/oxvba-compiler/src/descriptor_identity.rs`, not in the VM. The current
+seed also exposes a stable `VbaTypeId` registry and default-carrier rows for the
+implemented declared type enum. VM evidence consumes those package helpers and
+therefore reports descriptor ids/digests without allocating semantic identity
+inside the interpreter.
 
 `oxvba-host` now threads the same evidence through package-backed source,
 project, bundle, and callable-session VM execution paths. Existing snapshot APIs

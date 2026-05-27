@@ -5,8 +5,7 @@ use oxvba_runtime::{
 };
 use windows_sys::Win32::Foundation::SysAllocStringLen;
 use windows_sys::Win32::System::Com::{
-    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-    DISPPARAMS, EXCEPINFO,
+    DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO,
 };
 use windows_sys::Win32::System::Variant::{VARIANT, VT_BYREF, VT_I4, VT_VARIANT};
 
@@ -35,6 +34,12 @@ impl ComCallFrameMarshalError {
     }
 }
 
+/// Converts COM `DISPPARAMS` from `IDispatch::Invoke` into a runtime call frame.
+///
+/// # Safety
+/// `params` must be non-null and point to a valid `DISPPARAMS` for the duration
+/// of this call. When its argument counts are non-zero, `rgvarg` and
+/// `rgdispidNamedArgs` must point to arrays valid for those counts.
 pub unsafe fn disp_params_to_runtime_call_frame(
     dispatch_id: i32,
     flags: u16,
@@ -96,6 +101,12 @@ pub unsafe fn disp_params_to_runtime_call_frame(
     Ok(frame)
 }
 
+/// Writes a runtime call result into a COM `VARIANT`.
+///
+/// # Safety
+/// `variant` must be a valid writable `VARIANT` pointer. Object resolution
+/// callbacks must return valid COM interface pointers, and `add_ref_dispatch`
+/// must apply the ownership convention expected by the COM caller.
 pub unsafe fn runtime_call_result_to_variant<FResolve, FAddRef>(
     result: &RuntimeCallResult,
     variant: *mut VARIANT,
@@ -111,6 +122,12 @@ where
     unsafe { set_variant_from_com_value(variant, &com_value, resolve_object, add_ref_dispatch) }
 }
 
+/// Applies runtime ByRef writebacks to the original COM argument array.
+///
+/// # Safety
+/// When `params` is non-null, it must point to a valid mutable `DISPPARAMS`.
+/// If writebacks are present, `rgvarg` must be a writable array valid for
+/// `cArgs` elements and each targeted ByRef slot must be writable.
 pub unsafe fn apply_runtime_call_writebacks_to_disp_params(
     result: &RuntimeCallResult,
     params: *mut DISPPARAMS,
@@ -148,6 +165,12 @@ pub fn logical_arg_index_to_com_arg_index(logical_index: usize, arg_count: usize
     }
 }
 
+/// Converts a runtime call error into COM `EXCEPINFO` state.
+///
+/// # Safety
+/// Non-null `excep_info` and `arg_err` pointers must be valid for writes. The
+/// caller owns any BSTRs written to `excep_info` according to COM `EXCEPINFO`
+/// rules and must release them.
 pub unsafe fn runtime_call_error_to_excepinfo(
     error: &RuntimeCallError,
     excep_info: *mut EXCEPINFO,
@@ -173,14 +196,12 @@ pub unsafe fn runtime_call_error_to_excepinfo(
 }
 
 fn call_kind_from_dispatch_flags(flags: u16) -> RuntimeCallKind {
-    if flags & DISPATCH_PROPERTYPUTREF as u16 != 0 {
+    if flags & DISPATCH_PROPERTYPUTREF != 0 {
         RuntimeCallKind::PropertySet
-    } else if flags & DISPATCH_PROPERTYPUT as u16 != 0 {
+    } else if flags & DISPATCH_PROPERTYPUT != 0 {
         RuntimeCallKind::PropertyLet
-    } else if flags & DISPATCH_PROPERTYGET as u16 != 0 {
+    } else if flags & DISPATCH_PROPERTYGET != 0 {
         RuntimeCallKind::PropertyGet
-    } else if flags & DISPATCH_METHOD as u16 != 0 {
-        RuntimeCallKind::Method
     } else {
         RuntimeCallKind::Method
     }
@@ -250,6 +271,7 @@ mod tests {
     use super::*;
     use crate::windows_client::COM_DISP_E_TYPEMISMATCH;
     use oxvba_runtime::{RuntimeCallSource, bstr::BStr, safe_array::SafeArray};
+    use windows_sys::Win32::System::Com::DISPATCH_METHOD;
     use windows_sys::Win32::System::Variant::{
         VT_ARRAY, VT_BSTR, VT_CLSID, VT_DISPATCH, VT_EMPTY, VT_VARIANT, VariantClear,
     };
@@ -268,7 +290,7 @@ mod tests {
                 cArgs: 2,
                 cNamedArgs: 0,
             };
-            let frame = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD as u16, &params, 1033)
+            let frame = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD, &params, 1033)
                 .expect("frame");
             assert_eq!(frame.kind, RuntimeCallKind::Method);
             assert_eq!(frame.context.source, RuntimeCallSource::ExternalComDispatch);
@@ -291,9 +313,8 @@ mod tests {
                 cArgs: 1,
                 cNamedArgs: 1,
             };
-            let frame =
-                disp_params_to_runtime_call_frame(0, DISPATCH_PROPERTYPUT as u16, &params, 0)
-                    .expect("frame");
+            let frame = disp_params_to_runtime_call_frame(0, DISPATCH_PROPERTYPUT, &params, 0)
+                .expect("frame");
             assert_eq!(frame.kind, RuntimeCallKind::PropertyLet);
             assert!(frame.positional_args.is_empty());
             assert_eq!(
@@ -321,8 +342,8 @@ mod tests {
                 cArgs: 2,
                 cNamedArgs: 2,
             };
-            let frame = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD as u16, &params, 0)
-                .expect("frame");
+            let frame =
+                disp_params_to_runtime_call_frame(7, DISPATCH_METHOD, &params, 0).expect("frame");
             assert!(frame.positional_args.is_empty());
             assert_eq!(frame.named_args[0].name, "[dispid:101]");
             assert_eq!(frame.named_args[0].argument.value.as_i32(), Some(11));
@@ -347,8 +368,8 @@ mod tests {
                 cArgs: 2,
                 cNamedArgs: 0,
             };
-            let frame = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD as u16, &params, 0)
-                .expect("frame");
+            let frame =
+                disp_params_to_runtime_call_frame(7, DISPATCH_METHOD, &params, 0).expect("frame");
             assert_eq!(frame.positional_args[0].by_ref.map(|slot| slot.id), Some(0));
             assert_eq!(frame.positional_args[1].by_ref.map(|slot| slot.id), Some(1));
 
@@ -374,7 +395,7 @@ mod tests {
                 cArgs: 1,
                 cNamedArgs: 0,
             };
-            let err = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD as u16, &params, 0)
+            let err = disp_params_to_runtime_call_frame(7, DISPATCH_METHOD, &params, 0)
                 .expect_err("unsupported variant should fail");
             assert_eq!(err.logical_arg_index, Some(0));
             assert!(err.message.contains("unsupported VARIANT"));

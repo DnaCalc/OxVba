@@ -67,10 +67,7 @@ fn engine_with_profile(
     enable_jit: bool,
     callbacks: Arc<dyn HostCallbacks>,
 ) -> Engine {
-    let mut engine = Engine::new(HostConfig {
-        enable_jit,
-        ..HostConfig::default()
-    });
+    let mut engine = Engine::new(HostConfig { enable_jit });
     engine.set_runtime_profile(runtime_profile);
     engine.set_host_callbacks(Some(callbacks));
     engine

@@ -470,6 +470,7 @@ impl DirectHostIssue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum DirectHostCommandStatus {
     Available,
     Disabled { reason: DirectHostIssue },
