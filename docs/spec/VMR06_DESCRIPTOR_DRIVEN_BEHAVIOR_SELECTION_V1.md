@@ -60,6 +60,10 @@ Implementation evidence:
 - `VMR04_CALL_ARGUMENT_BINDING` now records package execution with
   `main:byvaltype = 5` while the fixture harness also asserts the raw bytecode
   baseline remains `main:byvaltype = 2`.
+- `bd-iave.9.4` makes the selected table-backed helper choice observable in
+  call-site evidence: `COERCE-CALL-BYVAL-DECLARED-TARGET`,
+  `COERCE-LET-NUMERIC-WIDEN`, and runtime helper
+  `oxvba_runtime::coerce_to`.
 
 ### Static Array Bounds
 
@@ -121,7 +125,8 @@ Required descriptor facts:
   - parameter slot known.
 - `CoercionDescriptor` seed rows
   - `COERCE-CALL-BYVAL-DECLARED-TARGET`;
-  - `COERCE-LET-NUMERIC-WIDEN`.
+  - `COERCE-LET-NUMERIC-WIDEN`;
+  - runtime helper id `oxvba_runtime::coerce_to`.
 - `SlotTypeDescriptor`
   - caller source slot declared `Long`;
   - callee parameter slot declared `Double`;
@@ -161,6 +166,8 @@ Primary fixture:
 - `VMR04_CALL_ARGUMENT_BINDING`
   - Raw bytecode baseline: `main:byvaltype:Local:Long` snapshot records `2`.
   - Package execution: `main:byvaltype` records `5`.
+  - Call-site evidence records the selected coercion row ids and runtime
+    helper id for the `value` argument.
   - `main:byvalcoerced` remains `f64:4.5`.
   - caller `seed` remains unchanged.
   - ByRef alias/writeback observations remain unchanged.
@@ -237,7 +244,7 @@ This selection feeds:
 - `bd-iave.9.2`: implement the selected descriptor-driven call binding path;
 - `bd-iave.9.3`: implement the selected descriptor-driven fixed/static array
   bound path;
-- `bd-iave.9.4`: bind the selected helper choice to table/coercion row ids
-  where the implementation needs a canonical coercion lookup;
+- `bd-iave.9.4`: bind the selected helper choice to table/coercion row ids in
+  VM evidence;
 - JIT readiness gates: use the changed VM evidence only after the VM fixture
   proves the new descriptor-driven behavior.

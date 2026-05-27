@@ -233,13 +233,18 @@ VM execution already depends on:
   compatibility and string display;
 - the selected VMR-06 call-entry shape where package execution uses metadata
   to coerce `ByVal Long` into a declared `Double` parameter at callee entry.
+  VM package evidence now records this selected shape with
+  `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
+  helper `oxvba_runtime::coerce_to`.
 
 The table uses `metadata-missing` even when a helper is VM-backed because rows
 are not yet canonical `CoercionDescriptor` package facts. The selected
 call-entry row is still intentionally narrow and does not generalize to other
 source/target types, expression forms, COM/native calls, or error-routing
-coercions. The table also keeps helper-specific behavior separate when the
-current implementation has multiple conversion paths. For example,
+coercions. The table ids are observable evidence for the selected row, not a
+claim that all coercion decisions are package-owned descriptors. The table also
+keeps helper-specific behavior separate when the current implementation has
+multiple conversion paths. For example,
 `variant_to_vba_string(Boolean)` returns
 `True`/`False`, while `runtime_variant_to_text(Boolean)` returns `-1`/`0` for
 several current VM helpers. A future descriptor-backed coercion pass must decide

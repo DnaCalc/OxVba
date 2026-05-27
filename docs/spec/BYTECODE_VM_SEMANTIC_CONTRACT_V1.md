@@ -247,7 +247,10 @@ missing-argument policy
 (`VariantMissingError448`) while current VM lowering still materializes a
 default local value. The fixture records those behaviors as VM/runtime
 limitations to resolve before descriptor-driven call binding or JIT lowering
-can claim full call-coercion or Optional-missing parity.
+can claim full call-coercion or Optional-missing parity. Call-site evidence also
+records the selected coercion row id, numeric-widen row id, and runtime helper
+id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
+observable without generalizing coercion behavior.
 
 The authoritative VMR-04 call-gap ledger is the
 `VMR-04 Call Fixture Gap Classification` section in

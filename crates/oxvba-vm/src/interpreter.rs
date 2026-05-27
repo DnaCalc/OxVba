@@ -351,6 +351,9 @@ pub struct VmInteropDescriptorEvidence {
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
 const DESCRIPTOR_INTRINSIC_LOOKBACK: usize = 8;
+const SELECTED_CALL_BYVAL_COERCION_ID: &str = "COERCE-CALL-BYVAL-DECLARED-TARGET";
+const SELECTED_CALL_BYVAL_NUMERIC_WIDEN_ID: &str = "COERCE-LET-NUMERIC-WIDEN";
+const SELECTED_CALL_BYVAL_RUNTIME_HELPER_ID: &str = "oxvba_runtime::coerce_to";
 
 fn collect_array_shape_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -949,20 +952,30 @@ fn native_invoke_instruction_observations(
 fn collect_call_site_descriptor_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
 ) -> Vec<VmCallSiteDescriptorEvidence> {
+    let metadata_by_entry_pc = procedure_metadata
+        .values()
+        .map(|metadata| (metadata.entry_pc, metadata))
+        .collect::<BTreeMap<_, _>>();
     let mut evidence = procedure_metadata
         .values()
         .flat_map(|metadata| {
-            metadata
-                .call_sites
-                .iter()
-                .map(|call_site| VmCallSiteDescriptorEvidence {
+            metadata.call_sites.iter().map(|call_site| {
+                let target_metadata = call_site
+                    .target_entry_pc
+                    .and_then(|entry_pc| metadata_by_entry_pc.get(&entry_pc).copied());
+                VmCallSiteDescriptorEvidence {
                     call_site_id: call_site.call_site_id.clone(),
                     caller_procedure_name: metadata.procedure_name.clone(),
                     call_pc: call_site.call_pc,
                     target_name: call_site.target_name.clone(),
                     call_site_descriptor_digest: digest_debug("call-site-descriptor", call_site),
-                    observations: call_site_descriptor_observations(call_site),
-                })
+                    observations: call_site_descriptor_observations(
+                        call_site,
+                        metadata,
+                        target_metadata,
+                    ),
+                }
+            })
         })
         .collect::<Vec<_>>();
     evidence.sort_by(|left, right| {
@@ -975,7 +988,11 @@ fn collect_call_site_descriptor_evidence(
     evidence
 }
 
-fn call_site_descriptor_observations(call_site: &CallSiteDescriptor) -> Vec<String> {
+fn call_site_descriptor_observations(
+    call_site: &CallSiteDescriptor,
+    caller_metadata: &ProcedureRuntimeMetadata,
+    target_metadata: Option<&ProcedureRuntimeMetadata>,
+) -> Vec<String> {
     let mut observations = Vec::new();
     observations.push(format!(
         "target-kind:{}",
@@ -991,7 +1008,11 @@ fn call_site_descriptor_observations(call_site: &CallSiteDescriptor) -> Vec<Stri
         debug_token(&call_site.default_member_policy)
     ));
     for argument in &call_site.arguments {
-        observations.extend(call_site_argument_observations(argument));
+        observations.extend(call_site_argument_observations(
+            argument,
+            caller_metadata,
+            target_metadata,
+        ));
     }
     if let Some(return_value) = &call_site.return_value {
         observations.push(if return_value.copyout_required {
@@ -1006,7 +1027,11 @@ fn call_site_descriptor_observations(call_site: &CallSiteDescriptor) -> Vec<Stri
     observations
 }
 
-fn call_site_argument_observations(argument: &ArgumentBindingDescriptor) -> Vec<String> {
+fn call_site_argument_observations(
+    argument: &ArgumentBindingDescriptor,
+    caller_metadata: &ProcedureRuntimeMetadata,
+    target_metadata: Option<&ProcedureRuntimeMetadata>,
+) -> Vec<String> {
     let name = argument
         .parameter_name
         .as_deref()
@@ -1048,7 +1073,77 @@ fn call_site_argument_observations(argument: &ArgumentBindingDescriptor) -> Vec<
     if argument.binding_kind == ArgumentBindingKindDescriptor::ByRefExpressionTemp {
         observations.push(format!("arg:{name}:no-writeback-temp"));
     }
+    if target_metadata
+        .and_then(|target_metadata| {
+            selected_long_to_double_byval_call_entry_slots(
+                argument,
+                caller_metadata,
+                target_metadata,
+            )
+        })
+        .is_some()
+    {
+        observations.push(format!(
+            "arg:{name}:coercion-id={SELECTED_CALL_BYVAL_COERCION_ID}"
+        ));
+        observations.push(format!(
+            "arg:{name}:coercion-helper-id={SELECTED_CALL_BYVAL_NUMERIC_WIDEN_ID}"
+        ));
+        observations.push(format!(
+            "arg:{name}:runtime-helper={SELECTED_CALL_BYVAL_RUNTIME_HELPER_ID}"
+        ));
+    }
     observations
+}
+
+fn selected_long_to_double_byval_call_entry_slots(
+    argument: &ArgumentBindingDescriptor,
+    caller_metadata: &ProcedureRuntimeMetadata,
+    target_metadata: &ProcedureRuntimeMetadata,
+) -> Option<(usize, usize)> {
+    if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy
+        || argument.expression_kind != ArgumentExpressionKindDescriptor::Variable
+    {
+        return None;
+    }
+    let source_slot = argument.source_slot?;
+    let parameter_slot = argument.parameter_slot?;
+    let parameter = target_metadata
+        .signature
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.slot == Some(parameter_slot)
+                && argument
+                    .parameter_index
+                    .map_or(true, |index| parameter.index == index)
+        })?;
+    if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal
+        || parameter.declared_type != VbaTypeId::Double
+    {
+        return None;
+    }
+    let caller_slot = caller_metadata
+        .slots
+        .iter()
+        .find(|slot| slot.slot == source_slot)?;
+    if caller_slot.kind != ProcedureRuntimeSlotKind::Local
+        || caller_slot.declared_type != VbaTypeId::Long
+        || caller_slot.carrier != RuntimeCarrierKind::I32
+    {
+        return None;
+    }
+    let callee_slot = target_metadata
+        .slots
+        .iter()
+        .find(|slot| slot.slot == parameter_slot)?;
+    if callee_slot.kind != ProcedureRuntimeSlotKind::Parameter
+        || callee_slot.declared_type != VbaTypeId::Double
+        || callee_slot.carrier != RuntimeCarrierKind::F64
+    {
+        return None;
+    }
+    Some((parameter_slot, source_slot))
 }
 
 fn optional_default_token(default_value: &OptionalDefaultValue) -> String {
@@ -2232,7 +2327,7 @@ impl Vm {
         let mut actions = Vec::new();
         for argument in &call_site.arguments {
             let Some((parameter_slot, source_slot)) =
-                Self::selected_long_to_double_byval_call_entry_slots(
+                selected_long_to_double_byval_call_entry_slots(
                     argument,
                     caller_metadata,
                     target_metadata,
@@ -2280,56 +2375,6 @@ impl Vm {
         self.procedure_runtime_metadata
             .values()
             .find(|metadata| metadata.entry_pc == entry_pc)
-    }
-
-    fn selected_long_to_double_byval_call_entry_slots(
-        argument: &ArgumentBindingDescriptor,
-        caller_metadata: &ProcedureRuntimeMetadata,
-        target_metadata: &ProcedureRuntimeMetadata,
-    ) -> Option<(usize, usize)> {
-        if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy
-            || argument.expression_kind != ArgumentExpressionKindDescriptor::Variable
-        {
-            return None;
-        }
-        let source_slot = argument.source_slot?;
-        let parameter_slot = argument.parameter_slot?;
-        let parameter = target_metadata
-            .signature
-            .parameters
-            .iter()
-            .find(|parameter| {
-                parameter.slot == Some(parameter_slot)
-                    && argument
-                        .parameter_index
-                        .map_or(true, |index| parameter.index == index)
-            })?;
-        if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal
-            || parameter.declared_type != VbaTypeId::Double
-        {
-            return None;
-        }
-        let caller_slot = caller_metadata
-            .slots
-            .iter()
-            .find(|slot| slot.slot == source_slot)?;
-        if caller_slot.kind != ProcedureRuntimeSlotKind::Local
-            || caller_slot.declared_type != VbaTypeId::Long
-            || caller_slot.carrier != RuntimeCarrierKind::I32
-        {
-            return None;
-        }
-        let callee_slot = target_metadata
-            .slots
-            .iter()
-            .find(|slot| slot.slot == parameter_slot)?;
-        if callee_slot.kind != ProcedureRuntimeSlotKind::Parameter
-            || callee_slot.declared_type != VbaTypeId::Double
-            || callee_slot.carrier != RuntimeCarrierKind::F64
-        {
-            return None;
-        }
-        Some((parameter_slot, source_slot))
     }
 
     fn descriptor_declared_array_bound(

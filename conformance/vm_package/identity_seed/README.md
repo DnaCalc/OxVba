@@ -45,7 +45,10 @@ observes `VarType=5`. The remaining current VM limitation in this row is
 Optional `Variant`: the descriptor says the missing policy is
 `VariantMissingError448` while current VM lowering still materializes a default
 local observed by the fixture as `VarType=2`. That gap is not treated as
-VBA-compatible missing-argument behavior.
+VBA-compatible missing-argument behavior. The call-site evidence also records
+the selected table row ids for the behavior-driving call-entry coercion:
+`COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
+helper `oxvba_runtime::coerce_to`.
 
 `VMR04_BYREF_EXPRESSION_FORMS` narrows the ByRef expression evidence to
 currently VM-runnable source forms: direct variable alias/writeback,

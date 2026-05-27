@@ -630,8 +630,8 @@ Current implementation anchors:
   behavior. VMR-04 fixture rows add call-site
   descriptor evidence for ByRef alias/writeback, ByRef expression temp,
   ByVal copy with the selected package-backed declared-`Double` call-entry
-  coercion shape, Optional default, Optional `Variant` missing-policy metadata,
-  and empty/non-empty `ParamArray`
+  coercion shape and its selected coercion/helper row ids, Optional default,
+  Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
   shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
   dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
   carrier facts, package-backed rank-1 fixed/static `LBound`/`UBound`
