@@ -21,6 +21,8 @@ does not implement JIT execution or activate Cranelift.
   [`../spec/BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](../spec/BYTECODE_VM_SEMANTIC_CONTRACT_V1.md)
 - Semantic tables and binding:
   [`../spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](../spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md)
+- VMR-06 first behavior selection:
+  [`../spec/VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md`](../spec/VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md)
 - Type system:
   [`../spec/VBA_TYPE_SYSTEM_V1.md`](../spec/VBA_TYPE_SYSTEM_V1.md)
 - Expression/call semantics:
@@ -64,6 +66,12 @@ The rollout maps this workset into:
 The first active execution path is still metadata/evidence first. VMR-06 beads
 must not start until their descriptor fixtures and gap classifications are in
 place.
+
+The first VMR-06 behavior selection is now documented as
+`VMR06-CALL-BYVAL-COERCE-001`: descriptor-driven call-entry Let coercion for a
+direct `Long` argument passed to a declared `Double ByVal` parameter. The
+selection record is a gate for implementation beads; it is not itself the
+behavior change.
 
 ## Review Findings And Repairs
 

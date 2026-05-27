@@ -17,6 +17,7 @@ Current draft set:
 - [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md) (`working-draft`): package fact-to-implementation map and gap taxonomy across bytecode, metadata, VM, runtime, COM/native, and evidence surfaces.
 - [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md) (`working-draft`): bytecode family semantic catalog shape, VM package consumption contract, and VM evidence schema.
 - [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md) (`working-draft`): machine-readable coercion/operator/call binding, slot lifecycle/cleanup, and object/member binding table plan.
+- [`VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md`](VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md) (`working-draft`): first VMR-06 behavior-affecting VM selection, scoped to descriptor-driven ByVal call-entry coercion.
 - [`NATIVE_READY_VALUE_SUBSTRATE_V1.md`](NATIVE_READY_VALUE_SUBSTRATE_V1.md) (`working-draft`): canonical native-ready value/type substrate target for `Variant`, exact numeric carriers, UDT descriptors, and ABI materialization boundaries.
 - [`NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md`](NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md) (`working-draft`): shared correctness/performance result schema for VM, JIT, wrapper, and future native runners.
 - [`HAL_DESIGN_DRAFT.md`](HAL_DESIGN_DRAFT.md) (`design-draft`): scope, principles, profile targets, and staged design plan for the Host Abstraction Layer.
