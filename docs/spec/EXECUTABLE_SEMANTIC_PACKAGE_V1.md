@@ -11,6 +11,8 @@ Completion and VM strengthening references:
 [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md),
 [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md),
 [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md)
+Completion workset:
+[`../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md)
 
 ## Purpose
 
@@ -128,6 +130,9 @@ digest, all facts needed to execute and lower a project:
   diagnostics;
 - error-state maps, `On Error` targets, resume targets, source/bytecode maps,
   and debug/profiling identities;
+- error transition descriptors for enabled-vs-active handlers, fault-site
+  tracking, `Err` snapshot/reset behavior, handler unwinding, fallible operation
+  edges, and host/COM/native error projection;
 - helper ABI version requirements and semantic helper categories used by the
   bytecode;
 - runtime carrier/layout version and package digest for cache and evidence
@@ -145,10 +150,50 @@ digest, all facts needed to execute and lower a project:
   VARIANT projection. It is not the universal internal carrier for JIT planning.
 - COM/native descriptors are part of the semantic package, not ambient runtime
   state discovered by generated code.
+- VBA errors are executable control flow plus mutable runtime state. They are
+  not merely diagnostics, and the JIT must not infer or reinterpret them from
+  helper failures.
 - If a backend cannot legally execute a package feature, it reports a stable
   unsupported/deopt diagnostic. It must not silently choose a different
   semantic path.
 - Package digests must cover every fact that can change execution or lowering.
+
+## VBA Error Semantics Boundary
+
+The executable semantic package must model VBA error behavior as a state
+machine over the current procedure frame, caller frames, mutable `Err` fields,
+fallible operations, cleanup obligations, and host/boundary projections.
+
+At minimum, package-owned error descriptors must be able to represent:
+
+- per-procedure error mode: no enabled handler, `On Error Resume Next`,
+  `On Error GoTo <label>`, and disabled handling after `On Error GoTo 0`;
+- enabled handler versus active handler state, including the rule that an error
+  raised while the current handler is active must search caller frames for an
+  enabled but inactive handler before becoming fatal;
+- fault-site and resume-site identity for `Resume`, `Resume Next`, and
+  `Resume <label>` legality;
+- `Err` snapshot fields, default-property reads, explicit `Err.Clear`, and
+  automatic reset points;
+- call-out behavior for `On Error Resume Next`, including the caller-side resume
+  point after a failed call out of the procedure containing the statement;
+- fallible helper, coercion, bounds, allocation, COM, native, host, and cleanup
+  edges that can update `Err`, transfer control, request deopt, or become
+  fatal;
+- boundary projection from COM `HRESULT`/`EXCEPINFO`/`ArgErr`, native
+  return/`LastDLLError` policy, exported-callable error policy, and host
+  capability diagnostics into package-visible state.
+
+This model can be fully described in the package contract, but parity claims
+require evidence. Any uncertain VBA quirk must be recorded as an oracle-needed,
+test-shortcoming, VM-limitation, interop-limitation, or package-metadata gap.
+It must not be filled in by `ProcLoweringIr`, Cranelift lowering, or a helper
+shortcut. The JIT only lowers package-owned error maps and deopt snapshots.
+
+Reference behavior to anchor oracle rows includes Microsoft VBA documentation
+for the [`On Error` statement](https://learn.microsoft.com/en-us/office/vba/Language/Reference/User-Interface-Help/on-error-statement),
+[`Err` object](https://learn.microsoft.com/en-us/office/vba/Language/Reference/user-interface-help/err-object),
+and [`Err.Clear`](https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/clear-method-visual-basic-for-applications).
 
 ## VM Strengthening Contract
 
@@ -178,6 +223,8 @@ The ordered readiness slices and first-batch details live in
 [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md)
 and
 [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md).
+The delivery owner for completing the remaining full typed package is
+[`../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md).
 
 ## Relationship To ProcLoweringIr
 

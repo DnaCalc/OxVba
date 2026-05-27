@@ -179,6 +179,10 @@ descriptor/layout/error/cleanup/interop/export gaps are closed. Those gaps stay
 explicit in the completion map and JIT tracer matrix before later JIT work may
 consume them.
 
+The successor workset for completing the full lossless typed VM metadata bundle
+is
+[`WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md).
+
 ## Verification
 
 Run at least:

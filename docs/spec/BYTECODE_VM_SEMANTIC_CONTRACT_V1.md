@@ -52,7 +52,7 @@ Rows can start at family granularity and split when semantics diverge.
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Property value seed evidence exists; default-member object evidence remains incomplete. |
-| Error flow | `On Error`, Err state, resume target maps | use package error maps and snapshot Err state | Runtime exists; package maps incomplete. |
+| Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Runtime exists; package maps and oracle-backed edge evidence are incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
 | COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
 | Native Declare | ABI descriptor, marshal descriptors, ByRef writeback | route through host/native lane and capture writeback | Seed interop descriptor evidence exists; wider ABI gaps remain. |
@@ -77,6 +77,31 @@ If the VM currently executes a behavior from hardcoded interpreter logic, that
 is acceptable as current truth, but the fact must be classified as
 `implemented-runtime-only` in the completion map until package metadata carries
 it.
+
+### Error Flow Consumption
+
+The VM error lane must treat VBA errors as control flow plus mutable frame and
+`Err` state. VM evidence for package-backed error behavior must record, where
+the fixture reaches those states:
+
+- the current procedure error mode and target label/PC;
+- whether the current frame has an enabled handler and whether that handler is
+  active;
+- the faulting operation, fault PC/source mapping, resume target, and selected
+  `Resume` form;
+- `Err` fields before and after the fault, after `Err.Clear`, after `On Error`
+  statements, and after procedure exit or handler resume points;
+- caller-frame unwinding when a handler is already active;
+- call-out behavior under `On Error Resume Next`;
+- COM/native/host projection fields that feed `Err`, including
+  `HRESULT`/`EXCEPINFO`/`ArgErr` and native return/`LastDLLError` policy where
+  supported;
+- cleanup/deopt state that must be preserved if execution transfers, resumes,
+  or falls back.
+
+Uncertain VBA behavior is an evidence gap, not a backend freedom. The
+completion map must classify those rows explicitly before JIT lowering consumes
+the corresponding error descriptor.
 
 ## First VM Rework Batch
 
