@@ -66,8 +66,8 @@ package evidence named for that tracer.
 
 | Tracer | Entry status | Residual before tracer closure |
 |---|---|---|
-| TB01 Primitive typed scalar loop | Fixture/design ready; executable work blocked on package slot/carrier evidence | Needs declared carrier evidence, `ProcLoweringIr` verifier output, CLIF verifier output, and VM/JIT projected snapshot equality after code exists. |
-| TB02 UDT struct field/copy | Fixture/design ready; executable work blocked on UDT descriptor evidence | Needs UDT descriptor/field-offset evidence, copy-independence evidence, cleanup/deopt materialization, and VM/JIT projected field snapshot equality. |
+| TB01 Primitive typed scalar loop | Fixture/design ready; VM package primitive slot evidence present; executable work still blocked on canonical carrier/layout and verifier evidence | Needs canonical primitive carrier layout facts, operator/coercion descriptor ids, `ProcLoweringIr` verifier output, CLIF verifier output, and VM/JIT projected snapshot equality after code exists. |
+| TB02 UDT struct field/copy | Fixture/design ready; VM package UDT descriptor and selected lifecycle evidence present; executable work still blocked on offset/layout and cleanup/deopt evidence | Needs field-offset/layout evidence, copy-independence evidence, explicit cleanup/deopt materialization, and VM/JIT projected field snapshot equality. |
 | TB03 Error routing | Fixture/design ready; executable work blocked on error-frame package evidence | Needs failing helper evidence, `Err` state equality, and resume target equality. |
 | TB04 BSTR lifetime | Fixture/design ready; executable work blocked on cleanup/lifetime package evidence | Needs allocation/release counters and branch/failure/deopt cleanup evidence. |
 | TB05 SAFEARRAY | VM seed exists for store, index, For Each, and bounds metadata; executable work blocked on array package evidence | Runtime bounds-error fixture/evidence is still required before TB05 can close. |

@@ -111,6 +111,16 @@ The tracer matrix separates VM seed status from package readiness:
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb01_primitive_scalar_loop.bas`
 
+Package/VM evidence gate:
+
+- VM package evidence must include package/procedure/bytecode identity and slot
+  descriptor rows for the declared `Long`, `Double`, and `Boolean` slots before
+  `ProcLoweringIr` may consume this tracer.
+- The current package identity seed fixtures provide the first declared
+  primitive slot/carrier evidence; canonical primitive carrier layout
+  descriptors and operator/coercion descriptor ids remain blocking facts before
+  executable JIT work may close TB01.
+
 Required assertions:
 
 - VM and JIT projected slot snapshots match.
@@ -127,6 +137,16 @@ Required assertions:
 
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb02_udt_struct_fields.bas`
+
+Package/VM evidence gate:
+
+- VM package evidence must include nominal `UdtTypeDescriptor` rows, field
+  order/carrier facts, field aliases, copy classification, and lifecycle
+  evidence for owning fields before `ProcLoweringIr` may consume this tracer.
+- The current VM package fixtures provide UDT descriptor evidence and selected
+  BSTR-owning field lifecycle evidence. Field offsets/layout, explicit
+  cleanup/deopt maps, and descriptor-driven UDT field/copy execution remain
+  blocking facts before executable JIT work may close TB02.
 
 Required assertions:
 

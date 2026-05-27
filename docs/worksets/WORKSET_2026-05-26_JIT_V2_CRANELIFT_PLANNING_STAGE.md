@@ -119,7 +119,10 @@ Current planning artifacts:
    complete, but executable tracer work is gated by package/VM evidence for the
    descriptor families it consumes. At minimum, package identity, procedure
    identity, bytecode digest, signature descriptors, and slot descriptors must
-   be visible in VM evidence for the touched fixtures.
+   be visible in VM evidence for the touched fixtures. TB01 additionally gates
+   on declared primitive slot/carrier evidence; TB02 additionally gates on UDT
+   descriptor and owning-field lifecycle evidence before `ProcLoweringIr`
+   consumes those facts.
 
 ## Planning Deliverables
 
@@ -188,17 +191,19 @@ tracer work and not evidence that JIT execution exists.
    - Compile a small arithmetic loop over declared `Long`, `Double`, and
      `Boolean` locals.
    - Acceptance: VM/JIT typed slot snapshots match after projection; primitive
-     carrier layout is documented; helper fallback/deopt is specified; CLIF
-     verifier is required; no unsafe memory flags are used for frame loads or
-     stores; `Variant` is used only for declared `Variant` or VM snapshot
-     materialization.
+     carrier layout is documented; VM package evidence includes the declared
+     primitive slot/carrier facts consumed by `ProcLoweringIr`; helper
+     fallback/deopt is specified; CLIF verifier is required; no unsafe memory
+     flags are used for frame loads or stores; `Variant` is used only for
+     declared `Variant` or VM snapshot materialization.
 2. **UDT struct field/copy path**
    - Compile field assignment, whole-UDT copy, field update, and typed field
      arithmetic over a declared UDT.
    - Acceptance: VM/JIT UDT field snapshots match after projection; struct
      descriptor, field offsets, copy semantics, cleanup, and deopt
-     materialization are documented; no field is boxed as Variant unless the
-     declared field type is `Variant`.
+     materialization are documented; VM package evidence includes UDT
+     descriptor and lifecycle facts consumed by `ProcLoweringIr`; no field is
+     boxed as Variant unless the declared field type is `Variant`.
 3. **Error-routing path**
    - Compile `On Error Resume Next`, `Err.Number`, and a failing helper call.
    - Acceptance: VM/JIT error state, resume target, and slot snapshots match;
