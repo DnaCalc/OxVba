@@ -204,6 +204,10 @@ Required assertions:
   slot value.
 - Current VM seed is hosted because the controlled `OxVba.TestDispatch` object
   is provided by the Rust host test, not by standalone CLI ProgID registration.
+- Current VM package evidence records hosted `CreateObject` and dispatch invoke
+  instruction expectations, runtime selector source, `early_bound=false`, and
+  runtime-owned HRESULT/EXCEPINFO/ArgErr classification. It does not yet prove
+  package-owned boundary projection or cleanup behavior.
 
 ### TB07 Early-Bound COM
 
@@ -218,6 +222,9 @@ Required assertions:
 - Missing arg/failure variants later extend this fixture family before closure.
 - Current VM seed is hosted because typed imported COM binding requires a
   project manifest with an `OxVba` type-library reference.
+- Current VM package evidence records the early-bound dispatch instruction
+  expectation. Imported COM class/interface/member descriptor identity and
+  dispatch-vtable strategy remain package gaps.
 
 ### TB08 Native Declare
 
@@ -233,6 +240,9 @@ Required assertions:
 - General Automation `Variant` and `SAFEARRAY` declared-parameter ABI support is
   a real current VM/native limitation and remains a future tracer-closure
   requirement.
+- Current VM package evidence records `ExternalCallDescriptor` and native
+  invoke facts for library/alias/name, return/parameter tokens, ByRef flags,
+  argument slots, and writeback slots for the supported seed subset.
 - Writeback commits or cancels according to helper status.
 - Cleanup runs for marshalled buffers on success, failure, and deopt.
 

@@ -11,6 +11,9 @@ All tracer bullets have a VM seed path today:
   and `expected_vm_values.csv`;
 - hosted COM/type-library/native fixtures run through
   `cargo test -p oxvba-host --test jit_v2_tracer_vm_seed -- --nocapture`.
+  The hosted TB06 through TB08 tests also assert
+  `VmPackageIdentityEvidence::interop_descriptor_evidence` for the current
+  COM activation/dispatch and native Declare/invoke descriptor expectations.
 
 Authoritative test design:
 `docs/spec/JIT_V2_TRACER_BULLET_TEST_PLAN_V1.md`.

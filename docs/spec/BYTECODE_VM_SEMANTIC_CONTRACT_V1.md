@@ -54,8 +54,8 @@ Rows can start at family granularity and split when semantics diverge.
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Property value seed evidence exists; default-member object evidence remains incomplete. |
 | Error flow | `On Error`, Err state, resume target maps | use package error maps and snapshot Err state | Runtime exists; package maps incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
-| COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Descriptor unification incomplete. |
-| Native Declare | ABI descriptor, marshal descriptors, ByRef writeback | route through host/native lane and capture writeback | Wider ABI gaps remain. |
+| COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
+| Native Declare | ABI descriptor, marshal descriptors, ByRef writeback | route through host/native lane and capture writeback | Seed interop descriptor evidence exists; wider ABI gaps remain. |
 | Exported callable | inbound ABI, return/error policy, cleanup | not first-class VM path yet | Planned. |
 
 ## VM Package Consumption Contract
@@ -142,6 +142,7 @@ cleanup_lifetime_observations
 array_shape_observations
 udt_field_observations
 object_identity_observations
+interop_descriptor_evidence
 interop_observations
 host_policy_observations
 unsupported_diagnostics
@@ -292,6 +293,18 @@ is supplied the compiled project route tables. This is still metadata/evidence
 only: descriptor-driven `As New` activation, default instances, imported COM
 class/interface descriptors, object lifetime cleanup, and object/member call
 binding remain incomplete.
+
+The VMR-05 interop descriptor fixture adds `VmInteropDescriptorEvidence` for
+the hosted TB06 through TB08 COM/native tracer seeds. VM evidence records COM
+`CreateObject` activation instructions, COM dispatch invoke instructions, the
+current early-bound flag, selector source, arity/named-argument counts, and the
+runtime-owned HRESULT/EXCEPINFO/ArgErr classification. It also records current
+native `ExternalCallDescriptor` and invoke instruction facts, including
+library, alias/name, return and parameter type tokens, ByRef flags, argument
+slots, and writeback slots. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr
+projection remains runtime-owned rather than package-unified, and general
+Automation `Variant`/`SAFEARRAY` declared-parameter ABI support remains
+incomplete.
 
 ## Strengthening Rule
 

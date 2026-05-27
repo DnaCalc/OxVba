@@ -18,8 +18,8 @@ use oxvba_compiler::{
     ProjectDynamicParamRoute, ResolvedParameterMechanism, SlotTypeDescriptor, UdtFieldDescriptor,
     UdtTypeDescriptor,
     bytecode::{
-        ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
-        StringCompareMode,
+        ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
+        ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
     },
 };
 use oxvba_hal::{
@@ -183,6 +183,7 @@ impl<'a> VmExecutionPackage<'a> {
         let udt_descriptor_evidence = collect_udt_descriptor_evidence(self.procedure_metadata);
         let object_descriptor_evidence =
             collect_object_descriptor_evidence(self.procedure_metadata);
+        let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -195,6 +196,7 @@ impl<'a> VmExecutionPackage<'a> {
             array_shape_evidence,
             udt_descriptor_evidence,
             object_descriptor_evidence,
+            interop_descriptor_evidence,
         }
     }
 
@@ -288,6 +290,7 @@ pub struct VmPackageIdentityEvidence {
     pub array_shape_evidence: Vec<VmArrayShapeEvidence>,
     pub udt_descriptor_evidence: Vec<VmUdtDescriptorEvidence>,
     pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
+    pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -333,6 +336,14 @@ pub struct VmObjectDescriptorEvidence {
     pub type_name: String,
     pub object_descriptor_id: String,
     pub object_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmInteropDescriptorEvidence {
+    pub interop_kind: String,
+    pub descriptor_id: String,
+    pub descriptor_digest: String,
     pub observations: Vec<String>,
 }
 
@@ -707,6 +718,230 @@ fn sort_object_descriptor_evidence(evidence: &mut [VmObjectDescriptorEvidence]) 
             .then(left.type_name.cmp(&right.type_name))
             .then(left.object_descriptor_id.cmp(&right.object_descriptor_id))
     });
+}
+
+fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDescriptorEvidence> {
+    let mut evidence = bytecode
+        .external_call_descriptors
+        .iter()
+        .map(|descriptor| {
+            let descriptor_id = format!("native:{}", descriptor.descriptor_id);
+            VmInteropDescriptorEvidence {
+                interop_kind: "native-declare".to_string(),
+                descriptor_id,
+                descriptor_digest: digest_debug("native-declare-descriptor", descriptor),
+                observations: external_call_descriptor_observations(descriptor),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for (pc, instruction) in bytecode.instructions.iter().enumerate() {
+        match instruction {
+            Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
+                evidence.push(VmInteropDescriptorEvidence {
+                    interop_kind: "com-createobject".to_string(),
+                    descriptor_id: format!("com-createobject@pc:{pc}"),
+                    descriptor_digest: digest_debug("com-createobject-instruction", instruction),
+                    observations: vec![
+                        "kind=com-createobject".to_string(),
+                        "boundary=host-com-activation".to_string(),
+                        "support=vmrunnablehosted".to_string(),
+                        format!("dst-slot={dst}"),
+                        format!("prog-id-slot={prog_id}"),
+                    ],
+                });
+            }
+            Instruction::IntrinsicDispatchInvokeHost {
+                dst,
+                object,
+                member,
+                args,
+                early_bound,
+                com_member,
+            } => {
+                evidence.push(VmInteropDescriptorEvidence {
+                    interop_kind: "com-dispatch-invoke".to_string(),
+                    descriptor_id: format!("com-dispatch@pc:{pc}"),
+                    descriptor_digest: digest_debug("com-dispatch-instruction", instruction),
+                    observations: com_dispatch_instruction_observations(
+                        *dst,
+                        *object,
+                        *member,
+                        args,
+                        *early_bound,
+                        com_member.as_ref(),
+                    ),
+                });
+            }
+            Instruction::IntrinsicInvokeSymbolHost {
+                dst,
+                descriptor_id,
+                symbol,
+                args,
+                writeback_slots,
+            } => {
+                evidence.push(VmInteropDescriptorEvidence {
+                    interop_kind: "native-invoke".to_string(),
+                    descriptor_id: format!("native-invoke:{descriptor_id}@pc:{pc}"),
+                    descriptor_digest: digest_debug("native-invoke-instruction", instruction),
+                    observations: native_invoke_instruction_observations(
+                        *dst,
+                        *descriptor_id,
+                        symbol,
+                        args,
+                        writeback_slots,
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    evidence.sort_by(|left, right| {
+        left.interop_kind
+            .cmp(&right.interop_kind)
+            .then(left.descriptor_id.cmp(&right.descriptor_id))
+    });
+    evidence
+}
+
+fn external_call_descriptor_observations(descriptor: &ExternalCallDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        "kind=native-declare".to_string(),
+        format!("descriptor-id=native:{}", descriptor.descriptor_id),
+        format!(
+            "declared-name={}",
+            descriptor.declared_name.to_ascii_lowercase()
+        ),
+        format!("library={}", descriptor.library.to_ascii_lowercase()),
+        format!("alias={}", descriptor.alias.to_ascii_lowercase()),
+        format!("ordinal-alias={}", descriptor.ordinal_alias),
+        format!("symbol={}", debug_token(&descriptor.symbol)),
+        format!(
+            "marshal-lane={}",
+            descriptor.marshal_lane.to_ascii_lowercase()
+        ),
+        format!(
+            "calling-convention={}",
+            descriptor.calling_convention.to_ascii_lowercase()
+        ),
+        format!(
+            "selection-policy={}",
+            descriptor.selection_policy.to_ascii_lowercase()
+        ),
+        format!("param-count={}", descriptor.param_count),
+        format!(
+            "return-type={}",
+            descriptor
+                .return_type
+                .as_ref()
+                .map(debug_token)
+                .unwrap_or_else(|| "void".to_string())
+        ),
+        "boundary=host-native-declare".to_string(),
+        "support=vmrunnablehosted".to_string(),
+    ];
+    for (index, param_type) in descriptor.param_types.iter().enumerate() {
+        observations.push(format!("param:{index}:type={}", debug_token(param_type)));
+        observations.push(format!(
+            "param:{index}:byref={}",
+            descriptor.param_by_ref.get(index).copied().unwrap_or(false)
+        ));
+    }
+    observations
+}
+
+fn com_dispatch_instruction_observations(
+    dst: usize,
+    object: usize,
+    member: usize,
+    args: &[oxvba_compiler::bytecode::DispatchInvokeArg],
+    early_bound: bool,
+    com_member: Option<&oxvba_compiler::bytecode::ComMemberCallDescriptor>,
+) -> Vec<String> {
+    let named_arg_count = args.iter().filter(|arg| arg.name.is_some()).count();
+    let mut observations = vec![
+        "kind=com-dispatch-invoke".to_string(),
+        "boundary=host-com-dispatch".to_string(),
+        "support=vmrunnablehosted".to_string(),
+        format!("early-bound={early_bound}"),
+        format!("dst-slot={dst}"),
+        format!("object-slot={object}"),
+        format!("member-slot={member}"),
+        format!("arg-count={}", args.len()),
+        format!("named-arg-count={named_arg_count}"),
+        "hresult-excepinfo-argerr=runtime-owned".to_string(),
+    ];
+    if let Some(com_member) = com_member {
+        observations.push(format!(
+            "selector={}",
+            com_member_selector_token(&com_member.selector)
+        ));
+        observations.push(format!("descriptor-arity={}", com_member.arity));
+    } else {
+        observations.push("selector=runtime-name-slot".to_string());
+        observations.push("descriptor-arity=runtime-args".to_string());
+    }
+    for (index, arg) in args.iter().enumerate() {
+        observations.push(format!(
+            "arg:{index}:source={}",
+            if arg.slot.is_some() {
+                "slot-known"
+            } else {
+                "slot-missing"
+            }
+        ));
+        if let Some(name) = &arg.name {
+            observations.push(format!("arg:{index}:name={}", name.to_ascii_lowercase()));
+        }
+    }
+    observations
+}
+
+fn com_member_selector_token(selector: &ComMemberSelectorDescriptor) -> String {
+    match selector {
+        ComMemberSelectorDescriptor::DispatchId(dispatch_id) => {
+            format!("dispid:{dispatch_id}")
+        }
+        ComMemberSelectorDescriptor::Name(name) => format!("name:{}", name.to_ascii_lowercase()),
+    }
+}
+
+fn native_invoke_instruction_observations(
+    dst: usize,
+    descriptor_id: u32,
+    symbol: &oxvba_runtime::DynLinkSymbol,
+    args: &[usize],
+    writeback_slots: &[ExternalCallWriteback],
+) -> Vec<String> {
+    let mut observations = vec![
+        "kind=native-invoke".to_string(),
+        "boundary=host-native-invoke".to_string(),
+        "support=vmrunnablehosted".to_string(),
+        format!("descriptor-ref=native:{descriptor_id}"),
+        format!("symbol={}", debug_token(symbol)),
+        format!("dst-slot={dst}"),
+        format!("arg-count={}", args.len()),
+        format!("writeback-count={}", writeback_slots.len()),
+    ];
+    for (index, slot) in args.iter().enumerate() {
+        observations.push(format!("arg:{index}:slot={slot}"));
+    }
+    for (index, writeback) in writeback_slots.iter().enumerate() {
+        observations.push(format!(
+            "writeback:{index}:arg-index={}",
+            writeback.arg_index
+        ));
+        observations.push(format!(
+            "writeback:{index}:source-slot={}",
+            writeback.source_slot
+        ));
+        observations.push(format!(
+            "writeback:{index}:kind={}",
+            debug_token(&writeback.kind)
+        ));
+    }
+    observations
 }
 
 fn collect_call_site_descriptor_evidence(

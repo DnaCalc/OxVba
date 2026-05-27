@@ -10,6 +10,8 @@ use oxvba_compiler::{
 };
 #[cfg(target_os = "windows")]
 use oxvba_hal::model::HostPolicy;
+#[cfg(target_os = "windows")]
+use oxvba_host::HostVariantSnapshotWithPackageIdentity;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -35,11 +37,13 @@ fn run_source_vm(source: &str) -> Vec<Variant> {
 }
 
 #[cfg(target_os = "windows")]
-fn run_windows_hosted_source_vm(source: &str) -> Vec<Variant> {
+fn run_windows_hosted_source_vm_with_package(
+    source: &str,
+) -> HostVariantSnapshotWithPackageIdentity {
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_source_with_variant_snapshot_phased(source)
+        .execute_source_with_variant_snapshot_and_package_identity_phased(source)
         .expect("JIT v2 Windows host-backed VM seed source should execute")
 }
 
@@ -61,12 +65,39 @@ fn manifest_with_oxvba_typelib(source: &str) -> ProjectManifest {
 }
 
 #[cfg(target_os = "windows")]
-fn run_windows_hosted_project_vm(manifest: &ProjectManifest) -> Vec<Variant> {
+fn run_windows_hosted_project_vm_with_package(
+    manifest: &ProjectManifest,
+) -> HostVariantSnapshotWithPackageIdentity {
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_project_with_variant_snapshot_phased(manifest)
+        .execute_project_with_variant_snapshot_and_package_identity_phased(manifest)
         .expect("JIT v2 Windows host-backed VM seed project should execute")
+}
+
+#[cfg(target_os = "windows")]
+fn interop_descriptor_observation_tokens(
+    snapshot: &HostVariantSnapshotWithPackageIdentity,
+) -> Vec<String> {
+    snapshot
+        .package_identity
+        .interop_descriptor_evidence
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor
+                .observations
+                .iter()
+                .map(move |observation| format!("{}:{observation}", descriptor.descriptor_id))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn assert_interop_observation(tokens: &[String], expected: &str) {
+    assert!(
+        tokens.iter().any(|token| token.contains(expected)),
+        "expected interop descriptor evidence containing `{expected}`; got: {tokens:?}"
+    );
 }
 
 #[test]
@@ -150,7 +181,10 @@ fn tb05_safearray_vm_seed_runs() {
 #[cfg(target_os = "windows")]
 #[test]
 fn tb06_late_bound_com_vm_seed_runs_with_hosted_controlled_com() {
-    let out = run_windows_hosted_source_vm(&fixture_source("tb06_late_bound_com_resume_next.bas"));
+    let snapshot = run_windows_hosted_source_vm_with_package(&fixture_source(
+        "tb06_late_bound_com_resume_next.bas",
+    ));
+    let out = &snapshot.values;
 
     assert!(
         out[0]
@@ -164,6 +198,14 @@ fn tb06_late_bound_com_vm_seed_runs_with_hosted_controlled_com() {
         out[3].as_i32().is_some_and(|err| err != 0),
         "RaiseException under Resume Next should set Err.Number, got {out:?}"
     );
+
+    let interop_tokens = interop_descriptor_observation_tokens(&snapshot);
+    assert_interop_observation(&interop_tokens, "kind=com-createobject");
+    assert_interop_observation(&interop_tokens, "boundary=host-com-activation");
+    assert_interop_observation(&interop_tokens, "kind=com-dispatch-invoke");
+    assert_interop_observation(&interop_tokens, "early-bound=false");
+    assert_interop_observation(&interop_tokens, "selector=runtime-name-slot");
+    assert_interop_observation(&interop_tokens, "hresult-excepinfo-argerr=runtime-owned");
 }
 
 #[cfg(target_os = "windows")]
@@ -171,7 +213,8 @@ fn tb06_late_bound_com_vm_seed_runs_with_hosted_controlled_com() {
 fn tb07_early_bound_com_vm_seed_runs_with_typelib_reference() {
     let source = fixture_source("tb07_early_bound_com_typelib.bas");
     let manifest = manifest_with_oxvba_typelib(&source);
-    let out = run_windows_hosted_project_vm(&manifest);
+    let snapshot = run_windows_hosted_project_vm_with_package(&manifest);
+    let out = &snapshot.values;
 
     assert!(
         out[0]
@@ -185,12 +228,21 @@ fn tb07_early_bound_com_vm_seed_runs_with_typelib_reference() {
         Variant::from_bool(true),
         "typed Exists(42) mismatch"
     );
+
+    let interop_tokens = interop_descriptor_observation_tokens(&snapshot);
+    assert_interop_observation(&interop_tokens, "kind=com-dispatch-invoke");
+    assert_interop_observation(&interop_tokens, "early-bound=true");
+    assert_interop_observation(&interop_tokens, "boundary=host-com-dispatch");
+    assert_interop_observation(&interop_tokens, "hresult-excepinfo-argerr=runtime-owned");
 }
 
 #[cfg(target_os = "windows")]
 #[test]
 fn tb08_native_declare_vm_seed_runs_on_current_windows_native_lane() {
-    let out = run_windows_hosted_source_vm(&fixture_source("tb08_native_declare_shared_abi.bas"));
+    let snapshot = run_windows_hosted_source_vm_with_package(&fixture_source(
+        "tb08_native_declare_shared_abi.bas",
+    ));
+    let out = &snapshot.values;
 
     assert_eq!(out[0], Variant::from_i32(5), "BSTR length mismatch");
     assert!(
@@ -209,6 +261,16 @@ fn tb08_native_declare_vm_seed_runs_on_current_windows_native_lane() {
         "Variant pointer exposure mismatch"
     );
     assert_eq!(out[5], Variant::from_i32(7), "aggregate result mismatch");
+
+    let interop_tokens = interop_descriptor_observation_tokens(&snapshot);
+    assert_interop_observation(&interop_tokens, "kind=native-declare");
+    assert_interop_observation(&interop_tokens, "declared-name=lstrlenw");
+    assert_interop_observation(&interop_tokens, "declared-name=varr8fromi4");
+    assert_interop_observation(&interop_tokens, "library=kernel32");
+    assert_interop_observation(&interop_tokens, "library=oleaut32");
+    assert_interop_observation(&interop_tokens, "param:1:byref=true");
+    assert_interop_observation(&interop_tokens, "kind=native-invoke");
+    assert_interop_observation(&interop_tokens, "writeback:0:kind=byrefvalue");
 }
 
 #[test]
