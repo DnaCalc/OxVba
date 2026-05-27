@@ -35,18 +35,24 @@ pub use emit::{
     ArrayShapeDescriptor, ArrayStorageKind, CallDiagnosticKindDescriptor,
     CallDiagnosticOwnerDescriptor, CallDiagnosticPolicyDescriptor, CallInvocationSyntaxDescriptor,
     CallReturnDescriptor, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
-    CarrierLayoutKind, DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor,
-    ObjectActivationDescriptor, ObjectDefaultMemberDescriptor, ObjectDescriptorSupport,
-    ObjectEventBindingDescriptor, ObjectInstanceDescriptor, ObjectTypeDescriptor,
-    ObjectTypeDescriptorKind, OptionalDefaultValue, OptionalMissingStatePolicy,
-    OptionalParameterDescriptor, ParamArrayBindingDescriptor, ParamArrayDescriptor,
-    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    ProcedureSignatureDescriptor, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
-    SlotRole, SlotTypeDescriptor, SourceParameterMechanism, UdtCleanupDescriptor,
-    UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor, UdtInstanceDescriptor,
-    UdtStorageKind, UdtTypeDescriptor, ValueStateDescriptor, ValueStateKind, ValueStateSource,
-    VbaTypeId, bound_type_to_declare_param_type,
+    CarrierLayoutKind, CoercionDescriptor, CoercionKindDescriptor, CoercionStaticStatusDescriptor,
+    DefaultMemberPolicyDescriptor, EvaluationOrderDescriptor, ExpressionClassificationDescriptor,
+    ExpressionSemanticsDescriptor, ExpressionSourceContextDescriptor,
+    ImplicitCurrentObjectDescriptor, MemberDispatchKindDescriptor, NameBindingDescriptor,
+    NameBindingKindDescriptor, NameBindingPrecedenceDescriptor, ObjectActivationDescriptor,
+    ObjectDefaultMemberDescriptor, ObjectDescriptorSupport, ObjectEventBindingDescriptor,
+    ObjectInstanceDescriptor, ObjectMemberBindingDescriptor, ObjectMemberKindDescriptor,
+    ObjectTypeDescriptor, ObjectTypeDescriptorKind, OperatorCompareModeDescriptor,
+    OperatorFamilyDescriptor, OperatorSemanticsDescriptor, OptionalDefaultValue,
+    OptionalMissingStatePolicy, OptionalParameterDescriptor, ParamArrayBindingDescriptor,
+    ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode, ParameterRole,
+    ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
+    RuntimeCarrierKind, RuntimeFailurePolicyDescriptor, SlotInitialState, SlotRole,
+    SlotTypeDescriptor, SourceParameterMechanism, UdtCleanupDescriptor, UdtCopySemanticsDescriptor,
+    UdtFieldAliasDescriptor, UdtFieldDescriptor, UdtInstanceDescriptor, UdtStorageKind,
+    UdtTypeDescriptor, ValueStateDescriptor, ValueStateKind, ValueStateSource,
+    VbaOperatorDescriptor, VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -153,11 +159,14 @@ mod tests {
     use super::{
         ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, Bytecode,
         CallDiagnosticKindDescriptor, CallDiagnosticOwnerDescriptor,
-        CallInvocationSyntaxDescriptor, CallTargetKindDescriptor, DefaultMemberPolicyDescriptor,
-        Instruction, OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
+        CallInvocationSyntaxDescriptor, CallTargetKindDescriptor, CoercionKindDescriptor,
+        DefaultMemberPolicyDescriptor, EvaluationOrderDescriptor,
+        ExpressionClassificationDescriptor, Instruction, NameBindingKindDescriptor,
+        ObjectMemberKindDescriptor, OperatorCompareModeDescriptor, OperatorFamilyDescriptor,
+        OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
         ParameterPassingMode, ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
-        SourceParameterMechanism, ValueStateKind, VbaTypeId, compile,
+        SourceParameterMechanism, ValueStateKind, VbaOperatorDescriptor, VbaTypeId, compile,
         compile_with_runtime_metadata,
     };
     use crate::bytecode::{
@@ -895,6 +904,144 @@ mod tests {
                     == CallDiagnosticKindDescriptor::MissingRequiredArgument
                     && policy.owner == CallDiagnosticOwnerDescriptor::CompilerCurrent)),
             "current invalid-call diagnostics should remain compiler-owned package policy"
+        );
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors() {
+        let source = "Option Compare Text\n\
+                      Sub Main()\n\
+                      Dim x As Long\n\
+                      Dim y As Double\n\
+                      Dim s As String\n\
+                      x = 1\n\
+                      y = x\n\
+                      y = y + x\n\
+                      Dim v As Variant\n\
+                      v = Null + 1\n\
+                      v = Empty + 1\n\
+                      v = CVErr(7) + 1\n\
+                      s = \"a\" & CStr(x)\n\
+                      If Null = 0 Or Empty = \"\" Then\n\
+                      s = s\n\
+                      End If\n\
+                      If x > 0 And y > 0 Then\n\
+                      s = s & vbNullString\n\
+                      End If\n\
+                      If x Then\n\
+                      s = s\n\
+                      End If\n\
+                      Call TakeDouble(x)\n\
+                      End Sub\n\
+                      Sub TakeDouble(ByVal value As Double)\n\
+                      End Sub";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let main = metadata
+            .get("main")
+            .expect("Main metadata should be present");
+
+        assert!(main.expression_semantics.iter().any(|descriptor| {
+            descriptor.classification == ExpressionClassificationDescriptor::Variable
+        }));
+        assert!(main.expression_semantics.iter().any(|descriptor| {
+            descriptor.classification == ExpressionClassificationDescriptor::OperatorResult
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-CONCAT-AMPERSAND"
+                && descriptor.operator == VbaOperatorDescriptor::Concatenate
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-BOOL-NOT-AND-OR"
+                && descriptor.evaluation_order == EvaluationOrderDescriptor::LeftToRightEager
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-CMP-NULL"
+                && descriptor
+                    .result_value_states
+                    .contains(&ValueStateKind::Null)
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-CMP-EMPTY-STRING"
+                && descriptor
+                    .result_value_states
+                    .contains(&ValueStateKind::Empty)
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-ADD-I32-COMPAT"
+                && descriptor
+                    .result_value_states
+                    .contains(&ValueStateKind::Error)
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.operator_id == "OP-IIF-EAGER-DEFERRED"
+                && descriptor.evaluation_order == EvaluationOrderDescriptor::UnsupportedDeferred
+        }));
+        assert!(main.operator_semantics.iter().any(|descriptor| {
+            descriptor.family == OperatorFamilyDescriptor::Comparison
+                && descriptor.compare_mode == Some(OperatorCompareModeDescriptor::Text)
+        }));
+        assert!(main.coercions.iter().any(|descriptor| {
+            descriptor.coercion_id == "COERCE-LET-NUMERIC-WIDEN"
+                && descriptor.kind == CoercionKindDescriptor::Let
+        }));
+        assert!(main.coercions.iter().any(|descriptor| {
+            descriptor.coercion_id == "COERCE-CALL-BYVAL-DECLARED-TARGET"
+                && descriptor.kind == CoercionKindDescriptor::CallLet
+                && descriptor.source_declared_type == VbaTypeId::Long
+                && descriptor.target_declared_type == VbaTypeId::Double
+        }));
+        assert!(
+            main.coercions
+                .iter()
+                .any(|descriptor| { descriptor.coercion_id == "COERCE-VM-TRUTHINESS" })
+        );
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_carries_name_and_property_member_descriptors() {
+        let source = "Sub Main()\n\
+                      Dim x As Long\n\
+                      x = 1\n\
+                      Value = x\n\
+                      End Sub\n\
+                      Property Get Value() As Long\n\
+                      Value = 1\n\
+                      End Property\n\
+                      Property Let Value(ByRef newValue As Long)\n\
+                      End Property";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let all_metadata = metadata.values().collect::<Vec<_>>();
+        let main = metadata
+            .get("main")
+            .expect("Main metadata should be present");
+
+        assert!(main.name_bindings.iter().any(|descriptor| {
+            descriptor.binding_id == "NAME-BINDING-PROCEDURE-POLICY"
+                && descriptor.binding_kind == NameBindingKindDescriptor::Policy
+                && descriptor
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic == "with-context=deferred")
+        }));
+        assert!(all_metadata.iter().any(|metadata| {
+            metadata.name_bindings.iter().any(|descriptor| {
+                descriptor.binding_id == "NAME-BINDING-PROPERTY-ACCESSOR"
+                    && descriptor.name == "value"
+            })
+        }));
+        assert!(all_metadata.iter().any(|metadata| {
+            metadata.object_member_bindings.iter().any(|descriptor| {
+                descriptor.binding_id == "BIND-PROPERTY-LET-VALUE"
+                    && descriptor.member_kind == ObjectMemberKindDescriptor::PropertyLet
+                    && descriptor.argument_binding_policy == "value-param-is-runtime-ByVal"
+            })
+        }));
+        assert!(
+            main.coercions
+                .iter()
+                .any(|descriptor| { descriptor.coercion_id == "COERCE-PROPERTY-VALUE-BYVAL" })
         );
     }
 

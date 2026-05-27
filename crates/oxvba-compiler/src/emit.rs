@@ -147,6 +147,11 @@ pub struct ProcedureRuntimeMetadata {
     pub object_types: Vec<ObjectTypeDescriptor>,
     pub carrier_layouts: Vec<CarrierLayoutDescriptor>,
     pub value_states: Vec<ValueStateDescriptor>,
+    pub expression_semantics: Vec<ExpressionSemanticsDescriptor>,
+    pub operator_semantics: Vec<OperatorSemanticsDescriptor>,
+    pub coercions: Vec<CoercionDescriptor>,
+    pub name_bindings: Vec<NameBindingDescriptor>,
+    pub object_member_bindings: Vec<ObjectMemberBindingDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -204,6 +209,240 @@ pub enum ValueStateSource {
     OptionalParameter,
     IntrinsicConstant,
     DeclaredTypeExtension,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ExpressionSemanticsDescriptor {
+    pub descriptor_id: String,
+    pub expression_id: String,
+    pub classification: ExpressionClassificationDescriptor,
+    pub declared_type: VbaTypeId,
+    pub value_states: Vec<ValueStateKind>,
+    pub carrier_hint: RuntimeCarrierKind,
+    pub default_member_policy: DefaultMemberPolicyDescriptor,
+    pub source_context: ExpressionSourceContextDescriptor,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ExpressionClassificationDescriptor {
+    Unknown,
+    Literal,
+    Variable,
+    ArrayElement,
+    FunctionResult,
+    IntrinsicResult,
+    OperatorResult,
+    ComparisonResult,
+    TruthyPredicate,
+    Temporary,
+    PointerBuffer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ExpressionSourceContextDescriptor {
+    Unknown,
+    AssignmentRhs,
+    RuntimeArrayIndex,
+    RuntimeArrayValue,
+    CallArgument,
+    Condition,
+    LoopBound,
+    PrintOrIo,
+    ReturnValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct OperatorSemanticsDescriptor {
+    pub descriptor_id: String,
+    pub operator_id: String,
+    pub family: OperatorFamilyDescriptor,
+    pub operator: VbaOperatorDescriptor,
+    pub left_declared_type: Option<VbaTypeId>,
+    pub right_declared_type: Option<VbaTypeId>,
+    pub result_declared_type: VbaTypeId,
+    pub result_value_states: Vec<ValueStateKind>,
+    pub compare_mode: Option<OperatorCompareModeDescriptor>,
+    pub helper_id: String,
+    pub runtime_error_policy: String,
+    pub evaluation_order: EvaluationOrderDescriptor,
+    pub current_vm_status: String,
+    pub gap_classification: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum OperatorFamilyDescriptor {
+    Arithmetic,
+    Concatenation,
+    Comparison,
+    Logical,
+    Truthiness,
+    BranchPredicate,
+    EvaluationOrder,
+    ImplementationFastPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum VbaOperatorDescriptor {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    IntegerDivide,
+    Modulo,
+    Power,
+    Concatenate,
+    Negate,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
+    Like,
+    Not,
+    And,
+    Or,
+    Predicate,
+    IIf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum OperatorCompareModeDescriptor {
+    Binary,
+    Text,
+    Database,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum EvaluationOrderDescriptor {
+    LeftToRightEager,
+    PredicateBranch,
+    RuntimeHelperDefined,
+    UnsupportedDeferred,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CoercionDescriptor {
+    pub descriptor_id: String,
+    pub coercion_id: String,
+    pub kind: CoercionKindDescriptor,
+    pub source_declared_type: VbaTypeId,
+    pub source_value_states: Vec<ValueStateKind>,
+    pub target_declared_type: VbaTypeId,
+    pub static_status: CoercionStaticStatusDescriptor,
+    pub runtime_failure: RuntimeFailurePolicyDescriptor,
+    pub helper_id: String,
+    pub evidence_anchor: String,
+    pub gap_classification: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CoercionKindDescriptor {
+    Let,
+    Set,
+    CallLet,
+    PropertyValueAssignment,
+    ExplicitConversionIntrinsic,
+    HelperCompatibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CoercionStaticStatusDescriptor {
+    Identity,
+    Runtime,
+    DescriptorRequired,
+    Invalid,
+    Deferred,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum RuntimeFailurePolicyDescriptor {
+    None,
+    TypeMismatch,
+    NumericError,
+    HelperSpecific,
+    UnsupportedDeferred,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct NameBindingDescriptor {
+    pub descriptor_id: String,
+    pub binding_id: String,
+    pub name: String,
+    pub binding_kind: NameBindingKindDescriptor,
+    pub precedence: NameBindingPrecedenceDescriptor,
+    pub target: Option<String>,
+    pub diagnostics: Vec<String>,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum NameBindingKindDescriptor {
+    Policy,
+    Parameter,
+    Local,
+    ReturnValue,
+    Procedure,
+    PropertyAccessor,
+    ModuleScope,
+    AmbiguityDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum NameBindingPrecedenceDescriptor {
+    LocalProcedureScope,
+    ModuleScope,
+    ProjectProcedure,
+    PropertyAccessor,
+    WithContextDeferred,
+    ImportedMemberDeferred,
+    DefaultMemberDeferred,
+    CompilerDiagnostic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ObjectMemberBindingDescriptor {
+    pub descriptor_id: String,
+    pub binding_id: String,
+    pub target_declared_type: VbaTypeId,
+    pub member_name: String,
+    pub member_kind: ObjectMemberKindDescriptor,
+    pub default_member: bool,
+    pub property_accessor_group: Option<String>,
+    pub dispatch_kind: MemberDispatchKindDescriptor,
+    pub argument_binding_policy: String,
+    pub result_declared_type: Option<VbaTypeId>,
+    pub object_identity_policy: String,
+    pub cache_invalidation_policy: String,
+    pub fallback_or_unsupported_policy: String,
+    pub current_vm_status: String,
+    pub gap_classification: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectMemberKindDescriptor {
+    SetAssignment,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+    DefaultMemberGet,
+    Method,
+    Activation,
+    Event,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum MemberDispatchKindDescriptor {
+    None,
+    ProjectRoute,
+    DefaultMemberFallback,
+    DispatchInvoke,
+    TypelibBackedDispatch,
+    ProjectEventRoute,
+    MetadataOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -869,6 +1108,26 @@ impl ProcedureRuntimeMetadata {
         self.value_states.clone()
     }
 
+    pub fn expression_semantics_descriptors(&self) -> Vec<ExpressionSemanticsDescriptor> {
+        self.expression_semantics.clone()
+    }
+
+    pub fn operator_semantics_descriptors(&self) -> Vec<OperatorSemanticsDescriptor> {
+        self.operator_semantics.clone()
+    }
+
+    pub fn coercion_descriptors(&self) -> Vec<CoercionDescriptor> {
+        self.coercions.clone()
+    }
+
+    pub fn name_binding_descriptors(&self) -> Vec<NameBindingDescriptor> {
+        self.name_bindings.clone()
+    }
+
+    pub fn object_member_binding_descriptors(&self) -> Vec<ObjectMemberBindingDescriptor> {
+        self.object_member_bindings.clone()
+    }
+
     pub(crate) fn legacy_declared_type_for_slot(
         &self,
         slot: usize,
@@ -1482,6 +1741,11 @@ pub fn emit_bytecode_with_runtime_metadata(
             ),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         },
     );
 
@@ -1588,6 +1852,11 @@ pub fn emit_bytecode_with_runtime_metadata(
                 object_types: build_object_type_descriptors(proc, &proc_slots[idx]),
                 carrier_layouts: Vec::new(),
                 value_states: Vec::new(),
+                expression_semantics: Vec::new(),
+                operator_semantics: Vec::new(),
+                coercions: Vec::new(),
+                name_bindings: Vec::new(),
+                object_member_bindings: Vec::new(),
             },
         );
     }
@@ -1633,6 +1902,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         &mut procedure_runtime_metadata,
         &instructions,
         &procedures,
+        compare_mode,
     );
 
     (
@@ -1734,12 +2004,14 @@ fn decorate_runtime_metadata_descriptors(
     metadata: &mut BTreeMap<String, ProcedureRuntimeMetadata>,
     instructions: &[Instruction],
     procedures: &[BoundProcedure],
+    compare_mode: StringCompareMode,
 ) {
     let mut ranges = metadata
         .iter()
         .map(|(key, value)| (key.clone(), value.entry_pc))
         .collect::<Vec<_>>();
     ranges.sort_by(|left, right| left.1.cmp(&right.1).then(left.0.cmp(&right.0)));
+    let metadata_snapshot = metadata.clone();
     for index in 0..ranges.len() {
         let key = ranges[index].0.clone();
         let start_pc = ranges[index].1;
@@ -1756,6 +2028,12 @@ fn decorate_runtime_metadata_descriptors(
         metadata.carrier_layouts = build_carrier_layout_descriptors(&metadata.slots);
         metadata.value_states =
             build_value_state_descriptors(metadata, proc, instructions, start_pc, end_pc);
+        metadata.expression_semantics = build_expression_semantics_descriptors(metadata, proc);
+        metadata.operator_semantics =
+            build_operator_semantics_descriptors(metadata, proc, compare_mode);
+        metadata.coercions = build_coercion_descriptors(metadata, proc, &metadata_snapshot);
+        metadata.name_bindings = build_name_binding_descriptors(metadata, proc);
+        metadata.object_member_bindings = build_object_member_binding_descriptors(metadata, proc);
     }
 }
 
@@ -2484,6 +2762,2714 @@ fn value_state_source_key(source: ValueStateSource) -> &'static str {
         ValueStateSource::IntrinsicConstant => "intrinsic-constant",
         ValueStateSource::DeclaredTypeExtension => "declared-type-extension",
     }
+}
+
+fn build_expression_semantics_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+) -> Vec<ExpressionSemanticsDescriptor> {
+    let Some(proc) = proc else {
+        return Vec::new();
+    };
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    let type_by_name = slot_type_by_name(metadata);
+    let mut ordinal = 0usize;
+    let mut descriptors = Vec::new();
+    for stmt in &proc.body {
+        collect_stmt_expression_semantics(
+            stmt,
+            &type_by_name,
+            &procedure_id,
+            &mut ordinal,
+            &mut descriptors,
+        );
+    }
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+fn collect_stmt_expression_semantics(
+    stmt: &BoundStmt,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ExpressionSemanticsDescriptor>,
+) {
+    match stmt {
+        BoundStmt::Assign { expr, .. } => collect_expr_semantics(
+            expr,
+            ExpressionSourceContextDescriptor::AssignmentRhs,
+            type_by_name,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundStmt::AssignRuntimeArrayElement { indices, expr, .. } => {
+            for index in indices {
+                collect_expr_semantics(
+                    index,
+                    ExpressionSourceContextDescriptor::RuntimeArrayIndex,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_semantics(
+                expr,
+                ExpressionSourceContextDescriptor::RuntimeArrayValue,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::MidAssign {
+            start,
+            count,
+            value,
+            ..
+        } => {
+            collect_expr_semantics(
+                start,
+                ExpressionSourceContextDescriptor::RuntimeArrayIndex,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            if let Some(count) = count {
+                collect_expr_semantics(
+                    count,
+                    ExpressionSourceContextDescriptor::RuntimeArrayIndex,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_semantics(
+                value,
+                ExpressionSourceContextDescriptor::AssignmentRhs,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_cond_expression_semantics(
+                cond,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for stmt in then_body.iter().chain(else_body.iter()) {
+                collect_stmt_expression_semantics(
+                    stmt,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::DoWhile { cond, body, .. } => {
+            collect_cond_expression_semantics(
+                cond,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for stmt in body {
+                collect_stmt_expression_semantics(
+                    stmt,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ForRange {
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => {
+            for expr in [start, end, step] {
+                collect_expr_semantics(
+                    expr,
+                    ExpressionSourceContextDescriptor::LoopBound,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            for stmt in body {
+                collect_stmt_expression_semantics(
+                    stmt,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ForEach {
+            items,
+            iterable,
+            body,
+            ..
+        } => {
+            for item in items {
+                collect_expr_semantics(
+                    item,
+                    ExpressionSourceContextDescriptor::LoopBound,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            if let Some(iterable) = iterable {
+                collect_expr_semantics(
+                    iterable,
+                    ExpressionSourceContextDescriptor::LoopBound,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            for stmt in body {
+                collect_stmt_expression_semantics(
+                    stmt,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ReDimRuntime { bounds, .. } => {
+            for bound in bounds {
+                collect_expr_semantics(
+                    &bound.upper_bound,
+                    ExpressionSourceContextDescriptor::RuntimeArrayIndex,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::RaiseEvent { args, .. }
+        | BoundStmt::Call { args, .. }
+        | BoundStmt::AssignFromCall { args, .. } => {
+            for arg in args {
+                collect_expr_semantics(
+                    &arg.expr,
+                    ExpressionSourceContextDescriptor::CallArgument,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            collect_expr_semantics(
+                expr,
+                ExpressionSourceContextDescriptor::Condition,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_expression_semantics(
+                        stmt,
+                        type_by_name,
+                        procedure_id,
+                        ordinal,
+                        descriptors,
+                    );
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_expression_semantics(
+                    stmt,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileOpen {
+            path, file_number, ..
+        } => {
+            collect_expr_semantics(
+                path,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_semantics(
+                file_number,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::FileClose { file_number } => {
+            if let Some(file_number) = file_number {
+                collect_expr_semantics(
+                    file_number,
+                    ExpressionSourceContextDescriptor::PrintOrIo,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileKill { path } => collect_expr_semantics(
+            path,
+            ExpressionSourceContextDescriptor::PrintOrIo,
+            type_by_name,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundStmt::FilePrint { file_number, data } => {
+            collect_expr_semantics(
+                file_number,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_semantics(
+                data,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::FileWrite { file_number, data } => {
+            collect_expr_semantics(
+                file_number,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for item in data {
+                collect_expr_semantics(
+                    item,
+                    ExpressionSourceContextDescriptor::PrintOrIo,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileInput { file_number, .. } | BoundStmt::FileLineInput { file_number, .. } => {
+            collect_expr_semantics(
+                file_number,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            )
+        }
+        BoundStmt::ConsolePrint { data } | BoundStmt::DebugPrint { data } => {
+            collect_expr_semantics(
+                data,
+                ExpressionSourceContextDescriptor::PrintOrIo,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::ReDim { .. }
+        | BoundStmt::Erase { .. }
+        | BoundStmt::UdtAssign { .. }
+        | BoundStmt::ExitDo
+        | BoundStmt::ExitFor
+        | BoundStmt::OnErrorResumeNext
+        | BoundStmt::OnErrorGoto0
+        | BoundStmt::OnErrorGotoLabel { .. }
+        | BoundStmt::ResumeNext
+        | BoundStmt::Resume
+        | BoundStmt::ResumeLabel { .. }
+        | BoundStmt::RaiseError(_)
+        | BoundStmt::ErrClear
+        | BoundStmt::Label { .. }
+        | BoundStmt::GoTo { .. }
+        | BoundStmt::GoSub { .. }
+        | BoundStmt::Return
+        | BoundStmt::Beep
+        | BoundStmt::ExitProcedure
+        | BoundStmt::ConsoleInput { .. }
+        | BoundStmt::ConsoleLineInput { .. }
+        | BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+fn collect_cond_expression_semantics(
+    cond: &BoundCond,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ExpressionSemanticsDescriptor>,
+) {
+    match cond {
+        BoundCond::Compare { lhs, rhs, .. } => {
+            collect_expr_semantics(
+                lhs,
+                ExpressionSourceContextDescriptor::Condition,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_semantics(
+                rhs,
+                ExpressionSourceContextDescriptor::Condition,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundCond::Truthy(expr) => collect_expr_semantics(
+            expr,
+            ExpressionSourceContextDescriptor::Condition,
+            type_by_name,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundCond::Not(inner) => collect_cond_expression_semantics(
+            inner,
+            type_by_name,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
+            collect_cond_expression_semantics(
+                lhs,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_cond_expression_semantics(
+                rhs,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+    }
+}
+
+fn collect_expr_semantics(
+    expr: &BoundExpr,
+    context: ExpressionSourceContextDescriptor,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ExpressionSemanticsDescriptor>,
+) {
+    descriptors.push(expression_semantics_descriptor(
+        procedure_id,
+        expr,
+        context,
+        type_by_name,
+        ordinal,
+    ));
+    match expr {
+        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+            collect_expr_semantics(
+                lhs,
+                context,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_semantics(
+                rhs,
+                context,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::UnaryOp { operand, .. } => {
+            collect_expr_semantics(
+                operand,
+                context,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::IntrinsicCall { args, .. } => {
+            for arg in args {
+                collect_expr_semantics(
+                    arg,
+                    context,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundExpr::ProcCall { args, .. } => {
+            for arg in args {
+                collect_expr_semantics(
+                    &arg.expr,
+                    ExpressionSourceContextDescriptor::CallArgument,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_)
+        | BoundExpr::Var(_)
+        | BoundExpr::VarPtrArrayBuffer(_)
+        | BoundExpr::AddConst { .. }
+        | BoundExpr::SubConst { .. } => {}
+    }
+}
+
+fn expression_semantics_descriptor(
+    procedure_id: &str,
+    expr: &BoundExpr,
+    context: ExpressionSourceContextDescriptor,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    ordinal: &mut usize,
+) -> ExpressionSemanticsDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let expression_id = format!("expr:{current}");
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::ExpressionSemantics,
+        [procedure_id, expression_id.as_str()],
+    );
+    let declared_type = expr_declared_type(expr, type_by_name);
+    ExpressionSemanticsDescriptor {
+        descriptor_id,
+        expression_id,
+        classification: expression_classification(expr),
+        declared_type,
+        value_states: expr_value_states(expr),
+        carrier_hint: RuntimeCarrierKind::for_declared_type(declared_type),
+        default_member_policy: expr_default_member_policy(expr),
+        source_context: context,
+        detail: expr_semantics_detail(expr),
+    }
+}
+
+fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescriptor {
+    match expr {
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_) => ExpressionClassificationDescriptor::Literal,
+        BoundExpr::Var(_) => ExpressionClassificationDescriptor::Variable,
+        BoundExpr::VarPtrArrayBuffer(_) => ExpressionClassificationDescriptor::PointerBuffer,
+        BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
+            ExpressionClassificationDescriptor::Temporary
+        }
+        BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => {
+            ExpressionClassificationDescriptor::OperatorResult
+        }
+        BoundExpr::CompareOp { .. } => ExpressionClassificationDescriptor::ComparisonResult,
+        BoundExpr::IntrinsicCall { name, .. } if name == "__oxvba_array_get" => {
+            ExpressionClassificationDescriptor::ArrayElement
+        }
+        BoundExpr::IntrinsicCall { .. } => ExpressionClassificationDescriptor::IntrinsicResult,
+        BoundExpr::ProcCall { .. } => ExpressionClassificationDescriptor::FunctionResult,
+    }
+}
+
+fn expr_default_member_policy(expr: &BoundExpr) -> DefaultMemberPolicyDescriptor {
+    match expr {
+        BoundExpr::ProcCall { .. } => DefaultMemberPolicyDescriptor::ExplicitMember,
+        BoundExpr::IntrinsicCall { name, .. }
+            if matches!(name.as_str(), "dispatchinvoke" | "__oxvbaearlyinvoke") =>
+        {
+            DefaultMemberPolicyDescriptor::Unknown
+        }
+        _ => DefaultMemberPolicyDescriptor::NotApplicable,
+    }
+}
+
+fn expr_semantics_detail(expr: &BoundExpr) -> String {
+    match expr {
+        BoundExpr::Var(name) => format!("name={}", name.to_ascii_lowercase()),
+        BoundExpr::VarPtrArrayBuffer(name) => {
+            format!("varptr-array-buffer={}", name.to_ascii_lowercase())
+        }
+        BoundExpr::AddConst { var, delta } => {
+            format!("fast-add-const:{}:{delta}", var.to_ascii_lowercase())
+        }
+        BoundExpr::SubConst { var, delta } => {
+            format!("fast-sub-const:{}:{delta}", var.to_ascii_lowercase())
+        }
+        BoundExpr::BinaryOp { op, .. } => format!("operator={}", arith_op_key(*op)),
+        BoundExpr::CompareOp { op, .. } => format!("compare={}", compare_op_key(*op)),
+        BoundExpr::UnaryOp { op, .. } => format!("unary={}", arith_op_key(*op)),
+        BoundExpr::IntrinsicCall { name, .. } => format!("intrinsic={}", name.to_ascii_lowercase()),
+        BoundExpr::ProcCall { name, .. } => format!("proc-call={}", name.to_ascii_lowercase()),
+        BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
+        BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
+        BoundExpr::FloatConst(_) => "literal=f64".to_string(),
+        BoundExpr::StringConst(_) => "literal=string".to_string(),
+    }
+}
+
+fn build_operator_semantics_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+    compare_mode: StringCompareMode,
+) -> Vec<OperatorSemanticsDescriptor> {
+    let Some(proc) = proc else {
+        return Vec::new();
+    };
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    let type_by_name = slot_type_by_name(metadata);
+    let mut ordinal = 0usize;
+    let mut descriptors = Vec::new();
+    descriptors.push(deferred_iif_operator_descriptor(
+        &procedure_id,
+        &mut ordinal,
+    ));
+    for stmt in &proc.body {
+        collect_stmt_operator_semantics(
+            stmt,
+            &type_by_name,
+            compare_mode,
+            &procedure_id,
+            &mut ordinal,
+            &mut descriptors,
+        );
+    }
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+fn collect_stmt_operator_semantics(
+    stmt: &BoundStmt,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<OperatorSemanticsDescriptor>,
+) {
+    match stmt {
+        BoundStmt::Assign { expr, .. } => collect_expr_operator_semantics(
+            expr,
+            type_by_name,
+            compare_mode,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundStmt::AssignRuntimeArrayElement { indices, expr, .. } => {
+            for index in indices {
+                collect_expr_operator_semantics(
+                    index,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_operator_semantics(
+                expr,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::MidAssign {
+            start,
+            count,
+            value,
+            ..
+        } => {
+            collect_expr_operator_semantics(
+                start,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            if let Some(count) = count {
+                collect_expr_operator_semantics(
+                    count,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            collect_expr_operator_semantics(
+                value,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_cond_operator_semantics(
+                cond,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            descriptors.push(branch_predicate_descriptor(
+                procedure_id,
+                compare_mode,
+                ordinal,
+            ));
+            for stmt in then_body.iter().chain(else_body.iter()) {
+                collect_stmt_operator_semantics(
+                    stmt,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::DoWhile { cond, body, .. } => {
+            collect_cond_operator_semantics(
+                cond,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            descriptors.push(branch_predicate_descriptor(
+                procedure_id,
+                compare_mode,
+                ordinal,
+            ));
+            for stmt in body {
+                collect_stmt_operator_semantics(
+                    stmt,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ForRange {
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => {
+            for expr in [start, end, step] {
+                collect_expr_operator_semantics(
+                    expr,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            for stmt in body {
+                collect_stmt_operator_semantics(
+                    stmt,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ForEach {
+            items,
+            iterable,
+            body,
+            ..
+        } => {
+            for item in items {
+                collect_expr_operator_semantics(
+                    item,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            if let Some(iterable) = iterable {
+                collect_expr_operator_semantics(
+                    iterable,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+            for stmt in body {
+                collect_stmt_operator_semantics(
+                    stmt,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::ReDimRuntime { bounds, .. } => {
+            for bound in bounds {
+                collect_expr_operator_semantics(
+                    &bound.upper_bound,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::RaiseEvent { args, .. }
+        | BoundStmt::Call { args, .. }
+        | BoundStmt::AssignFromCall { args, .. } => {
+            for arg in args {
+                collect_expr_operator_semantics(
+                    &arg.expr,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            collect_expr_operator_semantics(
+                expr,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_operator_semantics(
+                        stmt,
+                        type_by_name,
+                        compare_mode,
+                        procedure_id,
+                        ordinal,
+                        descriptors,
+                    );
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_operator_semantics(
+                    stmt,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileOpen {
+            path, file_number, ..
+        } => {
+            collect_expr_operator_semantics(
+                path,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                file_number,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::FileClose { file_number } => {
+            if let Some(file_number) = file_number {
+                collect_expr_operator_semantics(
+                    file_number,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileKill { path } => collect_expr_operator_semantics(
+            path,
+            type_by_name,
+            compare_mode,
+            procedure_id,
+            ordinal,
+            descriptors,
+        ),
+        BoundStmt::FilePrint { file_number, data } => {
+            collect_expr_operator_semantics(
+                file_number,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                data,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::FileWrite { file_number, data } => {
+            collect_expr_operator_semantics(
+                file_number,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for item in data {
+                collect_expr_operator_semantics(
+                    item,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileInput { file_number, .. } | BoundStmt::FileLineInput { file_number, .. } => {
+            collect_expr_operator_semantics(
+                file_number,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            )
+        }
+        BoundStmt::ConsolePrint { data } | BoundStmt::DebugPrint { data } => {
+            collect_expr_operator_semantics(
+                data,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::ReDim { .. }
+        | BoundStmt::Erase { .. }
+        | BoundStmt::UdtAssign { .. }
+        | BoundStmt::ExitDo
+        | BoundStmt::ExitFor
+        | BoundStmt::OnErrorResumeNext
+        | BoundStmt::OnErrorGoto0
+        | BoundStmt::OnErrorGotoLabel { .. }
+        | BoundStmt::ResumeNext
+        | BoundStmt::Resume
+        | BoundStmt::ResumeLabel { .. }
+        | BoundStmt::RaiseError(_)
+        | BoundStmt::ErrClear
+        | BoundStmt::Label { .. }
+        | BoundStmt::GoTo { .. }
+        | BoundStmt::GoSub { .. }
+        | BoundStmt::Return
+        | BoundStmt::Beep
+        | BoundStmt::ExitProcedure
+        | BoundStmt::ConsoleInput { .. }
+        | BoundStmt::ConsoleLineInput { .. }
+        | BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+fn collect_cond_operator_semantics(
+    cond: &BoundCond,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<OperatorSemanticsDescriptor>,
+) {
+    match cond {
+        BoundCond::Compare { op, lhs, rhs } => {
+            descriptors.push(compare_operator_descriptor(
+                procedure_id,
+                *op,
+                lhs,
+                rhs,
+                type_by_name,
+                compare_mode,
+                ordinal,
+            ));
+            collect_expr_operator_semantics(
+                lhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                rhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundCond::Truthy(expr) => {
+            descriptors.push(truthiness_operator_descriptor(
+                procedure_id,
+                expr,
+                type_by_name,
+                compare_mode,
+                ordinal,
+            ));
+            collect_expr_operator_semantics(
+                expr,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundCond::Not(inner) => {
+            descriptors.push(logical_operator_descriptor(
+                procedure_id,
+                VbaOperatorDescriptor::Not,
+                compare_mode,
+                ordinal,
+            ));
+            collect_cond_operator_semantics(
+                inner,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
+            let operator = if matches!(cond, BoundCond::And(_, _)) {
+                VbaOperatorDescriptor::And
+            } else {
+                VbaOperatorDescriptor::Or
+            };
+            descriptors.push(logical_operator_descriptor(
+                procedure_id,
+                operator,
+                compare_mode,
+                ordinal,
+            ));
+            collect_cond_operator_semantics(
+                lhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_cond_operator_semantics(
+                rhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+    }
+}
+
+fn collect_expr_operator_semantics(
+    expr: &BoundExpr,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<OperatorSemanticsDescriptor>,
+) {
+    match expr {
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            descriptors.push(arith_operator_descriptor(
+                procedure_id,
+                *op,
+                lhs,
+                Some(rhs),
+                type_by_name,
+                compare_mode,
+                ordinal,
+            ));
+            collect_expr_operator_semantics(
+                lhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                rhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::CompareOp { op, lhs, rhs } => {
+            descriptors.push(compare_operator_descriptor(
+                procedure_id,
+                *op,
+                lhs,
+                rhs,
+                type_by_name,
+                compare_mode,
+                ordinal,
+            ));
+            collect_expr_operator_semantics(
+                lhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                rhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::UnaryOp { op, operand } => {
+            descriptors.push(arith_operator_descriptor(
+                procedure_id,
+                *op,
+                operand,
+                None,
+                type_by_name,
+                compare_mode,
+                ordinal,
+            ));
+            collect_expr_operator_semantics(
+                operand,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::IntrinsicCall { args, .. } => {
+            for arg in args {
+                collect_expr_operator_semantics(
+                    arg,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundExpr::ProcCall { args, .. } => {
+            for arg in args {
+                collect_expr_operator_semantics(
+                    &arg.expr,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
+            descriptors.push(fastpath_operator_descriptor(
+                procedure_id,
+                compare_mode,
+                ordinal,
+            ));
+        }
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_)
+        | BoundExpr::Var(_)
+        | BoundExpr::VarPtrArrayBuffer(_) => {}
+    }
+}
+
+fn deferred_iif_operator_descriptor(
+    procedure_id: &str,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    operator_descriptor(
+        procedure_id,
+        "OP-IIF-EAGER-DEFERRED",
+        OperatorFamilyDescriptor::EvaluationOrder,
+        VbaOperatorDescriptor::IIf,
+        None,
+        None,
+        VbaTypeId::Variant,
+        Vec::new(),
+        Some(OperatorCompareModeDescriptor::NotApplicable),
+        "unsupported:iif-not-lowered".to_string(),
+        "IIf branch evaluation requires source-form/oracle coverage before descriptor consumption"
+            .to_string(),
+        EvaluationOrderDescriptor::UnsupportedDeferred,
+        "unsupported-deferred".to_string(),
+        "test-shortcoming; oracle-required".to_string(),
+        ordinal,
+    )
+}
+
+fn arith_operator_descriptor(
+    procedure_id: &str,
+    op: ArithOp,
+    lhs: &BoundExpr,
+    rhs: Option<&BoundExpr>,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    let left = expr_declared_type(lhs, type_by_name);
+    let right = rhs.map(|expr| expr_declared_type(expr, type_by_name));
+    let operator_id = operator_seed_id(op, left, right, lhs, rhs);
+    let (family, operator, helper, runtime_error) = match op {
+        ArithOp::Add => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Add,
+            "oxvba_vm::variant_add_values",
+            "numeric-text-error|CVErr-type-mismatch",
+        ),
+        ArithOp::Sub => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Subtract,
+            "oxvba_vm::variant_sub_values",
+            "numeric-error|CVErr-type-mismatch",
+        ),
+        ArithOp::Mul => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Multiply,
+            "oxvba_vm::variant_mul_values",
+            "numeric-error|CVErr-type-mismatch",
+        ),
+        ArithOp::Div => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Divide,
+            "oxvba_vm::variant_div_values",
+            "runtime-error-11-on-zero|numeric-error",
+        ),
+        ArithOp::IntDiv => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::IntegerDivide,
+            "oxvba_vm::variant_intdiv_values",
+            "runtime-error-11-on-zero|numeric-error",
+        ),
+        ArithOp::Mod => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Modulo,
+            "oxvba_vm::variant_mod_values",
+            "runtime-error-11-on-zero|numeric-error",
+        ),
+        ArithOp::Pow => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Power,
+            "oxvba_vm::variant_pow_values",
+            "numeric-error|CVErr-type-mismatch",
+        ),
+        ArithOp::Concat => (
+            OperatorFamilyDescriptor::Concatenation,
+            VbaOperatorDescriptor::Concatenate,
+            "oxvba_vm::variant_concat_values",
+            "text-conversion-errors-currently-empty",
+        ),
+        ArithOp::Neg => (
+            OperatorFamilyDescriptor::Arithmetic,
+            VbaOperatorDescriptor::Negate,
+            "oxvba_vm::variant_neg_value",
+            "numeric-error|CVErr-type-mismatch",
+        ),
+    };
+    operator_descriptor(
+        procedure_id,
+        operator_id,
+        family,
+        operator,
+        Some(left),
+        right,
+        VbaTypeId::Variant,
+        expr_value_states(lhs)
+            .into_iter()
+            .chain(rhs.into_iter().flat_map(expr_value_states))
+            .collect(),
+        Some(compare_mode_descriptor(compare_mode)),
+        helper.to_string(),
+        runtime_error.to_string(),
+        EvaluationOrderDescriptor::LeftToRightEager,
+        "vm-helper-backed".to_string(),
+        "metadata-package-descriptor; broader-oracle-rows-remain-open".to_string(),
+        ordinal,
+    )
+}
+
+fn compare_operator_descriptor(
+    procedure_id: &str,
+    op: CompareOp,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    let left = expr_declared_type(lhs, type_by_name);
+    let right = expr_declared_type(rhs, type_by_name);
+    let operator_id = comparison_seed_id(left, right, lhs, rhs);
+    operator_descriptor(
+        procedure_id,
+        operator_id,
+        OperatorFamilyDescriptor::Comparison,
+        compare_operator_descriptor_kind(op),
+        Some(left),
+        Some(right),
+        VbaTypeId::Boolean,
+        expr_value_states(lhs)
+            .into_iter()
+            .chain(expr_value_states(rhs))
+            .collect(),
+        Some(compare_mode_descriptor(compare_mode)),
+        "oxvba_vm::typed_compare_variants".to_string(),
+        "numeric-incompatible-error-or-current-null-falsy".to_string(),
+        EvaluationOrderDescriptor::LeftToRightEager,
+        "vm-helper-backed".to_string(),
+        "metadata-package-descriptor; locale/oracle-rows-remain-open".to_string(),
+        ordinal,
+    )
+}
+
+fn truthiness_operator_descriptor(
+    procedure_id: &str,
+    expr: &BoundExpr,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    operator_descriptor(
+        procedure_id,
+        "OP-TRUTHINESS",
+        OperatorFamilyDescriptor::Truthiness,
+        VbaOperatorDescriptor::Predicate,
+        Some(expr_declared_type(expr, type_by_name)),
+        None,
+        VbaTypeId::Boolean,
+        expr_value_states(expr),
+        Some(compare_mode_descriptor(compare_mode)),
+        "oxvba_vm::variant_truthy_value".to_string(),
+        "Error-Object-Array-numeric-error".to_string(),
+        EvaluationOrderDescriptor::PredicateBranch,
+        "implemented-runtime-only".to_string(),
+        "metadata-package-descriptor; compatibility-oracle-rows-remain-open".to_string(),
+        ordinal,
+    )
+}
+
+fn logical_operator_descriptor(
+    procedure_id: &str,
+    operator: VbaOperatorDescriptor,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    operator_descriptor(
+        procedure_id,
+        "OP-BOOL-NOT-AND-OR",
+        OperatorFamilyDescriptor::Logical,
+        operator,
+        Some(VbaTypeId::Variant),
+        Some(VbaTypeId::Variant),
+        VbaTypeId::Variant,
+        Vec::new(),
+        Some(compare_mode_descriptor(compare_mode)),
+        "oxvba_vm::variant_truthy_value|Instruction::BoolNot|Instruction::BoolAnd|Instruction::BoolOr"
+            .to_string(),
+        "truthiness-error".to_string(),
+        EvaluationOrderDescriptor::LeftToRightEager,
+        "implemented-runtime-only".to_string(),
+        "metadata-package-descriptor; non-short-circuit-order-recorded".to_string(),
+        ordinal,
+    )
+}
+
+fn branch_predicate_descriptor(
+    procedure_id: &str,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    operator_descriptor(
+        procedure_id,
+        "OP-BRANCH-JUMPIFZERO",
+        OperatorFamilyDescriptor::BranchPredicate,
+        VbaOperatorDescriptor::Predicate,
+        Some(VbaTypeId::Variant),
+        None,
+        VbaTypeId::Boolean,
+        Vec::new(),
+        Some(compare_mode_descriptor(compare_mode)),
+        "oxvba_vm::variant_truthy_value|Vm::next_pc_for_jump_if_zero_variant".to_string(),
+        "truthiness-error".to_string(),
+        EvaluationOrderDescriptor::PredicateBranch,
+        "implemented-runtime-only".to_string(),
+        "metadata-package-descriptor".to_string(),
+        ordinal,
+    )
+}
+
+fn fastpath_operator_descriptor(
+    procedure_id: &str,
+    compare_mode: StringCompareMode,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    operator_descriptor(
+        procedure_id,
+        "OP-TYPED-FASTPATH-I32",
+        OperatorFamilyDescriptor::ImplementationFastPath,
+        VbaOperatorDescriptor::Add,
+        Some(VbaTypeId::Long),
+        Some(VbaTypeId::Long),
+        VbaTypeId::Variant,
+        Vec::new(),
+        Some(compare_mode_descriptor(compare_mode)),
+        "Vm::fast_add_const|Vm::fast_sub_const|Vm::fast_cmp_slots".to_string(),
+        "falls-back-to-Variant-helper".to_string(),
+        EvaluationOrderDescriptor::RuntimeHelperDefined,
+        "implemented-runtime-only-not-semantic-proof".to_string(),
+        "metadata-package-descriptor; fastpath-not-parity-proof".to_string(),
+        ordinal,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn operator_descriptor(
+    procedure_id: &str,
+    operator_id: &str,
+    family: OperatorFamilyDescriptor,
+    operator: VbaOperatorDescriptor,
+    left_declared_type: Option<VbaTypeId>,
+    right_declared_type: Option<VbaTypeId>,
+    result_declared_type: VbaTypeId,
+    result_value_states: Vec<ValueStateKind>,
+    compare_mode: Option<OperatorCompareModeDescriptor>,
+    helper_id: String,
+    runtime_error_policy: String,
+    evaluation_order: EvaluationOrderDescriptor,
+    current_vm_status: String,
+    gap_classification: String,
+    ordinal: &mut usize,
+) -> OperatorSemanticsDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let ordinal_key = current.to_string();
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::OperatorSemantics,
+        [procedure_id, operator_id, ordinal_key.as_str()],
+    );
+    OperatorSemanticsDescriptor {
+        descriptor_id,
+        operator_id: operator_id.to_string(),
+        family,
+        operator,
+        left_declared_type,
+        right_declared_type,
+        result_declared_type,
+        result_value_states,
+        compare_mode,
+        helper_id,
+        runtime_error_policy,
+        evaluation_order,
+        current_vm_status,
+        gap_classification,
+    }
+}
+
+fn build_coercion_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<CoercionDescriptor> {
+    let Some(proc) = proc else {
+        return Vec::new();
+    };
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    let type_by_name = slot_type_by_name(metadata);
+    let mut ordinal = 0usize;
+    let mut descriptors = Vec::new();
+    for stmt in &proc.body {
+        collect_stmt_coercions(
+            stmt,
+            &type_by_name,
+            &procedure_id,
+            &mut ordinal,
+            &mut descriptors,
+        );
+    }
+    for call_site in &metadata.call_sites {
+        if matches!(
+            call_site.target_kind,
+            CallTargetKindDescriptor::PropertyLet | CallTargetKindDescriptor::PropertySet
+        ) {
+            descriptors.push(coercion_descriptor(
+                &procedure_id,
+                "COERCE-PROPERTY-VALUE-BYVAL",
+                CoercionKindDescriptor::PropertyValueAssignment,
+                VbaTypeId::Variant,
+                Vec::new(),
+                VbaTypeId::Variant,
+                CoercionStaticStatusDescriptor::DescriptorRequired,
+                RuntimeFailurePolicyDescriptor::HelperSpecific,
+                "ProcedureSignatureDescriptor::PropertyValueByVal|CallSiteDescriptor".to_string(),
+                "Property value assignment is runtime ByVal and package-visible".to_string(),
+                "metadata-package-descriptor; broader property coercion oracle rows remain open"
+                    .to_string(),
+                format!("target={}", call_site.target_name.to_ascii_lowercase()),
+                &mut ordinal,
+            ));
+        }
+        for argument in &call_site.arguments {
+            if let Some(descriptor) = call_entry_byval_coercion_descriptor(
+                metadata,
+                procedure_metadata,
+                call_site,
+                argument,
+                &mut ordinal,
+            ) {
+                descriptors.push(descriptor);
+            }
+        }
+    }
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+fn call_entry_byval_coercion_descriptor(
+    caller_metadata: &ProcedureRuntimeMetadata,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    call_site: &CallSiteDescriptor,
+    argument: &ArgumentBindingDescriptor,
+    ordinal: &mut usize,
+) -> Option<CoercionDescriptor> {
+    if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy {
+        return None;
+    }
+    let source_slot = argument.source_slot?;
+    let parameter_slot = argument.parameter_slot?;
+    let source_slot = caller_metadata
+        .slots
+        .iter()
+        .find(|slot| slot.slot == source_slot)?;
+    let target_metadata = call_site
+        .target_entry_pc
+        .and_then(|entry_pc| {
+            procedure_metadata
+                .values()
+                .find(|metadata| metadata.entry_pc == entry_pc)
+        })
+        .or_else(|| procedure_metadata.get(&call_site.target_name.to_ascii_lowercase()))?;
+    let target_parameter = target_metadata
+        .signature
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.slot == Some(parameter_slot)
+                && argument
+                    .parameter_index
+                    .is_none_or(|index| parameter.index == index)
+        })?;
+    if target_parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal {
+        return None;
+    }
+    if source_slot.declared_type == target_parameter.declared_type {
+        return None;
+    }
+    Some(coercion_descriptor(
+        &metadata_descriptor_owner_id(caller_metadata),
+        "COERCE-CALL-BYVAL-DECLARED-TARGET",
+        CoercionKindDescriptor::CallLet,
+        source_slot.declared_type,
+        Vec::new(),
+        target_parameter.declared_type,
+        CoercionStaticStatusDescriptor::DescriptorRequired,
+        RuntimeFailurePolicyDescriptor::HelperSpecific,
+        "CallSiteDescriptor|ProcedureSignatureDescriptor|oxvba_runtime::coerce_to".to_string(),
+        "VMR06-CALL-BYVAL-COERCE-001".to_string(),
+        "metadata-package-descriptor; selected Long-to-Double behavior-backed, broader call-entry coercions remain open".to_string(),
+        format!(
+            "target={};source-slot={};parameter-slot={};helper-row=COERCE-LET-NUMERIC-WIDEN",
+            call_site.target_name.to_ascii_lowercase(),
+            source_slot.slot,
+            parameter_slot
+        ),
+        ordinal,
+    ))
+}
+
+fn collect_stmt_coercions(
+    stmt: &BoundStmt,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<CoercionDescriptor>,
+) {
+    match stmt {
+        BoundStmt::Assign {
+            target,
+            expr,
+            intent,
+        } => {
+            let target_type = type_by_name
+                .get(&target.to_ascii_lowercase())
+                .copied()
+                .unwrap_or(VbaTypeId::Variant);
+            descriptors.push(assignment_coercion_descriptor(
+                procedure_id,
+                *intent,
+                expr,
+                target_type,
+                type_by_name,
+                ordinal,
+            ));
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::AssignRuntimeArrayElement { indices, expr, .. } => {
+            descriptors.push(assignment_coercion_descriptor(
+                procedure_id,
+                AssignmentIntent::Implicit,
+                expr,
+                VbaTypeId::Variant,
+                type_by_name,
+                ordinal,
+            ));
+            for index in indices {
+                collect_expr_coercions(index, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::MidAssign {
+            start,
+            count,
+            value,
+            ..
+        } => {
+            for expr in [Some(start), count.as_ref(), Some(value)]
+                .into_iter()
+                .flatten()
+            {
+                collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_cond_coercions(cond, type_by_name, procedure_id, ordinal, descriptors);
+            for stmt in then_body.iter().chain(else_body.iter()) {
+                collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::DoWhile { cond, body, .. } => {
+            collect_cond_coercions(cond, type_by_name, procedure_id, ordinal, descriptors);
+            for stmt in body {
+                collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ForRange {
+            start,
+            end,
+            step,
+            body,
+            ..
+        } => {
+            for expr in [start, end, step] {
+                collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            for stmt in body {
+                collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ForEach {
+            items,
+            iterable,
+            body,
+            ..
+        } => {
+            for item in items {
+                collect_expr_coercions(item, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            if let Some(iterable) = iterable {
+                collect_expr_coercions(iterable, type_by_name, procedure_id, ordinal, descriptors);
+            }
+            for stmt in body {
+                collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ReDimRuntime { bounds, .. } => {
+            for bound in bounds {
+                collect_expr_coercions(
+                    &bound.upper_bound,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::RaiseEvent { args, .. }
+        | BoundStmt::Call { args, .. }
+        | BoundStmt::AssignFromCall { args, .. } => {
+            for arg in args {
+                collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_coercions(stmt, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::FileOpen {
+            path, file_number, ..
+        } => {
+            collect_expr_coercions(path, type_by_name, procedure_id, ordinal, descriptors);
+            collect_expr_coercions(
+                file_number,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::FileClose { file_number } => {
+            if let Some(file_number) = file_number {
+                collect_expr_coercions(
+                    file_number,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundStmt::FileKill { path } => {
+            collect_expr_coercions(path, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::FilePrint { file_number, data } => {
+            collect_expr_coercions(
+                file_number,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_coercions(data, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::FileWrite { file_number, data } => {
+            collect_expr_coercions(
+                file_number,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for item in data {
+                collect_expr_coercions(item, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::FileInput { file_number, .. } | BoundStmt::FileLineInput { file_number, .. } => {
+            collect_expr_coercions(
+                file_number,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::ConsolePrint { data } | BoundStmt::DebugPrint { data } => {
+            collect_expr_coercions(data, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::ReDim { .. }
+        | BoundStmt::Erase { .. }
+        | BoundStmt::UdtAssign { .. }
+        | BoundStmt::ExitDo
+        | BoundStmt::ExitFor
+        | BoundStmt::OnErrorResumeNext
+        | BoundStmt::OnErrorGoto0
+        | BoundStmt::OnErrorGotoLabel { .. }
+        | BoundStmt::ResumeNext
+        | BoundStmt::Resume
+        | BoundStmt::ResumeLabel { .. }
+        | BoundStmt::RaiseError(_)
+        | BoundStmt::ErrClear
+        | BoundStmt::Label { .. }
+        | BoundStmt::GoTo { .. }
+        | BoundStmt::GoSub { .. }
+        | BoundStmt::Return
+        | BoundStmt::Beep
+        | BoundStmt::ExitProcedure
+        | BoundStmt::ConsoleInput { .. }
+        | BoundStmt::ConsoleLineInput { .. }
+        | BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+fn collect_cond_coercions(
+    cond: &BoundCond,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<CoercionDescriptor>,
+) {
+    match cond {
+        BoundCond::Compare { lhs, rhs, .. } => {
+            collect_expr_coercions(lhs, type_by_name, procedure_id, ordinal, descriptors);
+            collect_expr_coercions(rhs, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundCond::Truthy(expr) => {
+            descriptors.push(coercion_descriptor(
+                procedure_id,
+                "COERCE-VM-TRUTHINESS",
+                CoercionKindDescriptor::HelperCompatibility,
+                expr_declared_type(expr, type_by_name),
+                expr_value_states(expr),
+                VbaTypeId::Boolean,
+                CoercionStaticStatusDescriptor::Runtime,
+                RuntimeFailurePolicyDescriptor::NumericError,
+                "oxvba_vm::variant_truthy_value".to_string(),
+                "crates/oxvba-vm/src/semantics.rs::variant_truthy_value".to_string(),
+                "metadata-package-descriptor; compatibility-oracle-rows-remain-open".to_string(),
+                "branch predicate truthiness".to_string(),
+                ordinal,
+            ));
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundCond::Not(inner) => {
+            collect_cond_coercions(inner, type_by_name, procedure_id, ordinal, descriptors)
+        }
+        BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
+            collect_cond_coercions(lhs, type_by_name, procedure_id, ordinal, descriptors);
+            collect_cond_coercions(rhs, type_by_name, procedure_id, ordinal, descriptors);
+        }
+    }
+}
+
+fn collect_expr_coercions(
+    expr: &BoundExpr,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<CoercionDescriptor>,
+) {
+    match expr {
+        BoundExpr::IntrinsicCall { name, args } => {
+            if let Some(target) = explicit_conversion_target_type(name) {
+                let source = args
+                    .first()
+                    .map(|arg| expr_declared_type(arg, type_by_name))
+                    .unwrap_or(VbaTypeId::Variant);
+                descriptors.push(coercion_descriptor(
+                    procedure_id,
+                    explicit_conversion_coercion_id(name),
+                    CoercionKindDescriptor::ExplicitConversionIntrinsic,
+                    source,
+                    args.first().map(expr_value_states).unwrap_or_default(),
+                    target,
+                    CoercionStaticStatusDescriptor::Runtime,
+                    RuntimeFailurePolicyDescriptor::HelperSpecific,
+                    format!("intrinsic={}", name.to_ascii_lowercase()),
+                    "Intrinsic conversion lowering".to_string(),
+                    "metadata-package-descriptor; helper-specific runtime behavior".to_string(),
+                    format!("conversion={}", name.to_ascii_lowercase()),
+                    ordinal,
+                ));
+            }
+            for arg in args {
+                collect_expr_coercions(arg, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+            collect_expr_coercions(lhs, type_by_name, procedure_id, ordinal, descriptors);
+            collect_expr_coercions(rhs, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundExpr::UnaryOp { operand, .. } => {
+            collect_expr_coercions(operand, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundExpr::ProcCall { args, .. } => {
+            for arg in args {
+                collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_)
+        | BoundExpr::Var(_)
+        | BoundExpr::VarPtrArrayBuffer(_)
+        | BoundExpr::AddConst { .. }
+        | BoundExpr::SubConst { .. } => {}
+    }
+}
+
+fn assignment_coercion_descriptor(
+    procedure_id: &str,
+    intent: AssignmentIntent,
+    expr: &BoundExpr,
+    target_type: VbaTypeId,
+    type_by_name: &HashMap<String, VbaTypeId>,
+    ordinal: &mut usize,
+) -> CoercionDescriptor {
+    let source_type = expr_declared_type(expr, type_by_name);
+    let source_states = expr_value_states(expr);
+    let kind = match intent {
+        AssignmentIntent::Set => CoercionKindDescriptor::Set,
+        AssignmentIntent::Implicit | AssignmentIntent::Let => CoercionKindDescriptor::Let,
+    };
+    let coercion_id = assignment_coercion_id(kind, source_type, target_type, &source_states);
+    let static_status = if source_type == target_type {
+        CoercionStaticStatusDescriptor::Identity
+    } else {
+        CoercionStaticStatusDescriptor::Runtime
+    };
+    coercion_descriptor(
+        procedure_id,
+        coercion_id,
+        kind,
+        source_type,
+        source_states,
+        target_type,
+        static_status,
+        RuntimeFailurePolicyDescriptor::HelperSpecific,
+        coercion_helper_id(coercion_id).to_string(),
+        "docs/validation/VBA_COERCION_SEED_TABLE_V1.csv".to_string(),
+        "metadata-package-descriptor; behavior remains current VM/helper-backed".to_string(),
+        format!("assignment-intent={}", assignment_intent_key(intent)),
+        ordinal,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn coercion_descriptor(
+    procedure_id: &str,
+    coercion_id: &str,
+    kind: CoercionKindDescriptor,
+    source_declared_type: VbaTypeId,
+    source_value_states: Vec<ValueStateKind>,
+    target_declared_type: VbaTypeId,
+    static_status: CoercionStaticStatusDescriptor,
+    runtime_failure: RuntimeFailurePolicyDescriptor,
+    helper_id: String,
+    evidence_anchor: String,
+    gap_classification: String,
+    detail: String,
+    ordinal: &mut usize,
+) -> CoercionDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let ordinal_key = current.to_string();
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::Coercion,
+        [procedure_id, coercion_id, ordinal_key.as_str()],
+    );
+    CoercionDescriptor {
+        descriptor_id,
+        coercion_id: coercion_id.to_string(),
+        kind,
+        source_declared_type,
+        source_value_states,
+        target_declared_type,
+        static_status,
+        runtime_failure,
+        helper_id,
+        evidence_anchor,
+        gap_classification,
+        detail,
+    }
+}
+
+fn build_name_binding_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+) -> Vec<NameBindingDescriptor> {
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    let mut descriptors = Vec::new();
+    let mut ordinal = 0usize;
+    descriptors.push(name_binding_descriptor(
+        &procedure_id,
+        "NAME-BINDING-PROCEDURE-POLICY",
+        metadata.procedure_name.clone(),
+        NameBindingKindDescriptor::Policy,
+        NameBindingPrecedenceDescriptor::LocalProcedureScope,
+        None,
+        vec![
+            "duplicate-declaration-diagnostic=compiler-current".to_string(),
+            "ambiguous-member-diagnostic=compiler-current-or-deferred".to_string(),
+            "with-context=deferred".to_string(),
+            "imported-member=deferred".to_string(),
+            "default-member=deferred-to-object-member-binding".to_string(),
+        ],
+        "local-scope-before-module-members".to_string(),
+        &mut ordinal,
+    ));
+    for slot in &metadata.slots {
+        let (kind, precedence) = match slot.kind {
+            ProcedureRuntimeSlotKind::Parameter => (
+                NameBindingKindDescriptor::Parameter,
+                NameBindingPrecedenceDescriptor::LocalProcedureScope,
+            ),
+            ProcedureRuntimeSlotKind::ReturnValue => (
+                NameBindingKindDescriptor::ReturnValue,
+                NameBindingPrecedenceDescriptor::LocalProcedureScope,
+            ),
+            ProcedureRuntimeSlotKind::Local | ProcedureRuntimeSlotKind::CompilerGenerated => (
+                NameBindingKindDescriptor::Local,
+                NameBindingPrecedenceDescriptor::LocalProcedureScope,
+            ),
+            ProcedureRuntimeSlotKind::Temporary => continue,
+        };
+        descriptors.push(name_binding_descriptor(
+            &procedure_id,
+            "NAME-BINDING-SLOT",
+            slot.name.clone(),
+            kind,
+            precedence,
+            Some(format!("slot:{}", slot.slot)),
+            Vec::new(),
+            format!("declared-type={}", slot.declared_type.registry_key()),
+            &mut ordinal,
+        ));
+    }
+    if let Some(proc) = proc {
+        for duplicate in &proc.duplicate_declarations {
+            descriptors.push(name_binding_descriptor(
+                &procedure_id,
+                "NAME-BINDING-AMBIGUITY-DIAGNOSTIC",
+                duplicate.clone(),
+                NameBindingKindDescriptor::AmbiguityDiagnostic,
+                NameBindingPrecedenceDescriptor::CompilerDiagnostic,
+                None,
+                vec!["duplicate-declaration-diagnostic=compiler-current".to_string()],
+                "duplicate declaration blocks package execution until resolved".to_string(),
+                &mut ordinal,
+            ));
+        }
+        if matches!(
+            metadata.signature.kind,
+            ProcedureKindDescriptor::PropertyGet
+                | ProcedureKindDescriptor::PropertyLet
+                | ProcedureKindDescriptor::PropertySet
+        ) {
+            descriptors.push(name_binding_descriptor(
+                &procedure_id,
+                "NAME-BINDING-PROPERTY-ACCESSOR",
+                property_base_name(&metadata.procedure_name),
+                NameBindingKindDescriptor::PropertyAccessor,
+                NameBindingPrecedenceDescriptor::PropertyAccessor,
+                Some(metadata.procedure_name.clone()),
+                Vec::new(),
+                "property accessor participates in member binding table".to_string(),
+                &mut ordinal,
+            ));
+        }
+    }
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+#[allow(clippy::too_many_arguments)]
+fn name_binding_descriptor(
+    procedure_id: &str,
+    binding_id: &str,
+    name: String,
+    binding_kind: NameBindingKindDescriptor,
+    precedence: NameBindingPrecedenceDescriptor,
+    target: Option<String>,
+    diagnostics: Vec<String>,
+    detail: String,
+    ordinal: &mut usize,
+) -> NameBindingDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let ordinal_key = current.to_string();
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::NameBinding,
+        [
+            procedure_id,
+            binding_id,
+            name.as_str(),
+            ordinal_key.as_str(),
+        ],
+    );
+    NameBindingDescriptor {
+        descriptor_id,
+        binding_id: binding_id.to_string(),
+        name,
+        binding_kind,
+        precedence,
+        target,
+        diagnostics,
+        detail,
+    }
+}
+
+fn build_object_member_binding_descriptors(
+    metadata: &ProcedureRuntimeMetadata,
+    proc: Option<&BoundProcedure>,
+) -> Vec<ObjectMemberBindingDescriptor> {
+    let procedure_id = metadata_descriptor_owner_id(metadata);
+    let mut descriptors = Vec::new();
+    let mut ordinal = 0usize;
+    if matches!(
+        metadata.signature.kind,
+        ProcedureKindDescriptor::PropertyGet
+            | ProcedureKindDescriptor::PropertyLet
+            | ProcedureKindDescriptor::PropertySet
+    ) {
+        descriptors.push(property_signature_member_binding(
+            &procedure_id,
+            &metadata.signature,
+            &mut ordinal,
+        ));
+    }
+    for call_site in &metadata.call_sites {
+        if let Some(descriptor) = call_site_member_binding(&procedure_id, call_site, &mut ordinal) {
+            descriptors.push(descriptor);
+        }
+    }
+    if let Some(proc) = proc {
+        for stmt in &proc.body {
+            collect_stmt_member_bindings(stmt, &procedure_id, &mut ordinal, &mut descriptors);
+        }
+    }
+    descriptors.sort_by(|left, right| left.descriptor_id.cmp(&right.descriptor_id));
+    descriptors
+}
+
+fn property_signature_member_binding(
+    procedure_id: &str,
+    signature: &ProcedureSignatureDescriptor,
+    ordinal: &mut usize,
+) -> ObjectMemberBindingDescriptor {
+    let (binding_id, member_kind, argument_policy, result_type) = match signature.kind {
+        ProcedureKindDescriptor::PropertyGet => (
+            "BIND-PROPERTY-GET",
+            ObjectMemberKindDescriptor::PropertyGet,
+            "source-arguments-map-to-property-parameters",
+            signature.return_type,
+        ),
+        ProcedureKindDescriptor::PropertyLet => (
+            "BIND-PROPERTY-LET-VALUE",
+            ObjectMemberKindDescriptor::PropertyLet,
+            "value-param-is-runtime-ByVal",
+            signature
+                .parameters
+                .last()
+                .map(|parameter| parameter.declared_type),
+        ),
+        ProcedureKindDescriptor::PropertySet => (
+            "BIND-PROPERTY-SET-OBJECT",
+            ObjectMemberKindDescriptor::PropertySet,
+            "set-coercion-object-value-param",
+            signature
+                .parameters
+                .last()
+                .map(|parameter| parameter.declared_type),
+        ),
+        _ => unreachable!(),
+    };
+    object_member_binding_descriptor(
+        procedure_id,
+        binding_id,
+        VbaTypeId::Object,
+        property_base_name(&signature.procedure_name),
+        member_kind,
+        false,
+        signature.property_group.clone(),
+        MemberDispatchKindDescriptor::ProjectRoute,
+        argument_policy.to_string(),
+        result_type,
+        "preserve-receiver-identity".to_string(),
+        "route-cache-by-name-arity-and-kind".to_string(),
+        "missing-or-ambiguous-accessor-diagnostic".to_string(),
+        "metadata-and-runtime-backed-subset".to_string(),
+        "metadata-package-descriptor; broader object/property oracle rows remain open".to_string(),
+        ordinal,
+    )
+}
+
+fn call_site_member_binding(
+    procedure_id: &str,
+    call_site: &CallSiteDescriptor,
+    ordinal: &mut usize,
+) -> Option<ObjectMemberBindingDescriptor> {
+    match call_site.target_kind {
+        CallTargetKindDescriptor::PropertyGet
+        | CallTargetKindDescriptor::PropertyLet
+        | CallTargetKindDescriptor::PropertySet => {
+            let signature = ProcedureSignatureDescriptor {
+                procedure_name: call_site.target_name.clone(),
+                kind: match call_site.target_kind {
+                    CallTargetKindDescriptor::PropertyGet => ProcedureKindDescriptor::PropertyGet,
+                    CallTargetKindDescriptor::PropertyLet => ProcedureKindDescriptor::PropertyLet,
+                    CallTargetKindDescriptor::PropertySet => ProcedureKindDescriptor::PropertySet,
+                    _ => ProcedureKindDescriptor::Unknown,
+                },
+                parameters: Vec::new(),
+                return_type: call_site.return_value.as_ref().map(|_| VbaTypeId::Variant),
+                return_slot: call_site
+                    .return_value
+                    .as_ref()
+                    .and_then(|return_value| return_value.return_slot),
+                property_group: Some(property_base_name(&call_site.target_name)),
+                implicit_current_object: None,
+            };
+            Some(property_signature_member_binding(
+                procedure_id,
+                &signature,
+                ordinal,
+            ))
+        }
+        CallTargetKindDescriptor::LateBoundDefaultMember => Some(object_member_binding_descriptor(
+            procedure_id,
+            "BIND-LET-DEFAULT-MEMBER",
+            VbaTypeId::Object,
+            call_site.target_name.clone(),
+            ObjectMemberKindDescriptor::DefaultMemberGet,
+            true,
+            Some("default-member-group".to_string()),
+            MemberDispatchKindDescriptor::DefaultMemberFallback,
+            "let-context-binds-object-default-value".to_string(),
+            Some(VbaTypeId::Variant),
+            "receiver-object-identity-preserved-while-value-is-read".to_string(),
+            "route-cache-by-default-member-id".to_string(),
+            "Set-context-must-not-use-default-member-fallback".to_string(),
+            "current-policy-evidence-only".to_string(),
+            "metadata-package-descriptor; oracle-required".to_string(),
+            ordinal,
+        )),
+        _ => None,
+    }
+}
+
+fn collect_stmt_member_bindings(
+    stmt: &BoundStmt,
+    procedure_id: &str,
+    ordinal: &mut usize,
+    descriptors: &mut Vec<ObjectMemberBindingDescriptor>,
+) {
+    match stmt {
+        BoundStmt::Assign {
+            target,
+            intent: AssignmentIntent::Set,
+            ..
+        } => descriptors.push(object_member_binding_descriptor(
+            procedure_id,
+            "BIND-SET-OBJECT-ASSIGN",
+            VbaTypeId::Object,
+            target.clone(),
+            ObjectMemberKindDescriptor::SetAssignment,
+            false,
+            None,
+            MemberDispatchKindDescriptor::None,
+            "set-coercion-object-expression".to_string(),
+            Some(VbaTypeId::Object),
+            "preserve-assigned-object-identity-and-release-replaced-reference".to_string(),
+            "not-applicable".to_string(),
+            "incompatible-object-shapes-must-diagnose-or-runtime-error".to_string(),
+            "current-runtime-backed-not-package-owned".to_string(),
+            "metadata-package-descriptor; broader Set semantics remain open".to_string(),
+            ordinal,
+        )),
+        BoundStmt::IfCond {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for stmt in then_body.iter().chain(else_body.iter()) {
+                collect_stmt_member_bindings(stmt, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::DoWhile { body, .. } | BoundStmt::ForRange { body, .. } => {
+            for stmt in body {
+                collect_stmt_member_bindings(stmt, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::ForEach { body, .. } => {
+            for stmt in body {
+                collect_stmt_member_bindings(stmt, procedure_id, ordinal, descriptors);
+            }
+        }
+        BoundStmt::SelectCase {
+            arms, else_body, ..
+        } => {
+            for (_, body) in arms {
+                for stmt in body {
+                    collect_stmt_member_bindings(stmt, procedure_id, ordinal, descriptors);
+                }
+            }
+            for stmt in else_body {
+                collect_stmt_member_bindings(stmt, procedure_id, ordinal, descriptors);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn object_member_binding_descriptor(
+    procedure_id: &str,
+    binding_id: &str,
+    target_declared_type: VbaTypeId,
+    member_name: String,
+    member_kind: ObjectMemberKindDescriptor,
+    default_member: bool,
+    property_accessor_group: Option<String>,
+    dispatch_kind: MemberDispatchKindDescriptor,
+    argument_binding_policy: String,
+    result_declared_type: Option<VbaTypeId>,
+    object_identity_policy: String,
+    cache_invalidation_policy: String,
+    fallback_or_unsupported_policy: String,
+    current_vm_status: String,
+    gap_classification: String,
+    ordinal: &mut usize,
+) -> ObjectMemberBindingDescriptor {
+    let current = *ordinal;
+    *ordinal += 1;
+    let ordinal_key = current.to_string();
+    let descriptor_id = canonical_descriptor_id(
+        DescriptorFamily::ObjectMemberBinding,
+        [
+            procedure_id,
+            binding_id,
+            member_name.as_str(),
+            ordinal_key.as_str(),
+        ],
+    );
+    ObjectMemberBindingDescriptor {
+        descriptor_id,
+        binding_id: binding_id.to_string(),
+        target_declared_type,
+        member_name,
+        member_kind,
+        default_member,
+        property_accessor_group,
+        dispatch_kind,
+        argument_binding_policy,
+        result_declared_type,
+        object_identity_policy,
+        cache_invalidation_policy,
+        fallback_or_unsupported_policy,
+        current_vm_status,
+        gap_classification,
+    }
+}
+
+fn slot_type_by_name(metadata: &ProcedureRuntimeMetadata) -> HashMap<String, VbaTypeId> {
+    metadata
+        .slots
+        .iter()
+        .map(|slot| (slot.name.to_ascii_lowercase(), slot.declared_type))
+        .collect()
+}
+
+fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId>) -> VbaTypeId {
+    match expr {
+        BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
+            VbaTypeId::Long
+        }
+        BoundExpr::BoolConst(_) => VbaTypeId::Boolean,
+        BoundExpr::FloatConst(_) => VbaTypeId::Double,
+        BoundExpr::StringConst(_) => VbaTypeId::String,
+        BoundExpr::Var(name) => type_by_name
+            .get(&name.to_ascii_lowercase())
+            .copied()
+            .unwrap_or(VbaTypeId::Variant),
+        BoundExpr::VarPtrArrayBuffer(_) => VbaTypeId::LongPtr,
+        BoundExpr::BinaryOp { op, .. } => match op {
+            ArithOp::Concat => VbaTypeId::String,
+            _ => VbaTypeId::Variant,
+        },
+        BoundExpr::CompareOp { .. } => VbaTypeId::Boolean,
+        BoundExpr::UnaryOp { .. } => VbaTypeId::Variant,
+        BoundExpr::IntrinsicCall { name, args } => intrinsic_result_type(name, args, type_by_name),
+        BoundExpr::ProcCall { .. } => VbaTypeId::Variant,
+    }
+}
+
+fn intrinsic_result_type(
+    name: &str,
+    args: &[BoundExpr],
+    type_by_name: &HashMap<String, VbaTypeId>,
+) -> VbaTypeId {
+    match name {
+        "__empty" | "__null" | "cverr" | "cdec" | "array" | "__oxvba_array_get" => {
+            VbaTypeId::Variant
+        }
+        "vbnullstring" | "cstr" | "str" | "left" | "right" | "mid" | "replace" | "lcase"
+        | "ucase" | "trim" | "ltrim" | "rtrim" | "space" | "chr" | "format" | "hex" | "oct"
+        | "typename" => VbaTypeId::String,
+        "cint" => VbaTypeId::Integer,
+        "clng" | "len" | "asc" | "lbound" | "ubound" | "vartype" | "instr" | "instrrev" => {
+            VbaTypeId::Long
+        }
+        "cdbl" | "val" | "timer" | "sqr" | "sin" | "cos" | "log" | "exp" | "atn" | "tan" => {
+            VbaTypeId::Double
+        }
+        "cbool" | "isarray" | "isnumeric" | "isdate" | "isobject" | "isempty" | "isnull"
+        | "iserror" | "typeofis" => VbaTypeId::Boolean,
+        "cdate" | "date" | "time" | "now" | "datevalue" | "timevalue" | "dateserial"
+        | "timeserial" | "dateadd" => VbaTypeId::Date,
+        "csng" => VbaTypeId::Single,
+        "cbyte" => VbaTypeId::Byte,
+        "ccur" => VbaTypeId::Currency,
+        "varptr" | "strptr" | "objptr" => VbaTypeId::LongPtr,
+        _ => args
+            .first()
+            .map(|arg| expr_declared_type(arg, type_by_name))
+            .unwrap_or(VbaTypeId::Variant),
+    }
+}
+
+fn expr_value_states(expr: &BoundExpr) -> Vec<ValueStateKind> {
+    match expr {
+        BoundExpr::IntrinsicCall { name, .. } => match name.as_str() {
+            "__empty" => vec![ValueStateKind::Empty],
+            "__null" => vec![ValueStateKind::Null],
+            "cverr" => vec![ValueStateKind::Error],
+            "cdec" => vec![ValueStateKind::DecimalVariantSubtype],
+            "vbnullstring" => vec![ValueStateKind::VbNullString],
+            _ => Vec::new(),
+        },
+        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+            expr_value_states(lhs)
+                .into_iter()
+                .chain(expr_value_states(rhs))
+                .collect()
+        }
+        BoundExpr::UnaryOp { operand, .. } => expr_value_states(operand),
+        _ => Vec::new(),
+    }
+}
+
+fn explicit_conversion_target_type(name: &str) -> Option<VbaTypeId> {
+    match name {
+        "cint" => Some(VbaTypeId::Integer),
+        "clng" => Some(VbaTypeId::Long),
+        "cdbl" => Some(VbaTypeId::Double),
+        "cstr" | "str" => Some(VbaTypeId::String),
+        "cbool" => Some(VbaTypeId::Boolean),
+        "cdate" => Some(VbaTypeId::Date),
+        "csng" => Some(VbaTypeId::Single),
+        "cbyte" => Some(VbaTypeId::Byte),
+        "ccur" => Some(VbaTypeId::Currency),
+        "cdec" => Some(VbaTypeId::Variant),
+        _ => None,
+    }
+}
+
+fn explicit_conversion_coercion_id(name: &str) -> &'static str {
+    match name {
+        "cstr" | "str" => "COERCE-LET-STRING-BSTR",
+        "cbool" => "COERCE-LET-BOOLEAN-NUMERIC",
+        "cdec" => "COERCE-VARIANT-DECIMAL-PAYLOAD",
+        _ => "COERCE-LET-NUMERIC-WIDEN",
+    }
+}
+
+fn assignment_coercion_id(
+    kind: CoercionKindDescriptor,
+    source: VbaTypeId,
+    target: VbaTypeId,
+    source_states: &[ValueStateKind],
+) -> &'static str {
+    if kind == CoercionKindDescriptor::Set {
+        return if source_states.contains(&ValueStateKind::Nothing) {
+            "COERCE-SET-NOTHING"
+        } else {
+            "COERCE-SET-OBJECT-ASSIGN"
+        };
+    }
+    if source_states.contains(&ValueStateKind::Empty) {
+        return if target == VbaTypeId::String {
+            "COERCE-LET-EMPTY-STRING"
+        } else {
+            "COERCE-LET-EMPTY-NUMERIC"
+        };
+    }
+    if source_states.contains(&ValueStateKind::DecimalVariantSubtype) {
+        return "COERCE-VARIANT-DECIMAL-PAYLOAD";
+    }
+    if source == target {
+        if target == VbaTypeId::Variant {
+            "COERCE-LET-VARIANT-PRESERVE"
+        } else {
+            "COERCE-LET-IDENTITY"
+        }
+    } else if source == VbaTypeId::Boolean && is_numeric_type(target) {
+        "COERCE-LET-BOOLEAN-NUMERIC"
+    } else if target == VbaTypeId::String {
+        "COERCE-LET-STRING-BSTR"
+    } else if is_numeric_type(source) && is_numeric_type(target) {
+        "COERCE-LET-NUMERIC-WIDEN"
+    } else {
+        "COERCE-LET-IDENTITY"
+    }
+}
+
+fn coercion_helper_id(coercion_id: &str) -> &'static str {
+    match coercion_id {
+        "COERCE-LET-STRING-BSTR" | "COERCE-LET-EMPTY-STRING" => {
+            "oxvba_runtime::variant_to_vba_string"
+        }
+        "COERCE-VM-TRUTHINESS" => "oxvba_vm::variant_truthy_value",
+        "COERCE-SET-OBJECT-ASSIGN" | "COERCE-SET-NOTHING" => "ObjectRef assignment",
+        _ => "oxvba_runtime::coerce_to",
+    }
+}
+
+fn operator_seed_id(
+    op: ArithOp,
+    left: VbaTypeId,
+    right: Option<VbaTypeId>,
+    lhs: &BoundExpr,
+    rhs: Option<&BoundExpr>,
+) -> &'static str {
+    match op {
+        ArithOp::Concat => "OP-CONCAT-AMPERSAND",
+        ArithOp::Add if left == VbaTypeId::String && right == Some(VbaTypeId::String) => {
+            "OP-ADD-STRING-STRING"
+        }
+        ArithOp::Add
+            if expr_value_states(lhs).contains(&ValueStateKind::Null)
+                || rhs
+                    .map(expr_value_states)
+                    .unwrap_or_default()
+                    .contains(&ValueStateKind::Null) =>
+        {
+            "OP-ADD-F64-COMPAT"
+        }
+        ArithOp::Add if left == VbaTypeId::Double || right == Some(VbaTypeId::Double) => {
+            "OP-ADD-F64-COMPAT"
+        }
+        ArithOp::Add => "OP-ADD-I32-COMPAT",
+        ArithOp::Sub | ArithOp::Mul => "OP-SUB-MUL-I32-F64",
+        ArithOp::Div | ArithOp::IntDiv | ArithOp::Mod => "OP-DIVISION",
+        ArithOp::Pow | ArithOp::Neg => "OP-POWER-NEG",
+    }
+}
+
+fn comparison_seed_id(
+    left: VbaTypeId,
+    right: VbaTypeId,
+    lhs: &BoundExpr,
+    rhs: &BoundExpr,
+) -> &'static str {
+    let states = expr_value_states(lhs)
+        .into_iter()
+        .chain(expr_value_states(rhs))
+        .collect::<Vec<_>>();
+    if states.contains(&ValueStateKind::Null) {
+        "OP-CMP-NULL"
+    } else if states.contains(&ValueStateKind::Empty)
+        && (left == VbaTypeId::String || right == VbaTypeId::String)
+    {
+        "OP-CMP-EMPTY-STRING"
+    } else if left == VbaTypeId::String && right == VbaTypeId::String {
+        "OP-CMP-STRING"
+    } else {
+        "OP-CMP-NUMERIC"
+    }
+}
+
+fn compare_operator_descriptor_kind(op: CompareOp) -> VbaOperatorDescriptor {
+    match op {
+        CompareOp::Eq => VbaOperatorDescriptor::Equal,
+        CompareOp::Ne => VbaOperatorDescriptor::NotEqual,
+        CompareOp::Lt => VbaOperatorDescriptor::LessThan,
+        CompareOp::Le => VbaOperatorDescriptor::LessOrEqual,
+        CompareOp::Gt => VbaOperatorDescriptor::GreaterThan,
+        CompareOp::Ge => VbaOperatorDescriptor::GreaterOrEqual,
+        CompareOp::Like => VbaOperatorDescriptor::Like,
+    }
+}
+
+fn compare_mode_descriptor(mode: StringCompareMode) -> OperatorCompareModeDescriptor {
+    match mode {
+        StringCompareMode::Binary => OperatorCompareModeDescriptor::Binary,
+        StringCompareMode::Text => OperatorCompareModeDescriptor::Text,
+    }
+}
+
+fn arith_op_key(op: ArithOp) -> &'static str {
+    match op {
+        ArithOp::Add => "add",
+        ArithOp::Sub => "subtract",
+        ArithOp::Mul => "multiply",
+        ArithOp::Div => "divide",
+        ArithOp::IntDiv => "integer-divide",
+        ArithOp::Mod => "modulo",
+        ArithOp::Pow => "power",
+        ArithOp::Concat => "concatenate",
+        ArithOp::Neg => "negate",
+    }
+}
+
+fn compare_op_key(op: CompareOp) -> &'static str {
+    match op {
+        CompareOp::Eq => "equal",
+        CompareOp::Ne => "not-equal",
+        CompareOp::Lt => "less-than",
+        CompareOp::Le => "less-or-equal",
+        CompareOp::Gt => "greater-than",
+        CompareOp::Ge => "greater-or-equal",
+        CompareOp::Like => "like",
+    }
+}
+
+fn is_numeric_type(ty: VbaTypeId) -> bool {
+    matches!(
+        ty,
+        VbaTypeId::Boolean
+            | VbaTypeId::Byte
+            | VbaTypeId::Integer
+            | VbaTypeId::Long
+            | VbaTypeId::LongLong
+            | VbaTypeId::LongPtr
+            | VbaTypeId::Single
+            | VbaTypeId::Double
+            | VbaTypeId::Currency
+            | VbaTypeId::Date
+    )
+}
+
+fn assignment_intent_key(intent: AssignmentIntent) -> &'static str {
+    match intent {
+        AssignmentIntent::Implicit => "implicit-let",
+        AssignmentIntent::Let => "explicit-let",
+        AssignmentIntent::Set => "set",
+    }
+}
+
+fn property_base_name(procedure_name: &str) -> String {
+    procedure_name
+        .strip_prefix("property_get_")
+        .or_else(|| procedure_name.strip_prefix("property_let_"))
+        .or_else(|| procedure_name.strip_prefix("property_set_"))
+        .unwrap_or(procedure_name)
+        .to_ascii_lowercase()
 }
 
 fn udt_descriptor_id_for_instance(proc: &BoundProcedure, name: &str) -> Option<String> {

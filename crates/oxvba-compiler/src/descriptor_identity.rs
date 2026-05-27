@@ -28,6 +28,11 @@ pub enum DescriptorFamily {
     Lifecycle,
     CarrierLayout,
     ValueState,
+    ExpressionSemantics,
+    OperatorSemantics,
+    Coercion,
+    NameBinding,
+    ObjectMemberBinding,
     TypeRegistry,
     DescriptorSet,
 }
@@ -48,6 +53,11 @@ impl DescriptorFamily {
             Self::Lifecycle => "lifecycle",
             Self::CarrierLayout => "carrier-layout",
             Self::ValueState => "value-state",
+            Self::ExpressionSemantics => "expression-semantics",
+            Self::OperatorSemantics => "operator-semantics",
+            Self::Coercion => "coercion",
+            Self::NameBinding => "name-binding",
+            Self::ObjectMemberBinding => "object-member-binding",
             Self::TypeRegistry => "type-registry",
             Self::DescriptorSet => "descriptor-set",
         }

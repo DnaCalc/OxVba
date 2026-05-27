@@ -44,14 +44,14 @@ Rows can start at family granularity and split when semantics diverge.
 | Family | Semantic facts required | VM consumption requirement | Current gap |
 |---|---|---|---|
 | Constants and copies | declared target slot type, value state, carrier init | initialize/copy with declared carrier semantics | Slot descriptor metadata incomplete. |
-| Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Operator table not package metadata yet. |
-| Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Helper behavior needs table-backed evidence. |
-| Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Truthiness table needs extraction. |
+| Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Selected v14 operator descriptors and evidence exist; full truth table and descriptor-driven execution remain incomplete. |
+| Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Selected v14 coercion/operator/value-state descriptors exist; full helper truth table evidence remains incomplete. |
+| Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Selected v14 truthiness/logical/branch descriptors exist; broader extraction and behavior consumption remain incomplete. |
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
-| Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Property value seed evidence exists; default-member object evidence remains incomplete. |
+| Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v14 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
 | Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Runtime exists; package maps and oracle-backed edge evidence are incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
 | COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
@@ -65,7 +65,8 @@ The VM should consume package metadata where it changes execution or evidence:
 - procedure signature descriptors for argument binding and return slots;
 - slot descriptors for initialization, carrier choice, snapshots, and
   declared-type evidence;
-- expression and call descriptors for ByRef aliasing, temporary locals,
+- expression, operator, coercion, name-binding, object-member, and call
+  descriptors for ByRef aliasing, temporary locals, helper choice,
   optional/default handling, ParamArray construction, and default-member paths;
 - array/UDT/object descriptors for shape, field, identity, copy, and cleanup
   behavior;
@@ -161,6 +162,11 @@ opcode_family_coverage
 slot_snapshot
 slot_descriptor_digest
 declared_carrier_layout
+expression_semantics_evidence
+operator_semantics_evidence
+coercion_evidence
+name_binding_evidence
+object_member_binding_evidence
 expression_call_descriptor_digest
 call_binding_observations
 byref_alias_writeback_observations
@@ -196,7 +202,9 @@ Current VMR-01 seed evidence in `oxvba-vm` is
   procedure name, entry PC, slot descriptor digest, and slot descriptor rows;
 - package-owned descriptor identity rows for bytecode, procedures, procedure
   signatures, slots, call sites, array shapes, UDTs, object routes, interop
-  descriptors, and lifecycle descriptors reached by current evidence.
+  descriptors, lifecycle descriptors, expression semantics, operator
+  semantics, coercion, name binding, and object/member binding descriptors
+  reached by current evidence.
 
 Canonical descriptor identity helpers live in
 `crates/oxvba-compiler/src/descriptor_identity.rs`, not in the VM. The current
@@ -309,6 +317,22 @@ can claim full call-coercion or Optional-missing parity. Call-site evidence also
 records the selected coercion row id, numeric-widen row id, and runtime helper
 id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
 observable without generalizing coercion behavior.
+
+Current expression/operator/coercion seed surface is package metadata and VM
+identity evidence, not broad expression rewiring: `OxBundle` format v14 carries
+`ExpressionSemanticsDescriptor`, `OperatorSemanticsDescriptor`,
+`CoercionDescriptor`, `NameBindingDescriptor`, and
+`ObjectMemberBindingDescriptor` rows. The v13 compatibility reader upgrades
+older bundles with those vectors empty, preserving v13 call-site policy facts
+without inventing expression semantics. VM identity evidence reports descriptor
+digests and observation tokens for selected expression classifications,
+operator helper choices, `Option Compare` influence, truthiness/logical/branch
+rows, explicit deferred `IIf` ordering, Let/Set/property-value coercion rows,
+name-binding policy, and property/default-member member binding rows. These
+rows make helper choice and selected property/coercion facts package-visible;
+they do not imply that all operators, default-member routes, `With`/imported
+member lookup, COM/native projection, or error-routing coercions are
+descriptor-driven yet.
 
 The authoritative VMR-04 call-gap ledger is the
 `VMR-04 Call Fixture Gap Classification` section in

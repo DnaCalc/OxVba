@@ -111,6 +111,11 @@ fn make_runtime_metadata(
         object_types: Vec::new(),
         carrier_layouts: Vec::new(),
         value_states: Vec::new(),
+        expression_semantics: Vec::new(),
+        operator_semantics: Vec::new(),
+        coercions: Vec::new(),
+        name_bindings: Vec::new(),
+        object_member_bindings: Vec::new(),
     }
 }
 

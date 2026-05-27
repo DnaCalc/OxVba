@@ -237,14 +237,19 @@ VM execution already depends on:
   `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
   helper `oxvba_runtime::coerce_to`.
 
-The table uses `metadata-missing` even when a helper is VM-backed because rows
-are not yet canonical `CoercionDescriptor` package facts. The selected
-call-entry row is still intentionally narrow and does not generalize to other
-source/target types, expression forms, COM/native calls, or error-routing
-coercions. The table ids are observable evidence for the selected row, not a
-claim that all coercion decisions are package-owned descriptors. The table also
-keeps helper-specific behavior separate when the current implementation has
-multiple conversion paths. For example,
+`OxBundle` v14 lifts selected helper-backed rows into package
+`CoercionDescriptor` facts, including identity, Variant preservation,
+`Empty`-to-target cases, numeric widening, Boolean numeric conversion,
+String/BSTR conversion, VM truthiness, Decimal Variant payloads, and selected
+property/Set and call-entry rows. The table still keeps many rows as seed/gap
+evidence rather than a complete truth table. The selected call-entry row remains
+intentionally narrow and does not generalize to other source/target types,
+expression forms,
+COM/native calls, or error-routing coercions. The table ids are observable
+evidence for selected rows, not a claim that all coercion decisions are
+package-owned or descriptor-consumed. The table also keeps helper-specific
+behavior separate when the current implementation has multiple conversion
+paths. For example,
 `variant_to_vba_string(Boolean)` returns
 `True`/`False`, while `runtime_variant_to_text(Boolean)` returns `-1`/`0` for
 several current VM helpers. A future descriptor-backed coercion pass must decide
@@ -272,15 +277,18 @@ This table records the current VM helper families for:
 - internal `i32` fast paths, explicitly marked as implementation fast paths
   and not semantic proof.
 
-As with coercion, these rows are not canonical package descriptors yet. They are
-current helper evidence and a guardrail for future table-backed VM behavior or
-JIT lowering. Rows that look suspicious from a VBA compatibility perspective,
-such as `Null` comparison producing a deterministic false Boolean and
-`&` swallowing text conversion failures as empty text, remain classified as
-current helper behavior until a spec/oracle-backed behavior bead changes them.
-The `Option Compare Text` seed is also current-helper evidence only: the VM
-normalizes text with ASCII lowercasing today, so full VBA locale/collation parity
-still needs table and oracle coverage.
+`OxBundle` v14 lifts selected rows into package `OperatorSemanticsDescriptor`
+facts with helper ids, operand/result declared types, `Option Compare` mode,
+value-state tags, and evaluation-order policy. This includes selected
+arithmetic, forced concatenation, comparisons, truthiness, `Not`/`And`/`Or`,
+branch predicate, internal fast-path, and explicit deferred `IIf` rows. Rows
+that look suspicious from a VBA compatibility perspective, such as `Null`
+comparison producing a deterministic false Boolean and `&` swallowing text
+conversion failures as empty text, remain classified as current helper behavior
+until a spec/oracle-backed behavior bead changes them. The `Option Compare
+Text` seed remains current-helper evidence for selected string comparisons:
+the VM normalizes text with ASCII lowercasing today, so full VBA
+locale/collation parity still needs table and oracle coverage.
 
 ## Lifecycle Cleanup Seed Table v1
 
@@ -333,10 +341,14 @@ This table records current descriptor/evidence rows for:
 These rows deliberately separate core object/member semantics from COM wire
 projection. For example, `Set` assignment owns object identity and lifetime at
 the semantic layer, while late-bound COM dispatch rows are boundary projection
-facts over that object model. The current rows are not a complete member
-binding registry: descriptor ids, property/default-member pairing, dispatch
-cache invalidation, event graph semantics, COM result cleanup, and VM
-consumption remain open unless a row says otherwise.
+facts over that object model. `OxBundle` v14 lifts selected core rows into
+package `NameBindingDescriptor` and `ObjectMemberBindingDescriptor` facts for
+procedure-scope binding policy, property accessor names, `Property
+Get`/`Let`/`Set` shape, `Set` object assignment, selected `Nothing` handling,
+and default-member-in-`Let` metadata. The current rows are not a complete
+member binding registry: `With` context, imported members, full ambiguity
+diagnostics, dispatch cache invalidation, event graph semantics, COM result
+cleanup, and VM consumption remain open unless a row says otherwise.
 
 ## Minimum Table Artifact
 

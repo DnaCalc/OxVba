@@ -36,7 +36,7 @@ use crate::resolve::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 13;
+const FORMAT_VERSION: u32 = 14;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -523,6 +523,22 @@ struct LegacyOxBundleV12 {
     project_context: Option<BundleProjectContext>,
 }
 
+/// v13 bundle layout before expression/operator/coercion/name/member descriptors were added.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV13 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV13>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+    project_context: Option<BundleProjectContext>,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyCallSiteDescriptorV12 {
     call_site_id: String,
@@ -629,6 +645,11 @@ impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         };
         let slots = legacy
             .slots
@@ -667,6 +688,11 @@ impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -717,6 +743,11 @@ impl From<LegacyProcedureRuntimeMetadataV4> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -783,6 +814,11 @@ impl From<LegacyProcedureRuntimeMetadataV5> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -826,6 +862,11 @@ impl From<LegacyProcedureRuntimeMetadataV6> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -870,6 +911,11 @@ impl From<LegacyProcedureRuntimeMetadataV7> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -915,6 +961,11 @@ impl From<LegacyProcedureRuntimeMetadataV8> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -961,6 +1012,11 @@ impl From<LegacyProcedureRuntimeMetadataV9> for ProcedureRuntimeMetadata {
             object_types: Vec::new(),
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -1008,6 +1064,11 @@ impl From<LegacyProcedureRuntimeMetadataV10> for ProcedureRuntimeMetadata {
             object_types: legacy.object_types,
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -1057,6 +1118,65 @@ impl From<LegacyProcedureRuntimeMetadataV12> for ProcedureRuntimeMetadata {
             object_types: legacy.object_types,
             carrier_layouts: legacy.carrier_layouts,
             value_states: legacy.value_states,
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadataV13 {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<ProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+    signature: ProcedureSignatureDescriptor,
+    call_sites: Vec<CallSiteDescriptor>,
+    array_shapes: Vec<ArrayShapeDescriptor>,
+    udt_types: Vec<UdtTypeDescriptor>,
+    object_types: Vec<ObjectTypeDescriptor>,
+    carrier_layouts: Vec<CarrierLayoutDescriptor>,
+    value_states: Vec<ValueStateDescriptor>,
+}
+
+impl From<LegacyProcedureRuntimeMetadataV13> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadataV13) -> Self {
+        ProcedureRuntimeMetadata {
+            module_name: legacy.module_name,
+            procedure_name: legacy.procedure_name,
+            entry_pc: legacy.entry_pc,
+            source_line_start: legacy.source_line_start,
+            source_line_end: legacy.source_line_end,
+            statement_line_numbers: legacy.statement_line_numbers,
+            statement_entry_pcs: legacy.statement_entry_pcs,
+            slots: legacy.slots,
+            param_slots: legacy.param_slots,
+            return_slot: legacy.return_slot,
+            param_types: legacy.param_types,
+            return_type: legacy.return_type,
+            signature: legacy.signature,
+            call_sites: legacy.call_sites,
+            array_shapes: legacy.array_shapes,
+            udt_types: legacy.udt_types,
+            object_types: legacy.object_types,
+            carrier_layouts: legacy.carrier_layouts,
+            value_states: legacy.value_states,
+            expression_semantics: Vec::new(),
+            operator_semantics: Vec::new(),
+            coercions: Vec::new(),
+            name_bindings: Vec::new(),
+            object_member_bindings: Vec::new(),
         }
     }
 }
@@ -1391,10 +1511,11 @@ impl OxBundle {
             && version != 10
             && version != 11
             && version != 12
+            && version != 13
             && version != FORMAT_VERSION
         {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, or {FORMAT_VERSION})"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, or {FORMAT_VERSION})"
             ));
         }
 
@@ -1630,6 +1751,27 @@ impl OxBundle {
             let legacy: LegacyOxBundleV12 =
                 rkyv::from_bytes::<LegacyOxBundleV12, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v12: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy
+                    .procedure_metadata
+                    .into_iter()
+                    .map(|(name, metadata)| (name, metadata.into()))
+                    .collect(),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+                project_context: legacy.project_context,
+            })
+        } else if version == 13 {
+            let legacy: LegacyOxBundleV13 =
+                rkyv::from_bytes::<LegacyOxBundleV13, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v13: {e}"))?;
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
                 procedure_metadata: legacy
@@ -2688,6 +2830,11 @@ mod tests {
                 object_types: Vec::new(),
                 carrier_layouts: Vec::new(),
                 value_states: Vec::new(),
+                expression_semantics: Vec::new(),
+                operator_semantics: Vec::new(),
+                coercions: Vec::new(),
+                name_bindings: Vec::new(),
+                object_member_bindings: Vec::new(),
             },
         );
         OxBundle::new(bytecode, metadata)
@@ -2770,6 +2917,40 @@ mod tests {
                             .into_iter()
                             .map(legacy_call_site_v12)
                             .collect(),
+                        array_shapes: metadata.array_shapes,
+                        udt_types: metadata.udt_types,
+                        object_types: metadata.object_types,
+                        carrier_layouts: metadata.carrier_layouts,
+                        value_states: metadata.value_states,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn legacy_v13_metadata(
+        metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    ) -> BTreeMap<String, LegacyProcedureRuntimeMetadataV13> {
+        metadata
+            .into_iter()
+            .map(|(name, metadata)| {
+                (
+                    name,
+                    LegacyProcedureRuntimeMetadataV13 {
+                        module_name: metadata.module_name,
+                        procedure_name: metadata.procedure_name,
+                        entry_pc: metadata.entry_pc,
+                        source_line_start: metadata.source_line_start,
+                        source_line_end: metadata.source_line_end,
+                        statement_line_numbers: metadata.statement_line_numbers,
+                        statement_entry_pcs: metadata.statement_entry_pcs,
+                        slots: metadata.slots,
+                        param_slots: metadata.param_slots,
+                        return_slot: metadata.return_slot,
+                        param_types: metadata.param_types,
+                        return_type: metadata.return_type,
+                        signature: metadata.signature,
+                        call_sites: metadata.call_sites,
                         array_shapes: metadata.array_shapes,
                         udt_types: metadata.udt_types,
                         object_types: metadata.object_types,
@@ -2986,6 +3167,56 @@ mod tests {
     }
 
     #[test]
+    fn v13_backward_compat_preserves_call_policy_without_expression_descriptor_fields() {
+        let source = "Sub Main()\n\
+                      Dim value As Long\n\
+                      value = 1\n\
+                      Touch value\n\
+                      End Sub\n\
+                      Sub Touch(ByVal value As Double)\n\
+                      End Sub";
+        let (bytecode, metadata) = crate::compile_with_runtime_metadata(source).expect("compile");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let legacy = LegacyOxBundleV13 {
+            bytecode: bundle.bytecode,
+            procedure_metadata: legacy_v13_metadata(bundle.procedure_metadata),
+            manifest_snapshot: bundle.manifest_snapshot,
+            export_inventory: bundle.export_inventory,
+            source_hashes: bundle.source_hashes,
+            toolchain_fingerprint: bundle.toolchain_fingerprint,
+            event_dispatch_bindings: bundle.event_dispatch_bindings,
+            com_withevents_routes: bundle.com_withevents_routes,
+            dynamic_object_routes: bundle.dynamic_object_routes,
+            descriptor_inventory: bundle.descriptor_inventory,
+            project_context: bundle.project_context,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v13");
+        let data = bundle_bytes_from_payload(13, &payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v13");
+        let main = restored
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("main metadata");
+        let call_site = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Touch"))
+            .expect("touch call site");
+        assert_eq!(
+            call_site.invocation_syntax,
+            CallInvocationSyntaxDescriptor::StatementNoCall
+        );
+        assert_eq!(call_site.argument_evaluation_order, vec![0]);
+        assert!(main.expression_semantics.is_empty());
+        assert!(main.operator_semantics.is_empty());
+        assert!(main.coercions.is_empty());
+        assert!(main.name_bindings.is_empty());
+        assert!(main.object_member_bindings.is_empty());
+    }
+
+    #[test]
     fn header_magic_is_correct() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
@@ -2993,11 +3224,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_13() {
+    fn header_version_is_14() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 13);
+        assert_eq!(version, 14);
     }
 
     #[test]

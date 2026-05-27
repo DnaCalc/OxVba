@@ -21,8 +21,8 @@ pub use interpreter::{
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
     VmCarrierLayoutEvidence, VmDescriptorIdentityEvidence, VmExecutionPackage,
     VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
-    VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSignatureCallEvidence,
-    VmValueStateEvidence,
+    VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSemanticDescriptorEvidence,
+    VmSignatureCallEvidence, VmValueStateEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -416,6 +416,77 @@ mod tests {
                     .iter()
                     .any(|observation| observation == expected),
                 "missing call evidence token {expected}; got {observations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn package_identity_exposes_expression_operator_coercion_and_member_evidence() {
+        let source = "Option Compare Text\n\
+                      Sub Main()\n\
+                      Dim x As Long\n\
+                      Dim y As Double\n\
+                      Dim s As String\n\
+                      x = 1\n\
+                      y = x\n\
+                      y = y + x\n\
+                      Dim v As Variant\n\
+                      v = Null + 1\n\
+                      v = Empty + 1\n\
+                      v = CVErr(7) + 1\n\
+                      s = \"a\" & CStr(x)\n\
+                      If Null = 0 Or Empty = \"\" Then\n\
+                      s = s\n\
+                      End If\n\
+                      If x > 0 And y > 0 Then\n\
+                      s = s & vbNullString\n\
+                      End If\n\
+                      Call TakeDouble(x)\n\
+                      Value = x\n\
+                      End Sub\n\
+                      Sub TakeDouble(ByVal value As Double)\n\
+                      End Sub\n\
+                      Property Get Value() As Long\n\
+                      Value = 1\n\
+                      End Property\n\
+                      Property Let Value(ByRef newValue As Long)\n\
+                      End Property";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let evidence = VmExecutionPackage::new(&bytecode, &metadata).identity_evidence();
+        let observations = evidence
+            .expression_semantics_evidence
+            .iter()
+            .chain(evidence.operator_semantics_evidence.iter())
+            .chain(evidence.coercion_evidence.iter())
+            .chain(evidence.name_binding_evidence.iter())
+            .chain(evidence.object_member_binding_evidence.iter())
+            .flat_map(|entry| entry.observations.iter().cloned())
+            .collect::<Vec<_>>();
+
+        for expected in [
+            "classification=variable",
+            "operator-id=OP-CONCAT-AMPERSAND",
+            "operator-id=OP-BOOL-NOT-AND-OR",
+            "evaluation-order=lefttorighteager",
+            "operator-id=OP-CMP-NULL",
+            "operator-id=OP-CMP-EMPTY-STRING",
+            "result-value-state=null",
+            "result-value-state=empty",
+            "result-value-state=error",
+            "operator-id=OP-IIF-EAGER-DEFERRED",
+            "evaluation-order=unsupporteddeferred",
+            "coercion-id=COERCE-CALL-BYVAL-DECLARED-TARGET",
+            "coercion-id=COERCE-LET-NUMERIC-WIDEN",
+            "coercion-id=COERCE-PROPERTY-VALUE-BYVAL",
+            "name-binding-policy=local-scope-before-module-members",
+            "binding-id=BIND-PROPERTY-LET-VALUE",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing semantic evidence token {expected}; got {observations:?}"
             );
         }
     }

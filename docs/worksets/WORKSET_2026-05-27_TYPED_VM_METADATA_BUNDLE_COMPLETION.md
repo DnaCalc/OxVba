@@ -73,6 +73,16 @@ Current progress:
   Optional, ParamArray, return-copyout, and selected call-entry coercion facts.
   This keeps Optional `Variant` missing behavior and broader COM/native/export
   call binding classified as later VM/oracle/interop work.
+- `bd-tvmb.5` has added `OxBundle` v14 expression, operator, coercion,
+  name-binding, and object/member binding descriptors for selected primitive,
+  string, Variant, property, and object-assignment lanes. VM package evidence
+  now emits descriptor tokens for expression classifications, helper-selected
+  operators, `Option Compare` influence, Null/Empty/Error value states,
+  non-short-circuit `And`/`Or`, explicit deferred `IIf`, Let/Set/property
+  coercion, the selected `Long` to declared `Double ByVal` call-entry coercion,
+  procedure-scope binding policy, and selected property/default-member binding
+  rows. Broader truth-table extraction, `With`/imported lookup,
+  COM/native projection, and descriptor-driven execution remain later beads.
 
 ## Reference Truth
 

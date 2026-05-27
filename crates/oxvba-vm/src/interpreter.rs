@@ -12,13 +12,15 @@ use oxvba_com::{
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArrayShapeDescriptor, ArrayStorageKind, BundleProjectContext, Bytecode, CallSiteDescriptor,
-    CallTargetKindDescriptor, CarrierLayoutDescriptor, DescriptorFamily, DescriptorIdentity,
-    Instruction, ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
-    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor,
-    UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId,
+    CallTargetKindDescriptor, CarrierLayoutDescriptor, CoercionDescriptor, DescriptorFamily,
+    DescriptorIdentity, ExpressionSemanticsDescriptor, Instruction, NameBindingDescriptor,
+    ObjectMemberBindingDescriptor, ObjectTypeDescriptor, OperatorSemanticsDescriptor,
+    OptionalDefaultValue, OptionalParameterDescriptor, OxBundle, ParameterDescriptor,
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
+    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
+    RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
+    ValueStateDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
@@ -204,6 +206,14 @@ impl<'a> VmExecutionPackage<'a> {
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
         let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
         let value_state_evidence = collect_value_state_evidence(self.procedure_metadata);
+        let expression_semantics_evidence =
+            collect_expression_semantics_evidence(self.procedure_metadata);
+        let operator_semantics_evidence =
+            collect_operator_semantics_evidence(self.procedure_metadata);
+        let coercion_evidence = collect_coercion_evidence(self.procedure_metadata);
+        let name_binding_evidence = collect_name_binding_evidence(self.procedure_metadata);
+        let object_member_binding_evidence =
+            collect_object_member_binding_evidence(self.procedure_metadata);
         let descriptor_identities = collect_descriptor_identity_evidence(
             self.bytecode,
             self.procedure_metadata,
@@ -226,6 +236,11 @@ impl<'a> VmExecutionPackage<'a> {
             lifecycle_evidence,
             carrier_layout_evidence,
             value_state_evidence,
+            expression_semantics_evidence,
+            operator_semantics_evidence,
+            coercion_evidence,
+            name_binding_evidence,
+            object_member_binding_evidence,
             descriptor_identities,
             project_context: self
                 .project_context
@@ -349,6 +364,11 @@ pub struct VmPackageIdentityEvidence {
     pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
     pub carrier_layout_evidence: Vec<VmCarrierLayoutEvidence>,
     pub value_state_evidence: Vec<VmValueStateEvidence>,
+    pub expression_semantics_evidence: Vec<VmSemanticDescriptorEvidence>,
+    pub operator_semantics_evidence: Vec<VmSemanticDescriptorEvidence>,
+    pub coercion_evidence: Vec<VmSemanticDescriptorEvidence>,
+    pub name_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
+    pub object_member_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
     pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
     pub project_context: Option<VmProjectContextEvidence>,
 }
@@ -580,6 +600,15 @@ pub struct VmValueStateEvidence {
     pub observations: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmSemanticDescriptorEvidence {
+    pub procedure_name: String,
+    pub descriptor_id: String,
+    pub descriptor_digest: String,
+    pub descriptor_family: String,
+    pub observations: Vec<String>,
+}
+
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
 const DESCRIPTOR_INTRINSIC_LOOKBACK: usize = 8;
@@ -670,6 +699,51 @@ fn collect_descriptor_identity_evidence(
                     DescriptorFamily::ValueState,
                     value_state.descriptor_id.clone(),
                     value_state,
+                ),
+            ));
+        }
+        for descriptor in &metadata.expression_semantics {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::ExpressionSemantics,
+                    descriptor.descriptor_id.clone(),
+                    descriptor,
+                ),
+            ));
+        }
+        for descriptor in &metadata.operator_semantics {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::OperatorSemantics,
+                    descriptor.descriptor_id.clone(),
+                    descriptor,
+                ),
+            ));
+        }
+        for descriptor in &metadata.coercions {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::Coercion,
+                    descriptor.descriptor_id.clone(),
+                    descriptor,
+                ),
+            ));
+        }
+        for descriptor in &metadata.name_bindings {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::NameBinding,
+                    descriptor.descriptor_id.clone(),
+                    descriptor,
+                ),
+            ));
+        }
+        for descriptor in &metadata.object_member_bindings {
+            identities.push(VmDescriptorIdentityEvidence::from(
+                descriptor_identity_debug(
+                    DescriptorFamily::ObjectMemberBinding,
+                    descriptor.descriptor_id.clone(),
+                    descriptor,
                 ),
             ));
         }
@@ -1199,6 +1273,281 @@ fn value_state_observations(descriptor: &ValueStateDescriptor) -> Vec<String> {
         observations.push(format!("name={}", name.to_ascii_lowercase()));
     }
     observations
+}
+
+fn collect_expression_semantics_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSemanticDescriptorEvidence> {
+    collect_semantic_descriptor_evidence(
+        procedure_metadata,
+        DescriptorFamily::ExpressionSemantics,
+        |metadata| &metadata.expression_semantics,
+    )
+}
+
+fn collect_operator_semantics_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSemanticDescriptorEvidence> {
+    collect_semantic_descriptor_evidence(
+        procedure_metadata,
+        DescriptorFamily::OperatorSemantics,
+        |metadata| &metadata.operator_semantics,
+    )
+}
+
+fn collect_coercion_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSemanticDescriptorEvidence> {
+    collect_semantic_descriptor_evidence(
+        procedure_metadata,
+        DescriptorFamily::Coercion,
+        |metadata| &metadata.coercions,
+    )
+}
+
+fn collect_name_binding_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSemanticDescriptorEvidence> {
+    collect_semantic_descriptor_evidence(
+        procedure_metadata,
+        DescriptorFamily::NameBinding,
+        |metadata| &metadata.name_bindings,
+    )
+}
+
+fn collect_object_member_binding_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmSemanticDescriptorEvidence> {
+    collect_semantic_descriptor_evidence(
+        procedure_metadata,
+        DescriptorFamily::ObjectMemberBinding,
+        |metadata| &metadata.object_member_bindings,
+    )
+}
+
+trait VmSemanticDescriptorView: Debug {
+    fn descriptor_id(&self) -> &str;
+    fn observations(&self) -> Vec<String>;
+}
+
+impl VmSemanticDescriptorView for ExpressionSemanticsDescriptor {
+    fn descriptor_id(&self) -> &str {
+        &self.descriptor_id
+    }
+
+    fn observations(&self) -> Vec<String> {
+        expression_semantics_observations(self)
+    }
+}
+
+impl VmSemanticDescriptorView for OperatorSemanticsDescriptor {
+    fn descriptor_id(&self) -> &str {
+        &self.descriptor_id
+    }
+
+    fn observations(&self) -> Vec<String> {
+        operator_semantics_observations(self)
+    }
+}
+
+impl VmSemanticDescriptorView for CoercionDescriptor {
+    fn descriptor_id(&self) -> &str {
+        &self.descriptor_id
+    }
+
+    fn observations(&self) -> Vec<String> {
+        coercion_observations(self)
+    }
+}
+
+impl VmSemanticDescriptorView for NameBindingDescriptor {
+    fn descriptor_id(&self) -> &str {
+        &self.descriptor_id
+    }
+
+    fn observations(&self) -> Vec<String> {
+        name_binding_observations(self)
+    }
+}
+
+impl VmSemanticDescriptorView for ObjectMemberBindingDescriptor {
+    fn descriptor_id(&self) -> &str {
+        &self.descriptor_id
+    }
+
+    fn observations(&self) -> Vec<String> {
+        object_member_binding_observations(self)
+    }
+}
+
+fn collect_semantic_descriptor_evidence<T>(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    family: DescriptorFamily,
+    descriptors: fn(&ProcedureRuntimeMetadata) -> &Vec<T>,
+) -> Vec<VmSemanticDescriptorEvidence>
+where
+    T: VmSemanticDescriptorView,
+{
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            descriptors(metadata).iter().map(move |descriptor| {
+                let descriptor_id = descriptor.descriptor_id().to_string();
+                VmSemanticDescriptorEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    descriptor_digest: descriptor_digest_debug(family, &descriptor_id, descriptor),
+                    descriptor_id,
+                    descriptor_family: family.registry_key().to_string(),
+                    observations: descriptor.observations(),
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.descriptor_id.cmp(&right.descriptor_id))
+    });
+    evidence
+}
+
+fn expression_semantics_observations(descriptor: &ExpressionSemanticsDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("expression-id={}", descriptor.expression_id),
+        format!("classification={}", debug_token(&descriptor.classification)),
+        format!("declared-type={}", debug_token(&descriptor.declared_type)),
+        format!("carrier-hint={}", debug_token(&descriptor.carrier_hint)),
+        format!(
+            "default-member-policy={}",
+            debug_token(&descriptor.default_member_policy)
+        ),
+        format!("source-context={}", debug_token(&descriptor.source_context)),
+        format!("detail={}", descriptor.detail),
+    ];
+    for state in &descriptor.value_states {
+        observations.push(format!("value-state={}", debug_token(state)));
+    }
+    observations
+}
+
+fn operator_semantics_observations(descriptor: &OperatorSemanticsDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("operator-id={}", descriptor.operator_id),
+        format!("family={}", debug_token(&descriptor.family)),
+        format!("operator={}", debug_token(&descriptor.operator)),
+        format!(
+            "result-declared-type={}",
+            debug_token(&descriptor.result_declared_type)
+        ),
+        format!("helper-id={}", descriptor.helper_id),
+        format!("runtime-error-policy={}", descriptor.runtime_error_policy),
+        format!(
+            "evaluation-order={}",
+            debug_token(&descriptor.evaluation_order)
+        ),
+        format!("current-vm-status={}", descriptor.current_vm_status),
+        format!("gap-classification={}", descriptor.gap_classification),
+    ];
+    if let Some(left) = descriptor.left_declared_type {
+        observations.push(format!("left-declared-type={}", debug_token(&left)));
+    }
+    if let Some(right) = descriptor.right_declared_type {
+        observations.push(format!("right-declared-type={}", debug_token(&right)));
+    }
+    if let Some(compare_mode) = descriptor.compare_mode {
+        observations.push(format!("compare-mode={}", debug_token(&compare_mode)));
+    }
+    for state in &descriptor.result_value_states {
+        observations.push(format!("result-value-state={}", debug_token(state)));
+    }
+    observations
+}
+
+fn coercion_observations(descriptor: &CoercionDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("coercion-id={}", descriptor.coercion_id),
+        format!("kind={}", debug_token(&descriptor.kind)),
+        format!(
+            "source-declared-type={}",
+            debug_token(&descriptor.source_declared_type)
+        ),
+        format!(
+            "target-declared-type={}",
+            debug_token(&descriptor.target_declared_type)
+        ),
+        format!("static-status={}", debug_token(&descriptor.static_status)),
+        format!(
+            "runtime-failure={}",
+            debug_token(&descriptor.runtime_failure)
+        ),
+        format!("helper-id={}", descriptor.helper_id),
+        format!("evidence-anchor={}", descriptor.evidence_anchor),
+        format!("gap-classification={}", descriptor.gap_classification),
+        format!("detail={}", descriptor.detail),
+    ];
+    for state in &descriptor.source_value_states {
+        observations.push(format!("source-value-state={}", debug_token(state)));
+    }
+    observations
+}
+
+fn name_binding_observations(descriptor: &NameBindingDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("binding-id={}", descriptor.binding_id),
+        format!("name={}", descriptor.name.to_ascii_lowercase()),
+        format!("binding-kind={}", debug_token(&descriptor.binding_kind)),
+        format!("precedence={}", debug_token(&descriptor.precedence)),
+        format!("detail={}", descriptor.detail),
+    ];
+    if descriptor.binding_id == "NAME-BINDING-PROCEDURE-POLICY" {
+        observations.push("name-binding-policy=local-scope-before-module-members".to_string());
+    }
+    if let Some(target) = &descriptor.target {
+        observations.push(format!("target={}", target.to_ascii_lowercase()));
+    }
+    observations.extend(
+        descriptor
+            .diagnostics
+            .iter()
+            .map(|diagnostic| format!("diagnostic={diagnostic}")),
+    );
+    observations
+}
+
+fn object_member_binding_observations(descriptor: &ObjectMemberBindingDescriptor) -> Vec<String> {
+    vec![
+        format!("binding-id={}", descriptor.binding_id),
+        format!(
+            "target-declared-type={}",
+            debug_token(&descriptor.target_declared_type)
+        ),
+        format!(
+            "member-name={}",
+            descriptor.member_name.to_ascii_lowercase()
+        ),
+        format!("member-kind={}", debug_token(&descriptor.member_kind)),
+        format!("default-member={}", descriptor.default_member),
+        format!("dispatch-kind={}", debug_token(&descriptor.dispatch_kind)),
+        format!(
+            "argument-binding-policy={}",
+            descriptor.argument_binding_policy
+        ),
+        format!(
+            "object-identity-policy={}",
+            descriptor.object_identity_policy
+        ),
+        format!(
+            "cache-invalidation-policy={}",
+            descriptor.cache_invalidation_policy
+        ),
+        format!(
+            "fallback-or-unsupported-policy={}",
+            descriptor.fallback_or_unsupported_policy
+        ),
+        format!("current-vm-status={}", descriptor.current_vm_status),
+        format!("gap-classification={}", descriptor.gap_classification),
+    ]
 }
 
 fn collect_object_descriptor_evidence(

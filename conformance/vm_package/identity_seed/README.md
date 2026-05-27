@@ -79,6 +79,19 @@ the selected table row ids for the behavior-driving call-entry coercion:
 `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
 helper `oxvba_runtime::coerce_to`.
 
+The expression/operator/coercion/member lane records `OxBundle` v14 package
+evidence for selected `ExpressionSemanticsDescriptor`,
+`OperatorSemanticsDescriptor`, `CoercionDescriptor`, `NameBindingDescriptor`,
+and `ObjectMemberBindingDescriptor` rows. The VM package evidence emits
+descriptor tokens for expression classifications, helper-selected arithmetic
+and concatenation, `Option Compare` string comparisons, Null/Empty/Error value
+state rows, VM truthiness, non-short-circuit `And`/`Or`, branch predicates,
+explicit deferred `IIf`, Let/Set/property coercion, procedure-scope binding
+policy, selected `Long` to declared `Double ByVal` call-entry coercion, and
+selected property/default-member binding. This is package identity and evidence
+coverage; broader VM consumption, `With` context, imported members, COM/native
+projection, and unsupported/default-member execution remain later work.
+
 `VMR04_BYREF_EXPRESSION_FORMS` narrows the ByRef expression evidence to
 currently VM-runnable source forms: direct variable alias/writeback,
 statement-level parenthesized force-ByVal, arithmetic expression temporary,
