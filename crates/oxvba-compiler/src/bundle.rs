@@ -10,12 +10,14 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bytecode::{Bytecode, ExternalCallDescriptor, Instruction};
 use crate::emit::{
-    ArrayShapeDescriptor, CallSiteDescriptor, ObjectTypeDescriptor, OptionalDefaultValue,
+    ArgumentBindingDescriptor, ArrayShapeDescriptor, CallInvocationSyntaxDescriptor,
+    CallReturnDescriptor, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
+    DefaultMemberPolicyDescriptor, ObjectTypeDescriptor, OptionalDefaultValue,
     OptionalMissingStatePolicy, OptionalParameterDescriptor, ParamArrayDescriptor,
     ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProcedureSignatureDescriptor, ResolvedParameterMechanism, SourceParameterMechanism,
-    UdtTypeDescriptor, VbaTypeId, legacy_procedure_signature_descriptor,
+    UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId, legacy_procedure_signature_descriptor,
 };
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
@@ -34,7 +36,7 @@ use crate::resolve::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 12;
+const FORMAT_VERSION: u32 = 13;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -505,6 +507,65 @@ struct LegacyOxBundleV11 {
     project_context: Option<BundleProjectContext>,
 }
 
+/// v12 bundle layout before call invocation syntax and diagnostic policies were added.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV12 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV12>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+    project_context: Option<BundleProjectContext>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyCallSiteDescriptorV12 {
+    call_site_id: String,
+    caller_procedure_name: String,
+    call_pc: usize,
+    target_name: String,
+    target_kind: CallTargetKindDescriptor,
+    target_entry_pc: Option<usize>,
+    default_member_policy: DefaultMemberPolicyDescriptor,
+    arguments: Vec<ArgumentBindingDescriptor>,
+    return_value: Option<CallReturnDescriptor>,
+}
+
+impl From<LegacyCallSiteDescriptorV12> for CallSiteDescriptor {
+    fn from(legacy: LegacyCallSiteDescriptorV12) -> Self {
+        let argument_evaluation_order = legacy_argument_evaluation_order(&legacy.arguments);
+        CallSiteDescriptor {
+            call_site_id: legacy.call_site_id,
+            caller_procedure_name: legacy.caller_procedure_name,
+            call_pc: legacy.call_pc,
+            target_name: legacy.target_name,
+            target_kind: legacy.target_kind,
+            target_entry_pc: legacy.target_entry_pc,
+            default_member_policy: legacy.default_member_policy,
+            invocation_syntax: CallInvocationSyntaxDescriptor::Unknown,
+            argument_evaluation_order,
+            arguments: legacy.arguments,
+            return_value: legacy.return_value,
+            diagnostic_policies: Vec::new(),
+        }
+    }
+}
+
+fn legacy_argument_evaluation_order(arguments: &[ArgumentBindingDescriptor]) -> Vec<usize> {
+    let mut order = arguments
+        .iter()
+        .filter_map(|argument| argument.source_index)
+        .collect::<Vec<_>>();
+    order.sort_unstable();
+    order.dedup();
+    order
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyProcedureRuntimeSlotMetadata {
     name: String,
@@ -784,7 +845,7 @@ struct LegacyProcedureRuntimeMetadataV7 {
     param_types: Vec<crate::bytecode::DeclareParamType>,
     return_type: Option<crate::bytecode::DeclareParamType>,
     signature: ProcedureSignatureDescriptor,
-    call_sites: Vec<CallSiteDescriptor>,
+    call_sites: Vec<LegacyCallSiteDescriptorV12>,
 }
 
 impl From<LegacyProcedureRuntimeMetadataV7> for ProcedureRuntimeMetadata {
@@ -803,7 +864,7 @@ impl From<LegacyProcedureRuntimeMetadataV7> for ProcedureRuntimeMetadata {
             param_types: legacy.param_types,
             return_type: legacy.return_type,
             signature: legacy.signature,
-            call_sites: legacy.call_sites,
+            call_sites: legacy.call_sites.into_iter().map(Into::into).collect(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
             object_types: Vec::new(),
@@ -828,7 +889,7 @@ struct LegacyProcedureRuntimeMetadataV8 {
     param_types: Vec<crate::bytecode::DeclareParamType>,
     return_type: Option<crate::bytecode::DeclareParamType>,
     signature: ProcedureSignatureDescriptor,
-    call_sites: Vec<CallSiteDescriptor>,
+    call_sites: Vec<LegacyCallSiteDescriptorV12>,
     array_shapes: Vec<ArrayShapeDescriptor>,
 }
 
@@ -848,7 +909,7 @@ impl From<LegacyProcedureRuntimeMetadataV8> for ProcedureRuntimeMetadata {
             param_types: legacy.param_types,
             return_type: legacy.return_type,
             signature: legacy.signature,
-            call_sites: legacy.call_sites,
+            call_sites: legacy.call_sites.into_iter().map(Into::into).collect(),
             array_shapes: legacy.array_shapes,
             udt_types: Vec::new(),
             object_types: Vec::new(),
@@ -873,7 +934,7 @@ struct LegacyProcedureRuntimeMetadataV9 {
     param_types: Vec<crate::bytecode::DeclareParamType>,
     return_type: Option<crate::bytecode::DeclareParamType>,
     signature: ProcedureSignatureDescriptor,
-    call_sites: Vec<CallSiteDescriptor>,
+    call_sites: Vec<LegacyCallSiteDescriptorV12>,
     array_shapes: Vec<ArrayShapeDescriptor>,
     udt_types: Vec<UdtTypeDescriptor>,
 }
@@ -894,7 +955,7 @@ impl From<LegacyProcedureRuntimeMetadataV9> for ProcedureRuntimeMetadata {
             param_types: legacy.param_types,
             return_type: legacy.return_type,
             signature: legacy.signature,
-            call_sites: legacy.call_sites,
+            call_sites: legacy.call_sites.into_iter().map(Into::into).collect(),
             array_shapes: legacy.array_shapes,
             udt_types: legacy.udt_types,
             object_types: Vec::new(),
@@ -919,7 +980,7 @@ struct LegacyProcedureRuntimeMetadataV10 {
     param_types: Vec<crate::bytecode::DeclareParamType>,
     return_type: Option<crate::bytecode::DeclareParamType>,
     signature: ProcedureSignatureDescriptor,
-    call_sites: Vec<CallSiteDescriptor>,
+    call_sites: Vec<LegacyCallSiteDescriptorV12>,
     array_shapes: Vec<ArrayShapeDescriptor>,
     udt_types: Vec<UdtTypeDescriptor>,
     object_types: Vec<ObjectTypeDescriptor>,
@@ -941,12 +1002,61 @@ impl From<LegacyProcedureRuntimeMetadataV10> for ProcedureRuntimeMetadata {
             param_types: legacy.param_types,
             return_type: legacy.return_type,
             signature: legacy.signature,
-            call_sites: legacy.call_sites,
+            call_sites: legacy.call_sites.into_iter().map(Into::into).collect(),
             array_shapes: legacy.array_shapes,
             udt_types: legacy.udt_types,
             object_types: legacy.object_types,
             carrier_layouts: Vec::new(),
             value_states: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadataV12 {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<ProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+    signature: ProcedureSignatureDescriptor,
+    call_sites: Vec<LegacyCallSiteDescriptorV12>,
+    array_shapes: Vec<ArrayShapeDescriptor>,
+    udt_types: Vec<UdtTypeDescriptor>,
+    object_types: Vec<ObjectTypeDescriptor>,
+    carrier_layouts: Vec<CarrierLayoutDescriptor>,
+    value_states: Vec<ValueStateDescriptor>,
+}
+
+impl From<LegacyProcedureRuntimeMetadataV12> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadataV12) -> Self {
+        ProcedureRuntimeMetadata {
+            module_name: legacy.module_name,
+            procedure_name: legacy.procedure_name,
+            entry_pc: legacy.entry_pc,
+            source_line_start: legacy.source_line_start,
+            source_line_end: legacy.source_line_end,
+            statement_line_numbers: legacy.statement_line_numbers,
+            statement_entry_pcs: legacy.statement_entry_pcs,
+            slots: legacy.slots,
+            param_slots: legacy.param_slots,
+            return_slot: legacy.return_slot,
+            param_types: legacy.param_types,
+            return_type: legacy.return_type,
+            signature: legacy.signature,
+            call_sites: legacy.call_sites.into_iter().map(Into::into).collect(),
+            array_shapes: legacy.array_shapes,
+            udt_types: legacy.udt_types,
+            object_types: legacy.object_types,
+            carrier_layouts: legacy.carrier_layouts,
+            value_states: legacy.value_states,
         }
     }
 }
@@ -1280,10 +1390,11 @@ impl OxBundle {
             && version != 9
             && version != 10
             && version != 11
+            && version != 12
             && version != FORMAT_VERSION
         {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, or {FORMAT_VERSION})"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, or {FORMAT_VERSION})"
             ));
         }
 
@@ -1498,6 +1609,27 @@ impl OxBundle {
             let legacy: LegacyOxBundleV11 =
                 rkyv::from_bytes::<LegacyOxBundleV11, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v11: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy
+                    .procedure_metadata
+                    .into_iter()
+                    .map(|(name, metadata)| (name, metadata.into()))
+                    .collect(),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+                project_context: legacy.project_context,
+            })
+        } else if version == 12 {
+            let legacy: LegacyOxBundleV12 =
+                rkyv::from_bytes::<LegacyOxBundleV12, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v12: {e}"))?;
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
                 procedure_metadata: legacy
@@ -2583,10 +2715,66 @@ mod tests {
                         param_types: metadata.param_types,
                         return_type: metadata.return_type,
                         signature: metadata.signature,
-                        call_sites: metadata.call_sites,
+                        call_sites: metadata
+                            .call_sites
+                            .into_iter()
+                            .map(legacy_call_site_v12)
+                            .collect(),
                         array_shapes: metadata.array_shapes,
                         udt_types: metadata.udt_types,
                         object_types: metadata.object_types,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn legacy_call_site_v12(call_site: CallSiteDescriptor) -> LegacyCallSiteDescriptorV12 {
+        LegacyCallSiteDescriptorV12 {
+            call_site_id: call_site.call_site_id,
+            caller_procedure_name: call_site.caller_procedure_name,
+            call_pc: call_site.call_pc,
+            target_name: call_site.target_name,
+            target_kind: call_site.target_kind,
+            target_entry_pc: call_site.target_entry_pc,
+            default_member_policy: call_site.default_member_policy,
+            arguments: call_site.arguments,
+            return_value: call_site.return_value,
+        }
+    }
+
+    fn legacy_v12_metadata(
+        metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    ) -> BTreeMap<String, LegacyProcedureRuntimeMetadataV12> {
+        metadata
+            .into_iter()
+            .map(|(name, metadata)| {
+                (
+                    name,
+                    LegacyProcedureRuntimeMetadataV12 {
+                        module_name: metadata.module_name,
+                        procedure_name: metadata.procedure_name,
+                        entry_pc: metadata.entry_pc,
+                        source_line_start: metadata.source_line_start,
+                        source_line_end: metadata.source_line_end,
+                        statement_line_numbers: metadata.statement_line_numbers,
+                        statement_entry_pcs: metadata.statement_entry_pcs,
+                        slots: metadata.slots,
+                        param_slots: metadata.param_slots,
+                        return_slot: metadata.return_slot,
+                        param_types: metadata.param_types,
+                        return_type: metadata.return_type,
+                        signature: metadata.signature,
+                        call_sites: metadata
+                            .call_sites
+                            .into_iter()
+                            .map(legacy_call_site_v12)
+                            .collect(),
+                        array_shapes: metadata.array_shapes,
+                        udt_types: metadata.udt_types,
+                        object_types: metadata.object_types,
+                        carrier_layouts: metadata.carrier_layouts,
+                        value_states: metadata.value_states,
                     },
                 )
             })
@@ -2750,6 +2938,54 @@ mod tests {
     }
 
     #[test]
+    fn v12_backward_compat_preserves_typed_descriptors_without_call_policy_fields() {
+        let source = "Sub Main()\n\
+                      Dim value As Long\n\
+                      Touch value\n\
+                      Debug.Print Empty\n\
+                      End Sub\n\
+                      Sub Touch(ByRef value As Long)\n\
+                      value = value + 1\n\
+                      End Sub";
+        let (bytecode, metadata) = crate::compile_with_runtime_metadata(source).expect("compile");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let legacy = LegacyOxBundleV12 {
+            bytecode: bundle.bytecode,
+            procedure_metadata: legacy_v12_metadata(bundle.procedure_metadata),
+            manifest_snapshot: bundle.manifest_snapshot,
+            export_inventory: bundle.export_inventory,
+            source_hashes: bundle.source_hashes,
+            toolchain_fingerprint: bundle.toolchain_fingerprint,
+            event_dispatch_bindings: bundle.event_dispatch_bindings,
+            com_withevents_routes: bundle.com_withevents_routes,
+            dynamic_object_routes: bundle.dynamic_object_routes,
+            descriptor_inventory: bundle.descriptor_inventory,
+            project_context: bundle.project_context,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v12");
+        let data = bundle_bytes_from_payload(12, &payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v12");
+        let main = restored
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("main metadata");
+        assert!(!main.carrier_layouts.is_empty());
+        assert!(!main.value_states.is_empty());
+        let call_site = main
+            .call_sites
+            .iter()
+            .find(|call| call.target_name.eq_ignore_ascii_case("Touch"))
+            .expect("touch call site");
+        assert_eq!(
+            call_site.invocation_syntax,
+            CallInvocationSyntaxDescriptor::Unknown
+        );
+        assert!(call_site.diagnostic_policies.is_empty());
+    }
+
+    #[test]
     fn header_magic_is_correct() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
@@ -2757,11 +2993,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_12() {
+    fn header_version_is_13() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 12);
+        assert_eq!(version, 13);
     }
 
     #[test]
@@ -3190,7 +3426,11 @@ mod tests {
                         param_types: metadata.param_types,
                         return_type: metadata.return_type,
                         signature: metadata.signature,
-                        call_sites: metadata.call_sites,
+                        call_sites: metadata
+                            .call_sites
+                            .into_iter()
+                            .map(legacy_call_site_v12)
+                            .collect(),
                     },
                 )
             })
@@ -3256,7 +3496,11 @@ mod tests {
                         param_types: metadata.param_types,
                         return_type: metadata.return_type,
                         signature: metadata.signature,
-                        call_sites: metadata.call_sites,
+                        call_sites: metadata
+                            .call_sites
+                            .into_iter()
+                            .map(legacy_call_site_v12)
+                            .collect(),
                         array_shapes: metadata.array_shapes,
                     },
                 )
@@ -3322,7 +3566,11 @@ mod tests {
                         param_types: metadata.param_types,
                         return_type: metadata.return_type,
                         signature: metadata.signature,
-                        call_sites: metadata.call_sites,
+                        call_sites: metadata
+                            .call_sites
+                            .into_iter()
+                            .map(legacy_call_site_v12)
+                            .collect(),
                         array_shapes: metadata.array_shapes,
                         udt_types: metadata.udt_types,
                     },

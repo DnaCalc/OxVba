@@ -379,6 +379,48 @@ mod tests {
     }
 
     #[test]
+    fn package_identity_exposes_call_syntax_and_diagnostic_policy_evidence() {
+        let source = "Sub Main()\n\
+                      Dim x As Long\n\
+                      Dim y As Long\n\
+                      Touch x\n\
+                      Call Touch(y)\n\
+                      Touch (x)\n\
+                      y = Echo(x)\n\
+                      End Sub\n\
+                      Sub Touch(ByRef value As Long)\n\
+                      value = value + 1\n\
+                      End Sub\n\
+                      Function Echo(ByVal value As Long) As Long\n\
+                      Echo = value\n\
+                      End Function";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let evidence = VmExecutionPackage::new(&bytecode, &metadata).identity_evidence();
+        let observations = evidence
+            .call_site_evidence
+            .iter()
+            .flat_map(|call| call.observations.iter().cloned())
+            .collect::<Vec<_>>();
+
+        for expected in [
+            "invocation-syntax:statementnocall",
+            "invocation-syntax:statementcallkeyword",
+            "invocation-syntax:expressioncall",
+            "arg:value:no-writeback-temp",
+            "diagnostic:missingrequiredargument:owner=compilercurrent:detail=current-invalid-early-bound-call=runtime-449",
+            "diagnostic:byrefexpressionnowriteback:owner=oracleneeded:detail=no-writeback-temp-shape-recorded; broaden-only-with-oracle",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing call evidence token {expected}; got {observations:?}"
+            );
+        }
+    }
+
+    #[test]
     fn package_identity_exposes_carrier_layout_and_value_state_evidence() {
         let source = "Type Point\n\
                       X As Long\n\

@@ -1714,11 +1714,34 @@ fn call_site_descriptor_observations(
         "default-member-policy:{}",
         debug_token(&call_site.default_member_policy)
     ));
+    observations.push(format!(
+        "invocation-syntax:{}",
+        debug_token(&call_site.invocation_syntax)
+    ));
+    if !call_site.argument_evaluation_order.is_empty() {
+        observations.push(format!(
+            "arg-eval-order:{}",
+            call_site
+                .argument_evaluation_order
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
     for argument in &call_site.arguments {
         observations.extend(call_site_argument_observations(
             argument,
             caller_metadata,
             target_metadata,
+        ));
+    }
+    for policy in &call_site.diagnostic_policies {
+        observations.push(format!(
+            "diagnostic:{}:owner={}:detail={}",
+            debug_token(&policy.diagnostic),
+            debug_token(&policy.owner),
+            policy.detail
         ));
     }
     if let Some(return_value) = &call_site.return_value {

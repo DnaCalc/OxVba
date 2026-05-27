@@ -281,7 +281,13 @@ sites. The seed rows represent target kind, call PC, target entry PC after
 patching, named/positional/omitted/ParamArray argument source shape, ByRef
 alias/writeback, ByRef expression temporary/no-writeback, ByVal copy, Optional
 default, ParamArray pack, fixed-array materialization, default-member fallback
-policy, and return copyout. The VM exposes these rows through
+policy, invocation syntax (`Call` keyword, no-`Call`, expression-call, and
+synthetic property-assignment forms), source argument evaluation order,
+diagnostic-policy ownership for the current compiler-owned 448/449/450
+invalid-call cases, and return copyout. `OxBundle` format v13 carries those
+call policy fields while the v12 compatibility reader upgrades older call-site
+rows with unknown syntax and empty diagnostic policies. The VM exposes these
+rows through
 `VmExecutionPackage::call_site_descriptors`, and
 `VmPackageIdentityEvidence::call_site_evidence` records descriptor digests plus
 observation tokens for the VM-runnable call fixtures. Package execution now has

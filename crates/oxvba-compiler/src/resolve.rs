@@ -95,6 +95,15 @@ pub struct BoundCallArg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundCallSyntax {
+    Unknown,
+    StatementNoCall,
+    StatementCallKeyword,
+    ExpressionCall,
+    SyntheticPropertyAssignment,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentIntent {
     Implicit,
     Let,
@@ -199,12 +208,14 @@ pub enum BoundStmt {
     Call {
         name: String,
         args: Vec<BoundCallArg>,
+        syntax: BoundCallSyntax,
     },
     AssignFromCall {
         target: String,
         name: String,
         args: Vec<BoundCallArg>,
         intent: AssignmentIntent,
+        syntax: BoundCallSyntax,
     },
     SelectCase {
         expr: BoundExpr,
@@ -2677,6 +2688,7 @@ fn parse_block(
             out.push(BoundStmt::Call {
                 name: "randomize".to_string(),
                 args,
+                syntax: BoundCallSyntax::StatementNoCall,
             });
             *index += 1;
             continue;
@@ -3430,6 +3442,7 @@ fn parse_assign_or_unsupported(
                 name: call_name,
                 args,
                 intent: assignment_intent,
+                syntax: BoundCallSyntax::ExpressionCall,
             };
         }
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
@@ -3446,6 +3459,7 @@ fn parse_assign_or_unsupported(
                 name,
                 args,
                 intent: assignment_intent,
+                syntax: BoundCallSyntax::ExpressionCall,
             };
         }
 
@@ -3460,6 +3474,7 @@ fn parse_assign_or_unsupported(
                 name: route_proc.clone(),
                 args: Vec::new(),
                 intent: assignment_intent,
+                syntax: BoundCallSyntax::ExpressionCall,
             };
         }
 
@@ -3506,6 +3521,7 @@ fn parse_assign_or_unsupported(
                         // through ByRef — the assigned value is always by-value.
                         force_byval: true,
                     }],
+                    syntax: BoundCallSyntax::SyntheticPropertyAssignment,
                 };
             }
             return BoundStmt::Assign {
@@ -3523,7 +3539,11 @@ fn parse_assign_or_unsupported(
         assignment_line.trim()
     };
     if let Some((name, args)) = parse_dispatch_invoke_call_invocation(call_token, array_bounds) {
-        return BoundStmt::Call { name, args };
+        return BoundStmt::Call {
+            name,
+            args,
+            syntax: call_syntax_from_keyword(has_call_keyword),
+        };
     }
     if let Some((name, mut args)) = parse_call_invocation(call_token, array_bounds) {
         // VBA rule: at statement level (no Call keyword), parentheses around a
@@ -3532,22 +3552,39 @@ fn parse_assign_or_unsupported(
         if !has_call_keyword && args.len() == 1 {
             args[0].force_byval = true;
         }
-        return BoundStmt::Call { name, args };
+        return BoundStmt::Call {
+            name,
+            args,
+            syntax: call_syntax_from_keyword(has_call_keyword),
+        };
     }
     if !has_call_keyword
         && let Some((name, args)) = parse_statement_call_invocation(call_token, array_bounds)
     {
-        return BoundStmt::Call { name, args };
+        return BoundStmt::Call {
+            name,
+            args,
+            syntax: BoundCallSyntax::StatementNoCall,
+        };
     }
     if let Some(name) = normalize_ident(call_token).or_else(|| parse_member_reference(call_token)) {
         return BoundStmt::Call {
             name,
             args: Vec::new(),
+            syntax: call_syntax_from_keyword(has_call_keyword),
         };
     }
 
     BoundStmt::Unsupported {
         line: line.to_string(),
+    }
+}
+
+fn call_syntax_from_keyword(has_call_keyword: bool) -> BoundCallSyntax {
+    if has_call_keyword {
+        BoundCallSyntax::StatementCallKeyword
+    } else {
+        BoundCallSyntax::StatementNoCall
     }
 }
 
@@ -7309,7 +7346,7 @@ mod tests {
             .iter()
             .find(|p| p.name == "main")
             .expect("main procedure expected");
-        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+        let Some(BoundStmt::Call { name, args, .. }) = main_proc.body.first() else {
             panic!("expected call statement");
         };
         assert_eq!(name, "mathmodule_add");
@@ -7325,7 +7362,7 @@ mod tests {
             .iter()
             .find(|p| p.name == "main")
             .expect("main procedure expected");
-        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+        let Some(BoundStmt::Call { name, args, .. }) = main_proc.body.first() else {
             panic!("expected call statement");
         };
         assert_eq!(name, "mathmodule_ping");
@@ -7341,7 +7378,7 @@ mod tests {
             .iter()
             .find(|p| p.name == "main")
             .expect("main procedure expected");
-        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+        let Some(BoundStmt::Call { name, args, .. }) = main_proc.body.first() else {
             panic!("expected call statement");
         };
         assert_eq!(name, "rtlmovememory");
@@ -7894,7 +7931,7 @@ mod tests {
         )));
         assert!(module.body.iter().any(|stmt| matches!(
             stmt,
-            BoundStmt::Call { name, args }
+            BoundStmt::Call { name, args, .. }
             if name == "fill" && args.len() == 1 && args[0].name.as_deref() == Some("value")
         )));
     }

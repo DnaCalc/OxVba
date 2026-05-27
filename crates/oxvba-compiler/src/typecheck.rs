@@ -676,7 +676,7 @@ fn check_stmt(
             }
         }
         BoundStmt::Return => Ok(()),
-        BoundStmt::Call { name, args } => validate_call_site(
+        BoundStmt::Call { name, args, .. } => validate_call_site(
             name,
             args,
             option_explicit,
@@ -693,6 +693,7 @@ fn check_stmt(
             name,
             args,
             intent,
+            ..
         } => {
             ensure_declared(
                 target,

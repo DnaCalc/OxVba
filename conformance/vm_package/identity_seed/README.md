@@ -58,6 +58,10 @@ bytecode lowering, not broad descriptor-driven call execution. Seed
 metadata for top-level project calls. VMR-06 has one selected package-backed
 call-entry behavior, but full expression/COM/native call-site coverage and
 broader descriptor-driven VM behavior remain later work.
+The call-site descriptor lane now records `OxBundle` v13 invocation syntax
+(`Call` keyword, no-`Call`, expression-call, and synthetic property-assignment
+forms), source argument evaluation order, and package-visible diagnostic policy
+ownership for the current compiler-owned 448/449/450 invalid-call cases.
 
 The VMR-04 row adds dedicated call-site descriptor evidence for ByRef variable
 alias/writeback, ByRef expression temporary/no-writeback, a ByVal `Long` to
@@ -91,6 +95,9 @@ then records current compile-time diagnostics for missing required arguments,
 wrong argument counts, unknown named arguments, duplicate mappings, positional
 after named, and named `ParamArray` targets, with the intended 448/449/450
 classification kept as evidence for later descriptor-driven call binding.
+The positive descriptor evidence also emits diagnostic-policy tokens so later
+VM-owned binding changes can prove when ownership intentionally moves away from
+the current compiler diagnostics.
 
 `VMR05_ARRAY_SHAPE_BOUNDS` is the first VM-runnable array shape descriptor
 fixture. It records fixed/static and dynamic local array slots, compiler

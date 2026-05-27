@@ -66,6 +66,13 @@ Current progress:
   Variant subtype extension. This is package/evidence coverage; later beads
   still own expression/operator/call/property/interop propagation and broader
   descriptor-driven VM consumption.
+- `bd-tvmb.4` has added `OxBundle` v13 call-site policy metadata for
+  invocation syntax, source argument evaluation order, and diagnostic ownership
+  of the current compiler-owned 448/449/450 invalid-call cases. VM package
+  evidence now emits these call policy tokens alongside existing ByRef,
+  Optional, ParamArray, return-copyout, and selected call-entry coercion facts.
+  This keeps Optional `Variant` missing behavior and broader COM/native/export
+  call binding classified as later VM/oracle/interop work.
 
 ## Reference Truth
 

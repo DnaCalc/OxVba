@@ -153,12 +153,14 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 name,
                 args,
                 intent,
+                syntax,
             } => {
                 out.push(BoundStmt::AssignFromCall {
                     target,
                     name,
                     args,
                     intent,
+                    syntax,
                 });
             }
             other => out.push(other),

@@ -15,9 +15,9 @@ use crate::{
     },
     descriptor_identity::{DescriptorFamily, canonical_descriptor_id},
     resolve::{
-        ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
-        BoundExpr, BoundExternalDecl, BoundModule, BoundParam, BoundParamSourceMechanism,
-        BoundProcedure, BoundStmt, BoundType, CompareOp,
+        ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause,
+        BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl, BoundModule, BoundParam,
+        BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType, CompareOp,
     },
 };
 
@@ -361,8 +361,11 @@ pub struct CallSiteDescriptor {
     pub target_kind: CallTargetKindDescriptor,
     pub target_entry_pc: Option<usize>,
     pub default_member_policy: DefaultMemberPolicyDescriptor,
+    pub invocation_syntax: CallInvocationSyntaxDescriptor,
+    pub argument_evaluation_order: Vec<usize>,
     pub arguments: Vec<ArgumentBindingDescriptor>,
     pub return_value: Option<CallReturnDescriptor>,
+    pub diagnostic_policies: Vec<CallDiagnosticPolicyDescriptor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -385,6 +388,44 @@ pub enum DefaultMemberPolicyDescriptor {
     NotApplicable,
     ExplicitMember,
     DefaultMemberFallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CallInvocationSyntaxDescriptor {
+    Unknown,
+    StatementNoCall,
+    StatementCallKeyword,
+    ExpressionCall,
+    SyntheticPropertyAssignment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CallDiagnosticPolicyDescriptor {
+    pub diagnostic: CallDiagnosticKindDescriptor,
+    pub owner: CallDiagnosticOwnerDescriptor,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CallDiagnosticKindDescriptor {
+    MissingRequiredArgument,
+    TooManyArguments,
+    UnknownNamedArgument,
+    DuplicateArgumentMapping,
+    PositionalAfterNamed,
+    NamedParamArray,
+    OptionalVariantMissingRuntimeState,
+    ByRefExpressionNoWriteback,
+    CallEntryCoercion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum CallDiagnosticOwnerDescriptor {
+    CompilerCurrent,
+    VmRuntimeCurrent,
+    PackageDescriptorSelected,
+    VmDeferred,
+    OracleNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -1011,6 +1052,20 @@ fn argument_source_kind(arg: &BoundCallArg) -> ArgumentSourceKindDescriptor {
         ArgumentSourceKindDescriptor::Named
     } else {
         ArgumentSourceKindDescriptor::Positional
+    }
+}
+
+fn call_invocation_syntax_descriptor(syntax: BoundCallSyntax) -> CallInvocationSyntaxDescriptor {
+    match syntax {
+        BoundCallSyntax::Unknown => CallInvocationSyntaxDescriptor::Unknown,
+        BoundCallSyntax::StatementNoCall => CallInvocationSyntaxDescriptor::StatementNoCall,
+        BoundCallSyntax::StatementCallKeyword => {
+            CallInvocationSyntaxDescriptor::StatementCallKeyword
+        }
+        BoundCallSyntax::ExpressionCall => CallInvocationSyntaxDescriptor::ExpressionCall,
+        BoundCallSyntax::SyntheticPropertyAssignment => {
+            CallInvocationSyntaxDescriptor::SyntheticPropertyAssignment
+        }
     }
 }
 
@@ -3709,7 +3764,8 @@ fn emit_stmt(
                 }
             }
         }
-        BoundStmt::Call { name, args } => {
+        BoundStmt::Call { name, args, syntax } => {
+            let invocation_syntax = call_invocation_syntax_descriptor(*syntax);
             if name.eq_ignore_ascii_case("randomize") {
                 let dst = temps.alloc_temp();
                 let seed = if args.is_empty() {
@@ -3733,6 +3789,7 @@ fn emit_stmt(
             } else if !emit_early_call(
                 name,
                 args,
+                invocation_syntax,
                 compare_mode,
                 slot_map,
                 temps,
@@ -3747,6 +3804,7 @@ fn emit_stmt(
                 let _ = emit_late_bound_default_member_call(
                     name,
                     args,
+                    invocation_syntax,
                     compare_mode,
                     slot_map,
                     temps,
@@ -3765,7 +3823,9 @@ fn emit_stmt(
             name,
             args,
             intent,
+            syntax,
         } => {
+            let invocation_syntax = call_invocation_syntax_descriptor(*syntax);
             if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
                 let current_meta = proc_meta
                     .get(current_proc_name)
@@ -3783,6 +3843,7 @@ fn emit_stmt(
                     if !emit_early_call(
                         name,
                         args,
+                        invocation_syntax,
                         compare_mode,
                         slot_map,
                         temps,
@@ -3797,6 +3858,7 @@ fn emit_stmt(
                         let _ = emit_late_bound_default_member_call(
                             name,
                             args,
+                            invocation_syntax,
                             compare_mode,
                             slot_map,
                             temps,
@@ -3823,6 +3885,7 @@ fn emit_stmt(
                 } else if !emit_early_call(
                     name,
                     args,
+                    invocation_syntax,
                     compare_mode,
                     slot_map,
                     temps,
@@ -3837,6 +3900,7 @@ fn emit_stmt(
                     let _ = emit_late_bound_default_member_call(
                         name,
                         args,
+                        invocation_syntax,
                         compare_mode,
                         slot_map,
                         temps,
@@ -4266,6 +4330,7 @@ fn bound_type_display_name(ty: BoundType) -> &'static str {
 fn emit_early_call(
     name: &str,
     args: &[BoundCallArg],
+    invocation_syntax: CallInvocationSyntaxDescriptor,
     compare_mode: StringCompareMode,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
@@ -4412,6 +4477,8 @@ fn emit_early_call(
             patch_idx,
             name,
             meta,
+            invocation_syntax,
+            args.len(),
             &arg_mapping,
             &byref_copyback,
             &param_array_element_slots,
@@ -4446,6 +4513,8 @@ fn build_early_call_site_descriptor(
     call_pc: usize,
     target_name: &str,
     meta: &EmitProcMeta,
+    invocation_syntax: CallInvocationSyntaxDescriptor,
+    source_argument_count: usize,
     arg_mapping: &EmitCallArgMapping<'_>,
     byref_copyback: &[(usize, usize)],
     param_array_element_slots: &HashMap<usize, Vec<usize>>,
@@ -4570,6 +4639,7 @@ fn build_early_call_site_descriptor(
         assign_target_slot: assign_target,
         copyout_required: assign_target.is_some_and(|dst| dst != return_slot),
     });
+    let diagnostic_policies = call_diagnostic_policies(&arguments);
     CallSiteDescriptor {
         call_site_id: format!(
             "callsite:{}@pc:{}",
@@ -4582,8 +4652,80 @@ fn build_early_call_site_descriptor(
         target_kind,
         target_entry_pc: None,
         default_member_policy: DefaultMemberPolicyDescriptor::NotApplicable,
+        invocation_syntax,
+        argument_evaluation_order: (0..source_argument_count).collect(),
         arguments,
         return_value,
+        diagnostic_policies,
+    }
+}
+
+fn call_diagnostic_policies(
+    arguments: &[ArgumentBindingDescriptor],
+) -> Vec<CallDiagnosticPolicyDescriptor> {
+    let mut policies = vec![
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::MissingRequiredArgument,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-449".to_string(),
+        ),
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::TooManyArguments,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-450".to_string(),
+        ),
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::UnknownNamedArgument,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-448".to_string(),
+        ),
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::DuplicateArgumentMapping,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-448".to_string(),
+        ),
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::PositionalAfterNamed,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-450".to_string(),
+        ),
+        call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::NamedParamArray,
+            CallDiagnosticOwnerDescriptor::CompilerCurrent,
+            "current-invalid-early-bound-call=runtime-448".to_string(),
+        ),
+    ];
+    if arguments.iter().any(|argument| {
+        argument.optional_default == Some(OptionalDefaultValue::VariantMissingError448)
+    }) {
+        policies.push(call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::OptionalVariantMissingRuntimeState,
+            CallDiagnosticOwnerDescriptor::VmDeferred,
+            "package-records-missing-argument; vm-current-materializes-default".to_string(),
+        ));
+    }
+    if arguments
+        .iter()
+        .any(|argument| argument.binding_kind == ArgumentBindingKindDescriptor::ByRefExpressionTemp)
+    {
+        policies.push(call_diagnostic_policy(
+            CallDiagnosticKindDescriptor::ByRefExpressionNoWriteback,
+            CallDiagnosticOwnerDescriptor::OracleNeeded,
+            "no-writeback-temp-shape-recorded; broaden-only-with-oracle".to_string(),
+        ));
+    }
+    policies
+}
+
+fn call_diagnostic_policy(
+    diagnostic: CallDiagnosticKindDescriptor,
+    owner: CallDiagnosticOwnerDescriptor,
+    detail: String,
+) -> CallDiagnosticPolicyDescriptor {
+    CallDiagnosticPolicyDescriptor {
+        diagnostic,
+        owner,
+        detail,
     }
 }
 
@@ -4845,6 +4987,7 @@ pub fn bound_type_to_declare_param_type(ty: &BoundType) -> DeclareParamType {
 fn emit_late_bound_default_member_call(
     name: &str,
     args: &[BoundCallArg],
+    invocation_syntax: CallInvocationSyntaxDescriptor,
     compare_mode: StringCompareMode,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
@@ -4905,12 +5048,14 @@ fn emit_late_bound_default_member_call(
             object_slot,
             args,
             &arg_slots,
+            invocation_syntax,
             Some(dst),
         ));
     }
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_late_bound_default_member_call_site_descriptor(
     current_proc_name: &str,
     call_pc: usize,
@@ -4918,6 +5063,7 @@ fn build_late_bound_default_member_call_site_descriptor(
     _object_slot: usize,
     args: &[BoundCallArg],
     arg_slots: &[usize],
+    invocation_syntax: CallInvocationSyntaxDescriptor,
     assign_target: Option<usize>,
 ) -> CallSiteDescriptor {
     let arguments = args
@@ -4939,7 +5085,7 @@ fn build_late_bound_default_member_call_site_descriptor(
             optional_default: None,
             param_array: None,
         })
-        .collect();
+        .collect::<Vec<_>>();
     CallSiteDescriptor {
         call_site_id: format!(
             "callsite:{}@pc:{}",
@@ -4952,12 +5098,15 @@ fn build_late_bound_default_member_call_site_descriptor(
         target_kind: CallTargetKindDescriptor::LateBoundDefaultMember,
         target_entry_pc: None,
         default_member_policy: DefaultMemberPolicyDescriptor::DefaultMemberFallback,
+        invocation_syntax,
+        argument_evaluation_order: (0..args.len()).collect(),
         arguments,
         return_value: Some(CallReturnDescriptor {
             return_slot: assign_target,
             assign_target_slot: assign_target,
             copyout_required: false,
         }),
+        diagnostic_policies: Vec::new(),
     }
 }
 
@@ -6282,6 +6431,7 @@ fn emit_expr_into(
             if !emit_early_call(
                 name,
                 args,
+                CallInvocationSyntaxDescriptor::ExpressionCall,
                 compare_mode,
                 slot_map,
                 temps,
@@ -6296,6 +6446,7 @@ fn emit_expr_into(
                 let _ = emit_late_bound_default_member_call(
                     name,
                     args,
+                    CallInvocationSyntaxDescriptor::ExpressionCall,
                     compare_mode,
                     slot_map,
                     temps,

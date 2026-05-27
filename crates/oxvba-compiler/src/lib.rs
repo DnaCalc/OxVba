@@ -32,19 +32,21 @@ pub use descriptor_identity::{
 pub use emit::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
     ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, ArrayBoundDescriptor,
-    ArrayShapeDescriptor, ArrayStorageKind, CallReturnDescriptor, CallSiteDescriptor,
-    CallTargetKindDescriptor, CarrierLayoutDescriptor, CarrierLayoutKind,
-    DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor, ObjectActivationDescriptor,
-    ObjectDefaultMemberDescriptor, ObjectDescriptorSupport, ObjectEventBindingDescriptor,
-    ObjectInstanceDescriptor, ObjectTypeDescriptor, ObjectTypeDescriptorKind, OptionalDefaultValue,
-    OptionalMissingStatePolicy, OptionalParameterDescriptor, ParamArrayBindingDescriptor,
-    ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode, ParameterRole,
-    ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
-    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
-    UdtCleanupDescriptor, UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor,
-    UdtInstanceDescriptor, UdtStorageKind, UdtTypeDescriptor, ValueStateDescriptor, ValueStateKind,
-    ValueStateSource, VbaTypeId, bound_type_to_declare_param_type,
+    ArrayShapeDescriptor, ArrayStorageKind, CallDiagnosticKindDescriptor,
+    CallDiagnosticOwnerDescriptor, CallDiagnosticPolicyDescriptor, CallInvocationSyntaxDescriptor,
+    CallReturnDescriptor, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
+    CarrierLayoutKind, DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor,
+    ObjectActivationDescriptor, ObjectDefaultMemberDescriptor, ObjectDescriptorSupport,
+    ObjectEventBindingDescriptor, ObjectInstanceDescriptor, ObjectTypeDescriptor,
+    ObjectTypeDescriptorKind, OptionalDefaultValue, OptionalMissingStatePolicy,
+    OptionalParameterDescriptor, ParamArrayBindingDescriptor, ParamArrayDescriptor,
+    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
+    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    ProcedureSignatureDescriptor, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
+    SlotRole, SlotTypeDescriptor, SourceParameterMechanism, UdtCleanupDescriptor,
+    UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor, UdtInstanceDescriptor,
+    UdtStorageKind, UdtTypeDescriptor, ValueStateDescriptor, ValueStateKind, ValueStateSource,
+    VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,
@@ -150,9 +152,10 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 mod tests {
     use super::{
         ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, Bytecode,
-        CallTargetKindDescriptor, DefaultMemberPolicyDescriptor, Instruction, OptionalDefaultValue,
-        OptionalMissingStatePolicy, OptionalParameterDescriptor, ParameterPassingMode,
-        ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
+        CallDiagnosticKindDescriptor, CallDiagnosticOwnerDescriptor,
+        CallInvocationSyntaxDescriptor, CallTargetKindDescriptor, DefaultMemberPolicyDescriptor,
+        Instruction, OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
+        ParameterPassingMode, ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
         SourceParameterMechanism, ValueStateKind, VbaTypeId, compile,
         compile_with_runtime_metadata,
@@ -823,6 +826,75 @@ mod tests {
                 .as_ref()
                 .map(|param_array| param_array.element_count),
             Some(2)
+        );
+    }
+
+    #[test]
+    fn call_site_descriptors_preserve_invocation_syntax_and_diagnostic_policy() {
+        let source = "Sub Main()\n\
+                      Dim x As Long\n\
+                      Dim y As Long\n\
+                      Touch x\n\
+                      Call Touch(y)\n\
+                      Touch (x)\n\
+                      y = Echo(x)\n\
+                      End Sub\n\
+                      Sub Touch(ByRef value As Long)\n\
+                      value = value + 1\n\
+                      End Sub\n\
+                      Function Echo(ByVal value As Long) As Long\n\
+                      Echo = value\n\
+                      End Function";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let main = metadata
+            .get("main")
+            .expect("Main metadata should be present");
+        assert!(
+            main.call_sites.iter().any(|call| call.invocation_syntax
+                == CallInvocationSyntaxDescriptor::StatementNoCall
+                && call.arguments[0].binding_kind == ArgumentBindingKindDescriptor::ByRefAlias
+                && call.argument_evaluation_order == vec![0]),
+            "statement calls without Call should preserve source order and alias policy"
+        );
+        assert!(
+            main.call_sites.iter().any(|call| call.invocation_syntax
+                == CallInvocationSyntaxDescriptor::StatementCallKeyword
+                && call.arguments[0].binding_kind == ArgumentBindingKindDescriptor::ByRefAlias),
+            "Call keyword invocation should be package-visible"
+        );
+        assert!(
+            main.call_sites.iter().any(|call| call.invocation_syntax
+                == CallInvocationSyntaxDescriptor::StatementNoCall
+                && call.arguments[0].force_byval
+                && call.arguments[0].binding_kind
+                    == ArgumentBindingKindDescriptor::ByRefExpressionTemp
+                && call
+                    .diagnostic_policies
+                    .iter()
+                    .any(|policy| policy.diagnostic
+                        == CallDiagnosticKindDescriptor::ByRefExpressionNoWriteback
+                        && policy.owner == CallDiagnosticOwnerDescriptor::OracleNeeded)),
+            "parenthesized statement-level argument should record no-writeback temp policy"
+        );
+        assert!(
+            main.call_sites.iter().any(|call| call.invocation_syntax
+                == CallInvocationSyntaxDescriptor::ExpressionCall
+                && call.target_name.eq_ignore_ascii_case("Echo")
+                && call
+                    .return_value
+                    .as_ref()
+                    .is_some_and(|return_value| return_value.copyout_required)),
+            "assignment from function should record expression-call syntax and return copyout"
+        );
+        assert!(
+            main.call_sites.iter().any(|call| call
+                .diagnostic_policies
+                .iter()
+                .any(|policy| policy.diagnostic
+                    == CallDiagnosticKindDescriptor::MissingRequiredArgument
+                    && policy.owner == CallDiagnosticOwnerDescriptor::CompilerCurrent)),
+            "current invalid-call diagnostics should remain compiler-owned package policy"
         );
     }
 
