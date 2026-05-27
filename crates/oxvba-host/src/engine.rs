@@ -316,6 +316,7 @@ impl Engine {
             bytecode: &compiled.bytecode,
             procedure_metadata: &compiled.procedure_runtime_metadata,
             package_origin: *package_origin,
+            project_context: None,
         };
         vm.invoke_package_procedure_with_variants(&package, entry_pc, param_slots, args)
             .map_err(PhaseDiagnostic::runtime)

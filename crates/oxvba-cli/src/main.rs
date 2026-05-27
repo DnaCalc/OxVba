@@ -118,7 +118,7 @@ fn run_build(args: Vec<String>) {
     };
 
     let mut bundle =
-        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+        oxvba_compiler::OxBundle::from_compiled_project_with_manifest(&compiled, &loaded.manifest);
 
     // Store COM class exports in the bundle's export inventory
     if !com_class_exports.is_empty()
@@ -552,7 +552,7 @@ fn produce_wrapper_exe_runner_row(
     let compiled = oxvba_compiler::compile_project(&loaded.manifest)
         .map_err(|err| format!("wrapper compile failed: {err}"))?;
     let bundle =
-        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+        oxvba_compiler::OxBundle::from_compiled_project_with_manifest(&compiled, &loaded.manifest);
     let bytes = bundle
         .serialize_to_bytes()
         .map_err(|err| format!("wrapper bundle serialization failed: {err}"))?;
@@ -693,7 +693,7 @@ fn produce_wrapper_library_runner_row(
         })?;
 
     let bundle =
-        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+        oxvba_compiler::OxBundle::from_compiled_project_with_manifest(&compiled, &loaded.manifest);
     let bytes = bundle
         .serialize_to_bytes()
         .map_err(|err| format!("wrapper library bundle serialization failed: {err}"))?;

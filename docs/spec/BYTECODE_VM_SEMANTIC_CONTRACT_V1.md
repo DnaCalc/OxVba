@@ -154,6 +154,8 @@ run_id
 fixture_id
 package_digest
 bytecode_digest
+project_context_evidence
+compile_context_evidence
 procedure_id
 opcode_family_coverage
 slot_snapshot
@@ -169,6 +171,9 @@ udt_field_observations
 object_identity_observations
 interop_descriptor_evidence
 interop_observations
+source_map_evidence
+package_diagnostics
+gap_classifications
 host_policy_observations
 unsupported_diagnostics
 ```
@@ -182,6 +187,10 @@ Current VMR-01 seed evidence in `oxvba-vm` is
 
 - package origin (`in-memory` package view or `OxBundle`);
 - package digest and bytecode digest;
+- bundle-backed project context evidence when an `OxBundle` v11 supplies
+  project/module/reference/import, module option, compile context, source-map,
+  native library, host capability, package diagnostic, and gap classification
+  facts;
 - package slot count and user slot count;
 - per-procedure id, package-owned procedure descriptor id/digest, module name,
   procedure name, entry PC, slot descriptor digest, and slot descriptor rows;
@@ -203,9 +212,9 @@ the recorded VM package identity for evidence and future JIT gates.
 
 This began as package identity plus first slot descriptor evidence. The current
 surface now also includes signature comparison, call-site, array-shape, UDT,
-object, interop, and selected UDT lifecycle evidence. Host-policy evidence and
-explicit cleanup-stack execution remain future rows under the strengthening
-sequence above.
+object, interop, bundle project/compile context, and selected UDT lifecycle
+evidence. Host-policy behavior consumption and explicit cleanup-stack execution
+remain future rows under the strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -219,9 +228,9 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v10 carries those facts and upgrades older
-v3/v4/v5/v6/v7/v8/v9 metadata into the current descriptor shape. This remains
-metadata-only: VM slot storage,
+`OxBundle` format v11 carries those facts, preserves v10 through the
+compatibility reader, and upgrades older v3/v4/v5/v6/v7/v8/v9 metadata into the
+current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
 metadata enrichment does not make compiler scratch slots user-visible.

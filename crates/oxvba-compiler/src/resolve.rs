@@ -1155,7 +1155,7 @@ fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
     out
 }
 
-fn builtin_pp_constants() -> HashMap<String, i32> {
+pub(crate) fn builtin_pp_constants() -> HashMap<String, i32> {
     let mut constants = HashMap::new();
     constants.insert("vba7".to_string(), -1);
     constants.insert(
@@ -6024,7 +6024,7 @@ fn collect_option_compare_mode(lines: &[String]) -> BoundCompareMode {
     mode
 }
 
-fn collect_option_base(lines: &[String]) -> i32 {
+pub(crate) fn collect_option_base(lines: &[String]) -> i32 {
     let mut base = 0i32;
     for line in lines {
         if let Some(parsed) = parse_option_base_directive(line) {

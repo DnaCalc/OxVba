@@ -944,7 +944,7 @@ fn execute_wrapped_com_server_build(
 
     ensure_parent_dir(&bundle_path)?;
     let bundle =
-        OxBundle::from_compiled_project(compiled, &request.workspace.manifest.project_name);
+        OxBundle::from_compiled_project_with_manifest(compiled, &request.workspace.manifest);
     let bundle_bytes = bundle
         .serialize_to_bytes()
         .map_err(|err| PhaseDiagnostic::compile(format!("bundle serialization failed: {err}")))?;

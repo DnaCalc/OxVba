@@ -49,6 +49,15 @@ Current progress:
   and evidence step only; downstream beads still own project/import, value
   state, call, expression, aggregate, object, interop, error, cleanup, and
   descriptor-driven execution closure.
+- `bd-tvmb.2` is adding `OxBundle` v11 project context inventory for module
+  options, `Def*` default-type families, manifest/builtin conditional
+  constants, pointer-width facts, references/import resolution state,
+  referenced-project summaries, compiler source maps, native Declare library
+  facts, host capability requirements, and deterministic package
+  diagnostics/gap classifications. VM evidence exposes this project context
+  and includes it in the package digest. This preserves facts for later beads;
+  it does not yet make type-library/native/host-policy behavior complete or
+  descriptor-driven.
 
 ## Reference Truth
 

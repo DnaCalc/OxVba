@@ -26,6 +26,14 @@ signature, slot, call-site, array-shape, UDT, object, interop, and lifecycle
 families reached by these fixtures. These rows are package identity evidence;
 they do not imply broader descriptor-driven VM execution.
 
+Bundle-backed VM package identity now also exposes project-context evidence
+when an `OxBundle` v11 supplies it: project/module/reference/import facts,
+module option and compile-context facts, source maps, native library facts,
+host capability requirements, deterministic package diagnostics, and gap
+classifications. These identity-seed fixtures remain focused on VM-runnable
+package evidence; full import, native ABI, and host-policy behavior closure
+belongs to later workset beads.
+
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
 and the current VM-runnable UDT field-alias shape. The UDT base slots now carry
 `UdtFields` carrier hints, but execution still uses the existing flattened

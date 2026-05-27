@@ -11,13 +11,14 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
-    ArrayShapeDescriptor, ArrayStorageKind, Bytecode, CallSiteDescriptor, CallTargetKindDescriptor,
-    DescriptorFamily, DescriptorIdentity, Instruction, ObjectTypeDescriptor, OptionalDefaultValue,
-    OptionalParameterDescriptor, OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata,
-    ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor, ProjectComWithEventsRoute,
-    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
-    ProjectDynamicParamRoute, ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor,
-    UdtFieldDescriptor, UdtTypeDescriptor, VbaTypeId,
+    ArrayShapeDescriptor, ArrayStorageKind, BundleProjectContext, Bytecode, CallSiteDescriptor,
+    CallTargetKindDescriptor, DescriptorFamily, DescriptorIdentity, Instruction,
+    ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor,
+    UdtTypeDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
@@ -140,6 +141,7 @@ pub struct DebugRuntimeSnapshot {
 pub struct VmExecutionPackage<'a> {
     pub bytecode: &'a Bytecode,
     pub procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
+    pub project_context: Option<&'a BundleProjectContext>,
     pub package_origin: VmPackageOrigin,
 }
 
@@ -151,6 +153,7 @@ impl<'a> VmExecutionPackage<'a> {
         Self {
             bytecode,
             procedure_metadata,
+            project_context: None,
             package_origin: VmPackageOrigin::InMemory,
         }
     }
@@ -159,6 +162,7 @@ impl<'a> VmExecutionPackage<'a> {
         Self {
             bytecode: &bundle.bytecode,
             procedure_metadata: &bundle.procedure_metadata,
+            project_context: bundle.project_context.as_ref(),
             package_origin: VmPackageOrigin::OxBundle,
         }
     }
@@ -178,7 +182,11 @@ impl<'a> VmExecutionPackage<'a> {
             &bytecode_descriptor_id,
             self.bytecode,
         );
-        let package_digest = digest_package(&bytecode_digest, self.procedure_metadata);
+        let package_digest = digest_package(
+            &bytecode_digest,
+            self.procedure_metadata,
+            self.project_context,
+        );
         let procedures = self
             .procedure_metadata
             .values()
@@ -215,6 +223,9 @@ impl<'a> VmExecutionPackage<'a> {
             interop_descriptor_evidence,
             lifecycle_evidence,
             descriptor_identities,
+            project_context: self
+                .project_context
+                .map(VmProjectContextEvidence::from_context),
         }
     }
 
@@ -333,6 +344,144 @@ pub struct VmPackageIdentityEvidence {
     pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
     pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
     pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
+    pub project_context: Option<VmProjectContextEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmProjectContextEvidence {
+    pub project_name: String,
+    pub project_kind: String,
+    pub compile_context: Vec<String>,
+    pub modules: Vec<String>,
+    pub module_compile_options: Vec<String>,
+    pub references: Vec<String>,
+    pub referenced_projects: Vec<String>,
+    pub source_maps: Vec<String>,
+    pub native_libraries: Vec<String>,
+    pub host_capabilities: Vec<String>,
+    pub package_diagnostics: Vec<String>,
+    pub gap_classifications: Vec<String>,
+}
+
+impl VmProjectContextEvidence {
+    fn from_context(context: &BundleProjectContext) -> Self {
+        Self {
+            project_name: context.project_name.clone(),
+            project_kind: context.project_kind.clone(),
+            compile_context: context
+                .compile_context
+                .builtin_conditional_constants
+                .iter()
+                .chain(
+                    context
+                        .compile_context
+                        .manifest_conditional_constants
+                        .iter(),
+                )
+                .map(|constant| {
+                    format!("{}:{}={}", constant.source, constant.name, constant.value)
+                })
+                .chain(std::iter::once(format!(
+                    "target:pointer-width={}",
+                    context.compile_context.target_pointer_width_bits
+                )))
+                .chain(std::iter::once(format!(
+                    "target:longptr-carrier={}",
+                    context.compile_context.long_ptr_carrier
+                )))
+                .chain(std::iter::once(format!(
+                    "target:vba7={}",
+                    context.compile_context.vba7
+                )))
+                .chain(std::iter::once(format!(
+                    "target:win64={}",
+                    context.compile_context.win64
+                )))
+                .chain(std::iter::once(format!(
+                    "target:longlong-supported={}",
+                    context.compile_context.long_long_supported
+                )))
+                .collect(),
+            modules: context
+                .modules
+                .iter()
+                .map(|module| format!("{}:{}:{}", module.kind, module.name, module.module_id))
+                .collect(),
+            module_compile_options: context
+                .modules
+                .iter()
+                .map(|module| {
+                    format!(
+                        "{}:explicit={}:compare={}:base={}:def={}:declares={}:ptrsafe={}:longptr={}:longlong={}",
+                        module.name,
+                        module.option_explicit,
+                        module.option_compare,
+                        module.option_base,
+                        module.default_type_families.len(),
+                        module.external_declare_count,
+                        module.ptrsafe_declare_count,
+                        module.uses_long_ptr,
+                        module.uses_long_long,
+                    )
+                })
+                .collect(),
+            references: context
+                .references
+                .iter()
+                .map(|reference| {
+                    format!(
+                        "{}:{}:{}",
+                        reference.kind, reference.name, reference.resolution
+                    )
+                })
+                .collect(),
+            referenced_projects: context
+                .referenced_projects
+                .iter()
+                .map(|project| {
+                    format!(
+                        "{}:{}:{}",
+                        project.source, project.project_name, project.module_count
+                    )
+                })
+                .collect(),
+            source_maps: context
+                .source_maps
+                .iter()
+                .map(|source_map| format!("{}:{}", source_map.module_name, source_map.lines.len()))
+                .collect(),
+            native_libraries: context
+                .native_libraries
+                .iter()
+                .map(|library| {
+                    format!(
+                        "{}:{}:{}",
+                        library.declared_name, library.library, library.calling_convention
+                    )
+                })
+                .collect(),
+            host_capabilities: context
+                .host_capabilities
+                .iter()
+                .map(|capability| format!("{}:{}", capability.capability, capability.source))
+                .collect(),
+            package_diagnostics: context
+                .package_diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    format!(
+                        "{}:{}:{}",
+                        diagnostic.severity, diagnostic.code, diagnostic.fact_id
+                    )
+                })
+                .collect(),
+            gap_classifications: context
+                .gap_classifications
+                .iter()
+                .map(|gap| format!("{}:{}:{}", gap.area, gap.status, gap.gap_id))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1796,6 +1945,7 @@ fn is_call_evidence_boundary(instruction: &Instruction) -> bool {
 fn digest_package(
     bytecode_digest: &str,
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    project_context: Option<&BundleProjectContext>,
 ) -> String {
     descriptor_digest_from_fields(
         DescriptorFamily::Package,
@@ -1803,6 +1953,7 @@ fn digest_package(
         [
             ("bytecode_digest", bytecode_digest.to_string()),
             ("procedure_metadata", format!("{procedure_metadata:#?}")),
+            ("project_context", format!("{project_context:#?}")),
         ],
     )
 }

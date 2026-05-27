@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use rkyv::{Archive, Deserialize, Serialize};
 
-use crate::bytecode::Bytecode;
+use crate::bytecode::{Bytecode, ExternalCallDescriptor, Instruction};
 use crate::emit::{
     ArrayShapeDescriptor, CallSiteDescriptor, OptionalDefaultValue, OptionalMissingStatePolicy,
     OptionalParameterDescriptor, ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode,
@@ -18,17 +18,22 @@ use crate::emit::{
 };
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
-    ModuleKind, ModuleVisibility, PassingMode, ProcedureAnnotation, ProcedureDescriptor,
-    ProcedureKind, ProcedureParameterDescriptor, ProcedureSignature, ProcedureVisibility,
-    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicObjectRoute,
-    ProjectEventDispatchBinding, ProjectIdentity, ProjectReflection, RuntimeProcedureRoute,
-    VbaType, VbaTypeDescriptor,
+    ModuleKind, ModuleUnit, ModuleVisibility, PassingMode, ProcedureAnnotation,
+    ProcedureDescriptor, ProcedureKind, ProcedureParameterDescriptor, ProcedureSignature,
+    ProcedureVisibility, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicObjectRoute, ProjectEventDispatchBinding, ProjectIdentity, ProjectKind,
+    ProjectManifest, ProjectReference, ProjectReflection, ReferenceKind, ReferencedProjectManifest,
+    RuntimeProcedureRoute, VbaType, VbaTypeDescriptor,
+};
+use crate::resolve::{
+    BoundCompareMode, BoundExternalDecl, BoundModule, BoundType, builtin_pp_constants,
+    collect_option_base, normalize_source_lines, resolve_symbols,
 };
 
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 10;
+const FORMAT_VERSION: u32 = 11;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -54,6 +59,137 @@ pub struct DescriptorInventory {
     pub com_classes: Vec<BundleComClassDescriptor>,
     pub com_events: Vec<BundleComEventDescriptor>,
     pub callables: Vec<BundleCallableDescriptor>,
+}
+
+/// Project/import/source/host context facts carried by executable packages.
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleProjectContext {
+    pub project_name: String,
+    pub project_kind: String,
+    pub project_id: String,
+    pub source_fingerprint: String,
+    pub compile_context: BundleCompileContext,
+    pub modules: Vec<BundleProjectModuleFact>,
+    pub references: Vec<BundleProjectReferenceFact>,
+    pub referenced_projects: Vec<BundleReferencedProjectFact>,
+    pub source_maps: Vec<BundleModuleSourceMap>,
+    pub native_libraries: Vec<BundleNativeLibraryFact>,
+    pub host_capabilities: Vec<BundleHostCapabilityRequirement>,
+    pub package_diagnostics: Vec<BundlePackageDiagnostic>,
+    pub gap_classifications: Vec<BundlePackageGapClassification>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleProjectModuleFact {
+    pub module_id: String,
+    pub name: String,
+    pub kind: String,
+    pub option_private_module: bool,
+    pub option_explicit: bool,
+    pub option_compare: String,
+    pub option_base: i32,
+    pub vb_exposed: bool,
+    pub vb_creatable: bool,
+    pub vb_predeclared_id: bool,
+    pub vb_global_namespace: bool,
+    pub source_fingerprint: String,
+    pub source_line_count: usize,
+    pub default_type_families: Vec<BundleDefaultTypeFamilyFact>,
+    pub external_declare_count: usize,
+    pub ptrsafe_declare_count: usize,
+    pub uses_long_ptr: bool,
+    pub uses_long_long: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleCompileContext {
+    pub manifest_conditional_constants: Vec<BundleConditionalConstantFact>,
+    pub builtin_conditional_constants: Vec<BundleConditionalConstantFact>,
+    pub target_pointer_width_bits: u32,
+    pub vba7: bool,
+    pub win64: bool,
+    pub long_ptr_carrier: String,
+    pub long_long_supported: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleConditionalConstantFact {
+    pub name: String,
+    pub value: i32,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleDefaultTypeFamilyFact {
+    pub start_letter: char,
+    pub end_letter: char,
+    pub type_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleProjectReferenceFact {
+    pub reference_id: String,
+    pub ordinal: usize,
+    pub name: String,
+    pub kind: String,
+    pub resolution: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleReferencedProjectFact {
+    pub project_name: String,
+    pub module_names: Vec<String>,
+    pub module_count: usize,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleModuleSourceMap {
+    pub module_name: String,
+    pub lines: Vec<BundleSourceLineMapping>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleSourceLineMapping {
+    pub file_line: u32,
+    pub runtime_line: Option<u32>,
+    pub kind: String,
+    pub executable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleNativeLibraryFact {
+    pub descriptor_id: u32,
+    pub declared_name: String,
+    pub library: String,
+    pub alias: String,
+    pub ordinal_alias: bool,
+    pub calling_convention: String,
+    pub marshal_lane: String,
+    pub selection_policy: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundleHostCapabilityRequirement {
+    pub capability_id: String,
+    pub capability: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundlePackageDiagnostic {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+    pub fact_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+pub struct BundlePackageGapClassification {
+    pub gap_id: String,
+    pub area: String,
+    pub status: String,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
@@ -206,6 +342,7 @@ pub struct OxBundle {
     pub com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
     pub dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
     pub descriptor_inventory: Option<DescriptorInventory>,
+    pub project_context: Option<BundleProjectContext>,
 }
 
 /// v1 bundle layout for backward-compatible deserialization.
@@ -326,6 +463,21 @@ struct LegacyOxBundleV8 {
 struct LegacyOxBundleV9 {
     bytecode: Bytecode,
     procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV9>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+}
+
+/// v10 bundle layout before project/import/source/host context facts were added.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV10 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     manifest_snapshot: Option<ManifestSnapshot>,
     export_inventory: Option<ExportInventory>,
     source_hashes: Option<BTreeMap<String, [u8; 32]>>,
@@ -814,7 +966,7 @@ fn upgrade_legacy_procedure_metadata(
 impl OxBundle {
     /// Create a new bundle from a compiled bytecode and its procedure metadata.
     ///
-    /// New v2 fields default to `None`.
+    /// Optional package metadata fields default to `None`.
     pub fn new(
         bytecode: Bytecode,
         procedure_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -830,6 +982,7 @@ impl OxBundle {
             com_withevents_routes: None,
             dynamic_object_routes: None,
             descriptor_inventory: None,
+            project_context: None,
         }
     }
 
@@ -901,22 +1054,61 @@ impl OxBundle {
         })
     }
 
-    /// Create a bundle from a `CompiledProject`, populating v2 metadata fields.
+    /// Create a bundle from a `CompiledProject`, preserving reflection-derived
+    /// package metadata when a source manifest is unavailable.
     pub fn from_compiled_project(
         compiled: &crate::project::CompiledProject,
         project_name: &str,
     ) -> Self {
+        Self::from_compiled_project_parts(compiled, project_name, None)
+    }
+
+    /// Create a bundle from a compiled project and its source manifest.
+    ///
+    /// This preserves project/module/reference/import/source-map and host
+    /// capability context that cannot be recovered from bytecode alone.
+    pub fn from_compiled_project_with_manifest(
+        compiled: &crate::project::CompiledProject,
+        manifest: &ProjectManifest,
+    ) -> Self {
+        Self::from_compiled_project_parts(compiled, &manifest.project_name, Some(manifest))
+    }
+
+    fn from_compiled_project_parts(
+        compiled: &crate::project::CompiledProject,
+        project_name: &str,
+        manifest: Option<&ProjectManifest>,
+    ) -> Self {
         let manifest_snapshot = ManifestSnapshot {
             project_name: project_name.to_string(),
-            project_kind: "compiled".to_string(),
-            module_names: compiled
-                .host_exports
-                .iter()
-                .map(|e| e.module_name.clone())
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect(),
-            reference_names: Vec::new(),
+            project_kind: manifest
+                .map(|manifest| project_kind_name(manifest.project_kind).to_string())
+                .unwrap_or_else(|| "compiled".to_string()),
+            module_names: manifest
+                .map(|manifest| {
+                    manifest
+                        .modules
+                        .iter()
+                        .map(|module| module.module_name.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| {
+                    compiled
+                        .project_reflection
+                        .modules
+                        .iter()
+                        .map(|module| module.name.clone())
+                        .collect()
+                }),
+            reference_names: manifest
+                .map(|manifest| {
+                    manifest
+                        .references
+                        .iter()
+                        .map(|reference| reference.referenced_project_name.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
         };
 
         let host_exports = compiled.host_exports.clone();
@@ -948,6 +1140,11 @@ impl OxBundle {
                 Some(compiled.project_dynamic_objects.clone())
             },
             descriptor_inventory: descriptor_inventory_from_compiled_project(compiled),
+            project_context: Some(project_context_from_compiled_project(
+                compiled,
+                project_name,
+                manifest,
+            )),
         }
     }
 
@@ -1001,10 +1198,11 @@ impl OxBundle {
             && version != 7
             && version != 8
             && version != 9
+            && version != 10
             && version != FORMAT_VERSION
         {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, or {FORMAT_VERSION})"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, or {FORMAT_VERSION})"
             ));
         }
 
@@ -1049,6 +1247,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: None,
+                project_context: None,
             })
         } else if version == 3 {
             let legacy: LegacyOxBundleV3 =
@@ -1065,6 +1264,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 4 {
             let legacy: LegacyOxBundleV4 =
@@ -1085,6 +1285,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 5 {
             let legacy: LegacyOxBundleV5 =
@@ -1105,6 +1306,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 6 {
             let legacy: LegacyOxBundleV6 =
@@ -1125,6 +1327,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 7 {
             let legacy: LegacyOxBundleV7 =
@@ -1145,6 +1348,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 8 {
             let legacy: LegacyOxBundleV8 =
@@ -1165,6 +1369,7 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else if version == 9 {
             let legacy: LegacyOxBundleV9 =
@@ -1185,6 +1390,24 @@ impl OxBundle {
                 com_withevents_routes: legacy.com_withevents_routes,
                 dynamic_object_routes: legacy.dynamic_object_routes,
                 descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
+            })
+        } else if version == 10 {
+            let legacy: LegacyOxBundleV10 =
+                rkyv::from_bytes::<LegacyOxBundleV10, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v10: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy.procedure_metadata,
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+                project_context: None,
             })
         } else {
             let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
@@ -1232,6 +1455,556 @@ fn descriptor_inventory_from_compiled_project(
             callables,
         })
     }
+}
+
+fn project_context_from_compiled_project(
+    compiled: &crate::project::CompiledProject,
+    project_name: &str,
+    manifest: Option<&ProjectManifest>,
+) -> BundleProjectContext {
+    let modules = manifest
+        .map(|manifest| {
+            manifest
+                .modules
+                .iter()
+                .map(|module| {
+                    module_fact_from_manifest_module(module, &compiled.project_reflection)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            compiled
+                .project_reflection
+                .modules
+                .iter()
+                .map(module_fact_from_reflection_module)
+                .collect::<Vec<_>>()
+        });
+    let references = manifest.map(project_reference_facts).unwrap_or_default();
+    let referenced_projects = manifest
+        .map(|manifest| {
+            manifest
+                .reference_projects
+                .iter()
+                .map(referenced_project_fact)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let source_maps = compiled
+        .source_maps
+        .modules
+        .values()
+        .map(|module| BundleModuleSourceMap {
+            module_name: module.module_name.clone(),
+            lines: module
+                .lines
+                .iter()
+                .map(|line| BundleSourceLineMapping {
+                    file_line: line.file_line,
+                    runtime_line: line.runtime_line,
+                    kind: format!("{:?}", line.kind),
+                    executable: line.executable,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    let native_libraries = native_library_facts(&compiled.bytecode.external_call_descriptors);
+    let host_capabilities = host_capability_requirements(&compiled.bytecode);
+    let package_diagnostics = package_context_diagnostics(&references);
+    let gap_classifications = package_context_gaps(
+        &references,
+        &source_maps,
+        &native_libraries,
+        &host_capabilities,
+    );
+    BundleProjectContext {
+        project_name: manifest
+            .map(|manifest| manifest.project_name.clone())
+            .unwrap_or_else(|| project_name.to_string()),
+        project_kind: manifest
+            .map(|manifest| project_kind_name(manifest.project_kind).to_string())
+            .unwrap_or_else(|| "compiled".to_string()),
+        project_id: compiled.project_reflection.identity.project_id.clone(),
+        source_fingerprint: compiled
+            .project_reflection
+            .identity
+            .source_fingerprint
+            .clone(),
+        compile_context: bundle_compile_context(manifest),
+        modules,
+        references,
+        referenced_projects,
+        source_maps,
+        native_libraries,
+        host_capabilities,
+        package_diagnostics,
+        gap_classifications,
+    }
+}
+
+fn module_fact_from_manifest_module(
+    module: &ModuleUnit,
+    reflection: &ProjectReflection,
+) -> BundleProjectModuleFact {
+    let reflected = reflection
+        .modules
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(&module.module_name));
+    let bound = resolve_symbols(&module.source);
+    let external_declare_count = bound.external_declarations.len();
+    let ptrsafe_declare_count = bound
+        .external_declarations
+        .values()
+        .filter(|external| external.ptr_safe)
+        .count();
+    let uses_long_ptr = bound_module_uses_type(&bound, BoundType::LongPtr);
+    let uses_long_long = bound_module_uses_type(&bound, BoundType::LongLong);
+    BundleProjectModuleFact {
+        module_id: reflected
+            .map(|module| module.module_id.clone())
+            .unwrap_or_else(|| stable_id(["module", &module.module_name])),
+        name: module.module_name.clone(),
+        kind: module_kind_name(module.module_kind).to_string(),
+        option_private_module: module.attributes.option_private_module,
+        option_explicit: bound.option_explicit,
+        option_compare: compare_mode_name(bound.compare_mode).to_string(),
+        option_base: bound
+            .array_descriptors
+            .values()
+            .next()
+            .map(|descriptor| descriptor.option_base)
+            .unwrap_or_else(|| collect_module_option_base(&module.source)),
+        vb_exposed: module.attributes.vb_exposed,
+        vb_creatable: module.attributes.vb_creatable,
+        vb_predeclared_id: module.attributes.vb_predeclared_id,
+        vb_global_namespace: module.attributes.vb_global_namespace,
+        source_fingerprint: reflected
+            .map(|module| module.source_fingerprint.clone())
+            .unwrap_or_default(),
+        source_line_count: module.source.lines().count().max(1),
+        default_type_families: default_type_families(&bound.default_type_table),
+        external_declare_count,
+        ptrsafe_declare_count,
+        uses_long_ptr,
+        uses_long_long,
+    }
+}
+
+fn module_fact_from_reflection_module(module: &ModuleDescriptor) -> BundleProjectModuleFact {
+    BundleProjectModuleFact {
+        module_id: module.module_id.clone(),
+        name: module.name.clone(),
+        kind: module_kind_name(module.kind).to_string(),
+        option_private_module: module.visibility.option_private_module,
+        option_explicit: false,
+        option_compare: "Unknown".to_string(),
+        option_base: 0,
+        vb_exposed: module.visibility.vb_exposed,
+        vb_creatable: module.visibility.vb_creatable,
+        vb_predeclared_id: false,
+        vb_global_namespace: false,
+        source_fingerprint: module.source_fingerprint.clone(),
+        source_line_count: module
+            .source_span
+            .as_ref()
+            .map(|span| {
+                span.end_line
+                    .saturating_sub(span.start_line)
+                    .saturating_add(1)
+            })
+            .unwrap_or_default(),
+        default_type_families: Vec::new(),
+        external_declare_count: 0,
+        ptrsafe_declare_count: 0,
+        uses_long_ptr: false,
+        uses_long_long: false,
+    }
+}
+
+fn bundle_compile_context(manifest: Option<&ProjectManifest>) -> BundleCompileContext {
+    let manifest_conditional_constants = manifest
+        .map(|manifest| {
+            manifest
+                .conditional_constants
+                .iter()
+                .map(|(name, value)| BundleConditionalConstantFact {
+                    name: name.clone(),
+                    value: *value,
+                    source: "manifest".to_string(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut builtin_conditional_constants = builtin_pp_constants()
+        .into_iter()
+        .map(|(name, value)| BundleConditionalConstantFact {
+            name,
+            value,
+            source: "builtin".to_string(),
+        })
+        .collect::<Vec<_>>();
+    builtin_conditional_constants.sort_by(|left, right| left.name.cmp(&right.name));
+    BundleCompileContext {
+        manifest_conditional_constants,
+        builtin_conditional_constants,
+        target_pointer_width_bits: if cfg!(target_pointer_width = "64") {
+            64
+        } else {
+            32
+        },
+        vba7: true,
+        win64: cfg!(all(windows, target_pointer_width = "64")),
+        long_ptr_carrier: if cfg!(target_pointer_width = "64") {
+            "LongLong"
+        } else {
+            "Long"
+        }
+        .to_string(),
+        long_long_supported: true,
+    }
+}
+
+fn collect_module_option_base(source: &str) -> i32 {
+    collect_option_base(&normalize_source_lines(source))
+}
+
+fn compare_mode_name(mode: BoundCompareMode) -> &'static str {
+    match mode {
+        BoundCompareMode::Binary => "Binary",
+        BoundCompareMode::Text => "Text",
+        BoundCompareMode::Database => "Database",
+    }
+}
+
+fn default_type_families(table: &[BoundType; 26]) -> Vec<BundleDefaultTypeFamilyFact> {
+    let mut families = Vec::new();
+    let mut index = 0;
+    while index < table.len() {
+        let ty = table[index];
+        let start = index;
+        let mut end = index;
+        while end + 1 < table.len() && table[end + 1] == ty {
+            end += 1;
+        }
+        if ty != BoundType::Variant {
+            families.push(BundleDefaultTypeFamilyFact {
+                start_letter: letter_for_default_type_index(start),
+                end_letter: letter_for_default_type_index(end),
+                type_name: bound_type_name(ty).to_string(),
+            });
+        }
+        index = end + 1;
+    }
+    families
+}
+
+fn letter_for_default_type_index(index: usize) -> char {
+    char::from(b'A' + u8::try_from(index).unwrap_or(0))
+}
+
+fn external_uses_long_ptr(external: &BoundExternalDecl) -> bool {
+    external.return_type == BoundType::LongPtr
+        || external
+            .params
+            .iter()
+            .any(|param| param.ty == BoundType::LongPtr)
+}
+
+fn external_uses_long_long(external: &BoundExternalDecl) -> bool {
+    external.return_type == BoundType::LongLong
+        || external
+            .params
+            .iter()
+            .any(|param| param.ty == BoundType::LongLong)
+}
+
+fn bound_module_uses_type(module: &BoundModule, ty: BoundType) -> bool {
+    module.default_type_table.contains(&ty)
+        || module
+            .declaration_types
+            .values()
+            .any(|candidate| *candidate == ty)
+        || module.external_declarations.values().any(|external| {
+            if ty == BoundType::LongPtr {
+                external_uses_long_ptr(external)
+            } else if ty == BoundType::LongLong {
+                external_uses_long_long(external)
+            } else {
+                external.return_type == ty || external.params.iter().any(|param| param.ty == ty)
+            }
+        })
+        || module.procedures.iter().any(|procedure| {
+            procedure.return_type == ty
+                || procedure
+                    .declaration_types
+                    .values()
+                    .any(|candidate| *candidate == ty)
+                || procedure.params.iter().any(|param| param.ty == ty)
+        })
+}
+
+fn bound_type_name(ty: BoundType) -> &'static str {
+    match ty {
+        BoundType::Variant => "Variant",
+        BoundType::Integer => "Integer",
+        BoundType::Long => "Long",
+        BoundType::LongLong => "LongLong",
+        BoundType::LongPtr => "LongPtr",
+        BoundType::Byte => "Byte",
+        BoundType::Single => "Single",
+        BoundType::Double => "Double",
+        BoundType::Currency => "Currency",
+        BoundType::Decimal => "Decimal",
+        BoundType::Date => "Date",
+        BoundType::String => "String",
+        BoundType::Boolean => "Boolean",
+        BoundType::Object => "Object",
+        BoundType::Array => "Array",
+    }
+}
+
+fn project_reference_facts(manifest: &ProjectManifest) -> Vec<BundleProjectReferenceFact> {
+    manifest
+        .references
+        .iter()
+        .enumerate()
+        .map(|(index, reference)| {
+            let kind = reference_kind_name(reference.reference_kind).to_string();
+            BundleProjectReferenceFact {
+                reference_id: stable_id([
+                    "reference",
+                    &index.to_string(),
+                    &kind,
+                    &reference.referenced_project_name,
+                ]),
+                ordinal: index,
+                name: reference.referenced_project_name.clone(),
+                kind,
+                resolution: reference_resolution(reference, manifest),
+            }
+        })
+        .collect()
+}
+
+fn reference_resolution(reference: &ProjectReference, manifest: &ProjectManifest) -> String {
+    if manifest.reference_projects.iter().any(|project| {
+        project
+            .project_name
+            .eq_ignore_ascii_case(&reference.referenced_project_name)
+    }) {
+        return "project-source-present".to_string();
+    }
+    if reference.reference_kind == ReferenceKind::TypeLibrary {
+        if manifest.reference_projects.iter().any(|project| {
+            projected_typelib_reference_matches(&reference.referenced_project_name, project)
+        }) {
+            "typelib-projection-present".to_string()
+        } else {
+            "typelib-projection-missing".to_string()
+        }
+    } else {
+        "project-source-missing".to_string()
+    }
+}
+
+fn projected_typelib_reference_matches(
+    reference_name: &str,
+    project: &ReferencedProjectManifest,
+) -> bool {
+    let reference_key = reference_name.to_ascii_lowercase();
+    project.modules.iter().any(|module| {
+        let source = module.source.to_ascii_lowercase();
+        source.contains("oxvbaprojectedtypelibreference")
+            && (source.contains(&format!("reference-name={reference_key}"))
+                || source.contains(&format!("requested-coclass={reference_key}"))
+                || project.project_name.eq_ignore_ascii_case(reference_name))
+    })
+}
+
+fn referenced_project_fact(project: &ReferencedProjectManifest) -> BundleReferencedProjectFact {
+    BundleReferencedProjectFact {
+        project_name: project.project_name.clone(),
+        module_names: project
+            .modules
+            .iter()
+            .map(|module| module.module_name.clone())
+            .collect(),
+        module_count: project.modules.len(),
+        source: if project.modules.iter().any(|module| {
+            module
+                .source
+                .to_ascii_lowercase()
+                .contains("oxvbaprojectedtypelibreference")
+        }) {
+            "projected-typelib".to_string()
+        } else {
+            "project-reference".to_string()
+        },
+    }
+}
+
+fn native_library_facts(descriptors: &[ExternalCallDescriptor]) -> Vec<BundleNativeLibraryFact> {
+    let mut facts = descriptors
+        .iter()
+        .map(|descriptor| BundleNativeLibraryFact {
+            descriptor_id: descriptor.descriptor_id,
+            declared_name: descriptor.declared_name.clone(),
+            library: descriptor.library.clone(),
+            alias: descriptor.alias.clone(),
+            ordinal_alias: descriptor.ordinal_alias,
+            calling_convention: descriptor.calling_convention.clone(),
+            marshal_lane: descriptor.marshal_lane.clone(),
+            selection_policy: descriptor.selection_policy.clone(),
+        })
+        .collect::<Vec<_>>();
+    facts.sort_by_key(|fact| fact.descriptor_id);
+    facts
+}
+
+fn host_capability_requirements(bytecode: &Bytecode) -> Vec<BundleHostCapabilityRequirement> {
+    let mut requirements = bytecode
+        .instructions
+        .iter()
+        .filter_map(instruction_host_capability)
+        .map(|(source, capability)| BundleHostCapabilityRequirement {
+            capability_id: stable_id(["host-capability", capability, source]),
+            capability: capability.to_string(),
+            source: source.to_string(),
+        })
+        .collect::<Vec<_>>();
+    requirements.extend(bytecode.external_call_descriptors.iter().map(|descriptor| {
+        BundleHostCapabilityRequirement {
+            capability_id: stable_id([
+                "host-capability",
+                "dynamic-linking",
+                &descriptor.declared_name,
+            ]),
+            capability: "dynamic-linking".to_string(),
+            source: descriptor.declared_name.clone(),
+        }
+    }));
+    requirements.sort_by(|left, right| {
+        left.capability_id
+            .cmp(&right.capability_id)
+            .then(left.source.cmp(&right.source))
+    });
+    requirements.dedup_by(|left, right| left.capability_id == right.capability_id);
+    requirements
+}
+
+fn instruction_host_capability(instruction: &Instruction) -> Option<(&'static str, &'static str)> {
+    match instruction {
+        Instruction::IntrinsicShellHost { .. } => Some(("Shell", "process-env")),
+        Instruction::IntrinsicEnvironHost { .. } => Some(("Environ", "process-env")),
+        Instruction::IntrinsicDirHost { .. } => Some(("Dir", "process-env")),
+        Instruction::IntrinsicDateNowHost { .. } => Some(("Date", "time-locale")),
+        Instruction::IntrinsicTimeNowHost { .. } => Some(("Time", "time-locale")),
+        Instruction::IntrinsicNowHost { .. } => Some(("Now", "time-locale")),
+        Instruction::IntrinsicTimerHost { .. } => Some(("Timer", "time-locale")),
+        Instruction::IntrinsicFreeFileHost { .. } => Some(("FreeFile", "file-system-io")),
+        Instruction::IntrinsicConsolePrintHost { .. } => Some(("Print", "console-io")),
+        Instruction::IntrinsicConsoleInputHost { .. } => Some(("Input", "console-io")),
+        Instruction::IntrinsicConsoleLineInputHost { .. } => Some(("Line Input", "console-io")),
+        Instruction::IntrinsicMsgBoxHost { .. } => Some(("MsgBox", "ui-interaction")),
+        Instruction::IntrinsicInputBoxHost { .. } => Some(("InputBox", "ui-interaction")),
+        Instruction::IntrinsicDebugPrintHost { .. } => {
+            Some(("Debug.Print", "diagnostics-telemetry"))
+        }
+        Instruction::IntrinsicDoEventsHost { .. } => Some(("DoEvents", "event-pump")),
+        Instruction::IntrinsicCreateObjectHost { .. } => {
+            Some(("CreateObject", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicDispatchInvokeHost { .. } => {
+            Some(("DispatchInvoke", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComSubscribeEventHost { .. } => {
+            Some(("ComSubscribeEvent", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComUnsubscribeEventHost { .. } => {
+            Some(("ComUnsubscribeEvent", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComEventCallbackSubscriptionHost { .. } => {
+            Some(("ComEventCallbackSubscription", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComEventCallbackArgHost { .. } => {
+            Some(("ComEventCallbackArg", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComReleaseEventCallbackHost { .. } => {
+            Some(("ComReleaseEventCallback", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicInvokeSymbolHost { .. } => Some(("DeclareInvoke", "dynamic-linking")),
+        _ => None,
+    }
+}
+
+fn package_context_diagnostics(
+    references: &[BundleProjectReferenceFact],
+) -> Vec<BundlePackageDiagnostic> {
+    references
+        .iter()
+        .filter_map(|reference| {
+            let code = match reference.resolution.as_str() {
+                "project-source-missing" => "PKG-IMPORT-PROJECT-SOURCE-MISSING",
+                "typelib-projection-missing" => "PKG-IMPORT-TYPELIB-PROJECTION-MISSING",
+                _ => return None,
+            };
+            Some(BundlePackageDiagnostic {
+                code: code.to_string(),
+                severity: "unsupported".to_string(),
+                message: format!(
+                    "{} reference `{}` is present in the package manifest but has no executable reference projection",
+                    reference.kind, reference.name
+                ),
+                fact_id: reference.reference_id.clone(),
+            })
+        })
+        .collect()
+}
+
+fn package_context_gaps(
+    references: &[BundleProjectReferenceFact],
+    source_maps: &[BundleModuleSourceMap],
+    native_libraries: &[BundleNativeLibraryFact],
+    host_capabilities: &[BundleHostCapabilityRequirement],
+) -> Vec<BundlePackageGapClassification> {
+    let mut gaps = Vec::new();
+    gaps.extend(
+        references
+            .iter()
+            .map(|reference| BundlePackageGapClassification {
+                gap_id: stable_id(["gap", "reference", &reference.reference_id]),
+                area: "reference-import".to_string(),
+                status: reference.resolution.clone(),
+                detail: format!("{} reference `{}`", reference.kind, reference.name),
+            }),
+    );
+    gaps.push(BundlePackageGapClassification {
+        gap_id: "gap:source-map".to_string(),
+        area: "source-map".to_string(),
+        status: if source_maps.is_empty() {
+            "missing".to_string()
+        } else {
+            "present".to_string()
+        },
+        detail: format!("source map modules={}", source_maps.len()),
+    });
+    if !native_libraries.is_empty() {
+        gaps.push(BundlePackageGapClassification {
+            gap_id: "gap:native-declare".to_string(),
+            area: "native-library".to_string(),
+            status: "descriptor-present".to_string(),
+            detail: format!("native declare descriptors={}", native_libraries.len()),
+        });
+    }
+    if !host_capabilities.is_empty() {
+        gaps.push(BundlePackageGapClassification {
+            gap_id: "gap:host-capability-policy".to_string(),
+            area: "host-capability".to_string(),
+            status: "policy-required".to_string(),
+            detail: format!("host capabilities={}", host_capabilities.len()),
+        });
+    }
+    gaps
 }
 
 fn com_class_descriptor_from_route(route: &ProjectDynamicObjectRoute) -> BundleComClassDescriptor {
@@ -1544,6 +2317,32 @@ fn passing_mode_name(mode: PassingMode) -> &'static str {
     }
 }
 
+fn project_kind_name(kind: ProjectKind) -> &'static str {
+    match kind {
+        ProjectKind::Source => "Source",
+        ProjectKind::Host => "Host",
+        ProjectKind::Library => "Library",
+    }
+}
+
+fn module_kind_name(kind: ModuleKind) -> &'static str {
+    match kind {
+        ModuleKind::Procedural => "Procedural",
+        ModuleKind::Class => "Class",
+        ModuleKind::Document => "Document",
+        ModuleKind::Form => "Form",
+        ModuleKind::Extension => "Extension",
+    }
+}
+
+fn reference_kind_name(kind: ReferenceKind) -> &'static str {
+    match kind {
+        ReferenceKind::Project => "Project",
+        ReferenceKind::TypeLibrary => "TypeLibrary",
+        ReferenceKind::HostInjected => "HostInjected",
+    }
+}
+
 fn vba_type_from_name(name: &str) -> VbaType {
     match name {
         "Variant" => VbaType::Variant,
@@ -1608,7 +2407,10 @@ mod tests {
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SourceParameterMechanism,
         VbaTypeId,
     };
-    use crate::project::ExportKind;
+    use crate::project::{
+        ExportKind, ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, module_unit_from_source,
+    };
 
     fn sample_bundle() -> OxBundle {
         let bytecode = Bytecode {
@@ -1723,6 +2525,35 @@ mod tests {
     }
 
     #[test]
+    fn v10_backward_compat_leaves_project_context_absent() {
+        let bundle = sample_bundle();
+        let legacy = LegacyOxBundleV10 {
+            bytecode: bundle.bytecode,
+            procedure_metadata: bundle.procedure_metadata,
+            manifest_snapshot: bundle.manifest_snapshot,
+            export_inventory: bundle.export_inventory,
+            source_hashes: bundle.source_hashes,
+            toolchain_fingerprint: bundle.toolchain_fingerprint,
+            event_dispatch_bindings: bundle.event_dispatch_bindings,
+            com_withevents_routes: bundle.com_withevents_routes,
+            dynamic_object_routes: bundle.dynamic_object_routes,
+            descriptor_inventory: bundle.descriptor_inventory,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v10");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v10");
+        assert!(restored.project_context.is_none());
+    }
+
+    #[test]
     fn header_magic_is_correct() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
@@ -1730,11 +2561,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_10() {
+    fn header_version_is_11() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
     }
 
     #[test]
@@ -2443,6 +3274,149 @@ mod tests {
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
         assert!(restored.manifest_snapshot.is_some());
+    }
+
+    #[test]
+    fn from_compiled_project_with_manifest_persists_project_import_source_and_host_context() {
+        let main_source = "Attribute VB_Name = \"Main\"\n\
+Option Explicit\n\
+Option Compare Text\n\
+Option Base 1\n\
+DefLng A-Z\n\
+Private Declare PtrSafe Function GetTickCount Lib \"kernel32\" () As Long\n\
+Public Sub Main()\n\
+Dim p As LongPtr\n\
+Dim q As LongLong\n\
+Debug.Print GetTickCount()\n\
+End Sub";
+        let lib_source = "Attribute VB_Name = \"LibMod\"\nPublic Sub Helper()\nEnd Sub";
+        let mut conditional_constants = BTreeMap::new();
+        conditional_constants.insert("FeatureX".to_string(), -1);
+        let manifest = ProjectManifest {
+            project_name: "PkgCtx".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, main_source)
+                    .expect("main module"),
+            ],
+            references: vec![
+                ProjectReference {
+                    referenced_project_name: "Lib".to_string(),
+                    reference_kind: ReferenceKind::Project,
+                },
+                ProjectReference {
+                    referenced_project_name: "MissingLib".to_string(),
+                    reference_kind: ReferenceKind::Project,
+                },
+                ProjectReference {
+                    referenced_project_name: "MissingTypeLib".to_string(),
+                    reference_kind: ReferenceKind::TypeLibrary,
+                },
+            ],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "Lib".to_string(),
+                modules: vec![
+                    module_unit_from_source("LibMod", ModuleKind::Procedural, lib_source)
+                        .expect("lib module"),
+                ],
+            }],
+            conditional_constants,
+        };
+        let compiled = crate::compile_project(&manifest).expect("compile");
+        let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
+        let context = bundle.project_context.as_ref().expect("project context");
+
+        assert_eq!(context.project_name, "PkgCtx");
+        assert_eq!(context.project_kind, "Source");
+        assert_eq!(context.modules.len(), 1);
+        assert_eq!(context.modules[0].name, "Main");
+        assert_eq!(context.modules[0].source_line_count, 11);
+        assert!(context.modules[0].option_explicit);
+        assert_eq!(context.modules[0].option_compare, "Text");
+        assert_eq!(context.modules[0].option_base, 1);
+        assert!(
+            context.modules[0]
+                .default_type_families
+                .iter()
+                .any(|family| family.start_letter == 'A'
+                    && family.end_letter == 'Z'
+                    && family.type_name == "Long")
+        );
+        assert_eq!(context.modules[0].external_declare_count, 1);
+        assert_eq!(context.modules[0].ptrsafe_declare_count, 1);
+        assert!(context.modules[0].uses_long_ptr);
+        assert!(context.modules[0].uses_long_long);
+        assert!(
+            context
+                .compile_context
+                .manifest_conditional_constants
+                .iter()
+                .any(|constant| constant.name == "FeatureX" && constant.value == -1)
+        );
+        assert!(
+            context
+                .compile_context
+                .builtin_conditional_constants
+                .iter()
+                .any(|constant| constant.name == "vba7" && constant.value == -1)
+        );
+        assert!(matches!(
+            context.compile_context.target_pointer_width_bits,
+            32 | 64
+        ));
+        assert_eq!(context.references.len(), 3);
+        assert!(context.references.iter().any(|reference| {
+            reference.name == "Lib" && reference.resolution == "project-source-present"
+        }));
+        assert!(context.references.iter().any(|reference| {
+            reference.name == "MissingLib" && reference.resolution == "project-source-missing"
+        }));
+        assert!(context.references.iter().any(|reference| {
+            reference.name == "MissingTypeLib"
+                && reference.resolution == "typelib-projection-missing"
+        }));
+        assert_eq!(context.referenced_projects[0].project_name, "Lib");
+        assert!(
+            context
+                .source_maps
+                .iter()
+                .any(|map| map.module_name == "Main")
+        );
+        assert!(context.native_libraries.iter().any(|native| {
+            native.declared_name.eq_ignore_ascii_case("GetTickCount")
+                && native.library.eq_ignore_ascii_case("kernel32")
+        }));
+        assert!(context.host_capabilities.iter().any(|capability| {
+            capability.capability == "dynamic-linking"
+                && capability.source.eq_ignore_ascii_case("GetTickCount")
+        }));
+        assert!(context.host_capabilities.iter().any(|capability| {
+            capability.capability == "diagnostics-telemetry" && capability.source == "Debug.Print"
+        }));
+        assert!(
+            context
+                .package_diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.code == "PKG-IMPORT-PROJECT-SOURCE-MISSING" })
+        );
+        assert!(
+            context
+                .package_diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.code == "PKG-IMPORT-TYPELIB-PROJECTION-MISSING" })
+        );
+
+        let bytes = bundle.serialize_to_bytes().expect("serialize");
+        let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
+        let restored_context = restored.project_context.as_ref().expect("restored context");
+        assert_eq!(restored_context.references, context.references);
+        assert_eq!(restored_context.modules, context.modules);
+        assert_eq!(restored_context.compile_context, context.compile_context);
+        assert_eq!(restored_context.native_libraries, context.native_libraries);
+        assert_eq!(
+            restored_context.host_capabilities,
+            context.host_capabilities
+        );
     }
 
     #[test]

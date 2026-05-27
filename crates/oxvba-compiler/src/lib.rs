@@ -15,9 +15,13 @@ use thiserror::Error;
 pub use bundle::{
     BundleCallableDescriptor, BundleComClassDescriptor, BundleComEventDescriptor,
     BundleComInterfaceDescriptor, BundleComMemberDescriptor, BundleComParamDescriptor,
-    BundleDescriptorInventoryError, BundleProcedureAnnotation, BundleProcedureParameterDescriptor,
-    BundleProcedureSignature, BundleVbaTypeDescriptor, ComClassExportEntry, DescriptorInventory,
-    OxBundle,
+    BundleCompileContext, BundleConditionalConstantFact, BundleDefaultTypeFamilyFact,
+    BundleDescriptorInventoryError, BundleHostCapabilityRequirement, BundleModuleSourceMap,
+    BundleNativeLibraryFact, BundlePackageDiagnostic, BundlePackageGapClassification,
+    BundleProcedureAnnotation, BundleProcedureParameterDescriptor, BundleProcedureSignature,
+    BundleProjectContext, BundleProjectModuleFact, BundleProjectReferenceFact,
+    BundleReferencedProjectFact, BundleSourceLineMapping, BundleVbaTypeDescriptor,
+    ComClassExportEntry, DescriptorInventory, OxBundle,
 };
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use descriptor_identity::{

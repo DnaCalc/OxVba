@@ -21,7 +21,7 @@ pub use interpreter::{
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
     VmDescriptorIdentityEvidence, VmExecutionPackage, VmInteropDescriptorEvidence,
     VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin, VmProcedureIdentityEvidence,
-    VmSignatureCallEvidence,
+    VmProjectContextEvidence, VmSignatureCallEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -122,10 +122,12 @@ mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
         ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, CallTargetKindDescriptor,
-        DeclareParamType, OxBundle, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-        ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
-        ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
-        SourceParameterMechanism, VbaTypeId, compile, compile_with_runtime_metadata,
+        DeclareParamType, ModuleKind, OxBundle, ParameterPassingMode, ParameterRole,
+        ProcedureKindDescriptor, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+        ProjectDynamicObjectRoute, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, ResolvedParameterMechanism, RuntimeCarrierKind,
+        SlotInitialState, SlotRole, SourceParameterMechanism, VbaTypeId, compile, compile_project,
+        compile_with_runtime_metadata, module_unit_from_source,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -373,6 +375,114 @@ mod tests {
             double_main.slot_descriptor_digest
         );
         assert_ne!(long_identity.package_digest, double_identity.package_digest);
+    }
+
+    #[test]
+    fn bundle_project_context_is_vm_visible_and_affects_package_digest() {
+        fn project_bundle(reference_name: &str) -> OxBundle {
+            let manifest = ProjectManifest {
+                project_name: "VmPkgCtx".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![
+                    module_unit_from_source(
+                        "Main",
+                        ModuleKind::Procedural,
+                        "Attribute VB_Name = \"Main\"\n\
+                         Option Explicit\n\
+                         Option Compare Text\n\
+                         Option Base 1\n\
+                         DefLng A-Z\n\
+                         Private Declare PtrSafe Function GetTickCount Lib \"kernel32\" () As Long\n\
+                         Public Sub Main()\n\
+                         Dim p As LongPtr\n\
+                         Dim q As LongLong\n\
+                         Debug.Print GetTickCount()\n\
+                         End Sub",
+                    )
+                    .expect("main module"),
+                ],
+                references: vec![ProjectReference {
+                    referenced_project_name: reference_name.to_string(),
+                    reference_kind: ReferenceKind::Project,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: reference_name.to_string(),
+                    modules: vec![
+                        module_unit_from_source(
+                            "LibMod",
+                            ModuleKind::Procedural,
+                            "Attribute VB_Name = \"LibMod\"\nPublic Sub Helper()\nEnd Sub",
+                        )
+                        .expect("lib module"),
+                    ],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).expect("compile");
+            OxBundle::from_compiled_project_with_manifest(&compiled, &manifest)
+        }
+
+        let first_bundle = project_bundle("LibA");
+        let second_bundle = project_bundle("LibB");
+        let first = VmExecutionPackage::from_bundle(&first_bundle).identity_evidence();
+        let second = VmExecutionPackage::from_bundle(&second_bundle).identity_evidence();
+        let context = first.project_context.as_ref().expect("project context");
+
+        assert_eq!(context.project_name, "VmPkgCtx");
+        assert!(context.modules.iter().any(|module| module.contains("Main")));
+        assert!(context
+            .module_compile_options
+            .iter()
+            .any(|module| module
+                == "Main:explicit=true:compare=Text:base=1:def=1:declares=1:ptrsafe=1:longptr=true:longlong=true"));
+        assert!(
+            context
+                .compile_context
+                .iter()
+                .any(|item| item == "builtin:vba7=-1")
+        );
+        assert!(
+            context
+                .compile_context
+                .iter()
+                .any(|item| item.starts_with("target:pointer-width="))
+        );
+        assert!(
+            context
+                .references
+                .iter()
+                .any(|reference| reference == "Project:LibA:project-source-present")
+        );
+        assert!(
+            context
+                .referenced_projects
+                .iter()
+                .any(|project| project == "project-reference:LibA:1")
+        );
+        assert!(
+            context
+                .source_maps
+                .iter()
+                .any(|source_map| source_map.starts_with("Main:"))
+        );
+        assert!(context.native_libraries.iter().any(|native| {
+            native
+                .to_ascii_lowercase()
+                .starts_with("gettickcount:kernel32:")
+        }));
+        assert!(
+            context
+                .host_capabilities
+                .iter()
+                .any(|capability| capability.eq_ignore_ascii_case("dynamic-linking:GetTickCount"))
+        );
+        assert!(
+            context
+                .host_capabilities
+                .iter()
+                .any(|capability| capability == "diagnostics-telemetry:Debug.Print")
+        );
+        assert_ne!(first.package_digest, second.package_digest);
     }
 
     #[test]

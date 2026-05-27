@@ -30,7 +30,7 @@ fn run() -> Result<(), String> {
         .map_err(|err| format!("failed to load {}: {err}", project_path.display()))?;
     let compiled = compile_project(&loaded.manifest)
         .map_err(|err| format!("failed to compile {}: {err}", project_path.display()))?;
-    let bundle = OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+    let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &loaded.manifest);
     let bytes = bundle
         .serialize_to_bytes()
         .map_err(|err| format!("failed to serialize bundle: {err}"))?;
