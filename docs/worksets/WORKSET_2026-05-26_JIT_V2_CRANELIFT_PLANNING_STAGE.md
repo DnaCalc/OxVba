@@ -121,8 +121,12 @@ Current planning artifacts:
    identity, bytecode digest, signature descriptors, and slot descriptors must
    be visible in VM evidence for the touched fixtures. TB01 additionally gates
    on declared primitive slot/carrier evidence; TB02 additionally gates on UDT
-   descriptor and owning-field lifecycle evidence before `ProcLoweringIr`
-   consumes those facts.
+   descriptor and owning-field lifecycle evidence; TB03 additionally gates on
+   package-owned error/resume maps and failing-helper evidence; TB04
+   additionally gates on non-UDT BSTR layout, helper, cleanup, and lifetime
+   evidence; TB05 additionally gates on array descriptor, SAFEARRAY bounds,
+   element lifetime, and ownership evidence before `ProcLoweringIr` consumes
+   those facts.
 
 ## Planning Deliverables
 
@@ -207,16 +211,23 @@ tracer work and not evidence that JIT execution exists.
 3. **Error-routing path**
    - Compile `On Error Resume Next`, `Err.Number`, and a failing helper call.
    - Acceptance: VM/JIT error state, resume target, and slot snapshots match;
-     slow-helper or deopt behavior is explicit.
+     VM package evidence includes error/resume maps, failing-helper
+     descriptors, resume target evidence, and `Err`-state snapshot fields
+     consumed by `ProcLoweringIr`; slow-helper or deopt behavior is explicit.
 4. **BSTR lifetime path**
    - Compile declared `String` assignment, concat, and `Len` over real `BStr`.
    - Acceptance: allocation, branch-exit cleanup, helper-failure cleanup, early
-     return cleanup, and deopt cleanup are mapped and tested.
+     return cleanup, and deopt cleanup are mapped and tested; VM package
+     evidence includes declared String/BSTR layout facts, concat/Len helper
+     descriptors, cleanup maps, and lifetime counters consumed by
+     `ProcLoweringIr`.
 5. **SAFEARRAY path**
    - Compile typed `Long` array store/index/`For Each` plus array literal
      metadata over real `SafeArray`.
    - Acceptance: bounds errors, element lifetime, live maps around helpers, and
-     snapshot equality are proved.
+     snapshot equality are proved; VM package evidence includes array shape
+     descriptors, `Option Base` provenance, runtime SAFEARRAY bounds, element
+     lifetime facts, and ownership policy consumed by `ProcLoweringIr`.
 6. **Late-bound COM path**
    - Compile `CreateObject` plus `IDispatch::Invoke` with named/default member
      and failure under `Resume Next`.

@@ -163,6 +163,15 @@ Required assertions:
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb03_error_resume_next.bas`
 
+Package/VM evidence gate:
+
+- VM package evidence must include error/resume maps, failing-helper
+  descriptors, resume target evidence, and `Err`-state snapshot fields before
+  `ProcLoweringIr` may consume this tracer.
+- The current VM seed proves runtime behavior, but the package-owned
+  error-frame evidence schema is still missing. This keeps executable TB03
+  blocked even though the source fixture runs under the VM.
+
 Required assertions:
 
 - Division failure routes through JIT error helper.
@@ -178,6 +187,17 @@ Required assertions:
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb04_bstr_lifetime_concat_len.bas`
 
+Package/VM evidence gate:
+
+- VM package evidence must include declared `String` slot descriptors, BSTR
+  carrier/layout facts, concat/`Len` helper descriptors, and cleanup maps for
+  return, branch, helper-failure, and deopt paths before `ProcLoweringIr` may
+  consume this tracer.
+- The current lifecycle seed table and selected UDT BSTR-owning lifecycle
+  evidence are useful supporting evidence, but they do not close the non-UDT
+  declared String/BSTR lifetime gate for TB04. Allocation/release counters and
+  helper failure cleanup observations remain blocking.
+
 Required assertions:
 
 - String assignment, concat, and `Len` snapshots match.
@@ -192,6 +212,18 @@ Required assertions:
 
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb05_safearray_foreach_bounds.bas`
+
+Package/VM evidence gate:
+
+- VM package evidence must include `ArrayShapeDescriptor` rows, `Option Base`
+  provenance, runtime SAFEARRAY bounds evidence, element carrier/lifetime facts,
+  and SAFEARRAY ownership policy before `ProcLoweringIr` may consume this
+  tracer.
+- The current package fixtures provide fixed/static and dynamic local array
+  descriptors, dynamic `ReDim` runtime bounds, and selected rank-1
+  fixed/static `LBound`/`UBound` descriptor-backed execution. Runtime
+  bounds-error evidence, multi-rank coverage, VM lifecycle ownership
+  observations, and COM/native SAFEARRAY projection remain blocking.
 
 Required assertions:
 
