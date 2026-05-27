@@ -16,8 +16,9 @@ targets, signature/call observation tokens, call-site descriptor digests, and
 call-site descriptor observation tokens for each fixture. The array rows also
 print array-shape descriptor digests and array-shape observation tokens. The
 UDT rows also print UDT descriptor digests and UDT descriptor observation
-tokens. The object rows also print object descriptor digests and object
-descriptor observation tokens.
+tokens, plus selected lifecycle cleanup observation tokens for owning fields.
+The object rows also print object descriptor digests and object descriptor
+observation tokens.
 
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
 and the current VM-runnable UDT field-alias shape. The UDT base slots now carry
@@ -85,6 +86,13 @@ field bounds, field-alias slots, fieldwise copy classification, and first
 cleanup ownership flags. It intentionally uses the VM's current flattened field
 alias syntax for fixed array fields; descriptor-backed UDT execution and
 offset/layout consumption remain later VM work.
+
+`VMR06-UDT-OWNING-FIELD-CLEANUP-001` adds the first lifecycle evidence lane for
+owning UDT fields. `VMR02_UDT_FIELD_SLOTS` records variable `String` field
+cleanup obligations for `Point.Caption`, while `VMR05_UDT_DESCRIPTOR_MEMBERS`
+records fixed-length `String * 5` cleanup obligations for `Record.Name`. The
+evidence is descriptor-backed and fixture-asserted, but it does not add an
+explicit cleanup stack or change runtime carrier drop behavior.
 
 `VMR05_OBJECT_DESCRIPTOR_IDENTITY` is the first object descriptor fixture. It
 records a generic `Object` local with `Nothing` initial state and `ObjectRef`

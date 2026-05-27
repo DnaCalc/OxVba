@@ -185,6 +185,7 @@ impl<'a> VmExecutionPackage<'a> {
         let object_descriptor_evidence =
             collect_object_descriptor_evidence(self.procedure_metadata);
         let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
+        let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -198,6 +199,7 @@ impl<'a> VmExecutionPackage<'a> {
             udt_descriptor_evidence,
             object_descriptor_evidence,
             interop_descriptor_evidence,
+            lifecycle_evidence,
         }
     }
 
@@ -292,6 +294,7 @@ pub struct VmPackageIdentityEvidence {
     pub udt_descriptor_evidence: Vec<VmUdtDescriptorEvidence>,
     pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
     pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
+    pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,6 +348,14 @@ pub struct VmInteropDescriptorEvidence {
     pub interop_kind: String,
     pub descriptor_id: String,
     pub descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmLifecycleEvidence {
+    pub procedure_name: String,
+    pub cleanup_scope_id: String,
+    pub lifecycle_descriptor_digest: String,
     pub observations: Vec<String>,
 }
 
@@ -547,6 +558,137 @@ fn udt_field_observations(field: &UdtFieldDescriptor) -> Vec<String> {
         ));
     }
     observations
+}
+
+fn collect_lifecycle_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<VmLifecycleEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .udt_types
+                .iter()
+                .filter(|descriptor| udt_has_selected_cleanup_obligation(descriptor))
+                .map(move |descriptor| VmLifecycleEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    cleanup_scope_id: format!("cleanup:{}", descriptor.descriptor_id),
+                    lifecycle_descriptor_digest: digest_debug("lifecycle-cleanup", descriptor),
+                    observations: udt_lifecycle_observations(descriptor, runtime_slots),
+                })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.cleanup_scope_id.cmp(&right.cleanup_scope_id))
+    });
+    evidence
+}
+
+fn udt_has_selected_cleanup_obligation(descriptor: &UdtTypeDescriptor) -> bool {
+    descriptor.cleanup.owns_bstr
+        || descriptor.cleanup.owns_object_ref
+        || descriptor.cleanup.owns_safearray
+        || descriptor.cleanup.owns_variant
+}
+
+fn udt_lifecycle_observations(
+    descriptor: &UdtTypeDescriptor,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    let mut observations = vec![
+        "source=UdtTypeDescriptor".to_string(),
+        format!("descriptor-id={}", descriptor.descriptor_id),
+        "descriptor-family=SlotLifecycleDescriptor".to_string(),
+        "lifecycle-id=LIFE-UDT-FIELD-OWNING".to_string(),
+        "cleanup-map=udt-recursive-owned-fields".to_string(),
+        "success-exit=drop-owned-fields".to_string(),
+        "branch-exit=drop-owned-fields".to_string(),
+        "error-exit=drop-owned-fields".to_string(),
+        "deopt=field-ownership-map-required".to_string(),
+        format!(
+            "cleanup=bstr:{}:object:{}:safearray:{}:variant:{}",
+            descriptor.cleanup.owns_bstr,
+            descriptor.cleanup.owns_object_ref,
+            descriptor.cleanup.owns_safearray,
+            descriptor.cleanup.owns_variant
+        ),
+    ];
+    for field in &descriptor.fields {
+        observations.extend(udt_field_lifecycle_observations(field, runtime_slots));
+    }
+    observations
+}
+
+fn udt_field_lifecycle_observations(
+    field: &UdtFieldDescriptor,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    let field_name = field.name.to_ascii_lowercase();
+    let mut observations = Vec::new();
+    if let Some(carrier_lifecycle_id) = selected_field_carrier_lifecycle_id(field) {
+        observations.push(format!(
+            "field:{field_name}:lifecycle-id=LIFE-UDT-FIELD-OWNING"
+        ));
+        observations.push(format!(
+            "field:{field_name}:carrier-lifecycle-id={carrier_lifecycle_id}"
+        ));
+        observations.push(format!("field:{field_name}:drop-policy=drop-owned-carrier"));
+        observations.push(format!(
+            "field:{field_name}:helper-cleanup=recursive-by-field"
+        ));
+        for alias in &field.aliases {
+            observations.push(format!(
+                "field:{field_name}:alias:{}:{}",
+                alias.slot_name.to_ascii_lowercase(),
+                if alias.slot.is_some() {
+                    "cleanup-slot-known"
+                } else {
+                    "cleanup-slot-missing"
+                }
+            ));
+            if let Some(slot) = alias.slot.and_then(|slot| runtime_slots.get(slot)) {
+                observations.push(format!(
+                    "field:{field_name}:alias:{}:runtime-carrier={}",
+                    alias.slot_name.to_ascii_lowercase(),
+                    runtime_slot_lifecycle_token(slot)
+                ));
+            }
+        }
+    }
+    observations
+}
+
+fn selected_field_carrier_lifecycle_id(field: &UdtFieldDescriptor) -> Option<&'static str> {
+    match field.carrier {
+        RuntimeCarrierKind::BStr => {
+            if field.fixed_string_len.is_some() {
+                Some("LIFE-BSTR-FIXED-STRING")
+            } else {
+                Some("LIFE-BSTR-VARIABLE-STRING")
+            }
+        }
+        RuntimeCarrierKind::ObjectRef => Some("LIFE-OBJECTREF"),
+        RuntimeCarrierKind::SafeArray => {
+            if field.array_bounds.is_empty() {
+                Some("LIFE-SAFEARRAY-DYNAMIC")
+            } else {
+                Some("LIFE-UDT-FIXED-ARRAY-FIELD")
+            }
+        }
+        RuntimeCarrierKind::Variant => Some("LIFE-VARIANT-PAYLOAD"),
+        _ => None,
+    }
+}
+
+fn runtime_slot_lifecycle_token(slot: &RuntimeSlot) -> String {
+    match slot {
+        RuntimeSlot::Variant(value) => format!("variant-{}", debug_token(&value.vtype())),
+        RuntimeSlot::BindingHandle(handle) => format!("binding-handle-{}", handle.raw()),
+    }
 }
 
 fn collect_object_descriptor_evidence(

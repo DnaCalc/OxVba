@@ -67,16 +67,20 @@ The initial execution path was metadata/evidence first. Behavior-affecting
 VMR-06 beads may start only after their descriptor fixtures and gap
 classifications are in place.
 
-The first VMR-06 behavior selections are now documented as
-`VMR06-CALL-BYVAL-COERCE-001` and `VMR06-ARRAY-STATIC-BOUNDS-001`. The first
-adds descriptor-driven call-entry Let coercion for a direct `Long` argument
-passed to a declared `Double ByVal` parameter, with selected coercion/helper
-row ids now visible in call-site evidence. The second adds package-only rank-1
-fixed/static `LBound`/`UBound` lookup from `ArrayShapeDescriptor` while raw
-bytecode retains the old unallocated-base-slot runtime error baseline.
-Broader call-entry coercion, Optional-missing, multi-rank array bounds,
-bounds-error routing, object/member, COM/native, and export behavior still need
-separate selected VMR-06 rows before behavior changes.
+The first VMR-06 selections are now documented as
+`VMR06-CALL-BYVAL-COERCE-001`, `VMR06-ARRAY-STATIC-BOUNDS-001`, and
+`VMR06-UDT-OWNING-FIELD-CLEANUP-001`. The first adds descriptor-driven
+call-entry Let coercion for a direct `Long` argument passed to a declared
+`Double ByVal` parameter, with selected coercion/helper row ids now visible in
+call-site evidence. The second adds package-only rank-1 fixed/static
+`LBound`/`UBound` lookup from `ArrayShapeDescriptor` while raw bytecode retains
+the old unallocated-base-slot runtime error baseline. The third adds selected
+VM lifecycle evidence for UDT BSTR-owning field cleanup from
+`UdtTypeDescriptor`/`UdtFieldDescriptor` facts without rewriting runtime carrier
+drops. Broader call-entry coercion, Optional-missing, multi-rank array bounds,
+bounds-error routing, explicit cleanup-stack execution, object/member,
+COM/native, and export behavior still need separate selected VMR-06 rows before
+behavior changes.
 
 ## Review Findings And Repairs
 

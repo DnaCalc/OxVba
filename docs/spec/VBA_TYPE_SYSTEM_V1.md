@@ -618,10 +618,11 @@ Current implementation anchors:
   descriptor rows, signature/call observation rows for current seed `CallProc`
   lowering compared with signature metadata, and call-site descriptor evidence
   rows for the first VMR-04 fixtures, plus array-shape and UDT descriptor
-  evidence for VMR-05 fixtures; object descriptor evidence for generic object
-  slots; and runtime project evidence for VM-capable class/interface dynamic
-  object routes and imported COM `WithEvents` routes when those route tables
-  are supplied.
+  evidence for VMR-05 fixtures; selected lifecycle evidence for descriptor-backed
+  UDT owning-field cleanup; object descriptor evidence for generic object slots;
+  and runtime project evidence for VM-capable class/interface dynamic object
+  routes and imported COM `WithEvents` routes when those route tables are
+  supplied.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
   declared `Variant`, the current flattened UDT field-alias/base-slot shape,
@@ -637,10 +638,11 @@ Current implementation anchors:
   carrier facts, package-backed rank-1 fixed/static `LBound`/`UBound`
   descriptor consumption with a raw-bytecode base-slot limitation baseline, and
   UDT descriptor facts for nested UDTs, fixed strings, fixed array fields,
-  aliases, cleanup ownership flags, and generic `Object` descriptor facts. A companion
-  project fixture asserts source-project class route identity, implemented
-  interface alias identity, and imported COM `WithEvents` route identity for
-  current VM-capable route tables.
+  aliases, cleanup ownership flags, selected lifecycle cleanup observations for
+  variable/fixed BSTR-owning UDT fields, and generic `Object` descriptor facts.
+  A companion project fixture asserts source-project class route identity,
+  implemented interface alias identity, and imported COM `WithEvents` route
+  identity for current VM-capable route tables.
 
 Known development gaps:
 
@@ -671,7 +673,9 @@ Known development gaps:
   incomplete or explicitly `Unknown`; the first lifecycle/cleanup seed table
   names current cleanup obligations for primitive, Variant/Decimal, BStr,
   SafeArray, ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and
-  deopt state, but those rows are not package-owned descriptors yet;
+  deopt state, and VM lifecycle evidence now asserts the selected UDT BSTR
+  owning-field cleanup path, but those rows are not package-owned descriptors
+  yet and explicit cleanup-stack execution remains open;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;

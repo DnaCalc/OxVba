@@ -305,9 +305,11 @@ Rows are current-state seed evidence, not package-owned lifecycle descriptors.
 The table deliberately keeps `metadata-missing`, `test-shortcoming`,
 `VM-limitation`, `interop-limitation`, and `oracle-required` gaps visible until
 VM evidence records lifecycle observations and descriptor-backed cleanup maps
-exist. A later behavior-changing VM or JIT path may use these rows only after
-the row has a canonical descriptor id and its branch, return, error, helper
-failure, boundary, and deopt cleanup obligations are fixture-backed.
+exist. `bd-iave.9.5` adds the first selected VM lifecycle evidence for
+`LIFE-UDT-FIELD-OWNING` over variable and fixed-length BSTR fields in UDT
+fixtures. A later behavior-changing VM or JIT path may use these rows only
+after the row has a canonical descriptor id and its branch, return, error,
+helper failure, boundary, and deopt cleanup obligations are fixture-backed.
 
 ## Object Member Binding Seed Table v1
 

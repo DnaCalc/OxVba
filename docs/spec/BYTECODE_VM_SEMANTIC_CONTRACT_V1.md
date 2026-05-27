@@ -49,7 +49,7 @@ Rows can start at family granularity and split when semantics diverge.
 | Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Truthiness table needs extraction. |
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
-| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
+| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Property value seed evidence exists; default-member object evidence remains incomplete. |
 | Error flow | `On Error`, Err state, resume target maps | use package error maps and snapshot Err state | Runtime exists; package maps incomplete. |
@@ -166,10 +166,11 @@ project, bundle, and callable-session VM execution paths. Existing snapshot APIs
 remain value-only compatibility surfaces, while package-identity variants expose
 the recorded VM package identity for evidence and future JIT gates.
 
-This is package identity plus first slot descriptor evidence only. The first
-signature descriptor view is now loaded as package metadata, but signature
-comparison evidence, expression/call descriptor, lifecycle, interop, and
-host-policy evidence remain future rows under the strengthening sequence above.
+This began as package identity plus first slot descriptor evidence. The current
+surface now also includes signature comparison, call-site, array-shape, UDT,
+object, interop, and selected UDT lifecycle evidence. Host-policy evidence and
+explicit cleanup-stack execution remain future rows under the strengthening
+sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -290,9 +291,12 @@ The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
 the current flattened UDT storage model. VM evidence now records descriptor ids,
 instances, field order, field carriers, nested UDT references, fixed-length
 string field lengths, fixed array field bounds, field-alias slots, fieldwise
-copy classification, and first cleanup ownership flags. This is still
-metadata/evidence only: VM UDT field access, whole-copy execution, offsets,
-layout, branch cleanup, and deopt cleanup do not consume these descriptors yet.
+copy classification, and cleanup ownership flags. The selected VMR-06 cleanup
+slice also records `VmPackageIdentityEvidence::lifecycle_evidence` for UDT
+BSTR-owning fields, including success, branch, error, helper, deopt, and
+runtime alias-carrier observations. VM UDT field access, whole-copy execution,
+offsets, layout, and explicit cleanup-stack execution still do not consume
+these descriptors yet.
 
 The VMR-05 object descriptor fixture adds `ObjectTypeDescriptor` evidence for
 the current object identity seed. Procedure metadata records generic

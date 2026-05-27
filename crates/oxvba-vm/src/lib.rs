@@ -19,7 +19,7 @@ use oxvba_runtime::Variant;
 pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence, VmExecutionPackage,
-    VmInteropDescriptorEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
+    VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
     VmProcedureIdentityEvidence, VmSignatureCallEvidence,
 };
 

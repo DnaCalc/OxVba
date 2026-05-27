@@ -22,6 +22,7 @@ struct FixtureRow {
     expected_array_shape_tokens: Vec<String>,
     expected_udt_descriptor_tokens: Vec<String>,
     expected_object_descriptor_tokens: Vec<String>,
+    expected_lifecycle_tokens: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -58,8 +59,8 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                10,
-                "identity fixture manifest row should have 10 columns: {line}"
+                11,
+                "identity fixture manifest row should have 11 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
@@ -92,6 +93,11 @@ fn fixture_rows() -> Vec<FixtureRow> {
                     .map(|token| token.trim().to_string())
                     .collect(),
                 expected_object_descriptor_tokens: columns[9]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_lifecycle_tokens: columns[10]
                     .split(';')
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
@@ -407,6 +413,42 @@ fn object_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> Stri
     tokens.join("|")
 }
 
+fn lifecycle_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .lifecycle_evidence
+        .iter()
+        .flat_map(|lifecycle| {
+            lifecycle.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}:{}",
+                    lifecycle.procedure_name.to_ascii_lowercase(),
+                    lifecycle.cleanup_scope_id.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn lifecycle_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .lifecycle_evidence
+        .iter()
+        .map(|lifecycle| {
+            format!(
+                "{}:{}={}",
+                lifecycle.procedure_name.to_ascii_lowercase(),
+                lifecycle.cleanup_scope_id.to_ascii_lowercase(),
+                lifecycle.lifecycle_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 fn assert_raw_and_package_snapshot_relation(
     row: &FixtureRow,
     raw: &Result<Vec<Variant>, String>,
@@ -562,6 +604,16 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 object_descriptor_tokens
             );
         }
+        let lifecycle_tokens = lifecycle_observation_tokens(evidence);
+        for expected_lifecycle in &row.expected_lifecycle_tokens {
+            assert!(
+                lifecycle_tokens.contains(expected_lifecycle),
+                "{} lifecycle evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_lifecycle,
+                lifecycle_tokens
+            );
+        }
         assert_eq!(sorted_procedure_names(evidence), {
             let mut expected = row
                 .expected_procedures
@@ -703,9 +755,31 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 object_descriptor
             );
         }
+        for lifecycle in &evidence.lifecycle_evidence {
+            assert!(
+                lifecycle.cleanup_scope_id.starts_with("cleanup:"),
+                "{} lifecycle evidence should retain cleanup scope identity: {:?}",
+                row.id,
+                lifecycle
+            );
+            assert!(
+                lifecycle
+                    .lifecycle_descriptor_digest
+                    .starts_with("fnv1a64:"),
+                "{} lifecycle descriptor digest should be explicit: {:?}",
+                row.id,
+                lifecycle
+            );
+            assert!(
+                !lifecycle.observations.is_empty(),
+                "{} lifecycle evidence should classify each cleanup descriptor: {:?}",
+                row.id,
+                lifecycle
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} lifecycle_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={} lifecycle_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -720,12 +794,14 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             array_shape_digest_tokens(evidence),
             udt_descriptor_digest_tokens(evidence),
             object_descriptor_digest_tokens(evidence),
+            lifecycle_digest_tokens(evidence),
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
             call_site_tokens.join("|"),
             array_shape_tokens.join("|"),
             udt_descriptor_tokens.join("|"),
-            object_descriptor_tokens.join("|")
+            object_descriptor_tokens.join("|"),
+            lifecycle_tokens.join("|")
         );
     }
 }

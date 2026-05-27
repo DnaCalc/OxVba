@@ -105,6 +105,43 @@ Implementation evidence:
   the VM does not infer array bounds from compiler-generated element slot
   names or from ambient runtime state.
 
+### UDT Owning Field Cleanup Evidence
+
+Selection id: `VMR06-UDT-OWNING-FIELD-CLEANUP-001`
+
+Behavior:
+
+Use package UDT cleanup facts to build a VM lifecycle evidence lane for owning
+UDT fields. This selected slice does not rewrite Rust carrier drop behavior or
+introduce an explicit cleanup stack yet. It consumes `UdtTypeDescriptor.cleanup`
+and owning `UdtFieldDescriptor` rows to make the VM-visible cleanup obligation
+map explicit for success exit, branch exit, error exit, helper cleanup, and
+future deopt materialization.
+
+First implemented shape:
+
+- descriptor source: `UdtTypeDescriptor` plus `UdtFieldDescriptor`;
+- selected lifecycle row: `LIFE-UDT-FIELD-OWNING`;
+- carrier rows surfaced for selected fields:
+  `LIFE-BSTR-VARIABLE-STRING` and `LIFE-BSTR-FIXED-STRING`;
+- selected field carrier: `RuntimeCarrierKind::BStr`;
+- selected fixtures: `VMR02_UDT_FIELD_SLOTS` and
+  `VMR05_UDT_DESCRIPTOR_MEMBERS`;
+- evidence path: `VmPackageIdentityEvidence.lifecycle_evidence`;
+- raw value behavior: unchanged.
+
+Implementation evidence:
+
+- `bd-iave.9.5` adds VM lifecycle evidence derived from descriptor-backed UDT
+  cleanup ownership flags.
+- `VMR02_UDT_FIELD_SLOTS` records variable string UDT field cleanup evidence for
+  `Point.Caption`.
+- `VMR05_UDT_DESCRIPTOR_MEMBERS` records fixed string UDT field cleanup evidence
+  for `Record.Name`.
+- The evidence records current runtime carrier observations for known field
+  alias slots while keeping canonical cleanup descriptor ids and explicit VM
+  cleanup-stack execution as later work.
+
 ## Call-Entry Descriptor Inputs
 
 Required descriptor facts:
@@ -159,6 +196,28 @@ VM may use is the immediate argument-temp copy that maps the intrinsic operand
 back to the descriptor base slot; the bound value itself must come from
 `ArrayShapeDescriptor`.
 
+## UDT Cleanup Descriptor Inputs
+
+Required descriptor facts:
+
+- `UdtTypeDescriptor`
+  - descriptor id;
+  - storage kind;
+  - fieldwise copy classification;
+  - cleanup ownership flags for BSTR, ObjectRef, SAFEARRAY, and Variant.
+- `UdtFieldDescriptor`
+  - field name and index;
+  - carrier kind;
+  - fixed string length where present;
+  - alias slot names and slot ids.
+- Runtime package evidence context
+  - final runtime carrier observation for known alias slots;
+  - lifecycle evidence digest for the selected cleanup scope.
+
+Descriptor absence or mismatch leaves lifecycle evidence absent for the
+selected cleanup scope. The VM must not invent cleanup obligations from field
+names or runtime values alone.
+
 ## Acceptance Fixtures
 
 Primary fixture:
@@ -185,6 +244,21 @@ Primary fixture:
   - Total element snapshot remains `72`.
   - Loading package metadata into a raw VM and calling `execute` must not
     activate descriptor-driven array bounds.
+
+- `VMR02_UDT_FIELD_SLOTS`
+  - Lifecycle evidence records `LIFE-UDT-FIELD-OWNING` for `udt:point`.
+  - The `Caption` field records carrier lifecycle id
+    `LIFE-BSTR-VARIABLE-STRING`.
+  - Success, branch, and error exit obligations are present as evidence tokens.
+  - Known field alias slots record the current runtime carrier as
+    `variant-string`.
+
+- `VMR05_UDT_DESCRIPTOR_MEMBERS`
+  - Lifecycle evidence records `LIFE-UDT-FIELD-OWNING` for `udt:record`.
+  - The fixed-length `Name` field records carrier lifecycle id
+    `LIFE-BSTR-FIXED-STRING`.
+  - Success, branch, and error exit obligations are present as evidence tokens.
+  - The scoped value snapshot remains unchanged.
 
 Required check commands for the implementation bead:
 
@@ -217,6 +291,8 @@ The first slice does not change:
 - multi-rank array bound behavior;
 - bounds-error routing;
 - fixed/static array allocation or element storage;
+- explicit cleanup stack execution;
+- cleanup lifetime counters;
 - runtime slot storage representation;
 - `oxvba-jit` behavior.
 
@@ -246,5 +322,7 @@ This selection feeds:
   bound path;
 - `bd-iave.9.4`: bind the selected helper choice to table/coercion row ids in
   VM evidence;
+- `bd-iave.9.5`: add selected UDT owning-field lifecycle evidence from
+  descriptor cleanup facts;
 - JIT readiness gates: use the changed VM evidence only after the VM fixture
   proves the new descriptor-driven behavior.
