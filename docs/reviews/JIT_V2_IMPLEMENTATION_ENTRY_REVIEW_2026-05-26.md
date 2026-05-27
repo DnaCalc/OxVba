@@ -84,8 +84,10 @@ package evidence named for that tracer.
   cross-linked.
 - The first support-scaffolding implementation cut has a bounded path:
   support query -> `ProcLoweringIr` data model -> verifier -> helper manifest ->
-  harness unavailable rows -> Cranelift module setup. TB01/TB02 execution
-  starts only after their VM/package evidence gates pass.
+  harness unavailable rows -> Cranelift module setup. TB01 through TB09
+  execution starts only after each tracer's VM/package evidence gate in
+  `docs/validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv` passes for the
+  descriptor families that tracer consumes.
 - `oxvba-jit` remains a disabled public boundary and still reports not
   implemented.
 - `./scripts/run-jit-v2-tracer-fixtures.ps1` is the planning-stage guard for

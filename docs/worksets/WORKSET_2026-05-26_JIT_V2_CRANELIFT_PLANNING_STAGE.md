@@ -84,7 +84,10 @@ Current planning artifacts:
   Declare interop must be present in the first design slice.
 - The first supported JIT target policy is Windows x64 only. Non-Windows and
   unsupported-target JIT requests remain deterministic unavailable until a
-  separate target-support decision accepts them.
+  separate target-support decision accepts them. The support matrix records
+  target availability only; executable tracer entry remains governed by the
+  package/VM evidence gates in
+  `docs/validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`.
 - Cranelift is the selected backend, but Cranelift is only a code generator
   behind OxVba semantic contracts. VBA semantics, cleanup, error routing,
   COM/native descriptors, and deopt behavior belong to OxVba planning artifacts.
@@ -321,7 +324,8 @@ Implementation may start only when:
   unsupported bytecode, deopt requested, helper fault, COM/native failure, and
   real JIT execution are distinct statuses/diagnostic rows.
 - Target policy: Windows x64 is the only first accepted JIT target.
-  Non-Windows and non-x64 requests are deterministic unavailable.
+  Non-Windows and non-x64 requests are deterministic unavailable. Target
+  availability does not bypass the tracer matrix package/VM evidence gates.
 - COM/native policy: late COM, early COM, native Declare, and exported callable
   paths use shared descriptor-backed helpers before any specialization.
 

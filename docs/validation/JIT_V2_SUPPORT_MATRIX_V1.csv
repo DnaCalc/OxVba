@@ -1,5 +1,5 @@
 target_triple,host_os,arch,status,com_native_scope,diagnostic_or_gate,notes
-x86_64-pc-windows-msvc,windows,x86_64,planned-first-target,"COM late-bound; COM early-bound; native Declare; exported callable",implementation-entry-gate,"Only first target accepted for JIT execution planning."
+x86_64-pc-windows-msvc,windows,x86_64,planned-first-target,"COM late-bound; COM early-bound; native Declare; exported callable","implementation-entry-gate; package-vm-evidence-gate","Only first target accepted for JIT execution planning; executable tracer work remains blocked until the tracer matrix package/VM evidence gates pass for each consumed descriptor family."
 aarch64-pc-windows-msvc,windows,aarch64,unavailable,"none",JIT-TARGET-UNAVAILABLE,"Not accepted for first implementation slice."
 x86_64-unknown-linux-gnu,linux,x86_64,unavailable,"none",JIT-TARGET-UNAVAILABLE,"Non-Windows scalar-only probes require separate target decision."
 x86_64-apple-darwin,macos,x86_64,unavailable,"none",JIT-TARGET-UNAVAILABLE,"Non-Windows scalar-only probes require separate target decision."
