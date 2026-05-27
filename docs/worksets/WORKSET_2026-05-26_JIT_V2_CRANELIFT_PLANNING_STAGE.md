@@ -125,8 +125,12 @@ Current planning artifacts:
    package-owned error/resume maps and failing-helper evidence; TB04
    additionally gates on non-UDT BSTR layout, helper, cleanup, and lifetime
    evidence; TB05 additionally gates on array descriptor, SAFEARRAY bounds,
-   element lifetime, and ownership evidence before `ProcLoweringIr` consumes
-   those facts.
+   element lifetime, and ownership evidence; TB06/TB07 additionally gate on
+   COM boundary descriptors, object identity, error projection, selector
+   metadata, and cleanup evidence; TB08 additionally gates on native ABI,
+   writeback, cleanup, and error-policy evidence; and TB09 additionally gates
+   on exported-callable ABI projection, cleanup/error policy, writeback, and
+   unsupported-shape diagnostics before `ProcLoweringIr` consumes those facts.
 
 ## Planning Deliverables
 
@@ -232,21 +236,33 @@ tracer work and not evidence that JIT execution exists.
    - Compile `CreateObject` plus `IDispatch::Invoke` with named/default member
      and failure under `Resume Next`.
    - Acceptance: HRESULT, EXCEPINFO, ArgErr, `Err` projection, object identity,
-     and named/default dispatch metadata match VM/COM behavior.
+     and named/default dispatch metadata match VM/COM behavior; VM package
+     evidence includes COM activation/dispatch descriptors, selector metadata,
+     error projection fields, object identity observations, and cleanup facts
+     consumed by `ProcLoweringIr`.
 7. **Early-bound COM path**
    - Compile a known typelib-backed call using metadata-derived dispatch or
      vtable strategy.
    - Acceptance: descriptor identity, object identity, and dispatch-vs-vtable
-     parity are proved, not only call success.
+     parity are proved, not only call success; VM package evidence includes
+     typelib/imported member descriptors, dispatch-vtable strategy evidence,
+     argument/return projection facts, object identity observations, and
+     cleanup facts consumed by `ProcLoweringIr`.
 8. **Native Declare path**
    - Compile a DLL/SO call with scalar, BSTR, Variant, SAFEARRAY, and ByRef
      writeback.
    - Acceptance: shared ABI descriptor reuse, writeback, cleanup on failure,
-     and error policy are proved.
+     and error policy are proved; VM package evidence includes native ABI
+     descriptor digests, projection facts, ByRef writeback evidence,
+     cleanup/buffer ownership evidence, and native error policy consumed by
+     `ProcLoweringIr`.
 9. **Exported callable path**
    - Expose a JIT-backed procedure through wrapped COM/native export shape.
    - Acceptance: inbound ABI projection, cleanup, error return policy, and
-     unsupported-shape diagnostics are defined with no silent fallback.
+     unsupported-shape diagnostics are defined with no silent fallback; VM
+     package evidence includes inbound/outbound projection descriptors, ByRef
+     writeback policy, cleanup/error return policy, and unsupported-shape
+     diagnostics consumed by `ProcLoweringIr`.
 
 ## Review And Implementation-Entry Gate
 

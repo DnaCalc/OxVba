@@ -249,6 +249,18 @@ Required assertions:
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb06_late_bound_com_resume_next.bas`
 
+Package/VM evidence gate:
+
+- VM package evidence must include COM activation/dispatch descriptors,
+  named/default member selector evidence, HRESULT/EXCEPINFO/ArgErr projection
+  fields, `ObjectRef` identity observations, and boundary cleanup facts before
+  `ProcLoweringIr` may consume this tracer.
+- The current hosted VM seed records `CreateObject`/dispatch instruction
+  expectations, runtime selector source, `early_bound=false`, and
+  runtime-owned HRESULT/EXCEPINFO/ArgErr classification. Package-owned
+  boundary projection, object identity comparison, default-member facts, and
+  cleanup evidence remain blocking.
+
 Required assertions:
 
 - `CreateObject` and `IDispatch::Invoke` use descriptor-backed helpers.
@@ -268,6 +280,17 @@ Required assertions:
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb07_early_bound_com_typelib.bas`
 
+Package/VM evidence gate:
+
+- VM package evidence must include typelib/reference descriptors, imported COM
+  class/interface/member descriptors, dispatch-vs-vtable strategy evidence,
+  `ObjectRef` identity observations, and argument/return projection facts
+  before `ProcLoweringIr` may consume this tracer.
+- The current hosted VM seed records early-bound dispatch instruction
+  expectations and the object/member seed table names early-bound dispatch plus
+  vtable strategy obligations. Imported member descriptors, strategy digest
+  evidence, object identity comparison, and projection facts remain blocking.
+
 Required assertions:
 
 - Typelib-backed descriptor identity is present.
@@ -284,6 +307,17 @@ Required assertions:
 
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb08_native_declare_shared_abi.bas`
+
+Package/VM evidence gate:
+
+- VM package evidence must include native ABI descriptor digests, scalar/BSTR
+  pointer/Variant cell/SAFEARRAY buffer projection facts, ByRef writeback
+  evidence, cleanup-buffer ownership evidence, and native error policy before
+  `ProcLoweringIr` may consume this tracer.
+- The current hosted VM seed records `ExternalCallDescriptor` and native invoke
+  facts for the supported subset. Generic Automation `Variant` and SAFEARRAY
+  declared-parameter ABI support plus cleanup/buffer ownership observations
+  remain real VM/native limitations before executable TB08 can close.
 
 Required assertions:
 
@@ -304,6 +338,16 @@ Required assertions:
 
 Fixture:
 `conformance/jit_v2/tracer_bullets/tb09_exported_callable_projection.bas`
+
+Package/VM evidence gate:
+
+- VM package evidence must include inbound ABI projection descriptors, ByRef
+  writeback policy, return projection, cleanup/error return policy, and
+  unsupported-shape diagnostics before `ProcLoweringIr` may consume this
+  tracer.
+- The current seed proves an internal callable projection path only. External
+  inbound/outbound export projection is not yet a first-class package
+  descriptor and remains the blocking TB09 evidence gap.
 
 Required assertions:
 

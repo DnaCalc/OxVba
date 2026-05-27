@@ -15,15 +15,19 @@ All tracer bullets have a VM seed path today:
   `VmPackageIdentityEvidence::interop_descriptor_evidence` for the current
   COM activation/dispatch and native Declare/invoke descriptor expectations.
 
-VM seed readiness is separate from package/JIT readiness. TB01 through TB05
+VM seed readiness is separate from package/JIT readiness. TB01 through TB09
 executable JIT work is gated by the package evidence named in
 `docs/validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`: declared primitive
 slot/carrier evidence for TB01; UDT descriptor plus selected lifecycle evidence
 for TB02; package error-frame evidence for TB03; declared String/BSTR helper
 and cleanup evidence for TB04; and array descriptor, SAFEARRAY bounds, element
-lifetime, and ownership evidence for TB05. Remaining canonical layout, offset,
-cleanup/deopt, bounds-error, multi-rank, COM/native projection, and verifier
-gaps must stay explicit until the JIT workset owns them.
+lifetime, and ownership evidence for TB05; COM boundary descriptor, object
+identity, projection, and cleanup evidence for TB06/TB07; native ABI,
+writeback, cleanup, and error-policy evidence for TB08; and exported-callable
+projection, cleanup/error policy, writeback, and unsupported-shape diagnostics
+for TB09. Remaining canonical layout, offset, cleanup/deopt, bounds-error,
+multi-rank, COM/native/export projection, and verifier gaps must stay explicit
+until the JIT workset owns them.
 
 Authoritative test design:
 `docs/spec/JIT_V2_TRACER_BULLET_TEST_PLAN_V1.md`.
