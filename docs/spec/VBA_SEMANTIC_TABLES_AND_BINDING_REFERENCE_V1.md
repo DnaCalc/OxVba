@@ -206,8 +206,9 @@ attempting full table coverage at once:
   declared-type call-entry coercion and Optional missing `Variant` explicitly
   classified in the completion-map VMR-04 call-gap ledger before
   behavior-changing follow-up.
-- Lifecycle seed: primitive, `Variant`, `BStr`, `SafeArray`, `ObjectRef`, and
-  UDTs containing primitive, `String`, and `Variant` fields.
+- Lifecycle seed: primitive, `Variant`, Decimal-in-Variant payload, `BStr`,
+  `SafeArray`, `ObjectRef`, UDT fields, ByRef temporaries, and COM/native
+  boundary temporaries.
 - Object/member seed: `Set` object assignment, `Nothing`, default member in
   `Let` context, `Property Get`/`Let`/`Set` shape, and late-bound dispatch
   descriptor.
@@ -272,6 +273,33 @@ current helper behavior until a spec/oracle-backed behavior bead changes them.
 The `Option Compare Text` seed is also current-helper evidence only: the VM
 normalizes text with ASCII lowercasing today, so full VBA locale/collation parity
 still needs table and oracle coverage.
+
+## Lifecycle Cleanup Seed Table v1
+
+The first checked-in lifecycle and cleanup seed table is:
+
+[`../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv)
+
+This table records current runtime and VM evidence for:
+
+- primitive declared slots that have no owned cleanup;
+- declared `Variant` slots, including Decimal as a Variant payload rather than
+  ordinary declared storage;
+- variable and fixed-length string cleanup obligations;
+- dynamic arrays, SAFEARRAY element ownership, and `ParamArray` packs;
+- `ObjectRef` AddRef/Release ownership and object identity;
+- UDT primitive and owning fields, fixed strings, and fixed arrays;
+- ByRef alias/writeback and ByRef expression temporary policies;
+- COM dispatch temporaries, native Declare writeback buffers, and future deopt
+  cleanup materialization.
+
+Rows are current-state seed evidence, not package-owned lifecycle descriptors.
+The table deliberately keeps `metadata-missing`, `test-shortcoming`,
+`VM-limitation`, `interop-limitation`, and `oracle-required` gaps visible until
+VM evidence records lifecycle observations and descriptor-backed cleanup maps
+exist. A later behavior-changing VM or JIT path may use these rows only after
+the row has a canonical descriptor id and its branch, return, error, helper
+failure, boundary, and deopt cleanup obligations are fixture-backed.
 
 ## Minimum Table Artifact
 

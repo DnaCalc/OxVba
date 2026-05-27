@@ -498,6 +498,8 @@ Review gaps:
   [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv);
   the first operator seed rows are checked in at
   [`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv);
+  the first lifecycle/cleanup seed rows are checked in at
+  [`../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv);
   full truth-table extraction and canonical descriptor ids remain open;
 - `Array(...)` function lower-bound behavior needs explicit MS-VBAL plus Office
   oracle closure before specialization.
@@ -660,7 +662,10 @@ Known development gaps:
   descriptor-driven UDT copy/drop behavior, richer class/interface/imported-COM
   descriptors, `As New` activation/default-instance policy, general
   fixed-string behavior, cleanup maps, and full carrier layout facts remain
-  incomplete or explicitly `Unknown`;
+  incomplete or explicitly `Unknown`; the first lifecycle/cleanup seed table
+  names current cleanup obligations for primitive, Variant/Decimal, BStr,
+  SafeArray, ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and
+  deopt state, but those rows are not package-owned descriptors yet;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
