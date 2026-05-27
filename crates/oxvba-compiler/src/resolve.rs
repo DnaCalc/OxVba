@@ -332,6 +332,7 @@ pub struct BoundArrayDescriptor {
     pub rank: usize,
     pub bounds: Vec<(i32, i32)>,
     pub dynamic: bool,
+    pub option_base: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -642,7 +643,8 @@ fn build_mainline_procedure_from_lines(
         &[],
     );
     body.splice(0..0, build_const_prelude(module_constants));
-    let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+    let array_descriptors =
+        build_array_descriptors(&array_bounds, &declaration_types, &body, option_base);
     remove_udt_type_markers(&mut declaration_types);
     Some(BoundProcedure {
         name: "main".to_string(),
@@ -1571,7 +1573,8 @@ fn parse_procedures(
             &[end_term],
         );
         body.splice(0..0, build_const_prelude(module_constants));
-        let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+        let array_descriptors =
+            build_array_descriptors(&array_bounds, &declaration_types, &body, option_base);
         remove_udt_type_markers(&mut declaration_types);
         let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term)
         {
@@ -6084,6 +6087,7 @@ fn build_array_descriptors(
     array_bounds: &ArrayBoundsMap,
     declaration_types: &HashMap<String, BoundType>,
     body: &[BoundStmt],
+    option_base: i32,
 ) -> HashMap<String, BoundArrayDescriptor> {
     let mut redim_targets = HashSet::new();
     collect_redim_targets(body, &mut redim_targets);
@@ -6101,7 +6105,8 @@ fn build_array_descriptors(
                 element_type,
                 rank: bounds.len().max(1),
                 bounds: bounds.clone(),
-                dynamic: redim_targets.contains(name),
+                dynamic: bounds.is_empty() || redim_targets.contains(name),
+                option_base,
             },
         );
     }

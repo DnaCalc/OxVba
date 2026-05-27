@@ -21,15 +21,15 @@ pub use bundle::{
 pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
-    ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, CallReturnDescriptor,
-    CallSiteDescriptor, CallTargetKindDescriptor, DefaultMemberPolicyDescriptor,
-    ImplicitCurrentObjectDescriptor, OptionalDefaultValue, OptionalMissingStatePolicy,
-    OptionalParameterDescriptor, ParamArrayBindingDescriptor, ParamArrayDescriptor,
-    ParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
-    ProcedureSignatureDescriptor, ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState,
-    SlotRole, SlotTypeDescriptor, SourceParameterMechanism, VbaTypeId,
-    bound_type_to_declare_param_type,
+    ArgumentSourceKindDescriptor, ArgumentWritebackDescriptor, ArrayBoundDescriptor,
+    ArrayShapeDescriptor, ArrayStorageKind, CallReturnDescriptor, CallSiteDescriptor,
+    CallTargetKindDescriptor, DefaultMemberPolicyDescriptor, ImplicitCurrentObjectDescriptor,
+    OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
+    ParamArrayBindingDescriptor, ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode,
+    ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
+    RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
+    VbaTypeId, bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,

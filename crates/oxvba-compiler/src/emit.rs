@@ -141,6 +141,33 @@ pub struct ProcedureRuntimeMetadata {
     pub return_type: Option<DeclareParamType>,
     pub signature: ProcedureSignatureDescriptor,
     pub call_sites: Vec<CallSiteDescriptor>,
+    pub array_shapes: Vec<ArrayShapeDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ArrayShapeDescriptor {
+    pub name: String,
+    pub base_slot: Option<usize>,
+    pub element_type: VbaTypeId,
+    pub element_carrier: RuntimeCarrierKind,
+    pub rank: usize,
+    pub bounds: Vec<ArrayBoundDescriptor>,
+    pub storage: ArrayStorageKind,
+    pub option_base: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ArrayBoundDescriptor {
+    pub dimension: usize,
+    pub lower_bound: i32,
+    pub upper_bound: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ArrayStorageKind {
+    StaticFixed,
+    Dynamic,
+    ParamArrayPack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -579,6 +606,10 @@ impl ProcedureRuntimeMetadata {
             .iter()
             .map(ProcedureRuntimeSlotMetadata::slot_type_descriptor)
             .collect()
+    }
+
+    pub fn array_shape_descriptors(&self) -> Vec<ArrayShapeDescriptor> {
+        self.array_shapes.clone()
     }
 
     pub(crate) fn legacy_declared_type_for_slot(
@@ -1168,6 +1199,10 @@ pub fn emit_bytecode_with_runtime_metadata(
                 module.is_class_module,
             ),
             call_sites: entry_call_sites,
+            array_shapes: build_array_shape_descriptors(
+                &procedures[entry_idx],
+                &proc_slots[entry_idx],
+            ),
         },
     );
 
@@ -1269,6 +1304,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     module.is_class_module,
                 ),
                 call_sites,
+                array_shapes: build_array_shape_descriptors(proc, &proc_slots[idx]),
             },
         );
     }
@@ -1388,6 +1424,49 @@ fn build_runtime_slot_metadata(
             .then_with(|| lhs.name.cmp(&rhs.name))
     });
     slots
+}
+
+fn build_array_shape_descriptors(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+) -> Vec<ArrayShapeDescriptor> {
+    let mut descriptors = proc
+        .array_descriptors
+        .iter()
+        .map(|(name, descriptor)| {
+            let is_param_array = proc
+                .params
+                .iter()
+                .any(|param| param.param_array && param.name.eq_ignore_ascii_case(name));
+            ArrayShapeDescriptor {
+                name: name.clone(),
+                base_slot: proc_slots.get(name).copied(),
+                element_type: vba_type_id_from_bound_type(descriptor.element_type),
+                element_carrier: runtime_carrier_from_bound_type(descriptor.element_type),
+                rank: descriptor.rank,
+                bounds: descriptor
+                    .bounds
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (lower_bound, upper_bound))| ArrayBoundDescriptor {
+                        dimension: index + 1,
+                        lower_bound: *lower_bound,
+                        upper_bound: *upper_bound,
+                    })
+                    .collect(),
+                storage: if is_param_array {
+                    ArrayStorageKind::ParamArrayPack
+                } else if descriptor.dynamic {
+                    ArrayStorageKind::Dynamic
+                } else {
+                    ArrayStorageKind::StaticFixed
+                },
+                option_base: descriptor.option_base,
+            }
+        })
+        .collect::<Vec<_>>();
+    descriptors.sort_by(|left, right| left.name.cmp(&right.name));
+    descriptors
 }
 
 fn is_compiler_generated_array_element_slot(proc: &BoundProcedure, name: &str) -> bool {

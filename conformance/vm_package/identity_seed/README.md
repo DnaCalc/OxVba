@@ -13,7 +13,8 @@ The test output prints value snapshots plus package digest, bytecode digest,
 slot counts, procedure identity fields, per-procedure slot descriptor digests,
 slot descriptor tokens, signature descriptor digests for observed `CallProc`
 targets, signature/call observation tokens, call-site descriptor digests, and
-call-site descriptor observation tokens for each fixture.
+call-site descriptor observation tokens for each fixture. The array rows also
+print array-shape descriptor digests and array-shape observation tokens.
 
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
 and the current VM-runnable UDT field-alias shape. They do not claim nominal
@@ -56,6 +57,15 @@ then records current compile-time diagnostics for missing required arguments,
 wrong argument counts, unknown named arguments, duplicate mappings, positional
 after named, and named `ParamArray` targets, with the intended 448/449/450
 classification kept as evidence for later descriptor-driven call binding.
+
+`VMR05_ARRAY_SHAPE_BOUNDS` is the first VM-runnable array shape descriptor
+fixture. It records fixed/static and dynamic local array slots, compiler
+generated fixed-array element slots, `Option Base 1` influence, explicit
+`0 To 2` bounds, dynamic `ReDim 2 To 4` runtime SAFEARRAY bounds, and ByRef
+copyback of the observed scalar results. It intentionally does not call
+`LBound`/`UBound` on fixed arrays because the current VM lowers fixed arrays to
+element slots and leaves the base slot unallocated; that is classified as a VM
+limitation for later fixed-array bound introspection, not a fixture failure.
 
 The durable classification for those call-shape gaps lives in
 `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under

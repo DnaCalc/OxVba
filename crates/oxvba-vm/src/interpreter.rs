@@ -10,12 +10,12 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, Bytecode, CallSiteDescriptor,
-    Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle, ParameterDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
-    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
-    SlotTypeDescriptor,
+    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArrayShapeDescriptor, Bytecode,
+    CallSiteDescriptor, Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ResolvedParameterMechanism, SlotTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -160,6 +160,13 @@ impl<'a> VmExecutionPackage<'a> {
     }
 
     pub fn identity_evidence(&self) -> VmPackageIdentityEvidence {
+        self.identity_evidence_with_runtime_slots(&[])
+    }
+
+    fn identity_evidence_with_runtime_slots(
+        &self,
+        runtime_slots: &[RuntimeSlot],
+    ) -> VmPackageIdentityEvidence {
         let bytecode_digest = digest_debug("bytecode", self.bytecode);
         let package_digest = digest_package(&bytecode_digest, self.procedure_metadata);
         let procedures = self
@@ -170,6 +177,8 @@ impl<'a> VmExecutionPackage<'a> {
         let signature_call_evidence =
             collect_signature_call_evidence(self.bytecode, self.procedure_metadata);
         let call_site_evidence = collect_call_site_descriptor_evidence(self.procedure_metadata);
+        let array_shape_evidence =
+            collect_array_shape_evidence(self.procedure_metadata, runtime_slots);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -179,6 +188,7 @@ impl<'a> VmExecutionPackage<'a> {
             procedures,
             signature_call_evidence,
             call_site_evidence,
+            array_shape_evidence,
         }
     }
 
@@ -255,6 +265,7 @@ pub struct VmPackageIdentityEvidence {
     pub procedures: Vec<VmProcedureIdentityEvidence>,
     pub signature_call_evidence: Vec<VmSignatureCallEvidence>,
     pub call_site_evidence: Vec<VmCallSiteDescriptorEvidence>,
+    pub array_shape_evidence: Vec<VmArrayShapeEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -277,8 +288,112 @@ pub struct VmCallSiteDescriptorEvidence {
     pub observations: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmArrayShapeEvidence {
+    pub procedure_name: String,
+    pub array_name: String,
+    pub array_shape_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
+
+fn collect_array_shape_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<VmArrayShapeEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .array_shapes
+                .iter()
+                .map(move |descriptor| VmArrayShapeEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    array_name: descriptor.name.clone(),
+                    array_shape_descriptor_digest: digest_debug("array-shape", descriptor),
+                    observations: array_shape_observations(descriptor, runtime_slots),
+                })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.array_name.cmp(&right.array_name))
+    });
+    evidence
+}
+
+fn array_shape_observations(
+    descriptor: &ArrayShapeDescriptor,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    let mut observations = vec![
+        format!("rank={}", descriptor.rank),
+        format!("storage={}", debug_token(&descriptor.storage)),
+        format!("element-type={}", debug_token(&descriptor.element_type)),
+        format!(
+            "element-carrier={}",
+            debug_token(&descriptor.element_carrier)
+        ),
+        format!("option-base={}", descriptor.option_base),
+    ];
+    if descriptor.base_slot.is_some() {
+        observations.push("base-slot-known".to_string());
+    } else {
+        observations.push("base-slot-missing".to_string());
+    }
+    if descriptor.bounds.is_empty() {
+        observations.push("declared-bounds=runtime".to_string());
+    } else {
+        for bound in &descriptor.bounds {
+            observations.push(format!(
+                "declared-dim{}={}..{}",
+                bound.dimension, bound.lower_bound, bound.upper_bound
+            ));
+        }
+    }
+    observations.extend(runtime_array_shape_observations(descriptor, runtime_slots));
+    observations
+}
+
+fn runtime_array_shape_observations(
+    descriptor: &ArrayShapeDescriptor,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    if runtime_slots.is_empty() {
+        return Vec::new();
+    }
+    let Some(slot) = descriptor.base_slot else {
+        return Vec::new();
+    };
+    let Some(runtime_slot) = runtime_slots.get(slot) else {
+        return vec!["runtime-slot-out-of-range".to_string()];
+    };
+    let RuntimeSlot::Variant(value) = runtime_slot else {
+        return vec!["runtime-slot-non-variant".to_string()];
+    };
+    let Some(array) = value.as_safearray() else {
+        return vec!["runtime-bounds=unallocated".to_string()];
+    };
+    let mut observations = vec![format!("runtime-rank={}", array.dimensions())];
+    if let Some(bounds) = array.bounds() {
+        for (index, bound) in bounds.iter().enumerate() {
+            let upper = i64::from(bound.lower) + i64::from(bound.count) - 1;
+            observations.push(format!(
+                "runtime-dim{}={}..{}",
+                index + 1,
+                bound.lower,
+                upper
+            ));
+        }
+    } else {
+        observations.push("runtime-bounds=unknown".to_string());
+    }
+    observations
+}
 
 fn collect_call_site_descriptor_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -286,16 +401,17 @@ fn collect_call_site_descriptor_evidence(
     let mut evidence = procedure_metadata
         .values()
         .flat_map(|metadata| {
-            metadata.call_sites.iter().map(|call_site| {
-                VmCallSiteDescriptorEvidence {
+            metadata
+                .call_sites
+                .iter()
+                .map(|call_site| VmCallSiteDescriptorEvidence {
                     call_site_id: call_site.call_site_id.clone(),
                     caller_procedure_name: metadata.procedure_name.clone(),
                     call_pc: call_site.call_pc,
                     target_name: call_site.target_name.clone(),
                     call_site_descriptor_digest: digest_debug("call-site-descriptor", call_site),
                     observations: call_site_descriptor_observations(call_site),
-                }
-            })
+                })
         })
         .collect::<Vec<_>>();
     evidence.sort_by(|left, right| {
@@ -1151,9 +1267,10 @@ impl Vm {
         package: &VmExecutionPackage<'_>,
         typed_fastpaths: bool,
     ) -> Result<(), String> {
-        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
         let result = self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths);
+        let identity_evidence =
+            package.identity_evidence_with_runtime_slots(&self.registers.registers);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }
@@ -1206,10 +1323,11 @@ impl Vm {
         arg_slots: &[usize],
         args: &[i32],
     ) -> Result<(), String> {
-        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
         let result =
             self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args);
+        let identity_evidence =
+            package.identity_evidence_with_runtime_slots(&self.registers.registers);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }
@@ -1304,10 +1422,11 @@ impl Vm {
         arg_slots: &[usize],
         args: &[Variant],
     ) -> Result<(), String> {
-        let identity_evidence = package.identity_evidence();
         self.load_execution_package_metadata(package);
         let result =
             self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args);
+        let identity_evidence =
+            package.identity_evidence_with_runtime_slots(&self.registers.registers);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }

@@ -182,7 +182,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v7 carries those facts and upgrades older v3/v4/v5/v6 metadata
+`OxBundle` format v8 carries those facts and upgrades older v3/v4/v5/v6/v7 metadata
 into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -204,7 +204,7 @@ declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
 where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
-metadata knows them. `OxBundle` format v7 carries those facts, upgrades v6
+metadata knows them. `OxBundle` format v8 carries those facts, upgrades v6/v7
 bundles with empty call-site rows, upgrades v5 bundles with `Unknown` source
 mechanism where v5 lacked that distinction, and upgrades v4 bundles with
 `Unknown` parameter passing mode where v4 had no serialized ByRef/ByVal fact.
@@ -252,6 +252,23 @@ separate. In particular, the ByVal `Long` to declared-`Double` gap is a
 compiler/VM call-binding limitation with existing primitive carriers, while the
 omitted Optional `Variant` gap also requires a first-class missing-argument
 value state before `IsMissing` or call-entry introspection can claim parity.
+
+Current VMR-05 seed surface is package metadata plus VM evidence, not array
+execution rewiring: `ProcedureRuntimeMetadata::array_shapes` carries
+`ArrayShapeDescriptor` rows for arrays known to the resolver, and
+`VmPackageIdentityEvidence::array_shape_evidence` reports descriptor digests
+plus observations for rank, storage kind, declared bounds, `Option Base`,
+element type/carrier, base-slot presence, and runtime SAFEARRAY bounds when a
+base slot is allocated after VM execution. `OxBundle` format v8 carries these
+rows and upgrades v7 bundles with an explicit empty array-shape set.
+
+The VMR-05 seed fixture proves the current positive subset for fixed/static
+local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
+and ByRef scalar observation copyback. It also records a real VM limitation:
+fixed arrays are currently lowered to compiler-generated element slots with an
+unallocated base slot, so `LBound`/`UBound` over fixed arrays is not VM-runnable
+yet and is not claimed by the fixture. That limitation must be resolved or kept
+descriptor-only before JIT lowering consumes fixed-array bound facts.
 
 ## Strengthening Rule
 

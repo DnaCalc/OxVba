@@ -207,9 +207,11 @@ once.
 - Element lifetime is part of safepoint live maps.
 - Bounds failures route through VM error state when the bytecode reaches runtime
   bounds handling.
-- Current tracer fixture TB05 covers VM-runnable store, index, For Each, and
-  bounds metadata behavior; runtime bounds-error evidence remains required
-  before TB05 closure.
+- Current VM/package evidence covers VM-runnable store, index, For Each, first
+  package array-shape descriptors, fixed/static declared bounds, and dynamic
+  `ReDim` runtime SAFEARRAY bounds. Runtime bounds-error evidence, multi-rank
+  evidence, lifecycle ownership evidence, COM/native SAFEARRAY projection, and
+  fixed-array `LBound`/`UBound` behavior remain required before TB05 closure.
 
 ## Object Identity Contract
 

@@ -588,10 +588,12 @@ Current implementation anchors:
   `ParameterDescriptor` view for procedure kind, parsed parameter mode,
   source/resolved parameter mechanism, Optional/default/missing policy,
   ParamArray shape, return type, property group, property value ByVal
-  semantics, and class hidden-receiver metadata.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v7 serializes the
-  populated slot, signature, and seed call-site metadata and upgrades
-  v1/v2/v3/v4/v5/v6 bundles into the current descriptor shape.
+  semantics, and class hidden-receiver metadata; first `ArrayShapeDescriptor`
+  rows for resolver-known arrays, including rank, declared bounds, storage
+  kind, `Option Base`, element type, and element carrier.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v8 serializes the
+  populated slot, signature, seed call-site, and array-shape metadata and
+  upgrades v1/v2/v3/v4/v5/v6/v7 bundles into the current descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
   current slot descriptor view and
@@ -601,7 +603,8 @@ Current implementation anchors:
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
   descriptor rows, signature/call observation rows for current seed `CallProc`
   lowering compared with signature metadata, and call-site descriptor evidence
-  rows for the first VMR-04 fixtures.
+  rows for the first VMR-04 fixtures, plus array-shape descriptor evidence for
+  VMR-05 fixtures.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
   declared `Variant`, the current flattened UDT field-alias shape, and VMR-03
@@ -610,7 +613,9 @@ Current implementation anchors:
   descriptor evidence for ByRef alias/writeback, ByRef expression temp,
   ByVal copy with a declared-`Double` call-entry coercion gap, Optional default,
   Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
-  shape.
+  shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
+  dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
+  carrier facts, and the current fixed-array base-slot limitation.
 
 Known development gaps:
 
@@ -629,11 +634,12 @@ Known development gaps:
   current direct lowering, external Declare/COM call coverage, canonical
   descriptor ids, descriptor-driven VM behavior, true ByVal call-entry
   coercion, and true Optional-missing runtime behavior remain incomplete;
-- `ProcedureRuntimeSlotMetadata` now carries first-pass descriptor facts, but
-  expression temporary declared types, richer array shape/provenance, UDT
-  nominal identity, aggregate UDT field offsets, object/class/interface ids,
-  fixed-string details, cleanup obligations, and full carrier layout facts
-  remain incomplete or explicitly `Unknown`;
+- `ProcedureRuntimeSlotMetadata` and `ArrayShapeDescriptor` now carry first-pass
+  slot and local array shape facts, but expression temporary declared types,
+  multi-rank/error/lifecycle array evidence, UDT nominal identity, aggregate
+  UDT field offsets, object/class/interface ids, fixed-string details, cleanup
+  obligations, and full carrier layout facts remain incomplete or explicitly
+  `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;

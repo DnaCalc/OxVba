@@ -176,10 +176,17 @@ Fixture:
 Required assertions:
 
 - Typed `Long` array element stores and `For Each` snapshots match.
-- Index reads, `LBound`, and `UBound` snapshots match the VM seed fixture.
+- Index reads and dynamic-array `LBound`/`UBound` snapshots match the VM seed
+  fixture.
+- Package array-shape evidence records fixed/static bounds, explicit
+  `0 To 2` bounds, dynamic runtime SAFEARRAY bounds, `Option Base`, element
+  type/carrier, and fixed-array base-slot allocation status.
 - A follow-up runtime bounds-error fixture must be added before TB05 closes;
   the current active compiler/runtime does not yet expose that failure route
   through a VM-runnable standalone tracer shape.
+- A fixed-array `LBound`/`UBound` follow-up must be implemented or explicitly
+  deferred because the current VM lowers fixed arrays to element slots with an
+  unallocated base slot.
 - Element carrier lifetimes are recorded in safepoint live maps.
 - SAFEARRAY descriptor and payload ownership remain runtime-owned.
 

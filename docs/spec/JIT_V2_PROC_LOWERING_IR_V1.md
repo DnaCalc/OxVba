@@ -316,10 +316,12 @@ BSTR.
 
 ### TB05 SAFEARRAY
 
-Current VM-runnable seed covers array stores, index reads, `For Each`, and
-`LBound`/`UBound` metadata. The IR must model array helpers as safepoints with
-element live maps. TB05 cannot close until runtime bounds-error evidence is
-added.
+Current VM-runnable seed covers array stores, index reads, `For Each`, first
+package array-shape descriptors, fixed/static declared bounds, and dynamic
+`ReDim` runtime SAFEARRAY bounds. The IR must model array helpers as safepoints
+with element live maps. TB05 cannot close until runtime bounds-error evidence,
+multi-rank evidence, lifecycle ownership evidence, and a fixed-array
+`LBound`/`UBound` implementation-or-deferral decision are added.
 
 ### TB06-TB09 Interop
 

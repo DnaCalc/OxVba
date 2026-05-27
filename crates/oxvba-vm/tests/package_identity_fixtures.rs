@@ -16,6 +16,7 @@ struct FixtureRow {
     expected_descriptor_tokens: Vec<String>,
     expected_call_observation_tokens: Vec<String>,
     expected_call_descriptor_tokens: Vec<String>,
+    expected_array_shape_tokens: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -52,8 +53,8 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                7,
-                "identity fixture manifest row should have 7 columns: {line}"
+                8,
+                "identity fixture manifest row should have 8 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
@@ -71,6 +72,11 @@ fn fixture_rows() -> Vec<FixtureRow> {
                     .map(|token| token.trim().to_string())
                     .collect(),
                 expected_call_descriptor_tokens: columns[6]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_array_shape_tokens: columns[7]
                     .split(';')
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
@@ -278,6 +284,42 @@ fn call_site_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> S
     tokens.join("|")
 }
 
+fn array_shape_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .array_shape_evidence
+        .iter()
+        .flat_map(|array| {
+            array.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}:{}",
+                    array.procedure_name.to_ascii_lowercase(),
+                    array.array_name.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn array_shape_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .array_shape_evidence
+        .iter()
+        .map(|array| {
+            format!(
+                "{}:{}={}",
+                array.procedure_name.to_ascii_lowercase(),
+                array.array_name.to_ascii_lowercase(),
+                array.array_shape_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -337,6 +379,16 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 row.id,
                 expected_call_descriptor,
                 call_site_tokens
+            );
+        }
+        let array_shape_tokens = array_shape_observation_tokens(evidence);
+        for expected_array_shape in &row.expected_array_shape_tokens {
+            assert!(
+                array_shape_tokens.contains(expected_array_shape),
+                "{} array-shape evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_array_shape,
+                array_shape_tokens
             );
         }
         assert_eq!(sorted_procedure_names(evidence), {
@@ -422,9 +474,25 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 call_site
             );
         }
+        for array_shape in &evidence.array_shape_evidence {
+            assert!(
+                array_shape
+                    .array_shape_descriptor_digest
+                    .starts_with("fnv1a64:"),
+                "{} array-shape descriptor digest should be explicit: {:?}",
+                row.id,
+                array_shape
+            );
+            assert!(
+                !array_shape.observations.is_empty(),
+                "{} array-shape evidence should classify each descriptor: {:?}",
+                row.id,
+                array_shape
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -436,9 +504,11 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             slot_descriptor_digest_tokens(evidence),
             signature_call_digest_tokens(evidence),
             call_site_descriptor_digest_tokens(evidence),
+            array_shape_digest_tokens(evidence),
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
-            call_site_tokens.join("|")
+            call_site_tokens.join("|"),
+            array_shape_tokens.join("|")
         );
     }
 }
