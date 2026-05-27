@@ -241,6 +241,9 @@ Primary fixture:
     `explicitU=2` are produced from package array-shape descriptors.
   - Dynamic `ReDim 2 To 4` `LBound`/`UBound` still use runtime SAFEARRAY
     bounds and remain `2`/`4`.
+  - Array-shape evidence now also records allocation, bounds, preserve, element
+    lifecycle, fixed/static array cleanup, dynamic SAFEARRAY cleanup, and local
+    SAFEARRAY slot cleanup tokens.
   - Total element snapshot remains `72`.
   - Loading package metadata into a raw VM and calling `execute` must not
     activate descriptor-driven array bounds.

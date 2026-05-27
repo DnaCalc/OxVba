@@ -157,7 +157,7 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
 #[cfg(test)]
 mod tests {
     use super::{
-        ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, Bytecode,
+        ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, ArrayStorageKind, Bytecode,
         CallDiagnosticKindDescriptor, CallDiagnosticOwnerDescriptor,
         CallInvocationSyntaxDescriptor, CallTargetKindDescriptor, CoercionKindDescriptor,
         DefaultMemberPolicyDescriptor, EvaluationOrderDescriptor,
@@ -166,8 +166,8 @@ mod tests {
         OptionalDefaultValue, OptionalMissingStatePolicy, OptionalParameterDescriptor,
         ParameterPassingMode, ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeSlotKind,
         ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SlotRole,
-        SourceParameterMechanism, ValueStateKind, VbaOperatorDescriptor, VbaTypeId, compile,
-        compile_with_runtime_metadata,
+        SourceParameterMechanism, UdtCopySemanticsDescriptor, ValueStateKind,
+        VbaOperatorDescriptor, VbaTypeId, compile, compile_with_runtime_metadata,
     };
     use crate::bytecode::{
         RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
@@ -578,6 +578,106 @@ mod tests {
                 "missing value-state descriptor {state:?}"
             );
         }
+    }
+
+    #[test]
+    fn procedure_runtime_metadata_carries_array_udt_enum_aggregate_facts() {
+        let source = "Option Base 1\n\
+                      Enum Mode\n\
+                      Fast = 3\n\
+                      Safe\n\
+                      End Enum\n\
+                      Type Inner\n\
+                      X As Long\n\
+                      End Type\n\
+                      Type Record\n\
+                      Name As String * 5\n\
+                      Scores(1 To 2) As Long\n\
+                      Inner As Inner\n\
+                      End Type\n\
+                      Sub Main()\n\
+                      Dim fixed(3) As Long\n\
+                      Dim explicit(0 To 2) As Long\n\
+                      Dim matrix(1 To 2, 3 To 4) As Long\n\
+                      Dim dyn() As Long\n\
+                      Dim r As Record\n\
+                      Dim modeValue As Long\n\
+                      modeValue = Safe\n\
+                      ReDim dyn(2 To 4)\n\
+                      End Sub";
+        let (_bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let main = metadata
+            .get("main")
+            .expect("Main metadata should be present");
+
+        let fixed = main
+            .array_shapes
+            .iter()
+            .find(|descriptor| descriptor.name.eq_ignore_ascii_case("fixed"))
+            .expect("fixed array shape should be present");
+        assert_eq!(fixed.storage, ArrayStorageKind::StaticFixed);
+        assert_eq!(fixed.option_base, 1);
+        assert_eq!(fixed.bounds[0].lower_bound, 1);
+        assert_eq!(fixed.bounds[0].upper_bound, 3);
+
+        let matrix = main
+            .array_shapes
+            .iter()
+            .find(|descriptor| descriptor.name.eq_ignore_ascii_case("matrix"))
+            .expect("multi-rank array shape should be present");
+        assert_eq!(matrix.rank, 2);
+        assert_eq!(matrix.bounds[0].lower_bound, 1);
+        assert_eq!(matrix.bounds[0].upper_bound, 2);
+        assert_eq!(matrix.bounds[1].lower_bound, 3);
+        assert_eq!(matrix.bounds[1].upper_bound, 4);
+
+        let dyn_array = main
+            .array_shapes
+            .iter()
+            .find(|descriptor| descriptor.name.eq_ignore_ascii_case("dyn"))
+            .expect("dynamic array shape should be present");
+        assert_eq!(dyn_array.storage, ArrayStorageKind::Dynamic);
+        assert!(dyn_array.bounds.is_empty());
+
+        let record = main
+            .udt_types
+            .iter()
+            .find(|descriptor| descriptor.type_name.eq_ignore_ascii_case("Record"))
+            .expect("Record UDT descriptor should be present");
+        assert_eq!(
+            record.copy_semantics,
+            UdtCopySemanticsDescriptor::FieldWiseCopy
+        );
+        assert!(record.cleanup.owns_bstr);
+        let name_field = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("Name"))
+            .expect("fixed string field should be present");
+        assert_eq!(name_field.fixed_string_len, Some(5));
+        let scores_field = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("Scores"))
+            .expect("fixed array field should be present");
+        assert_eq!(scores_field.array_bounds[0].lower_bound, 1);
+        assert_eq!(scores_field.array_bounds[0].upper_bound, 2);
+        let inner_field = record
+            .fields
+            .iter()
+            .find(|field| field.name.eq_ignore_ascii_case("Inner"))
+            .expect("nested UDT field should be present");
+        assert_eq!(inner_field.nested_udt_name.as_deref(), Some("inner"));
+
+        assert!(main.name_bindings.iter().any(|binding| {
+            binding.binding_id == "NAME-BINDING-ENUM-TYPE"
+                && binding.target.as_deref() == Some("enum:mode")
+        }));
+        assert!(main.name_bindings.iter().any(|binding| {
+            binding.binding_id == "NAME-BINDING-ENUM-MEMBER"
+                && binding.target.as_deref() == Some("enum:mode:safe=4")
+        }));
     }
 
     #[test]

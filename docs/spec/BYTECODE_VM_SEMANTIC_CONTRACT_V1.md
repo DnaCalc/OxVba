@@ -352,8 +352,11 @@ execution rewiring: `ProcedureRuntimeMetadata::array_shapes` carries
 `ArrayShapeDescriptor` rows for arrays known to the resolver, and
 `VmPackageIdentityEvidence::array_shape_evidence` reports descriptor digests
 plus observations for rank, storage kind, declared bounds, `Option Base`,
-element type/carrier, base-slot presence, and runtime SAFEARRAY bounds when a
-base slot is allocated after VM execution. `OxBundle` format v10 carries these
+element type/carrier, base-slot presence, bounds provenance, allocation/erase/
+preserve policy, element lifecycle classification, and runtime SAFEARRAY bounds
+when a base slot is allocated after VM execution. `VmPackageIdentityEvidence`
+also records selected lifecycle evidence for fixed/static array elements,
+dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v10 carries these
 rows, upgrades v7 bundles with an explicit empty array-shape set, upgrades v8
 bundles with an explicit empty UDT descriptor set, and upgrades v9 bundles with
 an explicit empty object descriptor set.
@@ -363,20 +366,22 @@ local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
 and ByRef scalar observation copyback. Package execution now consumes
 `ArrayShapeDescriptor` for the selected VMR-06 rank-1 fixed/static
 `LBound`/`UBound` path while raw bytecode execution still records the old
-runtime error 13 on the unallocated fixed-array base slot. Multi-rank
-fixed/static bounds, runtime bounds-error evidence, lifecycle ownership, and
-COM/native SAFEARRAY projection remain incomplete before JIT lowering may claim
-TB05 closure.
+runtime error 13 on the unallocated fixed-array base slot. Compiler/VM unit
+evidence now covers multi-rank descriptor serialization, but VM-runnable
+multi-rank execution fixtures, runtime bounds-error evidence, and COM/native
+SAFEARRAY projection remain incomplete before JIT lowering may claim TB05
+closure.
 
 The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
 the current flattened UDT storage model. VM evidence now records descriptor ids,
 instances, field order, field carriers, nested UDT references, fixed-length
 string field lengths, fixed array field bounds, field-alias slots, fieldwise
-copy classification, and cleanup ownership flags. The selected VMR-06 cleanup
-slice also records `VmPackageIdentityEvidence::lifecycle_evidence` for UDT
-BSTR-owning fields, including success, branch, error, helper, deopt, and
-runtime alias-carrier observations. VM UDT field access, whole-copy execution,
-offsets, layout, and explicit cleanup-stack execution still do not consume
+copy classification, recursive init policy, descriptor field-order layout
+tokens, and cleanup ownership flags. The selected VMR-06 cleanup slice also
+records `VmPackageIdentityEvidence::lifecycle_evidence` for UDT BSTR-owning
+fields, including success, branch, error, helper, deopt, and runtime
+alias-carrier observations. VM UDT field access, whole-copy execution,
+byte-offset layout, and explicit cleanup-stack execution still do not consume
 these descriptors yet.
 
 The VMR-05 object descriptor fixture adds `ObjectTypeDescriptor` evidence for

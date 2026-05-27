@@ -582,6 +582,115 @@ mod tests {
     }
 
     #[test]
+    fn package_identity_exposes_array_udt_lifecycle_and_enum_evidence() {
+        let source = "Option Base 1\n\
+                      Enum Mode\n\
+                      Fast = 3\n\
+                      Safe\n\
+                      End Enum\n\
+                      Type Inner\n\
+                      X As Long\n\
+                      End Type\n\
+                      Type Record\n\
+                      Name As String * 5\n\
+                      Scores(1 To 2) As Long\n\
+                      Inner As Inner\n\
+                      End Type\n\
+                      Sub Main()\n\
+                      Dim fixed(3) As Long\n\
+                      Dim matrix(1 To 2, 3 To 4) As Long\n\
+                      Dim dyn() As Long\n\
+                      Dim s As String\n\
+                      Dim r As Record\n\
+                      Dim modeValue As Long\n\
+                      modeValue = Safe\n\
+                      ReDim dyn(2 To 4)\n\
+                      s = \"ok\"\n\
+                      End Sub";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let evidence = VmExecutionPackage::new(&bytecode, &metadata).identity_evidence();
+
+        let array_observations = evidence
+            .array_shape_evidence
+            .iter()
+            .flat_map(|entry| entry.observations.iter().cloned())
+            .collect::<Vec<_>>();
+        for expected in [
+            "rank=2",
+            "declared-dim2=3..4",
+            "bounds-policy=declared-descriptor",
+            "redim-policy=runtime-shape",
+            "preserve-policy=last-dimension-only",
+        ] {
+            assert!(
+                array_observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing array evidence token {expected}; got {array_observations:?}"
+            );
+        }
+
+        let udt_observations = evidence
+            .udt_descriptor_evidence
+            .iter()
+            .flat_map(|entry| entry.observations.iter().cloned())
+            .collect::<Vec<_>>();
+        for expected in [
+            "copy=fieldwisecopy",
+            "init=recursive-field-defaults",
+            "layout=descriptor-field-order",
+            "field:name:layout-index=0",
+            "field:scores:array-dim1=1..2",
+            "field:inner:nested-udt=inner",
+        ] {
+            assert!(
+                udt_observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing UDT evidence token {expected}; got {udt_observations:?}"
+            );
+        }
+
+        let lifecycle_observations = evidence
+            .lifecycle_evidence
+            .iter()
+            .flat_map(|entry| entry.observations.iter().cloned())
+            .collect::<Vec<_>>();
+        for expected in [
+            "lifecycle-id=LIFE-BSTR-SLOT",
+            "lifecycle-id=LIFE-STATIC-ARRAY-ELEMENTS",
+            "lifecycle-id=LIFE-SAFEARRAY-DYNAMIC",
+            "field:name:carrier-lifecycle-id=LIFE-BSTR-FIXED-STRING",
+        ] {
+            assert!(
+                lifecycle_observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing lifecycle evidence token {expected}; got {lifecycle_observations:?}"
+            );
+        }
+
+        let name_binding_observations = evidence
+            .name_binding_evidence
+            .iter()
+            .flat_map(|entry| entry.observations.iter().cloned())
+            .collect::<Vec<_>>();
+        for expected in [
+            "binding-id=NAME-BINDING-ENUM-TYPE",
+            "binding-id=NAME-BINDING-ENUM-MEMBER",
+            "target=enum:mode:safe=4",
+        ] {
+            assert!(
+                name_binding_observations
+                    .iter()
+                    .any(|observation| observation == expected),
+                "missing enum binding evidence token {expected}; got {name_binding_observations:?}"
+            );
+        }
+    }
+
+    #[test]
     fn bundle_project_context_is_vm_visible_and_affects_package_digest() {
         fn project_bundle(reference_name: &str) -> OxBundle {
             let manifest = ProjectManifest {

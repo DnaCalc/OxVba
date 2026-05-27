@@ -16,8 +16,9 @@ use crate::{
     descriptor_identity::{DescriptorFamily, canonical_descriptor_id},
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause,
-        BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl, BoundModule, BoundParam,
-        BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType, CompareOp,
+        BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundExpr, BoundExternalDecl,
+        BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
+        CompareOp,
     },
 };
 
@@ -1902,6 +1903,7 @@ pub fn emit_bytecode_with_runtime_metadata(
         &mut procedure_runtime_metadata,
         &instructions,
         &procedures,
+        &module.enum_descriptors,
         compare_mode,
     );
 
@@ -2004,6 +2006,7 @@ fn decorate_runtime_metadata_descriptors(
     metadata: &mut BTreeMap<String, ProcedureRuntimeMetadata>,
     instructions: &[Instruction],
     procedures: &[BoundProcedure],
+    enum_descriptors: &[BoundEnumDescriptor],
     compare_mode: StringCompareMode,
 ) {
     let mut ranges = metadata
@@ -2032,7 +2035,7 @@ fn decorate_runtime_metadata_descriptors(
         metadata.operator_semantics =
             build_operator_semantics_descriptors(metadata, proc, compare_mode);
         metadata.coercions = build_coercion_descriptors(metadata, proc, &metadata_snapshot);
-        metadata.name_bindings = build_name_binding_descriptors(metadata, proc);
+        metadata.name_bindings = build_name_binding_descriptors(metadata, proc, enum_descriptors);
         metadata.object_member_bindings = build_object_member_binding_descriptors(metadata, proc);
     }
 }
@@ -4802,6 +4805,7 @@ fn coercion_descriptor(
 fn build_name_binding_descriptors(
     metadata: &ProcedureRuntimeMetadata,
     proc: Option<&BoundProcedure>,
+    enum_descriptors: &[BoundEnumDescriptor],
 ) -> Vec<NameBindingDescriptor> {
     let procedure_id = metadata_descriptor_owner_id(metadata);
     let mut descriptors = Vec::new();
@@ -4823,6 +4827,55 @@ fn build_name_binding_descriptors(
         "local-scope-before-module-members".to_string(),
         &mut ordinal,
     ));
+    for enum_descriptor in enum_descriptors {
+        descriptors.push(name_binding_descriptor(
+            &procedure_id,
+            "NAME-BINDING-ENUM-TYPE",
+            enum_descriptor.type_name.clone(),
+            NameBindingKindDescriptor::ModuleScope,
+            NameBindingPrecedenceDescriptor::ModuleScope,
+            Some(format!(
+                "enum:{}",
+                enum_descriptor.type_name.to_ascii_lowercase()
+            )),
+            vec![
+                "enum-base-type=Long".to_string(),
+                format!("enum-visibility={}", if enum_descriptor.is_public { "public" } else { "private-or-default" }),
+                format!("enum-member-count={}", enum_descriptor.members.len()),
+            ],
+            "enum type is currently lowered as module constants; package row preserves nominal identity".to_string(),
+            &mut ordinal,
+        ));
+        for member in &enum_descriptor.members {
+            descriptors.push(name_binding_descriptor(
+                &procedure_id,
+                "NAME-BINDING-ENUM-MEMBER",
+                member.name.clone(),
+                NameBindingKindDescriptor::ModuleScope,
+                NameBindingPrecedenceDescriptor::ModuleScope,
+                Some(format!(
+                    "enum:{}:{}={}",
+                    enum_descriptor.type_name.to_ascii_lowercase(),
+                    member.name.to_ascii_lowercase(),
+                    member.value
+                )),
+                vec![
+                    "enum-member-base-type=Long".to_string(),
+                    format!(
+                        "enum-type={}",
+                        enum_descriptor.type_name.to_ascii_lowercase()
+                    ),
+                    format!("enum-ordinal={}", member.ordinal),
+                    format!("enum-explicit-value={}", member.explicit_value),
+                ],
+                format!(
+                    "enum member value={} carrier=i32 current-lowering=module-constant",
+                    member.value
+                ),
+                &mut ordinal,
+            ));
+        }
+    }
     for slot in &metadata.slots {
         let (kind, precedence) = match slot.kind {
             ProcedureRuntimeSlotKind::Parameter => (

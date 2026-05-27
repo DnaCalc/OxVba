@@ -119,17 +119,20 @@ generated fixed-array element slots, `Option Base 1` influence, explicit
 copyback of the observed scalar results. The fixture now calls `LBound` and
 `UBound` on fixed/static local arrays: raw bytecode execution still fails on
 the unallocated base slot, while package execution resolves the rank-1
-declared bounds through `ArrayShapeDescriptor`. Broader multi-rank,
-bounds-error, lifecycle, and COM/native SAFEARRAY projection evidence remain
+declared bounds through `ArrayShapeDescriptor`. The manifest now also asserts
+allocation, bounds, preserve, element-lifecycle, and selected SAFEARRAY cleanup
+tokens for the fixed/static and dynamic local array rows. Broader VM-runnable
+multi-rank, bounds-error, and COM/native SAFEARRAY projection evidence remain
 later work.
 
 `VMR05_UDT_DESCRIPTOR_MEMBERS` is the first nominal UDT descriptor fixture. It
 records descriptor ids, owning instances, field order, primitive field
 carriers, nested UDT references, fixed-length string metadata, fixed array
-field bounds, field-alias slots, fieldwise copy classification, and first
-cleanup ownership flags. It intentionally uses the VM's current flattened field
-alias syntax for fixed array fields; descriptor-backed UDT execution and
-offset/layout consumption remain later VM work.
+field bounds, field-alias slots, recursive init/layout-index tokens, fieldwise
+copy classification, and first cleanup ownership flags. It intentionally uses
+the VM's current flattened field alias syntax for fixed array fields;
+descriptor-backed UDT execution and byte-offset layout consumption remain later
+VM work.
 
 `VMR06-UDT-OWNING-FIELD-CLEANUP-001` adds the first lifecycle evidence lane for
 owning UDT fields. `VMR02_UDT_FIELD_SLOTS` records variable `String` field
@@ -137,6 +140,11 @@ cleanup obligations for `Point.Caption`, while `VMR05_UDT_DESCRIPTOR_MEMBERS`
 records fixed-length `String * 5` cleanup obligations for `Record.Name`. The
 evidence is descriptor-backed and fixture-asserted, but it does not add an
 explicit cleanup stack or change runtime carrier drop behavior.
+
+`VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot
+lifecycle tokens. The selected row records `LIFE-BSTR-SLOT` cleanup obligations
+for a declared local `String`, while broader helper-temp cleanup and lifetime
+counters remain TB04 follow-up work.
 
 `VMR05_OBJECT_DESCRIPTOR_IDENTITY` is the first object descriptor fixture. It
 records a generic `Object` local with `Nothing` initial state and `ObjectRef`

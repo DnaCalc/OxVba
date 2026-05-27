@@ -83,6 +83,15 @@ Current progress:
   procedure-scope binding policy, and selected property/default-member binding
   rows. Broader truth-table extraction, `With`/imported lookup,
   COM/native projection, and descriptor-driven execution remain later beads.
+- `bd-tvmb.6` has extended the aggregate package evidence for selected
+  string, array, UDT, and enum lanes. VM evidence now asserts non-UDT
+  `String` slot lifecycle rows, array bounds/allocation/erase/preserve and
+  element-lifecycle tokens, selected fixed/static and dynamic SAFEARRAY cleanup
+  rows, UDT recursive-init and descriptor layout-index tokens, and enum
+  type/member name-binding rows. Descriptor-driven rank-1 fixed/static
+  `LBound`/`UBound` remains the selected VM consumption path; VM-runnable
+  multi-rank/bounds-error, byte-offset UDT layout, helper-temp lifetime
+  counters, and COM/native SAFEARRAY projection remain later gates.
 
 ## Reference Truth
 

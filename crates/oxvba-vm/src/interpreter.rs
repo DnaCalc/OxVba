@@ -19,7 +19,7 @@ use oxvba_compiler::{
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
     ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
     ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
-    RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
+    RuntimeCarrierKind, SlotRole, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
     ValueStateDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
@@ -881,7 +881,36 @@ fn array_shape_observations(
             debug_token(&descriptor.element_carrier)
         ),
         format!("option-base={}", descriptor.option_base),
+        format!(
+            "bounds-policy={}",
+            match descriptor.storage {
+                ArrayStorageKind::ParamArrayPack => "paramarray-lower-0",
+                _ if descriptor.bounds.is_empty() => "runtime-safearray",
+                _ => "declared-descriptor",
+            }
+        ),
+        format!(
+            "element-lifecycle={}",
+            array_element_lifecycle_token(&descriptor.element_carrier)
+        ),
     ];
+    match descriptor.storage {
+        ArrayStorageKind::StaticFixed => {
+            observations.push("allocation-policy=compile-time-fixed-slots".to_string());
+            observations.push("erase-policy=reset-fixed-elements".to_string());
+            observations.push("preserve-policy=not-resizable".to_string());
+        }
+        ArrayStorageKind::Dynamic => {
+            observations.push("allocation-policy=runtime-safearray".to_string());
+            observations.push("redim-policy=runtime-shape".to_string());
+            observations.push("erase-policy=release-runtime-safearray".to_string());
+            observations.push("preserve-policy=last-dimension-only".to_string());
+        }
+        ArrayStorageKind::ParamArrayPack => {
+            observations.push("allocation-policy=call-entry-paramarray-pack".to_string());
+            observations.push("preserve-policy=not-resizable".to_string());
+        }
+    }
     if descriptor.base_slot.is_some() {
         observations.push("base-slot-known".to_string());
     } else {
@@ -899,6 +928,17 @@ fn array_shape_observations(
     }
     observations.extend(runtime_array_shape_observations(descriptor, runtime_slots));
     observations
+}
+
+fn array_element_lifecycle_token(carrier: &RuntimeCarrierKind) -> &'static str {
+    match carrier {
+        RuntimeCarrierKind::BStr => "owned-bstr-elements",
+        RuntimeCarrierKind::ObjectRef => "owned-objectref-elements",
+        RuntimeCarrierKind::SafeArray => "owned-safearray-elements",
+        RuntimeCarrierKind::Variant => "owned-variant-payload-elements",
+        RuntimeCarrierKind::UdtFields { .. } => "owned-udt-fields",
+        _ => "plain-scalar-elements",
+    }
 }
 
 fn runtime_array_shape_observations(
@@ -973,6 +1013,8 @@ fn udt_descriptor_observations(descriptor: &UdtTypeDescriptor) -> Vec<String> {
         format!("descriptor-id={}", descriptor.descriptor_id),
         format!("storage={}", debug_token(&descriptor.storage)),
         format!("copy={}", debug_token(&descriptor.copy_semantics)),
+        "init=recursive-field-defaults".to_string(),
+        "layout=descriptor-field-order".to_string(),
         format!(
             "cleanup=bstr:{}:object:{}:safearray:{}:variant:{}",
             descriptor.cleanup.owns_bstr,
@@ -1002,6 +1044,8 @@ fn udt_field_observations(field: &UdtFieldDescriptor) -> Vec<String> {
     let field_name = field.name.to_ascii_lowercase();
     let mut observations = vec![
         format!("field:{field_name}:index={}", field.index),
+        format!("field:{field_name}:layout-index={}", field.index),
+        format!("field:{field_name}:init=declared-type-default"),
         format!(
             "field:{field_name}:type={}",
             debug_token(&field.declared_type)
@@ -1043,25 +1087,30 @@ fn collect_lifecycle_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
     runtime_slots: &[RuntimeSlot],
 ) -> Vec<VmLifecycleEvidence> {
-    let mut evidence = procedure_metadata
-        .values()
-        .flat_map(|metadata| {
+    let mut evidence = Vec::new();
+    for metadata in procedure_metadata.values() {
+        evidence.extend(collect_slot_lifecycle_evidence(metadata, runtime_slots));
+        evidence.extend(collect_array_lifecycle_evidence(metadata, runtime_slots));
+        evidence.extend(
             metadata
                 .udt_types
                 .iter()
                 .filter(|descriptor| udt_has_selected_cleanup_obligation(descriptor))
-                .map(move |descriptor| VmLifecycleEvidence {
-                    procedure_name: metadata.procedure_name.clone(),
-                    cleanup_scope_id: format!("cleanup:{}", descriptor.descriptor_id),
-                    lifecycle_descriptor_digest: descriptor_digest_debug(
-                        DescriptorFamily::Lifecycle,
-                        &format!("cleanup:{}", descriptor.descriptor_id),
-                        descriptor,
-                    ),
-                    observations: udt_lifecycle_observations(descriptor, runtime_slots),
-                })
-        })
-        .collect::<Vec<_>>();
+                .map(|descriptor| {
+                    let cleanup_scope_id = format!("cleanup:{}", descriptor.descriptor_id);
+                    VmLifecycleEvidence {
+                        procedure_name: metadata.procedure_name.clone(),
+                        cleanup_scope_id: cleanup_scope_id.clone(),
+                        lifecycle_descriptor_digest: descriptor_digest_debug(
+                            DescriptorFamily::Lifecycle,
+                            &cleanup_scope_id,
+                            descriptor,
+                        ),
+                        observations: udt_lifecycle_observations(descriptor, runtime_slots),
+                    }
+                }),
+        );
+    }
     evidence.sort_by(|left, right| {
         left.procedure_name
             .to_ascii_lowercase()
@@ -1069,6 +1118,139 @@ fn collect_lifecycle_evidence(
             .then(left.cleanup_scope_id.cmp(&right.cleanup_scope_id))
     });
     evidence
+}
+
+fn collect_slot_lifecycle_evidence(
+    metadata: &ProcedureRuntimeMetadata,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<VmLifecycleEvidence> {
+    let procedure_key = metadata.procedure_name.to_ascii_lowercase();
+    metadata
+        .slot_type_descriptors()
+        .into_iter()
+        .filter_map(|descriptor| {
+            let lifecycle_id = selected_slot_lifecycle_id(&descriptor)?;
+            let slot_name = descriptor
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("slot{}", descriptor.slot))
+                .to_ascii_lowercase();
+            let cleanup_scope_id = format!("cleanup:slot:{procedure_key}:{slot_name}");
+            Some(VmLifecycleEvidence {
+                procedure_name: metadata.procedure_name.clone(),
+                cleanup_scope_id: cleanup_scope_id.clone(),
+                lifecycle_descriptor_digest: descriptor_digest_debug(
+                    DescriptorFamily::Lifecycle,
+                    &cleanup_scope_id,
+                    &descriptor,
+                ),
+                observations: slot_lifecycle_observations(&descriptor, lifecycle_id, runtime_slots),
+            })
+        })
+        .collect()
+}
+
+fn selected_slot_lifecycle_id(descriptor: &SlotTypeDescriptor) -> Option<&'static str> {
+    if descriptor.role == SlotRole::Parameter {
+        return None;
+    }
+    match descriptor.carrier {
+        RuntimeCarrierKind::BStr => Some("LIFE-BSTR-SLOT"),
+        RuntimeCarrierKind::SafeArray => Some("LIFE-SAFEARRAY-SLOT"),
+        RuntimeCarrierKind::ObjectRef => Some("LIFE-OBJECTREF-SLOT"),
+        RuntimeCarrierKind::Variant => Some("LIFE-VARIANT-PAYLOAD-SLOT"),
+        _ => None,
+    }
+}
+
+fn slot_lifecycle_observations(
+    descriptor: &SlotTypeDescriptor,
+    lifecycle_id: &str,
+    _runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    let mut observations = vec![
+        "source=SlotTypeDescriptor".to_string(),
+        format!("lifecycle-id={lifecycle_id}"),
+        format!("slot={}", descriptor.slot),
+        format!("role={}", debug_token(&descriptor.role)),
+        format!("declared-type={}", debug_token(&descriptor.declared_type)),
+        format!("carrier={}", debug_token(&descriptor.carrier)),
+        "cleanup-map=slot-owned-carrier".to_string(),
+        "success-exit=drop-owned-slot".to_string(),
+        "branch-exit=drop-owned-slot".to_string(),
+        "error-exit=drop-owned-slot".to_string(),
+        "helper-failure=drop-owned-slot".to_string(),
+        "deopt=slot-ownership-map-required".to_string(),
+    ];
+    if let Some(name) = &descriptor.name {
+        observations.push(format!("name={}", name.to_ascii_lowercase()));
+    }
+    observations
+}
+
+fn collect_array_lifecycle_evidence(
+    metadata: &ProcedureRuntimeMetadata,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<VmLifecycleEvidence> {
+    let procedure_key = metadata.procedure_name.to_ascii_lowercase();
+    metadata
+        .array_shapes
+        .iter()
+        .map(|descriptor| {
+            let array_key = descriptor.name.to_ascii_lowercase();
+            let cleanup_scope_id = format!("cleanup:array:{procedure_key}:{array_key}");
+            VmLifecycleEvidence {
+                procedure_name: metadata.procedure_name.clone(),
+                cleanup_scope_id: cleanup_scope_id.clone(),
+                lifecycle_descriptor_digest: descriptor_digest_debug(
+                    DescriptorFamily::Lifecycle,
+                    &cleanup_scope_id,
+                    descriptor,
+                ),
+                observations: array_lifecycle_observations(descriptor, runtime_slots),
+            }
+        })
+        .collect()
+}
+
+fn array_lifecycle_observations(
+    descriptor: &ArrayShapeDescriptor,
+    runtime_slots: &[RuntimeSlot],
+) -> Vec<String> {
+    let lifecycle_id = match descriptor.storage {
+        ArrayStorageKind::StaticFixed => "LIFE-STATIC-ARRAY-ELEMENTS",
+        ArrayStorageKind::Dynamic => "LIFE-SAFEARRAY-DYNAMIC",
+        ArrayStorageKind::ParamArrayPack => "LIFE-PARAMARRAY-PACK",
+    };
+    let mut observations = vec![
+        "source=ArrayShapeDescriptor".to_string(),
+        format!("lifecycle-id={lifecycle_id}"),
+        format!("array={}", descriptor.name.to_ascii_lowercase()),
+        format!("storage={}", debug_token(&descriptor.storage)),
+        format!("rank={}", descriptor.rank),
+        format!(
+            "element-carrier={}",
+            debug_token(&descriptor.element_carrier)
+        ),
+        format!(
+            "element-lifecycle={}",
+            array_element_lifecycle_token(&descriptor.element_carrier)
+        ),
+        "cleanup-map=array-elements-and-safearray".to_string(),
+        "success-exit=drop-array-carrier".to_string(),
+        "branch-exit=drop-array-carrier".to_string(),
+        "error-exit=drop-array-carrier".to_string(),
+        "helper-failure=drop-array-carrier".to_string(),
+        "deopt=array-ownership-map-required".to_string(),
+    ];
+    for bound in &descriptor.bounds {
+        observations.push(format!(
+            "declared-dim{}={}..{}",
+            bound.dimension, bound.lower_bound, bound.upper_bound
+        ));
+    }
+    observations.extend(runtime_array_shape_observations(descriptor, runtime_slots));
+    observations
 }
 
 fn udt_has_selected_cleanup_obligation(descriptor: &UdtTypeDescriptor) -> bool {

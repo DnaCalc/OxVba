@@ -275,6 +275,14 @@ record:
 - underlying carrier as `Long`;
 - assignment/coercion behavior where VBA treats enum values as numeric.
 
+Current package evidence preserves selected enum facts through
+`NameBindingDescriptor` rows: `NAME-BINDING-ENUM-TYPE` records nominal identity,
+visibility, member count, and `Long` carrier policy; `NAME-BINDING-ENUM-MEMBER`
+records member order, explicit-value status, and constant value. Execution still
+lowers enum members as module constants. A dedicated `EnumTypeDescriptor`,
+declared enum slot typing, and enum-specific coercion diagnostics remain
+future work.
+
 ### Object, Class, Interface, And Imported COM Types
 
 Object-like declared types are central, not edge cases.
@@ -665,22 +673,27 @@ Known development gaps:
   declared-`Double ByVal` call entry;
 - `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, `UdtTypeDescriptor`,
   and `ObjectTypeDescriptor` now carry first-pass slot, local array shape, UDT
-  shape facts, and generic object slot facts, but expression temporary declared types,
-  multi-rank/error/lifecycle array evidence, aggregate UDT field offsets/layout,
+  shape facts, generic object slot facts, selected array lifecycle evidence,
+  non-UDT String slot lifecycle evidence, and UDT recursive-init/layout-index
+  evidence, but expression temporary declared types, VM-runnable multi-rank and
+  bounds-error array evidence, aggregate UDT byte offsets/ABI layout,
   descriptor-driven UDT copy/drop behavior, richer class/interface/imported-COM
   descriptors, `As New` activation/default-instance policy, general
-  fixed-string behavior, cleanup maps, and full carrier layout facts remain
-  incomplete or explicitly `Unknown`; the first lifecycle/cleanup seed table
+  fixed-string behavior, helper lifetime counters, and full carrier layout
+  facts remain incomplete or explicitly `Unknown`; the first lifecycle/cleanup seed table
   names current cleanup obligations for primitive, Variant/Decimal, BStr,
   SafeArray, ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and
-  deopt state, and VM lifecycle evidence now asserts the selected UDT BSTR
-  owning-field cleanup path, but those rows are not package-owned descriptors
-  yet and explicit cleanup-stack execution remains open;
+  deopt state, and VM lifecycle evidence now asserts selected String, array,
+  SAFEARRAY, and UDT BSTR owning-field cleanup paths, but those rows are not
+  package-owned descriptors yet and explicit cleanup-stack execution remains
+  open;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
 - project reflection `VbaType` is useful but too coarse for package/JIT use;
-- enum descriptors, UDT offset/layout/lifecycle descriptors, richer
+- enum facts now have selected package name-binding rows, and UDT descriptors
+  now emit recursive init plus descriptor layout-index evidence, but dedicated
+  enum descriptors, UDT byte-offset/ABI layout descriptors, richer
   object/class/interface descriptors, and COM imported type descriptors are not
   yet unified behind one package type registry; the first object/member binding
   seed table now names `Set`/`Nothing`, property accessors, default members,

@@ -456,6 +456,7 @@ mod kani_proofs {
                 crate::resolve::BoundType::Variant,
             )]),
             array_descriptors: std::collections::HashMap::new(),
+            enum_descriptors: Vec::new(),
             external_declarations: std::collections::HashMap::new(),
             body: vec![BoundStmt::Assign {
                 target: "x".to_string(),

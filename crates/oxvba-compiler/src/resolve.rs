@@ -14,6 +14,21 @@ struct UdtFieldDef {
 type UdtDefMap = HashMap<String, Vec<UdtFieldDef>>;
 const UDT_TYPE_MARKER_PREFIX: &str = "__oxvba_udt_type__";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundEnumDescriptor {
+    pub type_name: String,
+    pub is_public: bool,
+    pub members: Vec<BoundEnumMemberDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundEnumMemberDescriptor {
+    pub name: String,
+    pub value: i32,
+    pub ordinal: usize,
+    pub explicit_value: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithOp {
     Add,
@@ -317,6 +332,7 @@ pub struct BoundModule {
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
+    pub enum_descriptors: Vec<BoundEnumDescriptor>,
     pub external_declarations: HashMap<String, BoundExternalDecl>,
     pub body: Vec<BoundStmt>,
     pub procedures: Vec<BoundProcedure>,
@@ -417,6 +433,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
     let udt_defs = collect_udt_definitions(&lines, &default_type_table);
+    let enum_descriptors = collect_enum_descriptors(&lines);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
     let property_read_routes = collect_property_read_routes(&lines);
@@ -526,6 +543,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
         array_descriptors: entry.array_descriptors.clone(),
+        enum_descriptors,
         external_declarations,
         body: entry.body.clone(),
         procedures,
@@ -1932,7 +1950,7 @@ fn collect_module_constants(lines: &[String]) -> ModuleConstMap {
             continue;
         }
 
-        if lower.starts_with("enum ") {
+        if parse_enum_header(line).is_some() {
             parse_enum_block(lines, &mut index, &mut constants);
             continue;
         }
@@ -1944,6 +1962,73 @@ fn collect_module_constants(lines: &[String]) -> ModuleConstMap {
     }
 
     constants
+}
+
+fn collect_enum_descriptors(lines: &[String]) -> Vec<BoundEnumDescriptor> {
+    let mut descriptors = Vec::new();
+    let mut index = 0usize;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        let lower = line.to_ascii_lowercase();
+        if let Some(kind) = detect_proc_kind(&lower) {
+            let end_term = kind.end_term();
+            index += 1;
+            while index < lines.len() && !lines[index].eq_ignore_ascii_case(end_term) {
+                index += 1;
+            }
+            if index < lines.len() {
+                index += 1;
+            }
+            continue;
+        }
+        if let Some((type_name, is_public)) = parse_enum_header(line) {
+            index += 1;
+            let mut members = Vec::new();
+            let mut next_value = 0i32;
+            while index < lines.len() {
+                let line = lines[index].trim();
+                if line.eq_ignore_ascii_case("end enum") {
+                    break;
+                }
+                if let Some((name, explicit)) = parse_enum_member(line) {
+                    let value = explicit.unwrap_or(next_value);
+                    members.push(BoundEnumMemberDescriptor {
+                        name,
+                        value,
+                        ordinal: members.len(),
+                        explicit_value: explicit.is_some(),
+                    });
+                    next_value = value.saturating_add(1);
+                }
+                index += 1;
+            }
+            descriptors.push(BoundEnumDescriptor {
+                type_name,
+                is_public,
+                members,
+            });
+        }
+        index += 1;
+    }
+
+    descriptors.sort_by(|left, right| {
+        left.type_name
+            .to_ascii_lowercase()
+            .cmp(&right.type_name.to_ascii_lowercase())
+    });
+    descriptors
+}
+
+fn parse_enum_header(line: &str) -> Option<(String, bool)> {
+    if let Some(rest) = strip_keyword_prefix_ci(line, "public enum") {
+        return normalize_ident(rest).map(|name| (name, true));
+    }
+    if let Some(rest) = strip_keyword_prefix_ci(line, "private enum") {
+        return normalize_ident(rest).map(|name| (name, false));
+    }
+    strip_keyword_prefix_ci(line, "enum")
+        .and_then(|rest| normalize_ident(rest).map(|name| (name, false)))
 }
 
 fn collect_property_write_routes(lines: &[String]) -> HashMap<String, String> {
