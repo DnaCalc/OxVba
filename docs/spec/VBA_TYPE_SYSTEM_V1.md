@@ -634,9 +634,10 @@ Current implementation anchors:
   and empty/non-empty `ParamArray`
   shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
   dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
-  carrier facts, the current fixed-array base-slot limitation, and UDT
-  descriptor facts for nested UDTs, fixed strings, fixed array fields, aliases,
-  cleanup ownership flags, and generic `Object` descriptor facts. A companion
+  carrier facts, package-backed rank-1 fixed/static `LBound`/`UBound`
+  descriptor consumption with a raw-bytecode base-slot limitation baseline, and
+  UDT descriptor facts for nested UDTs, fixed strings, fixed array fields,
+  aliases, cleanup ownership flags, and generic `Object` descriptor facts. A companion
   project fixture asserts source-project class route identity, implemented
   interface alias identity, and imported COM `WithEvents` route identity for
   current VM-capable route tables.

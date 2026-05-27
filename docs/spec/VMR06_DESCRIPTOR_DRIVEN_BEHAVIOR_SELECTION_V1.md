@@ -15,7 +15,9 @@ The selection is intentionally narrow. VMR-06 is allowed to prove that one
 well-evidenced VM behavior can be descriptor-driven; it is not a broad call
 binding rewrite and does not change JIT status.
 
-## Selected Slice
+## Selected Behavior Slices
+
+### Call-Entry Coercion
 
 Selection id: `VMR06-CALL-BYVAL-COERCE-001`
 
@@ -59,7 +61,47 @@ Implementation evidence:
   `main:byvaltype = 5` while the fixture harness also asserts the raw bytecode
   baseline remains `main:byvaltype = 2`.
 
-## Descriptor Inputs
+### Static Array Bounds
+
+Selection id: `VMR06-ARRAY-STATIC-BOUNDS-001`
+
+Behavior:
+
+Use package array-shape facts to answer `LBound` and `UBound` for rank-1
+fixed/static local arrays whose runtime base slot remains unallocated because
+the current VM lowers the elements into compiler-generated scalar element
+slots.
+
+First implemented shape:
+
+- array storage kind: `ArrayStorageKind::StaticFixed`;
+- rank: `1`;
+- descriptor source: `ArrayShapeDescriptor.bounds[0]`;
+- target operation: intrinsic `LBound` or `UBound`;
+- operand mapping: the intrinsic's materialized temporary may be traced through
+  the immediate pre-intrinsic `CopySlot` back to the descriptor base slot;
+- package gate: only `Vm::execute_package` may consume the descriptor;
+- raw bytecode gate: ordinary `Vm::execute` must keep the pre-VMR06 runtime
+  error when the base slot is unallocated.
+
+The scoped fixture is
+`conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas`, procedure
+`ArrayWorker`. The fixture now observes `LBound(fixed)`, `UBound(fixed)`,
+`LBound(explicit)`, and `UBound(explicit)` through package execution while the
+raw bytecode baseline fails with runtime error 13 on the fixed/static
+unallocated base slot.
+
+Implementation evidence:
+
+- `bd-iave.9.3` wires package-only fixed/static rank-1 array bound lookup
+  through `Vm::descriptor_declared_array_bound_for_intrinsic`.
+- Runtime SAFEARRAY-backed dynamic arrays continue to use the existing runtime
+  helper path.
+- Descriptor absence or mismatch still produces the existing runtime error;
+  the VM does not infer array bounds from compiler-generated element slot
+  names or from ambient runtime state.
+
+## Call-Entry Descriptor Inputs
 
 Required descriptor facts:
 
@@ -85,10 +127,32 @@ Required descriptor facts:
   - callee parameter slot declared `Double`;
   - return slot declared `Double`.
 
+## Static Array Bound Descriptor Inputs
+
+Required descriptor facts:
+
+- `ArrayShapeDescriptor`
+  - base slot known;
+  - storage kind `StaticFixed`;
+  - rank `1`;
+  - one declared bounds row;
+  - declared lower and upper bounds;
+  - element type/carrier evidence retained for the fixture.
+- Bytecode/intrinsic context
+  - intrinsic operation is `LBound` or `UBound`;
+  - intrinsic operand can be mapped to the array base slot through the current
+    materialized-argument `CopySlot` lowering.
+- Package execution state
+  - descriptor metadata is active only for `VmExecutionPackage`;
+  - raw VM execution with merely loaded metadata remains behaviorally raw.
+
 Descriptor absence or mismatch is not an invitation to infer behavior from
 bytecode shape. If any required descriptor fact is missing, the first VMR-06
-implementation must leave the current VM path unchanged and keep the gap
-classified.
+implementations must leave the current VM path unchanged and keep the gap
+classified. For the static array bound slice, the only bytecode-shape fact the
+VM may use is the immediate argument-temp copy that maps the intrinsic operand
+back to the descriptor base slot; the bound value itself must come from
+`ArrayShapeDescriptor`.
 
 ## Acceptance Fixtures
 
@@ -104,6 +168,16 @@ Primary fixture:
   - Optional default, Optional `Variant` missing metadata, empty/non-empty
     `ParamArray`, named arguments, and return copyout observations remain
     unchanged.
+
+- `VMR05_ARRAY_SHAPE_BOUNDS`
+  - Raw bytecode baseline: runtime error 13 on fixed/static `LBound`.
+  - Package execution: `fixedL=1`, `fixedU=3`, `explicitL=0`, and
+    `explicitU=2` are produced from package array-shape descriptors.
+  - Dynamic `ReDim 2 To 4` `LBound`/`UBound` still use runtime SAFEARRAY
+    bounds and remain `2`/`4`.
+  - Total element snapshot remains `72`.
+  - Loading package metadata into a raw VM and calling `execute` must not
+    activate descriptor-driven array bounds.
 
 Required check commands for the implementation bead:
 
@@ -132,6 +206,10 @@ The first slice does not change:
 - native Declare or exported callable ABI projection;
 - string, Date, Currency, Boolean, UDT, object, array, or Variant-wide
   call-entry coercion;
+- dynamic array runtime SAFEARRAY bound behavior;
+- multi-rank array bound behavior;
+- bounds-error routing;
+- fixed/static array allocation or element storage;
 - runtime slot storage representation;
 - `oxvba-jit` behavior.
 
@@ -157,6 +235,8 @@ The implementation must be easy to back out:
 This selection feeds:
 
 - `bd-iave.9.2`: implement the selected descriptor-driven call binding path;
+- `bd-iave.9.3`: implement the selected descriptor-driven fixed/static array
+  bound path;
 - `bd-iave.9.4`: bind the selected helper choice to table/coercion row ids
   where the implementation needs a canonical coercion lookup;
 - JIT readiness gates: use the changed VM evidence only after the VM fixture

@@ -181,12 +181,14 @@ Required assertions:
 - Package array-shape evidence records fixed/static bounds, explicit
   `0 To 2` bounds, dynamic runtime SAFEARRAY bounds, `Option Base`, element
   type/carrier, and fixed-array base-slot allocation status.
+- Package execution resolves rank-1 fixed/static `LBound`/`UBound` from
+  `ArrayShapeDescriptor`; raw bytecode execution remains the baseline runtime
+  error for the same unallocated fixed-array base slot.
 - A follow-up runtime bounds-error fixture must be added before TB05 closes;
   the current active compiler/runtime does not yet expose that failure route
   through a VM-runnable standalone tracer shape.
-- A fixed-array `LBound`/`UBound` follow-up must be implemented or explicitly
-  deferred because the current VM lowers fixed arrays to element slots with an
-  unallocated base slot.
+- Multi-rank fixed/static bound evidence remains a follow-up before TB05
+  closure.
 - Element carrier lifetimes are recorded in safepoint live maps.
 - SAFEARRAY descriptor and payload ownership remain runtime-owned.
 

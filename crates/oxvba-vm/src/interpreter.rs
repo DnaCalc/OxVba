@@ -11,8 +11,8 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
-    ArrayShapeDescriptor, Bytecode, CallSiteDescriptor, CallTargetKindDescriptor, Instruction,
-    ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ArrayShapeDescriptor, ArrayStorageKind, Bytecode, CallSiteDescriptor, CallTargetKindDescriptor,
+    Instruction, ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
     ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
@@ -350,6 +350,7 @@ pub struct VmInteropDescriptorEvidence {
 
 const CALL_EVIDENCE_LOOKBACK: usize = 32;
 const CALL_EVIDENCE_COPY_LIMIT: usize = 8;
+const DESCRIPTOR_INTRINSIC_LOOKBACK: usize = 8;
 
 fn collect_array_shape_evidence(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -2331,6 +2332,76 @@ impl Vm {
         Some((parameter_slot, source_slot))
     }
 
+    fn descriptor_declared_array_bound(
+        &self,
+        source_slot: usize,
+        upper_bound: bool,
+    ) -> Option<i32> {
+        if !self.descriptor_metadata_active {
+            return None;
+        }
+        self.procedure_runtime_metadata
+            .values()
+            .flat_map(|metadata| metadata.array_shapes.iter())
+            .find(|descriptor| {
+                descriptor.base_slot == Some(source_slot)
+                    && descriptor.rank == 1
+                    && descriptor.storage == ArrayStorageKind::StaticFixed
+                    && descriptor.bounds.len() == 1
+            })
+            .and_then(|descriptor| descriptor.bounds.first())
+            .map(|bound| {
+                if upper_bound {
+                    bound.upper_bound
+                } else {
+                    bound.lower_bound
+                }
+            })
+    }
+
+    fn descriptor_declared_array_bound_for_intrinsic(
+        &self,
+        bytecode: &Bytecode,
+        pc: usize,
+        source_slot: usize,
+        upper_bound: bool,
+    ) -> Option<i32> {
+        let mut candidate = source_slot;
+        for _ in 0..DESCRIPTOR_INTRINSIC_LOOKBACK {
+            if let Some(bound) = self.descriptor_declared_array_bound(candidate, upper_bound) {
+                return Some(bound);
+            }
+            let copied_source = Self::recent_pre_intrinsic_copy_source(bytecode, pc, candidate)?;
+            if copied_source == candidate {
+                return None;
+            }
+            candidate = copied_source;
+        }
+        None
+    }
+
+    fn recent_pre_intrinsic_copy_source(
+        bytecode: &Bytecode,
+        pc: usize,
+        dst_slot: usize,
+    ) -> Option<usize> {
+        let mut index = pc;
+        let lower_bound = pc.saturating_sub(DESCRIPTOR_INTRINSIC_LOOKBACK);
+        while index > lower_bound {
+            index -= 1;
+            let instruction = &bytecode.instructions[index];
+            if let Instruction::CopySlot { dst, src } = instruction
+                && *dst == dst_slot
+            {
+                return Some(*src);
+            }
+            if is_call_evidence_boundary(instruction) {
+                break;
+            }
+        }
+        None
+    }
+
     fn execute_loop(
         &mut self,
         bytecode: &Bytecode,
@@ -3797,17 +3868,31 @@ impl Vm {
                 }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    let out =
-                        crate::semantics::runtime_array_lbound_variant(&value, "LBound operand")
-                            .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    let out = match crate::semantics::runtime_array_lbound_variant(
+                        &value,
+                        "LBound operand",
+                    ) {
+                        Ok(out) => out,
+                        Err(detail) => self
+                            .descriptor_declared_array_bound_for_intrinsic(
+                                bytecode, pc, *src, false,
+                            )
+                            .ok_or_else(|| format!("runtime error: 13 ({detail})"))?,
+                    };
                     self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUBoundArray { dst, src } => {
                     let value = self.read_variant_slot(*src)?;
-                    let out =
-                        crate::semantics::runtime_array_ubound_variant(&value, "UBound operand")
-                            .map_err(|detail| format!("runtime error: 13 ({detail})"))?;
+                    let out = match crate::semantics::runtime_array_ubound_variant(
+                        &value,
+                        "UBound operand",
+                    ) {
+                        Ok(out) => out,
+                        Err(detail) => self
+                            .descriptor_declared_array_bound_for_intrinsic(bytecode, pc, *src, true)
+                            .ok_or_else(|| format!("runtime error: 13 ({detail})"))?,
+                    };
                     self.write_variant_slot(*dst, Variant::from_i32(out))?;
                     pc += 1;
                 }

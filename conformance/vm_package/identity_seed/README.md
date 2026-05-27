@@ -68,10 +68,12 @@ classification kept as evidence for later descriptor-driven call binding.
 fixture. It records fixed/static and dynamic local array slots, compiler
 generated fixed-array element slots, `Option Base 1` influence, explicit
 `0 To 2` bounds, dynamic `ReDim 2 To 4` runtime SAFEARRAY bounds, and ByRef
-copyback of the observed scalar results. It intentionally does not call
-`LBound`/`UBound` on fixed arrays because the current VM lowers fixed arrays to
-element slots and leaves the base slot unallocated; that is classified as a VM
-limitation for later fixed-array bound introspection, not a fixture failure.
+copyback of the observed scalar results. The fixture now calls `LBound` and
+`UBound` on fixed/static local arrays: raw bytecode execution still fails on
+the unallocated base slot, while package execution resolves the rank-1
+declared bounds through `ArrayShapeDescriptor`. Broader multi-rank,
+bounds-error, lifecycle, and COM/native SAFEARRAY projection evidence remain
+later work.
 
 `VMR05_UDT_DESCRIPTOR_MEMBERS` is the first nominal UDT descriptor fixture. It
 records descriptor ids, owning instances, field order, primitive field

@@ -63,16 +63,18 @@ The rollout maps this workset into:
 - `bd-iave.9`: VMR-06 behavior-affecting metadata consumption;
 - `bd-iave.10`: JIT readiness package evidence gates.
 
-The first active execution path is still metadata/evidence first. VMR-06 beads
-must not start until their descriptor fixtures and gap classifications are in
-place.
+The initial execution path was metadata/evidence first. Behavior-affecting
+VMR-06 beads may start only after their descriptor fixtures and gap
+classifications are in place.
 
-The first VMR-06 behavior selection is now documented as
-`VMR06-CALL-BYVAL-COERCE-001`: descriptor-driven call-entry Let coercion for a
-direct `Long` argument passed to a declared `Double ByVal` parameter. The
-selected path is now implemented for package execution only; raw bytecode
-execution remains the pre-VMR06 baseline. Broader call-entry coercion,
-Optional-missing, object/member, COM/native, and export behavior still need
+The first VMR-06 behavior selections are now documented as
+`VMR06-CALL-BYVAL-COERCE-001` and `VMR06-ARRAY-STATIC-BOUNDS-001`. The first
+adds descriptor-driven call-entry Let coercion for a direct `Long` argument
+passed to a declared `Double ByVal` parameter. The second adds package-only
+rank-1 fixed/static `LBound`/`UBound` lookup from `ArrayShapeDescriptor` while
+raw bytecode retains the old unallocated-base-slot runtime error baseline.
+Broader call-entry coercion, Optional-missing, multi-rank array bounds,
+bounds-error routing, object/member, COM/native, and export behavior still need
 separate selected VMR-06 rows before behavior changes.
 
 ## Review Findings And Repairs

@@ -318,10 +318,12 @@ BSTR.
 
 Current VM-runnable seed covers array stores, index reads, `For Each`, first
 package array-shape descriptors, fixed/static declared bounds, and dynamic
-`ReDim` runtime SAFEARRAY bounds. The IR must model array helpers as safepoints
-with element live maps. TB05 cannot close until runtime bounds-error evidence,
-multi-rank evidence, lifecycle ownership evidence, and a fixed-array
-`LBound`/`UBound` implementation-or-deferral decision are added.
+`ReDim` runtime SAFEARRAY bounds. Package execution also covers the selected
+rank-1 fixed/static `LBound`/`UBound` descriptor path while raw bytecode keeps
+the old unallocated-base-slot runtime error baseline. The IR must model array
+helpers as safepoints with element live maps. TB05 cannot close until runtime
+bounds-error evidence, multi-rank evidence, and lifecycle ownership evidence
+are added.
 
 ### TB06-TB09 Interop
 

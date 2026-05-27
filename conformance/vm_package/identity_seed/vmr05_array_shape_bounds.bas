@@ -25,10 +25,10 @@ Sub ArrayWorker(ByRef fixedL As Long, ByRef fixedU As Long, ByRef explicitL As L
     dyn(2) = 17
     dyn(4) = 19
 
-    fixedL = 1
-    fixedU = 3
-    explicitL = 0
-    explicitU = 2
+    fixedL = LBound(fixed)
+    fixedU = UBound(fixed)
+    explicitL = LBound(explicit)
+    explicitU = UBound(explicit)
     dynL = LBound(dyn)
     dynU = UBound(dyn)
     total = fixed(1) + fixed(3) + explicit(0) + explicit(2) + dyn(2) + dyn(4)

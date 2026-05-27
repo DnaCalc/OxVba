@@ -209,9 +209,11 @@ once.
   bounds handling.
 - Current VM/package evidence covers VM-runnable store, index, For Each, first
   package array-shape descriptors, fixed/static declared bounds, and dynamic
-  `ReDim` runtime SAFEARRAY bounds. Runtime bounds-error evidence, multi-rank
-  evidence, lifecycle ownership evidence, COM/native SAFEARRAY projection, and
-  fixed-array `LBound`/`UBound` behavior remain required before TB05 closure.
+  `ReDim` runtime SAFEARRAY bounds. Package execution also covers the selected
+  rank-1 fixed/static `LBound`/`UBound` descriptor path while raw bytecode
+  retains the old fixed-array base-slot runtime error baseline. Runtime
+  bounds-error evidence, multi-rank evidence, lifecycle ownership evidence, and
+  COM/native SAFEARRAY projection remain required before TB05 closure.
 
 ## Object Identity Contract
 

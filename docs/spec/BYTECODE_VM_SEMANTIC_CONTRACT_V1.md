@@ -275,11 +275,13 @@ an explicit empty object descriptor set.
 
 The VMR-05 seed fixture proves the current positive subset for fixed/static
 local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
-and ByRef scalar observation copyback. It also records a real VM limitation:
-fixed arrays are currently lowered to compiler-generated element slots with an
-unallocated base slot, so `LBound`/`UBound` over fixed arrays is not VM-runnable
-yet and is not claimed by the fixture. That limitation must be resolved or kept
-descriptor-only before JIT lowering consumes fixed-array bound facts.
+and ByRef scalar observation copyback. Package execution now consumes
+`ArrayShapeDescriptor` for the selected VMR-06 rank-1 fixed/static
+`LBound`/`UBound` path while raw bytecode execution still records the old
+runtime error 13 on the unallocated fixed-array base slot. Multi-rank
+fixed/static bounds, runtime bounds-error evidence, lifecycle ownership, and
+COM/native SAFEARRAY projection remain incomplete before JIT lowering may claim
+TB05 closure.
 
 The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
 the current flattened UDT storage model. VM evidence now records descriptor ids,
