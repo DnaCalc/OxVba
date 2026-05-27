@@ -232,13 +232,18 @@ default, ParamArray pack, fixed-array materialization, default-member fallback
 policy, and return copyout. The VM exposes these rows through
 `VmExecutionPackage::call_site_descriptors`, and
 `VmPackageIdentityEvidence::call_site_evidence` records descriptor digests plus
-observation tokens for the VM-runnable call fixtures, but VM call execution
-still follows the existing bytecode lowering.
+observation tokens for the VM-runnable call fixtures. Package execution now has
+one deliberately narrow descriptor-driven call-entry path for
+`VMR06-CALL-BYVAL-COERCE-001`; all other call binding still follows the
+existing bytecode lowering.
 
-The VMR-04 fixture evidence also classifies current limitations: ByVal
-declared-type call-entry coercion is not yet VM-compatible for the observed
-`Long` to declared-`Double` shape, and Optional `Variant` without an explicit
-default is described by package metadata as a missing-argument policy
+The VMR-04 fixture evidence also classifies current limitations and the first
+behavior-driving exception: raw bytecode execution still shows the old ByVal
+declared-type call-entry gap for the observed `Long` to declared-`Double`
+shape, while package execution consumes the selected call/signature slot
+descriptors and the callee observes a `Double` value at entry. Optional
+`Variant` without an explicit default is described by package metadata as a
+missing-argument policy
 (`VariantMissingError448`) while current VM lowering still materializes a
 default local value. The fixture records those behaviors as VM/runtime
 limitations to resolve before descriptor-driven call binding or JIT lowering
@@ -251,9 +256,11 @@ Behavior-affecting call work must cite that ledger, add any missing fixture row
 it needs, and keep ByRef expression temporaries, ByVal call-entry coercion,
 Optional missing state, ParamArray packing, and COM/native/export projections
 separate. In particular, the ByVal `Long` to declared-`Double` gap is a
-compiler/VM call-binding limitation with existing primitive carriers, while the
-omitted Optional `Variant` gap also requires a first-class missing-argument
-value state before `IsMissing` or call-entry introspection can claim parity.
+compiler/VM call-binding limitation with existing primitive carriers; the first
+package-backed VMR-06 path proves only the direct local `Long` to
+declared-`Double ByVal` shape. The omitted Optional `Variant` gap also requires
+a first-class missing-argument value state before `IsMissing` or call-entry
+introspection can claim parity.
 
 Current VMR-05 seed surface is package metadata plus VM evidence, not array
 execution rewiring: `ProcedureRuntimeMetadata::array_shapes` carries

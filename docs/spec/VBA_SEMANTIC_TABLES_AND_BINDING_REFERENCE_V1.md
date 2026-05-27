@@ -231,13 +231,16 @@ VM execution already depends on:
 - truthiness used by VM branch predicates;
 - `Decimal` as a Variant subtype/runtime carrier, including Decimal-to-`f64`
   compatibility and string display;
-- the known VMR-04 call-entry gap where `ByVal Long` into a declared `Double`
-  parameter is described by metadata but not yet applied at callee entry.
+- the selected VMR-06 call-entry shape where package execution uses metadata
+  to coerce `ByVal Long` into a declared `Double` parameter at callee entry.
 
 The table uses `metadata-missing` even when a helper is VM-backed because rows
-are not yet canonical `CoercionDescriptor` package facts. The table also keeps
-helper-specific behavior separate when the current implementation has multiple
-conversion paths. For example, `variant_to_vba_string(Boolean)` returns
+are not yet canonical `CoercionDescriptor` package facts. The selected
+call-entry row is still intentionally narrow and does not generalize to other
+source/target types, expression forms, COM/native calls, or error-routing
+coercions. The table also keeps helper-specific behavior separate when the
+current implementation has multiple conversion paths. For example,
+`variant_to_vba_string(Boolean)` returns
 `True`/`False`, while `runtime_variant_to_text(Boolean)` returns `-1`/`0` for
 several current VM helpers. A future descriptor-backed coercion pass must decide
 which source language context owns each path before routing execution through

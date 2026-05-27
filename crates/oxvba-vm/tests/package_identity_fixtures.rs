@@ -407,6 +407,32 @@ fn object_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> Stri
     tokens.join("|")
 }
 
+fn assert_raw_and_package_snapshot_relation(
+    row: &FixtureRow,
+    raw: &[Variant],
+    package: &[Variant],
+) {
+    if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
+        assert_eq!(
+            snapshot_tokens(raw),
+            "i32:4|i32:9|i32:4|f64:4.5|i32:2|i32:7|i32:2|i32:-1|i32:1",
+            "{} raw bytecode baseline should preserve the pre-VMR06 ByVal Long-to-Double gap",
+            row.id
+        );
+        assert_ne!(
+            package, raw,
+            "{} package execution should consume descriptors for the selected VMR06 call-entry coercion",
+            row.id
+        );
+    } else {
+        assert_eq!(
+            package, raw,
+            "{} package execution should not change the value snapshot",
+            row.id
+        );
+    }
+}
+
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -423,15 +449,27 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
         vm.execute_package(&package)
             .expect("package VM execution should succeed");
         let package_snapshot = vm.snapshot_variants(package.bytecode.user_slot_count);
+        if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
+            let mut raw_vm_with_loaded_metadata = Vm::default();
+            raw_vm_with_loaded_metadata.load_execution_package_metadata(&package);
+            raw_vm_with_loaded_metadata
+                .execute(package.bytecode)
+                .expect("raw VM execution should ignore loaded package metadata");
+            assert_eq!(
+                snapshot_tokens(
+                    &raw_vm_with_loaded_metadata
+                        .snapshot_variants(package.bytecode.user_slot_count)
+                ),
+                "i32:4|i32:9|i32:4|f64:4.5|i32:2|i32:7|i32:2|i32:-1|i32:1",
+                "{} raw execution must not accidentally consume loaded package metadata",
+                row.id
+            );
+        }
         let evidence = vm
             .package_identity_evidence()
             .expect("package identity evidence should be recorded");
 
-        assert_eq!(
-            package_snapshot, expected_snapshot,
-            "{} package execution should not change the value snapshot",
-            row.id
-        );
+        assert_raw_and_package_snapshot_relation(&row, &expected_snapshot, &package_snapshot);
         assert_eq!(snapshot_tokens(&package_snapshot), row.expected_values);
         assert_eq!(evidence.package_origin, VmPackageOrigin::OxBundle);
         assert!(evidence.package_digest.starts_with("fnv1a64:"));

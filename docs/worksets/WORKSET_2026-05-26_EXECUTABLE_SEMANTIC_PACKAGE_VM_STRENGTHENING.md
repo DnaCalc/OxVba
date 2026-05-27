@@ -70,8 +70,10 @@ place.
 The first VMR-06 behavior selection is now documented as
 `VMR06-CALL-BYVAL-COERCE-001`: descriptor-driven call-entry Let coercion for a
 direct `Long` argument passed to a declared `Double ByVal` parameter. The
-selection record is a gate for implementation beads; it is not itself the
-behavior change.
+selected path is now implemented for package execution only; raw bytecode
+execution remains the pre-VMR06 baseline. Broader call-entry coercion,
+Optional-missing, object/member, COM/native, and export behavior still need
+separate selected VMR-06 rows before behavior changes.
 
 ## Review Findings And Repairs
 

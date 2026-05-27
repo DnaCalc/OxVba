@@ -392,8 +392,9 @@ Open follow-up:
 - use the VMR-04 call-gap ledger in
   `EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` before changing call
   execution. That ledger currently classifies ByRef expression no-writeback as
-  oracle/test work, ByVal declared-type call-entry coercion as a VM call-binding
-  limitation plus missing coercion metadata, and omitted Optional `Variant` as
-  a VM/runtime value-state limitation;
+  oracle/test work, the first direct `Long` to declared-`Double ByVal`
+  call-entry coercion as package-backed VMR-06 behavior with broader coercion
+  metadata still missing, and omitted Optional `Variant` as a VM/runtime
+  value-state limitation;
 - add remaining fixtures for `Property Let`/`Set` value-param behavior and
   object default-member binding.

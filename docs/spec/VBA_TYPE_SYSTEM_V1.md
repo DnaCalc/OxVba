@@ -629,8 +629,9 @@ Current implementation anchors:
   ByRef, Optional default, ParamArray, property value, and return copyout
   behavior. VMR-04 fixture rows add call-site
   descriptor evidence for ByRef alias/writeback, ByRef expression temp,
-  ByVal copy with a declared-`Double` call-entry coercion gap, Optional default,
-  Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
+  ByVal copy with the selected package-backed declared-`Double` call-entry
+  coercion shape, Optional default, Optional `Variant` missing-policy metadata,
+  and empty/non-empty `ParamArray`
   shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
   dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
   carrier facts, the current fixed-array base-slot limitation, and UDT
@@ -655,8 +656,10 @@ Known development gaps:
   materialization, default-member fallback policy, property value ByVal
   classification, and return copyout facts. Expression-call coverage outside
   current direct lowering, external Declare/COM call coverage, canonical
-  descriptor ids, descriptor-driven VM behavior, true ByVal call-entry
-  coercion, and true Optional-missing runtime behavior remain incomplete;
+  descriptor ids, broader descriptor-driven VM behavior, broad ByVal call-entry
+  coercion, and true Optional-missing runtime behavior remain incomplete. The
+  first VMR-06 path consumes package metadata only for direct local `Long` to
+  declared-`Double ByVal` call entry;
 - `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, `UdtTypeDescriptor`,
   and `ObjectTypeDescriptor` now carry first-pass slot, local array shape, UDT
   shape facts, and generic object slot facts, but expression temporary declared types,

@@ -10,13 +10,14 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicValue,
 };
 use oxvba_compiler::{
-    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArrayShapeDescriptor, Bytecode,
-    CallSiteDescriptor, Instruction, ObjectTypeDescriptor, OptionalDefaultValue,
-    OptionalParameterDescriptor, OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata,
-    ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor, ProjectComWithEventsRoute,
-    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
-    ProjectDynamicParamRoute, ResolvedParameterMechanism, SlotTypeDescriptor, UdtFieldDescriptor,
-    UdtTypeDescriptor,
+    ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
+    ArrayShapeDescriptor, Bytecode, CallSiteDescriptor, CallTargetKindDescriptor, Instruction,
+    ObjectTypeDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ResolvedParameterMechanism, RuntimeCarrierKind, SlotTypeDescriptor, UdtFieldDescriptor,
+    UdtTypeDescriptor, VbaTypeId,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
@@ -37,7 +38,7 @@ use oxvba_runtime::safe_array::{
 use oxvba_runtime::{
     BindingHandle, ObjectRef, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
     RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
-    RuntimeValueType, Variant, bstr::BStr,
+    RuntimeValueType, VarType, Variant, bstr::BStr,
 };
 
 use crate::register_file::{RegisterFile, RuntimeSlot};
@@ -1383,6 +1384,7 @@ pub struct Vm {
     rnd_state: u32,
     debug_runtime: Option<DebugRuntimeState>,
     last_package_identity_evidence: Option<VmPackageIdentityEvidence>,
+    descriptor_metadata_active: bool,
 }
 
 const FIN_MAX_ITERS: usize = 60;
@@ -1432,6 +1434,7 @@ impl Vm {
             rnd_state: 0x50000,
             debug_runtime: None,
             last_package_identity_evidence: None,
+            descriptor_metadata_active: false,
         }
     }
 
@@ -1832,7 +1835,11 @@ impl Vm {
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let result = self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths);
+        let result = self.execute_with_typed_fastpaths_and_descriptor_metadata(
+            package.bytecode,
+            typed_fastpaths,
+            true,
+        );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
@@ -1843,9 +1850,21 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
     ) -> Result<(), String> {
+        self.execute_with_typed_fastpaths_and_descriptor_metadata(bytecode, typed_fastpaths, false)
+    }
+
+    fn execute_with_typed_fastpaths_and_descriptor_metadata(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+        descriptor_metadata_active: bool,
+    ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
+        self.descriptor_metadata_active = descriptor_metadata_active;
         self.reset_execution_state(bytecode.slot_count, false);
-        self.execute_loop(bytecode, 0, 0, typed_fastpaths, false)
+        let result = self.execute_loop(bytecode, 0, 0, typed_fastpaths, false);
+        self.descriptor_metadata_active = false;
+        result
     }
 
     pub fn invoke_procedure_with_i32_args(
@@ -1854,6 +1873,19 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[i32],
+    ) -> Result<(), String> {
+        self.invoke_procedure_with_i32_args_and_descriptor_metadata(
+            bytecode, entry_pc, arg_slots, args, false,
+        )
+    }
+
+    fn invoke_procedure_with_i32_args_and_descriptor_metadata(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[i32],
+        descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
@@ -1870,13 +1902,16 @@ impl Vm {
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_i32_slot(*slot, *value)?;
         }
-        self.execute_loop(
+        self.descriptor_metadata_active = descriptor_metadata_active;
+        let result = self.execute_loop(
             bytecode,
             entry_pc,
             entry_pc,
             self.typed_fastpaths_default,
             true,
-        )
+        );
+        self.descriptor_metadata_active = false;
+        result
     }
 
     pub fn invoke_package_procedure_with_i32_args(
@@ -1887,8 +1922,13 @@ impl Vm {
         args: &[i32],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let result =
-            self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args);
+        let result = self.invoke_procedure_with_i32_args_and_descriptor_metadata(
+            package.bytecode,
+            entry_pc,
+            arg_slots,
+            args,
+            true,
+        );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
@@ -1900,6 +1940,19 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[Variant],
+    ) -> Result<(), String> {
+        self.invoke_procedure_with_variants_and_descriptor_metadata(
+            bytecode, entry_pc, arg_slots, args, false,
+        )
+    }
+
+    fn invoke_procedure_with_variants_and_descriptor_metadata(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[Variant],
+        descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
@@ -1931,6 +1984,7 @@ impl Vm {
             self.write_variant_slot(*slot, value.clone())?;
         }
 
+        self.descriptor_metadata_active = descriptor_metadata_active;
         let result = self.execute_loop(
             bytecode,
             entry_pc,
@@ -1938,6 +1992,7 @@ impl Vm {
             self.typed_fastpaths_default,
             true,
         );
+        self.descriptor_metadata_active = false;
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -1985,8 +2040,13 @@ impl Vm {
         args: &[Variant],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let result =
-            self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args);
+        let result = self.invoke_procedure_with_variants_and_descriptor_metadata(
+            package.bytecode,
+            entry_pc,
+            arg_slots,
+            args,
+            true,
+        );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
@@ -2131,6 +2191,144 @@ impl Vm {
         };
         state.last_pause = Some(stop.clone());
         Some(stop)
+    }
+
+    fn apply_descriptor_driven_call_entry_bindings(
+        &mut self,
+        call_pc: usize,
+        target_pc: usize,
+    ) -> Result<(), String> {
+        if !self.descriptor_metadata_active {
+            return Ok(());
+        }
+        let actions = self.descriptor_driven_call_entry_coercions(call_pc, target_pc)?;
+        for (slot, value) in actions {
+            self.write_variant_slot(slot, value)?;
+        }
+        Ok(())
+    }
+
+    fn descriptor_driven_call_entry_coercions(
+        &self,
+        call_pc: usize,
+        target_pc: usize,
+    ) -> Result<Vec<(usize, Variant)>, String> {
+        let Some((caller_metadata, call_site)) =
+            self.call_site_descriptor_for_call(call_pc, target_pc)
+        else {
+            return Ok(Vec::new());
+        };
+        if !matches!(
+            call_site.target_kind,
+            CallTargetKindDescriptor::Function | CallTargetKindDescriptor::Procedure
+        ) {
+            return Ok(Vec::new());
+        }
+        let Some(target_metadata) = self.procedure_metadata_by_entry_pc(target_pc) else {
+            return Ok(Vec::new());
+        };
+
+        let mut actions = Vec::new();
+        for argument in &call_site.arguments {
+            let Some((parameter_slot, source_slot)) =
+                Self::selected_long_to_double_byval_call_entry_slots(
+                    argument,
+                    caller_metadata,
+                    target_metadata,
+                )
+            else {
+                continue;
+            };
+            if source_slot == parameter_slot {
+                continue;
+            }
+            let source_value = self.read_variant_slot(source_slot)?;
+            if source_value.vtype() != VarType::Long {
+                continue;
+            }
+            let coerced = oxvba_runtime::coerce::coerce_to(&source_value, VarType::Double)
+                .map_err(|err| {
+                    format!(
+                        "descriptor-driven call-entry coercion failed at call pc {call_pc}: {err}"
+                    )
+                })?;
+            actions.push((parameter_slot, coerced));
+        }
+        Ok(actions)
+    }
+
+    fn call_site_descriptor_for_call(
+        &self,
+        call_pc: usize,
+        target_pc: usize,
+    ) -> Option<(&ProcedureRuntimeMetadata, &CallSiteDescriptor)> {
+        self.procedure_runtime_metadata
+            .values()
+            .find_map(|metadata| {
+                metadata
+                    .call_sites
+                    .iter()
+                    .find(|call_site| {
+                        call_site.call_pc == call_pc && call_site.target_entry_pc == Some(target_pc)
+                    })
+                    .map(|call_site| (metadata, call_site))
+            })
+    }
+
+    fn procedure_metadata_by_entry_pc(&self, entry_pc: usize) -> Option<&ProcedureRuntimeMetadata> {
+        self.procedure_runtime_metadata
+            .values()
+            .find(|metadata| metadata.entry_pc == entry_pc)
+    }
+
+    fn selected_long_to_double_byval_call_entry_slots(
+        argument: &ArgumentBindingDescriptor,
+        caller_metadata: &ProcedureRuntimeMetadata,
+        target_metadata: &ProcedureRuntimeMetadata,
+    ) -> Option<(usize, usize)> {
+        if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy
+            || argument.expression_kind != ArgumentExpressionKindDescriptor::Variable
+        {
+            return None;
+        }
+        let source_slot = argument.source_slot?;
+        let parameter_slot = argument.parameter_slot?;
+        let parameter = target_metadata
+            .signature
+            .parameters
+            .iter()
+            .find(|parameter| {
+                parameter.slot == Some(parameter_slot)
+                    && argument
+                        .parameter_index
+                        .map_or(true, |index| parameter.index == index)
+            })?;
+        if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal
+            || parameter.declared_type != VbaTypeId::Double
+        {
+            return None;
+        }
+        let caller_slot = caller_metadata
+            .slots
+            .iter()
+            .find(|slot| slot.slot == source_slot)?;
+        if caller_slot.kind != ProcedureRuntimeSlotKind::Local
+            || caller_slot.declared_type != VbaTypeId::Long
+            || caller_slot.carrier != RuntimeCarrierKind::I32
+        {
+            return None;
+        }
+        let callee_slot = target_metadata
+            .slots
+            .iter()
+            .find(|slot| slot.slot == parameter_slot)?;
+        if callee_slot.kind != ProcedureRuntimeSlotKind::Parameter
+            || callee_slot.declared_type != VbaTypeId::Double
+            || callee_slot.carrier != RuntimeCarrierKind::F64
+        {
+            return None;
+        }
+        Some((parameter_slot, source_slot))
     }
 
     fn execute_loop(
@@ -4557,6 +4755,7 @@ impl Vm {
                     if *target_pc >= bytecode.instructions.len() {
                         return Err(format!("call target out of range: {target_pc}"));
                     }
+                    self.apply_descriptor_driven_call_entry_bindings(pc, *target_pc)?;
                     // Save caller's error frame and clear for new procedure.
                     let saved = ErrorFrame {
                         on_error_resume_next: self.on_error_resume_next,

@@ -28,21 +28,24 @@ The VMR-03 row is VM-runnable evidence for current call lowering compared with
 procedure signature metadata. It observes ByVal no-copyback, ByRef copyback,
 Optional default materialization, ParamArray packing, property value ByVal
 semantics, and function return-slot copyout. This is evidence over existing
-bytecode lowering, not descriptor-driven call execution. Seed
+bytecode lowering, not broad descriptor-driven call execution. Seed
 `CallSiteDescriptor` and `ArgumentBindingDescriptor` rows now exist in package
-metadata for top-level project calls; full expression/COM/native call-site
-coverage and descriptor-driven VM behavior remain later work.
+metadata for top-level project calls. VMR-06 has one selected package-backed
+call-entry behavior, but full expression/COM/native call-site coverage and
+broader descriptor-driven VM behavior remain later work.
 
 The VMR-04 row adds dedicated call-site descriptor evidence for ByRef variable
 alias/writeback, ByRef expression temporary/no-writeback, a ByVal `Long` to
 declared-`Double` call shape, explicit Optional default materialization,
 Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
-packs. It intentionally records two current VM limitations: the ByVal
-declared-`Double` callee observes `VarType=2` at entry instead of a coerced
-Double value, and the Optional `Variant` descriptor says the missing policy is
+packs. It now records the first behavior-driving split: raw bytecode execution
+preserves the old `VarType=2` entry observation for the declared-`Double`
+callee, while package execution consumes the selected VMR-06 descriptors and
+observes `VarType=5`. The remaining current VM limitation in this row is
+Optional `Variant`: the descriptor says the missing policy is
 `VariantMissingError448` while current VM lowering still materializes a default
-local observed by the fixture as `VarType=2`. Those gaps are not treated as
-VBA-compatible call-coercion or missing-argument behavior.
+local observed by the fixture as `VarType=2`. That gap is not treated as
+VBA-compatible missing-argument behavior.
 
 `VMR04_BYREF_EXPRESSION_FORMS` narrows the ByRef expression evidence to
 currently VM-runnable source forms: direct variable alias/writeback,

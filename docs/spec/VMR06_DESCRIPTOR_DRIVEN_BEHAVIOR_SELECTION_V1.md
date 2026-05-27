@@ -44,6 +44,21 @@ though the signature descriptor knows `value As Double`. The runtime scalar
 carrier and helper support already exist, so the selected slice is a VM
 call-entry binding limitation rather than a primitive carrier limitation.
 
+Implementation evidence:
+
+- `bd-iave.9.2` wires package execution through
+  `Vm::apply_descriptor_driven_call_entry_bindings`.
+- The VM applies the behavior only while executing a loaded
+  `VmExecutionPackage`; raw bytecode execution remains the pre-VMR06 baseline.
+- The implemented match requires a known direct project function/procedure
+  target, `ByValCopy`, variable argument expression, known source and parameter
+  slots, caller source slot metadata of local `Long`/`I32`, target parameter
+  signature metadata of `ByVal Double`, target parameter slot metadata of
+  `Parameter Double`/`F64`, and a runtime `Long` value.
+- `VMR04_CALL_ARGUMENT_BINDING` now records package execution with
+  `main:byvaltype = 5` while the fixture harness also asserts the raw bytecode
+  baseline remains `main:byvaltype = 2`.
+
 ## Descriptor Inputs
 
 Required descriptor facts:
@@ -80,8 +95,8 @@ classified.
 Primary fixture:
 
 - `VMR04_CALL_ARGUMENT_BINDING`
-  - Before behavior change: `main:byvaltype:Local:Long` snapshot records `2`.
-  - After behavior change: `main:byvaltype` must record `5`.
+  - Raw bytecode baseline: `main:byvaltype:Local:Long` snapshot records `2`.
+  - Package execution: `main:byvaltype` records `5`.
   - `main:byvalcoerced` remains `f64:4.5`.
   - caller `seed` remains unchanged.
   - ByRef alias/writeback observations remain unchanged.
