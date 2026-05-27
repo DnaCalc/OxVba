@@ -142,6 +142,7 @@ pub struct ProcedureRuntimeMetadata {
     pub signature: ProcedureSignatureDescriptor,
     pub call_sites: Vec<CallSiteDescriptor>,
     pub array_shapes: Vec<ArrayShapeDescriptor>,
+    pub udt_types: Vec<UdtTypeDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -168,6 +169,61 @@ pub enum ArrayStorageKind {
     StaticFixed,
     Dynamic,
     ParamArrayPack,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct UdtTypeDescriptor {
+    pub descriptor_id: String,
+    pub type_name: String,
+    pub instances: Vec<UdtInstanceDescriptor>,
+    pub fields: Vec<UdtFieldDescriptor>,
+    pub storage: UdtStorageKind,
+    pub copy_semantics: UdtCopySemanticsDescriptor,
+    pub cleanup: UdtCleanupDescriptor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct UdtInstanceDescriptor {
+    pub name: String,
+    pub base_slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct UdtFieldDescriptor {
+    pub field_id: String,
+    pub index: usize,
+    pub name: String,
+    pub declared_type: VbaTypeId,
+    pub carrier: RuntimeCarrierKind,
+    pub nested_udt_name: Option<String>,
+    pub fixed_string_len: Option<usize>,
+    pub array_bounds: Vec<ArrayBoundDescriptor>,
+    pub aliases: Vec<UdtFieldAliasDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct UdtFieldAliasDescriptor {
+    pub instance_name: String,
+    pub slot_name: String,
+    pub slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum UdtStorageKind {
+    FlattenedFieldSlots,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum UdtCopySemanticsDescriptor {
+    FieldWiseCopy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct UdtCleanupDescriptor {
+    pub owns_bstr: bool,
+    pub owns_object_ref: bool,
+    pub owns_safearray: bool,
+    pub owns_variant: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -584,6 +640,24 @@ impl ProcedureRuntimeSlotMetadata {
         }
     }
 
+    pub fn new_with_initial_state_and_carrier(
+        name: String,
+        slot: usize,
+        kind: ProcedureRuntimeSlotKind,
+        declared_type: VbaTypeId,
+        initial_state: SlotInitialState,
+        carrier: RuntimeCarrierKind,
+    ) -> Self {
+        Self {
+            name,
+            slot,
+            kind,
+            declared_type,
+            initial_state,
+            carrier,
+        }
+    }
+
     pub fn slot_type_descriptor(&self) -> SlotTypeDescriptor {
         SlotTypeDescriptor {
             slot: self.slot,
@@ -610,6 +684,10 @@ impl ProcedureRuntimeMetadata {
 
     pub fn array_shape_descriptors(&self) -> Vec<ArrayShapeDescriptor> {
         self.array_shapes.clone()
+    }
+
+    pub fn udt_type_descriptors(&self) -> Vec<UdtTypeDescriptor> {
+        self.udt_types.clone()
     }
 
     pub(crate) fn legacy_declared_type_for_slot(
@@ -1004,6 +1082,7 @@ pub fn emit_bytecode_with_runtime_metadata(
             declarations: module.declarations.clone(),
             declaration_types: module.declaration_types.clone(),
             array_descriptors: module.array_descriptors.clone(),
+            udt_descriptors: Vec::new(),
             duplicate_declarations: Vec::new(),
             body: module.body.clone(),
         }]
@@ -1203,6 +1282,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &procedures[entry_idx],
                 &proc_slots[entry_idx],
             ),
+            udt_types: build_udt_type_descriptors(&procedures[entry_idx], &proc_slots[entry_idx]),
         },
     );
 
@@ -1305,6 +1385,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 ),
                 call_sites,
                 array_shapes: build_array_shape_descriptors(proc, &proc_slots[idx]),
+                udt_types: build_udt_type_descriptors(proc, &proc_slots[idx]),
             },
         );
     }
@@ -1402,13 +1483,28 @@ fn build_runtime_slot_metadata(
             .get(name.as_str())
             .copied()
             .unwrap_or(BoundType::Variant);
-        slots.push(ProcedureRuntimeSlotMetadata::new_with_carrier(
-            name.clone(),
-            slot,
-            kind,
-            vba_type_id_from_bound_type(bound_type),
-            runtime_carrier_from_bound_type(bound_type),
-        ));
+        if let Some(descriptor_id) = udt_descriptor_id_for_instance(proc, name) {
+            slots.push(
+                ProcedureRuntimeSlotMetadata::new_with_initial_state_and_carrier(
+                    name.clone(),
+                    slot,
+                    kind,
+                    VbaTypeId::Unknown,
+                    SlotInitialState::UdtDefault,
+                    RuntimeCarrierKind::UdtFields {
+                        descriptor: descriptor_id,
+                    },
+                ),
+            );
+        } else {
+            slots.push(ProcedureRuntimeSlotMetadata::new_with_carrier(
+                name.clone(),
+                slot,
+                kind,
+                vba_type_id_from_bound_type(bound_type),
+                runtime_carrier_from_bound_type(bound_type),
+            ));
+        }
     }
     for slot in temp_slots {
         slots.push(ProcedureRuntimeSlotMetadata::new(
@@ -1424,6 +1520,30 @@ fn build_runtime_slot_metadata(
             .then_with(|| lhs.name.cmp(&rhs.name))
     });
     slots
+}
+
+fn udt_descriptor_id_for_instance(proc: &BoundProcedure, name: &str) -> Option<String> {
+    for descriptor in &proc.udt_descriptors {
+        if descriptor
+            .variable_names
+            .iter()
+            .any(|variable| variable.eq_ignore_ascii_case(name))
+        {
+            return Some(udt_descriptor_id(&descriptor.type_name));
+        }
+        for instance in &descriptor.variable_names {
+            for field in &descriptor.fields {
+                let Some(nested_name) = field.nested_udt_name.as_deref() else {
+                    continue;
+                };
+                let nested_alias = format!("{instance}_{}", field.name);
+                if nested_alias.eq_ignore_ascii_case(name) {
+                    return Some(udt_descriptor_id(nested_name));
+                }
+            }
+        }
+    }
+    None
 }
 
 fn build_array_shape_descriptors(
@@ -1467,6 +1587,141 @@ fn build_array_shape_descriptors(
         .collect::<Vec<_>>();
     descriptors.sort_by(|left, right| left.name.cmp(&right.name));
     descriptors
+}
+
+fn build_udt_type_descriptors(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+) -> Vec<UdtTypeDescriptor> {
+    let mut descriptors = proc
+        .udt_descriptors
+        .iter()
+        .map(|descriptor| {
+            let fields = descriptor
+                .fields
+                .iter()
+                .map(|field| {
+                    let aliases = descriptor
+                        .variable_names
+                        .iter()
+                        .flat_map(|instance| udt_field_aliases(instance, field, proc_slots))
+                        .collect::<Vec<_>>();
+                    let (declared_type, carrier) =
+                        if let Some(nested_name) = field.nested_udt_name.as_deref() {
+                            (
+                                VbaTypeId::Unknown,
+                                RuntimeCarrierKind::UdtFields {
+                                    descriptor: udt_descriptor_id(nested_name),
+                                },
+                            )
+                        } else {
+                            (
+                                vba_type_id_from_bound_type(field.bound_type),
+                                runtime_carrier_from_bound_type(field.bound_type),
+                            )
+                        };
+                    UdtFieldDescriptor {
+                        field_id: format!(
+                            "{}.{}",
+                            descriptor.type_name.to_ascii_lowercase(),
+                            field.name
+                        ),
+                        index: field.index,
+                        name: field.name.clone(),
+                        declared_type,
+                        carrier,
+                        nested_udt_name: field.nested_udt_name.clone(),
+                        fixed_string_len: field.fixed_string_len,
+                        array_bounds: field
+                            .array_bounds
+                            .as_ref()
+                            .map(|bounds| {
+                                bounds
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(index, (lower_bound, upper_bound))| {
+                                        ArrayBoundDescriptor {
+                                            dimension: index + 1,
+                                            lower_bound: *lower_bound,
+                                            upper_bound: *upper_bound,
+                                        }
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        aliases,
+                    }
+                })
+                .collect::<Vec<_>>();
+            UdtTypeDescriptor {
+                descriptor_id: udt_descriptor_id(&descriptor.type_name),
+                type_name: descriptor.type_name.clone(),
+                instances: descriptor
+                    .variable_names
+                    .iter()
+                    .map(|name| UdtInstanceDescriptor {
+                        name: name.clone(),
+                        base_slot: proc_slots.get(name).copied(),
+                    })
+                    .collect(),
+                cleanup: udt_cleanup_descriptor(&fields),
+                fields,
+                storage: UdtStorageKind::FlattenedFieldSlots,
+                copy_semantics: UdtCopySemanticsDescriptor::FieldWiseCopy,
+            }
+        })
+        .collect::<Vec<_>>();
+    descriptors.sort_by(|left, right| left.type_name.cmp(&right.type_name));
+    descriptors
+}
+
+fn udt_field_aliases(
+    instance_name: &str,
+    field: &crate::resolve::BoundUdtFieldDescriptor,
+    proc_slots: &HashMap<String, usize>,
+) -> Vec<UdtFieldAliasDescriptor> {
+    if let Some(bounds) = &field.array_bounds {
+        let mut aliases = Vec::new();
+        for (lower_bound, upper_bound) in bounds {
+            for index in *lower_bound..=*upper_bound {
+                let slot_name = format!("{instance_name}_{}_{index}", field.name);
+                aliases.push(UdtFieldAliasDescriptor {
+                    instance_name: instance_name.to_string(),
+                    slot: proc_slots.get(&slot_name).copied(),
+                    slot_name,
+                });
+            }
+        }
+        aliases
+    } else {
+        let slot_name = format!("{instance_name}_{}", field.name);
+        vec![UdtFieldAliasDescriptor {
+            instance_name: instance_name.to_string(),
+            slot: proc_slots.get(&slot_name).copied(),
+            slot_name,
+        }]
+    }
+}
+
+fn udt_cleanup_descriptor(fields: &[UdtFieldDescriptor]) -> UdtCleanupDescriptor {
+    UdtCleanupDescriptor {
+        owns_bstr: fields
+            .iter()
+            .any(|field| field.carrier == RuntimeCarrierKind::BStr),
+        owns_object_ref: fields
+            .iter()
+            .any(|field| field.carrier == RuntimeCarrierKind::ObjectRef),
+        owns_safearray: fields
+            .iter()
+            .any(|field| field.carrier == RuntimeCarrierKind::SafeArray),
+        owns_variant: fields
+            .iter()
+            .any(|field| field.carrier == RuntimeCarrierKind::Variant),
+    }
+}
+
+fn udt_descriptor_id(type_name: &str) -> String {
+    format!("udt:{}", type_name.to_ascii_lowercase())
 }
 
 fn is_compiler_generated_array_element_slot(proc: &BoundProcedure, name: &str) -> bool {

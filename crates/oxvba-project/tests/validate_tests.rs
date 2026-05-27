@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use oxvba_compiler::{
     Bytecode, CompiledProject, DeclareParamType, ExportKind, HostProcedureExport,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotMetadata, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotMetadata,
+    ProcedureSignatureDescriptor, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, VbaTypeId,
 };
 use oxvba_project::validate::{validate_com_class_exports, validate_native_exports};
 use oxvba_project::{
@@ -91,6 +92,22 @@ fn make_runtime_metadata(
         return_slot,
         param_types: vec![DeclareParamType::Variant; param_count],
         return_type: has_return.then_some(DeclareParamType::Variant),
+        signature: ProcedureSignatureDescriptor {
+            procedure_name: procedure_name.to_string(),
+            kind: if has_return {
+                ProcedureKindDescriptor::Function
+            } else {
+                ProcedureKindDescriptor::Sub
+            },
+            parameters: Vec::new(),
+            return_type: has_return.then_some(VbaTypeId::Variant),
+            return_slot,
+            property_group: None,
+            implicit_current_object: None,
+        },
+        call_sites: Vec::new(),
+        array_shapes: Vec::new(),
+        udt_types: Vec::new(),
     }
 }
 

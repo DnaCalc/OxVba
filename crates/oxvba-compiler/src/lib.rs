@@ -29,7 +29,9 @@ pub use emit::{
     ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
     RuntimeCarrierKind, SlotInitialState, SlotRole, SlotTypeDescriptor, SourceParameterMechanism,
-    VbaTypeId, bound_type_to_declare_param_type,
+    UdtCleanupDescriptor, UdtCopySemanticsDescriptor, UdtFieldAliasDescriptor, UdtFieldDescriptor,
+    UdtInstanceDescriptor, UdtStorageKind, UdtTypeDescriptor, VbaTypeId,
+    bound_type_to_declare_param_type,
 };
 pub use project::{
     CallableCapability, CallingShape, CompiledProject, CompilerLineMapping,

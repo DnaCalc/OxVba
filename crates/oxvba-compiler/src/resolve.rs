@@ -9,6 +9,7 @@ struct UdtFieldDef {
     bound_type: BoundType,
     nested_udt_name: Option<String>,
     array_bounds: Option<Vec<(i32, i32)>>,
+    fixed_string_len: Option<usize>,
 }
 type UdtDefMap = HashMap<String, Vec<UdtFieldDef>>;
 const UDT_TYPE_MARKER_PREFIX: &str = "__oxvba_udt_type__";
@@ -322,6 +323,7 @@ pub struct BoundProcedure {
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
+    pub udt_descriptors: Vec<BoundUdtDescriptor>,
     pub duplicate_declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
 }
@@ -333,6 +335,23 @@ pub struct BoundArrayDescriptor {
     pub bounds: Vec<(i32, i32)>,
     pub dynamic: bool,
     pub option_base: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundUdtDescriptor {
+    pub type_name: String,
+    pub variable_names: Vec<String>,
+    pub fields: Vec<BoundUdtFieldDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundUdtFieldDescriptor {
+    pub index: usize,
+    pub name: String,
+    pub bound_type: BoundType,
+    pub nested_udt_name: Option<String>,
+    pub array_bounds: Option<Vec<(i32, i32)>>,
+    pub fixed_string_len: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -471,6 +490,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             declarations: Vec::new(),
             declaration_types: HashMap::new(),
             array_descriptors: HashMap::new(),
+            udt_descriptors: Vec::new(),
             duplicate_declarations: Vec::new(),
             body: Vec::new(),
         });
@@ -537,6 +557,7 @@ fn build_whole_file_main_procedure(
         declarations: Vec::new(),
         declaration_types: HashMap::new(),
         array_descriptors: HashMap::new(),
+        udt_descriptors: Vec::new(),
         duplicate_declarations: Vec::new(),
         body: Vec::new(),
     })
@@ -645,6 +666,7 @@ fn build_mainline_procedure_from_lines(
     body.splice(0..0, build_const_prelude(module_constants));
     let array_descriptors =
         build_array_descriptors(&array_bounds, &declaration_types, &body, option_base);
+    let udt_descriptors = build_udt_descriptors(&declarations, &declaration_types, udt_defs);
     remove_udt_type_markers(&mut declaration_types);
     Some(BoundProcedure {
         name: "main".to_string(),
@@ -657,6 +679,7 @@ fn build_mainline_procedure_from_lines(
         declarations,
         declaration_types,
         array_descriptors,
+        udt_descriptors,
         duplicate_declarations,
         body,
     })
@@ -1575,6 +1598,7 @@ fn parse_procedures(
         body.splice(0..0, build_const_prelude(module_constants));
         let array_descriptors =
             build_array_descriptors(&array_bounds, &declaration_types, &body, option_base);
+        let udt_descriptors = build_udt_descriptors(&declarations, &declaration_types, udt_defs);
         remove_udt_type_markers(&mut declaration_types);
         let source_line_end = if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term)
         {
@@ -1604,6 +1628,7 @@ fn parse_procedures(
             declarations,
             declaration_types,
             array_descriptors,
+            udt_descriptors,
             duplicate_declarations,
             body,
         });
@@ -1987,6 +2012,7 @@ fn collect_declared_external_procedures(
             declarations,
             declaration_types,
             array_descriptors: HashMap::new(),
+            udt_descriptors: Vec::new(),
             duplicate_declarations: Vec::new(),
             body: Vec::new(),
         });
@@ -2247,10 +2273,13 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
         while index < lines.len() && !lines[index].eq_ignore_ascii_case("end type") {
             let raw = lines[index].trim();
             if !raw.is_empty() {
-                let (field_name_raw, explicit_ty, nested_udt_name) =
+                let (field_name_raw, explicit_ty, nested_udt_name, fixed_string_len) =
                     if let Some((lhs, rhs)) = split_keyword_ci(raw, "as") {
                         let rhs_trimmed = rhs.trim();
-                        let primitive = parse_declared_type(rhs_trimmed);
+                        let fixed_string_len = parse_fixed_string_declared_type(rhs_trimmed);
+                        let primitive = fixed_string_len
+                            .map(|_| BoundType::String)
+                            .or_else(|| parse_declared_type(rhs_trimmed));
                         let nested_name = if primitive.is_none() {
                             normalize_ident(rhs_trimmed)
                         } else {
@@ -2260,9 +2289,10 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
                             lhs.trim(),
                             primitive.unwrap_or(BoundType::Variant),
                             nested_name,
+                            fixed_string_len,
                         )
                     } else {
-                        (raw, BoundType::Variant, None)
+                        (raw, BoundType::Variant, None, None)
                     };
                 // Strip array bounds from field name if present, e.g. "Items(10)" → "Items"
                 let (field_name_clean, field_array_bounds) =
@@ -2286,6 +2316,7 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
                         bound_type: field_ty,
                         nested_udt_name: nested_udt_name.clone(),
                         array_bounds: field_array_bounds,
+                        fixed_string_len,
                     });
                 }
             }
@@ -2334,6 +2365,7 @@ fn expand_nested_udt_fields(defs: &mut UdtDefMap) {
                         bound_type: sub_field.bound_type,
                         nested_udt_name: sub_field.nested_udt_name.clone(),
                         array_bounds: sub_field.array_bounds.clone(),
+                        fixed_string_len: sub_field.fixed_string_len,
                     });
                 }
             }
@@ -5802,6 +5834,14 @@ fn parse_declared_type(token: &str) -> Option<BoundType> {
     }
 }
 
+fn parse_fixed_string_declared_type(token: &str) -> Option<usize> {
+    let (kind, len) = token.trim().split_once('*')?;
+    if !kind.trim().eq_ignore_ascii_case("string") {
+        return None;
+    }
+    len.trim().parse::<usize>().ok().filter(|value| *value > 0)
+}
+
 fn parse_reference_name(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
     if let Some(alias) = parse_err_member_reference(token) {
         return Some(alias);
@@ -6110,6 +6150,66 @@ fn build_array_descriptors(
             },
         );
     }
+    descriptors
+}
+
+fn build_udt_descriptors(
+    declarations: &[String],
+    declaration_types: &HashMap<String, BoundType>,
+    udt_defs: &UdtDefMap,
+) -> Vec<BoundUdtDescriptor> {
+    let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+    for name in declarations {
+        if let Some(udt_name) = declared_udt_type_for_variable(name, declaration_types) {
+            grouped.entry(udt_name).or_default().push(name.clone());
+        }
+    }
+
+    let mut required_type_names = grouped.keys().cloned().collect::<HashSet<_>>();
+    loop {
+        let before = required_type_names.len();
+        for type_name in required_type_names.clone() {
+            if let Some(fields) = udt_defs.get(&type_name) {
+                for field in fields {
+                    if let Some(nested_name) = &field.nested_udt_name {
+                        if udt_defs.contains_key(nested_name) {
+                            required_type_names.insert(nested_name.clone());
+                        }
+                    }
+                }
+            }
+        }
+        if required_type_names.len() == before {
+            break;
+        }
+    }
+
+    let mut descriptors = required_type_names
+        .into_iter()
+        .filter_map(|type_name| {
+            let mut variable_names = grouped.remove(&type_name).unwrap_or_default();
+            variable_names.sort();
+            variable_names.dedup();
+            let fields = udt_defs.get(&type_name)?;
+            Some(BoundUdtDescriptor {
+                type_name,
+                variable_names,
+                fields: fields
+                    .iter()
+                    .enumerate()
+                    .map(|(index, field)| BoundUdtFieldDescriptor {
+                        index,
+                        name: field.name.clone(),
+                        bound_type: field.bound_type,
+                        nested_udt_name: field.nested_udt_name.clone(),
+                        array_bounds: field.array_bounds.clone(),
+                        fixed_string_len: field.fixed_string_len,
+                    })
+                    .collect(),
+            })
+        })
+        .collect::<Vec<_>>();
+    descriptors.sort_by(|left, right| left.type_name.cmp(&right.type_name));
     descriptors
 }
 
@@ -8314,6 +8414,55 @@ mod tests {
             module.declarations.iter().any(|d| d == "s_items_10"),
             "expected s_items_10 in {:?}",
             module.declarations
+        );
+    }
+
+    #[test]
+    fn resolve_udt_descriptors_record_nested_fixed_string_and_array_members() {
+        let source = concat!(
+            "Type Point\n",
+            "X As Long\n",
+            "Y As Long\n",
+            "End Type\n",
+            "Type Record\n",
+            "Name As String * 5\n",
+            "Scores(1 To 2) As Long\n",
+            "Inner As Point\n",
+            "End Type\n",
+            "Sub Main()\n",
+            "Dim r As Record\n",
+            "End Sub",
+        );
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|proc| proc.name == "main")
+            .expect("main procedure expected");
+        let record = main_proc
+            .udt_descriptors
+            .iter()
+            .find(|descriptor| descriptor.type_name == "record")
+            .expect("record UDT descriptor expected");
+        assert_eq!(record.variable_names, vec!["r".to_string()]);
+        assert!(record.fields.iter().any(|field| field.name == "name"
+            && field.bound_type == super::BoundType::String
+            && field.fixed_string_len == Some(5)));
+        assert!(
+            record
+                .fields
+                .iter()
+                .any(|field| field.name == "scores" && field.array_bounds == Some(vec![(1, 2)]))
+        );
+        assert!(record.fields.iter().any(
+            |field| field.name == "inner" && field.nested_udt_name.as_deref() == Some("point")
+        ));
+        assert!(
+            main_proc
+                .udt_descriptors
+                .iter()
+                .any(|descriptor| descriptor.type_name == "point"),
+            "nested UDT type descriptor should be retained for package evidence"
         );
     }
 }

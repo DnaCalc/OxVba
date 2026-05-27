@@ -590,10 +590,12 @@ Current implementation anchors:
   ParamArray shape, return type, property group, property value ByVal
   semantics, and class hidden-receiver metadata; first `ArrayShapeDescriptor`
   rows for resolver-known arrays, including rank, declared bounds, storage
-  kind, `Option Base`, element type, and element carrier.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v8 serializes the
-  populated slot, signature, seed call-site, and array-shape metadata and
-  upgrades v1/v2/v3/v4/v5/v6/v7 bundles into the current descriptor shape.
+  kind, `Option Base`, element type, and element carrier; and first
+  `UdtTypeDescriptor` rows for nominal UDT ids, instances, fields, nested UDT
+  references, fixed strings, fixed array fields, aliases, and cleanup flags.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v9 serializes the
+  populated slot, signature, seed call-site, array-shape, and UDT metadata and
+  upgrades v1/v2/v3/v4/v5/v6/v7/v8 bundles into the current descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
   current slot descriptor view and
@@ -603,19 +605,22 @@ Current implementation anchors:
   `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
   descriptor rows, signature/call observation rows for current seed `CallProc`
   lowering compared with signature metadata, and call-site descriptor evidence
-  rows for the first VMR-04 fixtures, plus array-shape descriptor evidence for
-  VMR-05 fixtures.
+  rows for the first VMR-04 fixtures, plus array-shape and UDT descriptor
+  evidence for VMR-05 fixtures.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
-  declared `Variant`, the current flattened UDT field-alias shape, and VMR-03
-  call observations for ByVal, ByRef, Optional default, ParamArray, property
-  value, and return copyout behavior. VMR-04 fixture rows add call-site
+  declared `Variant`, the current flattened UDT field-alias/base-slot shape,
+  first nominal UDT descriptors, and VMR-03 call observations for ByVal,
+  ByRef, Optional default, ParamArray, property value, and return copyout
+  behavior. VMR-04 fixture rows add call-site
   descriptor evidence for ByRef alias/writeback, ByRef expression temp,
   ByVal copy with a declared-`Double` call-entry coercion gap, Optional default,
   Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
   shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
   dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
-  carrier facts, and the current fixed-array base-slot limitation.
+  carrier facts, the current fixed-array base-slot limitation, and UDT
+  descriptor facts for nested UDTs, fixed strings, fixed array fields, aliases,
+  and cleanup ownership flags.
 
 Known development gaps:
 
@@ -634,17 +639,18 @@ Known development gaps:
   current direct lowering, external Declare/COM call coverage, canonical
   descriptor ids, descriptor-driven VM behavior, true ByVal call-entry
   coercion, and true Optional-missing runtime behavior remain incomplete;
-- `ProcedureRuntimeSlotMetadata` and `ArrayShapeDescriptor` now carry first-pass
-  slot and local array shape facts, but expression temporary declared types,
-  multi-rank/error/lifecycle array evidence, UDT nominal identity, aggregate
-  UDT field offsets, object/class/interface ids, fixed-string details, cleanup
-  obligations, and full carrier layout facts remain incomplete or explicitly
-  `Unknown`;
+- `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, and
+  `UdtTypeDescriptor` now carry first-pass slot, local array shape, and UDT
+  shape facts, but expression temporary declared types,
+  multi-rank/error/lifecycle array evidence, aggregate UDT field offsets/layout,
+  descriptor-driven UDT copy/drop behavior, object/class/interface ids, general
+  fixed-string behavior, cleanup maps, and full carrier layout facts remain
+  incomplete or explicitly `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
 - project reflection `VbaType` is useful but too coarse for package/JIT use;
-- fixed-length strings, enum descriptors, full UDT descriptors, object/class
+- enum descriptors, UDT offset/layout/lifecycle descriptors, object/class
   descriptors, and COM imported type descriptors are not yet unified behind one
   package type registry.
 

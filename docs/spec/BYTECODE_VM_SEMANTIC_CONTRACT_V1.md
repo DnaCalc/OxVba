@@ -49,7 +49,7 @@ Rows can start at family granularity and split when semantics diverge.
 | Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Truthiness table needs extraction. |
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
-| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Full UDT descriptor missing. |
+| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Descriptor and VM evidence missing. |
 | Error flow | `On Error`, Err state, resume target maps | use package error maps and snapshot Err state | Runtime exists; package maps incomplete. |
@@ -182,7 +182,7 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v8 carries those facts and upgrades older v3/v4/v5/v6/v7 metadata
+`OxBundle` format v9 carries those facts and upgrades older v3/v4/v5/v6/v7/v8 metadata
 into the current descriptor shape. This remains metadata-only: VM slot storage,
 helper choice, and runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -192,9 +192,9 @@ states, and carrier hints per procedure while retained value snapshots remain
 unchanged.
 The package identity seed fixtures now assert descriptor tokens and value
 snapshots for primitive scalar, `String`/`BStr`, declared `Variant`, and the
-current VM-runnable UDT field-alias shape. Nominal UDT aggregate descriptors,
-field offsets, and cleanup obligations remain future VMR-05 evidence and are
-not inferred from these flattened aliases.
+current VM-runnable UDT field-alias shape. UDT aggregate base slots now carry
+`RuntimeCarrierKind::UdtFields` hints where the resolver knows the nominal
+type; descriptor-backed UDT execution is still deferred.
 
 Current VMR-03 seed surface is metadata/evidence, not call-binding behavior:
 `ProcedureRuntimeMetadata::procedure_signature_descriptor` and
@@ -204,7 +204,7 @@ declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
 where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
-metadata knows them. `OxBundle` format v8 carries those facts, upgrades v6/v7
+metadata knows them. `OxBundle` format v9 carries those facts, upgrades v6/v7
 bundles with empty call-site rows, upgrades v5 bundles with `Unknown` source
 mechanism where v5 lacked that distinction, and upgrades v4 bundles with
 `Unknown` parameter passing mode where v4 had no serialized ByRef/ByVal fact.
@@ -259,8 +259,9 @@ execution rewiring: `ProcedureRuntimeMetadata::array_shapes` carries
 `VmPackageIdentityEvidence::array_shape_evidence` reports descriptor digests
 plus observations for rank, storage kind, declared bounds, `Option Base`,
 element type/carrier, base-slot presence, and runtime SAFEARRAY bounds when a
-base slot is allocated after VM execution. `OxBundle` format v8 carries these
-rows and upgrades v7 bundles with an explicit empty array-shape set.
+base slot is allocated after VM execution. `OxBundle` format v9 carries these
+rows, upgrades v7 bundles with an explicit empty array-shape set, and upgrades
+v8 bundles with an explicit empty UDT descriptor set.
 
 The VMR-05 seed fixture proves the current positive subset for fixed/static
 local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
@@ -269,6 +270,14 @@ fixed arrays are currently lowered to compiler-generated element slots with an
 unallocated base slot, so `LBound`/`UBound` over fixed arrays is not VM-runnable
 yet and is not claimed by the fixture. That limitation must be resolved or kept
 descriptor-only before JIT lowering consumes fixed-array bound facts.
+
+The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
+the current flattened UDT storage model. VM evidence now records descriptor ids,
+instances, field order, field carriers, nested UDT references, fixed-length
+string field lengths, fixed array field bounds, field-alias slots, fieldwise
+copy classification, and first cleanup ownership flags. This is still
+metadata/evidence only: VM UDT field access, whole-copy execution, offsets,
+layout, branch cleanup, and deopt cleanup do not consume these descriptors yet.
 
 ## Strengthening Rule
 

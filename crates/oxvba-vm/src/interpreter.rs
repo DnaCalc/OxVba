@@ -15,7 +15,7 @@ use oxvba_compiler::{
     ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
     ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, SlotTypeDescriptor,
+    ResolvedParameterMechanism, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -179,6 +179,7 @@ impl<'a> VmExecutionPackage<'a> {
         let call_site_evidence = collect_call_site_descriptor_evidence(self.procedure_metadata);
         let array_shape_evidence =
             collect_array_shape_evidence(self.procedure_metadata, runtime_slots);
+        let udt_descriptor_evidence = collect_udt_descriptor_evidence(self.procedure_metadata);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -189,6 +190,7 @@ impl<'a> VmExecutionPackage<'a> {
             signature_call_evidence,
             call_site_evidence,
             array_shape_evidence,
+            udt_descriptor_evidence,
         }
     }
 
@@ -212,6 +214,13 @@ impl<'a> VmExecutionPackage<'a> {
         self.procedure_metadata
             .iter()
             .map(|(name, metadata)| (name.clone(), metadata.call_sites.clone()))
+            .collect()
+    }
+
+    pub fn udt_type_descriptors(&self) -> BTreeMap<String, Vec<UdtTypeDescriptor>> {
+        self.procedure_metadata
+            .iter()
+            .map(|(name, metadata)| (name.clone(), metadata.udt_type_descriptors()))
             .collect()
     }
 }
@@ -266,6 +275,7 @@ pub struct VmPackageIdentityEvidence {
     pub signature_call_evidence: Vec<VmSignatureCallEvidence>,
     pub call_site_evidence: Vec<VmCallSiteDescriptorEvidence>,
     pub array_shape_evidence: Vec<VmArrayShapeEvidence>,
+    pub udt_descriptor_evidence: Vec<VmUdtDescriptorEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -293,6 +303,15 @@ pub struct VmArrayShapeEvidence {
     pub procedure_name: String,
     pub array_name: String,
     pub array_shape_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmUdtDescriptorEvidence {
+    pub procedure_name: String,
+    pub type_name: String,
+    pub udt_descriptor_id: String,
+    pub udt_descriptor_digest: String,
     pub observations: Vec<String>,
 }
 
@@ -391,6 +410,104 @@ fn runtime_array_shape_observations(
         }
     } else {
         observations.push("runtime-bounds=unknown".to_string());
+    }
+    observations
+}
+
+fn collect_udt_descriptor_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmUdtDescriptorEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .udt_types
+                .iter()
+                .map(move |descriptor| VmUdtDescriptorEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    type_name: descriptor.type_name.clone(),
+                    udt_descriptor_id: descriptor.descriptor_id.clone(),
+                    udt_descriptor_digest: digest_debug("udt-descriptor", descriptor),
+                    observations: udt_descriptor_observations(descriptor),
+                })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.type_name.cmp(&right.type_name))
+    });
+    evidence
+}
+
+fn udt_descriptor_observations(descriptor: &UdtTypeDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("descriptor-id={}", descriptor.descriptor_id),
+        format!("storage={}", debug_token(&descriptor.storage)),
+        format!("copy={}", debug_token(&descriptor.copy_semantics)),
+        format!(
+            "cleanup=bstr:{}:object:{}:safearray:{}:variant:{}",
+            descriptor.cleanup.owns_bstr,
+            descriptor.cleanup.owns_object_ref,
+            descriptor.cleanup.owns_safearray,
+            descriptor.cleanup.owns_variant
+        ),
+    ];
+    for instance in &descriptor.instances {
+        observations.push(format!(
+            "instance:{}:{}",
+            instance.name.to_ascii_lowercase(),
+            if instance.base_slot.is_some() {
+                "base-slot-known"
+            } else {
+                "base-slot-missing"
+            }
+        ));
+    }
+    for field in &descriptor.fields {
+        observations.extend(udt_field_observations(field));
+    }
+    observations
+}
+
+fn udt_field_observations(field: &UdtFieldDescriptor) -> Vec<String> {
+    let field_name = field.name.to_ascii_lowercase();
+    let mut observations = vec![
+        format!("field:{field_name}:index={}", field.index),
+        format!(
+            "field:{field_name}:type={}",
+            debug_token(&field.declared_type)
+        ),
+        format!("field:{field_name}:carrier={}", debug_token(&field.carrier)),
+    ];
+    if let Some(nested) = &field.nested_udt_name {
+        observations.push(format!(
+            "field:{field_name}:nested-udt={}",
+            nested.to_ascii_lowercase()
+        ));
+    }
+    if let Some(len) = field.fixed_string_len {
+        observations.push(format!("field:{field_name}:fixed-string-len={len}"));
+    }
+    if !field.array_bounds.is_empty() {
+        for bound in &field.array_bounds {
+            observations.push(format!(
+                "field:{field_name}:array-dim{}={}..{}",
+                bound.dimension, bound.lower_bound, bound.upper_bound
+            ));
+        }
+    }
+    for alias in &field.aliases {
+        observations.push(format!(
+            "field:{field_name}:alias:{}:{}",
+            alias.slot_name.to_ascii_lowercase(),
+            if alias.slot.is_some() {
+                "slot-known"
+            } else {
+                "slot-missing"
+            }
+        ));
     }
     observations
 }

@@ -14,12 +14,14 @@ slot counts, procedure identity fields, per-procedure slot descriptor digests,
 slot descriptor tokens, signature descriptor digests for observed `CallProc`
 targets, signature/call observation tokens, call-site descriptor digests, and
 call-site descriptor observation tokens for each fixture. The array rows also
-print array-shape descriptor digests and array-shape observation tokens.
+print array-shape descriptor digests and array-shape observation tokens. The
+UDT rows also print UDT descriptor digests and UDT descriptor observation
+tokens.
 
 The VMR-02 rows cover primitive scalar, `String`/`BStr`, declared `Variant`,
-and the current VM-runnable UDT field-alias shape. They do not claim nominal
-UDT aggregate descriptors; that remains owned by the later UDT descriptor
-evidence work.
+and the current VM-runnable UDT field-alias shape. The UDT base slots now carry
+`UdtFields` carrier hints, but execution still uses the existing flattened
+field aliases.
 
 The VMR-03 row is VM-runnable evidence for current call lowering compared with
 procedure signature metadata. It observes ByVal no-copyback, ByRef copyback,
@@ -66,6 +68,14 @@ copyback of the observed scalar results. It intentionally does not call
 `LBound`/`UBound` on fixed arrays because the current VM lowers fixed arrays to
 element slots and leaves the base slot unallocated; that is classified as a VM
 limitation for later fixed-array bound introspection, not a fixture failure.
+
+`VMR05_UDT_DESCRIPTOR_MEMBERS` is the first nominal UDT descriptor fixture. It
+records descriptor ids, owning instances, field order, primitive field
+carriers, nested UDT references, fixed-length string metadata, fixed array
+field bounds, field-alias slots, fieldwise copy classification, and first
+cleanup ownership flags. It intentionally uses the VM's current flattened field
+alias syntax for fixed array fields; descriptor-backed UDT execution and
+offset/layout consumption remain later VM work.
 
 The durable classification for those call-shape gaps lives in
 `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under
