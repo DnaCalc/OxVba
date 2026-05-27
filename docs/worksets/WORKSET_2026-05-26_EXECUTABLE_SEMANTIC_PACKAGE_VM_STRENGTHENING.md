@@ -1,6 +1,6 @@
 # Executable Semantic Package VM Strengthening Workset
 
-Status: `planned`
+Status: `complete` (closed 2026-05-27)
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/native-readiness
 
@@ -169,6 +169,15 @@ This review found four unclear areas and repairs them in the referenced docs:
   JIT dependency.
 - JIT v2 planning can cite package descriptors for each first tracer without
   inventing a parallel typed path.
+
+## Closure Note
+
+The execution bead parent `bd-iave` is closed. This workset completed the
+metadata/evidence and selected descriptor-consumption slices only; it did not
+activate Cranelift, implement JIT execution, or claim that residual
+descriptor/layout/error/cleanup/interop/export gaps are closed. Those gaps stay
+explicit in the completion map and JIT tracer matrix before later JIT work may
+consume them.
 
 ## Verification
 
