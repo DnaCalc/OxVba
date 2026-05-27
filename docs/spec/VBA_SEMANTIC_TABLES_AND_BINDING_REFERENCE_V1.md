@@ -242,6 +242,37 @@ several current VM helpers. A future descriptor-backed coercion pass must decide
 which source language context owns each path before routing execution through
 the table.
 
+## Operator Seed Table v1
+
+The first checked-in operator and branch predicate seed table is:
+
+[`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv)
+
+This table records the current VM helper families for:
+
+- `+` over current integer-compatible, floating-compatible, Boolean, `Empty`,
+  numeric-string, and string/string paths;
+- `-`, `*`, `/`, `\`, `Mod`, `^`, and unary `-` over the current numeric
+  compatibility helpers;
+- forced concatenation with `&`, including the current helper's Null-as-empty
+  and text-conversion-error-to-empty behavior;
+- string and numeric comparisons under `StringCompareMode::Binary` and
+  `StringCompareMode::Text`;
+- `Null` and `Empty` comparison behavior in the current VM;
+- truthiness, `Not`/`And`/`Or`, and `JumpIfZero` branch predicates;
+- internal `i32` fast paths, explicitly marked as implementation fast paths
+  and not semantic proof.
+
+As with coercion, these rows are not canonical package descriptors yet. They are
+current helper evidence and a guardrail for future table-backed VM behavior or
+JIT lowering. Rows that look suspicious from a VBA compatibility perspective,
+such as `Null` comparison producing a deterministic false Boolean and
+`&` swallowing text conversion failures as empty text, remain classified as
+current helper behavior until a spec/oracle-backed behavior bead changes them.
+The `Option Compare Text` seed is also current-helper evidence only: the VM
+normalizes text with ASCII lowercasing today, so full VBA locale/collation parity
+still needs table and oracle coverage.
+
 ## Minimum Table Artifact
 
 Before full CSV automation, each seed table may be represented as a checked-in
