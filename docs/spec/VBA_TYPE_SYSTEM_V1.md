@@ -493,8 +493,10 @@ Review gaps:
 - the compiler/VM metadata still needs auditing against the full
   `ProcedureSignatureDescriptor` shape;
 - Let/Set coercion and operator truth tables are tracked in
-  [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
-  and still need machine-readable extraction;
+  [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md).
+  The first coercion seed rows are checked in at
+  [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv);
+  full truth-table extraction and canonical descriptor ids remain open;
 - `Array(...)` function lower-bound behavior needs explicit MS-VBAL plus Office
   oracle closure before specialization.
 

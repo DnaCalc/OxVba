@@ -365,7 +365,7 @@ Review result for this draft:
 | Area | Foundation/MS spec anchor | Required OxVba package fact | Current risk |
 |---|---|---|---|
 | Declared types and non-types | MS-VBAL table 2/table 3, segments around `SEG-000632`, `SEG-000653`; type-system doc | `VbaTypeId`, value-state space, carrier | Current code still lacks one central package registry. |
-| Let-coercion | MS-VBAL 5.5.1, spec items `00185..00201` | `CoercionDescriptor { kind: Let }` | Full truth table not yet extracted into package metadata. |
+| Let-coercion | MS-VBAL 5.5.1, spec items `00185..00201`; seed table [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv) | `CoercionDescriptor { kind: Let }` | First helper-backed seed rows exist, but canonical descriptor ids and full truth table extraction remain incomplete. |
 | Set-coercion | MS-VBAL 5.5.2, spec items `00202..00206` | `CoercionDescriptor { kind: Set }` | Object/class/interface/COM conformance must stay descriptor-backed. |
 | Operators | MS-VBAL 5.6.9, spec items `00219..00246`; `Option Compare` segments `SEG-001565..001571` | `OperatorSemanticsDescriptor` | Current VM helper behavior is not yet a complete spec table. |
 | Procedure signatures | MS-VBAL anchors `p:1418..1470`; `SEG-002047..002101` | `ProcedureSignatureDescriptor` and `ParameterDescriptor` | Existing metadata is useful but not full enough for package/JIT parity. |
@@ -376,8 +376,8 @@ Review result for this draft:
 
 Open follow-up:
 
-- extract a machine-readable Let/Set coercion table from MS-VBAL into the
-  validation matrix or a package-planning CSV;
+- expand the first machine-readable coercion seed table into the full MS-VBAL
+  Let/Set truth table and bind rows to package `CoercionDescriptor` ids;
 - build a compact operator truth table for numeric, string, Null, Empty,
   Error/CVErr, object, and Variant rows;
 - audit current compiler/VM metadata against the signature descriptors in

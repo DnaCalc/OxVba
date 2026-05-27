@@ -212,6 +212,36 @@ attempting full table coverage at once:
   `Let` context, `Property Get`/`Let`/`Set` shape, and late-bound dispatch
   descriptor.
 
+## Coercion Seed Table v1
+
+The first checked-in coercion seed table is:
+
+[`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv)
+
+This table is intentionally narrow. It records the current helper families that
+VM execution already depends on:
+
+- identity and selected numeric widening in `oxvba_runtime::coerce_to`;
+- `Empty` to numeric/Boolean/string helper behavior;
+- Boolean numeric coercion where `True` is `-1` and `False` is `0`;
+- string/BSTR conversion via `variant_to_vba_string`;
+- VM compatibility helpers for text, numeric, `i32`, and `f64` conversion;
+- `Null` propagation and `CVErr` arithmetic errors in current VM arithmetic;
+- truthiness used by VM branch predicates;
+- `Decimal` as a Variant subtype/runtime carrier, including Decimal-to-`f64`
+  compatibility and string display;
+- the known VMR-04 call-entry gap where `ByVal Long` into a declared `Double`
+  parameter is described by metadata but not yet applied at callee entry.
+
+The table uses `metadata-missing` even when a helper is VM-backed because rows
+are not yet canonical `CoercionDescriptor` package facts. The table also keeps
+helper-specific behavior separate when the current implementation has multiple
+conversion paths. For example, `variant_to_vba_string(Boolean)` returns
+`True`/`False`, while `runtime_variant_to_text(Boolean)` returns `-1`/`0` for
+several current VM helpers. A future descriptor-backed coercion pass must decide
+which source language context owns each path before routing execution through
+the table.
+
 ## Minimum Table Artifact
 
 Before full CSV automation, each seed table may be represented as a checked-in
