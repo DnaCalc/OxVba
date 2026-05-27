@@ -1,0 +1,7 @@
+id,file,expected_phase,expected_error_tokens,expected_vba_error,classification
+VMR04_DIAG_MISSING_REQUIRED,vmr04_diag_missing_required.bas,compile,missing required argument target,runtime-449,current-compiler-diagnostic
+VMR04_DIAG_TOO_MANY_ARGS,vmr04_diag_too_many_args.bas,compile,expects between 2 and 2 args;got 3,runtime-450,current-compiler-diagnostic
+VMR04_DIAG_UNKNOWN_NAMED_ARG,vmr04_diag_unknown_named_arg.bas,compile,has no parameter named missing,runtime-448,current-compiler-diagnostic
+VMR04_DIAG_DUPLICATE_MAPPING,vmr04_diag_duplicate_mapping.bas,compile,duplicate argument for parameter target,runtime-448,current-compiler-diagnostic
+VMR04_DIAG_POSITIONAL_AFTER_NAMED,vmr04_diag_positional_after_named.bas,compile,positional argument cannot follow named argument,runtime-450,current-compiler-diagnostic
+VMR04_DIAG_NAMED_PARAMARRAY,vmr04_diag_named_paramarray.bas,compile,named arguments are not supported for ParamArray parameter items,runtime-448,current-compiler-diagnostic

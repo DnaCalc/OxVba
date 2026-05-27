@@ -18,6 +18,16 @@ struct FixtureRow {
     expected_call_descriptor_tokens: Vec<String>,
 }
 
+#[derive(Debug)]
+struct DiagnosticFixtureRow {
+    id: String,
+    file: String,
+    expected_phase: String,
+    expected_error_tokens: Vec<String>,
+    expected_vba_error: String,
+    classification: String,
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -65,6 +75,36 @@ fn fixture_rows() -> Vec<FixtureRow> {
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
                     .collect(),
+            }
+        })
+        .collect()
+}
+
+fn diagnostic_fixture_rows() -> Vec<DiagnosticFixtureRow> {
+    let manifest = std::fs::read_to_string(fixture_root().join("diagnostic_manifest.csv"))
+        .expect("identity diagnostic fixture manifest should be readable");
+    manifest
+        .lines()
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let columns = line.split(',').collect::<Vec<_>>();
+            assert_eq!(
+                columns.len(),
+                6,
+                "identity diagnostic fixture manifest row should have 6 columns: {line}"
+            );
+            DiagnosticFixtureRow {
+                id: columns[0].to_string(),
+                file: columns[1].to_string(),
+                expected_phase: columns[2].to_string(),
+                expected_error_tokens: columns[3]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_vba_error: columns[4].to_string(),
+                classification: columns[5].to_string(),
             }
         })
         .collect()
@@ -368,7 +408,9 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 call_site.call_site_id
             );
             assert!(
-                call_site.call_site_descriptor_digest.starts_with("fnv1a64:"),
+                call_site
+                    .call_site_descriptor_digest
+                    .starts_with("fnv1a64:"),
                 "{} call-site descriptor digest should be explicit: {:?}",
                 row.id,
                 call_site
@@ -397,6 +439,56 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
             call_site_tokens.join("|")
+        );
+    }
+}
+
+#[test]
+fn vm_package_call_diagnostic_seed_fixtures_emit_current_compile_diagnostics() {
+    for row in diagnostic_fixture_rows() {
+        assert_eq!(
+            row.expected_phase, "compile",
+            "{} diagnostic fixture should currently be compile-phase evidence",
+            row.id
+        );
+        let source =
+            std::fs::read_to_string(fixture_root().join(&row.file)).unwrap_or_else(|err| {
+                panic!(
+                    "failed to read identity diagnostic fixture `{}`: {err}",
+                    row.file
+                )
+            });
+        let err = compile_with_runtime_metadata(&source)
+            .expect_err("identity diagnostic fixture should fail compilation");
+        let message = err.to_string();
+        for expected in &row.expected_error_tokens {
+            assert!(
+                message.contains(expected),
+                "{} diagnostic should include `{}`; got: {}",
+                row.id,
+                expected,
+                message
+            );
+        }
+        assert!(
+            matches!(
+                row.expected_vba_error.as_str(),
+                "runtime-448" | "runtime-449" | "runtime-450"
+            ),
+            "{} diagnostic fixture should carry intended VBA error classification: {:?}",
+            row.id,
+            row
+        );
+        assert!(
+            row.classification == "current-compiler-diagnostic",
+            "{} diagnostic fixture should classify the current phase explicitly: {:?}",
+            row.id,
+            row
+        );
+
+        println!(
+            "VM_PACKAGE_CALL_DIAGNOSTIC id={} phase={} intended_vba_error={} classification={} diagnostic={}",
+            row.id, row.expected_phase, row.expected_vba_error, row.classification, message
         );
     }
 }

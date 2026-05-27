@@ -49,6 +49,14 @@ property call path does not compile as a callable procedure in this fixture
 shape; that residual remains classified with the object/default-member call
 descriptor work.
 
+`VMR04_CALL_DIAGNOSTIC_DESCRIPTOR_BASELINE` is the positive VM-runnable
+baseline for named argument mapping and the currently supported named fixed
+argument plus positional `ParamArray` pack shape. `diagnostic_manifest.csv`
+then records current compile-time diagnostics for missing required arguments,
+wrong argument counts, unknown named arguments, duplicate mappings, positional
+after named, and named `ParamArray` targets, with the intended 448/449/450
+classification kept as evidence for later descriptor-driven call binding.
+
 The durable classification for those call-shape gaps lives in
 `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` under
 `VMR-04 Call Fixture Gap Classification`. Keep this fixture README descriptive;
