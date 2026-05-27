@@ -143,6 +143,7 @@ pub struct ProcedureRuntimeMetadata {
     pub call_sites: Vec<CallSiteDescriptor>,
     pub array_shapes: Vec<ArrayShapeDescriptor>,
     pub udt_types: Vec<UdtTypeDescriptor>,
+    pub object_types: Vec<ObjectTypeDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -224,6 +225,71 @@ pub struct UdtCleanupDescriptor {
     pub owns_object_ref: bool,
     pub owns_safearray: bool,
     pub owns_variant: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ObjectTypeDescriptor {
+    pub descriptor_id: String,
+    pub type_name: String,
+    pub kind: ObjectTypeDescriptorKind,
+    pub carrier: RuntimeCarrierKind,
+    pub initial_state: SlotInitialState,
+    pub activation: ObjectActivationDescriptor,
+    pub event_binding: ObjectEventBindingDescriptor,
+    pub default_member: ObjectDefaultMemberDescriptor,
+    pub support: ObjectDescriptorSupport,
+    pub instances: Vec<ObjectInstanceDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ObjectInstanceDescriptor {
+    pub name: String,
+    pub slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectTypeDescriptorKind {
+    Object,
+    VbaClass,
+    VbaInterface,
+    ComClass,
+    ComInterface,
+    WithEventsObject,
+    AsNewObject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectActivationDescriptor {
+    None,
+    AsNew,
+    CreateObjectProgId { prog_id: String },
+    HostProvided,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectEventBindingDescriptor {
+    None,
+    WithEvents {
+        binding_token: Option<i32>,
+        event_source: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectDefaultMemberDescriptor {
+    Unknown,
+    NoDefaultMember,
+    HasDefaultMember,
+    DefaultInstance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub enum ObjectDescriptorSupport {
+    VmRunnable,
+    VmRunnableHosted,
+    MetadataOnly,
+    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -688,6 +754,10 @@ impl ProcedureRuntimeMetadata {
 
     pub fn udt_type_descriptors(&self) -> Vec<UdtTypeDescriptor> {
         self.udt_types.clone()
+    }
+
+    pub fn object_type_descriptors(&self) -> Vec<ObjectTypeDescriptor> {
+        self.object_types.clone()
     }
 
     pub(crate) fn legacy_declared_type_for_slot(
@@ -1283,6 +1353,10 @@ pub fn emit_bytecode_with_runtime_metadata(
                 &proc_slots[entry_idx],
             ),
             udt_types: build_udt_type_descriptors(&procedures[entry_idx], &proc_slots[entry_idx]),
+            object_types: build_object_type_descriptors(
+                &procedures[entry_idx],
+                &proc_slots[entry_idx],
+            ),
         },
     );
 
@@ -1386,6 +1460,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                 call_sites,
                 array_shapes: build_array_shape_descriptors(proc, &proc_slots[idx]),
                 udt_types: build_udt_type_descriptors(proc, &proc_slots[idx]),
+                object_types: build_object_type_descriptors(proc, &proc_slots[idx]),
             },
         );
     }
@@ -1722,6 +1797,45 @@ fn udt_cleanup_descriptor(fields: &[UdtFieldDescriptor]) -> UdtCleanupDescriptor
 
 fn udt_descriptor_id(type_name: &str) -> String {
     format!("udt:{}", type_name.to_ascii_lowercase())
+}
+
+fn build_object_type_descriptors(
+    proc: &BoundProcedure,
+    proc_slots: &HashMap<String, usize>,
+) -> Vec<ObjectTypeDescriptor> {
+    let mut instances = proc
+        .declarations
+        .iter()
+        .filter(|name| {
+            matches!(
+                proc.declaration_types.get(name.as_str()),
+                Some(BoundType::Object)
+            )
+        })
+        .map(|name| ObjectInstanceDescriptor {
+            name: name.clone(),
+            slot: proc_slots.get(name.as_str()).copied(),
+        })
+        .collect::<Vec<_>>();
+    instances.sort_by(|left, right| left.name.cmp(&right.name));
+    instances.dedup_by(|left, right| left.name.eq_ignore_ascii_case(&right.name));
+
+    if instances.is_empty() {
+        Vec::new()
+    } else {
+        vec![ObjectTypeDescriptor {
+            descriptor_id: "object:object".to_string(),
+            type_name: "Object".to_string(),
+            kind: ObjectTypeDescriptorKind::Object,
+            carrier: RuntimeCarrierKind::ObjectRef,
+            initial_state: SlotInitialState::Nothing,
+            activation: ObjectActivationDescriptor::None,
+            event_binding: ObjectEventBindingDescriptor::None,
+            default_member: ObjectDefaultMemberDescriptor::NoDefaultMember,
+            support: ObjectDescriptorSupport::VmRunnable,
+            instances,
+        }]
+    }
 }
 
 fn is_compiler_generated_array_element_slot(proc: &BoundProcedure, name: &str) -> bool {

@@ -90,6 +90,12 @@ truth still lives in compiler internals, VM behavior, runtime helper contracts,
 or boundary-specific descriptors. The next evolution is to make those facts
 explicit, versioned, and consumable by both VM and JIT.
 
+The current additive descriptor surface already includes first slot,
+signature, call-site, array, UDT, and generic object descriptor evidence, plus
+runtime project evidence for VM-capable class/interface and COM `WithEvents`
+routes. Those facts are evidence and package scaffolding, not a claim that VM
+object/member execution is descriptor-driven yet.
+
 ## Required Package Contents
 
 A complete executable semantic package must contain, or reference by stable

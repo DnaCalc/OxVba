@@ -108,6 +108,7 @@ fn make_runtime_metadata(
         call_sites: Vec::new(),
         array_shapes: Vec::new(),
         udt_types: Vec::new(),
+        object_types: Vec::new(),
     }
 }
 

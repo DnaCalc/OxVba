@@ -11,11 +11,12 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArrayShapeDescriptor, Bytecode,
-    CallSiteDescriptor, Instruction, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
-    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
+    CallSiteDescriptor, Instruction, ObjectTypeDescriptor, OptionalDefaultValue,
+    OptionalParameterDescriptor, OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata,
+    ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor, ProjectComWithEventsRoute,
+    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+    ProjectDynamicParamRoute, ResolvedParameterMechanism, SlotTypeDescriptor, UdtFieldDescriptor,
+    UdtTypeDescriptor,
     bytecode::{
         ExternalCallWriteback, ExternalCallWritebackKind, RuntimeArrayElementType,
         StringCompareMode,
@@ -180,6 +181,8 @@ impl<'a> VmExecutionPackage<'a> {
         let array_shape_evidence =
             collect_array_shape_evidence(self.procedure_metadata, runtime_slots);
         let udt_descriptor_evidence = collect_udt_descriptor_evidence(self.procedure_metadata);
+        let object_descriptor_evidence =
+            collect_object_descriptor_evidence(self.procedure_metadata);
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
             package_digest,
@@ -191,6 +194,7 @@ impl<'a> VmExecutionPackage<'a> {
             call_site_evidence,
             array_shape_evidence,
             udt_descriptor_evidence,
+            object_descriptor_evidence,
         }
     }
 
@@ -221,6 +225,13 @@ impl<'a> VmExecutionPackage<'a> {
         self.procedure_metadata
             .iter()
             .map(|(name, metadata)| (name.clone(), metadata.udt_type_descriptors()))
+            .collect()
+    }
+
+    pub fn object_type_descriptors(&self) -> BTreeMap<String, Vec<ObjectTypeDescriptor>> {
+        self.procedure_metadata
+            .iter()
+            .map(|(name, metadata)| (name.clone(), metadata.object_type_descriptors()))
             .collect()
     }
 }
@@ -276,6 +287,7 @@ pub struct VmPackageIdentityEvidence {
     pub call_site_evidence: Vec<VmCallSiteDescriptorEvidence>,
     pub array_shape_evidence: Vec<VmArrayShapeEvidence>,
     pub udt_descriptor_evidence: Vec<VmUdtDescriptorEvidence>,
+    pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,6 +324,15 @@ pub struct VmUdtDescriptorEvidence {
     pub type_name: String,
     pub udt_descriptor_id: String,
     pub udt_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmObjectDescriptorEvidence {
+    pub procedure_name: String,
+    pub type_name: String,
+    pub object_descriptor_id: String,
+    pub object_descriptor_digest: String,
     pub observations: Vec<String>,
 }
 
@@ -510,6 +531,182 @@ fn udt_field_observations(field: &UdtFieldDescriptor) -> Vec<String> {
         ));
     }
     observations
+}
+
+fn collect_object_descriptor_evidence(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<VmObjectDescriptorEvidence> {
+    let mut evidence = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .object_types
+                .iter()
+                .map(move |descriptor| VmObjectDescriptorEvidence {
+                    procedure_name: metadata.procedure_name.clone(),
+                    type_name: descriptor.type_name.clone(),
+                    object_descriptor_id: descriptor.descriptor_id.clone(),
+                    object_descriptor_digest: digest_debug("object-descriptor", descriptor),
+                    observations: object_descriptor_observations(descriptor),
+                })
+        })
+        .collect::<Vec<_>>();
+    sort_object_descriptor_evidence(&mut evidence);
+    evidence
+}
+
+fn object_descriptor_observations(descriptor: &ObjectTypeDescriptor) -> Vec<String> {
+    let mut observations = vec![
+        format!("descriptor-id={}", descriptor.descriptor_id),
+        format!("kind={}", debug_token(&descriptor.kind)),
+        format!("carrier={}", debug_token(&descriptor.carrier)),
+        format!("initial={}", debug_token(&descriptor.initial_state)),
+        format!("activation={}", debug_token(&descriptor.activation)),
+        format!("event-binding={}", debug_token(&descriptor.event_binding)),
+        format!("default-member={}", debug_token(&descriptor.default_member)),
+        format!("support={}", debug_token(&descriptor.support)),
+    ];
+    for instance in &descriptor.instances {
+        observations.push(format!(
+            "instance:{}:{}",
+            instance.name.to_ascii_lowercase(),
+            if instance.slot.is_some() {
+                "slot-known"
+            } else {
+                "slot-missing"
+            }
+        ));
+        observations.push(format!(
+            "instance:{}:initial={}",
+            instance.name.to_ascii_lowercase(),
+            debug_token(&descriptor.initial_state)
+        ));
+        observations.push(format!(
+            "instance:{}:carrier={}",
+            instance.name.to_ascii_lowercase(),
+            debug_token(&descriptor.carrier)
+        ));
+    }
+    observations
+}
+
+fn collect_runtime_object_descriptor_evidence(
+    project_dynamic_objects: &HashMap<i32, ProjectDynamicObjectState>,
+    project_com_withevents_routes: &HashMap<i32, Vec<ProjectComWithEventsRoute>>,
+) -> Vec<VmObjectDescriptorEvidence> {
+    let mut evidence = project_dynamic_objects
+        .values()
+        .map(|state| {
+            let route = &state.route;
+            let descriptor_id = format!(
+                "class:{}:{}",
+                route.project_name.to_ascii_lowercase(),
+                route.module_name.to_ascii_lowercase()
+            );
+            VmObjectDescriptorEvidence {
+                procedure_name: "<project-runtime>".to_string(),
+                type_name: route.module_name.clone(),
+                object_descriptor_id: descriptor_id.clone(),
+                object_descriptor_digest: digest_debug("project-dynamic-object", route),
+                observations: project_dynamic_object_observations(&descriptor_id, state),
+            }
+        })
+        .collect::<Vec<_>>();
+    for routes in project_com_withevents_routes.values() {
+        for route in routes {
+            let descriptor_id = format!(
+                "com-withevents:{}:{}",
+                route.prog_id_name.to_ascii_lowercase(),
+                route.binding_token
+            );
+            evidence.push(VmObjectDescriptorEvidence {
+                procedure_name: "<project-runtime>".to_string(),
+                type_name: route.prog_id_name.clone(),
+                object_descriptor_id: descriptor_id.clone(),
+                object_descriptor_digest: digest_debug("project-com-withevents-route", route),
+                observations: project_com_withevents_observations(&descriptor_id, route),
+            });
+        }
+    }
+    sort_object_descriptor_evidence(&mut evidence);
+    evidence
+}
+
+fn project_dynamic_object_observations(
+    descriptor_id: &str,
+    state: &ProjectDynamicObjectState,
+) -> Vec<String> {
+    let route = &state.route;
+    let mut observations = vec![
+        format!("descriptor-id={descriptor_id}"),
+        "kind=vbaclass".to_string(),
+        "carrier=objectref".to_string(),
+        "activation=hostprovided".to_string(),
+        "event-binding=none".to_string(),
+        "support=vmrunnablehosted".to_string(),
+        "default-member=metadata-missing".to_string(),
+        format!("project={}", route.project_name.to_ascii_lowercase()),
+        format!("module={}", route.module_name.to_ascii_lowercase()),
+        format!("class={}", route.module_name.to_ascii_lowercase()),
+        format!("object-ref={}", state.object.raw()),
+        format!(
+            "interface:_{}:kind=dispatch",
+            route.module_name.to_ascii_lowercase()
+        ),
+    ];
+    for interface in &route.implements_interfaces {
+        observations.push(format!(
+            "interface:{}:kind=implemented",
+            interface.to_ascii_lowercase()
+        ));
+    }
+    for member in &route.members {
+        let member_name = member.member_name.to_ascii_lowercase();
+        observations.push(format!(
+            "member:{member_name}:kind={}",
+            debug_token(&member.kind)
+        ));
+        observations.push(format!(
+            "member:{member_name}:default={}",
+            member.is_default_member
+        ));
+        if let Some(dispatch_id) = member.dispatch_id.or(member.known_dispatch_token) {
+            observations.push(format!("member:{member_name}:dispatch-id={dispatch_id}"));
+        }
+        observations.push(format!(
+            "member:{member_name}:visible-param-count={}",
+            member.visible_param_count
+        ));
+    }
+    observations
+}
+
+fn project_com_withevents_observations(
+    descriptor_id: &str,
+    route: &ProjectComWithEventsRoute,
+) -> Vec<String> {
+    vec![
+        format!("descriptor-id={descriptor_id}"),
+        "kind=witheventsobject".to_string(),
+        "carrier=objectref".to_string(),
+        "activation=hostprovided".to_string(),
+        "support=vmrunnablehosted".to_string(),
+        format!("event-source={}", route.prog_id_name.to_ascii_lowercase()),
+        format!("binding-token={}", route.binding_token),
+        format!("event-token={}", route.event_token),
+        format!("event={}", route.event_name.to_ascii_lowercase()),
+        format!("handler={}", route.handler_symbol.to_ascii_lowercase()),
+    ]
+}
+
+fn sort_object_descriptor_evidence(evidence: &mut [VmObjectDescriptorEvidence]) {
+    evidence.sort_by(|left, right| {
+        left.procedure_name
+            .to_ascii_lowercase()
+            .cmp(&right.procedure_name.to_ascii_lowercase())
+            .then(left.type_name.cmp(&right.type_name))
+            .then(left.object_descriptor_id.cmp(&right.object_descriptor_id))
+    });
 }
 
 fn collect_call_site_descriptor_evidence(
@@ -1097,6 +1294,21 @@ impl Vm {
         self.last_package_identity_evidence.as_ref()
     }
 
+    fn package_identity_evidence_with_runtime_context(
+        &self,
+        package: &VmExecutionPackage<'_>,
+    ) -> VmPackageIdentityEvidence {
+        let mut evidence = package.identity_evidence_with_runtime_slots(&self.registers.registers);
+        evidence
+            .object_descriptor_evidence
+            .extend(collect_runtime_object_descriptor_evidence(
+                &self.project_dynamic_objects,
+                &self.project_com_withevents_routes,
+            ));
+        sort_object_descriptor_evidence(&mut evidence.object_descriptor_evidence);
+        evidence
+    }
+
     pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
         self.project_dynamic_dispatch_caches.clear();
         self.project_dynamic_objects = routes
@@ -1386,8 +1598,7 @@ impl Vm {
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
         let result = self.execute_with_typed_fastpaths(package.bytecode, typed_fastpaths);
-        let identity_evidence =
-            package.identity_evidence_with_runtime_slots(&self.registers.registers);
+        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }
@@ -1443,8 +1654,7 @@ impl Vm {
         self.load_execution_package_metadata(package);
         let result =
             self.invoke_procedure_with_i32_args(package.bytecode, entry_pc, arg_slots, args);
-        let identity_evidence =
-            package.identity_evidence_with_runtime_slots(&self.registers.registers);
+        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }
@@ -1542,8 +1752,7 @@ impl Vm {
         self.load_execution_package_metadata(package);
         let result =
             self.invoke_procedure_with_variants(package.bytecode, entry_pc, arg_slots, args);
-        let identity_evidence =
-            package.identity_evidence_with_runtime_slots(&self.registers.registers);
+        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
     }

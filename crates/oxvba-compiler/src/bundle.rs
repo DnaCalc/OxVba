@@ -14,7 +14,7 @@ use crate::emit::{
     OptionalParameterDescriptor, ParamArrayDescriptor, ParameterDescriptor, ParameterPassingMode,
     ParameterRole, ProcedureKindDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
     ProcedureRuntimeSlotMetadata, ProcedureSignatureDescriptor, ResolvedParameterMechanism,
-    SourceParameterMechanism, VbaTypeId, legacy_procedure_signature_descriptor,
+    SourceParameterMechanism, UdtTypeDescriptor, VbaTypeId, legacy_procedure_signature_descriptor,
 };
 use crate::project::{
     CallableCapability, CallingShape, HostProcedureExport, InvocationLane, ModuleDescriptor,
@@ -28,7 +28,7 @@ use crate::project::{
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
 /// Current bundle format version.
-const FORMAT_VERSION: u32 = 9;
+const FORMAT_VERSION: u32 = 10;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
 
@@ -321,6 +321,21 @@ struct LegacyOxBundleV8 {
     descriptor_inventory: Option<DescriptorInventory>,
 }
 
+/// v9 bundle layout before procedure object descriptors were added.
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyOxBundleV9 {
+    bytecode: Bytecode,
+    procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadataV9>,
+    manifest_snapshot: Option<ManifestSnapshot>,
+    export_inventory: Option<ExportInventory>,
+    source_hashes: Option<BTreeMap<String, [u8; 32]>>,
+    toolchain_fingerprint: Option<ToolchainFingerprint>,
+    event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
+    dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
+    descriptor_inventory: Option<DescriptorInventory>,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyProcedureRuntimeSlotMetadata {
     name: String,
@@ -381,6 +396,7 @@ impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
             call_sites: Vec::new(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         };
         let slots = legacy
             .slots
@@ -416,6 +432,7 @@ impl From<LegacyProcedureRuntimeMetadata> for ProcedureRuntimeMetadata {
             call_sites: Vec::new(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         }
     }
 }
@@ -463,6 +480,7 @@ impl From<LegacyProcedureRuntimeMetadataV4> for ProcedureRuntimeMetadata {
             call_sites: Vec::new(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         }
     }
 }
@@ -526,6 +544,7 @@ impl From<LegacyProcedureRuntimeMetadataV5> for ProcedureRuntimeMetadata {
             call_sites: Vec::new(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         }
     }
 }
@@ -566,6 +585,7 @@ impl From<LegacyProcedureRuntimeMetadataV6> for ProcedureRuntimeMetadata {
             call_sites: Vec::new(),
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         }
     }
 }
@@ -607,6 +627,7 @@ impl From<LegacyProcedureRuntimeMetadataV7> for ProcedureRuntimeMetadata {
             call_sites: legacy.call_sites,
             array_shapes: Vec::new(),
             udt_types: Vec::new(),
+            object_types: Vec::new(),
         }
     }
 }
@@ -649,6 +670,51 @@ impl From<LegacyProcedureRuntimeMetadataV8> for ProcedureRuntimeMetadata {
             call_sites: legacy.call_sites,
             array_shapes: legacy.array_shapes,
             udt_types: Vec::new(),
+            object_types: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+struct LegacyProcedureRuntimeMetadataV9 {
+    module_name: String,
+    procedure_name: String,
+    entry_pc: usize,
+    source_line_start: usize,
+    source_line_end: usize,
+    statement_line_numbers: Vec<usize>,
+    statement_entry_pcs: Vec<usize>,
+    slots: Vec<ProcedureRuntimeSlotMetadata>,
+    param_slots: Vec<usize>,
+    return_slot: Option<usize>,
+    param_types: Vec<crate::bytecode::DeclareParamType>,
+    return_type: Option<crate::bytecode::DeclareParamType>,
+    signature: ProcedureSignatureDescriptor,
+    call_sites: Vec<CallSiteDescriptor>,
+    array_shapes: Vec<ArrayShapeDescriptor>,
+    udt_types: Vec<UdtTypeDescriptor>,
+}
+
+impl From<LegacyProcedureRuntimeMetadataV9> for ProcedureRuntimeMetadata {
+    fn from(legacy: LegacyProcedureRuntimeMetadataV9) -> Self {
+        ProcedureRuntimeMetadata {
+            module_name: legacy.module_name,
+            procedure_name: legacy.procedure_name,
+            entry_pc: legacy.entry_pc,
+            source_line_start: legacy.source_line_start,
+            source_line_end: legacy.source_line_end,
+            statement_line_numbers: legacy.statement_line_numbers,
+            statement_entry_pcs: legacy.statement_entry_pcs,
+            slots: legacy.slots,
+            param_slots: legacy.param_slots,
+            return_slot: legacy.return_slot,
+            param_types: legacy.param_types,
+            return_type: legacy.return_type,
+            signature: legacy.signature,
+            call_sites: legacy.call_sites,
+            array_shapes: legacy.array_shapes,
+            udt_types: legacy.udt_types,
+            object_types: Vec::new(),
         }
     }
 }
@@ -934,10 +1000,11 @@ impl OxBundle {
             && version != 6
             && version != 7
             && version != 8
+            && version != 9
             && version != FORMAT_VERSION
         {
             return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, or {FORMAT_VERSION})"
+                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, or {FORMAT_VERSION})"
             ));
         }
 
@@ -1083,6 +1150,26 @@ impl OxBundle {
             let legacy: LegacyOxBundleV8 =
                 rkyv::from_bytes::<LegacyOxBundleV8, rkyv::rancor::Error>(&aligned)
                     .map_err(|e| format!("deserialize v8: {e}"))?;
+            Ok(OxBundle {
+                bytecode: legacy.bytecode,
+                procedure_metadata: legacy
+                    .procedure_metadata
+                    .into_iter()
+                    .map(|(name, metadata)| (name, metadata.into()))
+                    .collect(),
+                manifest_snapshot: legacy.manifest_snapshot,
+                export_inventory: legacy.export_inventory,
+                source_hashes: legacy.source_hashes,
+                toolchain_fingerprint: legacy.toolchain_fingerprint,
+                event_dispatch_bindings: legacy.event_dispatch_bindings,
+                com_withevents_routes: legacy.com_withevents_routes,
+                dynamic_object_routes: legacy.dynamic_object_routes,
+                descriptor_inventory: legacy.descriptor_inventory,
+            })
+        } else if version == 9 {
+            let legacy: LegacyOxBundleV9 =
+                rkyv::from_bytes::<LegacyOxBundleV9, rkyv::rancor::Error>(&aligned)
+                    .map_err(|e| format!("deserialize v9: {e}"))?;
             Ok(OxBundle {
                 bytecode: legacy.bytecode,
                 procedure_metadata: legacy
@@ -1558,6 +1645,7 @@ mod tests {
                 call_sites: Vec::new(),
                 array_shapes: Vec::new(),
                 udt_types: Vec::new(),
+                object_types: Vec::new(),
             },
         );
         OxBundle::new(bytecode, metadata)
@@ -1583,7 +1671,7 @@ mod tests {
     }
 
     #[test]
-    fn v9_roundtrip_preserves_call_site_array_shape_and_udt_descriptors() {
+    fn v10_roundtrip_preserves_call_site_array_udt_and_object_descriptors() {
         let source = "Type Point\n\
                       X As Long\n\
                       Caption As String\n\
@@ -1592,6 +1680,7 @@ mod tests {
                       Dim x As Long\n\
                       Dim a(1 To 2) As Long\n\
                       Dim p As Point\n\
+                      Dim o As Object\n\
                       x = 1\n\
                       a(1) = x\n\
                       p.X = x\n\
@@ -1627,6 +1716,10 @@ mod tests {
         assert_eq!(udt_types[0].fields.len(), 2);
         assert_eq!(udt_types[0].fields[0].name, "x");
         assert_eq!(udt_types[0].fields[1].name, "caption");
+        let object_types = &restored.procedure_metadata["main"].object_types;
+        assert_eq!(object_types.len(), 1);
+        assert_eq!(object_types[0].descriptor_id, "object:object");
+        assert_eq!(object_types[0].instances[0].name, "o");
     }
 
     #[test]
@@ -1637,11 +1730,11 @@ mod tests {
     }
 
     #[test]
-    fn header_version_is_9() {
+    fn header_version_is_10() {
         let bundle = sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
     }
 
     #[test]
@@ -2169,6 +2262,73 @@ mod tests {
         assert!(
             metadata.udt_types.is_empty(),
             "v8 bundles predate UDT descriptor rows and must upgrade with an explicit empty set"
+        );
+        assert!(
+            metadata.object_types.is_empty(),
+            "v8 bundles predate object descriptor rows and must upgrade with an explicit empty set"
+        );
+    }
+
+    #[test]
+    fn v9_backward_compat_adds_empty_object_descriptor_rows() {
+        let source = "Sub Main()\n\
+                      Dim o As Object\n\
+                      End Sub";
+        let (bytecode, metadata) =
+            crate::compile_with_runtime_metadata(source).expect("compile should succeed");
+        let procedure_metadata = metadata
+            .into_iter()
+            .map(|(name, metadata)| {
+                (
+                    name,
+                    LegacyProcedureRuntimeMetadataV9 {
+                        module_name: metadata.module_name,
+                        procedure_name: metadata.procedure_name,
+                        entry_pc: metadata.entry_pc,
+                        source_line_start: metadata.source_line_start,
+                        source_line_end: metadata.source_line_end,
+                        statement_line_numbers: metadata.statement_line_numbers,
+                        statement_entry_pcs: metadata.statement_entry_pcs,
+                        slots: metadata.slots,
+                        param_slots: metadata.param_slots,
+                        return_slot: metadata.return_slot,
+                        param_types: metadata.param_types,
+                        return_type: metadata.return_type,
+                        signature: metadata.signature,
+                        call_sites: metadata.call_sites,
+                        array_shapes: metadata.array_shapes,
+                        udt_types: metadata.udt_types,
+                    },
+                )
+            })
+            .collect();
+        let legacy = LegacyOxBundleV9 {
+            bytecode,
+            procedure_metadata,
+            manifest_snapshot: None,
+            export_inventory: None,
+            source_hashes: None,
+            toolchain_fingerprint: None,
+            event_dispatch_bindings: None,
+            com_withevents_routes: None,
+            dynamic_object_routes: None,
+            descriptor_inventory: None,
+        };
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v9");
+        let payload_len = payload.len() as u32;
+
+        let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&9u32.to_le_bytes());
+        data.extend_from_slice(&payload_len.to_le_bytes());
+        data.extend_from_slice(&[0u8; 4]);
+        data.extend_from_slice(&payload);
+
+        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v9");
+        let metadata = &restored.procedure_metadata["main"];
+        assert!(
+            metadata.object_types.is_empty(),
+            "v9 bundles predate object descriptor rows and must upgrade with an explicit empty set"
         );
     }
 

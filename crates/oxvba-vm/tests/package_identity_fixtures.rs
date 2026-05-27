@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use oxvba_compiler::{OxBundle, compile_with_runtime_metadata};
+use oxvba_compiler::{
+    ModuleKind, OxBundle, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    compile_project, compile_with_runtime_metadata, module_unit_from_source,
+};
 use oxvba_runtime::Variant;
 use oxvba_vm::{
     Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin,
@@ -18,6 +21,7 @@ struct FixtureRow {
     expected_call_descriptor_tokens: Vec<String>,
     expected_array_shape_tokens: Vec<String>,
     expected_udt_descriptor_tokens: Vec<String>,
+    expected_object_descriptor_tokens: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -54,8 +58,8 @@ fn fixture_rows() -> Vec<FixtureRow> {
             let columns = line.split(',').collect::<Vec<_>>();
             assert_eq!(
                 columns.len(),
-                9,
-                "identity fixture manifest row should have 9 columns: {line}"
+                10,
+                "identity fixture manifest row should have 10 columns: {line}"
             );
             FixtureRow {
                 id: columns[0].to_string(),
@@ -83,6 +87,11 @@ fn fixture_rows() -> Vec<FixtureRow> {
                     .map(|token| token.trim().to_string())
                     .collect(),
                 expected_udt_descriptor_tokens: columns[8]
+                    .split(';')
+                    .filter(|token| !token.trim().is_empty())
+                    .map(|token| token.trim().to_string())
+                    .collect(),
+                expected_object_descriptor_tokens: columns[9]
                     .split(';')
                     .filter(|token| !token.trim().is_empty())
                     .map(|token| token.trim().to_string())
@@ -362,6 +371,42 @@ fn udt_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String 
     tokens.join("|")
 }
 
+fn object_descriptor_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .object_descriptor_evidence
+        .iter()
+        .flat_map(|object| {
+            object.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}:{}",
+                    object.procedure_name.to_ascii_lowercase(),
+                    object.type_name.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn object_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .object_descriptor_evidence
+        .iter()
+        .map(|object| {
+            format!(
+                "{}:{}={}",
+                object.procedure_name.to_ascii_lowercase(),
+                object.type_name.to_ascii_lowercase(),
+                object.object_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -441,6 +486,16 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 row.id,
                 expected_udt_descriptor,
                 udt_descriptor_tokens
+            );
+        }
+        let object_descriptor_tokens = object_descriptor_observation_tokens(evidence);
+        for expected_object_descriptor in &row.expected_object_descriptor_tokens {
+            assert!(
+                object_descriptor_tokens.contains(expected_object_descriptor),
+                "{} object descriptor evidence should include `{}`; got: {:?}",
+                row.id,
+                expected_object_descriptor,
+                object_descriptor_tokens
             );
         }
         assert_eq!(sorted_procedure_names(evidence), {
@@ -562,9 +617,31 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 udt_descriptor
             );
         }
+        for object_descriptor in &evidence.object_descriptor_evidence {
+            assert!(
+                object_descriptor.object_descriptor_id.contains(':'),
+                "{} object descriptor id should be explicit: {:?}",
+                row.id,
+                object_descriptor
+            );
+            assert!(
+                object_descriptor
+                    .object_descriptor_digest
+                    .starts_with("fnv1a64:"),
+                "{} object descriptor digest should be explicit: {:?}",
+                row.id,
+                object_descriptor
+            );
+            assert!(
+                !object_descriptor.observations.is_empty(),
+                "{} object descriptor evidence should classify each descriptor: {:?}",
+                row.id,
+                object_descriptor
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -578,11 +655,86 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             call_site_descriptor_digest_tokens(evidence),
             array_shape_digest_tokens(evidence),
             udt_descriptor_digest_tokens(evidence),
+            object_descriptor_digest_tokens(evidence),
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
             call_site_tokens.join("|"),
             array_shape_tokens.join("|"),
-            udt_descriptor_tokens.join("|")
+            udt_descriptor_tokens.join("|"),
+            object_descriptor_tokens.join("|")
+        );
+    }
+}
+
+#[test]
+fn vm_project_object_descriptor_evidence_records_class_interface_and_com_withevents_routes() {
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New ThingImpl\nEnd Sub",
+    )
+    .expect("main module should parse");
+    let interface_module = module_unit_from_source(
+        "IThing",
+        ModuleKind::Class,
+        "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+    )
+    .expect("interface module should parse");
+    let impl_module = module_unit_from_source(
+        "ThingImpl",
+        ModuleKind::Class,
+        "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nEnd Sub",
+    )
+    .expect("implementation module should parse");
+    let sink_module = module_unit_from_source(
+        "Sink",
+        ModuleKind::Class,
+        "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As OxVba.TestEventServer\nPublic Sub Attach(ByVal value As Object)\nSet src = value\nEnd Sub\nPrivate Sub src_OnValueChanged(ByVal value)\nCall MainModule.Main\nEnd Sub",
+    )
+    .expect("sink module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, interface_module, impl_module, sink_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+    };
+    let compiled =
+        compile_project(&manifest).expect("project object descriptor seed should compile");
+    assert!(
+        !compiled.project_dynamic_objects.is_empty(),
+        "class/interface object route metadata should be present"
+    );
+    assert!(
+        !compiled.project_com_withevents_routes.is_empty(),
+        "imported COM WithEvents route metadata should be present"
+    );
+
+    let package = VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+    let mut vm = Vm::default();
+    vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+    vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
+    vm.execute_package(&package)
+        .expect("project package should execute");
+    let evidence = vm
+        .package_identity_evidence()
+        .expect("project package evidence should be recorded");
+    let tokens = object_descriptor_observation_tokens(evidence);
+    for expected in [
+        "<project-runtime>:thingimpl:descriptor-id=class:projecta:thingimpl",
+        "<project-runtime>:thingimpl:kind=vbaclass",
+        "<project-runtime>:thingimpl:interface:ithing:kind=implemented",
+        "<project-runtime>:oxvba.testeventserver:kind=witheventsobject",
+        "<project-runtime>:oxvba.testeventserver:event-source=oxvba.testeventserver",
+        "<project-runtime>:oxvba.testeventserver:handler=pmr_projecta_sink_src_onvaluechanged",
+    ] {
+        assert!(
+            tokens.contains(&expected.to_string()),
+            "object descriptor evidence should include `{expected}`; got: {tokens:?}"
         );
     }
 }

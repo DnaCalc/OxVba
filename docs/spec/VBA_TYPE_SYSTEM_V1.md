@@ -592,10 +592,14 @@ Current implementation anchors:
   rows for resolver-known arrays, including rank, declared bounds, storage
   kind, `Option Base`, element type, and element carrier; and first
   `UdtTypeDescriptor` rows for nominal UDT ids, instances, fields, nested UDT
-  references, fixed strings, fixed array fields, aliases, and cleanup flags.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v9 serializes the
-  populated slot, signature, seed call-site, array-shape, and UDT metadata and
-  upgrades v1/v2/v3/v4/v5/v6/v7/v8 bundles into the current descriptor shape.
+  references, fixed strings, fixed array fields, aliases, and cleanup flags;
+  and first `ObjectTypeDescriptor` rows for generic `Object` slots with
+  `Nothing` initial state, `ObjectRef` carrier, activation/event/default
+  member policy, support classification, and per-slot instances.
+- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v10 serializes the
+  populated slot, signature, seed call-site, array-shape, UDT, and object
+  metadata and upgrades v1/v2/v3/v4/v5/v6/v7/v8/v9 bundles into the current
+  descriptor shape.
 - `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
   metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
   current slot descriptor view and
@@ -606,7 +610,10 @@ Current implementation anchors:
   descriptor rows, signature/call observation rows for current seed `CallProc`
   lowering compared with signature metadata, and call-site descriptor evidence
   rows for the first VMR-04 fixtures, plus array-shape and UDT descriptor
-  evidence for VMR-05 fixtures.
+  evidence for VMR-05 fixtures; object descriptor evidence for generic object
+  slots; and runtime project evidence for VM-capable class/interface dynamic
+  object routes and imported COM `WithEvents` routes when those route tables
+  are supplied.
 - `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
   value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
   declared `Variant`, the current flattened UDT field-alias/base-slot shape,
@@ -620,7 +627,10 @@ Current implementation anchors:
   dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
   carrier facts, the current fixed-array base-slot limitation, and UDT
   descriptor facts for nested UDTs, fixed strings, fixed array fields, aliases,
-  and cleanup ownership flags.
+  cleanup ownership flags, and generic `Object` descriptor facts. A companion
+  project fixture asserts source-project class route identity, implemented
+  interface alias identity, and imported COM `WithEvents` route identity for
+  current VM-capable route tables.
 
 Known development gaps:
 
@@ -639,20 +649,21 @@ Known development gaps:
   current direct lowering, external Declare/COM call coverage, canonical
   descriptor ids, descriptor-driven VM behavior, true ByVal call-entry
   coercion, and true Optional-missing runtime behavior remain incomplete;
-- `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, and
-  `UdtTypeDescriptor` now carry first-pass slot, local array shape, and UDT
-  shape facts, but expression temporary declared types,
+- `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, `UdtTypeDescriptor`,
+  and `ObjectTypeDescriptor` now carry first-pass slot, local array shape, UDT
+  shape facts, and generic object slot facts, but expression temporary declared types,
   multi-rank/error/lifecycle array evidence, aggregate UDT field offsets/layout,
-  descriptor-driven UDT copy/drop behavior, object/class/interface ids, general
+  descriptor-driven UDT copy/drop behavior, richer class/interface/imported-COM
+  descriptors, `As New` activation/default-instance policy, general
   fixed-string behavior, cleanup maps, and full carrier layout facts remain
   incomplete or explicitly `Unknown`;
 - current `BoundType::Decimal` must be audited so Decimal is retained as a
   Variant subtype/value carrier rather than accepted as ordinary declared
   storage;
 - project reflection `VbaType` is useful but too coarse for package/JIT use;
-- enum descriptors, UDT offset/layout/lifecycle descriptors, object/class
-  descriptors, and COM imported type descriptors are not yet unified behind one
-  package type registry.
+- enum descriptors, UDT offset/layout/lifecycle descriptors, richer
+  object/class/interface descriptors, and COM imported type descriptors are not
+  yet unified behind one package type registry.
 
 ## Implementation Direction
 
