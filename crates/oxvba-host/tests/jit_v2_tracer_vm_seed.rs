@@ -146,6 +146,22 @@ fn deopt_snapshot_observation_tokens(
         .collect()
 }
 
+fn vm_consumption_observation_tokens(
+    snapshot: &HostVariantSnapshotWithPackageIdentity,
+) -> Vec<String> {
+    snapshot
+        .package_identity
+        .vm_consumption_evidence
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor
+                .observations
+                .iter()
+                .map(move |observation| format!("{}:{observation}", descriptor.consumption_id))
+        })
+        .collect()
+}
+
 fn assert_interop_observation(tokens: &[String], expected: &str) {
     assert!(
         tokens.iter().any(|token| token.contains(expected)),
@@ -285,6 +301,12 @@ fn tb06_late_bound_com_vm_seed_runs_with_hosted_controlled_com() {
     assert_interop_observation(&interop_tokens, "early-bound=false");
     assert_interop_observation(&interop_tokens, "selector=runtime-name-slot");
     assert_interop_observation(&interop_tokens, "hresult-excepinfo-argerr=runtime-owned");
+
+    let vm_consumption_tokens = vm_consumption_observation_tokens(&snapshot);
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=BOUNDARY-CONSUMPTION-UNSUPPORTED",
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -313,6 +335,16 @@ fn tb07_early_bound_com_vm_seed_runs_with_typelib_reference() {
     assert_interop_observation(&interop_tokens, "early-bound=true");
     assert_interop_observation(&interop_tokens, "boundary=host-com-dispatch");
     assert_interop_observation(&interop_tokens, "hresult-excepinfo-argerr=runtime-owned");
+
+    let vm_consumption_tokens = vm_consumption_observation_tokens(&snapshot);
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=VMR09-COM-DISPATCH-SELECTOR-001",
+    );
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=BOUNDARY-CONSUMPTION-UNSUPPORTED",
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -350,6 +382,16 @@ fn tb08_native_declare_vm_seed_runs_on_current_windows_native_lane() {
     assert_interop_observation(&interop_tokens, "param:1:byref=true");
     assert_interop_observation(&interop_tokens, "kind=native-invoke");
     assert_interop_observation(&interop_tokens, "writeback:0:kind=byrefvalue");
+
+    let vm_consumption_tokens = vm_consumption_observation_tokens(&snapshot);
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=VMR09-NATIVE-DESCRIPTOR-INVOKE-001",
+    );
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=BOUNDARY-CONSUMPTION-UNSUPPORTED",
+    );
 }
 
 #[test]
@@ -382,5 +424,11 @@ fn tb09_exported_callable_vm_seed_runs() {
     assert_interop_observation(
         &interop_tokens,
         "error-policy=runtime-error-projected-to-host-failure",
+    );
+
+    let vm_consumption_tokens = vm_consumption_observation_tokens(&snapshot);
+    assert_descriptor_observation(
+        &vm_consumption_tokens,
+        "selection=VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001",
     );
 }

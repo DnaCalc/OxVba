@@ -2304,27 +2304,105 @@ fn collect_vm_consumption_evidence(
         ));
     }
 
-    if !sources.interop.is_empty() {
+    if selected_native_boundary_consumption_present(sources.interop) {
         evidence.push(vm_consumption_evidence_row(
-            "BOUNDARY-CONSUMPTION-DEFERRED",
-            "interop-limitation",
+            "VMR09-NATIVE-DESCRIPTOR-INVOKE-001",
+            "supported-selected",
+            descriptor_family_keys(&[DescriptorFamily::Interop, DescriptorFamily::HostPolicy]),
+            vec!["interop-limitation:broader-native-abi-result-cleanup".to_string()],
+            vec![
+                "selection=VMR09-NATIVE-DESCRIPTOR-INVOKE-001".to_string(),
+                "package-execution=descriptor-visible-native-declare-invoke".to_string(),
+                "vm-path=Vm::IntrinsicInvokeSymbolHost".to_string(),
+                "package-baseline=ExternalCallDescriptor-and-native-invoke-instruction-visible"
+                    .to_string(),
+                "supported-scope=descriptor-id-symbol-argument-slot-writeback-map".to_string(),
+                "required-before-jit=full-native-abi-result-writeback-cleanup-consumption"
+                    .to_string(),
+                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+            ],
+        ));
+    }
+
+    if selected_com_dispatch_selector_consumption_present(sources.interop) {
+        evidence.push(vm_consumption_evidence_row(
+            "VMR09-COM-DISPATCH-SELECTOR-001",
+            "supported-selected",
+            descriptor_family_keys(&[
+                DescriptorFamily::Interop,
+                DescriptorFamily::ObjectMemberBinding,
+                DescriptorFamily::HostPolicy,
+            ]),
+            vec!["interop-limitation:broader-com-boundary-abi".to_string()],
+            vec![
+                "selection=VMR09-COM-DISPATCH-SELECTOR-001".to_string(),
+                "package-execution=descriptor-visible-com-member-selector".to_string(),
+                "vm-path=Vm::IntrinsicDispatchInvokeHost".to_string(),
+                "package-baseline=ComMemberSelectorDescriptor-visible".to_string(),
+                "supported-scope=early-bound-dispatch-selector-and-arity".to_string(),
+                "required-before-jit=full-com-boundary-result-error-cleanup-consumption"
+                    .to_string(),
+                "descriptor-absence-policy=runtime-name-slot-remains-unsupported".to_string(),
+            ],
+        ));
+    }
+
+    if selected_exported_callable_consumption_present(sources.interop) {
+        evidence.push(vm_consumption_evidence_row(
+            "VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001",
+            "supported-selected",
+            descriptor_family_keys(&[
+                DescriptorFamily::Interop,
+                DescriptorFamily::ProcedureSignature,
+                DescriptorFamily::Slot,
+            ]),
+            vec!["interop-limitation:external-host-entry-boundary-adapter".to_string()],
+            vec![
+                "selection=VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001".to_string(),
+                "package-execution=descriptor-visible-exported-callable".to_string(),
+                "vm-path=Vm::invoke_package_procedure_with_variants".to_string(),
+                "package-baseline=ExportInventory-and-callable-descriptor-visible".to_string(),
+                "supported-scope=variant-positional-slots-return-slot-byref-writeback-map"
+                    .to_string(),
+                "required-before-jit=external-export-entry-abi-error-cleanup-consumption"
+                    .to_string(),
+                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+            ],
+        ));
+    }
+
+    let unsupported_boundary_shapes = unsupported_boundary_consumption_shapes(sources.interop);
+    if !unsupported_boundary_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=BOUNDARY-CONSUMPTION-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "package-baseline=interop-descriptor-evidence-visible".to_string(),
+            "supported-selections=VMR09-NATIVE-DESCRIPTOR-INVOKE-001|VMR09-COM-DISPATCH-SELECTOR-001|VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+            "required-before-jit=boundary-result-writeback-cleanup-error-consumption".to_string(),
+        ];
+        observations.extend(
+            unsupported_boundary_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-boundary-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "BOUNDARY-CONSUMPTION-UNSUPPORTED",
+            "unsupported-rejected",
             descriptor_family_keys(&[
                 DescriptorFamily::Interop,
                 DescriptorFamily::HostPolicy,
                 DescriptorFamily::ErrorRouting,
                 DescriptorFamily::DeoptSnapshot,
+                DescriptorFamily::Lifecycle,
             ]),
             vec![
-                "interop-limitation:boundary-result-cleanup-execution".to_string(),
+                "interop-limitation:boundary-abi-result-writeback-cleanup-execution".to_string(),
                 "metadata-missing:generalized-boundary-descriptors".to_string(),
+                "metadata-missing:boundary-error-policy-descriptors".to_string(),
             ],
-            vec![
-                "selection=BOUNDARY-CONSUMPTION-DEFERRED".to_string(),
-                "package-execution=evidence-only".to_string(),
-                "vm-path=current-host-com-native-export-boundary-specialized".to_string(),
-                "package-baseline=interop-descriptor-evidence-visible".to_string(),
-                "required-before-jit=boundary-result-writeback-cleanup-consumption".to_string(),
-            ],
+            observations,
         ));
     }
 
@@ -2628,6 +2706,109 @@ fn descriptor_family_keys(families: &[DescriptorFamily]) -> Vec<String> {
         .iter()
         .map(|family| family.registry_key().to_string())
         .collect()
+}
+
+fn selected_native_boundary_consumption_present(interop: &[VmInteropDescriptorEvidence]) -> bool {
+    let has_descriptor = interop.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=native-declare")
+    });
+    let has_invoke = interop.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=native-invoke")
+            && evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "abi-descriptor-source=ExternalCallDescriptor")
+    });
+    has_descriptor && has_invoke
+}
+
+fn selected_com_dispatch_selector_consumption_present(
+    interop: &[VmInteropDescriptorEvidence],
+) -> bool {
+    interop.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=com-dispatch-invoke")
+            && evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "selector-policy=descriptor-backed")
+    })
+}
+
+fn selected_exported_callable_consumption_present(interop: &[VmInteropDescriptorEvidence]) -> bool {
+    interop.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=exported-callable")
+            && evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "support=vmrunnablehosted")
+            && !evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "callable-descriptor=missing")
+    })
+}
+
+fn unsupported_boundary_consumption_shapes(interop: &[VmInteropDescriptorEvidence]) -> Vec<String> {
+    let mut shapes = Vec::new();
+    for evidence in interop {
+        let kind = observation_value(&evidence.observations, "kind=").unwrap_or("unknown");
+        if kind == "exported-callable"
+            && evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "support=vmrunnablehosted")
+            && !evidence
+                .observations
+                .iter()
+                .any(|observation| observation == "callable-descriptor=missing")
+        {
+            continue;
+        }
+        let boundary = observation_value(&evidence.observations, "boundary=").unwrap_or("unknown");
+        let unsupported = evidence
+            .observations
+            .iter()
+            .filter_map(|observation| {
+                observation
+                    .strip_prefix("unsupported=")
+                    .or_else(|| observation.strip_prefix("support=unsupported-"))
+                    .or_else(|| observation.strip_prefix("unsupported-shape-policy="))
+            })
+            .collect::<Vec<_>>();
+        let execution_policies = evidence
+            .observations
+            .iter()
+            .filter(|observation| {
+                observation.starts_with("cleanup-policy=")
+                    || observation.starts_with("error-policy=")
+                    || observation.starts_with("writeback-policy=")
+                    || observation.starts_with("hresult-")
+                    || observation.ends_with("=runtime-owned")
+            })
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        shapes.push(format!(
+            "interop={};kind={kind};boundary={boundary};unsupported={};execution-policy={}",
+            evidence.descriptor_id,
+            unsupported.join("|"),
+            execution_policies.join("|"),
+        ));
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
 }
 
 fn selected_call_frame_deopt_consumption_present(

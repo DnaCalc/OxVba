@@ -625,6 +625,81 @@ mod tests {
     }
 
     #[test]
+    fn strict_package_accepts_selected_exported_callable_descriptor() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim x As Variant\n\
+             Dim y As Variant\n\
+             x = 5\n\
+             y = JitExportedAdd(7, x)\n\
+             End Sub\n\
+             Public Function JitExportedAdd(ByVal lhs As Long, ByRef rhs As Variant) As Variant\n\
+             rhs = rhs + 1\n\
+             JitExportedAdd = lhs + rhs\n\
+             End Function",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(
+            report.is_supported(),
+            "selected exported callable descriptor should remain VM-supported: {report:#?}"
+        );
+        assert!(
+            report.warnings.iter().any(|reason| reason
+                .code
+                .contains("VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001")),
+            "selected exported callable descriptor row should remain a VM warning: {report:#?}"
+        );
+
+        let main_metadata = package
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("Main metadata should exist");
+        let y_slot = main_metadata
+            .slots
+            .iter()
+            .find(|slot| slot.name.eq_ignore_ascii_case("y"))
+            .map(|slot| slot.slot)
+            .expect("y slot should exist");
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package_strict(&package).expect(
+            "strict package execution should accept selected exported callable descriptor metadata",
+        );
+        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
+        assert_eq!(snapshot[y_slot], Variant::from_i32(13));
+    }
+
+    #[test]
+    fn strict_package_rejects_com_boundary_consumption_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim obj As Object\n\
+             Set obj = CreateObject(\"Scripting.Dictionary\")\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report.reasons.iter().any(|reason| {
+                reason.kind == VmPackageSupportReasonKind::InteropLimitation
+                    && reason.code.contains("BOUNDARY-CONSUMPTION-UNSUPPORTED")
+            }),
+            "COM boundary descriptor gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject COM boundary descriptor gap");
+        assert!(err.contains("BOUNDARY-CONSUMPTION-UNSUPPORTED"));
+    }
+
+    #[test]
     fn package_execution_selects_optimized_paths_from_operator_descriptors() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\

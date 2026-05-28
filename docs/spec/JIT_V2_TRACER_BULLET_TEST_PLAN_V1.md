@@ -274,6 +274,8 @@ Package/VM evidence gate:
   expectations, runtime selector source, `early_bound=false`, and
   runtime-owned HRESULT/EXCEPINFO/ArgErr classification, runtime result
   projection classification, and host dispatch cleanup classification.
+  Strict VM support rejects this broader boundary execution through
+  `BOUNDARY-CONSUMPTION-UNSUPPORTED`.
   Generalized package-owned boundary projection, object identity comparison,
   default-member facts, and concrete cleanup execution evidence remain
   blocking.
@@ -291,7 +293,8 @@ Required assertions:
   instruction expectations, runtime selector source, `early_bound=false`, and
   runtime-owned HRESULT/EXCEPINFO/ArgErr classification, runtime
   Variant/Object result projection classification, and host dispatch cleanup
-  classification. It does not yet prove generalized package-owned boundary
+  classification, plus strict rejection of the non-selected COM boundary
+  execution row. It does not yet prove generalized package-owned boundary
   projection or cleanup execution behavior.
 
 ### TB07 Early-Bound COM
@@ -308,10 +311,12 @@ Package/VM evidence gate:
 - The current hosted VM seed records early-bound dispatch instruction
   expectations, selector policy, runtime-owned HRESULT/EXCEPINFO/ArgErr
   classification, argument/result projection classification, and cleanup
-  classification. The object/member seed table names early-bound dispatch plus
-  vtable strategy obligations. Imported member descriptors, strategy digest
-  evidence, object identity comparison, and typed projection execution facts
-  remain blocking.
+  classification. Strict VM support records the selected
+  `VMR09-COM-DISPATCH-SELECTOR-001` row and rejects broader COM boundary
+  execution through `BOUNDARY-CONSUMPTION-UNSUPPORTED`. The object/member seed
+  table names early-bound dispatch plus vtable strategy obligations. Imported
+  member descriptors, strategy digest evidence, object identity comparison, and
+  typed projection execution facts remain blocking.
 
 Required assertions:
 
@@ -322,9 +327,9 @@ Required assertions:
 - Current VM seed is hosted because typed imported COM binding requires a
   project manifest with an `OxVba` type-library reference.
 - Current VM package evidence records the early-bound dispatch instruction
-  expectation plus boundary policy classifications. Imported COM
-  class/interface/member descriptor identity and dispatch-vtable strategy
-  remain package gaps.
+  expectation, the selected COM selector consumption row, and boundary policy
+  classifications. Imported COM class/interface/member descriptor identity and
+  dispatch-vtable strategy remain package gaps.
 
 ### TB08 Native Declare
 
@@ -340,9 +345,12 @@ Package/VM evidence gate:
 - The current hosted VM seed records `ExternalCallDescriptor` and native invoke
   facts for the supported subset, including DeclareParamType projection tokens,
   writeback projection classifications, cleanup policy, and native error
-  policy. Generic Automation `Variant` and SAFEARRAY declared-parameter ABI
-  support plus broader cleanup/buffer ownership observations remain real
-  VM/native limitations before executable TB08 can close.
+  policy. Strict VM support records the selected
+  `VMR09-NATIVE-DESCRIPTOR-INVOKE-001` row and rejects broader native boundary
+  execution through `BOUNDARY-CONSUMPTION-UNSUPPORTED`. Generic Automation
+  `Variant` and SAFEARRAY declared-parameter ABI support plus broader
+  cleanup/buffer ownership observations remain real VM/native limitations
+  before executable TB08 can close.
 
 Required assertions:
 
@@ -356,7 +364,8 @@ Required assertions:
 - Current VM package evidence records `ExternalCallDescriptor` and native
   invoke facts for library/alias/name, return/parameter tokens, ByRef flags,
   argument slots, writeback slots, projection classifications, cleanup policy,
-  and native error policy for the supported seed subset.
+  native error policy for the supported seed subset, and strict rejection of
+  broader native boundary execution.
 - Writeback commits or cancels according to helper status.
 - Cleanup runs for marshalled buffers on success, failure, and deopt.
 
@@ -373,10 +382,11 @@ Package/VM evidence gate:
   tracer.
 - The current VM seed proves the internal callable behavior, and the project
   package seed records exported-callable descriptor evidence derived from
-  `ExportInventory` plus callable signatures. External ABI entry execution,
-  typed/non-Variant unmanaged projection breadth, concrete cleanup/error oracle
-  evidence, and unsupported-shape diagnostic fixtures remain blocking TB09
-  gaps.
+  `ExportInventory` plus callable signatures. Strict VM support records the
+  selected `VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001` row for package procedure
+  invocation metadata. External ABI entry execution, typed/non-Variant
+  unmanaged projection breadth, concrete cleanup/error oracle evidence, and
+  unsupported-shape diagnostic fixtures remain blocking TB09 gaps.
 
 Required assertions:
 
@@ -387,7 +397,8 @@ Required assertions:
 - Current VM package evidence records Variant-positional inbound projection,
   declared parameter types, ByRef export-boundary writeback policy,
   return-slot-to-Variant projection, cleanup/error return policy, and
-  unsupported-shape policy for the descriptor-backed package seed.
+  unsupported-shape policy for the descriptor-backed package seed, plus selected
+  exported-callable descriptor consumption evidence.
 
 ## Acceptance Before First Implementation Workset
 

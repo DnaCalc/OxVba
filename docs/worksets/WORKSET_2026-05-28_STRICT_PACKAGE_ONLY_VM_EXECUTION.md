@@ -63,7 +63,10 @@ The current repository is package-capable but not package-only.
   - non-selected error/deopt cleanup consumption, now strict VM support
     rejection while selected Err reset and call-frame safepoints remain
     supported;
-  - COM/native/export boundary consumption;
+  - COM/native boundary ABI/result/writeback/cleanup/error consumption, now a
+    strict VM support rejection while selected native descriptor, early-COM
+    selector, and exported-callable descriptor identity rows remain supported
+    metadata slices;
   - host-policy behavior-driving descriptor consumption, now a strict VM support
     rejection until policy evaluation is descriptor-consumed or explicitly kept
     unsupported.
@@ -113,6 +116,12 @@ Current progress:
   deopt cleanup descriptors and host-policy behavior-driving descriptors reject
   deterministically through `VmPackageSupportReport` before strict VM
   execution.
+- `bd-embl.9` converts COM/native/export boundary gaps into descriptor-owned VM
+  support outcomes: selected native invoke descriptor identity, early-bound COM
+  selector identity, and exported-callable descriptor identity remain strict-VM
+  supported metadata slices, while real COM/native boundary ABI/result/writeback
+  cleanup/error shapes reject deterministically through `VmPackageSupportReport`
+  before strict VM execution.
 
 ## Execution Beads
 

@@ -429,6 +429,11 @@ policy. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr projection remains
 runtime-owned rather than package-unified, external export ABI execution is not
 closed, and general Automation `Variant`/`SAFEARRAY` declared-parameter ABI
 support remains incomplete.
+The strict VM support ledger now splits this interop evidence: selected native
+invoke descriptor identity, early-bound COM selector identity, and
+exported-callable descriptor identity remain VM-supported metadata slices, while
+real COM/native boundary ABI/result/writeback/cleanup/error execution rejects
+before strict VM execution through `BOUNDARY-CONSUMPTION-UNSUPPORTED`.
 
 The VMR-05/bd-tvmb.9 error/cleanup/deopt fixture adds VM package evidence for
 selected `ErrorRoutingDescriptor`, `DeoptSnapshotDescriptor`, and
@@ -449,21 +454,21 @@ evaluation descriptors remain incomplete.
 The bd-tvmb.10 VM consumption ledger records which descriptor facts the VM
 currently consumes and which package-visible facts remain blocked. The selected
 supported rows are VMR-06 call-entry coercion, rank-1 static/fixed array bounds,
-Err reset, and call-frame safepoints; the selected evidence-only row is UDT
-owning field cleanup evidence.
-Optional `Variant` missing, non-selected error/deopt cleanup, boundary
-projection, and host-policy behavior consumption remain classified gap rows
-rather than backend-local assumptions. The strict VM now rejects the optional
-missing, non-selected error/deopt cleanup, and host-policy rows deterministically
-before execution; boundary projection remains a deferred VM warning until the
-boundary bead closes or rejects it.
+Err reset, call-frame safepoints, native invoke descriptor identity, early-bound
+COM selector identity, and exported-callable descriptor identity; the selected
+evidence-only row is UDT owning field cleanup evidence.
+Optional `Variant` missing, non-selected error/deopt cleanup, COM/native
+boundary execution, and host-policy behavior consumption remain classified gap
+rows rather than backend-local assumptions. The strict VM now rejects the
+optional missing, non-selected error/deopt cleanup, COM/native boundary
+execution, and host-policy rows deterministically before execution.
 
 The strict package-only execution workset adds `VmPackageSupportReport` as the
 shared support-query surface. The initial VM gate rejects incomplete in-memory
-packages that lack executable semantic package sections. Current deferred
-VM-consumption rows remain VM-execution warnings until their owning delivery
-beads either consume descriptors or turn the rows into deterministic VM
-rejects. The same deferred rows are `ProcLoweringIr` blockers immediately.
+packages that lack executable semantic package sections. Former deferred
+VM-consumption rows have been split into selected supported metadata slices and
+deterministic strict VM rejections; selected residual rows remain
+`ProcLoweringIr` blockers until their broader semantic gaps close.
 Public VM/JIT/launcher/debug execution entry points no longer accept bare
 `Bytecode`; production and test harness execution must enter through
 `OxBundle` or `VmExecutionPackage`. The VM instruction loop still receives the

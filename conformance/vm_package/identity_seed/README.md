@@ -153,8 +153,10 @@ evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), the strict
 rejection rows for Optional `Variant` missing, unselected broader ByVal
 call-entry coercions, unsupported array descriptor shapes, String/BSTR cleanup
 and lifetime gaps, executable UDT layout/copy/drop/cleanup gaps, non-selected
-error/deopt/cleanup behavior, and host-policy behavior-driving descriptors,
-plus the explicit gap for boundary projection. The companion seed table is
+error/deopt/cleanup behavior, COM/native boundary instruction execution, and
+host-policy behavior-driving descriptors. Selected native, early-COM selector,
+and exported-callable descriptor identity rows remain package-visible metadata
+slices. The companion seed table is
 `docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`.
 
 `VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot
