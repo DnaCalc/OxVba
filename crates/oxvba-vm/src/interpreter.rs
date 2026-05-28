@@ -2230,10 +2230,66 @@ fn collect_vm_consumption_evidence(
         ));
     }
 
-    if !sources.error.is_empty() || !sources.deopt.is_empty() {
+    if selected_call_frame_deopt_consumption_present(sources.error, sources.deopt) {
         evidence.push(vm_consumption_evidence_row(
-            "ERROR-CLEANUP-DEOPT-CONSUMPTION-DEFERRED",
-            "oracle-and-test-blocked",
+            "VMR08-CALL-FRAME-DEOPT-001",
+            "supported-selected",
+            descriptor_family_keys(&[
+                DescriptorFamily::ErrorRouting,
+                DescriptorFamily::DeoptSnapshot,
+                DescriptorFamily::ProcedureSignature,
+                DescriptorFamily::Slot,
+            ]),
+            vec!["metadata-missing:broader-error-resume-cleanup-maps".to_string()],
+            vec![
+                "selection=VMR08-CALL-FRAME-DEOPT-001".to_string(),
+                "package-execution=descriptor-visible-call-frame-safepoint".to_string(),
+                "vm-path=Vm::call_procedure_frame".to_string(),
+                "package-baseline=CallProc-error-frame-and-deopt-snapshot-descriptors-visible"
+                    .to_string(),
+                "supported-scope=call-frame-save-restore-and-slot-snapshot".to_string(),
+                "required-before-jit=broader-error-resume-cleanup-consumption".to_string(),
+                "descriptor-absence-policy=leave-raw-vm-call-frame".to_string(),
+            ],
+        ));
+    }
+
+    if selected_err_clear_consumption_present(sources.error) {
+        evidence.push(vm_consumption_evidence_row(
+            "VMR08-ERR-CLEAR-RESET-001",
+            "supported-selected",
+            descriptor_family_keys(&[DescriptorFamily::ErrorRouting]),
+            vec!["metadata-missing:broader-error-resume-cleanup-maps".to_string()],
+            vec![
+                "selection=VMR08-ERR-CLEAR-RESET-001".to_string(),
+                "package-execution=descriptor-visible-err-clear-reset".to_string(),
+                "vm-path=Vm::ClearErr-instruction".to_string(),
+                "package-baseline=Err.Clear-reset-descriptor-visible".to_string(),
+                "supported-scope=Err-number-description-source-last-error-pc-reset".to_string(),
+                "required-before-jit=broader-error-resume-cleanup-consumption".to_string(),
+                "descriptor-absence-policy=leave-raw-vm-err-clear".to_string(),
+            ],
+        ));
+    }
+
+    let unsupported_error_deopt_shapes =
+        unsupported_error_deopt_consumption_shapes(sources.error, sources.deopt);
+    if !unsupported_error_deopt_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=ERROR-CLEANUP-DEOPT-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "supported-selection=VMR08-CALL-FRAME-DEOPT-001".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_error_deopt_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-error-deopt-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "ERROR-CLEANUP-DEOPT-UNSUPPORTED",
+            "unsupported-rejected",
             descriptor_family_keys(&[
                 DescriptorFamily::ErrorRouting,
                 DescriptorFamily::DeoptSnapshot,
@@ -2244,15 +2300,7 @@ fn collect_vm_consumption_evidence(
                 "oracle-required:active-handler-caller-unwind".to_string(),
                 "metadata-missing:explicit-cleanup-stack-execution".to_string(),
             ],
-            vec![
-                "selection=ERROR-CLEANUP-DEOPT-CONSUMPTION-DEFERRED".to_string(),
-                "package-execution=evidence-only".to_string(),
-                "vm-path=current-error-frame-runtime".to_string(),
-                "package-baseline=ErrorRoutingDescriptor-and-DeoptSnapshotDescriptor-visible"
-                    .to_string(),
-                "required-before-jit=descriptor-driven-error-resume-cleanup-consumption"
-                    .to_string(),
-            ],
+            observations,
         ));
     }
 
@@ -2280,19 +2328,27 @@ fn collect_vm_consumption_evidence(
         ));
     }
 
-    if !sources.host_policy.is_empty() {
+    let unsupported_host_policy_shapes =
+        unsupported_host_policy_consumption_shapes(sources.host_policy);
+    if !unsupported_host_policy_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=HOST-POLICY-CONSUMPTION-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "package-baseline=host-capability-requirements-visible".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_host_policy_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-host-policy-shape={shape}")),
+        );
         evidence.push(vm_consumption_evidence_row(
-            "HOST-POLICY-CONSUMPTION-DEFERRED",
-            "metadata-missing",
+            "HOST-POLICY-CONSUMPTION-UNSUPPORTED",
+            "unsupported-rejected",
             descriptor_family_keys(&[DescriptorFamily::HostPolicy]),
-            vec!["metadata-missing:behavior-driving-policy-evaluation-descriptors".to_string()],
-            vec![
-                "selection=HOST-POLICY-CONSUMPTION-DEFERRED".to_string(),
-                "package-execution=evidence-only".to_string(),
-                "vm-path=current-host-services-policy".to_string(),
-                "package-baseline=host-capability-requirements-visible".to_string(),
-                "required-before-jit=host-policy-descriptor-consumption-or-reject".to_string(),
-            ],
+            vec!["host-policy:behavior-driving-policy-evaluation-descriptors".to_string()],
+            observations,
         ));
     }
 
@@ -2572,6 +2628,96 @@ fn descriptor_family_keys(families: &[DescriptorFamily]) -> Vec<String> {
         .iter()
         .map(|family| family.registry_key().to_string())
         .collect()
+}
+
+fn selected_call_frame_deopt_consumption_present(
+    error: &[VmErrorDescriptorEvidence],
+    deopt: &[VmDeoptSnapshotEvidence],
+) -> bool {
+    error.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=call-frame-error-state")
+    }) && deopt.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "operation=call-procedure")
+    })
+}
+
+fn selected_err_clear_consumption_present(error: &[VmErrorDescriptorEvidence]) -> bool {
+    error.iter().any(|evidence| {
+        evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "kind=err-clear")
+    })
+}
+
+fn unsupported_error_deopt_consumption_shapes(
+    error: &[VmErrorDescriptorEvidence],
+    deopt: &[VmDeoptSnapshotEvidence],
+) -> Vec<String> {
+    let mut shapes = Vec::new();
+    for evidence in error {
+        if evidence.observations.iter().any(|observation| {
+            observation == "kind=call-frame-error-state" || observation == "kind=err-clear"
+        }) {
+            continue;
+        }
+        let kind = observation_value(&evidence.observations, "kind=").unwrap_or("unknown");
+        let pc = observation_value(&evidence.observations, "pc=").unwrap_or("unknown");
+        shapes.push(format!(
+            "error-scope={};pc={pc};kind={kind}",
+            evidence.error_scope_id
+        ));
+    }
+    for evidence in deopt {
+        if evidence
+            .observations
+            .iter()
+            .any(|observation| observation == "operation=call-procedure")
+        {
+            continue;
+        }
+        let operation =
+            observation_value(&evidence.observations, "operation=").unwrap_or("unknown");
+        let pc = observation_value(&evidence.observations, "pc=").unwrap_or("unknown");
+        shapes.push(format!(
+            "deopt-safepoint={};pc={pc};operation={operation}",
+            evidence.safepoint_id
+        ));
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+fn unsupported_host_policy_consumption_shapes(host_policy: &[VmHostPolicyEvidence]) -> Vec<String> {
+    let mut shapes = host_policy
+        .iter()
+        .map(|evidence| {
+            let capability =
+                observation_value(&evidence.observations, "capability=").unwrap_or("unknown");
+            let source =
+                observation_value(&evidence.observations, "source-operation=").unwrap_or("unknown");
+            format!(
+                "host-policy={};capability={capability};source={source}",
+                evidence.host_policy_id
+            )
+        })
+        .collect::<Vec<_>>();
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+fn observation_value<'a>(observations: &'a [String], prefix: &str) -> Option<&'a str> {
+    observations
+        .iter()
+        .find_map(|observation| observation.strip_prefix(prefix))
 }
 
 fn selected_call_entry_consumption_present(

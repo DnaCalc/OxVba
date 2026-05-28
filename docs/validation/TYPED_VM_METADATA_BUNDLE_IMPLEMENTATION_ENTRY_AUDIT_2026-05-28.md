@@ -81,7 +81,7 @@ bundle workset. The remaining gap labels fall into these non-stale categories:
 | Category | Classification |
 |---|---|
 | Broader descriptor breadth | Rows such as broader primitive carrier execution, full enum storage, default-member expansion, byte-offset UDT layout, multi-rank array fixtures, and full imported COM descriptors remain future work. |
-| Selected VM-consumption residuals | `VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv` records Optional `Variant` missing, error/deopt cleanup, boundary projection, and host-policy behavior as explicit deferred/gap rows. |
+| Selected VM-consumption residuals | `VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv` records Optional `Variant` missing, non-selected error/deopt cleanup, boundary projection, and host-policy behavior as explicit gap rows; strict package-only follow-up beads convert selected rows into support or deterministic rejection. |
 | JIT-entry blockers | TB01 through TB09 tracer rows retain gap labels until `ProcLoweringIr`, verifier output, CLIF verifier output, VM/JIT differential evidence, and descriptor-specific parity checks exist. |
 | Oracle-required behavior | Office-observed quirks remain oracle gates and cannot be filled by JIT lowering. |
 | Interop breadth | COM/native/export lanes have package-visible selected evidence, but generic boundary ABI breadth and cleanup execution remain interop-limitation rows. |

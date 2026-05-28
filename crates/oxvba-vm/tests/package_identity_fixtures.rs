@@ -679,6 +679,14 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
         let error_descriptor_tokens = error_descriptor_observation_tokens(evidence);
         let deopt_snapshot_tokens = deopt_snapshot_observation_tokens(evidence);
         let vm_consumption_tokens = vm_consumption_observation_tokens(evidence);
+        assert!(
+            vm_consumption_tokens
+                .iter()
+                .any(|token| token.contains("selection=VMR08-ERR-CLEAR-RESET-001")),
+            "{} VM consumption evidence should include selected Err reset consumption; got: {:?}",
+            row.id,
+            vm_consumption_tokens
+        );
         if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
             assert!(
                 error_descriptor_tokens
@@ -703,6 +711,7 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 "raw-bytecode-baseline=pre-vmr06-byval-copy-observes-source-carrier",
                 "selection=CALL-OPTIONAL-MISSING-VARIANT",
                 "status=unsupported-rejected",
+                "selection=VMR08-CALL-FRAME-DEOPT-001",
             ] {
                 assert!(
                     vm_consumption_tokens

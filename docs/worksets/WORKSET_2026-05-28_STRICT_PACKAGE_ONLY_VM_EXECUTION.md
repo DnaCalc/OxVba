@@ -60,9 +60,13 @@ The current repository is package-capable but not package-only.
   - multi-rank/incomplete-bound/owning-element array descriptors, String/BSTR
     cleanup and lifetime gaps, and UDT layout/copy/drop/cleanup gaps, now
     strict VM support rejections until individually promoted;
-  - error/deopt cleanup consumption;
+  - non-selected error/deopt cleanup consumption, now strict VM support
+    rejection while selected Err reset and call-frame safepoints remain
+    supported;
   - COM/native/export boundary consumption;
-  - host-policy behavior-driving descriptor consumption.
+  - host-policy behavior-driving descriptor consumption, now a strict VM support
+    rejection until policy evaluation is descriptor-consumed or explicitly kept
+    unsupported.
 - `bd-embl.5` removed public/environment fastpath selection. Optimized VM
   paths are now selected from package support plus operator-semantic package
   descriptors and recorded in VM execution-selection evidence.
@@ -103,6 +107,12 @@ Current progress:
   descriptors, String/BSTR cleanup/lifetime gaps, and executable UDT
   layout/copy/drop/cleanup gaps reject deterministically through
   `VmPackageSupportReport` before strict VM execution.
+- `bd-embl.8` converts error/deopt/host-policy gaps into descriptor-owned VM
+  support outcomes: selected Err reset and call-frame safepoint descriptors
+  remain strict-VM supported, while non-selected error/resume/fallible-helper
+  deopt cleanup descriptors and host-policy behavior-driving descriptors reject
+  deterministically through `VmPackageSupportReport` before strict VM
+  execution.
 
 ## Execution Beads
 

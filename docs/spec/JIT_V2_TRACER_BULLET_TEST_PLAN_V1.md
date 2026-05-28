@@ -178,9 +178,11 @@ Package/VM evidence gate:
   helper failure edge, including Err-state fields, runtime error 11,
   resume-next-consumable policy, and `DeoptSnapshotDescriptor` rows for helper
   safepoints with slot-map, live-carrier, error-state, cleanup-state, and
-  ByRef-state obligations. Broader Resume forms, active-handler reentry,
-  caller unwinding, and explicit cleanup-stack execution remain blocking before
-  executable TB03 can close.
+  ByRef-state obligations. Strict VM support accepts selected Err reset and
+  call-frame safepoint rows, but rejects the Resume Next helper-failure shape
+  through `ERROR-CLEANUP-DEOPT-UNSUPPORTED`. Broader Resume forms,
+  active-handler reentry, caller unwinding, and explicit cleanup-stack execution
+  remain blocking before executable TB03 can close.
 
 Required assertions:
 
@@ -192,7 +194,8 @@ Required assertions:
 - Resume target is next bytecode PC.
 - Deopt/slow-helper path records error state before continuing.
 - Current VM package evidence asserts the selected error/deopt descriptor
-  tokens for the Resume Next division seed.
+  tokens for the Resume Next division seed and strict rejection of non-selected
+  error/deopt cleanup consumption.
 
 ### TB04 BSTR Lifetime
 

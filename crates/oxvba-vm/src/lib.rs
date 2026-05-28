@@ -243,6 +243,13 @@ mod tests {
             report.is_supported(),
             "strict current package should be VM-supported: {report:#?}"
         );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|reason| reason.code.contains("VMR08-ERR-CLEAR-RESET-001")),
+            "selected Err.Clear/reset descriptor slice should remain VM-supported: {report:#?}"
+        );
 
         let mut vm = Vm::new(default_host_services());
         vm.execute_package_strict(&package)
@@ -304,6 +311,13 @@ mod tests {
                 .iter()
                 .any(|reason| reason.code.contains("VMR06-CALL-BYVAL-COERCE-001")),
             "selected call-entry residual broader-shape gap should remain a warning: {report:#?}"
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|reason| reason.code.contains("VMR08-CALL-FRAME-DEOPT-001")),
+            "selected call-frame deopt/error-frame descriptor slice should remain VM-supported: {report:#?}"
         );
 
         let main_metadata = package
@@ -525,6 +539,92 @@ mod tests {
     }
 
     #[test]
+    fn strict_package_rejects_error_cleanup_deopt_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim beforeErr As Long\n\
+             Dim afterErr As Long\n\
+             Dim numerator As Long\n\
+             Dim denominator As Long\n\
+             Dim result As Double\n\
+             numerator = 10\n\
+             denominator = 0\n\
+             beforeErr = Err.Number\n\
+             On Error Resume Next\n\
+             result = numerator / denominator\n\
+             afterErr = Err.Number\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report
+                .reasons
+                .iter()
+                .any(|reason| reason.code.contains("ERROR-CLEANUP-DEOPT-UNSUPPORTED")),
+            "error/resume/deopt gap should reject strict VM execution: {report:#?}"
+        );
+
+        let main_metadata = package
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("Main metadata should exist");
+        let after_err_slot = main_metadata
+            .slots
+            .iter()
+            .find(|slot| slot.name.eq_ignore_ascii_case("afterErr"))
+            .map(|slot| slot.slot)
+            .expect("afterErr slot should exist");
+
+        let mut baseline_vm = Vm::new(default_host_services());
+        baseline_vm
+            .execute_package(&package)
+            .expect("non-strict package execution should retain current VM error behavior");
+        let baseline_snapshot = baseline_vm.snapshot_variants(package.bytecode.slot_count);
+        assert_eq!(baseline_snapshot[after_err_slot], Variant::from_i32(11));
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject error/resume/deopt gap");
+        assert!(err.contains("ERROR-CLEANUP-DEOPT-UNSUPPORTED"));
+    }
+
+    #[test]
+    fn strict_package_rejects_host_policy_consumption_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Debug.Print 1\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report.reasons.iter().any(|reason| {
+                reason.kind == VmPackageSupportReasonKind::HostPolicyUnsupported
+                    && reason.code.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED")
+            }),
+            "host-policy descriptor gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut baseline_vm = Vm::new(default_host_services());
+        baseline_vm
+            .execute_package(&package)
+            .expect("non-strict package execution should retain current host-policy runtime path");
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject host-policy descriptor gap");
+        assert!(err.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED"));
+    }
+
+    #[test]
     fn package_execution_selects_optimized_paths_from_operator_descriptors() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\
@@ -619,11 +719,11 @@ mod tests {
     }
 
     #[test]
-    fn proc_lowering_support_report_blocks_deferred_host_policy_consumption() {
+    fn proc_lowering_support_report_blocks_unsupported_host_policy_consumption() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\
              Public Sub Main()\n\
-             Debug.Print \"hello\"\n\
+             Debug.Print 1\n\
              End Sub",
         );
         let package = VmExecutionPackage::from_bundle(&bundle);
@@ -634,8 +734,8 @@ mod tests {
         assert!(
             report.reasons.iter().any(|reason| reason.kind
                 == VmPackageSupportReasonKind::HostPolicyUnsupported
-                && reason.code.contains("HOST-POLICY-CONSUMPTION-DEFERRED")),
-            "ProcLoweringIr support report should block deferred host-policy consumption: {report:#?}"
+                && reason.code.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED")),
+            "ProcLoweringIr support report should block unsupported host-policy consumption: {report:#?}"
         );
     }
 

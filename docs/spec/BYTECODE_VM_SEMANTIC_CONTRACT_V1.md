@@ -439,17 +439,24 @@ helper/call/host/COM/native safepoints with slot-map, live-carrier,
 cleanup-state, error-state, ByRef-state, source-PC, and host-policy obligations.
 Host-policy evidence records bundle capability requirements plus deterministic
 `HAL-E-CAP-UNAVAILABLE` and `HAL-E-POLICY-DENIED` diagnostic tokens. This is
-still evidence only: active-handler reentry, caller unwinding, full Resume
-quirks, explicit cleanup-stack execution, and behavior-driving policy
+now split by strict support: Err reset and call-frame safepoints are selected
+VM-supported descriptor rows, while non-selected error/resume/fallible-helper
+deopt cleanup behavior and host-policy behavior-driving descriptors reject
+before strict VM execution. Active-handler reentry, caller unwinding, full
+Resume quirks, explicit cleanup-stack execution, and behavior-driving policy
 evaluation descriptors remain incomplete.
 
 The bd-tvmb.10 VM consumption ledger records which descriptor facts the VM
 currently consumes and which package-visible facts remain blocked. The selected
-supported rows are VMR-06 call-entry coercion and rank-1 static/fixed array
-bounds; the selected evidence-only row is UDT owning field cleanup evidence.
-Optional `Variant` missing, error/deopt cleanup, boundary projection, and
-host-policy behavior consumption remain classified gap rows rather than
-backend-local assumptions.
+supported rows are VMR-06 call-entry coercion, rank-1 static/fixed array bounds,
+Err reset, and call-frame safepoints; the selected evidence-only row is UDT
+owning field cleanup evidence.
+Optional `Variant` missing, non-selected error/deopt cleanup, boundary
+projection, and host-policy behavior consumption remain classified gap rows
+rather than backend-local assumptions. The strict VM now rejects the optional
+missing, non-selected error/deopt cleanup, and host-policy rows deterministically
+before execution; boundary projection remains a deferred VM warning until the
+boundary bead closes or rejects it.
 
 The strict package-only execution workset adds `VmPackageSupportReport` as the
 shared support-query surface. The initial VM gate rejects incomplete in-memory
