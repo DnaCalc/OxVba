@@ -61,6 +61,15 @@ The current repository is package-capable but not package-only.
 - `OxBundle` still contains legacy version readers that backfill absent package
   sections for older versions.
 
+Current progress:
+
+- `bd-embl.1` published this workset and bead rollout.
+- `bd-embl.2` has introduced the first `VmPackageSupportReport` surface. The
+  strict VM gate rejects incomplete in-memory packages immediately. Existing
+  deferred VM-consumption rows remain VM-execution warnings until the relevant
+  delivery beads convert them into descriptor-driven behavior or hard rejects.
+  The same rows are already `ProcLoweringIr` blockers.
+
 ## Execution Beads
 
 Parent bead: `bd-embl` (`Strict package-only VM execution`).

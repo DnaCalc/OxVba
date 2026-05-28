@@ -21,8 +21,10 @@ pub use interpreter::{
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
     VmCarrierLayoutEvidence, VmDescriptorIdentityEvidence, VmExecutionPackage,
     VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
-    VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSemanticDescriptorEvidence,
-    VmSignatureCallEvidence, VmValueStateEvidence,
+    VmPackageSupportConsumer, VmPackageSupportReason, VmPackageSupportReasonKind,
+    VmPackageSupportReport, VmPackageSupportStatus, VmProcedureIdentityEvidence,
+    VmProjectContextEvidence, VmSemanticDescriptorEvidence, VmSignatureCallEvidence,
+    VmValueStateEvidence,
 };
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
@@ -137,8 +139,9 @@ mod tests {
     use oxvba_hal::model::native_host_profile;
 
     use super::{
-        Vm, VmExecutionPackage, default_host_services, execute_and_snapshot_variants,
-        execute_bundle_and_snapshot_variants, execute_package_and_snapshot_variants,
+        Vm, VmExecutionPackage, VmPackageSupportConsumer, VmPackageSupportReasonKind,
+        default_host_services, execute_and_snapshot_variants, execute_bundle_and_snapshot_variants,
+        execute_package_and_snapshot_variants,
     };
 
     #[test]
@@ -229,6 +232,92 @@ mod tests {
         assert_eq!(
             vm.package_identity_evidence(),
             Some(&package.identity_evidence())
+        );
+    }
+
+    fn strict_project_bundle(source: &str) -> OxBundle {
+        let manifest = ProjectManifest {
+            project_name: "StrictVmPkg".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, source)
+                    .expect("main module"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("strict project should compile");
+        OxBundle::from_compiled_project(&compiled, &manifest.project_name)
+    }
+
+    #[test]
+    fn strict_package_support_report_accepts_current_project_bundle() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim value As Long\n\
+             value = 42\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let report = package.support_report_for_vm_execution();
+        assert_eq!(report.consumer, VmPackageSupportConsumer::VmExecution);
+        assert!(
+            report.is_supported(),
+            "strict current package should be VM-supported: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package_strict(&package)
+            .expect("strict package execution should accept complete project bundle");
+    }
+
+    #[test]
+    fn strict_package_support_report_rejects_incomplete_inmemory_package() {
+        let (bytecode, metadata) = compile_with_runtime_metadata(
+            "Public Sub Main()\nDim value As Long\nvalue = 1\nEnd Sub",
+        )
+        .expect("compile should succeed");
+        let package = VmExecutionPackage::new(&bytecode, &metadata);
+
+        let report = package.support_report_for_vm_execution();
+        let reason_codes = report
+            .reasons
+            .iter()
+            .map(|reason| reason.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(!report.is_supported());
+        assert!(reason_codes.contains(&"PACKAGE-INMEMORY-NOT-STRICT"));
+        assert!(reason_codes.contains(&"PACKAGE-MISSING-PROJECT-CONTEXT"));
+        assert!(reason_codes.contains(&"PACKAGE-MISSING-DESCRIPTOR-INVENTORY"));
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject incomplete package");
+        assert!(err.contains("VM execution rejected executable semantic package"));
+    }
+
+    #[test]
+    fn proc_lowering_support_report_blocks_deferred_host_policy_consumption() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Debug.Print \"hello\"\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let report = package.support_report_for_proc_lowering_ir();
+        assert_eq!(report.consumer, VmPackageSupportConsumer::ProcLoweringIr);
+        assert!(!report.is_supported());
+        assert!(
+            report.reasons.iter().any(|reason| reason.kind
+                == VmPackageSupportReasonKind::HostPolicyUnsupported
+                && reason.code.contains("HOST-POLICY-CONSUMPTION-DEFERRED")),
+            "ProcLoweringIr support report should block deferred host-policy consumption: {report:#?}"
         );
     }
 

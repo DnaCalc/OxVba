@@ -31,6 +31,11 @@ unsupported, interop-limited, oracle-required, or test-blocked,
 `ProcLoweringIr` must reject/classify that path rather than deriving the fact
 from bytecode shape or backend convenience.
 
+Strict package-only VM work adds `VmPackageSupportReport` as the current shared
+support-query surface. `ProcLoweringIr` entry must treat any deferred
+VM-consumption row in that report as a blocker until the owning delivery bead
+either makes the behavior descriptor-driven or defines a deterministic reject.
+
 ## Core Types
 
 Recommended implementation module: `crates/oxvba-jit/src/ir`.

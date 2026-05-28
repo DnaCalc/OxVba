@@ -153,6 +153,119 @@ pub struct VmExecutionPackage<'a> {
     pub package_origin: VmPackageOrigin,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmPackageSupportConsumer {
+    VmExecution,
+    ProcLoweringIr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmPackageSupportStatus {
+    Supported,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VmPackageSupportReasonKind {
+    MissingDescriptor,
+    UnsupportedDescriptor,
+    VmLimitation,
+    InteropLimitation,
+    OracleRequired,
+    TestBlocked,
+    HostPolicyUnsupported,
+    PackageDiagnostic,
+    IncompletePackage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmPackageSupportReason {
+    pub kind: VmPackageSupportReasonKind,
+    pub code: String,
+    pub message: String,
+    pub evidence_anchor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmPackageSupportReport {
+    pub consumer: VmPackageSupportConsumer,
+    pub status: VmPackageSupportStatus,
+    pub package_origin: VmPackageOrigin,
+    pub reasons: Vec<VmPackageSupportReason>,
+    pub warnings: Vec<VmPackageSupportReason>,
+}
+
+impl VmPackageSupportReport {
+    fn new(consumer: VmPackageSupportConsumer, package_origin: VmPackageOrigin) -> Self {
+        Self {
+            consumer,
+            status: VmPackageSupportStatus::Supported,
+            package_origin,
+            reasons: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn is_supported(&self) -> bool {
+        self.status == VmPackageSupportStatus::Supported && self.reasons.is_empty()
+    }
+
+    pub fn rejection_message(&self) -> String {
+        if self.is_supported() {
+            return "package support accepted".to_string();
+        }
+        let consumer = match self.consumer {
+            VmPackageSupportConsumer::VmExecution => "VM execution",
+            VmPackageSupportConsumer::ProcLoweringIr => "ProcLoweringIr",
+        };
+        let reasons = self
+            .reasons
+            .iter()
+            .map(|reason| format!("{}: {}", reason.code, reason.message))
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("{consumer} rejected executable semantic package: {reasons}")
+    }
+
+    fn push_reason(
+        &mut self,
+        kind: VmPackageSupportReasonKind,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        evidence_anchor: Option<String>,
+    ) {
+        self.reasons.push(VmPackageSupportReason {
+            kind,
+            code: code.into(),
+            message: message.into(),
+            evidence_anchor,
+        });
+        self.status = VmPackageSupportStatus::Unsupported;
+    }
+
+    fn push_warning(
+        &mut self,
+        kind: VmPackageSupportReasonKind,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        evidence_anchor: Option<String>,
+    ) {
+        self.warnings.push(VmPackageSupportReason {
+            kind,
+            code: code.into(),
+            message: message.into(),
+            evidence_anchor,
+        });
+    }
+
+    fn sort(&mut self) {
+        self.reasons
+            .sort_by(|left, right| (left.kind, &left.code).cmp(&(right.kind, &right.code)));
+        self.warnings
+            .sort_by(|left, right| (left.kind, &left.code).cmp(&(right.kind, &right.code)));
+    }
+}
+
 impl<'a> VmExecutionPackage<'a> {
     pub fn new(
         bytecode: &'a Bytecode,
@@ -180,6 +293,23 @@ impl<'a> VmExecutionPackage<'a> {
             dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
             com_withevents_routes: bundle.com_withevents_routes.as_deref(),
             package_origin: VmPackageOrigin::OxBundle,
+        }
+    }
+
+    pub fn support_report_for_vm_execution(&self) -> VmPackageSupportReport {
+        package_support_report(self, VmPackageSupportConsumer::VmExecution)
+    }
+
+    pub fn support_report_for_proc_lowering_ir(&self) -> VmPackageSupportReport {
+        package_support_report(self, VmPackageSupportConsumer::ProcLoweringIr)
+    }
+
+    pub fn ensure_supported_for_vm_execution(&self) -> Result<(), String> {
+        let report = self.support_report_for_vm_execution();
+        if report.is_supported() {
+            Ok(())
+        } else {
+            Err(report.rejection_message())
         }
     }
 
@@ -2008,6 +2138,131 @@ fn collect_vm_consumption_evidence(
 
     evidence.sort_by(|left, right| left.consumption_id.cmp(&right.consumption_id));
     evidence
+}
+
+fn package_support_report(
+    package: &VmExecutionPackage<'_>,
+    consumer: VmPackageSupportConsumer,
+) -> VmPackageSupportReport {
+    let mut report = VmPackageSupportReport::new(consumer, package.package_origin);
+
+    if package.package_origin == VmPackageOrigin::InMemory {
+        report.push_reason(
+            VmPackageSupportReasonKind::IncompletePackage,
+            "PACKAGE-INMEMORY-NOT-STRICT",
+            "in-memory bytecode plus procedure metadata is not a strict executable semantic package",
+            None,
+        );
+    }
+    if package.procedure_metadata.is_empty() {
+        report.push_reason(
+            VmPackageSupportReasonKind::MissingDescriptor,
+            "PACKAGE-MISSING-PROCEDURE-METADATA",
+            "package does not contain procedure runtime metadata",
+            None,
+        );
+    }
+    if package.project_context.is_none() {
+        report.push_reason(
+            VmPackageSupportReasonKind::MissingDescriptor,
+            "PACKAGE-MISSING-PROJECT-CONTEXT",
+            "package does not contain project/import/host context facts",
+            None,
+        );
+    }
+    if package.descriptor_inventory.is_none() {
+        report.push_reason(
+            VmPackageSupportReasonKind::MissingDescriptor,
+            "PACKAGE-MISSING-DESCRIPTOR-INVENTORY",
+            "package does not contain descriptor inventory facts",
+            None,
+        );
+    }
+
+    if let Some(context) = package.project_context {
+        for diagnostic in &context.package_diagnostics {
+            report.push_reason(
+                VmPackageSupportReasonKind::PackageDiagnostic,
+                diagnostic.code.clone(),
+                format!(
+                    "{} package diagnostic for {}: {}",
+                    diagnostic.severity, diagnostic.fact_id, diagnostic.message
+                ),
+                Some(diagnostic.fact_id.clone()),
+            );
+        }
+        for gap in &context.gap_classifications {
+            let kind = support_reason_kind_from_gap(&gap.status, Some(&gap.area));
+            let code = format!("PROJECT-GAP:{}:{}", gap.area, gap.gap_id);
+            let message = format!("{}: {}", gap.status, gap.detail);
+            if consumer == VmPackageSupportConsumer::ProcLoweringIr {
+                report.push_reason(kind, code, message, Some(gap.gap_id.clone()));
+            } else {
+                report.push_warning(kind, code, message, Some(gap.gap_id.clone()));
+            }
+        }
+    }
+
+    let identity = package.identity_evidence();
+    for consumption in &identity.vm_consumption_evidence {
+        add_consumption_support(&mut report, consumption);
+    }
+
+    report.sort();
+    report
+}
+
+fn add_consumption_support(
+    report: &mut VmPackageSupportReport,
+    consumption: &VmConsumptionEvidence,
+) {
+    let blocks_for_consumer = report.consumer == VmPackageSupportConsumer::ProcLoweringIr;
+    if consumption.gap_classifications.is_empty() && blocks_for_consumer {
+        report.push_reason(
+            VmPackageSupportReasonKind::UnsupportedDescriptor,
+            format!("{}:{}", consumption.selection_id, consumption.status),
+            format!(
+                "VM consumption row {} is {} without a classified gap",
+                consumption.selection_id, consumption.status
+            ),
+            Some(consumption.selection_id.clone()),
+        );
+        return;
+    }
+
+    for gap in &consumption.gap_classifications {
+        let kind = support_reason_kind_from_gap(gap, Some(&consumption.selection_id));
+        let code = format!("{}:{gap}", consumption.selection_id);
+        let message = format!(
+            "VM consumption row {} is {} and carries gap {gap}",
+            consumption.selection_id, consumption.status
+        );
+        if blocks_for_consumer {
+            report.push_reason(kind, code, message, Some(consumption.selection_id.clone()));
+        } else {
+            report.push_warning(kind, code, message, Some(consumption.selection_id.clone()));
+        }
+    }
+}
+
+fn support_reason_kind_from_gap(gap: &str, context: Option<&str>) -> VmPackageSupportReasonKind {
+    let gap = gap.to_ascii_lowercase();
+    let context = context.unwrap_or_default().to_ascii_lowercase();
+    if context.contains("host-policy") || gap.contains("host-policy") {
+        VmPackageSupportReasonKind::HostPolicyUnsupported
+    } else if gap.starts_with("vm-limitation") || gap.contains("vm-limitation") {
+        VmPackageSupportReasonKind::VmLimitation
+    } else if gap.starts_with("interop-limitation") || gap.contains("interop-limitation") {
+        VmPackageSupportReasonKind::InteropLimitation
+    } else if gap.starts_with("oracle-required") || gap.contains("oracle-required") {
+        VmPackageSupportReasonKind::OracleRequired
+    } else if gap.starts_with("test-shortcoming") || gap.contains("test-shortcoming") {
+        VmPackageSupportReasonKind::TestBlocked
+    } else if gap.starts_with("metadata-missing") || gap.contains("metadata-missing") {
+        VmPackageSupportReasonKind::MissingDescriptor
+    } else {
+        VmPackageSupportReasonKind::UnsupportedDescriptor
+    }
 }
 
 fn vm_consumption_evidence_row(
@@ -4457,6 +4712,14 @@ impl Vm {
 
     pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
         self.execute_package_with_typed_fastpaths(package, self.typed_fastpaths_default)
+    }
+
+    pub fn execute_package_strict(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<(), String> {
+        package.ensure_supported_for_vm_execution()?;
+        self.execute_package(package)
     }
 
     pub fn execute_package_with_typed_fastpaths(
