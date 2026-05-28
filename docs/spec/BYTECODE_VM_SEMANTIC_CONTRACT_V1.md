@@ -47,9 +47,9 @@ Rows can start at family granularity and split when semantics diverge.
 | Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Selected v15 operator descriptors and evidence exist; full truth table and descriptor-driven execution remain incomplete. |
 | Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Selected v15 coercion/operator/value-state descriptors exist; full helper truth table evidence remains incomplete. |
 | Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Selected v15 truthiness/logical/branch descriptors exist; broader extraction and behavior consumption remain incomplete. |
-| String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
-| Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
-| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
+| String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | String/BSTR descriptor evidence exists; strict VM support rejects string cleanup/lifetime gaps through `STRING-CLEANUP-UNSUPPORTED` until helper-temp cleanup and lifetime evidence are package-owned. |
+| Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Selected rank-1 fixed/static bounds are descriptor-driven; unsupported multi-rank, incomplete-bound, and owning-element cleanup shapes reject under strict VM support through `ARRAY-DESCRIPTOR-UNSUPPORTED`. |
+| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; strict VM support rejects executable UDT layout/copy/drop/cleanup gaps through `UDT-LAYOUT-CLEANUP-UNSUPPORTED`. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; selected `Long` to `Double ByVal` binding is descriptor-driven; Optional-missing and unselected broader call-entry coercions reject under strict VM support until implemented. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v15 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
 | Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Selected error-routing/deopt evidence exists for the TB03 Resume Next division seed; broader maps and oracle-backed edge evidence remain incomplete. |
@@ -374,11 +374,12 @@ The VMR-05 seed fixture proves the current positive subset for fixed/static
 local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
 and ByRef scalar observation copyback. Package execution now consumes
 `ArrayShapeDescriptor` for the selected VMR-06 rank-1 fixed/static
-`LBound`/`UBound` path. Compiler/VM unit
-evidence now covers multi-rank descriptor serialization, but VM-runnable
-multi-rank execution fixtures, runtime bounds-error evidence, and COM/native
-SAFEARRAY projection remain incomplete before JIT lowering may claim TB05
-closure.
+`LBound`/`UBound` path. Strict VM support rejects descriptor-visible
+multi-rank, incomplete-bound, and owning-element cleanup array shapes before
+execution through `ARRAY-DESCRIPTOR-UNSUPPORTED`. Compiler/VM unit evidence now
+covers multi-rank descriptor serialization, but VM-runnable multi-rank
+execution fixtures, runtime bounds-error evidence, and COM/native SAFEARRAY
+projection remain incomplete before JIT lowering may claim TB05 closure.
 
 The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
 the current flattened UDT storage model. VM evidence now records descriptor ids,
@@ -388,7 +389,9 @@ copy classification, recursive init policy, descriptor field-order layout
 tokens, and cleanup ownership flags. The selected VMR-06 cleanup slice also
 records `VmPackageIdentityEvidence::lifecycle_evidence` for UDT BSTR-owning
 fields, including success, branch, error, helper, deopt, and runtime
-alias-carrier observations. VM UDT field access, whole-copy execution,
+alias-carrier observations. Strict VM support rejects executable UDT
+layout/copy/drop/cleanup gaps before execution through
+`UDT-LAYOUT-CLEANUP-UNSUPPORTED`; VM UDT field access, whole-copy execution,
 byte-offset layout, and explicit cleanup-stack execution still do not consume
 these descriptors yet.
 

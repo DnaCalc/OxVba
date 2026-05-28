@@ -57,6 +57,9 @@ The current repository is package-capable but not package-only.
   - broader ByVal call-entry coercions outside the selected direct `Long` to
     `Double` shape, now strict VM support rejections until individually
     promoted;
+  - multi-rank/incomplete-bound/owning-element array descriptors, String/BSTR
+    cleanup and lifetime gaps, and UDT layout/copy/drop/cleanup gaps, now
+    strict VM support rejections until individually promoted;
   - error/deopt cleanup consumption;
   - COM/native/export boundary consumption;
   - host-policy behavior-driving descriptor consumption.
@@ -94,6 +97,12 @@ Current progress:
   state and broader unselected ByVal call-entry coercion descriptors reject
   deterministically through `VmPackageSupportReport` before strict VM
   execution.
+- `bd-embl.7` converts array/UDT/string cleanup gaps into descriptor-owned VM
+  support outcomes: the selected rank-1 fixed/static array bound path remains
+  strict-VM supported, while multi-rank/incomplete-bound/owning-element array
+  descriptors, String/BSTR cleanup/lifetime gaps, and executable UDT
+  layout/copy/drop/cleanup gaps reject deterministically through
+  `VmPackageSupportReport` before strict VM execution.
 
 ## Execution Beads
 

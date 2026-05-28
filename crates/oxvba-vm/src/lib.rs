@@ -391,6 +391,140 @@ mod tests {
     }
 
     #[test]
+    fn strict_package_accepts_selected_static_array_bounds() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim fixed(1 To 3) As Long\n\
+             Dim fixedL As Long\n\
+             Dim fixedU As Long\n\
+             fixedL = LBound(fixed)\n\
+             fixedU = UBound(fixed)\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(
+            report.is_supported(),
+            "selected static array bounds should remain VM-supported: {report:#?}"
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|reason| reason.code.contains("VMR06-ARRAY-STATIC-BOUNDS-001")),
+            "selected static array residual bounds gap should remain a warning: {report:#?}"
+        );
+
+        let main_metadata = package
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("Main metadata should exist");
+        let slot_by_name = |name: &str| {
+            main_metadata
+                .slots
+                .iter()
+                .find(|slot| slot.name.eq_ignore_ascii_case(name))
+                .map(|slot| slot.slot)
+                .expect("slot should exist")
+        };
+        let fixed_l_slot = slot_by_name("fixedL");
+        let fixed_u_slot = slot_by_name("fixedU");
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package_strict(&package)
+            .expect("strict package execution should accept selected static array bounds");
+        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
+        assert_eq!(snapshot[fixed_l_slot], Variant::from_i32(1));
+        assert_eq!(snapshot[fixed_u_slot], Variant::from_i32(3));
+    }
+
+    #[test]
+    fn strict_package_rejects_multirank_array_descriptor_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim matrix(1 To 2, 3 To 4) As Long\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report
+                .reasons
+                .iter()
+                .any(|reason| reason.code.contains("ARRAY-DESCRIPTOR-UNSUPPORTED")),
+            "multi-rank array descriptor gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject multi-rank array descriptor gap");
+        assert!(err.contains("ARRAY-DESCRIPTOR-UNSUPPORTED"));
+    }
+
+    #[test]
+    fn strict_package_rejects_string_cleanup_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim label As String\n\
+             label = \"ok\"\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report
+                .reasons
+                .iter()
+                .any(|reason| reason.code.contains("STRING-CLEANUP-UNSUPPORTED")),
+            "string cleanup/lifetime gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject string cleanup gap");
+        assert!(err.contains("STRING-CLEANUP-UNSUPPORTED"));
+    }
+
+    #[test]
+    fn strict_package_rejects_udt_layout_cleanup_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Type Point\n\
+             X As Long\n\
+             Y As Long\n\
+             End Type\n\
+             Public Sub Main()\n\
+             Dim point As Point\n\
+             point.X = 1\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report
+                .reasons
+                .iter()
+                .any(|reason| reason.code.contains("UDT-LAYOUT-CLEANUP-UNSUPPORTED")),
+            "UDT layout/copy/drop gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject UDT layout/copy/drop gap");
+        assert!(err.contains("UDT-LAYOUT-CLEANUP-UNSUPPORTED"));
+    }
+
+    #[test]
     fn package_execution_selects_optimized_paths_from_operator_descriptors() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\

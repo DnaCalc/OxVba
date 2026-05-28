@@ -2117,6 +2117,37 @@ fn collect_vm_consumption_evidence(
         ));
     }
 
+    let unsupported_array_shapes = unsupported_array_descriptor_shapes(sources.procedure_metadata);
+    if !unsupported_array_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=ARRAY-DESCRIPTOR-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "supported-selection=VMR06-ARRAY-STATIC-BOUNDS-001".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_array_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-array-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "ARRAY-DESCRIPTOR-UNSUPPORTED",
+            "unsupported-rejected",
+            descriptor_family_keys(&[
+                DescriptorFamily::ArrayShape,
+                DescriptorFamily::Slot,
+                DescriptorFamily::Lifecycle,
+            ]),
+            vec![
+                "VM-limitation:array-multirank-and-incomplete-bounds".to_string(),
+                "metadata-missing:array-element-cleanup-stack".to_string(),
+                "metadata-missing:array-bounds-error-routing-evidence".to_string(),
+            ],
+            observations,
+        ));
+    }
+
     if selected_udt_cleanup_consumption_present(sources.lifecycle) {
         evidence.push(vm_consumption_evidence_row(
             "VMR06-UDT-OWNING-FIELD-CLEANUP-001",
@@ -2136,6 +2167,66 @@ fn collect_vm_consumption_evidence(
                 "fixture=VMR02_UDT_FIELD_SLOTS|VMR05_UDT_DESCRIPTOR_MEMBERS".to_string(),
                 "descriptor-absence-policy=omit-selected-cleanup-evidence".to_string(),
             ],
+        ));
+    }
+
+    let unsupported_udt_shapes = unsupported_udt_descriptor_shapes(sources.procedure_metadata);
+    if !unsupported_udt_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=UDT-LAYOUT-CLEANUP-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "supported-selection=VMR06-UDT-OWNING-FIELD-CLEANUP-001:evidence-only".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_udt_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-udt-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "UDT-LAYOUT-CLEANUP-UNSUPPORTED",
+            "unsupported-rejected",
+            descriptor_family_keys(&[
+                DescriptorFamily::UdtType,
+                DescriptorFamily::Slot,
+                DescriptorFamily::Lifecycle,
+            ]),
+            vec![
+                "metadata-missing:udt-byte-offset-layout".to_string(),
+                "metadata-missing:descriptor-driven-udt-copy-drop".to_string(),
+                "metadata-missing:explicit-cleanup-stack-execution".to_string(),
+            ],
+            observations,
+        ));
+    }
+
+    let unsupported_string_shapes = unsupported_string_cleanup_shapes(sources.procedure_metadata);
+    if !unsupported_string_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=STRING-CLEANUP-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_string_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-string-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "STRING-CLEANUP-UNSUPPORTED",
+            "unsupported-rejected",
+            descriptor_family_keys(&[
+                DescriptorFamily::Slot,
+                DescriptorFamily::Lifecycle,
+                DescriptorFamily::CarrierLayout,
+            ]),
+            vec![
+                "metadata-missing:string-helper-temp-cleanup".to_string(),
+                "metadata-missing:string-lifetime-counters".to_string(),
+            ],
+            observations,
         ));
     }
 
@@ -2645,6 +2736,139 @@ fn selected_static_array_bounds_consumption_present(
                 && descriptor.base_slot.is_some()
         })
     })
+}
+
+fn unsupported_array_descriptor_shapes(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<String> {
+    let mut shapes = Vec::new();
+    for metadata in procedure_metadata.values() {
+        for descriptor in &metadata.array_shapes {
+            let procedure_name = metadata.procedure_name.to_ascii_lowercase();
+            let array_name = descriptor.name.to_ascii_lowercase();
+            if descriptor.rank != 1 {
+                shapes.push(format!(
+                    "procedure={procedure_name};array={array_name};shape=multi-rank;rank={};storage={}",
+                    descriptor.rank,
+                    debug_token(&descriptor.storage)
+                ));
+            }
+            if descriptor.storage == ArrayStorageKind::StaticFixed
+                && descriptor.bounds.len() != descriptor.rank
+            {
+                shapes.push(format!(
+                    "procedure={procedure_name};array={array_name};shape=incomplete-static-bounds;rank={};bounds={}",
+                    descriptor.rank,
+                    descriptor.bounds.len()
+                ));
+            }
+            if array_carrier_needs_explicit_cleanup(&descriptor.element_carrier) {
+                shapes.push(format!(
+                    "procedure={procedure_name};array={array_name};shape=owning-element-cleanup;carrier={};storage={}",
+                    debug_token(&descriptor.element_carrier),
+                    debug_token(&descriptor.storage)
+                ));
+            }
+        }
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+fn unsupported_udt_descriptor_shapes(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<String> {
+    let mut shapes = Vec::new();
+    for metadata in procedure_metadata.values() {
+        for descriptor in &metadata.udt_types {
+            shapes.push(format!(
+                "procedure={};udt={};shape=layout-copy-drop;storage={};copy={};fields={};cleanup=bstr:{}:object:{}:safearray:{}:variant:{}",
+                metadata.procedure_name.to_ascii_lowercase(),
+                descriptor.type_name.to_ascii_lowercase(),
+                debug_token(&descriptor.storage),
+                debug_token(&descriptor.copy_semantics),
+                descriptor.fields.len(),
+                descriptor.cleanup.owns_bstr,
+                descriptor.cleanup.owns_object_ref,
+                descriptor.cleanup.owns_safearray,
+                descriptor.cleanup.owns_variant
+            ));
+            for field in &descriptor.fields {
+                if !field.array_bounds.is_empty() {
+                    shapes.push(format!(
+                        "procedure={};udt={};field={};shape=fixed-array-field;bounds={}",
+                        metadata.procedure_name.to_ascii_lowercase(),
+                        descriptor.type_name.to_ascii_lowercase(),
+                        field.name.to_ascii_lowercase(),
+                        field.array_bounds.len()
+                    ));
+                }
+                if array_carrier_needs_explicit_cleanup(&field.carrier) {
+                    shapes.push(format!(
+                        "procedure={};udt={};field={};shape=owning-field-cleanup;carrier={}",
+                        metadata.procedure_name.to_ascii_lowercase(),
+                        descriptor.type_name.to_ascii_lowercase(),
+                        field.name.to_ascii_lowercase(),
+                        debug_token(&field.carrier)
+                    ));
+                }
+            }
+        }
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+fn unsupported_string_cleanup_shapes(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<String> {
+    let mut shapes = Vec::new();
+    for metadata in procedure_metadata.values() {
+        for slot in &metadata.slots {
+            if slot.carrier == RuntimeCarrierKind::BStr {
+                shapes.push(format!(
+                    "procedure={};slot={};shape=bstr-slot-cleanup;role={:?};declared={:?}",
+                    metadata.procedure_name.to_ascii_lowercase(),
+                    slot.name.to_ascii_lowercase(),
+                    slot.kind,
+                    slot.declared_type
+                ));
+            }
+        }
+        for descriptor in &metadata.udt_types {
+            for field in &descriptor.fields {
+                if field.carrier == RuntimeCarrierKind::BStr {
+                    let shape = if field.fixed_string_len.is_some() {
+                        "fixed-string-field-cleanup"
+                    } else {
+                        "variable-string-field-cleanup"
+                    };
+                    shapes.push(format!(
+                        "procedure={};udt={};field={};shape={shape}",
+                        metadata.procedure_name.to_ascii_lowercase(),
+                        descriptor.type_name.to_ascii_lowercase(),
+                        field.name.to_ascii_lowercase()
+                    ));
+                }
+            }
+        }
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+fn array_carrier_needs_explicit_cleanup(carrier: &RuntimeCarrierKind) -> bool {
+    matches!(
+        carrier,
+        RuntimeCarrierKind::BStr
+            | RuntimeCarrierKind::ObjectRef
+            | RuntimeCarrierKind::SafeArray
+            | RuntimeCarrierKind::Variant
+            | RuntimeCarrierKind::UdtFields { .. }
+    )
 }
 
 fn selected_udt_cleanup_consumption_present(lifecycle: &[VmLifecycleEvidence]) -> bool {

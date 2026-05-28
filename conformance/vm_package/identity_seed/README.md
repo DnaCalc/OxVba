@@ -149,15 +149,18 @@ explicit cleanup stack or change runtime carrier drop behavior.
 The VM-consumption evidence ledger records the selected supported rows
 (`VMR06-CALL-BYVAL-COERCE-001` and `VMR06-ARRAY-STATIC-BOUNDS-001`), the
 selected evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), the
-strict rejection rows for Optional `Variant` missing and unselected broader
-ByVal call-entry coercions, and the explicit gaps for error/deopt cleanup,
-boundary projection, and host-policy consumption. The companion seed table is
+strict rejection rows for Optional `Variant` missing, unselected broader ByVal
+call-entry coercions, unsupported array descriptor shapes, String/BSTR cleanup
+and lifetime gaps, and executable UDT layout/copy/drop/cleanup gaps, plus the
+explicit gaps for error/deopt cleanup, boundary projection, and host-policy
+consumption. The companion seed table is
 `docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`.
 
 `VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot
 lifecycle tokens. The selected row records `LIFE-BSTR-SLOT` cleanup obligations
-for a declared local `String`, while broader helper-temp cleanup and lifetime
-counters remain TB04 follow-up work.
+for a declared local `String`; strict VM support now rejects String/BSTR
+cleanup and lifetime gaps before execution until helper-temp cleanup and
+lifetime counter evidence are package-owned.
 
 `VMR05_OBJECT_DESCRIPTOR_IDENTITY` is the first object descriptor fixture. It
 records a generic `Object` local with `Nothing` initial state and `ObjectRef`

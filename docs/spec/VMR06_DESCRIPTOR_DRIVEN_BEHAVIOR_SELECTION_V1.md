@@ -107,6 +107,10 @@ Implementation evidence:
   names or from ambient runtime state.
 - `bd-tvmb.10` adds VM-consumption evidence for this selected row, including
   the package-only descriptor path and raw runtime error 13 baseline.
+- `bd-embl.7` keeps this selected rank-1 fixed/static path strict-VM
+  supported, while descriptor-visible multi-rank arrays, incomplete static
+  bounds, and owning element cleanup shapes emit
+  `ARRAY-DESCRIPTOR-UNSUPPORTED` and reject before strict VM execution.
 
 ### UDT Owning Field Cleanup Evidence
 
@@ -146,6 +150,12 @@ Implementation evidence:
   cleanup-stack execution as later work.
 - `bd-tvmb.10` adds VM-consumption evidence for this evidence-only selected
   row, keeping explicit cleanup-stack execution classified as missing.
+- `bd-embl.7` keeps this evidence-only row in the ledger, while executable UDT
+  layout, copy, drop, and cleanup-stack gaps emit
+  `UDT-LAYOUT-CLEANUP-UNSUPPORTED` and reject before strict VM execution.
+  String/BSTR slot and field cleanup/lifetime gaps similarly emit
+  `STRING-CLEANUP-UNSUPPORTED` until helper-temp cleanup and lifetime counter
+  evidence are package-owned.
 
 ## Call-Entry Descriptor Inputs
 
@@ -296,11 +306,14 @@ The first slice does not change:
 - string, Date, Currency, Boolean, UDT, object, array, or Variant-wide
   call-entry coercion;
 - dynamic array runtime SAFEARRAY bound behavior;
-- multi-rank array bound behavior;
+- multi-rank array bound behavior, now rejected before strict VM execution
+  through `ARRAY-DESCRIPTOR-UNSUPPORTED` until promoted;
 - bounds-error routing;
 - fixed/static array allocation or element storage;
-- explicit cleanup stack execution;
-- cleanup lifetime counters;
+- explicit cleanup stack execution, now rejected before strict VM execution for
+  UDT and String/BSTR owning descriptors until promoted;
+- cleanup lifetime counters, now rejected before strict VM execution for
+  String/BSTR descriptors until promoted;
 - runtime slot storage representation;
 - `oxvba-jit` behavior.
 
