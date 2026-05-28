@@ -50,7 +50,7 @@ Rows can start at family granularity and split when semantics diverge.
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
-| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
+| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; selected `Long` to `Double ByVal` binding is descriptor-driven; Optional-missing and unselected broader call-entry coercions reject under strict VM support until implemented. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v15 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
 | Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Selected error-routing/deopt evidence exists for the TB03 Resume Next division seed; broader maps and oracle-backed edge evidence remain incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Host capability descriptor evidence exists; behavior-driving policy evaluation descriptors remain incomplete. |
@@ -317,12 +317,15 @@ call/signature slot descriptors for the observed `Long` to declared-`Double`
 shape, and the callee observes a `Double` value at entry. Optional
 `Variant` without an explicit default is described by package metadata as a
 missing-argument policy
-(`VariantMissingError448`) while current VM lowering still materializes a
-default local value. The fixture records those behaviors as VM/runtime
-limitations to resolve before descriptor-driven call binding or JIT lowering
-can claim full call-coercion or Optional-missing parity. Call-site evidence also
-records the selected coercion row id, numeric-widen row id, and runtime helper
-id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
+(`VariantMissingError448`), but strict VM package support now rejects that
+shape before execution until runtime missing-argument materialization has oracle
+evidence and descriptor-backed behavior. Broader ByVal call-entry coercion
+descriptors outside the selected direct local `Long` to `Double` path are also
+strict support-report rejections rather than silent fallbacks. Non-strict/raw
+fixture execution may still expose the old lowered baseline for evidence, but
+that baseline is not a package-support claim. Call-site evidence also records
+the selected coercion row id, numeric-widen row id, and runtime helper id for
+the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
 observable without generalizing coercion behavior.
 
 Current expression/operator/coercion seed surface is package metadata and VM

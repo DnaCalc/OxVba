@@ -52,7 +52,11 @@ The current repository is package-capable but not package-only.
     stack execution.
 - `docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv` still
   classifies these gaps:
-  - Optional `Variant` missing runtime materialization;
+  - Optional `Variant` missing runtime materialization, now a strict VM support
+    rejection until implemented;
+  - broader ByVal call-entry coercions outside the selected direct `Long` to
+    `Double` shape, now strict VM support rejections until individually
+    promoted;
   - error/deopt cleanup consumption;
   - COM/native/export boundary consumption;
   - host-policy behavior-driving descriptor consumption.
@@ -84,6 +88,12 @@ Current progress:
   computes `descriptor-selected-fastpaths` from the VM support gate plus
   `OperatorSemanticsDescriptor::ImplementationFastPath` facts and records that
   selection in `VmExecutionSelectionEvidence`.
+- `bd-embl.6` converts call/value-state gaps into descriptor-owned VM support
+  outcomes: the selected direct `Long` to declared `Double ByVal` call-entry
+  path remains strict-VM supported, while omitted Optional `Variant` missing
+  state and broader unselected ByVal call-entry coercion descriptors reject
+  deterministically through `VmPackageSupportReport` before strict VM
+  execution.
 
 ## Execution Beads
 

@@ -74,10 +74,13 @@ preserves the old `VarType=2` entry observation for the declared-`Double`
 callee, while package execution consumes the selected VMR-06 descriptors and
 observes `VarType=5`. The remaining current VM limitation in this row is
 Optional `Variant`: the descriptor says the missing policy is
-`VariantMissingError448` while current VM lowering still materializes a default
-local observed by the fixture as `VarType=2`. That gap is not treated as
-VBA-compatible missing-argument behavior. The call-site evidence also records
-the selected table row ids for the behavior-driving call-entry coercion:
+`VariantMissingError448`; strict VM package support rejects that shape before
+execution until a descriptor-backed missing-argument runtime state exists. The
+non-strict fixture still records the old lowered baseline as `VarType=2`, but
+that gap is not treated as VBA-compatible missing-argument behavior. Broader
+ByVal call-entry coercion descriptors outside the selected `Long` to `Double`
+shape likewise reject before strict VM execution. The call-site evidence also
+records the selected table row ids for the behavior-driving call-entry coercion:
 `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
 helper `oxvba_runtime::coerce_to`.
 
@@ -145,9 +148,10 @@ explicit cleanup stack or change runtime carrier drop behavior.
 
 The VM-consumption evidence ledger records the selected supported rows
 (`VMR06-CALL-BYVAL-COERCE-001` and `VMR06-ARRAY-STATIC-BOUNDS-001`), the
-selected evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), and
-the explicit gaps for Optional `Variant` missing, error/deopt cleanup, boundary
-projection, and host-policy consumption. The companion seed table is
+selected evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), the
+strict rejection rows for Optional `Variant` missing and unselected broader
+ByVal call-entry coercions, and the explicit gaps for error/deopt cleanup,
+boundary projection, and host-policy consumption. The companion seed table is
 `docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`.
 
 `VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot

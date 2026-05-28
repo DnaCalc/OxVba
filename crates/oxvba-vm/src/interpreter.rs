@@ -317,6 +317,32 @@ impl<'a> VmExecutionPackage<'a> {
         self.identity_evidence_with_runtime_slots(&[])
     }
 
+    fn vm_consumption_evidence_for_support_report(&self) -> Vec<VmConsumptionEvidence> {
+        let interop_descriptor_evidence = collect_interop_descriptor_evidence(
+            self.bytecode,
+            self.export_inventory,
+            self.descriptor_inventory,
+        );
+        let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, &[]);
+        let error_descriptor_evidence = collect_error_descriptor_evidence(self.bytecode);
+        let deopt_snapshot_evidence = collect_deopt_snapshot_evidence(
+            self.bytecode,
+            self.procedure_metadata,
+            &lifecycle_evidence,
+            self.project_context,
+        );
+        let host_policy_evidence = collect_host_policy_evidence(self.project_context);
+        collect_vm_consumption_evidence(VmConsumptionEvidenceSources {
+            bytecode: self.bytecode,
+            procedure_metadata: self.procedure_metadata,
+            lifecycle: &lifecycle_evidence,
+            interop: &interop_descriptor_evidence,
+            error: &error_descriptor_evidence,
+            deopt: &deopt_snapshot_evidence,
+            host_policy: &host_policy_evidence,
+        })
+    }
+
     fn identity_evidence_with_runtime_slots(
         &self,
         runtime_slots: &[RuntimeSlot],
@@ -2014,10 +2040,39 @@ fn collect_vm_consumption_evidence(
         ));
     }
 
+    let unsupported_call_entry_shapes =
+        unsupported_call_entry_coercion_shapes(sources.procedure_metadata);
+    if !unsupported_call_entry_shapes.is_empty() {
+        let mut observations = vec![
+            "selection=CALL-BYVAL-COERCION-UNSUPPORTED".to_string(),
+            "package-execution=rejected-by-support-report".to_string(),
+            "vm-path=VmPackageSupportReport".to_string(),
+            "supported-selection=VMR06-CALL-BYVAL-COERCE-001".to_string(),
+            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
+        ];
+        observations.extend(
+            unsupported_call_entry_shapes
+                .into_iter()
+                .map(|shape| format!("unsupported-call-entry-shape={shape}")),
+        );
+        evidence.push(vm_consumption_evidence_row(
+            "CALL-BYVAL-COERCION-UNSUPPORTED",
+            "unsupported-rejected",
+            descriptor_family_keys(&[
+                DescriptorFamily::ProcedureSignature,
+                DescriptorFamily::CallSite,
+                DescriptorFamily::Coercion,
+                DescriptorFamily::Slot,
+            ]),
+            vec!["metadata-missing:broader-call-entry-coercions".to_string()],
+            observations,
+        ));
+    }
+
     if optional_missing_gap_present(sources.procedure_metadata) {
         evidence.push(vm_consumption_evidence_row(
             "CALL-OPTIONAL-MISSING-VARIANT",
-            "vm-limitation",
+            "unsupported-rejected",
             descriptor_family_keys(&[
                 DescriptorFamily::CallSite,
                 DescriptorFamily::ValueState,
@@ -2029,12 +2084,13 @@ fn collect_vm_consumption_evidence(
             ],
             vec![
                 "selection=CALL-OPTIONAL-MISSING-VARIANT".to_string(),
-                "package-execution=deferred".to_string(),
-                "vm-path=current-compiler-lowered-default".to_string(),
+                "package-execution=rejected-by-support-report".to_string(),
+                "vm-path=VmPackageSupportReport".to_string(),
                 "raw-bytecode-baseline=materialized-i32-default-current-gap".to_string(),
                 "package-baseline=OptionalDefaultValue::VariantMissingError448".to_string(),
                 "fixture=VMR04_CALL_ARGUMENT_BINDING".to_string(),
                 "required-before-broad-call-binding=runtime-missing-state-consumption".to_string(),
+                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
             ],
         ));
     }
@@ -2216,8 +2272,8 @@ fn package_support_report(
         }
     }
 
-    let identity = package.identity_evidence();
-    for consumption in &identity.vm_consumption_evidence {
+    let vm_consumption_evidence = package.vm_consumption_evidence_for_support_report();
+    for consumption in &vm_consumption_evidence {
         add_consumption_support(&mut report, consumption);
     }
 
@@ -2229,7 +2285,8 @@ fn add_consumption_support(
     report: &mut VmPackageSupportReport,
     consumption: &VmConsumptionEvidence,
 ) {
-    let blocks_for_consumer = report.consumer == VmPackageSupportConsumer::ProcLoweringIr;
+    let blocks_for_consumer = report.consumer == VmPackageSupportConsumer::ProcLoweringIr
+        || consumption.status == "unsupported-rejected";
     if consumption.gap_classifications.is_empty() && blocks_for_consumer {
         report.push_reason(
             VmPackageSupportReasonKind::UnsupportedDescriptor,
@@ -2346,26 +2403,8 @@ fn descriptor_selected_fastpath_execution(
 }
 
 fn vm_execution_support_gate_observations(package: &VmExecutionPackage<'_>) -> (bool, Vec<String>) {
-    let mut blockers = Vec::new();
-    if package.package_origin == VmPackageOrigin::InMemory {
-        blockers.push("PACKAGE-INMEMORY-NOT-STRICT".to_string());
-    }
-    if package.procedure_metadata.is_empty() {
-        blockers.push("PACKAGE-MISSING-PROCEDURE-METADATA".to_string());
-    }
-    if package.project_context.is_none() {
-        blockers.push("PACKAGE-MISSING-PROJECT-CONTEXT".to_string());
-    }
-    if package.descriptor_inventory.is_none() {
-        blockers.push("PACKAGE-MISSING-DESCRIPTOR-INVENTORY".to_string());
-    }
-    if let Some(context) = package.project_context {
-        for diagnostic in &context.package_diagnostics {
-            blockers.push(format!("package-diagnostic={}", diagnostic.code));
-        }
-    }
-
-    let allowed = blockers.is_empty();
+    let report = package.support_report_for_vm_execution();
+    let allowed = report.is_supported();
     let mut observations = vec![
         format!("package-origin={:?}", package.package_origin),
         format!(
@@ -2373,8 +2412,8 @@ fn vm_execution_support_gate_observations(package: &VmExecutionPackage<'_>) -> (
             if allowed { "accepted" } else { "blocked" }
         ),
     ];
-    for blocker in blockers {
-        observations.push(format!("support-blocker={blocker}"));
+    for reason in &report.reasons {
+        observations.push(format!("support-blocker={}", reason.code));
     }
     (allowed, observations)
 }
@@ -2467,6 +2506,106 @@ fn selected_call_entry_consumption_present(
                 .is_some()
             })
         })
+    })
+}
+
+fn unsupported_call_entry_coercion_shapes(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<String> {
+    let metadata_by_entry_pc = procedure_metadata
+        .values()
+        .map(|metadata| (metadata.entry_pc, metadata))
+        .collect::<BTreeMap<_, _>>();
+    let mut shapes = Vec::new();
+    for caller_metadata in procedure_metadata.values() {
+        for call_site in &caller_metadata.call_sites {
+            let Some(target_metadata) = call_site
+                .target_entry_pc
+                .and_then(|target_pc| metadata_by_entry_pc.get(&target_pc).copied())
+            else {
+                continue;
+            };
+            for argument in &call_site.arguments {
+                if selected_long_to_double_byval_call_entry_slots(
+                    argument,
+                    caller_metadata,
+                    target_metadata,
+                )
+                .is_some()
+                {
+                    continue;
+                }
+                let Some(shape) =
+                    call_entry_declared_coercion_shape(argument, caller_metadata, target_metadata)
+                else {
+                    continue;
+                };
+                shapes.push(format!(
+                    "caller={};target={};arg={};source-slot={};parameter-slot={};source={:?};target={:?};expr={:?};binding={:?}",
+                    caller_metadata.procedure_name.to_ascii_lowercase(),
+                    call_site.target_name.to_ascii_lowercase(),
+                    argument
+                        .parameter_name
+                        .as_deref()
+                        .unwrap_or("<unnamed>")
+                        .to_ascii_lowercase(),
+                    shape.source_slot,
+                    shape.parameter_slot,
+                    shape.source_declared_type,
+                    shape.target_declared_type,
+                    argument.expression_kind,
+                    argument.binding_kind
+                ));
+            }
+        }
+    }
+    shapes.sort();
+    shapes.dedup();
+    shapes
+}
+
+struct CallEntryDeclaredCoercionShape {
+    source_slot: usize,
+    parameter_slot: usize,
+    source_declared_type: VbaTypeId,
+    target_declared_type: VbaTypeId,
+}
+
+fn call_entry_declared_coercion_shape(
+    argument: &ArgumentBindingDescriptor,
+    caller_metadata: &ProcedureRuntimeMetadata,
+    target_metadata: &ProcedureRuntimeMetadata,
+) -> Option<CallEntryDeclaredCoercionShape> {
+    if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy {
+        return None;
+    }
+    let source_slot = argument.source_slot?;
+    let parameter_slot = argument.parameter_slot?;
+    let parameter = target_metadata
+        .signature
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.slot == Some(parameter_slot)
+                && argument
+                    .parameter_index
+                    .is_none_or(|index| parameter.index == index)
+        })?;
+    if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal {
+        return None;
+    }
+    let caller_slot = caller_metadata
+        .slots
+        .iter()
+        .find(|slot| slot.slot == source_slot)?;
+    if caller_slot.declared_type == parameter.declared_type {
+        return None;
+    }
+    Some(CallEntryDeclaredCoercionShape {
+        source_slot,
+        parameter_slot,
+        source_declared_type: caller_slot.declared_type,
+        target_declared_type: parameter.declared_type,
     })
 }
 

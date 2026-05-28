@@ -1,7 +1,7 @@
 # Formal Run Report
 
 - Run ID: 20260528T082552Z
-- Timestamp (UTC): 2026-05-28T08:25:52Z
+- Timestamp (UTC): 2026-05-28T08:50:20Z
 - Profile scope: mvp-typed-execution-fastpaths-v85
 - Overall mode: non-blocking
 - Kani required: false

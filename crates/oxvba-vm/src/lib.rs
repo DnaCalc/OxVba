@@ -276,6 +276,121 @@ mod tests {
     }
 
     #[test]
+    fn strict_package_accepts_selected_call_entry_coercion() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim seed As Long\n\
+             Dim observedType As Long\n\
+             Dim byValCoerced As Double\n\
+             seed = 4\n\
+             byValCoerced = TakeDouble(seed, observedType)\n\
+             End Sub\n\
+             Public Function TakeDouble(ByVal value As Double, ByRef observedType As Long) As Double\n\
+             observedType = VarType(value)\n\
+             value = value + 0.5\n\
+             TakeDouble = value\n\
+             End Function",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(
+            report.is_supported(),
+            "selected call-entry coercion should remain VM-supported: {report:#?}"
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|reason| reason.code.contains("VMR06-CALL-BYVAL-COERCE-001")),
+            "selected call-entry residual broader-shape gap should remain a warning: {report:#?}"
+        );
+
+        let main_metadata = package
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("Main metadata should exist");
+        let slot_by_name = |name: &str| {
+            main_metadata
+                .slots
+                .iter()
+                .find(|slot| slot.name.eq_ignore_ascii_case(name))
+                .map(|slot| slot.slot)
+                .expect("slot should exist")
+        };
+        let observed_type_slot = slot_by_name("observedType");
+        let byval_coerced_slot = slot_by_name("byValCoerced");
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package_strict(&package)
+            .expect("strict package execution should accept selected call coercion");
+        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
+        assert_eq!(snapshot[observed_type_slot], Variant::from_i32(5));
+        assert_eq!(snapshot[byval_coerced_slot], Variant::from_f64(4.5));
+    }
+
+    #[test]
+    fn strict_package_rejects_optional_variant_missing_state_gap() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim observed As Long\n\
+             observed = MaybeVariantTag()\n\
+             End Sub\n\
+             Public Function MaybeVariantTag(Optional ByVal value As Variant) As Long\n\
+             MaybeVariantTag = VarType(value)\n\
+             End Function",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report.reasons.iter().any(|reason| {
+                reason.kind == VmPackageSupportReasonKind::VmLimitation
+                    && reason.code.contains("CALL-OPTIONAL-MISSING-VARIANT")
+            }),
+            "Optional Variant missing-state gap should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject Optional Variant missing state");
+        assert!(err.contains("CALL-OPTIONAL-MISSING-VARIANT"));
+    }
+
+    #[test]
+    fn strict_package_rejects_unselected_call_entry_coercion_shape() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim value As Variant\n\
+             value = 5\n\
+             Call TakeLong(value)\n\
+             End Sub\n\
+             Public Sub TakeLong(ByVal value As Long)\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        let report = package.support_report_for_vm_execution();
+        assert!(!report.is_supported());
+        assert!(
+            report.reasons.iter().any(|reason| {
+                reason.kind == VmPackageSupportReasonKind::MissingDescriptor
+                    && reason.code.contains("CALL-BYVAL-COERCION-UNSUPPORTED")
+            }),
+            "broader call-entry coercion should reject strict VM execution: {report:#?}"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        let err = vm
+            .execute_package_strict(&package)
+            .expect_err("strict VM gate should reject unselected call-entry coercion");
+        assert!(err.contains("CALL-BYVAL-COERCION-UNSUPPORTED"));
+    }
+
+    #[test]
     fn package_execution_selects_optimized_paths_from_operator_descriptors() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\

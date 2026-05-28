@@ -702,7 +702,7 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 "vm-path=Vm::apply_descriptor_driven_call_entry_bindings",
                 "raw-bytecode-baseline=pre-vmr06-byval-copy-observes-source-carrier",
                 "selection=CALL-OPTIONAL-MISSING-VARIANT",
-                "status=vm-limitation",
+                "status=unsupported-rejected",
             ] {
                 assert!(
                     vm_consumption_tokens
