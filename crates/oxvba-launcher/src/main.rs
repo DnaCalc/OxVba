@@ -59,10 +59,10 @@ fn main() {
 
     let result: Result<Vec<Variant>, String> = if args.use_jit {
         let jit = JitEngine;
-        jit.execute_and_snapshot_variants_with_host(&bundle.bytecode, host_services)
+        jit.execute_bundle_and_snapshot_variants_with_host(&bundle, host_services)
             .map_err(|e| e.to_string())
     } else {
-        oxvba_vm::execute_and_snapshot_variants_with_host(&bundle.bytecode, host_services)
+        oxvba_vm::execute_bundle_and_snapshot_variants_with_host(&bundle, host_services)
     };
 
     match result {

@@ -5,10 +5,7 @@ use oxvba_compiler::{
     compile_project, compile_with_runtime_metadata, module_unit_from_source,
 };
 use oxvba_runtime::Variant;
-use oxvba_vm::{
-    Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin,
-    execute_and_snapshot_variants,
-};
+use oxvba_vm::{Vm, VmExecutionPackage, VmPackageIdentityEvidence, VmPackageOrigin};
 
 #[derive(Debug)]
 struct FixtureRow {
@@ -585,47 +582,6 @@ fn vm_consumption_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String 
     tokens.join("|")
 }
 
-fn assert_raw_and_package_snapshot_relation(
-    row: &FixtureRow,
-    raw: &Result<Vec<Variant>, String>,
-    package: &[Variant],
-) {
-    if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
-        let raw = raw
-            .as_ref()
-            .expect("VMR04 raw bytecode baseline should still execute");
-        assert_eq!(
-            snapshot_tokens(raw),
-            "i32:4|i32:9|i32:4|f64:4.5|i32:2|i32:7|i32:2|i32:-1|i32:1",
-            "{} raw bytecode baseline should preserve the pre-VMR06 ByVal Long-to-Double gap",
-            row.id
-        );
-        assert_ne!(
-            package, raw,
-            "{} package execution should consume descriptors for the selected VMR06 call-entry coercion",
-            row.id
-        );
-    } else if row.id == "VMR05_ARRAY_SHAPE_BOUNDS" {
-        let err = raw
-            .as_ref()
-            .expect_err("VMR05 raw bytecode baseline should expose fixed-array LBound gap");
-        assert!(
-            err.contains("runtime error: 13"),
-            "{} raw bytecode should fail fixed/static array LBound without package descriptors; got: {err}",
-            row.id
-        );
-    } else {
-        let raw = raw
-            .as_ref()
-            .expect("raw VM snapshot should execute for non-VMR06-selected rows");
-        assert_eq!(
-            package, raw,
-            "{} package execution should not change the value snapshot",
-            row.id
-        );
-    }
-}
-
 #[test]
 fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors() {
     for row in fixture_rows() {
@@ -633,7 +589,6 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             .unwrap_or_else(|err| panic!("failed to read identity fixture `{}`: {err}", row.file));
         let (bytecode, metadata) =
             compile_with_runtime_metadata(&source).expect("identity fixture should compile");
-        let raw_snapshot = execute_and_snapshot_variants(&bytecode);
         let bundle = OxBundle::new(bytecode, metadata);
         let package = VmExecutionPackage::from_bundle(&bundle);
 
@@ -641,39 +596,10 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
         vm.execute_package(&package)
             .expect("package VM execution should succeed");
         let package_snapshot = vm.snapshot_variants(package.bytecode.user_slot_count);
-        if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
-            let mut raw_vm_with_loaded_metadata = Vm::default();
-            raw_vm_with_loaded_metadata.load_execution_package_metadata(&package);
-            raw_vm_with_loaded_metadata
-                .execute(package.bytecode)
-                .expect("raw VM execution should ignore loaded package metadata");
-            assert_eq!(
-                snapshot_tokens(
-                    &raw_vm_with_loaded_metadata
-                        .snapshot_variants(package.bytecode.user_slot_count)
-                ),
-                "i32:4|i32:9|i32:4|f64:4.5|i32:2|i32:7|i32:2|i32:-1|i32:1",
-                "{} raw execution must not accidentally consume loaded package metadata",
-                row.id
-            );
-        }
-        if row.id == "VMR05_ARRAY_SHAPE_BOUNDS" {
-            let mut raw_vm_with_loaded_metadata = Vm::default();
-            raw_vm_with_loaded_metadata.load_execution_package_metadata(&package);
-            let err = raw_vm_with_loaded_metadata
-                .execute(package.bytecode)
-                .expect_err("raw VM execution should ignore loaded array-shape metadata");
-            assert!(
-                err.contains("runtime error: 13"),
-                "{} raw execution must not accidentally consume loaded array-shape metadata; got: {err}",
-                row.id
-            );
-        }
         let evidence = vm
             .package_identity_evidence()
             .expect("package identity evidence should be recorded");
 
-        assert_raw_and_package_snapshot_relation(&row, &raw_snapshot, &package_snapshot);
         assert_eq!(snapshot_tokens(&package_snapshot), row.expected_values);
         assert_eq!(evidence.package_origin, VmPackageOrigin::OxBundle);
         assert!(evidence.package_digest.starts_with("fnv1a64:"));
@@ -1146,9 +1072,9 @@ fn vm_project_object_descriptor_evidence_records_class_interface_and_com_witheve
         "imported COM WithEvents route metadata should be present"
     );
 
-    let package = VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
     let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
-    let package_route_evidence = VmExecutionPackage::from_bundle(&bundle).identity_evidence();
+    let package = VmExecutionPackage::from_bundle(&bundle);
+    let package_route_evidence = package.identity_evidence();
     let package_route_tokens = object_descriptor_observation_tokens(&package_route_evidence);
     for expected in [
         "<package-routes>:thingimpl:activation=asnew-project-class",

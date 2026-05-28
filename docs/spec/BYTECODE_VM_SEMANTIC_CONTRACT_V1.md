@@ -452,6 +452,10 @@ packages that lack executable semantic package sections. Current deferred
 VM-consumption rows remain VM-execution warnings until their owning delivery
 beads either consume descriptors or turn the rows into deterministic VM
 rejects. The same deferred rows are `ProcLoweringIr` blockers immediately.
+Public VM/JIT/launcher/debug execution entry points no longer accept bare
+`Bytecode`; production and test harness execution must enter through
+`OxBundle` or `VmExecutionPackage`. The VM instruction loop still receives the
+package bytecode internally after package metadata is loaded.
 
 The bd-tvmb.11 implementation-entry audit is
 [`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).

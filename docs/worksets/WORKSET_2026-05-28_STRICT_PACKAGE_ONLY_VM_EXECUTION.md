@@ -69,6 +69,11 @@ Current progress:
   deferred VM-consumption rows remain VM-execution warnings until the relevant
   delivery beads convert them into descriptor-driven behavior or hard rejects.
   The same rows are already `ProcLoweringIr` blockers.
+- `bd-embl.3` removed public raw `Bytecode` execution from VM/JIT/launcher/debug
+  surfaces. VM free functions, JIT stubs, launcher execution, debugger stepping,
+  and package identity fixtures now enter through `OxBundle` or
+  `VmExecutionPackage`; raw bytecode remains only as the package instruction
+  stream and internal VM loop input.
 
 ## Execution Beads
 

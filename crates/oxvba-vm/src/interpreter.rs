@@ -4624,9 +4624,13 @@ impl Vm {
         }
     }
 
-    pub fn debug_start(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    pub fn debug_start_package(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
         self.last_package_identity_evidence = None;
-        self.reset_execution_state(bytecode.slot_count, false);
+        self.load_execution_package_metadata(package);
+        self.reset_execution_state(package.bytecode.slot_count, false);
         let mut state = self.debug_runtime.take().unwrap_or(DebugRuntimeState {
             current_pc: 0,
             return_halts_when_stack_empty: false,
@@ -4643,10 +4647,13 @@ impl Vm {
         state.step_mode = None;
         state.last_pause = None;
         self.debug_runtime = Some(state);
-        self.resume_debug_session(bytecode)
+        self.resume_debug_package_session(package)
     }
 
-    pub fn debug_continue(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    pub fn debug_continue_package(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
         let state = self
             .debug_runtime
             .as_mut()
@@ -4655,10 +4662,13 @@ impl Vm {
         state.step_mode = None;
         state.skip_pause_once_at_pc = Some(state.current_pc);
         state.last_pause = None;
-        self.resume_debug_session(bytecode)
+        self.resume_debug_package_session(package)
     }
 
-    pub fn debug_step_into(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    pub fn debug_step_into_package(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
         let state = self
             .debug_runtime
             .as_mut()
@@ -4667,10 +4677,13 @@ impl Vm {
         state.step_mode = Some(DebugStepMode::Into);
         state.skip_pause_once_at_pc = Some(state.current_pc);
         state.last_pause = None;
-        self.resume_debug_session(bytecode)
+        self.resume_debug_package_session(package)
     }
 
-    pub fn debug_step_over(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    pub fn debug_step_over_package(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
         let state = self
             .debug_runtime
             .as_mut()
@@ -4681,10 +4694,13 @@ impl Vm {
         });
         state.skip_pause_once_at_pc = Some(state.current_pc);
         state.last_pause = None;
-        self.resume_debug_session(bytecode)
+        self.resume_debug_package_session(package)
     }
 
-    pub fn debug_step_out(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    pub fn debug_step_out_package(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
         let state = self
             .debug_runtime
             .as_mut()
@@ -4695,7 +4711,7 @@ impl Vm {
         });
         state.skip_pause_once_at_pc = Some(state.current_pc);
         state.last_pause = None;
-        self.resume_debug_session(bytecode)
+        self.resume_debug_package_session(package)
     }
 
     pub fn debug_snapshot(&self) -> Option<DebugRuntimeSnapshot> {
@@ -4704,10 +4720,6 @@ impl Vm {
             last_pause: state.last_pause.clone(),
             activation_entry_pcs: self.activation_entry_pcs.clone(),
         })
-    }
-
-    pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
-        self.execute_with_typed_fastpaths(bytecode, self.typed_fastpaths_default)
     }
 
     pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
@@ -4738,14 +4750,6 @@ impl Vm {
         result
     }
 
-    pub fn execute_with_typed_fastpaths(
-        &mut self,
-        bytecode: &Bytecode,
-        typed_fastpaths: bool,
-    ) -> Result<(), String> {
-        self.execute_with_typed_fastpaths_and_descriptor_metadata(bytecode, typed_fastpaths, false)
-    }
-
     fn execute_with_typed_fastpaths_and_descriptor_metadata(
         &mut self,
         bytecode: &Bytecode,
@@ -4758,18 +4762,6 @@ impl Vm {
         let result = self.execute_loop(bytecode, 0, 0, typed_fastpaths, false);
         self.descriptor_metadata_active = false;
         result
-    }
-
-    pub fn invoke_procedure_with_i32_args(
-        &mut self,
-        bytecode: &Bytecode,
-        entry_pc: usize,
-        arg_slots: &[usize],
-        args: &[i32],
-    ) -> Result<(), String> {
-        self.invoke_procedure_with_i32_args_and_descriptor_metadata(
-            bytecode, entry_pc, arg_slots, args, false,
-        )
     }
 
     fn invoke_procedure_with_i32_args_and_descriptor_metadata(
@@ -4825,18 +4817,6 @@ impl Vm {
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
-    }
-
-    pub fn invoke_procedure_with_variants(
-        &mut self,
-        bytecode: &Bytecode,
-        entry_pc: usize,
-        arg_slots: &[usize],
-        args: &[Variant],
-    ) -> Result<(), String> {
-        self.invoke_procedure_with_variants_and_descriptor_metadata(
-            bytecode, entry_pc, arg_slots, args, false,
-        )
     }
 
     fn invoke_procedure_with_variants_and_descriptor_metadata(
@@ -5006,6 +4986,19 @@ impl Vm {
             self.debug_runtime = None;
             Ok(DebugRunResult::Completed)
         }
+    }
+
+    fn resume_debug_package_session(
+        &mut self,
+        package: &VmExecutionPackage<'_>,
+    ) -> Result<DebugRunResult, String> {
+        self.load_execution_package_metadata(package);
+        self.descriptor_metadata_active = true;
+        let result = self.resume_debug_session(package.bytecode);
+        self.descriptor_metadata_active = false;
+        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
+        self.last_package_identity_evidence = Some(identity_evidence);
+        result
     }
 
     fn debug_metadata_for_entry_pc(&self, entry_pc: usize) -> Option<&ProcedureRuntimeMetadata> {

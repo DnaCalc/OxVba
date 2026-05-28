@@ -87,16 +87,14 @@ First implemented shape:
 - target operation: intrinsic `LBound` or `UBound`;
 - operand mapping: the intrinsic's materialized temporary may be traced through
   the immediate pre-intrinsic `CopySlot` back to the descriptor base slot;
-- package gate: only `Vm::execute_package` may consume the descriptor;
-- raw bytecode gate: ordinary `Vm::execute` must keep the pre-VMR06 runtime
-  error when the base slot is unallocated.
+- package gate: only package execution may consume the descriptor; public raw
+  `Bytecode` execution was removed by the strict package-only execution
+  workset.
 
 The scoped fixture is
 `conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas`, procedure
 `ArrayWorker`. The fixture now observes `LBound(fixed)`, `UBound(fixed)`,
-`LBound(explicit)`, and `UBound(explicit)` through package execution while the
-raw bytecode baseline fails with runtime error 13 on the fixed/static
-unallocated base slot.
+`LBound(explicit)`, and `UBound(explicit)` through package execution.
 
 Implementation evidence:
 

@@ -1,11 +1,13 @@
 use std::{marker::PhantomData, rc::Rc, sync::Arc};
 
 use oxvba_compiler::{
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
+    OxBundle, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureRuntimeSlotMetadata,
     ProjectManifest,
 };
 use oxvba_runtime::{Variant, variant_to_vba_string};
-use oxvba_vm::{DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop};
+use oxvba_vm::{
+    DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugStop, VmExecutionPackage,
+};
 use thiserror::Error;
 
 use oxvba_host::{
@@ -263,6 +265,24 @@ impl DebugSessionCore {
         &self.source_map
     }
 
+    fn runtime_execution_bundle(&self) -> OxBundle {
+        OxBundle::from_compiled_project(
+            self.runtime.compiled(),
+            &self
+                .runtime
+                .compiled()
+                .project_reflection
+                .identity
+                .project_name,
+        )
+    }
+
+    fn runtime_execution_package<'a>(&self, bundle: &'a OxBundle) -> VmExecutionPackage<'a> {
+        let mut package = VmExecutionPackage::from_bundle(bundle);
+        package.package_origin = self.runtime.package_origin();
+        package
+    }
+
     pub fn command_status(&self) -> DebugSessionCommandStatus {
         let paused = self
             .runtime
@@ -516,11 +536,12 @@ impl DebugSessionCore {
     }
 
     pub fn start_variants(&mut self) -> Result<DebugCoreRunResult, DebugSessionError> {
-        let bytecode = self.runtime.compiled().bytecode.clone();
+        let bundle = self.runtime_execution_bundle();
+        let package = self.runtime_execution_package(&bundle);
         let result = self
             .runtime
             .debug_vm_mut()
-            .debug_start(&bytecode)
+            .debug_start_package(&package)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
     }
@@ -528,44 +549,48 @@ impl DebugSessionCore {
     /// Continue execution and retain debugger frame values as `Variant`
     /// carriers.
     pub fn continue_execution_variants(&mut self) -> Result<DebugCoreRunResult, DebugSessionError> {
-        let bytecode = self.runtime.compiled().bytecode.clone();
+        let bundle = self.runtime_execution_bundle();
+        let package = self.runtime_execution_package(&bundle);
         let result = self
             .runtime
             .debug_vm_mut()
-            .debug_continue(&bytecode)
+            .debug_continue_package(&package)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
     }
 
     /// Step into and retain debugger frame values as `Variant` carriers.
     pub fn step_into_variants(&mut self) -> Result<DebugCoreRunResult, DebugSessionError> {
-        let bytecode = self.runtime.compiled().bytecode.clone();
+        let bundle = self.runtime_execution_bundle();
+        let package = self.runtime_execution_package(&bundle);
         let result = self
             .runtime
             .debug_vm_mut()
-            .debug_step_into(&bytecode)
+            .debug_step_into_package(&package)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
     }
 
     /// Step over and retain debugger frame values as `Variant` carriers.
     pub fn step_over_variants(&mut self) -> Result<DebugCoreRunResult, DebugSessionError> {
-        let bytecode = self.runtime.compiled().bytecode.clone();
+        let bundle = self.runtime_execution_bundle();
+        let package = self.runtime_execution_package(&bundle);
         let result = self
             .runtime
             .debug_vm_mut()
-            .debug_step_over(&bytecode)
+            .debug_step_over_package(&package)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
     }
 
     /// Step out and retain debugger frame values as `Variant` carriers.
     pub fn step_out_variants(&mut self) -> Result<DebugCoreRunResult, DebugSessionError> {
-        let bytecode = self.runtime.compiled().bytecode.clone();
+        let bundle = self.runtime_execution_bundle();
+        let package = self.runtime_execution_package(&bundle);
         let result = self
             .runtime
             .debug_vm_mut()
-            .debug_step_out(&bytecode)
+            .debug_step_out_package(&package)
             .map_err(DebugSessionError::Runtime)?;
         self.project_variant_run_result(result)
     }

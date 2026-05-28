@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use oxvba_compiler::Bytecode;
+use oxvba_compiler::OxBundle;
 use oxvba_hal::traits::HostServices;
 use oxvba_runtime::Variant;
 use thiserror::Error;
@@ -29,18 +29,18 @@ impl JitEngine {
         Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))
     }
 
-    /// Retained value-model snapshot API.
-    pub fn execute_and_snapshot_variants(
+    /// OxBundle-backed retained value-model snapshot API.
+    pub fn execute_bundle_and_snapshot_variants(
         &self,
-        _bytecode: &Bytecode,
+        _bundle: &OxBundle,
     ) -> Result<Vec<Variant>, JitError> {
         Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))
     }
 
-    /// Retained value-model host-backed snapshot API.
-    pub fn execute_and_snapshot_variants_with_host(
+    /// OxBundle-backed retained value-model host-backed snapshot API.
+    pub fn execute_bundle_and_snapshot_variants_with_host(
         &self,
-        _bytecode: &Bytecode,
+        _bundle: &OxBundle,
         _host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<Variant>, JitError> {
         Err(JitError::NotImplemented(JIT_NOT_IMPLEMENTED_MESSAGE))

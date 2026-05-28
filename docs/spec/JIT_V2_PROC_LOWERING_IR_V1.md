@@ -35,6 +35,8 @@ Strict package-only VM work adds `VmPackageSupportReport` as the current shared
 support-query surface. `ProcLoweringIr` entry must treat any deferred
 VM-consumption row in that report as a blocker until the owning delivery bead
 either makes the behavior descriptor-driven or defines a deterministic reject.
+The public JIT boundary accepts executable packages such as `OxBundle`, not
+bare `Bytecode`, so lowering entry cannot bypass package support diagnostics.
 
 ## Core Types
 

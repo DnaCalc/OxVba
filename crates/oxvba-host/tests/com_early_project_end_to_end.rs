@@ -4,8 +4,8 @@ use std::{
 };
 
 use oxvba_compiler::{
-    ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind, compile_project,
-    module_unit_from_source,
+    ModuleKind, OxBundle, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    compile_project, module_unit_from_source,
 };
 use oxvba_hal::{
     adapters::builder::HostBuilder,
@@ -15,7 +15,7 @@ use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, Variant};
-use oxvba_vm::Vm;
+use oxvba_vm::{Vm, VmExecutionPackage};
 
 fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
     static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
@@ -299,7 +299,9 @@ End Property
         vm.project_dynamic_dispatch_cache_len_for_test(widget_handle) >= 4,
         "descriptor cache should retain unhinted Value get, Stored let, Kid set, and Observe get plans"
     );
-    vm.execute(&compiled.bytecode)
+    let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
+    let package = VmExecutionPackage::from_bundle(&bundle);
+    vm.execute_package(&package)
         .expect("project should execute pure OxVba indexed/property paths");
     let snapshot = vm.snapshot_variants(compiled.bytecode.slot_count);
     assert!(
