@@ -29,6 +29,8 @@ Current planning artifacts:
   [`WORKSET_2026-05-26_EXECUTABLE_SEMANTIC_PACKAGE_VM_STRENGTHENING.md`](WORKSET_2026-05-26_EXECUTABLE_SEMANTIC_PACKAGE_VM_STRENGTHENING.md)
 - Typed VM metadata bundle completion:
   [`WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md)
+- Typed VM metadata bundle implementation-entry audit:
+  [`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
 - Implementation-entry review:
   [`../reviews/JIT_V2_IMPLEMENTATION_ENTRY_REVIEW_2026-05-26.md`](../reviews/JIT_V2_IMPLEMENTATION_ENTRY_REVIEW_2026-05-26.md)
 - VM/native capability review:
@@ -93,6 +95,11 @@ Current planning artifacts:
 - Cranelift is the selected backend, but Cranelift is only a code generator
   behind OxVba semantic contracts. VBA semantics, cleanup, error routing,
   COM/native descriptors, and deopt behavior belong to OxVba planning artifacts.
+- The typed VM metadata bundle implementation-entry audit is the current package
+  handoff gate. It permits support-scaffolding implementation to consume package
+  facts, but any tracer row still carrying a package/VM/test/interop/oracle gap
+  remains a deterministic reject/classify path until its named evidence gate
+  passes.
 
 ## Execution Policy
 

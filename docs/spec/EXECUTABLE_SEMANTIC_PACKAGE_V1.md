@@ -74,6 +74,17 @@ The current error, cleanup, deopt, and host-policy seed rows are tracked by
 [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv).
 Selected VM consumption and gap-classification rows are tracked by
 [`../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`](../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv).
+The typed metadata bundle implementation-entry handoff is recorded by
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).
+
+## Implementation-Entry Handoff
+
+The typed VM metadata bundle handoff passes for JIT support-scaffolding entry.
+This means `ProcLoweringIr` may consume package-owned facts and must reject or
+classify absent facts. It is not a claim that executable JIT tracer lowering is
+ready for any row that the tracer matrix still marks as blocked by
+`metadata-missing`, `VM-limitation`, `test-shortcoming`, `interop-limitation`,
+or `oracle-required`.
 
 ## Current Baseline
 

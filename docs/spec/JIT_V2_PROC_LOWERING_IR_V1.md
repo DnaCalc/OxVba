@@ -10,6 +10,8 @@ Executable semantic package:
 [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
 Expression/call semantics:
 [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
+Typed metadata package handoff:
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
 
 ## Purpose
 
@@ -24,6 +26,10 @@ The executable semantic package answers what the compiled procedure means.
 target/profile. Any type, slot, expression, coercion, operator, call-site, UDT,
 COM/native, cleanup, error, or source-map fact required by `ProcLoweringIr`
 must come from the package or a versioned descriptor referenced by the package.
+If the handoff audit or tracer matrix classifies a required fact as missing,
+unsupported, interop-limited, oracle-required, or test-blocked,
+`ProcLoweringIr` must reject/classify that path rather than deriving the fact
+from bytecode shape or backend convenience.
 
 ## Core Types
 

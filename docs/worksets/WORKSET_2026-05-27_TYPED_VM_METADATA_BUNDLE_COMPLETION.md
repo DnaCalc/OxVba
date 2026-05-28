@@ -126,6 +126,11 @@ Current progress:
   missing, error/deopt cleanup, boundary, and host-policy consumption gaps.
   Raw-bytecode baselines remain documented where they intentionally differ from
   package execution.
+- `bd-tvmb.11` has added the terminal implementation-entry audit. The audit
+  verifies child bead closure evidence, reconciles the completion map, tracer
+  matrix, semantic package spec, VM contract, and JIT planning workset, and
+  records that remaining gap labels are either broader deferred work or
+  JIT-entry blockers rather than backend-local semantic assumptions.
 
 ## Reference Truth
 
@@ -141,6 +146,7 @@ This workset is the delivery owner for the remaining gaps already identified in:
 - [`../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`](../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv)
 - [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv)
 - [`../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`](../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv)
+- [`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
 
 The VM remains executable truth. Current VM behavior is preserved until a
 selected descriptor-consuming behavior change has its own fixture, evidence,

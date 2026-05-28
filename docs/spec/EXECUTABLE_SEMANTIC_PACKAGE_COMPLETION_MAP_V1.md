@@ -7,6 +7,8 @@ Primary package reference:
 [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
 Completion workset:
 [`../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md)
+Implementation-entry audit:
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
 
 ## Purpose
 
@@ -86,6 +88,12 @@ owner
 The `Current support` column names what is actually present today. The `Gap
 kind` column uses the taxonomy above and should not be upgraded until the
 package descriptor and VM evidence requirements are both satisfied.
+
+The bd-tvmb.11 audit confirms that remaining gap labels in this map are not
+stale closure gaps for the typed metadata bundle. They are either broader
+package/VM behavior still deferred by this map or JIT-entry blockers that must
+cause `ProcLoweringIr` to reject/classify unsupported paths rather than
+reconstruct semantics.
 
 | Semantic area | Target descriptor | Current location | Current support | Gap kind | Owner | Next action |
 |---|---|---|---|---|---|---|

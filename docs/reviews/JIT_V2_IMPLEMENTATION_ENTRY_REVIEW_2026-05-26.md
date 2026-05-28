@@ -29,6 +29,13 @@ The package is not a claim that any tracer bullet has executed through native
 JIT code. Each tracer bullet still closes only when VM/JIT differential evidence
 passes for that tracer's required surfaces.
 
+2026-05-28 addendum: the typed VM metadata bundle terminal audit is now the
+package handoff gate for this entry decision:
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).
+The addendum preserves the original support-scaffolding entry decision while
+making remaining tracer gap labels deterministic reject/classify gates rather
+than JIT-side semantic discovery work.
+
 ## P0/P1 Decision Ledger
 
 | Question | Decision for slice 1 | Evidence |

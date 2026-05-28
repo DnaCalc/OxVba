@@ -446,6 +446,12 @@ Optional `Variant` missing, error/deopt cleanup, boundary projection, and
 host-policy behavior consumption remain classified gap rows rather than
 backend-local assumptions.
 
+The bd-tvmb.11 implementation-entry audit is
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).
+It records that remaining VM contract gap labels are scoped to broader deferred
+behavior or future JIT-entry blockers, not unstated permission for
+`ProcLoweringIr` to infer semantics from raw bytecode.
+
 ## Strengthening Rule
 
 When a VM-runnable fixture exposes a semantic gap, classify it before changing
