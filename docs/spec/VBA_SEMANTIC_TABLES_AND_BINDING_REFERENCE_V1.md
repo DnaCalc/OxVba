@@ -237,7 +237,7 @@ VM execution already depends on:
   `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
   helper `oxvba_runtime::coerce_to`.
 
-`OxBundle` v14 lifts selected helper-backed rows into package
+`OxBundle` v15 lifts selected helper-backed rows into package
 `CoercionDescriptor` facts, including identity, Variant preservation,
 `Empty`-to-target cases, numeric widening, Boolean numeric conversion,
 String/BSTR conversion, VM truthiness, Decimal Variant payloads, and selected
@@ -277,7 +277,7 @@ This table records the current VM helper families for:
 - internal `i32` fast paths, explicitly marked as implementation fast paths
   and not semantic proof.
 
-`OxBundle` v14 lifts selected rows into package `OperatorSemanticsDescriptor`
+`OxBundle` v15 lifts selected rows into package `OperatorSemanticsDescriptor`
 facts with helper ids, operand/result declared types, `Option Compare` mode,
 value-state tags, and evaluation-order policy. This includes selected
 arithmetic, forced concatenation, comparisons, truthiness, `Not`/`And`/`Or`,
@@ -341,7 +341,7 @@ This table records current descriptor/evidence rows for:
 These rows deliberately separate core object/member semantics from COM wire
 projection. For example, `Set` assignment owns object identity and lifetime at
 the semantic layer, while late-bound COM dispatch rows are boundary projection
-facts over that object model. `OxBundle` v14 lifts selected core rows into
+facts over that object model. `OxBundle` v15 lifts selected core rows into
 package `NameBindingDescriptor` and `ObjectMemberBindingDescriptor` facts for
 procedure-scope binding policy, property accessor names, `Property
 Get`/`Let`/`Set` shape, `Set` object assignment, selected `Nothing` handling,

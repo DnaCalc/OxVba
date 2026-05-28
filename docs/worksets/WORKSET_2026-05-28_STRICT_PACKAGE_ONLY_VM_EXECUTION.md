@@ -58,8 +58,8 @@ The current repository is package-capable but not package-only.
   - host-policy behavior-driving descriptor consumption.
 - `oxvba-vm` still has public typed-fastpath selection APIs and environment
   defaulting.
-- `OxBundle` still contains legacy version readers that backfill absent package
-  sections for older versions.
+- `bd-embl.4` removed the legacy bundle reader/backfill path: strict bundle
+  format v15 is now the only accepted serialized package format.
 
 Current progress:
 
@@ -74,6 +74,10 @@ Current progress:
   and package identity fixtures now enter through `OxBundle` or
   `VmExecutionPackage`; raw bytecode remains only as the package instruction
   stream and internal VM loop input.
+- `bd-embl.4` bumps the bundle format to strict version 15. Current bundle
+  serialization and deserialization require procedure metadata, manifest,
+  export inventory, descriptor inventory, and project context sections. Versions
+  1 through 14 reject deterministically instead of backfilling missing facts.
 
 ## Execution Beads
 

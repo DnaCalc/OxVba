@@ -35,10 +35,16 @@ use crate::resolve::{
 
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
-/// Current bundle format version.
-const FORMAT_VERSION: u32 = 14;
+/// Current strict executable semantic package bundle format version.
+const FORMAT_VERSION: u32 = 15;
 /// Header size in bytes (padded to 16 for rkyv alignment).
 const HEADER_SIZE: usize = 16;
+
+fn unsupported_bundle_version_message(version: u32) -> String {
+    format!(
+        "unsupported legacy bundle version {version}; strict executable semantic packages require current bundle format version {FORMAT_VERSION}"
+    )
+}
 
 /// Snapshot of project manifest at compile time.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
@@ -348,14 +354,14 @@ pub struct OxBundle {
     pub project_context: Option<BundleProjectContext>,
 }
 
-/// v1 bundle layout for backward-compatible deserialization.
+/// v1 bundle layout retained only for rejection fixtures.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyOxBundleV1 {
     bytecode: Bytecode,
     procedure_metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
 }
 
-/// v2 bundle layout for backward-compatible deserialization.
+/// v2 bundle layout retained only for rejection fixtures.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyOxBundleV2 {
     bytecode: Bytecode,
@@ -369,7 +375,7 @@ struct LegacyOxBundleV2 {
     dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
 }
 
-/// v3 bundle layout for backward-compatible deserialization.
+/// v3 bundle layout retained only for rejection fixtures.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 struct LegacyOxBundleV3 {
     bytecode: Bytecode,
@@ -1264,15 +1270,6 @@ fn upgrade_v5_parameter_descriptor(
     }
 }
 
-fn upgrade_legacy_procedure_metadata(
-    metadata: BTreeMap<String, LegacyProcedureRuntimeMetadata>,
-) -> BTreeMap<String, ProcedureRuntimeMetadata> {
-    metadata
-        .into_iter()
-        .map(|(name, metadata)| (name, metadata.into()))
-        .collect()
-}
-
 impl OxBundle {
     /// Create a new bundle from a compiled bytecode and its procedure metadata.
     ///
@@ -1469,6 +1466,7 @@ impl OxBundle {
     /// [N bytes: rkyv-serialized OxBundle payload]
     /// ```
     pub fn serialize_to_bytes(&self) -> Result<Vec<u8>, String> {
+        self.validate_strict_package_sections()?;
         let payload =
             rkyv::to_bytes::<rkyv::rancor::Error>(self).map_err(|e| format!("serialize: {e}"))?;
 
@@ -1484,9 +1482,8 @@ impl OxBundle {
         Ok(out)
     }
 
-    /// Deserialize a bundle from bytes produced by `serialize_to_bytes`.
-    ///
-    /// Accepts legacy format versions and upgrades missing fields.
+    /// Deserialize a strict current-version bundle from bytes produced by
+    /// `serialize_to_bytes`.
     pub fn deserialize_from_bytes(data: &[u8]) -> Result<Self, String> {
         if data.len() < HEADER_SIZE {
             return Err("bundle too short for header".to_string());
@@ -1499,24 +1496,8 @@ impl OxBundle {
 
         // Read version.
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version != 1
-            && version != 2
-            && version != 3
-            && version != 4
-            && version != 5
-            && version != 6
-            && version != 7
-            && version != 8
-            && version != 9
-            && version != 10
-            && version != 11
-            && version != 12
-            && version != 13
-            && version != FORMAT_VERSION
-        {
-            return Err(format!(
-                "unsupported bundle version {version} (expected 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, or {FORMAT_VERSION})"
-            ));
+        if version != FORMAT_VERSION {
+            return Err(unsupported_bundle_version_message(version));
         }
 
         // Read payload length.
@@ -1536,263 +1517,36 @@ impl OxBundle {
             rkyv::util::AlignedVec::with_capacity(payload.len());
         aligned.extend_from_slice(payload);
 
-        if version == 1 {
-            // v1 layout: just bytecode + procedure_metadata
-            let legacy: LegacyOxBundleV1 =
-                rkyv::from_bytes::<LegacyOxBundleV1, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v1: {e}"))?;
-            Ok(OxBundle::new(
-                legacy.bytecode,
-                upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
-            ))
-        } else if version == 2 {
-            let legacy: LegacyOxBundleV2 =
-                rkyv::from_bytes::<LegacyOxBundleV2, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v2: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: None,
-                project_context: None,
-            })
-        } else if version == 3 {
-            let legacy: LegacyOxBundleV3 =
-                rkyv::from_bytes::<LegacyOxBundleV3, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v3: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: upgrade_legacy_procedure_metadata(legacy.procedure_metadata),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 4 {
-            let legacy: LegacyOxBundleV4 =
-                rkyv::from_bytes::<LegacyOxBundleV4, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v4: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 5 {
-            let legacy: LegacyOxBundleV5 =
-                rkyv::from_bytes::<LegacyOxBundleV5, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v5: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 6 {
-            let legacy: LegacyOxBundleV6 =
-                rkyv::from_bytes::<LegacyOxBundleV6, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v6: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 7 {
-            let legacy: LegacyOxBundleV7 =
-                rkyv::from_bytes::<LegacyOxBundleV7, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v7: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 8 {
-            let legacy: LegacyOxBundleV8 =
-                rkyv::from_bytes::<LegacyOxBundleV8, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v8: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 9 {
-            let legacy: LegacyOxBundleV9 =
-                rkyv::from_bytes::<LegacyOxBundleV9, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v9: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 10 {
-            let legacy: LegacyOxBundleV10 =
-                rkyv::from_bytes::<LegacyOxBundleV10, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v10: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: None,
-            })
-        } else if version == 11 {
-            let legacy: LegacyOxBundleV11 =
-                rkyv::from_bytes::<LegacyOxBundleV11, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v11: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: legacy.project_context,
-            })
-        } else if version == 12 {
-            let legacy: LegacyOxBundleV12 =
-                rkyv::from_bytes::<LegacyOxBundleV12, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v12: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: legacy.project_context,
-            })
-        } else if version == 13 {
-            let legacy: LegacyOxBundleV13 =
-                rkyv::from_bytes::<LegacyOxBundleV13, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize v13: {e}"))?;
-            Ok(OxBundle {
-                bytecode: legacy.bytecode,
-                procedure_metadata: legacy
-                    .procedure_metadata
-                    .into_iter()
-                    .map(|(name, metadata)| (name, metadata.into()))
-                    .collect(),
-                manifest_snapshot: legacy.manifest_snapshot,
-                export_inventory: legacy.export_inventory,
-                source_hashes: legacy.source_hashes,
-                toolchain_fingerprint: legacy.toolchain_fingerprint,
-                event_dispatch_bindings: legacy.event_dispatch_bindings,
-                com_withevents_routes: legacy.com_withevents_routes,
-                dynamic_object_routes: legacy.dynamic_object_routes,
-                descriptor_inventory: legacy.descriptor_inventory,
-                project_context: legacy.project_context,
-            })
+        let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
+            .map_err(|e| format!("deserialize: {e}"))?;
+        bundle.validate_strict_package_sections()?;
+        Ok(bundle)
+    }
+
+    fn validate_strict_package_sections(&self) -> Result<(), String> {
+        let mut missing = Vec::new();
+        if self.procedure_metadata.is_empty() {
+            missing.push("procedure_metadata");
+        }
+        if self.manifest_snapshot.is_none() {
+            missing.push("manifest_snapshot");
+        }
+        if self.export_inventory.is_none() {
+            missing.push("export_inventory");
+        }
+        if self.descriptor_inventory.is_none() {
+            missing.push("descriptor_inventory");
+        }
+        if self.project_context.is_none() {
+            missing.push("project_context");
+        }
+        if missing.is_empty() {
+            Ok(())
         } else {
-            let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
-                .map_err(|e| format!("deserialize: {e}"))?;
-            Ok(bundle)
+            Err(format!(
+                "BUNDLE-STRICT-MISSING-SECTIONS: current bundle format version {FORMAT_VERSION} requires {}",
+                missing.join(", ")
+            ))
         }
     }
 }
@@ -2782,11 +2536,7 @@ fn stable_id<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
 mod tests {
     use super::*;
     use crate::bytecode::{Bytecode, DeclareParamType, Instruction};
-    use crate::emit::{
-        OptionalParameterDescriptor, ParameterPassingMode, ParameterRole, ProcedureKindDescriptor,
-        ResolvedParameterMechanism, RuntimeCarrierKind, SlotInitialState, SourceParameterMechanism,
-        VbaTypeId,
-    };
+    use crate::emit::{ParameterPassingMode, ParameterRole, ProcedureKindDescriptor, VbaTypeId};
     use crate::project::{
         ExportKind, ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
         ReferencedProjectManifest, module_unit_from_source,
@@ -2838,6 +2588,32 @@ mod tests {
             },
         );
         OxBundle::new(bytecode, metadata)
+    }
+
+    fn strict_sample_bundle() -> OxBundle {
+        let manifest = ProjectManifest {
+            project_name: "StrictBundle".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source(
+                    "Main",
+                    ModuleKind::Procedural,
+                    "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim x As Long\nx = 42\nEnd Sub",
+                )
+                .expect("module"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = crate::project::compile_project(&manifest).expect("compile");
+        OxBundle::from_compiled_project_with_manifest(&compiled, &manifest)
+    }
+
+    fn assert_legacy_bundle_rejected(version: u32, data: &[u8]) {
+        let err = OxBundle::deserialize_from_bytes(data)
+            .expect_err("legacy bundle version should be rejected");
+        assert_eq!(err, unsupported_bundle_version_message(version));
     }
 
     fn legacy_v10_metadata(
@@ -2975,25 +2751,25 @@ mod tests {
 
     #[test]
     fn roundtrip_serialize_deserialize() {
-        let bundle = sample_bundle();
+        let bundle = strict_sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
 
-        assert_eq!(restored.bytecode.instructions.len(), 2);
-        assert_eq!(restored.bytecode.slot_count, 1);
-        assert_eq!(restored.bytecode.user_slot_count, 1);
-        assert!(restored.procedure_metadata.contains_key("Main"));
-        let meta = &restored.procedure_metadata["Main"];
-        assert_eq!(meta.entry_pc, 0);
-        assert!(meta.param_slots.is_empty());
-        assert_eq!(meta.return_slot, None);
-        // v2 fields are None by default
-        assert!(restored.manifest_snapshot.is_none());
-        assert!(restored.export_inventory.is_none());
+        assert!(!restored.bytecode.instructions.is_empty());
+        assert!(
+            restored
+                .procedure_metadata
+                .values()
+                .any(|metadata| { metadata.procedure_name.eq_ignore_ascii_case("Main") })
+        );
+        assert!(restored.manifest_snapshot.is_some());
+        assert!(restored.export_inventory.is_some());
+        assert!(restored.descriptor_inventory.is_some());
+        assert!(restored.project_context.is_some());
     }
 
     #[test]
-    fn v10_roundtrip_preserves_call_site_array_udt_and_object_descriptors() {
+    fn current_roundtrip_preserves_call_site_array_udt_and_object_descriptors() {
         let source = "Type Point\n\
                       X As Long\n\
                       Caption As String\n\
@@ -3012,40 +2788,61 @@ mod tests {
                       Sub Touch(ByRef value As Long)\n\
                       value = value + 1\n\
                       End Sub";
-        let (bytecode, metadata) =
-            crate::compile_with_runtime_metadata(source).expect("compile should succeed");
-        let bundle = OxBundle::new(bytecode, metadata);
+        let manifest = ProjectManifest {
+            project_name: "DescriptorRoundtrip".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, source).expect("module"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = crate::project::compile_project(&manifest).expect("compile should succeed");
+        let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
 
-        let call_sites = &restored.procedure_metadata["main"].call_sites;
-        assert_eq!(call_sites.len(), 1);
-        assert!(call_sites[0].target_name.eq_ignore_ascii_case("Touch"));
+        let main = restored
+            .procedure_metadata
+            .values()
+            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
+            .expect("main metadata");
+        let call_sites = &main.call_sites;
+        assert!(!call_sites.is_empty());
+        let call_site = call_sites
+            .iter()
+            .find(|call| call.target_name.to_ascii_lowercase().ends_with("_touch"))
+            .unwrap_or_else(|| panic!("Touch call site should be present: {call_sites:#?}"));
         assert_eq!(
-            call_sites[0].target_entry_pc,
-            Some(restored.procedure_metadata["touch"].entry_pc)
+            call_site.target_entry_pc,
+            restored
+                .procedure_metadata
+                .values()
+                .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Touch"))
+                .map(|metadata| metadata.entry_pc)
         );
-        let array_shapes = &restored.procedure_metadata["main"].array_shapes;
+        let array_shapes = &main.array_shapes;
         assert_eq!(array_shapes.len(), 1);
         assert_eq!(array_shapes[0].name, "a");
         assert_eq!(array_shapes[0].rank, 1);
         assert_eq!(array_shapes[0].bounds[0].lower_bound, 1);
         assert_eq!(array_shapes[0].bounds[0].upper_bound, 2);
-        let udt_types = &restored.procedure_metadata["main"].udt_types;
+        let udt_types = &main.udt_types;
         assert_eq!(udt_types.len(), 1);
         assert_eq!(udt_types[0].type_name, "point");
         assert_eq!(udt_types[0].instances[0].name, "p");
         assert_eq!(udt_types[0].fields.len(), 2);
         assert_eq!(udt_types[0].fields[0].name, "x");
         assert_eq!(udt_types[0].fields[1].name, "caption");
-        let object_types = &restored.procedure_metadata["main"].object_types;
+        let object_types = &main.object_types;
         assert_eq!(object_types.len(), 1);
         assert_eq!(object_types[0].descriptor_id, "object:object");
         assert_eq!(object_types[0].instances[0].name, "o");
     }
 
     #[test]
-    fn v10_backward_compat_leaves_project_context_absent() {
+    fn v10_legacy_bundle_rejects_without_project_context() {
         let bundle = sample_bundle();
         let legacy = LegacyOxBundleV10 {
             bytecode: bundle.bytecode,
@@ -3062,18 +2859,11 @@ mod tests {
         let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v10");
         let data = bundle_bytes_from_payload(10, &payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v10");
-        assert!(restored.project_context.is_none());
-        assert!(
-            restored.procedure_metadata["Main"]
-                .carrier_layouts
-                .is_empty()
-        );
-        assert!(restored.procedure_metadata["Main"].value_states.is_empty());
+        assert_legacy_bundle_rejected(10, &data);
     }
 
     #[test]
-    fn v11_backward_compat_preserves_project_context_without_typed_value_descriptors() {
+    fn v11_legacy_bundle_rejects_without_typed_value_descriptors() {
         let manifest = ProjectManifest {
             project_name: "CompatV11".to_string(),
             project_kind: ProjectKind::Source,
@@ -3107,19 +2897,11 @@ mod tests {
         let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v11");
         let data = bundle_bytes_from_payload(11, &payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v11");
-        assert!(restored.project_context.is_some());
-        let metadata = restored
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("main metadata");
-        assert!(metadata.carrier_layouts.is_empty());
-        assert!(metadata.value_states.is_empty());
+        assert_legacy_bundle_rejected(11, &data);
     }
 
     #[test]
-    fn v12_backward_compat_preserves_typed_descriptors_without_call_policy_fields() {
+    fn v12_legacy_bundle_rejects_without_call_policy_fields() {
         let source = "Sub Main()\n\
                       Dim value As Long\n\
                       Touch value\n\
@@ -3146,28 +2928,11 @@ mod tests {
         let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v12");
         let data = bundle_bytes_from_payload(12, &payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v12");
-        let main = restored
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("main metadata");
-        assert!(!main.carrier_layouts.is_empty());
-        assert!(!main.value_states.is_empty());
-        let call_site = main
-            .call_sites
-            .iter()
-            .find(|call| call.target_name.eq_ignore_ascii_case("Touch"))
-            .expect("touch call site");
-        assert_eq!(
-            call_site.invocation_syntax,
-            CallInvocationSyntaxDescriptor::Unknown
-        );
-        assert!(call_site.diagnostic_policies.is_empty());
+        assert_legacy_bundle_rejected(12, &data);
     }
 
     #[test]
-    fn v13_backward_compat_preserves_call_policy_without_expression_descriptor_fields() {
+    fn v13_legacy_bundle_rejects_without_expression_descriptor_fields() {
         let source = "Sub Main()\n\
                       Dim value As Long\n\
                       value = 1\n\
@@ -3193,66 +2958,62 @@ mod tests {
         let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy v13");
         let data = bundle_bytes_from_payload(13, &payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v13");
-        let main = restored
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("main metadata");
-        let call_site = main
-            .call_sites
-            .iter()
-            .find(|call| call.target_name.eq_ignore_ascii_case("Touch"))
-            .expect("touch call site");
-        assert_eq!(
-            call_site.invocation_syntax,
-            CallInvocationSyntaxDescriptor::StatementNoCall
-        );
-        assert_eq!(call_site.argument_evaluation_order, vec![0]);
-        assert!(main.expression_semantics.is_empty());
-        assert!(main.operator_semantics.is_empty());
-        assert!(main.coercions.is_empty());
-        assert!(main.name_bindings.is_empty());
-        assert!(main.object_member_bindings.is_empty());
+        assert_legacy_bundle_rejected(13, &data);
     }
 
     #[test]
     fn header_magic_is_correct() {
-        let bundle = sample_bundle();
+        let bundle = strict_sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         assert_eq!(&bytes[0..4], b"OXVB");
     }
 
     #[test]
-    fn header_version_is_14() {
-        let bundle = sample_bundle();
+    fn header_version_is_current_strict_version() {
+        let bundle = strict_sample_bundle();
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(version, 14);
+        assert_eq!(version, FORMAT_VERSION);
     }
 
     #[test]
     fn rejects_invalid_magic() {
-        let mut bytes = sample_bundle().serialize_to_bytes().expect("serialize");
+        let mut bytes = strict_sample_bundle()
+            .serialize_to_bytes()
+            .expect("serialize");
         bytes[0] = b'X';
         assert!(OxBundle::deserialize_from_bytes(&bytes).is_err());
     }
 
     #[test]
     fn rejects_truncated_data() {
-        let bytes = sample_bundle().serialize_to_bytes().expect("serialize");
+        let bytes = strict_sample_bundle()
+            .serialize_to_bytes()
+            .expect("serialize");
         assert!(OxBundle::deserialize_from_bytes(&bytes[..8]).is_err());
     }
 
     #[test]
     fn rejects_wrong_version() {
-        let mut bytes = sample_bundle().serialize_to_bytes().expect("serialize");
-        bytes[4] = 99; // invalid version
-        assert!(OxBundle::deserialize_from_bytes(&bytes).is_err());
+        let mut bytes = strict_sample_bundle()
+            .serialize_to_bytes()
+            .expect("serialize");
+        bytes[4..8].copy_from_slice(&99u32.to_le_bytes());
+        let err = OxBundle::deserialize_from_bytes(&bytes).expect_err("wrong version rejects");
+        assert_eq!(err, unsupported_bundle_version_message(99));
     }
 
     #[test]
-    fn v1_backward_compat() {
+    fn previous_current_v14_bundle_rejects_deterministically() {
+        let mut bytes = strict_sample_bundle()
+            .serialize_to_bytes()
+            .expect("serialize");
+        bytes[4..8].copy_from_slice(&14u32.to_le_bytes());
+        assert_legacy_bundle_rejected(14, &bytes);
+    }
+
+    #[test]
+    fn v1_legacy_bundle_rejects() {
         // Construct a v1 bundle: serialize LegacyOxBundleV1, write with v1 header
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
@@ -3275,14 +3036,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v1");
-        assert_eq!(restored.bytecode.instructions.len(), 1);
-        assert!(restored.manifest_snapshot.is_none());
-        assert!(restored.export_inventory.is_none());
+        assert_legacy_bundle_rejected(1, &data);
     }
 
     #[test]
-    fn v2_backward_compat() {
+    fn v2_legacy_bundle_rejects() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
             external_call_descriptors: vec![],
@@ -3315,19 +3073,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v2");
-        assert_eq!(
-            restored
-                .manifest_snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.project_name.as_str()),
-            Some("LegacyV2")
-        );
-        assert!(restored.descriptor_inventory.is_none());
+        assert_legacy_bundle_rejected(2, &data);
     }
 
     #[test]
-    fn v3_backward_compat_upgrades_slot_descriptors() {
+    fn v3_legacy_bundle_rejects_instead_of_upgrading_slot_descriptors() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
             external_call_descriptors: vec![],
@@ -3378,15 +3128,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v3");
-        let slot = &restored.procedure_metadata["Main"].slots[0];
-        assert_eq!(slot.declared_type, VbaTypeId::Long);
-        assert_eq!(slot.initial_state, SlotInitialState::CallerProvided);
-        assert_eq!(slot.carrier, RuntimeCarrierKind::I32);
+        assert_legacy_bundle_rejected(3, &data);
     }
 
     #[test]
-    fn v4_backward_compat_synthesizes_signature_descriptors() {
+    fn v4_legacy_bundle_rejects_instead_of_synthesizing_signature_descriptors() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
             external_call_descriptors: vec![],
@@ -3452,25 +3198,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v4");
-        let signature = &restored.procedure_metadata["Add"].signature;
-        assert_eq!(signature.kind, ProcedureKindDescriptor::Function);
-        assert_eq!(signature.return_type, Some(VbaTypeId::Double));
-        assert_eq!(signature.return_slot, Some(2));
-        assert_eq!(signature.parameters.len(), 2);
-        assert_eq!(signature.parameters[0].name, "a");
-        assert_eq!(signature.parameters[0].declared_type, VbaTypeId::Long);
-        assert_eq!(
-            signature.parameters[0].passing_mode,
-            ParameterPassingMode::Unknown,
-            "v4 did not serialize ByRef/ByVal, so upgraded signature keeps that gap explicit"
-        );
-        assert_eq!(signature.parameters[1].name, "b");
-        assert_eq!(signature.parameters[1].declared_type, VbaTypeId::Double);
+        assert_legacy_bundle_rejected(4, &data);
     }
 
     #[test]
-    fn v5_backward_compat_upgrades_call_relevant_signature_shape() {
+    fn v5_legacy_bundle_rejects_instead_of_upgrading_signature_shape() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
             external_call_descriptors: vec![],
@@ -3540,23 +3272,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v5");
-        let signature = &restored.procedure_metadata["property_let_value"].signature;
-        let param = &signature.parameters[0];
-        assert_eq!(param.source_mechanism, SourceParameterMechanism::Unknown);
-        assert_eq!(
-            param.resolved_mechanism,
-            ResolvedParameterMechanism::PropertyValueByVal
-        );
-        assert_eq!(
-            param.optional_descriptor,
-            OptionalParameterDescriptor::Required
-        );
-        assert!(signature.implicit_current_object.is_none());
+        assert_legacy_bundle_rejected(5, &data);
     }
 
     #[test]
-    fn v6_backward_compat_adds_empty_call_site_descriptor_rows() {
+    fn v6_legacy_bundle_rejects_instead_of_adding_empty_call_site_rows() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Halt],
             external_call_descriptors: vec![],
@@ -3617,17 +3337,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v6");
-        let metadata = &restored.procedure_metadata["use_value"];
-        assert_eq!(metadata.signature.parameters.len(), 1);
-        assert!(
-            metadata.call_sites.is_empty(),
-            "v6 bundles predate call-site descriptor rows and must upgrade with an explicit empty set"
-        );
+        assert_legacy_bundle_rejected(6, &data);
     }
 
     #[test]
-    fn v7_backward_compat_adds_empty_array_shape_descriptor_rows() {
+    fn v7_legacy_bundle_rejects_instead_of_adding_empty_array_shape_rows() {
         let source = "Sub Main()\n\
                       Dim x As Long\n\
                       x = 1\n\
@@ -3688,17 +3402,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v7");
-        let metadata = &restored.procedure_metadata["main"];
-        assert_eq!(metadata.call_sites.len(), 1);
-        assert!(
-            metadata.array_shapes.is_empty(),
-            "v7 bundles predate array-shape descriptor rows and must upgrade with an explicit empty set"
-        );
+        assert_legacy_bundle_rejected(7, &data);
     }
 
     #[test]
-    fn v8_backward_compat_adds_empty_udt_descriptor_rows() {
+    fn v8_legacy_bundle_rejects_instead_of_adding_empty_udt_rows() {
         let source = "Type Point\n\
                       X As Long\n\
                       End Type\n\
@@ -3759,20 +3467,11 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v8");
-        let metadata = &restored.procedure_metadata["main"];
-        assert!(
-            metadata.udt_types.is_empty(),
-            "v8 bundles predate UDT descriptor rows and must upgrade with an explicit empty set"
-        );
-        assert!(
-            metadata.object_types.is_empty(),
-            "v8 bundles predate object descriptor rows and must upgrade with an explicit empty set"
-        );
+        assert_legacy_bundle_rejected(8, &data);
     }
 
     #[test]
-    fn v9_backward_compat_adds_empty_object_descriptor_rows() {
+    fn v9_legacy_bundle_rejects_instead_of_adding_empty_object_rows() {
         let source = "Sub Main()\n\
                       Dim o As Object\n\
                       End Sub";
@@ -3830,17 +3529,12 @@ mod tests {
         data.extend_from_slice(&[0u8; 4]);
         data.extend_from_slice(&payload);
 
-        let restored = OxBundle::deserialize_from_bytes(&data).expect("deserialize v9");
-        let metadata = &restored.procedure_metadata["main"];
-        assert!(
-            metadata.object_types.is_empty(),
-            "v9 bundles predate object descriptor rows and must upgrade with an explicit empty set"
-        );
+        assert_legacy_bundle_rejected(9, &data);
     }
 
     #[test]
-    fn v2_roundtrip_with_populated_fields() {
-        let mut bundle = sample_bundle();
+    fn current_roundtrip_with_populated_optional_fields() {
+        let mut bundle = strict_sample_bundle();
         bundle.manifest_snapshot = Some(ManifestSnapshot {
             project_name: "TestProj".to_string(),
             project_kind: "Library".to_string(),
@@ -3888,8 +3582,18 @@ mod tests {
     #[test]
     fn compile_and_bundle_roundtrip() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub";
-        let (bytecode, metadata) = crate::compile_with_runtime_metadata(source).expect("compile");
-        let bundle = OxBundle::new(bytecode, metadata);
+        let manifest = ProjectManifest {
+            project_name: "Roundtrip".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, source).expect("module"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = crate::project::compile_project(&manifest).expect("compile");
+        let bundle = OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
 
@@ -4095,7 +3799,7 @@ End Sub";
     }
 
     #[test]
-    fn legacy_bundle_reports_callable_inventory_unavailable() {
+    fn incomplete_in_memory_bundle_reports_callable_inventory_unavailable() {
         let bundle = sample_bundle();
         assert_eq!(
             bundle
@@ -4103,6 +3807,17 @@ End Sub";
                 .expect_err("no descriptor inventory"),
             BundleDescriptorInventoryError::Unavailable
         );
+    }
+
+    #[test]
+    fn incomplete_in_memory_bundle_cannot_serialize_as_current_strict_format() {
+        let err = sample_bundle()
+            .serialize_to_bytes()
+            .expect_err("incomplete bundle must not serialize as current strict format");
+        assert!(err.contains("BUNDLE-STRICT-MISSING-SECTIONS"));
+        assert!(err.contains("manifest_snapshot"));
+        assert!(err.contains("descriptor_inventory"));
+        assert!(err.contains("project_context"));
     }
 
     #[test]

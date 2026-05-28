@@ -44,14 +44,14 @@ Rows can start at family granularity and split when semantics diverge.
 | Family | Semantic facts required | VM consumption requirement | Current gap |
 |---|---|---|---|
 | Constants and copies | declared target slot type, value state, carrier init | initialize/copy with declared carrier semantics | Slot descriptor metadata incomplete. |
-| Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Selected v14 operator descriptors and evidence exist; full truth table and descriptor-driven execution remain incomplete. |
-| Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Selected v14 coercion/operator/value-state descriptors exist; full helper truth table evidence remains incomplete. |
-| Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Selected v14 truthiness/logical/branch descriptors exist; broader extraction and behavior consumption remain incomplete. |
+| Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Selected v15 operator descriptors and evidence exist; full truth table and descriptor-driven execution remain incomplete. |
+| Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Selected v15 coercion/operator/value-state descriptors exist; full helper truth table evidence remains incomplete. |
+| Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Selected v15 truthiness/logical/branch descriptors exist; broader extraction and behavior consumption remain incomplete. |
 | String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | Fixed string and cleanup maps incomplete. |
 | Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Bounds metadata/evidence incomplete. |
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
-| Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v14 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
+| Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v15 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
 | Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Selected error-routing/deopt evidence exists for the TB03 Resume Next division seed; broader maps and oracle-backed edge evidence remain incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Host capability descriptor evidence exists; behavior-driving policy evaluation descriptors remain incomplete. |
 | COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
@@ -242,11 +242,11 @@ JIT-ready until later VMR-02 evidence fills them.
 The populated VMR-02 compiler/package pass now records descriptor facts on
 `ProcedureRuntimeSlotMetadata` for parameters, locals, return slots,
 compiler-generated fixed-array element slots, and expression temporaries.
-`OxBundle` format v12 also carries package-owned carrier layout descriptors
+`OxBundle` format v15 also carries package-owned carrier layout descriptors
 and value-state descriptors derived from slot metadata, procedure signatures,
-bound intrinsics, and emitted value-state opcodes. The compatibility reader
-preserves v10/v11 bundles and upgrades older v3/v4/v5/v6/v7/v8/v9 metadata
-into the current descriptor shape with the new v12 descriptor vectors empty.
+bound intrinsics, and emitted value-state opcodes. The strict package-only
+reader rejects older bundle versions instead of upgrading missing descriptor
+vectors into empty current-shape facts.
 This remains metadata/evidence-only: VM slot storage, helper choice, and
 runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -272,10 +272,9 @@ declared parameter types, parsed ByRef/ByVal mode, source parameter mechanism
 where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
-metadata knows them. `OxBundle` format v10 carries those facts, upgrades v6/v7
-bundles with empty call-site rows, upgrades v5 bundles with `Unknown` source
-mechanism where v5 lacked that distinction, and upgrades v4 bundles with
-`Unknown` parameter passing mode where v4 had no serialized ByRef/ByVal fact.
+metadata knows them. `OxBundle` format v15 carries those facts in the current
+strict package; older serialized versions reject deterministically instead of
+being backfilled with `Unknown` or empty descriptor facts.
 VM call execution does not consume these descriptors yet.
 
 The VMR-03 package evidence now also compares current `CallProc` lowering with
@@ -298,9 +297,8 @@ default, ParamArray pack, fixed-array materialization, default-member fallback
 policy, invocation syntax (`Call` keyword, no-`Call`, expression-call, and
 synthetic property-assignment forms), source argument evaluation order,
 diagnostic-policy ownership for the current compiler-owned 448/449/450
-invalid-call cases, and return copyout. `OxBundle` format v13 carries those
-call policy fields while the v12 compatibility reader upgrades older call-site
-rows with unknown syntax and empty diagnostic policies. The VM exposes these
+invalid-call cases, and return copyout. `OxBundle` format v15 carries those
+call policy fields as strict current package facts. The VM exposes these
 rows through
 `VmExecutionPackage::call_site_descriptors`, and
 `VmPackageIdentityEvidence::call_site_evidence` records descriptor digests plus
@@ -310,10 +308,9 @@ one deliberately narrow descriptor-driven call-entry path for
 existing bytecode lowering.
 
 The VMR-04 fixture evidence also classifies current limitations and the first
-behavior-driving exception: raw bytecode execution still shows the old ByVal
-declared-type call-entry gap for the observed `Long` to declared-`Double`
-shape, while package execution consumes the selected call/signature slot
-descriptors and the callee observes a `Double` value at entry. Optional
+behavior-driving exception: package execution consumes the selected
+call/signature slot descriptors for the observed `Long` to declared-`Double`
+shape, and the callee observes a `Double` value at entry. Optional
 `Variant` without an explicit default is described by package metadata as a
 missing-argument policy
 (`VariantMissingError448`) while current VM lowering still materializes a
@@ -325,12 +322,12 @@ id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
 observable without generalizing coercion behavior.
 
 Current expression/operator/coercion seed surface is package metadata and VM
-identity evidence, not broad expression rewiring: `OxBundle` format v14 carries
+identity evidence, not broad expression rewiring: `OxBundle` format v15 carries
 `ExpressionSemanticsDescriptor`, `OperatorSemanticsDescriptor`,
 `CoercionDescriptor`, `NameBindingDescriptor`, and
-`ObjectMemberBindingDescriptor` rows. The v13 compatibility reader upgrades
-older bundles with those vectors empty, preserving v13 call-site policy facts
-without inventing expression semantics. VM identity evidence reports descriptor
+`ObjectMemberBindingDescriptor` rows. Older bundle versions reject rather than
+preserving partial call-site policy facts while inventing absent expression
+semantics as empty vectors. VM identity evidence reports descriptor
 digests and observation tokens for selected expression classifications,
 operator helper choices, `Option Compare` influence, truthiness/logical/branch
 rows, explicit deferred `IIf` ordering, Let/Set/property-value coercion rows,
@@ -362,17 +359,15 @@ element type/carrier, base-slot presence, bounds provenance, allocation/erase/
 preserve policy, element lifecycle classification, and runtime SAFEARRAY bounds
 when a base slot is allocated after VM execution. `VmPackageIdentityEvidence`
 also records selected lifecycle evidence for fixed/static array elements,
-dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v10 carries these
-rows, upgrades v7 bundles with an explicit empty array-shape set, upgrades v8
-bundles with an explicit empty UDT descriptor set, and upgrades v9 bundles with
-an explicit empty object descriptor set.
+dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v15
+carries these rows in the strict current package; older bundles reject instead
+of being upgraded with empty array, UDT, or object descriptor sets.
 
 The VMR-05 seed fixture proves the current positive subset for fixed/static
 local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
 and ByRef scalar observation copyback. Package execution now consumes
 `ArrayShapeDescriptor` for the selected VMR-06 rank-1 fixed/static
-`LBound`/`UBound` path while raw bytecode execution still records the old
-runtime error 13 on the unallocated fixed-array base slot. Compiler/VM unit
+`LBound`/`UBound` path. Compiler/VM unit
 evidence now covers multi-rank descriptor serialization, but VM-runnable
 multi-rank execution fixtures, runtime bounds-error evidence, and COM/native
 SAFEARRAY projection remain incomplete before JIT lowering may claim TB05

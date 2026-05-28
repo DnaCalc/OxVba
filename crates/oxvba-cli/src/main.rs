@@ -2772,13 +2772,36 @@ fn run_compile(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let (bytecode, metadata) = oxvba_compiler::compile_with_runtime_metadata(&source)
-        .unwrap_or_else(|err| {
-            eprintln!("oxvba: compile failed: {err}");
-            std::process::exit(1);
-        });
+    let module_name = compile_args
+        .input_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("Main")
+        .to_string();
+    let module = oxvba_compiler::module_unit_from_source(
+        &module_name,
+        oxvba_compiler::ModuleKind::Procedural,
+        &source,
+    )
+    .unwrap_or_else(|err| {
+        eprintln!("oxvba: compile failed: {err}");
+        std::process::exit(1);
+    });
+    let manifest = oxvba_compiler::ProjectManifest {
+        project_name: module_name,
+        project_kind: oxvba_compiler::ProjectKind::Source,
+        modules: vec![module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let compiled = oxvba_compiler::compile_project(&manifest).unwrap_or_else(|err| {
+        eprintln!("oxvba: compile failed: {err}");
+        std::process::exit(1);
+    });
 
-    let bundle = oxvba_compiler::OxBundle::new(bytecode, metadata);
+    let bundle =
+        oxvba_compiler::OxBundle::from_compiled_project_with_manifest(&compiled, &manifest);
     let bytes = bundle.serialize_to_bytes().unwrap_or_else(|err| {
         eprintln!("oxvba: bundle serialization failed: {err}");
         std::process::exit(1);
