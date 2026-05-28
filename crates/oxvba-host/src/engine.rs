@@ -311,22 +311,13 @@ impl Engine {
         let ProjectRuntimeSession {
             compiled,
             vm,
-            package_origin,
+            package_origin: _,
         } = session;
         let bundle = OxBundle::from_compiled_project(
             compiled,
             &compiled.project_reflection.identity.project_name,
         );
-        let package = VmExecutionPackage {
-            bytecode: &bundle.bytecode,
-            procedure_metadata: &bundle.procedure_metadata,
-            package_origin: *package_origin,
-            project_context: bundle.project_context.as_ref(),
-            export_inventory: bundle.export_inventory.as_ref(),
-            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
-            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
-            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
-        };
+        let package = VmExecutionPackage::from_bundle(&bundle);
         vm.invoke_package_procedure_with_variants(&package, entry_pc, param_slots, args)
             .map_err(PhaseDiagnostic::runtime)
     }
@@ -729,22 +720,13 @@ impl Engine {
             &compiled,
             &compiled.project_reflection.identity.project_name,
         );
-        let package = VmExecutionPackage {
-            bytecode: &bundle.bytecode,
-            procedure_metadata: &bundle.procedure_metadata,
-            project_context: bundle.project_context.as_ref(),
-            export_inventory: bundle.export_inventory.as_ref(),
-            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
-            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
-            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
-            package_origin: VmPackageOrigin::InMemory,
-        };
+        let package = VmExecutionPackage::from_bundle(&bundle);
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession {
             compiled,
             vm,
-            package_origin: VmPackageOrigin::InMemory,
+            package_origin: VmPackageOrigin::OxBundle,
         })
     }
 
@@ -768,15 +750,18 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
-        let package =
-            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        let bundle = OxBundle::from_compiled_project(
+            &compiled,
+            &compiled.project_reflection.identity.project_name,
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
         vm.load_execution_package_metadata(&package);
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         Ok(ProjectRuntimeSession {
             compiled,
             vm,
-            package_origin: VmPackageOrigin::InMemory,
+            package_origin: VmPackageOrigin::OxBundle,
         })
     }
 
@@ -1199,16 +1184,7 @@ impl Engine {
             compiled,
             &compiled.project_reflection.identity.project_name,
         );
-        let package = VmExecutionPackage {
-            bytecode: &bundle.bytecode,
-            procedure_metadata: &bundle.procedure_metadata,
-            project_context: bundle.project_context.as_ref(),
-            export_inventory: bundle.export_inventory.as_ref(),
-            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
-            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
-            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
-            package_origin: VmPackageOrigin::InMemory,
-        };
+        let package = VmExecutionPackage::from_bundle(&bundle);
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         let package_identity = recorded_package_identity(&vm)?;
@@ -1694,7 +1670,7 @@ End Function
         assert_eq!(package_project_snapshot.values, legacy_project_snapshot);
         assert_eq!(
             package_project_snapshot.package_identity.package_origin,
-            VmPackageOrigin::InMemory
+            VmPackageOrigin::OxBundle
         );
         assert_eq!(
             sorted_procedure_names(&package_project_snapshot.package_identity),
@@ -1714,7 +1690,7 @@ End Function
         let mut session = engine
             .compile_and_prepare_session(&manifest)
             .expect("callable session should prepare");
-        assert_eq!(session.package_origin(), VmPackageOrigin::InMemory);
+        assert_eq!(session.package_origin(), VmPackageOrigin::OxBundle);
         assert!(
             session.package_identity_evidence().is_none(),
             "preparation alone should not claim an executed package identity"
@@ -1731,7 +1707,7 @@ End Function
         let session_identity = session
             .package_identity_evidence()
             .expect("callable invocation should record package identity");
-        assert_eq!(session_identity.package_origin, VmPackageOrigin::InMemory);
+        assert_eq!(session_identity.package_origin, VmPackageOrigin::OxBundle);
         assert_eq!(
             sorted_procedure_names(session_identity),
             vec!["addone".to_string(), "main".to_string()]

@@ -1,6 +1,6 @@
 # Strict Package-Only VM Execution Workset
 
-Status: `in-progress`
+Status: `handoff-passed`
 Date: 2026-05-28
 Scope owner: OxVBA compiler/VM/package/JIT-entry
 
@@ -122,6 +122,11 @@ Current progress:
   supported metadata slices, while real COM/native boundary ABI/result/writeback
   cleanup/error shapes reject deterministically through `VmPackageSupportReport`
   before strict VM execution.
+- `bd-embl.10` passes terminal review:
+  [`../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md`](../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md)
+  records child bead closure, raw execution/toggle/legacy-bundle scans, shared
+  VM/`ProcLoweringIr` support reporting, residual unsupported rows, final
+  checks, and package/JIT handoff rules.
 
 ## Execution Beads
 

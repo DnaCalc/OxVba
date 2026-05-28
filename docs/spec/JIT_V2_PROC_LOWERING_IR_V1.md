@@ -12,6 +12,8 @@ Expression/call semantics:
 [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
 Typed metadata package handoff:
 [`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
+Strict package-only VM handoff:
+[`../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md`](../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md)
 
 ## Purpose
 
@@ -32,11 +34,11 @@ unsupported, interop-limited, oracle-required, or test-blocked,
 from bytecode shape or backend convenience.
 
 Strict package-only VM work adds `VmPackageSupportReport` as the current shared
-support-query surface. `ProcLoweringIr` entry must treat any deferred
-VM-consumption row in that report as a blocker until the owning delivery bead
-either makes the behavior descriptor-driven or defines a deterministic reject.
-The public JIT boundary accepts executable packages such as `OxBundle`, not
-bare `Bytecode`, so lowering entry cannot bypass package support diagnostics.
+support-query surface. `ProcLoweringIr` entry must treat every unsupported or
+residual VM-consumption row in that report as a blocker until a later delivery
+bead makes the behavior descriptor-driven or keeps a deterministic reject. The
+public JIT boundary accepts executable packages such as `OxBundle`, not bare
+`Bytecode`, so lowering entry cannot bypass package support diagnostics.
 
 ## Core Types
 
