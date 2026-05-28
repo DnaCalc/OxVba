@@ -551,6 +551,40 @@ fn host_policy_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
     tokens.join("|")
 }
 
+fn vm_consumption_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .vm_consumption_evidence
+        .iter()
+        .flat_map(|consumption| {
+            consumption.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}",
+                    consumption.consumption_id.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn vm_consumption_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .vm_consumption_evidence
+        .iter()
+        .map(|consumption| {
+            format!(
+                "{}={}",
+                consumption.consumption_id.to_ascii_lowercase(),
+                consumption.consumption_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 fn assert_raw_and_package_snapshot_relation(
     row: &FixtureRow,
     raw: &Result<Vec<Variant>, String>,
@@ -718,6 +752,7 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
         }
         let error_descriptor_tokens = error_descriptor_observation_tokens(evidence);
         let deopt_snapshot_tokens = deopt_snapshot_observation_tokens(evidence);
+        let vm_consumption_tokens = vm_consumption_observation_tokens(evidence);
         if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
             assert!(
                 error_descriptor_tokens
@@ -734,6 +769,49 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 "{} deopt evidence should record call safepoints: {:?}",
                 row.id,
                 deopt_snapshot_tokens
+            );
+            for expected in [
+                "selection=VMR06-CALL-BYVAL-COERCE-001",
+                "status=supported-selected",
+                "vm-path=Vm::apply_descriptor_driven_call_entry_bindings",
+                "raw-bytecode-baseline=pre-vmr06-byval-copy-observes-source-carrier",
+                "selection=CALL-OPTIONAL-MISSING-VARIANT",
+                "status=vm-limitation",
+            ] {
+                assert!(
+                    vm_consumption_tokens
+                        .iter()
+                        .any(|token| token.contains(expected)),
+                    "{} VM consumption evidence should include `{expected}`; got: {:?}",
+                    row.id,
+                    vm_consumption_tokens
+                );
+            }
+        }
+        if row.id == "VMR05_ARRAY_SHAPE_BOUNDS" {
+            for expected in [
+                "selection=VMR06-ARRAY-STATIC-BOUNDS-001",
+                "package-execution=descriptor-driven-static-array-bounds",
+                "raw-bytecode-baseline=runtime-error-13-on-unallocated-fixed-array-base",
+            ] {
+                assert!(
+                    vm_consumption_tokens
+                        .iter()
+                        .any(|token| token.contains(expected)),
+                    "{} VM consumption evidence should include `{expected}`; got: {:?}",
+                    row.id,
+                    vm_consumption_tokens
+                );
+            }
+        }
+        if row.id == "VMR02_UDT_FIELD_SLOTS" || row.id == "VMR05_UDT_DESCRIPTOR_MEMBERS" {
+            assert!(
+                vm_consumption_tokens
+                    .iter()
+                    .any(|token| token.contains("selection=VMR06-UDT-OWNING-FIELD-CLEANUP-001")),
+                "{} VM consumption evidence should record selected UDT cleanup consumption: {:?}",
+                row.id,
+                vm_consumption_tokens
             );
         }
         assert_eq!(sorted_procedure_names(evidence), {
@@ -959,9 +1037,33 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 policy
             );
         }
+        for consumption in &evidence.vm_consumption_evidence {
+            assert!(
+                consumption.consumption_id.starts_with("vm-consumption:"),
+                "{} VM consumption evidence should retain consumption identity: {:?}",
+                row.id,
+                consumption
+            );
+            assert!(
+                consumption
+                    .consumption_descriptor_digest
+                    .starts_with("fnv1a64:"),
+                "{} VM consumption descriptor digest should be explicit: {:?}",
+                row.id,
+                consumption
+            );
+            assert!(
+                !consumption.observations.is_empty()
+                    && !consumption.descriptor_families.is_empty()
+                    && !consumption.gap_classifications.is_empty(),
+                "{} VM consumption evidence should classify each row: {:?}",
+                row.id,
+                consumption
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} lifecycle_digests={} error_descriptor_digests={} deopt_snapshot_digests={} host_policy_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={} lifecycle_observations={} error_descriptor_observations={} deopt_snapshot_observations={} host_policy_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} lifecycle_digests={} error_descriptor_digests={} deopt_snapshot_digests={} host_policy_digests={} vm_consumption_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={} lifecycle_observations={} error_descriptor_observations={} deopt_snapshot_observations={} host_policy_observations={} vm_consumption_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -980,6 +1082,7 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             error_descriptor_digest_tokens(evidence),
             deopt_snapshot_digest_tokens(evidence),
             host_policy_digest_tokens(evidence),
+            vm_consumption_digest_tokens(evidence),
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
             call_site_tokens.join("|"),
@@ -989,7 +1092,8 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             lifecycle_tokens.join("|"),
             error_descriptor_tokens.join("|"),
             deopt_snapshot_tokens.join("|"),
-            host_policy_observation_tokens(evidence).join("|")
+            host_policy_observation_tokens(evidence).join("|"),
+            vm_consumption_tokens.join("|")
         );
     }
 }

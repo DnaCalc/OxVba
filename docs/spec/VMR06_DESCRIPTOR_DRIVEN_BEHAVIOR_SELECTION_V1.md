@@ -64,6 +64,9 @@ Implementation evidence:
   call-site evidence: `COERCE-CALL-BYVAL-DECLARED-TARGET`,
   `COERCE-LET-NUMERIC-WIDEN`, and runtime helper
   `oxvba_runtime::coerce_to`.
+- `bd-tvmb.10` adds VM-consumption evidence for this selected row, including
+  the descriptor families, package execution path, and retained raw-bytecode
+  baseline.
 
 ### Static Array Bounds
 
@@ -104,6 +107,8 @@ Implementation evidence:
 - Descriptor absence or mismatch still produces the existing runtime error;
   the VM does not infer array bounds from compiler-generated element slot
   names or from ambient runtime state.
+- `bd-tvmb.10` adds VM-consumption evidence for this selected row, including
+  the package-only descriptor path and raw runtime error 13 baseline.
 
 ### UDT Owning Field Cleanup Evidence
 
@@ -141,6 +146,8 @@ Implementation evidence:
 - The evidence records current runtime carrier observations for known field
   alias slots while keeping canonical cleanup descriptor ids and explicit VM
   cleanup-stack execution as later work.
+- `bd-tvmb.10` adds VM-consumption evidence for this evidence-only selected
+  row, keeping explicit cleanup-stack execution classified as missing.
 
 ## Call-Entry Descriptor Inputs
 

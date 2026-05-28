@@ -180,6 +180,7 @@ interop_observations
 error_descriptor_evidence
 deopt_snapshot_evidence
 host_policy_evidence
+vm_consumption_evidence
 source_map_evidence
 package_diagnostics
 gap_classifications
@@ -436,6 +437,14 @@ Host-policy evidence records bundle capability requirements plus deterministic
 still evidence only: active-handler reentry, caller unwinding, full Resume
 quirks, explicit cleanup-stack execution, and behavior-driving policy
 evaluation descriptors remain incomplete.
+
+The bd-tvmb.10 VM consumption ledger records which descriptor facts the VM
+currently consumes and which package-visible facts remain blocked. The selected
+supported rows are VMR-06 call-entry coercion and rank-1 static/fixed array
+bounds; the selected evidence-only row is UDT owning field cleanup evidence.
+Optional `Variant` missing, error/deopt cleanup, boundary projection, and
+host-policy behavior consumption remain classified gap rows rather than
+backend-local assumptions.
 
 ## Strengthening Rule
 

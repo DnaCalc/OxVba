@@ -18,17 +18,19 @@ print array-shape descriptor digests and array-shape observation tokens. The
 UDT rows also print UDT descriptor digests and UDT descriptor observation
 tokens, plus selected lifecycle cleanup observation tokens for owning fields.
 The object rows also print object descriptor digests and object descriptor
-observation tokens. Carrier-layout and value-state rows are VM-visible through
-package identity evidence and are covered by the VM package tests for primitive,
-object, aggregate, Decimal96 Variant-subtype, Empty, Null, Error/CVErr,
-Missing, Nothing, and vbNullString lanes.
+observation tokens. VM-consumption rows print selected descriptor-consuming
+execution and deferred gap classifications. Carrier-layout and value-state rows
+are VM-visible through package identity evidence and are covered by the VM
+package tests for primitive, object, aggregate, Decimal96 Variant-subtype,
+Empty, Null, Error/CVErr, Missing, Nothing, and vbNullString lanes.
 
 The VM evidence also emits canonical descriptor identity rows sourced from the
 compiler/package descriptor identity helpers, including bytecode, procedure,
 signature, slot, call-site, array-shape, UDT, object, interop, lifecycle,
-carrier-layout, and value-state families reached by current package evidence.
-These rows are package identity evidence; they do not imply broader
-descriptor-driven VM execution.
+error-routing, deopt-snapshot, host-policy, VM-consumption, carrier-layout, and
+value-state families reached by current package evidence. These rows are
+package identity evidence; they do not imply broader descriptor-driven VM
+execution.
 
 Bundle-backed VM package identity now also exposes project-context evidence
 when an `OxBundle` v11 supplies it: project/module/reference/import facts,
@@ -140,6 +142,13 @@ cleanup obligations for `Point.Caption`, while `VMR05_UDT_DESCRIPTOR_MEMBERS`
 records fixed-length `String * 5` cleanup obligations for `Record.Name`. The
 evidence is descriptor-backed and fixture-asserted, but it does not add an
 explicit cleanup stack or change runtime carrier drop behavior.
+
+The VM-consumption evidence ledger records the selected supported rows
+(`VMR06-CALL-BYVAL-COERCE-001` and `VMR06-ARRAY-STATIC-BOUNDS-001`), the
+selected evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), and
+the explicit gaps for Optional `Variant` missing, error/deopt cleanup, boundary
+projection, and host-policy consumption. The companion seed table is
+`docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`.
 
 `VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot
 lifecycle tokens. The selected row records `LIFE-BSTR-SLOT` cleanup obligations

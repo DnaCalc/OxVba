@@ -72,6 +72,8 @@ object/member binding tables are tracked by
 [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md).
 The current error, cleanup, deopt, and host-policy seed rows are tracked by
 [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv).
+Selected VM consumption and gap-classification rows are tracked by
+[`../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`](../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv).
 
 ## Current Baseline
 
@@ -96,11 +98,11 @@ explicit, versioned, and consumable by both VM and JIT.
 
 The current additive descriptor surface already includes first slot, signature,
 call-site, array, UDT, generic object, COM/native/export interop,
-error-routing, deopt-snapshot, and host-policy descriptor evidence, plus
-runtime project evidence for VM-capable class/interface and COM `WithEvents`
-routes. Those facts are evidence and package scaffolding, not a claim that VM
-object/member, boundary, error, cleanup, or host-policy execution is fully
-descriptor-driven yet.
+error-routing, deopt-snapshot, host-policy, and VM-consumption descriptor
+evidence, plus runtime project evidence for VM-capable class/interface and COM
+`WithEvents` routes. Those facts are evidence and package scaffolding, not a
+claim that VM object/member, boundary, error, cleanup, or host-policy execution
+is fully descriptor-driven yet.
 
 ## Required Package Contents
 

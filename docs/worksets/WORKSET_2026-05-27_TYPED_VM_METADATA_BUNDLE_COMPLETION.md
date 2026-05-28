@@ -119,6 +119,13 @@ Current progress:
   through VM package evidence. Broader active-handler reentry, caller unwinding,
   complete Resume quirks, explicit cleanup-stack execution, and
   behavior-driving host policy consumption remain later gates.
+- `bd-tvmb.10` has added an explicit VM consumption evidence ledger. VM package
+  identity evidence now records selected descriptor-consuming lanes for
+  VMR-06 call-entry coercion, rank-1 static/fixed array bounds, and UDT owning
+  field cleanup evidence, while separately classifying Optional `Variant`
+  missing, error/deopt cleanup, boundary, and host-policy consumption gaps.
+  Raw-bytecode baselines remain documented where they intentionally differ from
+  package execution.
 
 ## Reference Truth
 
@@ -133,6 +140,7 @@ This workset is the delivery owner for the remaining gaps already identified in:
 - [`../spec/JIT_V2_PROC_LOWERING_IR_V1.md`](../spec/JIT_V2_PROC_LOWERING_IR_V1.md)
 - [`../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`](../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv)
 - [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv)
+- [`../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`](../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv)
 
 The VM remains executable truth. Current VM behavior is preserved until a
 selected descriptor-consuming behavior change has its own fixture, evidence,
