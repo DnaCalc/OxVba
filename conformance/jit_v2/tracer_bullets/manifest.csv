@@ -1,7 +1,7 @@
 id,file,status,notes
 TB01,tb01_primitive_scalar_loop.bas,vm-ready,Declared primitive Long Double Boolean loop tracer; Variant is only the VM snapshot carrier
 TB02,tb02_udt_struct_fields.bas,vm-ready,UDT struct field layout copy and typed field arithmetic tracer
-TB03,tb03_error_resume_next.bas,vm-ready,Resume Next error-routing and Err state tracer
+TB03,tb03_error_resume_next.bas,vm-ready-error-package-evidence,Resume Next error-routing and Err/deopt package evidence tracer
 TB04,tb04_bstr_lifetime_concat_len.bas,vm-ready,Declared String/BSTR assignment concat Len and cleanup tracer
 TB05,tb05_safearray_foreach_bounds.bas,vm-ready-bounds-followup,Typed Long array store index For Each plus Array() bounds metadata tracer; runtime bounds-error fixture still required
 TB06,tb06_late_bound_com_resume_next.bas,vm-ready-hosted,Late-bound COM CreateObject Invoke failure Resume Next tracer; requires oxvba-host controlled COM VM seed

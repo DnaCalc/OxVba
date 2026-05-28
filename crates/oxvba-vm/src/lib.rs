@@ -797,6 +797,51 @@ mod tests {
                 .iter()
                 .any(|capability| capability == "diagnostics-telemetry:Debug.Print")
         );
+        let host_policy_observations = first
+            .host_policy_evidence
+            .iter()
+            .flat_map(|evidence| evidence.observations.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(
+            first.host_policy_evidence.iter().all(|evidence| {
+                evidence.host_policy_id.starts_with("host-policy:")
+                    && evidence
+                        .host_policy_descriptor_digest
+                        .starts_with("fnv1a64:")
+            }),
+            "host-policy evidence should expose stable descriptor identities: {:?}",
+            first.host_policy_evidence
+        );
+        assert!(
+            host_policy_observations
+                .iter()
+                .any(|token| token == "capability=dynamic-linking"),
+            "dynamic-linking host capability should be policy evidence: {:?}",
+            host_policy_observations
+        );
+        assert!(
+            host_policy_observations
+                .iter()
+                .any(|token| token == "capability=diagnostics-telemetry"),
+            "diagnostics host capability should be policy evidence: {:?}",
+            host_policy_observations
+        );
+        assert!(
+            host_policy_observations
+                .iter()
+                .any(|token| token == "policy-denied-diagnostic=HAL-E-POLICY-DENIED"),
+            "host policy evidence should name deterministic policy diagnostics: {:?}",
+            host_policy_observations
+        );
+        assert!(
+            first.deopt_snapshot_evidence.iter().any(|evidence| evidence
+                .observations
+                .iter()
+                .any(|token| token == "host-policy-state=project-context-host-capabilities")),
+            "deopt snapshots should carry host-policy state when capabilities are present: {:?}",
+            first.deopt_snapshot_evidence
+        );
         assert_ne!(first.package_digest, second.package_digest);
     }
 

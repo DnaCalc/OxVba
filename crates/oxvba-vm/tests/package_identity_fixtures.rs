@@ -449,6 +449,108 @@ fn lifecycle_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
     tokens.join("|")
 }
 
+fn error_descriptor_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .error_descriptor_evidence
+        .iter()
+        .flat_map(|error| {
+            error.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}",
+                    error.error_scope_id.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn error_descriptor_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .error_descriptor_evidence
+        .iter()
+        .map(|error| {
+            format!(
+                "{}={}",
+                error.error_scope_id.to_ascii_lowercase(),
+                error.error_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
+fn deopt_snapshot_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .deopt_snapshot_evidence
+        .iter()
+        .flat_map(|deopt| {
+            deopt.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}",
+                    deopt.safepoint_id.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn deopt_snapshot_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .deopt_snapshot_evidence
+        .iter()
+        .map(|deopt| {
+            format!(
+                "{}={}",
+                deopt.safepoint_id.to_ascii_lowercase(),
+                deopt.deopt_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
+fn host_policy_observation_tokens(evidence: &VmPackageIdentityEvidence) -> Vec<String> {
+    let mut tokens = evidence
+        .host_policy_evidence
+        .iter()
+        .flat_map(|policy| {
+            policy.observations.iter().map(move |observation| {
+                format!(
+                    "{}:{}",
+                    policy.host_policy_id.to_ascii_lowercase(),
+                    observation
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens
+}
+
+fn host_policy_digest_tokens(evidence: &VmPackageIdentityEvidence) -> String {
+    let mut tokens = evidence
+        .host_policy_evidence
+        .iter()
+        .map(|policy| {
+            format!(
+                "{}={}",
+                policy.host_policy_id.to_ascii_lowercase(),
+                policy.host_policy_descriptor_digest
+            )
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    tokens.join("|")
+}
+
 fn assert_raw_and_package_snapshot_relation(
     row: &FixtureRow,
     raw: &Result<Vec<Variant>, String>,
@@ -614,6 +716,26 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 lifecycle_tokens
             );
         }
+        let error_descriptor_tokens = error_descriptor_observation_tokens(evidence);
+        let deopt_snapshot_tokens = deopt_snapshot_observation_tokens(evidence);
+        if row.id == "VMR04_CALL_ARGUMENT_BINDING" {
+            assert!(
+                error_descriptor_tokens
+                    .iter()
+                    .any(|token| token.contains("kind=call-frame-error-state")),
+                "{} error descriptor evidence should record call-frame error state: {:?}",
+                row.id,
+                error_descriptor_tokens
+            );
+            assert!(
+                deopt_snapshot_tokens
+                    .iter()
+                    .any(|token| token.contains("operation=call-procedure")),
+                "{} deopt evidence should record call safepoints: {:?}",
+                row.id,
+                deopt_snapshot_tokens
+            );
+        }
         assert_eq!(sorted_procedure_names(evidence), {
             let mut expected = row
                 .expected_procedures
@@ -777,9 +899,69 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
                 lifecycle
             );
         }
+        for error in &evidence.error_descriptor_evidence {
+            assert!(
+                error.error_scope_id.starts_with("error-routing:"),
+                "{} error descriptor evidence should retain error scope identity: {:?}",
+                row.id,
+                error
+            );
+            assert!(
+                error.error_descriptor_digest.starts_with("fnv1a64:"),
+                "{} error descriptor digest should be explicit: {:?}",
+                row.id,
+                error
+            );
+            assert!(
+                !error.observations.is_empty(),
+                "{} error evidence should classify each descriptor: {:?}",
+                row.id,
+                error
+            );
+        }
+        for deopt in &evidence.deopt_snapshot_evidence {
+            assert!(
+                deopt.safepoint_id.starts_with("deopt-snapshot:"),
+                "{} deopt evidence should retain safepoint identity: {:?}",
+                row.id,
+                deopt
+            );
+            assert!(
+                deopt.deopt_descriptor_digest.starts_with("fnv1a64:"),
+                "{} deopt descriptor digest should be explicit: {:?}",
+                row.id,
+                deopt
+            );
+            assert!(
+                !deopt.observations.is_empty(),
+                "{} deopt evidence should classify each safepoint: {:?}",
+                row.id,
+                deopt
+            );
+        }
+        for policy in &evidence.host_policy_evidence {
+            assert!(
+                policy.host_policy_id.starts_with("host-policy:"),
+                "{} host-policy evidence should retain policy identity: {:?}",
+                row.id,
+                policy
+            );
+            assert!(
+                policy.host_policy_descriptor_digest.starts_with("fnv1a64:"),
+                "{} host-policy descriptor digest should be explicit: {:?}",
+                row.id,
+                policy
+            );
+            assert!(
+                !policy.observations.is_empty(),
+                "{} host-policy evidence should classify each requirement: {:?}",
+                row.id,
+                policy
+            );
+        }
 
         println!(
-            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} lifecycle_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={} lifecycle_observations={}",
+            "VM_PACKAGE_IDENTITY id={} values={} package_digest={} bytecode_digest={} slot_count={} user_slot_count={} procedures={} procedure_identities={} slot_descriptor_digests={} signature_call_digests={} call_site_descriptor_digests={} array_shape_digests={} udt_descriptor_digests={} object_descriptor_digests={} lifecycle_digests={} error_descriptor_digests={} deopt_snapshot_digests={} host_policy_digests={} slot_descriptors={} signature_call_observations={} call_site_descriptor_observations={} array_shape_observations={} udt_descriptor_observations={} object_descriptor_observations={} lifecycle_observations={} error_descriptor_observations={} deopt_snapshot_observations={} host_policy_observations={}",
             row.id,
             snapshot_tokens(&package_snapshot),
             evidence.package_digest,
@@ -795,13 +977,19 @@ fn vm_package_identity_seed_fixtures_emit_identity_values_and_slot_descriptors()
             udt_descriptor_digest_tokens(evidence),
             object_descriptor_digest_tokens(evidence),
             lifecycle_digest_tokens(evidence),
+            error_descriptor_digest_tokens(evidence),
+            deopt_snapshot_digest_tokens(evidence),
+            host_policy_digest_tokens(evidence),
             descriptor_tokens.join("|"),
             signature_call_tokens.join("|"),
             call_site_tokens.join("|"),
             array_shape_tokens.join("|"),
             udt_descriptor_tokens.join("|"),
             object_descriptor_tokens.join("|"),
-            lifecycle_tokens.join("|")
+            lifecycle_tokens.join("|"),
+            error_descriptor_tokens.join("|"),
+            deopt_snapshot_tokens.join("|"),
+            host_policy_observation_tokens(evidence).join("|")
         );
     }
 }

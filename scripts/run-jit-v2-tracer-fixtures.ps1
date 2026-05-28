@@ -25,7 +25,7 @@ try {
     $cliVmStatuses = @(
         "vm-ready",
         "vm-ready-bounds-followup",
-        "vm-ready-export-followup"
+        "vm-ready-error-package-evidence"
     )
     $hostedVmRows = @()
     $ran = 0

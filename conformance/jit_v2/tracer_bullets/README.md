@@ -9,6 +9,8 @@ All tracer bullets have a VM seed path today:
 
 - host-independent fixtures run through `scripts/run-jit-v2-tracer-fixtures.ps1`
   and `expected_vm_values.csv`;
+- the TB03 error/deopt package evidence path also runs through
+  `cargo test -p oxvba-host --test jit_v2_tracer_vm_seed -- --nocapture`;
 - hosted COM/type-library/native fixtures run through
   `cargo test -p oxvba-host --test jit_v2_tracer_vm_seed -- --nocapture`.
   The hosted TB06 through TB09 tests also assert

@@ -70,6 +70,8 @@ Bytecode/VM consumption and evidence obligations are tracked by
 Machine-readable coercion, operator, call binding, lifecycle, cleanup, and
 object/member binding tables are tracked by
 [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md).
+The current error, cleanup, deopt, and host-policy seed rows are tracked by
+[`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv).
 
 ## Current Baseline
 
@@ -92,11 +94,13 @@ truth still lives in compiler internals, VM behavior, runtime helper contracts,
 or boundary-specific descriptors. The next evolution is to make those facts
 explicit, versioned, and consumable by both VM and JIT.
 
-The current additive descriptor surface already includes first slot,
-signature, call-site, array, UDT, and generic object descriptor evidence, plus
+The current additive descriptor surface already includes first slot, signature,
+call-site, array, UDT, generic object, COM/native/export interop,
+error-routing, deopt-snapshot, and host-policy descriptor evidence, plus
 runtime project evidence for VM-capable class/interface and COM `WithEvents`
 routes. Those facts are evidence and package scaffolding, not a claim that VM
-object/member execution is descriptor-driven yet.
+object/member, boundary, error, cleanup, or host-policy execution is fully
+descriptor-driven yet.
 
 ## Required Package Contents
 
@@ -194,6 +198,14 @@ Reference behavior to anchor oracle rows includes Microsoft VBA documentation
 for the [`On Error` statement](https://learn.microsoft.com/en-us/office/vba/Language/Reference/User-Interface-Help/on-error-statement),
 [`Err` object](https://learn.microsoft.com/en-us/office/vba/Language/Reference/user-interface-help/err-object),
 and [`Err.Clear`](https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/clear-method-visual-basic-for-applications).
+
+Current VM package evidence covers the selected TB03 `On Error Resume Next`
+division helper seed, selected `Resume` opcode descriptor rows, `Err.Clear`,
+`Raise`, call-frame isolation, host-boundary error routing, helper/call/boundary
+deopt snapshots, and host capability diagnostic descriptors. Active-handler
+reentry, caller unwinding, complete Resume edge cases, explicit cleanup-stack
+execution, and behavior-driving host-policy consumption remain classified
+package gaps until separate VM/oracle evidence exists.
 
 ## VM Strengthening Contract
 

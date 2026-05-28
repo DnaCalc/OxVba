@@ -229,6 +229,14 @@ impl<'a> VmExecutionPackage<'a> {
             self.descriptor_inventory,
         );
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
+        let error_descriptor_evidence = collect_error_descriptor_evidence(self.bytecode);
+        let deopt_snapshot_evidence = collect_deopt_snapshot_evidence(
+            self.bytecode,
+            self.procedure_metadata,
+            &lifecycle_evidence,
+            self.project_context,
+        );
+        let host_policy_evidence = collect_host_policy_evidence(self.project_context);
         let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
         let value_state_evidence = collect_value_state_evidence(self.procedure_metadata);
         let expression_semantics_evidence =
@@ -239,12 +247,18 @@ impl<'a> VmExecutionPackage<'a> {
         let name_binding_evidence = collect_name_binding_evidence(self.procedure_metadata);
         let object_member_binding_evidence =
             collect_object_member_binding_evidence(self.procedure_metadata);
+        let descriptor_sources = DescriptorIdentityEvidenceSources {
+            interop: &interop_descriptor_evidence,
+            lifecycle: &lifecycle_evidence,
+            error: &error_descriptor_evidence,
+            deopt: &deopt_snapshot_evidence,
+            host_policy: &host_policy_evidence,
+            package_route_object: &package_route_object_descriptor_evidence,
+        };
         let descriptor_identities = collect_descriptor_identity_evidence(
             self.bytecode,
             self.procedure_metadata,
-            &interop_descriptor_evidence,
-            &lifecycle_evidence,
-            &package_route_object_descriptor_evidence,
+            descriptor_sources,
         );
         VmPackageIdentityEvidence {
             package_origin: self.package_origin,
@@ -260,6 +274,9 @@ impl<'a> VmExecutionPackage<'a> {
             object_descriptor_evidence,
             interop_descriptor_evidence,
             lifecycle_evidence,
+            error_descriptor_evidence,
+            deopt_snapshot_evidence,
+            host_policy_evidence,
             carrier_layout_evidence,
             value_state_evidence,
             expression_semantics_evidence,
@@ -388,6 +405,9 @@ pub struct VmPackageIdentityEvidence {
     pub object_descriptor_evidence: Vec<VmObjectDescriptorEvidence>,
     pub interop_descriptor_evidence: Vec<VmInteropDescriptorEvidence>,
     pub lifecycle_evidence: Vec<VmLifecycleEvidence>,
+    pub error_descriptor_evidence: Vec<VmErrorDescriptorEvidence>,
+    pub deopt_snapshot_evidence: Vec<VmDeoptSnapshotEvidence>,
+    pub host_policy_evidence: Vec<VmHostPolicyEvidence>,
     pub carrier_layout_evidence: Vec<VmCarrierLayoutEvidence>,
     pub value_state_evidence: Vec<VmValueStateEvidence>,
     pub expression_semantics_evidence: Vec<VmSemanticDescriptorEvidence>,
@@ -610,6 +630,27 @@ pub struct VmLifecycleEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmErrorDescriptorEvidence {
+    pub error_scope_id: String,
+    pub error_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmDeoptSnapshotEvidence {
+    pub safepoint_id: String,
+    pub deopt_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmHostPolicyEvidence {
+    pub host_policy_id: String,
+    pub host_policy_descriptor_digest: String,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmCarrierLayoutEvidence {
     pub procedure_name: String,
     pub carrier_key: String,
@@ -646,12 +687,19 @@ const SELECTED_CALL_BYVAL_COERCION_ID: &str = "COERCE-CALL-BYVAL-DECLARED-TARGET
 const SELECTED_CALL_BYVAL_NUMERIC_WIDEN_ID: &str = "COERCE-LET-NUMERIC-WIDEN";
 const SELECTED_CALL_BYVAL_RUNTIME_HELPER_ID: &str = "oxvba_runtime::coerce_to";
 
+struct DescriptorIdentityEvidenceSources<'a> {
+    interop: &'a [VmInteropDescriptorEvidence],
+    lifecycle: &'a [VmLifecycleEvidence],
+    error: &'a [VmErrorDescriptorEvidence],
+    deopt: &'a [VmDeoptSnapshotEvidence],
+    host_policy: &'a [VmHostPolicyEvidence],
+    package_route_object: &'a [VmObjectDescriptorEvidence],
+}
+
 fn collect_descriptor_identity_evidence(
     bytecode: &Bytecode,
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-    interop_evidence: &[VmInteropDescriptorEvidence],
-    lifecycle_evidence: &[VmLifecycleEvidence],
-    package_route_object_evidence: &[VmObjectDescriptorEvidence],
+    sources: DescriptorIdentityEvidenceSources<'_>,
 ) -> Vec<VmDescriptorIdentityEvidence> {
     let mut identities = Vec::new();
     identities.push(VmDescriptorIdentityEvidence::from(
@@ -781,7 +829,8 @@ fn collect_descriptor_identity_evidence(
     }
 
     identities.extend(
-        interop_evidence
+        sources
+            .interop
             .iter()
             .map(|evidence| VmDescriptorIdentityEvidence {
                 family: DescriptorFamily::Interop.registry_key().to_string(),
@@ -790,7 +839,8 @@ fn collect_descriptor_identity_evidence(
             }),
     );
     identities.extend(
-        lifecycle_evidence
+        sources
+            .lifecycle
             .iter()
             .map(|evidence| VmDescriptorIdentityEvidence {
                 family: DescriptorFamily::Lifecycle.registry_key().to_string(),
@@ -798,7 +848,37 @@ fn collect_descriptor_identity_evidence(
                 descriptor_digest: evidence.lifecycle_descriptor_digest.clone(),
             }),
     );
-    identities.extend(package_route_object_evidence.iter().map(|evidence| {
+    identities.extend(
+        sources
+            .error
+            .iter()
+            .map(|evidence| VmDescriptorIdentityEvidence {
+                family: DescriptorFamily::ErrorRouting.registry_key().to_string(),
+                descriptor_id: evidence.error_scope_id.clone(),
+                descriptor_digest: evidence.error_descriptor_digest.clone(),
+            }),
+    );
+    identities.extend(
+        sources
+            .deopt
+            .iter()
+            .map(|evidence| VmDescriptorIdentityEvidence {
+                family: DescriptorFamily::DeoptSnapshot.registry_key().to_string(),
+                descriptor_id: evidence.safepoint_id.clone(),
+                descriptor_digest: evidence.deopt_descriptor_digest.clone(),
+            }),
+    );
+    identities.extend(
+        sources
+            .host_policy
+            .iter()
+            .map(|evidence| VmDescriptorIdentityEvidence {
+                family: DescriptorFamily::HostPolicy.registry_key().to_string(),
+                descriptor_id: evidence.host_policy_id.clone(),
+                descriptor_digest: evidence.host_policy_descriptor_digest.clone(),
+            }),
+    );
+    identities.extend(sources.package_route_object.iter().map(|evidence| {
         VmDescriptorIdentityEvidence {
             family: DescriptorFamily::ObjectType.registry_key().to_string(),
             descriptor_id: evidence.object_descriptor_id.clone(),
@@ -1383,6 +1463,397 @@ fn selected_field_carrier_lifecycle_id(field: &UdtFieldDescriptor) -> Option<&'s
             }
         }
         RuntimeCarrierKind::Variant => Some("LIFE-VARIANT-PAYLOAD"),
+        _ => None,
+    }
+}
+
+fn collect_error_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmErrorDescriptorEvidence> {
+    let mut evidence = bytecode
+        .instructions
+        .iter()
+        .enumerate()
+        .filter_map(|(pc, instruction)| {
+            let observations = error_descriptor_observations(pc, instruction)?;
+            let pc_token = pc.to_string();
+            let kind = error_instruction_kind(instruction);
+            let error_scope_id = canonical_descriptor_id(
+                DescriptorFamily::ErrorRouting,
+                ["pc", pc_token.as_str(), kind],
+            );
+            Some(VmErrorDescriptorEvidence {
+                error_scope_id: error_scope_id.clone(),
+                error_descriptor_digest: descriptor_digest_from_fields(
+                    DescriptorFamily::ErrorRouting,
+                    &error_scope_id,
+                    [
+                        ("pc", pc_token),
+                        ("instruction", format!("{instruction:#?}")),
+                        ("observations", format!("{observations:#?}")),
+                    ],
+                ),
+                observations,
+            })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| left.error_scope_id.cmp(&right.error_scope_id));
+    evidence
+}
+
+fn error_instruction_kind(instruction: &Instruction) -> &'static str {
+    match instruction {
+        Instruction::SetOnErrorResumeNext => "on-error-resume-next",
+        Instruction::SetOnErrorGoto0 => "on-error-goto-0",
+        Instruction::SetOnErrorGotoLabel { .. } => "on-error-goto-label",
+        Instruction::ResumeNext => "resume-next",
+        Instruction::Resume => "resume",
+        Instruction::ResumeLabel { .. } => "resume-label",
+        Instruction::RaiseError { .. } => "raise-error",
+        Instruction::ClearErr => "err-clear",
+        Instruction::CallProc { .. } => "call-frame-error-state",
+        Instruction::DivSlots { .. } => "fallible-div",
+        Instruction::IntDivSlots { .. } => "fallible-int-div",
+        Instruction::ModSlots { .. } => "fallible-mod",
+        instruction if instruction_host_boundary_kind(instruction).is_some() => {
+            "host-boundary-error"
+        }
+        _ => "not-error-routing",
+    }
+}
+
+fn error_descriptor_observations(pc: usize, instruction: &Instruction) -> Option<Vec<String>> {
+    let mut observations = vec![
+        "source=BytecodeInstruction".to_string(),
+        format!("pc={pc}"),
+        "err-state=number-description-source-last-error-pc".to_string(),
+        "active-error-state=last-error-pc".to_string(),
+        "error-policy=vm-error-frame-owned".to_string(),
+    ];
+    match instruction {
+        Instruction::SetOnErrorResumeNext => {
+            observations.extend([
+                "kind=on-error-resume-next".to_string(),
+                "state-transition=enable-resume-next".to_string(),
+                "enabled-handler=resume-next".to_string(),
+                "goto-label-target=cleared".to_string(),
+                "fault-routing=auto-advance-next-pc".to_string(),
+                "active-handler=last-error-pc-cleared-on-auto-advance".to_string(),
+            ]);
+        }
+        Instruction::SetOnErrorGoto0 => {
+            observations.extend([
+                "kind=on-error-goto-0".to_string(),
+                "state-transition=disable-handler".to_string(),
+                "enabled-handler=none".to_string(),
+                "goto-label-target=cleared".to_string(),
+                "err-state=preserved-by-current-vm".to_string(),
+            ]);
+        }
+        Instruction::SetOnErrorGotoLabel { target_pc } => {
+            observations.extend([
+                "kind=on-error-goto-label".to_string(),
+                "state-transition=enable-label-handler".to_string(),
+                format!("handler-target-pc={target_pc}"),
+                "fault-routing=jump-to-handler-target".to_string(),
+                "resume-required-to-clear-active-error".to_string(),
+            ]);
+        }
+        Instruction::ResumeNext => {
+            observations.extend([
+                "kind=resume-next".to_string(),
+                "requires-active-error=true".to_string(),
+                "resume-target=fault-pc-plus-one".to_string(),
+                "resume-without-error=runtime-error-20".to_string(),
+                "err-reset=clear-on-success".to_string(),
+            ]);
+        }
+        Instruction::Resume => {
+            observations.extend([
+                "kind=resume".to_string(),
+                "requires-active-error=true".to_string(),
+                "resume-target=fault-pc".to_string(),
+                "resume-without-error=runtime-error-20".to_string(),
+                "err-reset=clear-on-success".to_string(),
+            ]);
+        }
+        Instruction::ResumeLabel { target_pc } => {
+            observations.extend([
+                "kind=resume-label".to_string(),
+                "requires-active-error=true".to_string(),
+                format!("resume-target-pc={target_pc}"),
+                "resume-without-error=runtime-error-20".to_string(),
+                "err-reset=clear-on-success".to_string(),
+            ]);
+        }
+        Instruction::RaiseError { code } => {
+            observations.extend([
+                "kind=raise-error".to_string(),
+                format!("raise-code={code}"),
+                "fault-site=pc".to_string(),
+                "route=route-runtime-error".to_string(),
+                "resume-next-consumable=true".to_string(),
+            ]);
+        }
+        Instruction::ClearErr => {
+            observations.extend([
+                "kind=err-clear".to_string(),
+                "err-reset=number-description-source-last-error-pc".to_string(),
+                "handler-state=unchanged".to_string(),
+            ]);
+        }
+        Instruction::CallProc { target_pc, .. } => {
+            observations.extend([
+                "kind=call-frame-error-state".to_string(),
+                format!("call-target-pc={target_pc}"),
+                "caller-frame=save-handler-and-err-state".to_string(),
+                "callee-entry=clear-handler-and-err-state".to_string(),
+                "return-policy=restore-caller-error-frame".to_string(),
+                "call-out-resume-next=caller-frame-owned".to_string(),
+            ]);
+        }
+        Instruction::DivSlots { .. }
+        | Instruction::IntDivSlots { .. }
+        | Instruction::ModSlots { .. } => {
+            observations.extend([
+                "kind=fallible-helper".to_string(),
+                format!("helper={}", error_instruction_kind(instruction)),
+                "runtime-error=division-by-zero-11".to_string(),
+                "route=route-runtime-error".to_string(),
+                "resume-next-consumable=true".to_string(),
+                "helper-failure=edge-recorded".to_string(),
+            ]);
+        }
+        instruction => {
+            let (operation, capability) = instruction_host_boundary_kind(instruction)?;
+            observations.extend([
+                "kind=host-boundary-error".to_string(),
+                format!("host-operation={operation}"),
+                format!("host-capability={capability}"),
+                "route=route-host-error".to_string(),
+                "runtime-error-map=hal-error-code".to_string(),
+                "resume-next-consumable=true".to_string(),
+            ]);
+        }
+    }
+    Some(observations)
+}
+
+fn collect_deopt_snapshot_evidence(
+    bytecode: &Bytecode,
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    lifecycle_evidence: &[VmLifecycleEvidence],
+    project_context: Option<&BundleProjectContext>,
+) -> Vec<VmDeoptSnapshotEvidence> {
+    let slot_descriptor_count = procedure_metadata
+        .values()
+        .map(|metadata| metadata.slot_type_descriptors().len())
+        .sum::<usize>();
+    let carrier_layout_count = procedure_metadata
+        .values()
+        .map(|metadata| metadata.carrier_layouts.len())
+        .sum::<usize>();
+    let host_capability_count = project_context
+        .map(|context| context.host_capabilities.len())
+        .unwrap_or(0);
+    let mut evidence = bytecode
+        .instructions
+        .iter()
+        .enumerate()
+        .filter_map(|(pc, instruction)| {
+            let (operation, observations) = deopt_snapshot_observations(
+                pc,
+                instruction,
+                slot_descriptor_count,
+                carrier_layout_count,
+                lifecycle_evidence.len(),
+                host_capability_count,
+            )?;
+            let pc_token = pc.to_string();
+            let safepoint_id = canonical_descriptor_id(
+                DescriptorFamily::DeoptSnapshot,
+                ["pc", pc_token.as_str(), operation.as_str()],
+            );
+            Some(VmDeoptSnapshotEvidence {
+                safepoint_id: safepoint_id.clone(),
+                deopt_descriptor_digest: descriptor_digest_from_fields(
+                    DescriptorFamily::DeoptSnapshot,
+                    &safepoint_id,
+                    [
+                        ("pc", pc_token),
+                        ("operation", operation),
+                        ("instruction", format!("{instruction:#?}")),
+                        ("observations", format!("{observations:#?}")),
+                    ],
+                ),
+                observations,
+            })
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| left.safepoint_id.cmp(&right.safepoint_id));
+    evidence
+}
+
+fn deopt_snapshot_observations(
+    pc: usize,
+    instruction: &Instruction,
+    slot_descriptor_count: usize,
+    carrier_layout_count: usize,
+    cleanup_scope_count: usize,
+    host_capability_count: usize,
+) -> Option<(String, Vec<String>)> {
+    let operation = deopt_operation_token(instruction)?;
+    let mut observations = vec![
+        "kind=deopt-safepoint".to_string(),
+        format!("pc={pc}"),
+        format!("operation={operation}"),
+        "deopt-policy=vm-materialize-or-reject-before-jit-consumption".to_string(),
+        "slot-map=procedure-slot-descriptors".to_string(),
+        format!("slot-descriptor-count={slot_descriptor_count}"),
+        "live-carrier-map=carrier-layout-descriptors".to_string(),
+        format!("carrier-layout-count={carrier_layout_count}"),
+        "error-state=err-number-description-source-last-error-pc".to_string(),
+        "cleanup-state=lifecycle-descriptor-refs".to_string(),
+        format!("cleanup-scope-count={cleanup_scope_count}"),
+        "byref-state=call-site-and-external-writeback-descriptors".to_string(),
+        "source-map=bytecode-pc".to_string(),
+    ];
+    if host_capability_count > 0 {
+        observations.push("host-policy-state=project-context-host-capabilities".to_string());
+        observations.push(format!("host-capability-count={host_capability_count}"));
+    }
+    if instruction_host_boundary_kind(instruction).is_some() {
+        observations.push("boundary-state=host-or-interop-call-frame".to_string());
+    }
+    Some((operation.to_string(), observations))
+}
+
+fn deopt_operation_token(instruction: &Instruction) -> Option<&'static str> {
+    match instruction {
+        Instruction::CallProc { .. } => Some("call-procedure"),
+        Instruction::DivSlots { .. } => Some("helper-div"),
+        Instruction::IntDivSlots { .. } => Some("helper-int-div"),
+        Instruction::ModSlots { .. } => Some("helper-mod"),
+        Instruction::ConcatSlots { .. } => Some("helper-bstr-concat"),
+        Instruction::IntrinsicCreateObjectHost { .. } => Some("com-createobject"),
+        Instruction::IntrinsicDispatchInvokeHost { .. } => Some("com-dispatch-invoke"),
+        Instruction::IntrinsicInvokeSymbolHost { .. } => Some("native-declare-invoke"),
+        instruction if instruction_host_boundary_kind(instruction).is_some() => {
+            Some("host-service-call")
+        }
+        _ => None,
+    }
+}
+
+fn collect_host_policy_evidence(
+    project_context: Option<&BundleProjectContext>,
+) -> Vec<VmHostPolicyEvidence> {
+    let Some(context) = project_context else {
+        return Vec::new();
+    };
+    let host_gap = context
+        .gap_classifications
+        .iter()
+        .find(|gap| gap.area == "host-capability")
+        .map(|gap| format!("{}:{}", gap.status, gap.gap_id));
+    let mut evidence = context
+        .host_capabilities
+        .iter()
+        .map(|capability| {
+            let host_policy_id = canonical_descriptor_id(
+                DescriptorFamily::HostPolicy,
+                [capability.capability_id.as_str()],
+            );
+            let mut observations = vec![
+                "kind=host-capability-policy".to_string(),
+                "source=BundleProjectContext.host_capabilities".to_string(),
+                format!("bundle-capability-id={}", capability.capability_id),
+                format!("capability={}", capability.capability),
+                format!("source-operation={}", capability.source),
+                "policy-evaluation=HostServices::policy".to_string(),
+                "unsupported-diagnostic=HAL-E-CAP-UNAVAILABLE".to_string(),
+                "policy-denied-diagnostic=HAL-E-POLICY-DENIED".to_string(),
+                "runtime-error-map=Vm::hal_error_code".to_string(),
+                "err-projection=route-host-error".to_string(),
+                "deterministic-diagnostic=true".to_string(),
+            ];
+            if let Some(gap) = &host_gap {
+                observations.push(format!("gap={gap}"));
+            }
+            VmHostPolicyEvidence {
+                host_policy_id: host_policy_id.clone(),
+                host_policy_descriptor_digest: descriptor_digest_from_fields(
+                    DescriptorFamily::HostPolicy,
+                    &host_policy_id,
+                    [
+                        ("capability_id", capability.capability_id.clone()),
+                        ("capability", capability.capability.clone()),
+                        ("source", capability.source.clone()),
+                        ("observations", format!("{observations:#?}")),
+                    ],
+                ),
+                observations,
+            }
+        })
+        .collect::<Vec<_>>();
+    evidence.sort_by(|left, right| left.host_policy_id.cmp(&right.host_policy_id));
+    evidence
+}
+
+fn instruction_host_boundary_kind(
+    instruction: &Instruction,
+) -> Option<(&'static str, &'static str)> {
+    match instruction {
+        Instruction::IntrinsicShellHost { .. } => Some(("Shell", "process-env")),
+        Instruction::IntrinsicEnvironHost { .. } => Some(("Environ", "process-env")),
+        Instruction::IntrinsicDirHost { .. } => Some(("Dir", "process-env")),
+        Instruction::IntrinsicDateNowHost { .. } => Some(("Date", "time-locale")),
+        Instruction::IntrinsicTimeNowHost { .. } => Some(("Time", "time-locale")),
+        Instruction::IntrinsicNowHost { .. } => Some(("Now", "time-locale")),
+        Instruction::IntrinsicTimerHost { .. } => Some(("Timer", "time-locale")),
+        Instruction::IntrinsicFreeFileHost { .. } => Some(("FreeFile", "file-system-io")),
+        Instruction::IntrinsicFileOpenHost { .. } => Some(("Open", "file-system-io")),
+        Instruction::IntrinsicFileCloseHost { .. } => Some(("Close", "file-system-io")),
+        Instruction::IntrinsicFileKillHost { .. } => Some(("Kill", "file-system-io")),
+        Instruction::IntrinsicFileReadHost { .. } => Some(("Input", "file-system-io")),
+        Instruction::IntrinsicFileWriteHost { .. } => Some(("Write", "file-system-io")),
+        Instruction::IntrinsicFilePrintHost { .. } => Some(("Print", "file-system-io")),
+        Instruction::IntrinsicFileInputHost { .. } => Some(("Input", "file-system-io")),
+        Instruction::IntrinsicFileLineInputHost { .. } => Some(("LineInput", "file-system-io")),
+        Instruction::IntrinsicFileEofHost { .. } => Some(("EOF", "file-system-io")),
+        Instruction::IntrinsicFileLofHost { .. } => Some(("LOF", "file-system-io")),
+        Instruction::IntrinsicFileSeekHost { .. } => Some(("Seek", "file-system-io")),
+        Instruction::IntrinsicFileLocHost { .. } => Some(("Loc", "file-system-io")),
+        Instruction::IntrinsicConsolePrintHost { .. } => Some(("Print", "console-io")),
+        Instruction::IntrinsicConsoleInputHost { .. } => Some(("Input", "console-io")),
+        Instruction::IntrinsicConsoleLineInputHost { .. } => Some(("LineInput", "console-io")),
+        Instruction::IntrinsicMsgBoxHost { .. } => Some(("MsgBox", "ui-interaction")),
+        Instruction::IntrinsicInputBoxHost { .. } => Some(("InputBox", "ui-interaction")),
+        Instruction::IntrinsicBeepHost { .. } => Some(("Beep", "ui-interaction")),
+        Instruction::IntrinsicDebugPrintHost { .. } => {
+            Some(("Debug.Print", "diagnostics-telemetry"))
+        }
+        Instruction::IntrinsicDoEventsHost { .. } => Some(("DoEvents", "event-pump")),
+        Instruction::IntrinsicCreateObjectHost { .. } => {
+            Some(("CreateObject", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicDispatchInvokeHost { .. } => {
+            Some(("DispatchInvoke", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComSubscribeEventHost { .. } => {
+            Some(("ComSubscribeEvent", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComUnsubscribeEventHost { .. } => {
+            Some(("ComUnsubscribeEvent", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComEventCallbackSubscriptionHost { .. } => {
+            Some(("ComEventCallbackSubscription", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComEventCallbackArgHost { .. } => {
+            Some(("ComEventCallbackArg", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicComReleaseEventCallbackHost { .. } => {
+            Some(("ComReleaseEventCallback", "com-activation-dispatch"))
+        }
+        Instruction::IntrinsicInvokeSymbolHost { .. } => Some(("DeclareInvoke", "dynamic-linking")),
         _ => None,
     }
 }

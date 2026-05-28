@@ -114,10 +114,49 @@ fn interop_descriptor_observation_tokens(
         .collect()
 }
 
+fn error_descriptor_observation_tokens(
+    snapshot: &HostVariantSnapshotWithPackageIdentity,
+) -> Vec<String> {
+    snapshot
+        .package_identity
+        .error_descriptor_evidence
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor
+                .observations
+                .iter()
+                .map(move |observation| format!("{}:{observation}", descriptor.error_scope_id))
+        })
+        .collect()
+}
+
+fn deopt_snapshot_observation_tokens(
+    snapshot: &HostVariantSnapshotWithPackageIdentity,
+) -> Vec<String> {
+    snapshot
+        .package_identity
+        .deopt_snapshot_evidence
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor
+                .observations
+                .iter()
+                .map(move |observation| format!("{}:{observation}", descriptor.safepoint_id))
+        })
+        .collect()
+}
+
 fn assert_interop_observation(tokens: &[String], expected: &str) {
     assert!(
         tokens.iter().any(|token| token.contains(expected)),
         "expected interop descriptor evidence containing `{expected}`; got: {tokens:?}"
+    );
+}
+
+fn assert_descriptor_observation(tokens: &[String], expected: &str) {
+    assert!(
+        tokens.iter().any(|token| token.contains(expected)),
+        "expected descriptor evidence containing `{expected}`; got: {tokens:?}"
     );
 }
 
@@ -155,7 +194,8 @@ fn tb02_udt_struct_vm_seed_runs() {
 
 #[test]
 fn tb03_error_routing_vm_seed_runs() {
-    let out = run_source_vm(&fixture_source("tb03_error_resume_next.bas"));
+    let source = fixture_source("tb03_error_resume_next.bas");
+    let out = run_source_vm(&source);
 
     assert_eq!(out[0], Variant::from_i32(0), "initial Err.Number mismatch");
     assert_eq!(
@@ -166,6 +206,24 @@ fn tb03_error_routing_vm_seed_runs() {
     assert_eq!(out[2], Variant::from_i32(10), "numerator slot mismatch");
     assert_eq!(out[3], Variant::from_i32(0), "denominator slot mismatch");
     assert_eq!(out[4], Variant::empty(), "failed result slot mismatch");
+
+    let manifest = project_manifest_from_source("JitV2Tracer", "ErrorModule", &source);
+    let snapshot = run_project_vm_with_package(&manifest);
+    let error_tokens = error_descriptor_observation_tokens(&snapshot);
+    assert_descriptor_observation(&error_tokens, "kind=on-error-resume-next");
+    assert_descriptor_observation(&error_tokens, "state-transition=enable-resume-next");
+    assert_descriptor_observation(&error_tokens, "kind=fallible-helper");
+    assert_descriptor_observation(&error_tokens, "runtime-error=division-by-zero-11");
+    assert_descriptor_observation(&error_tokens, "resume-next-consumable=true");
+
+    let deopt_tokens = deopt_snapshot_observation_tokens(&snapshot);
+    assert_descriptor_observation(&deopt_tokens, "operation=helper-div");
+    assert_descriptor_observation(
+        &deopt_tokens,
+        "error-state=err-number-description-source-last-error-pc",
+    );
+    assert_descriptor_observation(&deopt_tokens, "cleanup-state=lifecycle-descriptor-refs");
+    assert_descriptor_observation(&deopt_tokens, "live-carrier-map=carrier-layout-descriptors");
 }
 
 #[test]

@@ -109,6 +109,16 @@ Current progress:
   External ABI execution breadth, generalized COM boundary descriptors,
   generic Automation `Variant`/`SAFEARRAY` declared-parameter ABI, and concrete
   cleanup/error oracle evidence remain later gates.
+- `bd-tvmb.9` has added package-visible error-routing, deopt-snapshot, and host
+  policy evidence. VM package identity evidence now emits selected
+  `ErrorRoutingDescriptor`, `DeoptSnapshotDescriptor`, and
+  `HostPolicyDescriptor` rows for `On Error`/Resume opcodes, `Err.Clear`,
+  `Raise`, call-frame isolation, division helper failure, host/COM/native
+  boundary error routing, helper/call/boundary safepoints, and deterministic
+  host capability diagnostics. TB03 now asserts the Resume Next division seed
+  through VM package evidence. Broader active-handler reentry, caller unwinding,
+  complete Resume quirks, explicit cleanup-stack execution, and
+  behavior-driving host policy consumption remain later gates.
 
 ## Reference Truth
 
@@ -122,6 +132,7 @@ This workset is the delivery owner for the remaining gaps already identified in:
 - [`../spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](../spec/VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md)
 - [`../spec/JIT_V2_PROC_LOWERING_IR_V1.md`](../spec/JIT_V2_PROC_LOWERING_IR_V1.md)
 - [`../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv`](../validation/JIT_V2_TRACER_BULLET_MATRIX_V1.csv)
+- [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv)
 
 The VM remains executable truth. Current VM behavior is preserved until a
 selected descriptor-consuming behavior change has its own fixture, evidence,

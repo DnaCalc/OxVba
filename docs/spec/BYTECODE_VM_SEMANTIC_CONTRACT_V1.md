@@ -52,8 +52,8 @@ Rows can start at family granularity and split when semantics diverge.
 | UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-backed offsets/layout/copy/drop execution remains incomplete. |
 | Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; descriptor-driven binding and Optional-missing runtime behavior incomplete. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v14 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
-| Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Runtime exists; package maps and oracle-backed edge evidence are incomplete. |
-| Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
+| Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Selected error-routing/deopt evidence exists for the TB03 Resume Next division seed; broader maps and oracle-backed edge evidence remain incomplete. |
+| Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Host capability descriptor evidence exists; behavior-driving policy evaluation descriptors remain incomplete. |
 | COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
 | Native Declare | ABI descriptor, marshal descriptors, ByRef writeback | route through host/native lane and capture writeback | Seed interop descriptor evidence exists; wider ABI gaps remain. |
 | Exported callable | inbound ABI, return/error policy, cleanup | expose package export descriptors and route hosted invocation through VM package facts | Export descriptor evidence exists for Variant-positional callable packages; external ABI execution breadth remains incomplete. |
@@ -177,6 +177,9 @@ udt_field_observations
 object_identity_observations
 interop_descriptor_evidence
 interop_observations
+error_descriptor_evidence
+deopt_snapshot_evidence
+host_policy_evidence
 source_map_evidence
 package_diagnostics
 gap_classifications
@@ -202,9 +205,10 @@ Current VMR-01 seed evidence in `oxvba-vm` is
   procedure name, entry PC, slot descriptor digest, and slot descriptor rows;
 - package-owned descriptor identity rows for bytecode, procedures, procedure
   signatures, slots, call sites, array shapes, UDTs, object routes, interop
-  descriptors, lifecycle descriptors, expression semantics, operator
-  semantics, coercion, name binding, and object/member binding descriptors
-  reached by current evidence.
+  descriptors, lifecycle descriptors, error-routing descriptors, deopt
+  snapshot descriptors, host-policy descriptors, expression semantics,
+  operator semantics, coercion, name binding, and object/member binding
+  descriptors reached by current evidence.
 
 Canonical descriptor identity helpers live in
 `crates/oxvba-compiler/src/descriptor_identity.rs`, not in the VM. The current
@@ -220,9 +224,10 @@ the recorded VM package identity for evidence and future JIT gates.
 
 This began as package identity plus first slot descriptor evidence. The current
 surface now also includes signature comparison, call-site, array-shape, UDT,
-object, interop, bundle project/compile context, and selected UDT lifecycle
-evidence. Host-policy behavior consumption and explicit cleanup-stack execution
-remain future rows under the strengthening sequence above.
+object, interop, bundle project/compile context, selected lifecycle,
+error-routing, deopt-snapshot, and host-policy evidence. Host-policy behavior
+consumption and explicit cleanup-stack execution remain future rows under the
+strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -418,6 +423,19 @@ policy. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr projection remains
 runtime-owned rather than package-unified, external export ABI execution is not
 closed, and general Automation `Variant`/`SAFEARRAY` declared-parameter ABI
 support remains incomplete.
+
+The VMR-05/bd-tvmb.9 error/cleanup/deopt fixture adds VM package evidence for
+selected `ErrorRoutingDescriptor`, `DeoptSnapshotDescriptor`, and
+`HostPolicyDescriptor` rows. TB03 now records `On Error Resume Next`,
+division-by-zero helper failure, Err-state fields, runtime error 11, and
+resume-next-consumable policy as package evidence. Deopt evidence records
+helper/call/host/COM/native safepoints with slot-map, live-carrier,
+cleanup-state, error-state, ByRef-state, source-PC, and host-policy obligations.
+Host-policy evidence records bundle capability requirements plus deterministic
+`HAL-E-CAP-UNAVAILABLE` and `HAL-E-POLICY-DENIED` diagnostic tokens. This is
+still evidence only: active-handler reentry, caller unwinding, full Resume
+quirks, explicit cleanup-stack execution, and behavior-driving policy
+evaluation descriptors remain incomplete.
 
 ## Strengthening Rule
 

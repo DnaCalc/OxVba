@@ -84,6 +84,10 @@ Current fixture statuses:
 - `vm-ready-bounds-followup`: source is VM-runnable for the SAFEARRAY store,
   index, `For Each`, and bounds-metadata subset, but a separate runtime
   bounds-error fixture is still required before that tracer bullet can close.
+- `vm-ready-error-package-evidence`: source is VM-runnable and package
+  evidence records the current error-routing/deopt descriptor subset, but
+  broader error maps, active-handler quirks, and cleanup-stack execution remain
+  required before that tracer bullet can close.
 - `vm-ready-export-package-evidence`: source is VM-runnable for the internal
   callable seed and package evidence records the current exported-callable
   descriptor subset, but external ABI execution breadth is still required
@@ -169,9 +173,14 @@ Package/VM evidence gate:
 - VM package evidence must include error/resume maps, failing-helper
   descriptors, resume target evidence, and `Err`-state snapshot fields before
   `ProcLoweringIr` may consume this tracer.
-- The current VM seed proves runtime behavior, but the package-owned
-  error-frame evidence schema is still missing. This keeps executable TB03
-  blocked even though the source fixture runs under the VM.
+- The current VM seed proves runtime behavior, and package evidence now records
+  `ErrorRoutingDescriptor` rows for `On Error Resume Next` plus the division
+  helper failure edge, including Err-state fields, runtime error 11,
+  resume-next-consumable policy, and `DeoptSnapshotDescriptor` rows for helper
+  safepoints with slot-map, live-carrier, error-state, cleanup-state, and
+  ByRef-state obligations. Broader Resume forms, active-handler reentry,
+  caller unwinding, and explicit cleanup-stack execution remain blocking before
+  executable TB03 can close.
 
 Required assertions:
 
@@ -182,6 +191,8 @@ Required assertions:
 - Failed operation preserves slot state according to VM behavior.
 - Resume target is next bytecode PC.
 - Deopt/slow-helper path records error state before continuing.
+- Current VM package evidence asserts the selected error/deopt descriptor
+  tokens for the Resume Next division seed.
 
 ### TB04 BSTR Lifetime
 
