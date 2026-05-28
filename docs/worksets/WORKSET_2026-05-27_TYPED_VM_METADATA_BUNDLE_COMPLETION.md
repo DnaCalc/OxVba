@@ -1,6 +1,6 @@
 # Typed VM Metadata Bundle Completion Workset
 
-Status: `in-progress`
+Status: `complete` (closed 2026-05-28)
 Date: 2026-05-27
 Scope owner: OxVBA compiler/VM/package/native-readiness
 
