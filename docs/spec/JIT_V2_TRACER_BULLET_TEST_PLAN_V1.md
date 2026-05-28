@@ -84,8 +84,9 @@ Current fixture statuses:
 - `vm-ready-bounds-followup`: source is VM-runnable for the SAFEARRAY store,
   index, `For Each`, and bounds-metadata subset, but a separate runtime
   bounds-error fixture is still required before that tracer bullet can close.
-- `vm-ready-export-followup`: source is VM-runnable for the internal callable
-  seed, but external inbound/outbound ABI projection evidence is still required
+- `vm-ready-export-package-evidence`: source is VM-runnable for the internal
+  callable seed and package evidence records the current exported-callable
+  descriptor subset, but external ABI execution breadth is still required
   before that tracer bullet can close.
 - `vm-ready-hosted`: source is VM-runnable when the test supplies required
   host setup, such as controlled COM or project/type-library metadata.
@@ -257,9 +258,11 @@ Package/VM evidence gate:
   `ProcLoweringIr` may consume this tracer.
 - The current hosted VM seed records `CreateObject`/dispatch instruction
   expectations, runtime selector source, `early_bound=false`, and
-  runtime-owned HRESULT/EXCEPINFO/ArgErr classification. Package-owned
-  boundary projection, object identity comparison, default-member facts, and
-  cleanup evidence remain blocking.
+  runtime-owned HRESULT/EXCEPINFO/ArgErr classification, runtime result
+  projection classification, and host dispatch cleanup classification.
+  Generalized package-owned boundary projection, object identity comparison,
+  default-member facts, and concrete cleanup execution evidence remain
+  blocking.
 
 Required assertions:
 
@@ -272,8 +275,10 @@ Required assertions:
   is provided by the Rust host test, not by standalone CLI ProgID registration.
 - Current VM package evidence records hosted `CreateObject` and dispatch invoke
   instruction expectations, runtime selector source, `early_bound=false`, and
-  runtime-owned HRESULT/EXCEPINFO/ArgErr classification. It does not yet prove
-  package-owned boundary projection or cleanup behavior.
+  runtime-owned HRESULT/EXCEPINFO/ArgErr classification, runtime
+  Variant/Object result projection classification, and host dispatch cleanup
+  classification. It does not yet prove generalized package-owned boundary
+  projection or cleanup execution behavior.
 
 ### TB07 Early-Bound COM
 
@@ -287,9 +292,12 @@ Package/VM evidence gate:
   `ObjectRef` identity observations, and argument/return projection facts
   before `ProcLoweringIr` may consume this tracer.
 - The current hosted VM seed records early-bound dispatch instruction
-  expectations and the object/member seed table names early-bound dispatch plus
+  expectations, selector policy, runtime-owned HRESULT/EXCEPINFO/ArgErr
+  classification, argument/result projection classification, and cleanup
+  classification. The object/member seed table names early-bound dispatch plus
   vtable strategy obligations. Imported member descriptors, strategy digest
-  evidence, object identity comparison, and projection facts remain blocking.
+  evidence, object identity comparison, and typed projection execution facts
+  remain blocking.
 
 Required assertions:
 
@@ -300,8 +308,9 @@ Required assertions:
 - Current VM seed is hosted because typed imported COM binding requires a
   project manifest with an `OxVba` type-library reference.
 - Current VM package evidence records the early-bound dispatch instruction
-  expectation. Imported COM class/interface/member descriptor identity and
-  dispatch-vtable strategy remain package gaps.
+  expectation plus boundary policy classifications. Imported COM
+  class/interface/member descriptor identity and dispatch-vtable strategy
+  remain package gaps.
 
 ### TB08 Native Declare
 
@@ -315,9 +324,11 @@ Package/VM evidence gate:
   evidence, cleanup-buffer ownership evidence, and native error policy before
   `ProcLoweringIr` may consume this tracer.
 - The current hosted VM seed records `ExternalCallDescriptor` and native invoke
-  facts for the supported subset. Generic Automation `Variant` and SAFEARRAY
-  declared-parameter ABI support plus cleanup/buffer ownership observations
-  remain real VM/native limitations before executable TB08 can close.
+  facts for the supported subset, including DeclareParamType projection tokens,
+  writeback projection classifications, cleanup policy, and native error
+  policy. Generic Automation `Variant` and SAFEARRAY declared-parameter ABI
+  support plus broader cleanup/buffer ownership observations remain real
+  VM/native limitations before executable TB08 can close.
 
 Required assertions:
 
@@ -330,7 +341,8 @@ Required assertions:
   requirement.
 - Current VM package evidence records `ExternalCallDescriptor` and native
   invoke facts for library/alias/name, return/parameter tokens, ByRef flags,
-  argument slots, and writeback slots for the supported seed subset.
+  argument slots, writeback slots, projection classifications, cleanup policy,
+  and native error policy for the supported seed subset.
 - Writeback commits or cancels according to helper status.
 - Cleanup runs for marshalled buffers on success, failure, and deopt.
 
@@ -345,9 +357,12 @@ Package/VM evidence gate:
   writeback policy, return projection, cleanup/error return policy, and
   unsupported-shape diagnostics before `ProcLoweringIr` may consume this
   tracer.
-- The current seed proves an internal callable projection path only. External
-  inbound/outbound export projection is not yet a first-class package
-  descriptor and remains the blocking TB09 evidence gap.
+- The current VM seed proves the internal callable behavior, and the project
+  package seed records exported-callable descriptor evidence derived from
+  `ExportInventory` plus callable signatures. External ABI entry execution,
+  typed/non-Variant unmanaged projection breadth, concrete cleanup/error oracle
+  evidence, and unsupported-shape diagnostic fixtures remain blocking TB09
+  gaps.
 
 Required assertions:
 
@@ -355,6 +370,10 @@ Required assertions:
 - ByRef inbound arguments have explicit writeback policy.
 - Return value projection and error return policy are deterministic.
 - Unsupported inbound shapes report diagnostics with no silent VM fallback.
+- Current VM package evidence records Variant-positional inbound projection,
+  declared parameter types, ByRef export-boundary writeback policy,
+  return-slot-to-Variant projection, cleanup/error return policy, and
+  unsupported-shape policy for the descriptor-backed package seed.
 
 ## Acceptance Before First Implementation Workset
 

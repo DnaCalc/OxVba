@@ -56,7 +56,7 @@ Rows can start at family granularity and split when semantics diverge.
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Capability digest missing. |
 | COM | late/early descriptor, named/default args, HRESULT/EXCEPINFO | call COM bridge and capture boundary observations | Seed interop descriptor evidence exists; descriptor unification and full boundary result evidence remain incomplete. |
 | Native Declare | ABI descriptor, marshal descriptors, ByRef writeback | route through host/native lane and capture writeback | Seed interop descriptor evidence exists; wider ABI gaps remain. |
-| Exported callable | inbound ABI, return/error policy, cleanup | not first-class VM path yet | Planned. |
+| Exported callable | inbound ABI, return/error policy, cleanup | expose package export descriptors and route hosted invocation through VM package facts | Export descriptor evidence exists for Variant-positional callable packages; external ABI execution breadth remains incomplete. |
 
 ## VM Package Consumption Contract
 
@@ -401,16 +401,23 @@ full imported COM class/interface descriptors, and explicit object cleanup-stack
 execution remain incomplete.
 
 The VMR-05 interop descriptor fixture adds `VmInteropDescriptorEvidence` for
-the hosted TB06 through TB08 COM/native tracer seeds. VM evidence records COM
-`CreateObject` activation instructions, COM dispatch invoke instructions, the
-current early-bound flag, selector source, arity/named-argument counts, and the
-runtime-owned HRESULT/EXCEPINFO/ArgErr classification. It also records current
-native `ExternalCallDescriptor` and invoke instruction facts, including
-library, alias/name, return and parameter type tokens, ByRef flags, argument
-slots, and writeback slots. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr
-projection remains runtime-owned rather than package-unified, and general
-Automation `Variant`/`SAFEARRAY` declared-parameter ABI support remains
-incomplete.
+the hosted TB06 through TB09 COM/native/export tracer seeds. VM evidence
+records COM `CreateObject` activation instructions, COM dispatch invoke
+instructions, the current early-bound flag, selector source/policy,
+arity/named-argument counts, runtime-owned HRESULT/EXCEPINFO/ArgErr policy,
+runtime result projection classification, and dispatch cleanup classification.
+It also records current native `ExternalCallDescriptor` and invoke instruction
+facts, including library, alias/name, return and parameter type tokens,
+`DeclareParamType` projection tokens, ByRef flags, argument slots, writeback
+slots, writeback projection classifications, cleanup policy, and native error
+policy. Bundle-backed project packages now also record exported-callable
+descriptors derived from `ExportInventory` plus callable signatures, including
+Variant-positional inbound projection, ByRef export-boundary writeback,
+return-slot-to-Variant projection, cleanup/error policy, and unsupported-shape
+policy. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr projection remains
+runtime-owned rather than package-unified, external export ABI execution is not
+closed, and general Automation `Variant`/`SAFEARRAY` declared-parameter ABI
+support remains incomplete.
 
 ## Strengthening Rule
 

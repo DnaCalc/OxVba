@@ -11,9 +11,10 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
-    ArrayShapeDescriptor, ArrayStorageKind, BundleProjectContext, Bytecode, CallSiteDescriptor,
-    CallTargetKindDescriptor, CarrierLayoutDescriptor, CoercionDescriptor, DescriptorFamily,
-    DescriptorIdentity, ExpressionSemanticsDescriptor, Instruction, NameBindingDescriptor,
+    ArrayShapeDescriptor, ArrayStorageKind, BundleCallableDescriptor, BundleProjectContext,
+    Bytecode, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
+    CoercionDescriptor, DescriptorFamily, DescriptorIdentity, DescriptorInventory,
+    ExpressionSemanticsDescriptor, HostProcedureExport, Instruction, NameBindingDescriptor,
     ObjectMemberBindingDescriptor, ObjectTypeDescriptor, OperatorSemanticsDescriptor,
     OptionalDefaultValue, OptionalParameterDescriptor, OxBundle, ParameterDescriptor,
     ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
@@ -21,6 +22,7 @@ use oxvba_compiler::{
     ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
     RuntimeCarrierKind, SlotRole, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
     ValueStateDescriptor, VbaTypeId,
+    bundle::ExportInventory,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, RuntimeArrayElementType, StringCompareMode,
@@ -144,6 +146,8 @@ pub struct VmExecutionPackage<'a> {
     pub bytecode: &'a Bytecode,
     pub procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
     pub project_context: Option<&'a BundleProjectContext>,
+    pub export_inventory: Option<&'a ExportInventory>,
+    pub descriptor_inventory: Option<&'a DescriptorInventory>,
     pub dynamic_object_routes: Option<&'a [ProjectDynamicObjectRoute]>,
     pub com_withevents_routes: Option<&'a [ProjectComWithEventsRoute]>,
     pub package_origin: VmPackageOrigin,
@@ -158,6 +162,8 @@ impl<'a> VmExecutionPackage<'a> {
             bytecode,
             procedure_metadata,
             project_context: None,
+            export_inventory: None,
+            descriptor_inventory: None,
             dynamic_object_routes: None,
             com_withevents_routes: None,
             package_origin: VmPackageOrigin::InMemory,
@@ -169,6 +175,8 @@ impl<'a> VmExecutionPackage<'a> {
             bytecode: &bundle.bytecode,
             procedure_metadata: &bundle.procedure_metadata,
             project_context: bundle.project_context.as_ref(),
+            export_inventory: bundle.export_inventory.as_ref(),
+            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
             dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
             com_withevents_routes: bundle.com_withevents_routes.as_deref(),
             package_origin: VmPackageOrigin::OxBundle,
@@ -215,7 +223,11 @@ impl<'a> VmExecutionPackage<'a> {
             collect_object_descriptor_evidence(self.procedure_metadata);
         object_descriptor_evidence.extend(package_route_object_descriptor_evidence.clone());
         sort_object_descriptor_evidence(&mut object_descriptor_evidence);
-        let interop_descriptor_evidence = collect_interop_descriptor_evidence(self.bytecode);
+        let interop_descriptor_evidence = collect_interop_descriptor_evidence(
+            self.bytecode,
+            self.export_inventory,
+            self.descriptor_inventory,
+        );
         let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, runtime_slots);
         let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
         let value_state_evidence = collect_value_state_evidence(self.procedure_metadata);
@@ -2121,7 +2133,11 @@ fn sort_object_descriptor_evidence(evidence: &mut [VmObjectDescriptorEvidence]) 
     });
 }
 
-fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDescriptorEvidence> {
+fn collect_interop_descriptor_evidence(
+    bytecode: &Bytecode,
+    export_inventory: Option<&ExportInventory>,
+    descriptor_inventory: Option<&DescriptorInventory>,
+) -> Vec<VmInteropDescriptorEvidence> {
     let mut evidence = bytecode
         .external_call_descriptors
         .iter()
@@ -2160,6 +2176,11 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
                         "kind=com-createobject".to_string(),
                         "boundary=host-com-activation".to_string(),
                         "support=vmrunnablehosted".to_string(),
+                        "projection-source=runtime-prog-id-slot".to_string(),
+                        "object-projection=objectref".to_string(),
+                        "object-identity-policy=host-created-object-ref".to_string(),
+                        "activation-error-policy=host-runtime-error-routing".to_string(),
+                        "cleanup-policy=objectref-slot-lifecycle-or-host-owned".to_string(),
                         format!("dst-slot={dst}"),
                         format!("prog-id-slot={prog_id}"),
                     ],
@@ -2229,6 +2250,10 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
             _ => {}
         }
     }
+    evidence.extend(collect_exported_callable_interop_evidence(
+        export_inventory,
+        descriptor_inventory,
+    ));
 
     evidence.sort_by(|left, right| {
         left.interop_kind
@@ -2236,6 +2261,212 @@ fn collect_interop_descriptor_evidence(bytecode: &Bytecode) -> Vec<VmInteropDesc
             .then(left.descriptor_id.cmp(&right.descriptor_id))
     });
     evidence
+}
+
+fn collect_exported_callable_interop_evidence(
+    export_inventory: Option<&ExportInventory>,
+    descriptor_inventory: Option<&DescriptorInventory>,
+) -> Vec<VmInteropDescriptorEvidence> {
+    let Some(export_inventory) = export_inventory else {
+        return Vec::new();
+    };
+    let callables = descriptor_inventory
+        .map(|inventory| inventory.callables.as_slice())
+        .unwrap_or(&[]);
+    export_inventory
+        .host_exports
+        .iter()
+        .map(|export| {
+            let callable = callables
+                .iter()
+                .find(|callable| export_matches_callable(export, callable));
+            let export_kind = debug_token(&export.kind);
+            let descriptor_id = canonical_descriptor_id(
+                DescriptorFamily::Interop,
+                [
+                    "exported-callable",
+                    export.project_name.as_str(),
+                    export.module_name.as_str(),
+                    export.procedure_name.as_str(),
+                    export_kind.as_str(),
+                ],
+            );
+            VmInteropDescriptorEvidence {
+                interop_kind: "exported-callable".to_string(),
+                descriptor_id: descriptor_id.clone(),
+                descriptor_digest: exported_callable_descriptor_digest(
+                    &descriptor_id,
+                    export,
+                    callable,
+                ),
+                observations: exported_callable_descriptor_observations(export, callable),
+            }
+        })
+        .collect()
+}
+
+fn export_matches_callable(
+    export: &HostProcedureExport,
+    callable: &BundleCallableDescriptor,
+) -> bool {
+    callable
+        .project_id
+        .eq_ignore_ascii_case(&export.project_name)
+        && callable
+            .module_name
+            .eq_ignore_ascii_case(&export.module_name)
+        && callable
+            .procedure_name
+            .eq_ignore_ascii_case(&export.procedure_name)
+}
+
+fn exported_callable_descriptor_digest(
+    descriptor_id: &str,
+    export: &HostProcedureExport,
+    callable: Option<&BundleCallableDescriptor>,
+) -> String {
+    descriptor_digest_from_fields(
+        DescriptorFamily::Interop,
+        descriptor_id,
+        [
+            ("export_project", export.project_name.clone()),
+            ("export_module", export.module_name.clone()),
+            ("export_procedure", export.procedure_name.clone()),
+            ("export_kind", debug_token(&export.kind)),
+            (
+                "callable_id",
+                callable
+                    .map(|callable| callable.callable_id.clone())
+                    .unwrap_or_else(|| "<missing>".to_string()),
+            ),
+            (
+                "callable_fingerprint",
+                callable
+                    .map(|callable| callable.descriptor_fingerprint.clone())
+                    .unwrap_or_else(|| "<missing>".to_string()),
+            ),
+            (
+                "callable_signature",
+                callable
+                    .map(|callable| format!("{:#?}", callable.signature))
+                    .unwrap_or_else(|| "<missing>".to_string()),
+            ),
+        ],
+    )
+}
+
+fn exported_callable_descriptor_observations(
+    export: &HostProcedureExport,
+    callable: Option<&BundleCallableDescriptor>,
+) -> Vec<String> {
+    let mut observations = vec![
+        "kind=exported-callable".to_string(),
+        "boundary=host-export-inbound".to_string(),
+        "source=ExportInventory".to_string(),
+        "callable-source=DescriptorInventory".to_string(),
+        format!("project={}", export.project_name.to_ascii_lowercase()),
+        format!("module={}", export.module_name.to_ascii_lowercase()),
+        format!("procedure={}", export.procedure_name.to_ascii_lowercase()),
+        format!("export-kind={}", debug_token(&export.kind)),
+        "lane=variant-positional".to_string(),
+        "inbound-projection=variant-positional-to-procedure-slots".to_string(),
+        "byref-writeback-policy=byref-params-writeback-through-export-boundary".to_string(),
+        "cleanup-policy=vm-frame-owned-slots-and-export-boundary-temporaries".to_string(),
+        "error-policy=runtime-error-projected-to-host-failure".to_string(),
+        "unsupported-shape-policy=descriptor-inventory-diagnostic-required".to_string(),
+    ];
+    let Some(callable) = callable else {
+        observations.push("callable-descriptor=missing".to_string());
+        observations.push("support=unsupported-missing-callable-descriptor".to_string());
+        return observations;
+    };
+    observations.push("support=vmrunnablehosted".to_string());
+    observations.push(format!(
+        "callable-id={}",
+        callable.callable_id.to_ascii_lowercase()
+    ));
+    observations.push(format!(
+        "module-id={}",
+        callable.module_id.to_ascii_lowercase()
+    ));
+    observations.push(format!(
+        "callable-kind={}",
+        callable.kind.to_ascii_lowercase()
+    ));
+    observations.push(format!("public={}", callable.is_public));
+    observations.push(format!("option-private={}", callable.is_option_private));
+    observations.push(format!("class-member={}", callable.is_class_member));
+    observations.push(format!(
+        "calling-shape={}",
+        callable.signature.calling_shape.to_ascii_lowercase()
+    ));
+    observations.push(format!(
+        "param-count={}",
+        callable.signature.parameters.len()
+    ));
+    observations.push(match callable.entry_pc {
+        Some(entry_pc) => format!("entry-pc={entry_pc}"),
+        None => "entry-pc=unavailable".to_string(),
+    });
+    observations.push(match callable.return_slot {
+        Some(slot) => format!("return-slot={slot}"),
+        None => "return-slot=void".to_string(),
+    });
+    observations.push(format!(
+        "return-type={}",
+        callable
+            .signature
+            .return_type
+            .as_ref()
+            .map(bundle_type_token)
+            .unwrap_or_else(|| "void".to_string())
+    ));
+    observations.push(if callable.return_slot.is_some() {
+        "outbound-return-projection=return-slot-to-variant".to_string()
+    } else {
+        "outbound-return-projection=void".to_string()
+    });
+    for (index, param) in callable.signature.parameters.iter().enumerate() {
+        let param_type = param
+            .value_type
+            .as_ref()
+            .map(bundle_type_token)
+            .unwrap_or_else(|| "variant".to_string());
+        observations.push(format!(
+            "param:{index}:name={}",
+            param
+                .name
+                .as_deref()
+                .unwrap_or("<unnamed>")
+                .to_ascii_lowercase()
+        ));
+        observations.push(format!(
+            "param:{index}:passing={}",
+            param.passing_mode.to_ascii_lowercase()
+        ));
+        observations.push(format!("param:{index}:type={param_type}"));
+        observations.push(match callable.param_slots.get(index).copied() {
+            Some(slot) => format!("param:{index}:slot={slot}"),
+            None => format!("param:{index}:slot=unavailable"),
+        });
+        observations.push(format!(
+            "param:{index}:projection=variant-inbound-to-{param_type}"
+        ));
+        if param.passing_mode.eq_ignore_ascii_case("ByRef") {
+            observations.push(format!("param:{index}:writeback=export-boundary-byref"));
+        }
+        if param.optional {
+            observations.push(format!("param:{index}:optional=true"));
+        }
+        if param.param_array {
+            observations.push(format!("param:{index}:paramarray=true"));
+        }
+    }
+    observations
+}
+
+fn bundle_type_token(ty: &oxvba_compiler::BundleVbaTypeDescriptor) -> String {
+    ty.normalized.to_ascii_lowercase()
 }
 
 fn external_call_descriptor_observations(descriptor: &ExternalCallDescriptor) -> Vec<String> {
@@ -2273,9 +2504,20 @@ fn external_call_descriptor_observations(descriptor: &ExternalCallDescriptor) ->
         ),
         "boundary=host-native-declare".to_string(),
         "support=vmrunnablehosted".to_string(),
+        "abi-descriptor-source=ExternalCallDescriptor".to_string(),
+        "parameter-projection-policy=declare-param-type".to_string(),
+        "return-projection-policy=declare-return-type".to_string(),
+        "writeback-policy=ExternalCallWriteback-on-invoke".to_string(),
+        "cleanup-policy=host-native-temporary-cleanup".to_string(),
+        "error-policy=host-native-status-or-runtime-error".to_string(),
+        "unsupported=generic-automation-variant-and-safearray-declared-parameter-abi".to_string(),
     ];
     for (index, param_type) in descriptor.param_types.iter().enumerate() {
         observations.push(format!("param:{index}:type={}", debug_token(param_type)));
+        observations.push(format!(
+            "param:{index}:projection={}",
+            declare_param_projection_token(param_type)
+        ));
         observations.push(format!(
             "param:{index}:byref={}",
             descriptor.param_by_ref.get(index).copied().unwrap_or(false)
@@ -2304,14 +2546,23 @@ fn com_dispatch_instruction_observations(
         format!("arg-count={}", args.len()),
         format!("named-arg-count={named_arg_count}"),
         "hresult-excepinfo-argerr=runtime-owned".to_string(),
+        "hresult-policy=runtime-owned".to_string(),
+        "excepinfo-policy=runtime-owned".to_string(),
+        "argerr-policy=runtime-owned".to_string(),
+        "argument-projection=runtime-variant-dispatch".to_string(),
+        "result-projection=runtime-owned-variant-or-object".to_string(),
+        "cleanup-policy=host-dispatch-temporary-cleanup".to_string(),
+        "unsupported=full-package-owned-com-boundary-abi-descriptor".to_string(),
     ];
     if let Some(com_member) = com_member {
+        observations.push("selector-policy=descriptor-backed".to_string());
         observations.push(format!(
             "selector={}",
             com_member_selector_token(&com_member.selector)
         ));
         observations.push(format!("descriptor-arity={}", com_member.arity));
     } else {
+        observations.push("selector-policy=runtime-name-slot".to_string());
         observations.push("selector=runtime-name-slot".to_string());
         observations.push("descriptor-arity=runtime-args".to_string());
     }
@@ -2326,6 +2577,10 @@ fn com_dispatch_instruction_observations(
         ));
         if let Some(name) = &arg.name {
             observations.push(format!("arg:{index}:name={}", name.to_ascii_lowercase()));
+            observations.push(format!("arg:{index}:named-policy=named-dispatch-arg"));
+        }
+        if arg.slot.is_none() {
+            observations.push(format!("arg:{index}:missing-policy=runtime-missing-arg"));
         }
     }
     observations
@@ -2356,6 +2611,12 @@ fn native_invoke_instruction_observations(
         format!("dst-slot={dst}"),
         format!("arg-count={}", args.len()),
         format!("writeback-count={}", writeback_slots.len()),
+        "abi-descriptor-source=ExternalCallDescriptor".to_string(),
+        "argument-projection=runtime-variant-to-native-helper".to_string(),
+        "return-projection=native-helper-to-variant".to_string(),
+        "writeback-policy=external-call-writeback-slots".to_string(),
+        "cleanup-policy=commit-writebacks-release-temporaries".to_string(),
+        "error-policy=hal-native-call-result".to_string(),
     ];
     for (index, slot) in args.iter().enumerate() {
         observations.push(format!("arg:{index}:slot={slot}"));
@@ -2373,8 +2634,38 @@ fn native_invoke_instruction_observations(
             "writeback:{index}:kind={}",
             debug_token(&writeback.kind)
         ));
+        observations.push(format!(
+            "writeback:{index}:projection={}",
+            external_writeback_projection_token(writeback.kind)
+        ));
     }
     observations
+}
+
+fn declare_param_projection_token(param_type: &oxvba_compiler::DeclareParamType) -> &'static str {
+    match param_type {
+        oxvba_compiler::DeclareParamType::String => "bstr-string",
+        oxvba_compiler::DeclareParamType::Variant => "variant-cell",
+        oxvba_compiler::DeclareParamType::Any => "interop-any",
+        oxvba_compiler::DeclareParamType::LongPtr => "pointer-sized-scalar",
+        oxvba_compiler::DeclareParamType::LongLong => "i64-scalar",
+        oxvba_compiler::DeclareParamType::Long => "i32-scalar",
+        oxvba_compiler::DeclareParamType::Integer => "i16-scalar",
+        oxvba_compiler::DeclareParamType::Byte => "u8-scalar",
+        oxvba_compiler::DeclareParamType::Boolean => "bool-scalar",
+        oxvba_compiler::DeclareParamType::Double => "f64-scalar",
+        oxvba_compiler::DeclareParamType::Single => "f32-scalar",
+        oxvba_compiler::DeclareParamType::Currency => "currency-scalar",
+        oxvba_compiler::DeclareParamType::Date => "date-scalar",
+    }
+}
+
+fn external_writeback_projection_token(kind: ExternalCallWritebackKind) -> &'static str {
+    match kind {
+        ExternalCallWritebackKind::ByRefValue => "byref-value",
+        ExternalCallWritebackKind::PointerByteArrayPayload => "safearray-byte-buffer-pointer",
+        ExternalCallWritebackKind::PointerStringPayload => "bstr-string-payload-pointer",
+    }
 }
 
 fn collect_call_site_descriptor_evidence(

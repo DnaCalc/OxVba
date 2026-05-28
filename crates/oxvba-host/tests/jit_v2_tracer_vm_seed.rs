@@ -1,17 +1,14 @@
 use std::path::PathBuf;
 
+use oxvba_compiler::{ModuleKind, ProjectKind, ProjectManifest, module_unit_from_source};
+use oxvba_host::HostVariantSnapshotWithPackageIdentity;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_runtime::Variant;
 
 #[cfg(target_os = "windows")]
-use oxvba_compiler::{
-    ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
-    module_unit_from_source,
-};
+use oxvba_compiler::{ProjectReference, ReferenceKind};
 #[cfg(target_os = "windows")]
 use oxvba_hal::model::HostPolicy;
-#[cfg(target_os = "windows")]
-use oxvba_host::HostVariantSnapshotWithPackageIdentity;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -34,6 +31,32 @@ fn run_source_vm(source: &str) -> Vec<Variant> {
     Engine::new(HostConfig { enable_jit: false })
         .execute_source_with_variant_snapshot_phased(source)
         .expect("JIT v2 VM seed source should execute")
+}
+
+fn project_manifest_from_source(
+    project_name: &str,
+    module_name: &str,
+    source: &str,
+) -> ProjectManifest {
+    ProjectManifest {
+        project_name: project_name.to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            module_unit_from_source(module_name, ModuleKind::Procedural, source)
+                .expect("JIT v2 tracer module should parse"),
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    }
+}
+
+fn run_project_vm_with_package(
+    manifest: &ProjectManifest,
+) -> HostVariantSnapshotWithPackageIdentity {
+    Engine::new(HostConfig { enable_jit: false })
+        .execute_project_with_variant_snapshot_and_package_identity_phased(manifest)
+        .expect("JIT v2 VM seed project should execute")
 }
 
 #[cfg(target_os = "windows")]
@@ -75,7 +98,6 @@ fn run_windows_hosted_project_vm_with_package(
         .expect("JIT v2 Windows host-backed VM seed project should execute")
 }
 
-#[cfg(target_os = "windows")]
 fn interop_descriptor_observation_tokens(
     snapshot: &HostVariantSnapshotWithPackageIdentity,
 ) -> Vec<String> {
@@ -92,7 +114,6 @@ fn interop_descriptor_observation_tokens(
         .collect()
 }
 
-#[cfg(target_os = "windows")]
 fn assert_interop_observation(tokens: &[String], expected: &str) {
     assert!(
         tokens.iter().any(|token| token.contains(expected)),
@@ -275,8 +296,33 @@ fn tb08_native_declare_vm_seed_runs_on_current_windows_native_lane() {
 
 #[test]
 fn tb09_exported_callable_vm_seed_runs() {
-    let out = run_source_vm(&fixture_source("tb09_exported_callable_projection.bas"));
+    let source = fixture_source("tb09_exported_callable_projection.bas");
+    let out = run_source_vm(&source);
 
     assert_eq!(out[0], Variant::from_i32(6), "ByRef writeback mismatch");
     assert_eq!(out[1], Variant::from_i32(13), "return projection mismatch");
+
+    let manifest = project_manifest_from_source("JitV2Tracer", "ExportModule", &source);
+    let snapshot = run_project_vm_with_package(&manifest);
+
+    let interop_tokens = interop_descriptor_observation_tokens(&snapshot);
+    assert_interop_observation(&interop_tokens, "kind=exported-callable");
+    assert_interop_observation(&interop_tokens, "procedure=jitexportedadd");
+    assert_interop_observation(
+        &interop_tokens,
+        "inbound-projection=variant-positional-to-procedure-slots",
+    );
+    assert_interop_observation(&interop_tokens, "param:1:writeback=export-boundary-byref");
+    assert_interop_observation(
+        &interop_tokens,
+        "outbound-return-projection=return-slot-to-variant",
+    );
+    assert_interop_observation(
+        &interop_tokens,
+        "cleanup-policy=vm-frame-owned-slots-and-export-boundary-temporaries",
+    );
+    assert_interop_observation(
+        &interop_tokens,
+        "error-policy=runtime-error-projected-to-host-failure",
+    );
 }

@@ -28,8 +28,8 @@ That work delivered the first executable-semantic-package foundation:
   compiler-generated slots, primitive/String/Variant slots, UDT base/field
   aliases, fixed/dynamic arrays, and generic object slots;
 - procedure signature descriptors and first call-site observations;
-- seed array, UDT, object, COM, native, lifecycle, coercion, operator, and
-  object/member binding evidence;
+- seed array, UDT, object, COM, native, exported-callable, lifecycle,
+  coercion, operator, and object/member binding evidence;
 - selected descriptor-driven VM behavior for:
   - direct `Long` argument to declared `Double ByVal` call entry,
   - rank-1 fixed/static `LBound`/`UBound`,
@@ -100,6 +100,15 @@ Current progress:
   selected `ObjectRef` slot lifecycle tokens. Descriptor-driven object/member
   call binding, default-instance execution, full imported COM type/member
   descriptors, and explicit object cleanup-stack execution remain later gates.
+- `bd-tvmb.8` has extended package-visible interop evidence for COM, native
+  Declare, and exported callable boundaries. VM package evidence now carries
+  bundle `ExportInventory` and callable descriptor inventories, records
+  exported-callable descriptors for the TB09 package seed, and adds COM/native
+  projection, writeback, cleanup, error-policy, and explicit unsupported
+  classification tokens for the current hosted TB06 through TB09 lanes.
+  External ABI execution breadth, generalized COM boundary descriptors,
+  generic Automation `Variant`/`SAFEARRAY` declared-parameter ABI, and concrete
+  cleanup/error oracle evidence remain later gates.
 
 ## Reference Truth
 

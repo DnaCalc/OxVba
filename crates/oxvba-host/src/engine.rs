@@ -9,8 +9,9 @@ use oxvba_com::{
     DynamicEventPayload, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectManifest, compile_project, compile_with_runtime_metadata,
+    Bytecode, CompiledProject, Instruction, OxBundle, ProcedureRuntimeMetadata,
+    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectManifest, compile_project,
+    compile_with_runtime_metadata,
 };
 use oxvba_hal::{
     HalComDynamicBridge,
@@ -312,13 +313,19 @@ impl Engine {
             vm,
             package_origin,
         } = session;
+        let bundle = OxBundle::from_compiled_project(
+            compiled,
+            &compiled.project_reflection.identity.project_name,
+        );
         let package = VmExecutionPackage {
-            bytecode: &compiled.bytecode,
-            procedure_metadata: &compiled.procedure_runtime_metadata,
+            bytecode: &bundle.bytecode,
+            procedure_metadata: &bundle.procedure_metadata,
             package_origin: *package_origin,
-            project_context: None,
-            dynamic_object_routes: Some(&compiled.project_dynamic_objects),
-            com_withevents_routes: Some(&compiled.project_com_withevents_routes),
+            project_context: bundle.project_context.as_ref(),
+            export_inventory: bundle.export_inventory.as_ref(),
+            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
+            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
+            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
         };
         vm.invoke_package_procedure_with_variants(&package, entry_pc, param_slots, args)
             .map_err(PhaseDiagnostic::runtime)
@@ -718,8 +725,20 @@ impl Engine {
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        let package =
-            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        let bundle = OxBundle::from_compiled_project(
+            &compiled,
+            &compiled.project_reflection.identity.project_name,
+        );
+        let package = VmExecutionPackage {
+            bytecode: &bundle.bytecode,
+            procedure_metadata: &bundle.procedure_metadata,
+            project_context: bundle.project_context.as_ref(),
+            export_inventory: bundle.export_inventory.as_ref(),
+            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
+            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
+            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
+            package_origin: VmPackageOrigin::InMemory,
+        };
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession {
@@ -1176,8 +1195,20 @@ impl Engine {
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        let package =
-            VmExecutionPackage::new(&compiled.bytecode, &compiled.procedure_runtime_metadata);
+        let bundle = OxBundle::from_compiled_project(
+            compiled,
+            &compiled.project_reflection.identity.project_name,
+        );
+        let package = VmExecutionPackage {
+            bytecode: &bundle.bytecode,
+            procedure_metadata: &bundle.procedure_metadata,
+            project_context: bundle.project_context.as_ref(),
+            export_inventory: bundle.export_inventory.as_ref(),
+            descriptor_inventory: bundle.descriptor_inventory.as_ref(),
+            dynamic_object_routes: bundle.dynamic_object_routes.as_deref(),
+            com_withevents_routes: bundle.com_withevents_routes.as_deref(),
+            package_origin: VmPackageOrigin::InMemory,
+        };
         vm.execute_package(&package)
             .map_err(PhaseDiagnostic::runtime)?;
         let package_identity = recorded_package_identity(&vm)?;

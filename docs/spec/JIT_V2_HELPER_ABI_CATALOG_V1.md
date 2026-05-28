@@ -170,7 +170,8 @@ descriptors, not ad hoc call lowering. Writeback descriptors must record source
 slot, projected storage, writeback kind, commit/cancel policy, and cleanup.
 The current VM seed for TB08 covers the implemented native descriptor subset:
 scalars, BSTR/string pointers, SAFEARRAY byte-buffer pointers, Variant cell
-pointers, and scalar ByRef writeback. General Automation `Variant` and
+pointers, scalar ByRef writeback, descriptor projection tokens, cleanup policy,
+and native error policy classification. General Automation `Variant` and
 `SAFEARRAY` declared-parameter ABI support is a future helper/descriptor
 extension, not current VM behavior.
 
@@ -178,7 +179,9 @@ extension, not current VM behavior.
 
 Export helpers project inbound ABI arguments into retained frame slots and
 project return/writeback state out. Unsupported inbound shape is a diagnostic,
-not VM fallback.
+not VM fallback. Current VM package evidence records the Variant-positional
+export descriptor subset from `ExportInventory` and callable signatures; typed
+external ABI entry execution remains future work.
 
 ### Deopt Helpers
 
