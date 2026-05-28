@@ -20,11 +20,11 @@ pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
     VmCarrierLayoutEvidence, VmDescriptorIdentityEvidence, VmExecutionPackage,
-    VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
-    VmPackageSupportConsumer, VmPackageSupportReason, VmPackageSupportReasonKind,
-    VmPackageSupportReport, VmPackageSupportStatus, VmProcedureIdentityEvidence,
-    VmProjectContextEvidence, VmSemanticDescriptorEvidence, VmSignatureCallEvidence,
-    VmValueStateEvidence,
+    VmExecutionSelectionEvidence, VmInteropDescriptorEvidence, VmLifecycleEvidence,
+    VmPackageIdentityEvidence, VmPackageOrigin, VmPackageSupportConsumer, VmPackageSupportReason,
+    VmPackageSupportReasonKind, VmPackageSupportReport, VmPackageSupportStatus,
+    VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSemanticDescriptorEvidence,
+    VmSignatureCallEvidence, VmValueStateEvidence,
 };
 
 pub fn execute_package(package: &VmExecutionPackage<'_>) -> Result<(), String> {
@@ -51,16 +51,6 @@ pub fn execute_package_and_snapshot_variants(
 pub fn execute_bundle_and_snapshot_variants(bundle: &OxBundle) -> Result<Vec<Variant>, String> {
     let package = VmExecutionPackage::from_bundle(bundle);
     execute_package_and_snapshot_variants(&package)
-}
-
-/// Package-oriented retained value-model snapshot API with typed-fastpath selection.
-pub fn execute_package_and_snapshot_variants_with_typed_fastpaths(
-    package: &VmExecutionPackage<'_>,
-    typed_fastpaths: bool,
-) -> Result<Vec<Variant>, String> {
-    let mut vm = Vm::new(default_host_services());
-    vm.execute_package_with_typed_fastpaths(package, typed_fastpaths)?;
-    Ok(vm.snapshot_variants(package.bytecode.user_slot_count))
 }
 
 pub fn execute_package_with_host(
@@ -111,12 +101,12 @@ mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
         ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, CallTargetKindDescriptor,
-        DeclareParamType, ModuleKind, OxBundle, ParameterPassingMode, ParameterRole,
-        ProcedureKindDescriptor, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-        ProjectDynamicObjectRoute, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
-        ReferencedProjectManifest, ResolvedParameterMechanism, RuntimeCarrierKind,
-        SlotInitialState, SlotRole, SourceParameterMechanism, VbaTypeId, compile_project,
-        compile_with_runtime_metadata, module_unit_from_source,
+        DeclareParamType, ModuleKind, OperatorFamilyDescriptor, OxBundle, ParameterPassingMode,
+        ParameterRole, ProcedureKindDescriptor, ProjectDynamicMemberKind,
+        ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectKind, ProjectManifest,
+        ProjectReference, ReferenceKind, ReferencedProjectManifest, ResolvedParameterMechanism,
+        RuntimeCarrierKind, SlotInitialState, SlotRole, SourceParameterMechanism, VbaTypeId,
+        compile_project, compile_with_runtime_metadata, module_unit_from_source,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -283,6 +273,100 @@ mod tests {
             .execute_package_strict(&package)
             .expect_err("strict VM gate should reject incomplete package");
         assert!(err.contains("VM execution rejected executable semantic package"));
+    }
+
+    #[test]
+    fn package_execution_selects_optimized_paths_from_operator_descriptors() {
+        let bundle = strict_project_bundle(
+            "Attribute VB_Name = \"Main\"\n\
+             Public Sub Main()\n\
+             Dim value As Long\n\
+             value = 1\n\
+             value = value + 2\n\
+             End Sub",
+        );
+        let package = VmExecutionPackage::from_bundle(&bundle);
+        assert!(
+            package.procedure_metadata.values().any(|metadata| metadata
+                .operator_semantics
+                .iter()
+                .any(|descriptor| descriptor.family
+                    == OperatorFamilyDescriptor::ImplementationFastPath)),
+            "strict package should carry an implementation-fastpath operator descriptor"
+        );
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package(&package)
+            .expect("descriptor-selected package execution should succeed");
+        let evidence = vm
+            .package_identity_evidence()
+            .expect("package identity evidence should be recorded");
+        let selection = evidence
+            .execution_selection_evidence
+            .iter()
+            .find(|selection| selection.selection_id == "descriptor-selected-fastpaths")
+            .expect("descriptor-selected fastpath evidence should be present");
+
+        assert_eq!(selection.status, "selected");
+        assert!(
+            selection
+                .selection_descriptor_digest
+                .starts_with("fnv1a64:"),
+            "selection evidence should have a stable digest"
+        );
+        assert!(
+            selection
+                .descriptor_families
+                .contains(&"operator-semantics".to_string())
+        );
+        assert!(
+            selection
+                .observations
+                .contains(&"vm-support-report-gate=accepted".to_string())
+        );
+        assert!(
+            selection
+                .observations
+                .contains(&"optimized-paths=enabled".to_string())
+        );
+    }
+
+    #[test]
+    fn incomplete_package_does_not_select_optimized_paths_from_metadata_only() {
+        let (bytecode, metadata) = compile_with_runtime_metadata(
+            "Public Sub Main()\n\
+             Dim value As Long\n\
+             value = 1\n\
+             value = value + 2\n\
+             End Sub",
+        )
+        .expect("compile should succeed");
+        let bundle = OxBundle::new(bytecode, metadata);
+        let package = VmExecutionPackage::from_bundle(&bundle);
+
+        let mut vm = Vm::new(default_host_services());
+        vm.execute_package(&package)
+            .expect("non-strict package execution should still use baseline VM path");
+        let evidence = vm
+            .package_identity_evidence()
+            .expect("package identity evidence should be recorded");
+        let selection = evidence
+            .execution_selection_evidence
+            .iter()
+            .find(|selection| selection.selection_id == "descriptor-selected-fastpaths")
+            .expect("descriptor-selected fastpath evidence should be present");
+
+        assert_eq!(selection.status, "not-selected");
+        assert!(
+            selection
+                .observations
+                .contains(&"vm-support-report-gate=blocked".to_string())
+        );
+        assert!(
+            selection
+                .observations
+                .contains(&"optimized-paths=disabled".to_string())
+        );
     }
 
     #[test]

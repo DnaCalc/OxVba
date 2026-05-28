@@ -56,8 +56,9 @@ The current repository is package-capable but not package-only.
   - error/deopt cleanup consumption;
   - COM/native/export boundary consumption;
   - host-policy behavior-driving descriptor consumption.
-- `oxvba-vm` still has public typed-fastpath selection APIs and environment
-  defaulting.
+- `bd-embl.5` removed public/environment fastpath selection. Optimized VM
+  paths are now selected from package support plus operator-semantic package
+  descriptors and recorded in VM execution-selection evidence.
 - `bd-embl.4` removed the legacy bundle reader/backfill path: strict bundle
   format v15 is now the only accepted serialized package format.
 
@@ -78,6 +79,11 @@ Current progress:
   serialization and deserialization require procedure metadata, manifest,
   export inventory, descriptor inventory, and project context sections. Versions
   1 through 14 reject deterministically instead of backfilling missing facts.
+- `bd-embl.5` removes the public typed-fastpath selector and
+  `OXVBA_DISABLE_TYPED_FASTPATH` environment default. VM package execution now
+  computes `descriptor-selected-fastpaths` from the VM support gate plus
+  `OperatorSemanticsDescriptor::ImplementationFastPath` facts and records that
+  selection in `VmExecutionSelectionEvidence`.
 
 ## Execution Beads
 

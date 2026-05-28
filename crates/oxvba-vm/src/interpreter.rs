@@ -15,13 +15,13 @@ use oxvba_compiler::{
     Bytecode, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
     CoercionDescriptor, DescriptorFamily, DescriptorIdentity, DescriptorInventory,
     ExpressionSemanticsDescriptor, HostProcedureExport, Instruction, NameBindingDescriptor,
-    ObjectMemberBindingDescriptor, ObjectTypeDescriptor, OperatorSemanticsDescriptor,
-    OptionalDefaultValue, OptionalParameterDescriptor, OxBundle, ParameterDescriptor,
-    ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor,
-    ProjectComWithEventsRoute, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ResolvedParameterMechanism,
-    RuntimeCarrierKind, SlotRole, SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor,
-    ValueStateDescriptor, VbaTypeId,
+    ObjectMemberBindingDescriptor, ObjectTypeDescriptor, OperatorFamilyDescriptor,
+    OperatorSemanticsDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
+    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
+    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ResolvedParameterMechanism, RuntimeCarrierKind, SlotRole, SlotTypeDescriptor,
+    UdtFieldDescriptor, UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId,
     bundle::ExportInventory,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
@@ -426,6 +426,9 @@ impl<'a> VmExecutionPackage<'a> {
             coercion_evidence,
             name_binding_evidence,
             object_member_binding_evidence,
+            execution_selection_evidence: vec![
+                descriptor_selected_fastpath_execution(self).evidence,
+            ],
             descriptor_identities,
             project_context: self
                 .project_context
@@ -558,6 +561,7 @@ pub struct VmPackageIdentityEvidence {
     pub coercion_evidence: Vec<VmSemanticDescriptorEvidence>,
     pub name_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
     pub object_member_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
+    pub execution_selection_evidence: Vec<VmExecutionSelectionEvidence>,
     pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
     pub project_context: Option<VmProjectContextEvidence>,
 }
@@ -801,6 +805,15 @@ pub struct VmConsumptionEvidence {
     pub status: String,
     pub descriptor_families: Vec<String>,
     pub gap_classifications: Vec<String>,
+    pub observations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VmExecutionSelectionEvidence {
+    pub selection_id: String,
+    pub selection_descriptor_digest: String,
+    pub status: String,
+    pub descriptor_families: Vec<String>,
     pub observations: Vec<String>,
 }
 
@@ -2263,6 +2276,127 @@ fn support_reason_kind_from_gap(gap: &str, context: Option<&str>) -> VmPackageSu
     } else {
         VmPackageSupportReasonKind::UnsupportedDescriptor
     }
+}
+
+struct DescriptorSelectedFastpathExecution {
+    enabled: bool,
+    evidence: VmExecutionSelectionEvidence,
+}
+
+fn descriptor_selected_fastpath_execution(
+    package: &VmExecutionPackage<'_>,
+) -> DescriptorSelectedFastpathExecution {
+    let (support_gate_allows, mut observations) = vm_execution_support_gate_observations(package);
+    let fastpath_descriptor_ids =
+        implementation_fastpath_operator_descriptor_ids(package.procedure_metadata);
+    let descriptor_count = fastpath_descriptor_ids.len();
+    let enabled = support_gate_allows && descriptor_count > 0;
+    let status = if enabled { "selected" } else { "not-selected" };
+    let selection_id = "descriptor-selected-fastpaths";
+    let descriptor_families = vec![
+        DescriptorFamily::OperatorSemantics
+            .registry_key()
+            .to_string(),
+        DescriptorFamily::VmConsumption.registry_key().to_string(),
+    ];
+
+    observations.push("selection-source=package-operator-semantics-descriptor".to_string());
+    observations.push(format!(
+        "implementation-fastpath-descriptor-count={descriptor_count}"
+    ));
+    observations.push(format!(
+        "descriptor-inventory={}",
+        if package.descriptor_inventory.is_some() {
+            "present"
+        } else {
+            "missing"
+        }
+    ));
+    observations.push(format!(
+        "optimized-paths={}",
+        if enabled { "enabled" } else { "disabled" }
+    ));
+    for descriptor_id in fastpath_descriptor_ids.iter().take(16) {
+        observations.push(format!("operator-descriptor-id={descriptor_id}"));
+    }
+
+    let descriptor_id = canonical_descriptor_id(DescriptorFamily::VmConsumption, [selection_id]);
+    let selection_descriptor_digest = descriptor_digest_from_fields(
+        DescriptorFamily::VmConsumption,
+        &descriptor_id,
+        [
+            ("selection_id", selection_id.to_string()),
+            ("status", status.to_string()),
+            ("descriptor_count", descriptor_count.to_string()),
+            ("descriptor_ids", fastpath_descriptor_ids.join("|")),
+            ("support_gate_allows", support_gate_allows.to_string()),
+        ],
+    );
+
+    DescriptorSelectedFastpathExecution {
+        enabled,
+        evidence: VmExecutionSelectionEvidence {
+            selection_id: selection_id.to_string(),
+            selection_descriptor_digest,
+            status: status.to_string(),
+            descriptor_families,
+            observations,
+        },
+    }
+}
+
+fn vm_execution_support_gate_observations(package: &VmExecutionPackage<'_>) -> (bool, Vec<String>) {
+    let mut blockers = Vec::new();
+    if package.package_origin == VmPackageOrigin::InMemory {
+        blockers.push("PACKAGE-INMEMORY-NOT-STRICT".to_string());
+    }
+    if package.procedure_metadata.is_empty() {
+        blockers.push("PACKAGE-MISSING-PROCEDURE-METADATA".to_string());
+    }
+    if package.project_context.is_none() {
+        blockers.push("PACKAGE-MISSING-PROJECT-CONTEXT".to_string());
+    }
+    if package.descriptor_inventory.is_none() {
+        blockers.push("PACKAGE-MISSING-DESCRIPTOR-INVENTORY".to_string());
+    }
+    if let Some(context) = package.project_context {
+        for diagnostic in &context.package_diagnostics {
+            blockers.push(format!("package-diagnostic={}", diagnostic.code));
+        }
+    }
+
+    let allowed = blockers.is_empty();
+    let mut observations = vec![
+        format!("package-origin={:?}", package.package_origin),
+        format!(
+            "vm-support-report-gate={}",
+            if allowed { "accepted" } else { "blocked" }
+        ),
+    ];
+    for blocker in blockers {
+        observations.push(format!("support-blocker={blocker}"));
+    }
+    (allowed, observations)
+}
+
+fn implementation_fastpath_operator_descriptor_ids(
+    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<String> {
+    let mut descriptor_ids = procedure_metadata
+        .values()
+        .flat_map(|metadata| {
+            metadata
+                .operator_semantics
+                .iter()
+                .filter(|descriptor| {
+                    descriptor.family == OperatorFamilyDescriptor::ImplementationFastPath
+                })
+                .map(|descriptor| descriptor.descriptor_id.clone())
+        })
+        .collect::<Vec<_>>();
+    descriptor_ids.sort();
+    descriptor_ids.dedup();
+    descriptor_ids
 }
 
 fn vm_consumption_evidence_row(
@@ -4246,7 +4380,6 @@ fn leak_runtime_descriptor_str(value: String) -> &'static str {
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
-    typed_fastpaths_default: bool,
     call_stack: Vec<(usize, ErrorFrame)>,
     activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
@@ -4296,7 +4429,6 @@ impl Vm {
         Self {
             registers: RegisterFile::with_capacity(256),
             host_services,
-            typed_fastpaths_default: Self::typed_fastpaths_enabled_from_env(),
             call_stack: Vec::new(),
             activation_entry_pcs: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
@@ -4723,7 +4855,13 @@ impl Vm {
     }
 
     pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
-        self.execute_package_with_typed_fastpaths(package, self.typed_fastpaths_default)
+        self.load_execution_package_metadata(package);
+        let selection = descriptor_selected_fastpath_execution(package);
+        let result =
+            self.execute_with_descriptor_metadata(package.bytecode, selection.enabled, true);
+        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
+        self.last_package_identity_evidence = Some(identity_evidence);
+        result
     }
 
     pub fn execute_package_strict(
@@ -4734,32 +4872,16 @@ impl Vm {
         self.execute_package(package)
     }
 
-    pub fn execute_package_with_typed_fastpaths(
-        &mut self,
-        package: &VmExecutionPackage<'_>,
-        typed_fastpaths: bool,
-    ) -> Result<(), String> {
-        self.load_execution_package_metadata(package);
-        let result = self.execute_with_typed_fastpaths_and_descriptor_metadata(
-            package.bytecode,
-            typed_fastpaths,
-            true,
-        );
-        let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
-        self.last_package_identity_evidence = Some(identity_evidence);
-        result
-    }
-
-    fn execute_with_typed_fastpaths_and_descriptor_metadata(
+    fn execute_with_descriptor_metadata(
         &mut self,
         bytecode: &Bytecode,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
         descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
         self.descriptor_metadata_active = descriptor_metadata_active;
         self.reset_execution_state(bytecode.slot_count, false);
-        let result = self.execute_loop(bytecode, 0, 0, typed_fastpaths, false);
+        let result = self.execute_loop(bytecode, 0, 0, descriptor_selected_fastpaths, false);
         self.descriptor_metadata_active = false;
         result
     }
@@ -4770,6 +4892,7 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[i32],
+        descriptor_selected_fastpaths: bool,
         descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
@@ -4792,7 +4915,7 @@ impl Vm {
             bytecode,
             entry_pc,
             entry_pc,
-            self.typed_fastpaths_default,
+            descriptor_selected_fastpaths,
             true,
         );
         self.descriptor_metadata_active = false;
@@ -4807,11 +4930,13 @@ impl Vm {
         args: &[i32],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
+        let selection = descriptor_selected_fastpath_execution(package);
         let result = self.invoke_procedure_with_i32_args_and_descriptor_metadata(
             package.bytecode,
             entry_pc,
             arg_slots,
             args,
+            selection.enabled,
             true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
@@ -4825,6 +4950,7 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[Variant],
+        descriptor_selected_fastpaths: bool,
         descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
@@ -4862,7 +4988,7 @@ impl Vm {
             bytecode,
             entry_pc,
             entry_pc,
-            self.typed_fastpaths_default,
+            descriptor_selected_fastpaths,
             true,
         );
         self.descriptor_metadata_active = false;
@@ -4913,11 +5039,13 @@ impl Vm {
         args: &[Variant],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
+        let selection = descriptor_selected_fastpath_execution(package);
         let result = self.invoke_procedure_with_variants_and_descriptor_metadata(
             package.bytecode,
             entry_pc,
             arg_slots,
             args,
+            selection.enabled,
             true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
@@ -4962,7 +5090,11 @@ impl Vm {
         Ok(())
     }
 
-    fn resume_debug_session(&mut self, bytecode: &Bytecode) -> Result<DebugRunResult, String> {
+    fn resume_debug_session(
+        &mut self,
+        bytecode: &Bytecode,
+        descriptor_selected_fastpaths: bool,
+    ) -> Result<DebugRunResult, String> {
         let (entry_pc, return_halts_when_stack_empty) = {
             let state = self
                 .debug_runtime
@@ -4974,7 +5106,7 @@ impl Vm {
             bytecode,
             entry_pc,
             self.activation_entry_pcs.last().copied().unwrap_or(0),
-            self.typed_fastpaths_default,
+            descriptor_selected_fastpaths,
             return_halts_when_stack_empty,
         )?;
         let Some(state) = &self.debug_runtime else {
@@ -4993,8 +5125,9 @@ impl Vm {
         package: &VmExecutionPackage<'_>,
     ) -> Result<DebugRunResult, String> {
         self.load_execution_package_metadata(package);
+        let selection = descriptor_selected_fastpath_execution(package);
         self.descriptor_metadata_active = true;
-        let result = self.resume_debug_session(package.bytecode);
+        let result = self.resume_debug_session(package.bytecode, selection.enabled);
         self.descriptor_metadata_active = false;
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
@@ -5242,7 +5375,7 @@ impl Vm {
         bytecode: &Bytecode,
         start_pc: usize,
         activation_entry_pc: usize,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
         return_halts_when_stack_empty: bool,
     ) -> Result<(), String> {
         let activation_depth = self.activation_entry_pcs.len();
@@ -5276,7 +5409,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {
-                    if typed_fastpaths && self.fast_add_const(*slot, *value) {
+                    if descriptor_selected_fastpaths && self.fast_add_const(*slot, *value) {
                         pc += 1;
                         continue;
                     }
@@ -5297,7 +5430,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
-                    if typed_fastpaths && self.fast_sub_const(*slot, *value) {
+                    if descriptor_selected_fastpaths && self.fast_sub_const(*slot, *value) {
                         pc += 1;
                         continue;
                     }
@@ -5397,7 +5530,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CopySlot { dst, src } => {
-                    if typed_fastpaths && self.fast_copy_slot(*dst, *src) {
+                    if descriptor_selected_fastpaths && self.fast_copy_slot(*dst, *src) {
                         pc += 1;
                         continue;
                     }
@@ -6654,7 +6787,11 @@ impl Vm {
                 }
                 Instruction::IntrinsicForEachInit { iter, src } => {
                     let iterable = self.read_variant_slot(*src)?;
-                    match self.materialize_foreach_items(bytecode, typed_fastpaths, &iterable) {
+                    match self.materialize_foreach_items(
+                        bytecode,
+                        descriptor_selected_fastpaths,
+                        &iterable,
+                    ) {
                         Ok(items) => {
                             let id = self.next_foreach_iterator_id;
                             self.next_foreach_iterator_id =
@@ -7007,7 +7144,11 @@ impl Vm {
                             name: arg.name.clone(),
                         });
                     }
-                    match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
+                    match self.try_invoke_project_dynamic(
+                        bytecode,
+                        descriptor_selected_fastpaths,
+                        &request,
+                    ) {
                         Ok(Some(value)) => {
                             self.write_runtime_slot(*dst, value)?;
                             pc += 1;
@@ -7035,7 +7176,10 @@ impl Vm {
                                 *dst,
                                 Self::normalize_dynamic_result_variant(value.variant()),
                             )?;
-                            self.pump_project_com_withevents_callbacks(bytecode, typed_fastpaths)?;
+                            self.pump_project_com_withevents_callbacks(
+                                bytecode,
+                                descriptor_selected_fastpaths,
+                            )?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -7471,7 +7615,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7489,7 +7635,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l != r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l != r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7507,7 +7655,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l < r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l < r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7525,7 +7675,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l <= r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l <= r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7543,7 +7695,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l > r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l > r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7561,7 +7715,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l >= r) {
+                    if descriptor_selected_fastpaths
+                        && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l >= r)
+                    {
                         pc += 1;
                         continue;
                     }
@@ -7849,7 +8005,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IncSlot { slot } => {
-                    if typed_fastpaths && self.fast_add_const(*slot, 1) {
+                    if descriptor_selected_fastpaths && self.fast_add_const(*slot, 1) {
                         pc += 1;
                         continue;
                     }
@@ -7957,12 +8113,6 @@ impl Vm {
         Ok(())
     }
 
-    fn typed_fastpaths_enabled_from_env() -> bool {
-        std::env::var("OXVBA_DISABLE_TYPED_FASTPATH")
-            .map(|value| value != "1")
-            .unwrap_or(true)
-    }
-
     fn withevents_binding_key(owner: &ObjectRef, binding: BindingHandle) -> i64 {
         crate::semantics::withevents_binding_key(owner, binding)
     }
@@ -7978,7 +8128,7 @@ impl Vm {
     fn materialize_foreach_items(
         &mut self,
         bytecode: &Bytecode,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
         iterable: &Variant,
     ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
         if let Some(array) = iterable.as_safearray() {
@@ -7990,7 +8140,11 @@ impl Vm {
         }
 
         if let Some(object) = iterable.as_object_ref() {
-            return self.materialize_foreach_items_from_object(bytecode, typed_fastpaths, object);
+            return self.materialize_foreach_items_from_object(
+                bytecode,
+                descriptor_selected_fastpaths,
+                object,
+            );
         }
 
         if let Some(handle) = iterable.as_i32()
@@ -7998,7 +8152,7 @@ impl Vm {
         {
             return self.materialize_foreach_items_from_object(
                 bytecode,
-                typed_fastpaths,
+                descriptor_selected_fastpaths,
                 ObjectRef::from_compat_identity(handle),
             );
         }
@@ -8012,7 +8166,7 @@ impl Vm {
     fn materialize_foreach_items_from_object(
         &mut self,
         bytecode: &Bytecode,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
         object: oxvba_runtime::ObjectRef,
     ) -> Result<Vec<RuntimeSlot>, ForEachInitError> {
         let request = DynamicCallRequest {
@@ -8021,8 +8175,11 @@ impl Vm {
             args: Vec::new(),
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
         };
-        let result_slot = match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request)
-        {
+        let result_slot = match self.try_invoke_project_dynamic(
+            bytecode,
+            descriptor_selected_fastpaths,
+            &request,
+        ) {
             Ok(Some(value)) => value,
             Ok(None) => {
                 let bridge = HalComDynamicBridge::new(
@@ -8212,7 +8369,7 @@ impl Vm {
     fn try_invoke_project_dynamic(
         &mut self,
         bytecode: &Bytecode,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
         request: &DynamicCallRequest,
     ) -> Result<Option<RuntimeSlot>, String> {
         let object = request.object.clone();
@@ -8392,7 +8549,7 @@ impl Vm {
             member.entry_pc,
             &member.param_slots,
             &values,
-            typed_fastpaths,
+            descriptor_selected_fastpaths,
         )?;
         Ok(Some(
             member
@@ -8408,7 +8565,7 @@ impl Vm {
         entry_pc: usize,
         arg_slots: &[usize],
         args: &[RuntimeSlot],
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
     ) -> Result<(), String> {
         if arg_slots.len() != args.len() {
             return Err(format!(
@@ -8443,7 +8600,13 @@ impl Vm {
             self.write_runtime_slot(*slot, value.clone())?;
         }
 
-        let result = self.execute_loop(bytecode, entry_pc, entry_pc, typed_fastpaths, true);
+        let result = self.execute_loop(
+            bytecode,
+            entry_pc,
+            entry_pc,
+            descriptor_selected_fastpaths,
+            true,
+        );
         self.call_stack.truncate(call_stack_depth);
 
         // Restore caller's error handling mode.
@@ -8669,7 +8832,7 @@ impl Vm {
         bytecode: &Bytecode,
         symbol: &str,
         args: &[Variant],
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
     ) -> Result<(), String> {
         let normalized = symbol.trim().to_ascii_lowercase();
         let metadata = self
@@ -8687,14 +8850,14 @@ impl Vm {
             metadata.entry_pc,
             &metadata.param_slots,
             &args,
-            typed_fastpaths,
+            descriptor_selected_fastpaths,
         )
     }
 
     fn pump_project_com_withevents_callbacks(
         &mut self,
         bytecode: &Bytecode,
-        typed_fastpaths: bool,
+        descriptor_selected_fastpaths: bool,
     ) -> Result<(), String> {
         if self.com_withevents_subscriptions.is_empty() {
             return Ok(());
@@ -8748,7 +8911,7 @@ impl Vm {
                 bytecode,
                 &target_symbol,
                 &args,
-                typed_fastpaths,
+                descriptor_selected_fastpaths,
             );
             let release_result = self
                 .host_services

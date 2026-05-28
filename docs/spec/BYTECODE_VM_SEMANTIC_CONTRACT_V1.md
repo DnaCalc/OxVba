@@ -181,6 +181,7 @@ error_descriptor_evidence
 deopt_snapshot_evidence
 host_policy_evidence
 vm_consumption_evidence
+execution_selection_evidence
 source_map_evidence
 package_diagnostics
 gap_classifications
@@ -208,8 +209,8 @@ Current VMR-01 seed evidence in `oxvba-vm` is
   signatures, slots, call sites, array shapes, UDTs, object routes, interop
   descriptors, lifecycle descriptors, error-routing descriptors, deopt
   snapshot descriptors, host-policy descriptors, expression semantics,
-  operator semantics, coercion, name binding, and object/member binding
-  descriptors reached by current evidence.
+  operator semantics, coercion, name binding, object/member binding, and
+  descriptor-selected execution-path evidence reached by current evidence.
 
 Canonical descriptor identity helpers live in
 `crates/oxvba-compiler/src/descriptor_identity.rs`, not in the VM. The current
@@ -226,9 +227,12 @@ the recorded VM package identity for evidence and future JIT gates.
 This began as package identity plus first slot descriptor evidence. The current
 surface now also includes signature comparison, call-site, array-shape, UDT,
 object, interop, bundle project/compile context, selected lifecycle,
-error-routing, deopt-snapshot, and host-policy evidence. Host-policy behavior
-consumption and explicit cleanup-stack execution remain future rows under the
-strengthening sequence above.
+error-routing, deopt-snapshot, host-policy, and execution-selection evidence.
+Optimized VM paths are not caller-selected or environment-selected; package
+execution computes the current `descriptor-selected-fastpaths` row from the VM
+support gate plus `OperatorSemanticsDescriptor::ImplementationFastPath` facts.
+Host-policy behavior consumption and explicit cleanup-stack execution remain
+future rows under the strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
