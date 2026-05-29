@@ -1188,7 +1188,7 @@ fn check_expr(
                 proc_context,
             )
         }
-        BoundExpr::BinaryOp { lhs, rhs, .. } => {
+        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
             check_expr(
                 lhs,
                 option_explicit,
@@ -1210,7 +1210,7 @@ fn check_expr(
                 proc_context,
             )
         }
-        BoundExpr::UnaryOp { operand, .. } => check_expr(
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => check_expr(
             operand,
             option_explicit,
             default_type_table,
@@ -1313,6 +1313,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         }
         BoundExpr::ProcCall { .. } => BoundType::Variant,
         BoundExpr::CompareOp { .. } => BoundType::Boolean,
+        BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
     }
 }

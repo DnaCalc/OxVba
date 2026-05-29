@@ -42,6 +42,15 @@ pub enum ArithOp {
     Neg,
 }
 
+/// Logical operators usable as value-producing expressions (VBA `And`/`Or`).
+/// Lowered to the VM's truthy `BoolAnd`/`BoolOr` instructions, consistent with
+/// the condition-path semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogicalBinOp {
+    And,
+    Or,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
@@ -70,6 +79,14 @@ pub enum BoundExpr {
     },
     UnaryOp {
         op: ArithOp,
+        operand: Box<BoundExpr>,
+    },
+    LogicalBinaryOp {
+        op: LogicalBinOp,
+        lhs: Box<BoundExpr>,
+        rhs: Box<BoundExpr>,
+    },
+    LogicalNot {
         operand: Box<BoundExpr>,
     },
     IntrinsicCall {
@@ -1925,6 +1942,8 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         | BoundExpr::BinaryOp { .. }
         | BoundExpr::CompareOp { .. }
         | BoundExpr::UnaryOp { .. }
+        | BoundExpr::LogicalBinaryOp { .. }
+        | BoundExpr::LogicalNot { .. }
         | BoundExpr::IntrinsicCall { .. }
         | BoundExpr::ProcCall { .. }
         | BoundExpr::VarPtrArrayBuffer(_) => BoundType::Variant,
@@ -4984,6 +5003,36 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         }
     }
 
+    // Logical operators have the lowest precedence (VBA: Or below And below Not,
+    // all below comparison). Split outermost so operands recurse into the
+    // comparison/arithmetic grammar. Lowered to truthy BoolOr/BoolAnd/BoolNot,
+    // matching the condition path's semantics.
+    if let Some((lhs_raw, rhs_raw)) = split_compare_keyword_top_level(expr, "or") {
+        let lhs = parse_expr(lhs_raw, array_bounds)?;
+        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        return Some(BoundExpr::LogicalBinaryOp {
+            op: LogicalBinOp::Or,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        });
+    }
+    if let Some((lhs_raw, rhs_raw)) = split_compare_keyword_top_level(expr, "and") {
+        let lhs = parse_expr(lhs_raw, array_bounds)?;
+        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        return Some(BoundExpr::LogicalBinaryOp {
+            op: LogicalBinOp::And,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        });
+    }
+    if let Some(rest) = strip_not_prefix(expr)
+        && let Some(operand) = parse_expr(rest, array_bounds)
+    {
+        return Some(BoundExpr::LogicalNot {
+            operand: Box::new(operand),
+        });
+    }
+
     if let Some(inner) = parse_intrinsic_conversion_expr(expr, array_bounds) {
         return Some(inner);
     }
@@ -5046,6 +5095,22 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     }
 
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
+}
+
+/// Strip a leading `Not` logical-operator keyword (word-bounded), returning the
+/// remaining operand text. Does not match identifiers like `Nothing`/`Notify`.
+fn strip_not_prefix(expr: &str) -> Option<&str> {
+    let trimmed = expr.trim_start();
+    if trimmed.len() >= 3 && trimmed[..3].eq_ignore_ascii_case("not") {
+        let after = &trimmed[3..];
+        if after.starts_with(|c: char| c.is_whitespace() || c == '(') {
+            let rest = after.trim_start();
+            if !rest.is_empty() {
+                return Some(rest);
+            }
+        }
+    }
+    None
 }
 
 fn parse_compare_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {

@@ -163,3 +163,34 @@ fn on_error_resume_next_division_by_zero() {
         "expected Err.Number=11 after div-by-zero in {snap:?}"
     );
 }
+
+#[test]
+fn logical_operators_as_rvalues() {
+    // And/Or/Not used as value-producing expressions (not just branch predicates).
+    let snap = run(
+        "Sub Main()\nDim a As Boolean\nDim b As Boolean\nDim andRes As Boolean\nDim orRes As Boolean\nDim notRes As Boolean\na = True\nb = False\nandRes = a And b\norRes = a Or b\nnotRes = Not a\nEnd Sub",
+    );
+    // a=True, b=False -> andRes=False, orRes=True, notRes=False
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_bool(true),
+            Variant::from_bool(false),
+            Variant::from_bool(false),
+            Variant::from_bool(true),
+            Variant::from_bool(false),
+        ]
+    );
+}
+
+#[test]
+fn logical_operator_precedence_with_comparison() {
+    // Comparison binds tighter than And/Or: `x > 0 And x < 10`.
+    let snap = run(
+        "Sub Main()\nDim x As Long\nDim inRange As Boolean\nx = 5\ninRange = x > 0 And x < 10\nEnd Sub",
+    );
+    assert!(
+        snap.contains(&Variant::from_bool(true)),
+        "expected inRange=True for x=5 in {snap:?}"
+    );
+}

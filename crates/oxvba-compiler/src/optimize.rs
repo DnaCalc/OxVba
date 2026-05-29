@@ -192,7 +192,12 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
         BoundExpr::CompareOp { lhs, rhs, .. } => expr_uses_var(lhs, var) || expr_uses_var(rhs, var),
         BoundExpr::BinaryOp { lhs, rhs, .. } => expr_uses_var(lhs, var) || expr_uses_var(rhs, var),
-        BoundExpr::UnaryOp { operand, .. } => expr_uses_var(operand, var),
+        BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
+            expr_uses_var(lhs, var) || expr_uses_var(rhs, var)
+        }
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => {
+            expr_uses_var(operand, var)
+        }
     }
 }
 
@@ -224,7 +229,12 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         BoundExpr::BinaryOp { lhs, rhs, .. } => {
             expr_has_observable_effect(lhs) || expr_has_observable_effect(rhs)
         }
-        BoundExpr::UnaryOp { operand, .. } => expr_has_observable_effect(operand),
+        BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
+            expr_has_observable_effect(lhs) || expr_has_observable_effect(rhs)
+        }
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => {
+            expr_has_observable_effect(operand)
+        }
     }
 }
 

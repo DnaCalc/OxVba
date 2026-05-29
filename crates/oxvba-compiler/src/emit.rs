@@ -18,7 +18,7 @@ use crate::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause,
         BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundExpr, BoundExternalDecl,
         BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
-        CompareOp,
+        CompareOp, LogicalBinOp,
     },
 };
 
@@ -1343,7 +1343,9 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
         | BoundExpr::SubConst { .. }
         | BoundExpr::BinaryOp { .. }
         | BoundExpr::CompareOp { .. }
-        | BoundExpr::UnaryOp { .. } => ArgumentExpressionKindDescriptor::Expression,
+        | BoundExpr::UnaryOp { .. }
+        | BoundExpr::LogicalBinaryOp { .. }
+        | BoundExpr::LogicalNot { .. } => ArgumentExpressionKindDescriptor::Expression,
     }
 }
 
@@ -2633,11 +2635,13 @@ fn collect_expr_value_states(
                 collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
             }
         }
-        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+        BoundExpr::BinaryOp { lhs, rhs, .. }
+        | BoundExpr::CompareOp { lhs, rhs, .. }
+        | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
             collect_expr_value_states(lhs, None, procedure_id, ordinal, descriptors);
             collect_expr_value_states(rhs, None, procedure_id, ordinal, descriptors);
         }
-        BoundExpr::UnaryOp { operand, .. } => {
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => {
             collect_expr_value_states(operand, None, procedure_id, ordinal, descriptors);
         }
         BoundExpr::IntConst(_)
@@ -3222,7 +3226,9 @@ fn collect_expr_semantics(
         ordinal,
     ));
     match expr {
-        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+        BoundExpr::BinaryOp { lhs, rhs, .. }
+        | BoundExpr::CompareOp { lhs, rhs, .. }
+        | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
             collect_expr_semantics(
                 lhs,
                 context,
@@ -3240,7 +3246,7 @@ fn collect_expr_semantics(
                 descriptors,
             );
         }
-        BoundExpr::UnaryOp { operand, .. } => {
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => {
             collect_expr_semantics(
                 operand,
                 context,
@@ -3324,9 +3330,10 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
         BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             ExpressionClassificationDescriptor::Temporary
         }
-        BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => {
-            ExpressionClassificationDescriptor::OperatorResult
-        }
+        BoundExpr::BinaryOp { .. }
+        | BoundExpr::UnaryOp { .. }
+        | BoundExpr::LogicalBinaryOp { .. }
+        | BoundExpr::LogicalNot { .. } => ExpressionClassificationDescriptor::OperatorResult,
         BoundExpr::CompareOp { .. } => ExpressionClassificationDescriptor::ComparisonResult,
         BoundExpr::IntrinsicCall { name, .. } if name == "__oxvba_array_get" => {
             ExpressionClassificationDescriptor::ArrayElement
@@ -3363,6 +3370,14 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         BoundExpr::BinaryOp { op, .. } => format!("operator={}", arith_op_key(*op)),
         BoundExpr::CompareOp { op, .. } => format!("compare={}", compare_op_key(*op)),
         BoundExpr::UnaryOp { op, .. } => format!("unary={}", arith_op_key(*op)),
+        BoundExpr::LogicalBinaryOp { op, .. } => format!(
+            "logical={}",
+            match op {
+                LogicalBinOp::And => "and",
+                LogicalBinOp::Or => "or",
+            }
+        ),
+        BoundExpr::LogicalNot { .. } => "logical=not".to_string(),
         BoundExpr::IntrinsicCall { name, .. } => format!("intrinsic={}", name.to_ascii_lowercase()),
         BoundExpr::ProcCall { name, .. } => format!("proc-call={}", name.to_ascii_lowercase()),
         BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
@@ -3950,6 +3965,34 @@ fn collect_expr_operator_semantics(
                 compare_mode,
                 ordinal,
             ));
+            collect_expr_operator_semantics(
+                operand,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
+            collect_expr_operator_semantics(
+                lhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            collect_expr_operator_semantics(
+                rhs,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundExpr::LogicalNot { operand } => {
             collect_expr_operator_semantics(
                 operand,
                 type_by_name,
@@ -4703,11 +4746,13 @@ fn collect_expr_coercions(
                 collect_expr_coercions(arg, type_by_name, procedure_id, ordinal, descriptors);
             }
         }
-        BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
+        BoundExpr::BinaryOp { lhs, rhs, .. }
+        | BoundExpr::CompareOp { lhs, rhs, .. }
+        | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
             collect_expr_coercions(lhs, type_by_name, procedure_id, ordinal, descriptors);
             collect_expr_coercions(rhs, type_by_name, procedure_id, ordinal, descriptors);
         }
-        BoundExpr::UnaryOp { operand, .. } => {
+        BoundExpr::UnaryOp { operand, .. } | BoundExpr::LogicalNot { operand, .. } => {
             collect_expr_coercions(operand, type_by_name, procedure_id, ordinal, descriptors);
         }
         BoundExpr::ProcCall { args, .. } => {
@@ -5256,6 +5301,7 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
             _ => VbaTypeId::Variant,
         },
         BoundExpr::CompareOp { .. } => VbaTypeId::Boolean,
+        BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => VbaTypeId::Boolean,
         BoundExpr::UnaryOp { .. } => VbaTypeId::Variant,
         BoundExpr::IntrinsicCall { name, args } => intrinsic_result_type(name, args, type_by_name),
         BoundExpr::ProcCall { .. } => VbaTypeId::Variant,
@@ -7280,6 +7326,7 @@ fn expr_bound_type(
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::CompareOp { .. } => BoundType::Boolean,
+        BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
         BoundExpr::Var(name) => current_meta
             .declaration_types
@@ -8697,6 +8744,59 @@ fn emit_expr_into(
                     instructions.push(Instruction::NegSlot { dst, src: src_slot });
                 }
                 _ => unreachable!("only Neg is a unary ArithOp"),
+            }
+        }
+        BoundExpr::LogicalNot { operand } => {
+            let src_slot = temps.alloc_temp();
+            emit_expr_into(
+                operand,
+                compare_mode,
+                src_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::BoolNot { dst, src: src_slot });
+        }
+        BoundExpr::LogicalBinaryOp { op, lhs, rhs } => {
+            let lhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let rhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            match op {
+                LogicalBinOp::And => instructions.push(Instruction::BoolAnd {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                LogicalBinOp::Or => instructions.push(Instruction::BoolOr {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
             }
         }
         BoundExpr::IntrinsicCall { name, args } => {
