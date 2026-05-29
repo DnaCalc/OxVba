@@ -5,6 +5,8 @@ Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/native-readiness
 Primary package reference:
 [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
+Current VM direction:
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md)
 
 ## Purpose
 
@@ -15,6 +17,16 @@ This document folds together the bytecode semantic catalog, VM executable
 package consumption contract, and VM evidence schema. The goal is to prevent a
 future JIT from learning bytecode meaning informally while the VM remains the
 reference execution engine.
+
+There is one VM. It runs the compiler's bytecode plus metadata package
+directly. There is no execution gate and no supported/unsupported lane
+classification: anything the VM runs incorrectly, or that leaks non-object
+memory, is a bug to fix rather than a gated lane. Object reference-cycle leaks
+are VBA-consistent and are not bugs in this scope. The "current gap" column
+below records facts the package does not yet carry or behavior the VM does not
+yet drive from descriptors; those are open implementation work, not lanes the
+VM refuses to execute. The current direction is recorded in
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md).
 
 ## Bytecode Catalog Row Shape
 
@@ -47,10 +59,10 @@ Rows can start at family granularity and split when semantics diverge.
 | Primitive arithmetic | operand/result declared types, operator row, overflow/coercion policy | execute helper or typed path matching operator descriptor | Selected v15 operator descriptors and evidence exist; full truth table and descriptor-driven execution remain incomplete. |
 | Variant/dynamic arithmetic | Variant payload states, Let coercion, Null/Error behavior | retain VM helper behavior and snapshot payload | Selected v15 coercion/operator/value-state descriptors exist; full helper truth table evidence remains incomplete. |
 | Boolean/control tests | truthiness/coercion row and error policy | branch with VM-equivalent value-state handling | Selected v15 truthiness/logical/branch descriptors exist; broader extraction and behavior consumption remain incomplete. |
-| String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | String/BSTR descriptor evidence exists; strict VM support rejects string cleanup/lifetime gaps through `STRING-CLEANUP-UNSUPPORTED` until helper-temp cleanup and lifetime evidence are package-owned. |
-| Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Selected rank-1 fixed/static bounds are descriptor-driven; unsupported multi-rank, incomplete-bound, and owning-element cleanup shapes reject under strict VM support through `ARRAY-DESCRIPTOR-UNSUPPORTED`. |
-| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; strict VM support rejects executable UDT layout/copy/drop/cleanup gaps through `UDT-LAYOUT-CLEANUP-UNSUPPORTED`. |
-| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; selected `Long` to `Double ByVal` binding is descriptor-driven; Optional-missing and unselected broader call-entry coercions reject under strict VM support until implemented. |
+| String/BSTR | variable/fixed string descriptor, allocation, concat/Len helpers | preserve BStr ownership and failure cleanup | String/BSTR descriptor evidence exists; helper-temp cleanup and lifetime accounting are not yet package-owned. |
+| Arrays/SAFEARRAY | shape, bounds, element type, resize/preserve, enumeration | consume runtime shape and emit bounds/error evidence | Selected rank-1 fixed/static bounds are descriptor-driven; multi-rank, incomplete-bound, and owning-element cleanup shapes are not yet descriptor-driven. |
+| UDT fields/copy | nominal UDT id, field order, field carriers, copy/drop rules | execute descriptor-backed field operations | Seed UDT descriptors and selected lifecycle evidence exist; descriptor-driven UDT layout/copy/drop/cleanup execution is incomplete. |
+| Procedure calls | target signature, call-site descriptor, ByRef/ByVal, optional/defaults | bind args using descriptor, expose alias/writeback evidence | Seed descriptors and evidence exist; selected `Long` to `Double ByVal` binding is descriptor-driven; Optional-missing and broader call-entry coercions are not yet descriptor-driven. |
 | Properties/default members | accessor group, value param, default member binding | distinguish Let/Set/Get and object default value | Selected v15 property/default-member binding descriptors and evidence exist; broader object/default-member execution remains incomplete. |
 | Error flow | `On Error`, enabled/active handler state, Err state, resume target maps, fallible operation edges | use package error maps, snapshot Err state, and expose handler/resume evidence | Selected error-routing/deopt evidence exists for the TB03 Resume Next division seed; broader maps and oracle-backed edge evidence remain incomplete. |
 | Host services | host capability, policy, deterministic unsupported diagnostics | route through host policy and evidence | Host capability descriptor evidence exists; behavior-driving policy evaluation descriptors remain incomplete. |
@@ -180,8 +192,6 @@ interop_observations
 error_descriptor_evidence
 deopt_snapshot_evidence
 host_policy_evidence
-vm_consumption_evidence
-execution_selection_evidence
 source_map_evidence
 package_diagnostics
 gap_classifications
@@ -209,8 +219,8 @@ Current VMR-01 seed evidence in `oxvba-vm` is
   signatures, slots, call sites, array shapes, UDTs, object routes, interop
   descriptors, lifecycle descriptors, error-routing descriptors, deopt
   snapshot descriptors, host-policy descriptors, expression semantics,
-  operator semantics, coercion, name binding, object/member binding, and
-  descriptor-selected execution-path evidence reached by current evidence.
+  operator semantics, coercion, name binding, and object/member binding
+  reached by current evidence.
 
 Canonical descriptor identity helpers live in
 `crates/oxvba-compiler/src/descriptor_identity.rs`, not in the VM. The current
@@ -227,12 +237,12 @@ the recorded VM package identity for evidence and future JIT gates.
 This began as package identity plus first slot descriptor evidence. The current
 surface now also includes signature comparison, call-site, array-shape, UDT,
 object, interop, bundle project/compile context, selected lifecycle,
-error-routing, deopt-snapshot, host-policy, and execution-selection evidence.
-Optimized VM paths are not caller-selected or environment-selected; package
-execution computes the current `descriptor-selected-fastpaths` row from the VM
-support gate plus `OperatorSemanticsDescriptor::ImplementationFastPath` facts.
+error-routing, deopt-snapshot, and host-policy evidence.
+Optimized VM paths are not caller-selected or environment-selected; the VM
+chooses any operator fast path from
+`OperatorSemanticsDescriptor::ImplementationFastPath` facts in the package.
 Host-policy behavior consumption and explicit cleanup-stack execution remain
-future rows under the strengthening sequence above.
+future work under the strengthening sequence above.
 
 Current VMR-02 seed surface is a metadata view, not execution behavior:
 `ProcedureRuntimeMetadata::slot_type_descriptors` and
@@ -248,9 +258,9 @@ The populated VMR-02 compiler/package pass now records descriptor facts on
 compiler-generated fixed-array element slots, and expression temporaries.
 `OxBundle` format v15 also carries package-owned carrier layout descriptors
 and value-state descriptors derived from slot metadata, procedure signatures,
-bound intrinsics, and emitted value-state opcodes. The strict package-only
-reader rejects older bundle versions instead of upgrading missing descriptor
-vectors into empty current-shape facts.
+bound intrinsics, and emitted value-state opcodes. The package reader rejects
+older bundle versions instead of upgrading missing descriptor vectors into
+empty current-shape facts.
 This remains metadata/evidence-only: VM slot storage, helper choice, and
 runtime behavior do not consume these descriptors yet.
 Host/project value snapshots continue to exclude `Temporary` descriptor rows so
@@ -277,7 +287,7 @@ where known, resolved mechanism, Optional/default/missing policy, ParamArray
 shape, return type, return slot, property group, property value ByVal
 semantics, and class hidden-receiver/`Me` metadata where current compiler
 metadata knows them. `OxBundle` format v15 carries those facts in the current
-strict package; older serialized versions reject deterministically instead of
+package; older serialized versions reject deterministically instead of
 being backfilled with `Unknown` or empty descriptor facts.
 VM call execution does not consume these descriptors yet.
 
@@ -302,7 +312,7 @@ policy, invocation syntax (`Call` keyword, no-`Call`, expression-call, and
 synthetic property-assignment forms), source argument evaluation order,
 diagnostic-policy ownership for the current compiler-owned 448/449/450
 invalid-call cases, and return copyout. `OxBundle` format v15 carries those
-call policy fields as strict current package facts. The VM exposes these
+call policy fields as current package facts. The VM exposes these
 rows through
 `VmExecutionPackage::call_site_descriptors`, and
 `VmPackageIdentityEvidence::call_site_evidence` records descriptor digests plus
@@ -316,16 +326,13 @@ behavior-driving exception: package execution consumes the selected
 call/signature slot descriptors for the observed `Long` to declared-`Double`
 shape, and the callee observes a `Double` value at entry. Optional
 `Variant` without an explicit default is described by package metadata as a
-missing-argument policy
-(`VariantMissingError448`), but strict VM package support now rejects that
-shape before execution until runtime missing-argument materialization has oracle
-evidence and descriptor-backed behavior. Broader ByVal call-entry coercion
-descriptors outside the selected direct local `Long` to `Double` path are also
-strict support-report rejections rather than silent fallbacks. Non-strict/raw
-fixture execution may still expose the old lowered baseline for evidence, but
-that baseline is not a package-support claim. Call-site evidence also records
-the selected coercion row id, numeric-widen row id, and runtime helper id for
-the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
+missing-argument policy (`VariantMissingError448`), but the VM does not yet
+materialize the runtime missing-argument state; that behavior is open work
+pending oracle evidence and descriptor-backed handling. Broader ByVal
+call-entry coercion descriptors outside the selected direct local `Long` to
+`Double` path are likewise not yet descriptor-driven. Call-site evidence also
+records the selected coercion row id, numeric-widen row id, and runtime helper
+id for the descriptor-driven `Long` to `Double ByVal` path, so helper choice is
 observable without generalizing coercion behavior.
 
 Current expression/operator/coercion seed surface is package metadata and VM
@@ -367,19 +374,19 @@ preserve policy, element lifecycle classification, and runtime SAFEARRAY bounds
 when a base slot is allocated after VM execution. `VmPackageIdentityEvidence`
 also records selected lifecycle evidence for fixed/static array elements,
 dynamic SAFEARRAY ownership, and local SAFEARRAY slots. `OxBundle` format v15
-carries these rows in the strict current package; older bundles reject instead
+carries these rows in the current package; older bundles reject instead
 of being upgraded with empty array, UDT, or object descriptor sets.
 
 The VMR-05 seed fixture proves the current positive subset for fixed/static
 local arrays, explicit `0 To 2` bounds, dynamic `ReDim 2 To 4` SAFEARRAY bounds,
 and ByRef scalar observation copyback. Package execution now consumes
 `ArrayShapeDescriptor` for the selected VMR-06 rank-1 fixed/static
-`LBound`/`UBound` path. Strict VM support rejects descriptor-visible
-multi-rank, incomplete-bound, and owning-element cleanup array shapes before
-execution through `ARRAY-DESCRIPTOR-UNSUPPORTED`. Compiler/VM unit evidence now
-covers multi-rank descriptor serialization, but VM-runnable multi-rank
-execution fixtures, runtime bounds-error evidence, and COM/native SAFEARRAY
-projection remain incomplete before JIT lowering may claim TB05 closure.
+`LBound`/`UBound` path. Descriptor-visible multi-rank, incomplete-bound, and
+owning-element cleanup array shapes are not yet descriptor-driven. Compiler/VM
+unit evidence now covers multi-rank descriptor serialization, but VM-runnable
+multi-rank execution fixtures, runtime bounds-error evidence, and COM/native
+SAFEARRAY projection remain incomplete before JIT lowering may claim TB05
+closure.
 
 The VMR-05 UDT descriptor fixture adds nominal `UdtTypeDescriptor` evidence for
 the current flattened UDT storage model. VM evidence now records descriptor ids,
@@ -389,9 +396,8 @@ copy classification, recursive init policy, descriptor field-order layout
 tokens, and cleanup ownership flags. The selected VMR-06 cleanup slice also
 records `VmPackageIdentityEvidence::lifecycle_evidence` for UDT BSTR-owning
 fields, including success, branch, error, helper, deopt, and runtime
-alias-carrier observations. Strict VM support rejects executable UDT
-layout/copy/drop/cleanup gaps before execution through
-`UDT-LAYOUT-CLEANUP-UNSUPPORTED`; VM UDT field access, whole-copy execution,
+alias-carrier observations. Descriptor-driven UDT layout/copy/drop/cleanup
+execution is incomplete; VM UDT field access, whole-copy execution,
 byte-offset layout, and explicit cleanup-stack execution still do not consume
 these descriptors yet.
 
@@ -429,11 +435,11 @@ policy. This is evidence only: COM HRESULT/EXCEPINFO/ArgErr projection remains
 runtime-owned rather than package-unified, external export ABI execution is not
 closed, and general Automation `Variant`/`SAFEARRAY` declared-parameter ABI
 support remains incomplete.
-The strict VM support ledger now splits this interop evidence: selected native
-invoke descriptor identity, early-bound COM selector identity, and
-exported-callable descriptor identity remain VM-supported metadata slices, while
-real COM/native boundary ABI/result/writeback/cleanup/error execution rejects
-before strict VM execution through `BOUNDARY-CONSUMPTION-UNSUPPORTED`.
+Native invoke descriptor identity, early-bound COM selector identity, and
+exported-callable descriptor identity are package-visible metadata slices.
+Real COM/native boundary ABI/result/writeback/cleanup/error execution is not
+yet driven from package descriptors; it remains open implementation work on the
+existing host boundary paths.
 
 The VMR-05/bd-tvmb.9 error/cleanup/deopt fixture adds VM package evidence for
 selected `ErrorRoutingDescriptor`, `DeoptSnapshotDescriptor`, and
@@ -443,44 +449,34 @@ resume-next-consumable policy as package evidence. Deopt evidence records
 helper/call/host/COM/native safepoints with slot-map, live-carrier,
 cleanup-state, error-state, ByRef-state, source-PC, and host-policy obligations.
 Host-policy evidence records bundle capability requirements plus deterministic
-`HAL-E-CAP-UNAVAILABLE` and `HAL-E-POLICY-DENIED` diagnostic tokens. This is
-now split by strict support: Err reset and call-frame safepoints are selected
-VM-supported descriptor rows, while non-selected error/resume/fallible-helper
-deopt cleanup behavior and host-policy behavior-driving descriptors reject
-before strict VM execution. Active-handler reentry, caller unwinding, full
-Resume quirks, explicit cleanup-stack execution, and behavior-driving policy
-evaluation descriptors remain incomplete.
+`HAL-E-CAP-UNAVAILABLE` and `HAL-E-POLICY-DENIED` diagnostic tokens. Err reset
+and call-frame safepoints have selected descriptor evidence, while broader
+error/resume/fallible-helper deopt cleanup behavior and host-policy
+behavior-driving descriptors are not yet descriptor-driven. Active-handler
+reentry, caller unwinding, full Resume quirks, explicit cleanup-stack execution,
+and behavior-driving policy evaluation descriptors remain incomplete.
 
-The bd-tvmb.10 VM consumption ledger records which descriptor facts the VM
-currently consumes and which package-visible facts remain blocked. The selected
-supported rows are VMR-06 call-entry coercion, rank-1 static/fixed array bounds,
-Err reset, call-frame safepoints, native invoke descriptor identity, early-bound
-COM selector identity, and exported-callable descriptor identity; the selected
-evidence-only row is UDT owning field cleanup evidence.
-Optional `Variant` missing, non-selected error/deopt cleanup, COM/native
-boundary execution, and host-policy behavior consumption remain classified gap
-rows rather than backend-local assumptions. The strict VM now rejects the
-optional missing, non-selected error/deopt cleanup, COM/native boundary
-execution, and host-policy rows deterministically before execution.
+The descriptor facts the VM drives behavior from today are: VMR-06 call-entry
+coercion, rank-1 static/fixed array bounds, Err reset, and call-frame
+safepoints; native invoke descriptor identity, early-bound COM selector
+identity, and exported-callable descriptor identity are package-visible metadata
+slices; UDT owning field cleanup has evidence only. Optional `Variant` missing
+materialization, broader error/deopt cleanup behavior, COM/native boundary
+execution, and host-policy behavior consumption remain open implementation work.
+None of these are gated lanes the VM refuses to run: the VM runs the package
+directly, and any incorrect result or non-object memory leak is a bug to fix.
 
-The strict package-only execution workset adds `VmPackageSupportReport` as the
-shared support-query surface. The initial VM gate rejects incomplete in-memory
-packages that lack executable semantic package sections. Former deferred
-VM-consumption rows have been split into selected supported metadata slices and
-deterministic strict VM rejections; selected residual rows remain
-`ProcLoweringIr` blockers until their broader semantic gaps close.
-Public VM/JIT/launcher/debug execution entry points no longer accept bare
-`Bytecode`; production and test harness execution must enter through
-`OxBundle` or `VmExecutionPackage`. The VM instruction loop still receives the
+Public VM/JIT/launcher/debug execution entry points accept executable packages
+(`OxBundle` or `VmExecutionPackage`), not bare `Bytecode`, so the VM always has
+the package metadata and digests it needs. The VM instruction loop receives the
 package bytecode internally after package metadata is loaded.
 
-The bd-tvmb.11 implementation-entry audit is
-[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).
-The strict package-only terminal handoff audit is
+The historical implementation-entry and package handoff records are
+[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
+and
 [`../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md`](../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md).
-Together they record that remaining VM contract gap labels are scoped to
-broader unsupported behavior or future JIT-entry blockers, not unstated
-permission for `ProcLoweringIr` to infer semantics from raw bytecode.
+They are point-in-time audits; the current direction is recorded in
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md).
 
 ## Strengthening Rule
 

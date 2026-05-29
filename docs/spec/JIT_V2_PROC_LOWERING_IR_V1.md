@@ -10,10 +10,8 @@ Executable semantic package:
 [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
 Expression/call semantics:
 [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
-Typed metadata package handoff:
-[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md)
-Strict package-only VM handoff:
-[`../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md`](../validation/STRICT_PACKAGE_ONLY_VM_HANDOFF_AUDIT_2026-05-28.md)
+Current VM direction:
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md)
 
 ## Purpose
 
@@ -28,17 +26,18 @@ The executable semantic package answers what the compiled procedure means.
 target/profile. Any type, slot, expression, coercion, operator, call-site, UDT,
 COM/native, cleanup, error, or source-map fact required by `ProcLoweringIr`
 must come from the package or a versioned descriptor referenced by the package.
-If the handoff audit or tracer matrix classifies a required fact as missing,
-unsupported, interop-limited, oracle-required, or test-blocked,
-`ProcLoweringIr` must reject/classify that path rather than deriving the fact
-from bytecode shape or backend convenience.
+If the tracer matrix classifies a required fact as missing, unsupported,
+interop-limited, oracle-required, or test-blocked, `ProcLoweringIr` must
+reject/classify that path rather than deriving the fact from bytecode shape or
+backend convenience.
 
-Strict package-only VM work adds `VmPackageSupportReport` as the current shared
-support-query surface. `ProcLoweringIr` entry must treat every unsupported or
-residual VM-consumption row in that report as a blocker until a later delivery
-bead makes the behavior descriptor-driven or keeps a deterministic reject. The
-public JIT boundary accepts executable packages such as `OxBundle`, not bare
-`Bytecode`, so lowering entry cannot bypass package support diagnostics.
+The JIT keeps its own entry gate: lowering classifies and rejects package facts
+it cannot yet lower for a given target/profile. This is a JIT lowering-readiness
+decision, not a VM execution gate. The VM itself runs the package directly
+without a support-report lane classification; anything the VM runs incorrectly
+is a bug to fix, not a gated lane. The public JIT boundary accepts executable
+packages such as `OxBundle`, not bare `Bytecode`, so lowering entry always has
+the package facts and digests it needs.
 
 ## Core Types
 

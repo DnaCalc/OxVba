@@ -18,8 +18,8 @@ print array-shape descriptor digests and array-shape observation tokens. The
 UDT rows also print UDT descriptor digests and UDT descriptor observation
 tokens, plus selected lifecycle cleanup observation tokens for owning fields.
 The object rows also print object descriptor digests and object descriptor
-observation tokens. VM-consumption rows print selected descriptor-consuming
-execution and deferred gap classifications. Carrier-layout and value-state rows
+observation tokens. Selected descriptor-driven VM behavior rows print the
+consuming execution path and remaining gap classifications. Carrier-layout and value-state rows
 are VM-visible through package identity evidence and are covered by the VM
 package tests for primitive, object, aggregate, Decimal96 Variant-subtype,
 Empty, Null, Error/CVErr, Missing, Nothing, and vbNullString lanes.
@@ -27,10 +27,9 @@ Empty, Null, Error/CVErr, Missing, Nothing, and vbNullString lanes.
 The VM evidence also emits canonical descriptor identity rows sourced from the
 compiler/package descriptor identity helpers, including bytecode, procedure,
 signature, slot, call-site, array-shape, UDT, object, interop, lifecycle,
-error-routing, deopt-snapshot, host-policy, VM-consumption, carrier-layout, and
-value-state families reached by current package evidence. These rows are
-package identity evidence; they do not imply broader descriptor-driven VM
-execution.
+error-routing, deopt-snapshot, host-policy, carrier-layout, and value-state
+families reached by current package evidence. These rows are package identity
+evidence; they do not imply broader descriptor-driven VM execution.
 
 Bundle-backed VM package identity now also exposes project-context evidence
 when an `OxBundle` v11 supplies it: project/module/reference/import facts,
@@ -74,12 +73,11 @@ preserves the old `VarType=2` entry observation for the declared-`Double`
 callee, while package execution consumes the selected VMR-06 descriptors and
 observes `VarType=5`. The remaining current VM limitation in this row is
 Optional `Variant`: the descriptor says the missing policy is
-`VariantMissingError448`; strict VM package support rejects that shape before
-execution until a descriptor-backed missing-argument runtime state exists. The
-non-strict fixture still records the old lowered baseline as `VarType=2`, but
-that gap is not treated as VBA-compatible missing-argument behavior. Broader
+`VariantMissingError448`, but the VM does not yet materialize the missing-
+argument runtime state, so it still observes the lowered `VarType=2` baseline.
+That is a VM bug to fix, not VBA-compatible missing-argument behavior. Broader
 ByVal call-entry coercion descriptors outside the selected `Long` to `Double`
-shape likewise reject before strict VM execution. The call-site evidence also
+shape are likewise not yet descriptor-driven. The call-site evidence also
 records the selected table row ids for the behavior-driving call-entry coercion:
 `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
 helper `oxvba_runtime::coerce_to`.
@@ -146,24 +144,24 @@ records fixed-length `String * 5` cleanup obligations for `Record.Name`. The
 evidence is descriptor-backed and fixture-asserted, but it does not add an
 explicit cleanup stack or change runtime carrier drop behavior.
 
-The VM-consumption evidence ledger records the selected supported rows
-(`VMR06-CALL-BYVAL-COERCE-001`, `VMR06-ARRAY-STATIC-BOUNDS-001`,
-`VMR08-ERR-CLEAR-RESET-001`, and `VMR08-CALL-FRAME-DEOPT-001`), the selected
-evidence-only cleanup row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`), the strict
-rejection rows for Optional `Variant` missing, unselected broader ByVal
-call-entry coercions, unsupported array descriptor shapes, String/BSTR cleanup
-and lifetime gaps, executable UDT layout/copy/drop/cleanup gaps, non-selected
-error/deopt/cleanup behavior, COM/native boundary instruction execution, and
-host-policy behavior-driving descriptors. Selected native, early-COM selector,
-and exported-callable descriptor identity rows remain package-visible metadata
-slices. The companion seed table is
-`docs/validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`.
+The descriptor-driven VM behavior proven by these fixtures is the selected
+VMR-06 call-entry coercion (`VMR06-CALL-BYVAL-COERCE-001`), rank-1 static/fixed
+array bounds (`VMR06-ARRAY-STATIC-BOUNDS-001`), Err reset
+(`VMR08-ERR-CLEAR-RESET-001`), and call-frame safepoints
+(`VMR08-CALL-FRAME-DEOPT-001`), plus the evidence-only owning UDT field cleanup
+row (`VMR06-UDT-OWNING-FIELD-CLEANUP-001`). Native invoke, early-COM selector,
+and exported-callable descriptor identity rows are package-visible metadata
+slices. Optional `Variant` missing materialization, broader ByVal call-entry
+coercions, multi-rank/incomplete-bound array shapes, String/BSTR helper-temp
+cleanup and lifetime accounting, descriptor-driven UDT layout/copy/drop/cleanup,
+broader error/deopt cleanup, COM/native boundary execution, and host-policy
+behavior-driving consumption are open implementation work on the existing
+runtime paths.
 
 `VMR02_PRIMITIVE_STRING_VARIANT` now asserts the first non-UDT string slot
 lifecycle tokens. The selected row records `LIFE-BSTR-SLOT` cleanup obligations
-for a declared local `String`; strict VM support now rejects String/BSTR
-cleanup and lifetime gaps before execution until helper-temp cleanup and
-lifetime counter evidence are package-owned.
+for a declared local `String`; String/BSTR helper-temp cleanup and lifetime
+accounting are not yet package-owned and remain open work.
 
 `VMR05_OBJECT_DESCRIPTOR_IDENTITY` is the first object descriptor fixture. It
 records a generic `Object` local with `Nothing` initial state and `ObjectRef`

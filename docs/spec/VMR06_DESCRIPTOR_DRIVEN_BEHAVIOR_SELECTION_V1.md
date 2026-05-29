@@ -3,6 +3,8 @@
 Status: `working-draft`
 Date: 2026-05-27
 Scope owner: OxVBA compiler/VM/runtime/native-readiness
+Current VM direction:
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md)
 
 ## Purpose
 
@@ -64,10 +66,6 @@ Implementation evidence:
   call-site evidence: `COERCE-CALL-BYVAL-DECLARED-TARGET`,
   `COERCE-LET-NUMERIC-WIDEN`, and runtime helper
   `oxvba_runtime::coerce_to`.
-- `bd-tvmb.10` adds VM-consumption evidence for this selected row, including
-  the descriptor families, package execution path, and retained raw-bytecode
-  baseline.
-
 ### Static Array Bounds
 
 Selection id: `VMR06-ARRAY-STATIC-BOUNDS-001`
@@ -87,9 +85,9 @@ First implemented shape:
 - target operation: intrinsic `LBound` or `UBound`;
 - operand mapping: the intrinsic's materialized temporary may be traced through
   the immediate pre-intrinsic `CopySlot` back to the descriptor base slot;
-- package gate: only package execution may consume the descriptor; public raw
-  `Bytecode` execution was removed by the strict package-only execution
-  workset.
+- package source: the descriptor is read from the executable package the VM
+  runs; the public VM/host entry points accept executable packages such as
+  `OxBundle`/`VmExecutionPackage`, not bare `Bytecode`.
 
 The scoped fixture is
 `conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas`, procedure
@@ -105,12 +103,9 @@ Implementation evidence:
 - Descriptor absence or mismatch still produces the existing runtime error;
   the VM does not infer array bounds from compiler-generated element slot
   names or from ambient runtime state.
-- `bd-tvmb.10` adds VM-consumption evidence for this selected row, including
-  the package-only descriptor path and raw runtime error 13 baseline.
-- `bd-embl.7` keeps this selected rank-1 fixed/static path strict-VM
-  supported, while descriptor-visible multi-rank arrays, incomplete static
-  bounds, and owning element cleanup shapes emit
-  `ARRAY-DESCRIPTOR-UNSUPPORTED` and reject before strict VM execution.
+- Multi-rank arrays, incomplete static bounds, and owning element cleanup
+  shapes are not yet descriptor-driven; they remain on the existing runtime
+  path until a later slice promotes each with its own fixture.
 
 ### UDT Owning Field Cleanup Evidence
 
@@ -148,14 +143,10 @@ Implementation evidence:
 - The evidence records current runtime carrier observations for known field
   alias slots while keeping canonical cleanup descriptor ids and explicit VM
   cleanup-stack execution as later work.
-- `bd-tvmb.10` adds VM-consumption evidence for this evidence-only selected
-  row, keeping explicit cleanup-stack execution classified as missing.
-- `bd-embl.7` keeps this evidence-only row in the ledger, while executable UDT
-  layout, copy, drop, and cleanup-stack gaps emit
-  `UDT-LAYOUT-CLEANUP-UNSUPPORTED` and reject before strict VM execution.
-  String/BSTR slot and field cleanup/lifetime gaps similarly emit
-  `STRING-CLEANUP-UNSUPPORTED` until helper-temp cleanup and lifetime counter
-  evidence are package-owned.
+- Executable UDT layout, copy, drop, and cleanup-stack behavior, plus
+  String/BSTR helper-temp cleanup and lifetime counters, remain later work on
+  the existing runtime path until a later slice promotes each with its own
+  fixture.
 
 ## Call-Entry Descriptor Inputs
 
@@ -306,14 +297,14 @@ The first slice does not change:
 - string, Date, Currency, Boolean, UDT, object, array, or Variant-wide
   call-entry coercion;
 - dynamic array runtime SAFEARRAY bound behavior;
-- multi-rank array bound behavior, now rejected before strict VM execution
-  through `ARRAY-DESCRIPTOR-UNSUPPORTED` until promoted;
+- multi-rank array bound behavior, which remains on the existing runtime path
+  until promoted;
 - bounds-error routing;
 - fixed/static array allocation or element storage;
-- explicit cleanup stack execution, now rejected before strict VM execution for
-  UDT and String/BSTR owning descriptors until promoted;
-- cleanup lifetime counters, now rejected before strict VM execution for
-  String/BSTR descriptors until promoted;
+- explicit cleanup stack execution for UDT and String/BSTR owning descriptors,
+  which remains later work until promoted;
+- cleanup lifetime counters for String/BSTR descriptors, which remain later
+  work until promoted;
 - runtime slot storage representation;
 - `oxvba-jit` behavior.
 

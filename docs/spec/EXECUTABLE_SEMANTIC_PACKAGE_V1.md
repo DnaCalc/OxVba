@@ -13,6 +13,8 @@ Completion and VM strengthening references:
 [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md)
 Completion workset:
 [`../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md`](../worksets/WORKSET_2026-05-27_TYPED_VM_METADATA_BUNDLE_COMPLETION.md)
+Current VM direction:
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md)
 
 ## Purpose
 
@@ -25,6 +27,14 @@ a native IR, not Cranelift-specific, and not a second source language model. It
 is the compiled project/procedure artifact that preserves enough semantics for
 the VM to execute directly and for JIT/native lowerers to proceed without
 re-parsing source or reconstructing typing through a parallel path.
+
+There is one VM, and it runs this package directly. There is no execution gate
+and no supported/unsupported lane classification over the package: the VM is
+expected to run the full build-target feature set correctly without non-object
+memory leaks. Anything it runs incorrectly is a bug to fix, not a gated lane;
+object reference-cycle leaks are VBA-consistent and out of scope. The current
+direction is recorded in
+[`../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md`](../worksets/WORKSET_2026-05-29_SINGLE_PACKAGE_DESCRIPTOR_VM.md).
 
 Declared type metadata in this package follows
 [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md). In particular, Decimal is a
@@ -65,23 +75,19 @@ the same package, not a typed side compiler with different semantic inputs.
 
 The package completion route is tracked by
 [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md).
-Bytecode/VM consumption and evidence obligations are tracked by
+Bytecode semantics and VM evidence obligations are tracked by
 [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md).
 Machine-readable coercion, operator, call binding, lifecycle, cleanup, and
 object/member binding tables are tracked by
 [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md).
 The current error, cleanup, deopt, and host-policy seed rows are tracked by
 [`../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv`](../validation/VBA_ERROR_CLEANUP_DEOPT_HOST_POLICY_SEED_TABLE_V1.csv).
-Selected VM consumption and gap-classification rows are tracked by
-[`../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv`](../validation/VBA_VM_CONSUMPTION_EVIDENCE_SEED_TABLE_V1.csv).
-The typed metadata bundle implementation-entry handoff is recorded by
-[`../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md`](../validation/TYPED_VM_METADATA_BUNDLE_IMPLEMENTATION_ENTRY_AUDIT_2026-05-28.md).
 
-## Implementation-Entry Handoff
+## JIT Lowering Entry
 
-The typed VM metadata bundle handoff passes for JIT support-scaffolding entry.
-This means `ProcLoweringIr` may consume package-owned facts and must reject or
-classify absent facts. It is not a claim that executable JIT tracer lowering is
+`ProcLoweringIr` may consume package-owned facts and must reject or classify
+facts it cannot yet lower. This is the JIT's own lowering-readiness gate, not a
+VM execution gate. It is not a claim that executable JIT tracer lowering is
 ready for any row that the tracer matrix still marks as blocked by
 `metadata-missing`, `VM-limitation`, `test-shortcoming`, `interop-limitation`,
 or `oracle-required`.
@@ -109,11 +115,11 @@ explicit, versioned, and consumable by both VM and JIT.
 
 The current additive descriptor surface already includes first slot, signature,
 call-site, array, UDT, generic object, COM/native/export interop,
-error-routing, deopt-snapshot, host-policy, and VM-consumption descriptor
-evidence, plus runtime project evidence for VM-capable class/interface and COM
-`WithEvents` routes. Those facts are evidence and package scaffolding, not a
-claim that VM object/member, boundary, error, cleanup, or host-policy execution
-is fully descriptor-driven yet.
+error-routing, deopt-snapshot, and host-policy descriptor evidence, plus runtime
+project evidence for VM-capable class/interface and COM `WithEvents` routes.
+Those facts are evidence and package scaffolding, not a claim that VM
+object/member, boundary, error, cleanup, or host-policy execution is fully
+descriptor-driven yet.
 
 ## Required Package Contents
 
