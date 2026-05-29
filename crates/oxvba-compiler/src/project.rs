@@ -4944,12 +4944,27 @@ fn rewrite_internal_class_call_statement_without_parens(
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
     let lower = trimmed.to_ascii_lowercase();
-    if !lower.starts_with("call ") {
-        return Ok(line.to_string());
-    }
-    let payload = trimmed[5..].trim_start();
+    let (payload, bare) = if lower.starts_with("call ") {
+        (trimmed[5..].trim_start(), false)
+    } else {
+        // Bare statement-form member call (`obj.Method [args]` without `Call`).
+        (trimmed, true)
+    };
     if payload.is_empty() || payload.contains('(') {
         return Ok(line.to_string());
+    }
+    if bare {
+        // Only consider bare statements that look like a dotted member call with
+        // positional args and no assignment. The member-resolution gate below
+        // leaves non-member dotted statements (Debug.Print, Err.Raise, ...) and
+        // anything that does not resolve to an internal class member untouched.
+        if payload.contains('=') {
+            return Ok(line.to_string());
+        }
+        let first_tok_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
+        if !payload[..first_tok_end].contains('.') {
+            return Ok(line.to_string());
+        }
     }
     let callee_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
     let callee = payload[..callee_end].trim();
