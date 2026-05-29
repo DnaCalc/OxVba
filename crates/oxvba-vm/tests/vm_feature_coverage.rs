@@ -184,6 +184,20 @@ fn logical_operators_as_rvalues() {
 }
 
 #[test]
+fn type_suffix_numeric_literals() {
+    // VBA type-suffix literals: # Double, & Long.
+    let snap = run("Sub Main()\nDim d As Double\nDim n As Long\nd = 2# * 1.5\nn = 100&\nEnd Sub");
+    assert!(
+        snap.contains(&Variant::from_f64(3.0)),
+        "expected 2# * 1.5 = 3.0 in {snap:?}"
+    );
+    assert!(
+        snap.contains(&Variant::from_i32(100)),
+        "expected 100& = 100 in {snap:?}"
+    );
+}
+
+#[test]
 fn logical_operator_precedence_with_comparison() {
     // Comparison binds tighter than And/Or: `x > 0 And x < 10`.
     let snap = run(

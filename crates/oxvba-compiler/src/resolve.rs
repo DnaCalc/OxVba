@@ -4972,6 +4972,12 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         return Some(BoundExpr::IntConst(hex_val));
     }
 
+    // Type-suffix numeric literals: 2# (Double), 2! (Single), 2@ (Currency),
+    // 2% (Integer), 2& (Long), 2^ (LongLong).
+    if let Some(suffixed) = parse_typed_suffix_literal(expr) {
+        return Some(suffixed);
+    }
+
     // Bare parenthesized expression: `(expr)` — strip and recurse
     if expr.starts_with('(') && expr.ends_with(')') {
         let inner = &expr[1..expr.len() - 1];
@@ -5095,6 +5101,28 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     }
 
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
+}
+
+/// Parse a VBA type-suffix numeric literal (e.g. `2#`, `2.5!`, `100&`). Only
+/// fires when the text before the suffix is itself a valid number, so it does
+/// not interfere with the `&` concatenation operator (`x & 2`).
+fn parse_typed_suffix_literal(expr: &str) -> Option<BoundExpr> {
+    let last = *expr.as_bytes().last()?;
+    let body = expr[..expr.len() - 1].trim();
+    if body.is_empty() {
+        return None;
+    }
+    match last {
+        // Double / Single / Currency carriers — represented as f64 constants.
+        b'#' | b'!' | b'@' => body
+            .parse::<f64>()
+            .ok()
+            .map(|v| BoundExpr::FloatConst(v.to_bits())),
+        // Integer / Long / LongLong carriers — represented as i32 constants for
+        // the common literal range.
+        b'%' | b'&' | b'^' => body.parse::<i32>().ok().map(BoundExpr::IntConst),
+        _ => None,
+    }
 }
 
 /// Strip a leading `Not` logical-operator keyword (word-bounded), returning the
