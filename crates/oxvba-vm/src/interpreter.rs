@@ -3725,7 +3725,6 @@ pub struct Vm {
     rnd_state: u32,
     debug_runtime: Option<DebugRuntimeState>,
     last_package_identity_evidence: Option<VmPackageIdentityEvidence>,
-    descriptor_metadata_active: bool,
 }
 
 const FIN_MAX_ITERS: usize = 60;
@@ -3774,7 +3773,6 @@ impl Vm {
             rnd_state: 0x50000,
             debug_runtime: None,
             last_package_identity_evidence: None,
-            descriptor_metadata_active: false,
         }
     }
 
@@ -4180,7 +4178,7 @@ impl Vm {
     pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
         self.load_execution_package_metadata(package);
         let fastpaths = package_descriptor_fastpaths_enabled(package);
-        let result = self.execute_with_descriptor_metadata(package.bytecode, fastpaths, true);
+        let result = self.execute_with_descriptor_metadata(package.bytecode, fastpaths);
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
@@ -4190,14 +4188,10 @@ impl Vm {
         &mut self,
         bytecode: &Bytecode,
         descriptor_selected_fastpaths: bool,
-        descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
-        self.descriptor_metadata_active = descriptor_metadata_active;
         self.reset_execution_state(bytecode.slot_count, false);
-        let result = self.execute_loop(bytecode, 0, 0, descriptor_selected_fastpaths, false);
-        self.descriptor_metadata_active = false;
-        result
+        self.execute_loop(bytecode, 0, 0, descriptor_selected_fastpaths, false)
     }
 
     fn invoke_procedure_with_i32_args_and_descriptor_metadata(
@@ -4207,7 +4201,6 @@ impl Vm {
         arg_slots: &[usize],
         args: &[i32],
         descriptor_selected_fastpaths: bool,
-        descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
@@ -4224,16 +4217,13 @@ impl Vm {
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_i32_slot(*slot, *value)?;
         }
-        self.descriptor_metadata_active = descriptor_metadata_active;
-        let result = self.execute_loop(
+        self.execute_loop(
             bytecode,
             entry_pc,
             entry_pc,
             descriptor_selected_fastpaths,
             true,
-        );
-        self.descriptor_metadata_active = false;
-        result
+        )
     }
 
     pub fn invoke_package_procedure_with_i32_args(
@@ -4251,7 +4241,6 @@ impl Vm {
             arg_slots,
             args,
             fastpaths,
-            true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
@@ -4265,7 +4254,6 @@ impl Vm {
         arg_slots: &[usize],
         args: &[Variant],
         descriptor_selected_fastpaths: bool,
-        descriptor_metadata_active: bool,
     ) -> Result<(), String> {
         self.last_package_identity_evidence = None;
         if arg_slots.len() != args.len() {
@@ -4297,7 +4285,6 @@ impl Vm {
             self.write_variant_slot(*slot, value.clone())?;
         }
 
-        self.descriptor_metadata_active = descriptor_metadata_active;
         let result = self.execute_loop(
             bytecode,
             entry_pc,
@@ -4305,7 +4292,6 @@ impl Vm {
             descriptor_selected_fastpaths,
             true,
         );
-        self.descriptor_metadata_active = false;
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -4360,7 +4346,6 @@ impl Vm {
             arg_slots,
             args,
             fastpaths,
-            true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
@@ -4440,9 +4425,7 @@ impl Vm {
     ) -> Result<DebugRunResult, String> {
         self.load_execution_package_metadata(package);
         let fastpaths = package_descriptor_fastpaths_enabled(package);
-        self.descriptor_metadata_active = true;
         let result = self.resume_debug_session(package.bytecode, fastpaths);
-        self.descriptor_metadata_active = false;
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
@@ -4531,9 +4514,6 @@ impl Vm {
         call_pc: usize,
         target_pc: usize,
     ) -> Result<(), String> {
-        if !self.descriptor_metadata_active {
-            return Ok(());
-        }
         let actions = self.descriptor_driven_call_entry_coercions(call_pc, target_pc)?;
         for (slot, value) in actions {
             self.write_variant_slot(slot, value)?;
@@ -4619,9 +4599,6 @@ impl Vm {
         source_slot: usize,
         upper_bound: bool,
     ) -> Option<i32> {
-        if !self.descriptor_metadata_active {
-            return None;
-        }
         self.procedure_runtime_metadata
             .values()
             .flat_map(|metadata| metadata.array_shapes.iter())
@@ -8292,7 +8269,7 @@ impl Vm {
             self.registers.registers.get(rhs),
         ) && (l.is_null() || r.is_null())
         {
-            return false; // fall through to legacy_compare_values
+            return false; // bail to the general comparison handler
         }
         let (Some(lhs), Some(rhs)) = (self.fast_read_slot(lhs), self.fast_read_slot(rhs)) else {
             return false;
