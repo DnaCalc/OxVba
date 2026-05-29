@@ -153,119 +153,6 @@ pub struct VmExecutionPackage<'a> {
     pub package_origin: VmPackageOrigin,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VmPackageSupportConsumer {
-    VmExecution,
-    ProcLoweringIr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VmPackageSupportStatus {
-    Supported,
-    Unsupported,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum VmPackageSupportReasonKind {
-    MissingDescriptor,
-    UnsupportedDescriptor,
-    VmLimitation,
-    InteropLimitation,
-    OracleRequired,
-    TestBlocked,
-    HostPolicyUnsupported,
-    PackageDiagnostic,
-    IncompletePackage,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VmPackageSupportReason {
-    pub kind: VmPackageSupportReasonKind,
-    pub code: String,
-    pub message: String,
-    pub evidence_anchor: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VmPackageSupportReport {
-    pub consumer: VmPackageSupportConsumer,
-    pub status: VmPackageSupportStatus,
-    pub package_origin: VmPackageOrigin,
-    pub reasons: Vec<VmPackageSupportReason>,
-    pub warnings: Vec<VmPackageSupportReason>,
-}
-
-impl VmPackageSupportReport {
-    fn new(consumer: VmPackageSupportConsumer, package_origin: VmPackageOrigin) -> Self {
-        Self {
-            consumer,
-            status: VmPackageSupportStatus::Supported,
-            package_origin,
-            reasons: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn is_supported(&self) -> bool {
-        self.status == VmPackageSupportStatus::Supported && self.reasons.is_empty()
-    }
-
-    pub fn rejection_message(&self) -> String {
-        if self.is_supported() {
-            return "package support accepted".to_string();
-        }
-        let consumer = match self.consumer {
-            VmPackageSupportConsumer::VmExecution => "VM execution",
-            VmPackageSupportConsumer::ProcLoweringIr => "ProcLoweringIr",
-        };
-        let reasons = self
-            .reasons
-            .iter()
-            .map(|reason| format!("{}: {}", reason.code, reason.message))
-            .collect::<Vec<_>>()
-            .join("; ");
-        format!("{consumer} rejected executable semantic package: {reasons}")
-    }
-
-    fn push_reason(
-        &mut self,
-        kind: VmPackageSupportReasonKind,
-        code: impl Into<String>,
-        message: impl Into<String>,
-        evidence_anchor: Option<String>,
-    ) {
-        self.reasons.push(VmPackageSupportReason {
-            kind,
-            code: code.into(),
-            message: message.into(),
-            evidence_anchor,
-        });
-        self.status = VmPackageSupportStatus::Unsupported;
-    }
-
-    fn push_warning(
-        &mut self,
-        kind: VmPackageSupportReasonKind,
-        code: impl Into<String>,
-        message: impl Into<String>,
-        evidence_anchor: Option<String>,
-    ) {
-        self.warnings.push(VmPackageSupportReason {
-            kind,
-            code: code.into(),
-            message: message.into(),
-            evidence_anchor,
-        });
-    }
-
-    fn sort(&mut self) {
-        self.reasons
-            .sort_by(|left, right| (left.kind, &left.code).cmp(&(right.kind, &right.code)));
-        self.warnings
-            .sort_by(|left, right| (left.kind, &left.code).cmp(&(right.kind, &right.code)));
-    }
-}
-
 impl<'a> VmExecutionPackage<'a> {
     pub fn new(
         bytecode: &'a Bytecode,
@@ -296,51 +183,8 @@ impl<'a> VmExecutionPackage<'a> {
         }
     }
 
-    pub fn support_report_for_vm_execution(&self) -> VmPackageSupportReport {
-        package_support_report(self, VmPackageSupportConsumer::VmExecution)
-    }
-
-    pub fn support_report_for_proc_lowering_ir(&self) -> VmPackageSupportReport {
-        package_support_report(self, VmPackageSupportConsumer::ProcLoweringIr)
-    }
-
-    pub fn ensure_supported_for_vm_execution(&self) -> Result<(), String> {
-        let report = self.support_report_for_vm_execution();
-        if report.is_supported() {
-            Ok(())
-        } else {
-            Err(report.rejection_message())
-        }
-    }
-
     pub fn identity_evidence(&self) -> VmPackageIdentityEvidence {
         self.identity_evidence_with_runtime_slots(&[])
-    }
-
-    fn vm_consumption_evidence_for_support_report(&self) -> Vec<VmConsumptionEvidence> {
-        let interop_descriptor_evidence = collect_interop_descriptor_evidence(
-            self.bytecode,
-            self.export_inventory,
-            self.descriptor_inventory,
-        );
-        let lifecycle_evidence = collect_lifecycle_evidence(self.procedure_metadata, &[]);
-        let error_descriptor_evidence = collect_error_descriptor_evidence(self.bytecode);
-        let deopt_snapshot_evidence = collect_deopt_snapshot_evidence(
-            self.bytecode,
-            self.procedure_metadata,
-            &lifecycle_evidence,
-            self.project_context,
-        );
-        let host_policy_evidence = collect_host_policy_evidence(self.project_context);
-        collect_vm_consumption_evidence(VmConsumptionEvidenceSources {
-            bytecode: self.bytecode,
-            procedure_metadata: self.procedure_metadata,
-            lifecycle: &lifecycle_evidence,
-            interop: &interop_descriptor_evidence,
-            error: &error_descriptor_evidence,
-            deopt: &deopt_snapshot_evidence,
-            host_policy: &host_policy_evidence,
-        })
     }
 
     fn identity_evidence_with_runtime_slots(
@@ -358,6 +202,10 @@ impl<'a> VmExecutionPackage<'a> {
             &bytecode_digest,
             self.procedure_metadata,
             self.project_context,
+            self.export_inventory,
+            self.descriptor_inventory,
+            self.dynamic_object_routes,
+            self.com_withevents_routes,
         );
         let procedures = self
             .procedure_metadata
@@ -393,16 +241,6 @@ impl<'a> VmExecutionPackage<'a> {
             self.project_context,
         );
         let host_policy_evidence = collect_host_policy_evidence(self.project_context);
-        let vm_consumption_evidence =
-            collect_vm_consumption_evidence(VmConsumptionEvidenceSources {
-                bytecode: self.bytecode,
-                procedure_metadata: self.procedure_metadata,
-                lifecycle: &lifecycle_evidence,
-                interop: &interop_descriptor_evidence,
-                error: &error_descriptor_evidence,
-                deopt: &deopt_snapshot_evidence,
-                host_policy: &host_policy_evidence,
-            });
         let carrier_layout_evidence = collect_carrier_layout_evidence(self.procedure_metadata);
         let value_state_evidence = collect_value_state_evidence(self.procedure_metadata);
         let expression_semantics_evidence =
@@ -419,7 +257,6 @@ impl<'a> VmExecutionPackage<'a> {
             error: &error_descriptor_evidence,
             deopt: &deopt_snapshot_evidence,
             host_policy: &host_policy_evidence,
-            vm_consumption: &vm_consumption_evidence,
             package_route_object: &package_route_object_descriptor_evidence,
         };
         let descriptor_identities = collect_descriptor_identity_evidence(
@@ -444,7 +281,6 @@ impl<'a> VmExecutionPackage<'a> {
             error_descriptor_evidence,
             deopt_snapshot_evidence,
             host_policy_evidence,
-            vm_consumption_evidence,
             carrier_layout_evidence,
             value_state_evidence,
             expression_semantics_evidence,
@@ -452,9 +288,6 @@ impl<'a> VmExecutionPackage<'a> {
             coercion_evidence,
             name_binding_evidence,
             object_member_binding_evidence,
-            execution_selection_evidence: vec![
-                descriptor_selected_fastpath_execution(self).evidence,
-            ],
             descriptor_identities,
             project_context: self
                 .project_context
@@ -579,7 +412,6 @@ pub struct VmPackageIdentityEvidence {
     pub error_descriptor_evidence: Vec<VmErrorDescriptorEvidence>,
     pub deopt_snapshot_evidence: Vec<VmDeoptSnapshotEvidence>,
     pub host_policy_evidence: Vec<VmHostPolicyEvidence>,
-    pub vm_consumption_evidence: Vec<VmConsumptionEvidence>,
     pub carrier_layout_evidence: Vec<VmCarrierLayoutEvidence>,
     pub value_state_evidence: Vec<VmValueStateEvidence>,
     pub expression_semantics_evidence: Vec<VmSemanticDescriptorEvidence>,
@@ -587,7 +419,6 @@ pub struct VmPackageIdentityEvidence {
     pub coercion_evidence: Vec<VmSemanticDescriptorEvidence>,
     pub name_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
     pub object_member_binding_evidence: Vec<VmSemanticDescriptorEvidence>,
-    pub execution_selection_evidence: Vec<VmExecutionSelectionEvidence>,
     pub descriptor_identities: Vec<VmDescriptorIdentityEvidence>,
     pub project_context: Option<VmProjectContextEvidence>,
 }
@@ -824,26 +655,6 @@ pub struct VmHostPolicyEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VmConsumptionEvidence {
-    pub consumption_id: String,
-    pub consumption_descriptor_digest: String,
-    pub selection_id: String,
-    pub status: String,
-    pub descriptor_families: Vec<String>,
-    pub gap_classifications: Vec<String>,
-    pub observations: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VmExecutionSelectionEvidence {
-    pub selection_id: String,
-    pub selection_descriptor_digest: String,
-    pub status: String,
-    pub descriptor_families: Vec<String>,
-    pub observations: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmCarrierLayoutEvidence {
     pub procedure_name: String,
     pub carrier_key: String,
@@ -886,18 +697,7 @@ struct DescriptorIdentityEvidenceSources<'a> {
     error: &'a [VmErrorDescriptorEvidence],
     deopt: &'a [VmDeoptSnapshotEvidence],
     host_policy: &'a [VmHostPolicyEvidence],
-    vm_consumption: &'a [VmConsumptionEvidence],
     package_route_object: &'a [VmObjectDescriptorEvidence],
-}
-
-struct VmConsumptionEvidenceSources<'a> {
-    bytecode: &'a Bytecode,
-    procedure_metadata: &'a BTreeMap<String, ProcedureRuntimeMetadata>,
-    lifecycle: &'a [VmLifecycleEvidence],
-    interop: &'a [VmInteropDescriptorEvidence],
-    error: &'a [VmErrorDescriptorEvidence],
-    deopt: &'a [VmDeoptSnapshotEvidence],
-    host_policy: &'a [VmHostPolicyEvidence],
 }
 
 fn collect_descriptor_identity_evidence(
@@ -1080,16 +880,6 @@ fn collect_descriptor_identity_evidence(
                 family: DescriptorFamily::HostPolicy.registry_key().to_string(),
                 descriptor_id: evidence.host_policy_id.clone(),
                 descriptor_digest: evidence.host_policy_descriptor_digest.clone(),
-            }),
-    );
-    identities.extend(
-        sources
-            .vm_consumption
-            .iter()
-            .map(|evidence| VmDescriptorIdentityEvidence {
-                family: DescriptorFamily::VmConsumption.registry_key().to_string(),
-                descriptor_id: evidence.consumption_id.clone(),
-                descriptor_digest: evidence.consumption_descriptor_digest.clone(),
             }),
     );
     identities.extend(sources.package_route_object.iter().map(|evidence| {
@@ -2012,637 +1802,6 @@ fn collect_host_policy_evidence(
     evidence
 }
 
-fn collect_vm_consumption_evidence(
-    sources: VmConsumptionEvidenceSources<'_>,
-) -> Vec<VmConsumptionEvidence> {
-    let mut evidence = Vec::new();
-
-    if selected_call_entry_consumption_present(sources.procedure_metadata) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR06-CALL-BYVAL-COERCE-001",
-            "supported-selected",
-            descriptor_family_keys(&[
-                DescriptorFamily::ProcedureSignature,
-                DescriptorFamily::CallSite,
-                DescriptorFamily::Coercion,
-                DescriptorFamily::Slot,
-            ]),
-            vec!["metadata-missing:broader-call-entry-coercions".to_string()],
-            vec![
-                "selection=VMR06-CALL-BYVAL-COERCE-001".to_string(),
-                "package-execution=descriptor-driven-call-entry-coercion".to_string(),
-                "vm-path=Vm::apply_descriptor_driven_call_entry_bindings".to_string(),
-                "raw-bytecode-baseline=pre-vmr06-byval-copy-observes-source-carrier".to_string(),
-                "package-baseline=callee-parameter-declared-double".to_string(),
-                "fixture=VMR04_CALL_ARGUMENT_BINDING".to_string(),
-                "descriptor-absence-policy=leave-raw-vm-call-binding".to_string(),
-            ],
-        ));
-    }
-
-    let unsupported_call_entry_shapes =
-        unsupported_call_entry_coercion_shapes(sources.procedure_metadata);
-    if !unsupported_call_entry_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=CALL-BYVAL-COERCION-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "supported-selection=VMR06-CALL-BYVAL-COERCE-001".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_call_entry_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-call-entry-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "CALL-BYVAL-COERCION-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::ProcedureSignature,
-                DescriptorFamily::CallSite,
-                DescriptorFamily::Coercion,
-                DescriptorFamily::Slot,
-            ]),
-            vec!["metadata-missing:broader-call-entry-coercions".to_string()],
-            observations,
-        ));
-    }
-
-    if optional_missing_gap_present(sources.procedure_metadata) {
-        evidence.push(vm_consumption_evidence_row(
-            "CALL-OPTIONAL-MISSING-VARIANT",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::CallSite,
-                DescriptorFamily::ValueState,
-                DescriptorFamily::ProcedureSignature,
-            ]),
-            vec![
-                "VM-limitation:optional-missing-runtime-materialization".to_string(),
-                "oracle-required:IsMissing-VarType-Err-behavior".to_string(),
-            ],
-            vec![
-                "selection=CALL-OPTIONAL-MISSING-VARIANT".to_string(),
-                "package-execution=rejected-by-support-report".to_string(),
-                "vm-path=VmPackageSupportReport".to_string(),
-                "raw-bytecode-baseline=materialized-i32-default-current-gap".to_string(),
-                "package-baseline=OptionalDefaultValue::VariantMissingError448".to_string(),
-                "fixture=VMR04_CALL_ARGUMENT_BINDING".to_string(),
-                "required-before-broad-call-binding=runtime-missing-state-consumption".to_string(),
-                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-            ],
-        ));
-    }
-
-    if selected_static_array_bounds_consumption_present(
-        sources.bytecode,
-        sources.procedure_metadata,
-    ) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR06-ARRAY-STATIC-BOUNDS-001",
-            "supported-selected",
-            descriptor_family_keys(&[DescriptorFamily::ArrayShape, DescriptorFamily::Slot]),
-            vec!["VM-limitation:runtime-bounds-error-and-multirank".to_string()],
-            vec![
-                "selection=VMR06-ARRAY-STATIC-BOUNDS-001".to_string(),
-                "package-execution=descriptor-driven-static-array-bounds".to_string(),
-                "vm-path=Vm::descriptor_declared_array_bound_for_intrinsic".to_string(),
-                "raw-bytecode-baseline=runtime-error-13-on-unallocated-fixed-array-base"
-                    .to_string(),
-                "package-baseline=declared-array-shape-bounds".to_string(),
-                "fixture=VMR05_ARRAY_SHAPE_BOUNDS".to_string(),
-                "descriptor-absence-policy=leave-runtime-array-helper-error".to_string(),
-            ],
-        ));
-    }
-
-    let unsupported_array_shapes = unsupported_array_descriptor_shapes(sources.procedure_metadata);
-    if !unsupported_array_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=ARRAY-DESCRIPTOR-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "supported-selection=VMR06-ARRAY-STATIC-BOUNDS-001".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_array_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-array-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "ARRAY-DESCRIPTOR-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::ArrayShape,
-                DescriptorFamily::Slot,
-                DescriptorFamily::Lifecycle,
-            ]),
-            vec![
-                "VM-limitation:array-multirank-and-incomplete-bounds".to_string(),
-                "metadata-missing:array-element-cleanup-stack".to_string(),
-                "metadata-missing:array-bounds-error-routing-evidence".to_string(),
-            ],
-            observations,
-        ));
-    }
-
-    if selected_udt_cleanup_consumption_present(sources.lifecycle) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR06-UDT-OWNING-FIELD-CLEANUP-001",
-            "evidence-only-selected",
-            descriptor_family_keys(&[
-                DescriptorFamily::UdtType,
-                DescriptorFamily::Lifecycle,
-                DescriptorFamily::Slot,
-            ]),
-            vec!["metadata-missing:explicit-cleanup-stack-execution".to_string()],
-            vec![
-                "selection=VMR06-UDT-OWNING-FIELD-CLEANUP-001".to_string(),
-                "package-execution=lifecycle-evidence-consumes-udt-cleanup-descriptors".to_string(),
-                "vm-path=VmExecutionPackage::identity_evidence_with_runtime_slots".to_string(),
-                "raw-bytecode-baseline=value-behavior-unchanged".to_string(),
-                "package-baseline=cleanup-obligation-map-visible".to_string(),
-                "fixture=VMR02_UDT_FIELD_SLOTS|VMR05_UDT_DESCRIPTOR_MEMBERS".to_string(),
-                "descriptor-absence-policy=omit-selected-cleanup-evidence".to_string(),
-            ],
-        ));
-    }
-
-    let unsupported_udt_shapes = unsupported_udt_descriptor_shapes(sources.procedure_metadata);
-    if !unsupported_udt_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=UDT-LAYOUT-CLEANUP-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "supported-selection=VMR06-UDT-OWNING-FIELD-CLEANUP-001:evidence-only".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_udt_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-udt-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "UDT-LAYOUT-CLEANUP-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::UdtType,
-                DescriptorFamily::Slot,
-                DescriptorFamily::Lifecycle,
-            ]),
-            vec![
-                "metadata-missing:udt-byte-offset-layout".to_string(),
-                "metadata-missing:descriptor-driven-udt-copy-drop".to_string(),
-                "metadata-missing:explicit-cleanup-stack-execution".to_string(),
-            ],
-            observations,
-        ));
-    }
-
-    let unsupported_string_shapes = unsupported_string_cleanup_shapes(sources.procedure_metadata);
-    if !unsupported_string_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=STRING-CLEANUP-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_string_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-string-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "STRING-CLEANUP-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::Slot,
-                DescriptorFamily::Lifecycle,
-                DescriptorFamily::CarrierLayout,
-            ]),
-            vec![
-                "metadata-missing:string-helper-temp-cleanup".to_string(),
-                "metadata-missing:string-lifetime-counters".to_string(),
-            ],
-            observations,
-        ));
-    }
-
-    if selected_call_frame_deopt_consumption_present(sources.error, sources.deopt) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR08-CALL-FRAME-DEOPT-001",
-            "supported-selected",
-            descriptor_family_keys(&[
-                DescriptorFamily::ErrorRouting,
-                DescriptorFamily::DeoptSnapshot,
-                DescriptorFamily::ProcedureSignature,
-                DescriptorFamily::Slot,
-            ]),
-            vec!["metadata-missing:broader-error-resume-cleanup-maps".to_string()],
-            vec![
-                "selection=VMR08-CALL-FRAME-DEOPT-001".to_string(),
-                "package-execution=descriptor-visible-call-frame-safepoint".to_string(),
-                "vm-path=Vm::call_procedure_frame".to_string(),
-                "package-baseline=CallProc-error-frame-and-deopt-snapshot-descriptors-visible"
-                    .to_string(),
-                "supported-scope=call-frame-save-restore-and-slot-snapshot".to_string(),
-                "required-before-jit=broader-error-resume-cleanup-consumption".to_string(),
-                "descriptor-absence-policy=leave-raw-vm-call-frame".to_string(),
-            ],
-        ));
-    }
-
-    if selected_err_clear_consumption_present(sources.error) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR08-ERR-CLEAR-RESET-001",
-            "supported-selected",
-            descriptor_family_keys(&[DescriptorFamily::ErrorRouting]),
-            vec!["metadata-missing:broader-error-resume-cleanup-maps".to_string()],
-            vec![
-                "selection=VMR08-ERR-CLEAR-RESET-001".to_string(),
-                "package-execution=descriptor-visible-err-clear-reset".to_string(),
-                "vm-path=Vm::ClearErr-instruction".to_string(),
-                "package-baseline=Err.Clear-reset-descriptor-visible".to_string(),
-                "supported-scope=Err-number-description-source-last-error-pc-reset".to_string(),
-                "required-before-jit=broader-error-resume-cleanup-consumption".to_string(),
-                "descriptor-absence-policy=leave-raw-vm-err-clear".to_string(),
-            ],
-        ));
-    }
-
-    let unsupported_error_deopt_shapes =
-        unsupported_error_deopt_consumption_shapes(sources.error, sources.deopt);
-    if !unsupported_error_deopt_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=ERROR-CLEANUP-DEOPT-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "supported-selection=VMR08-CALL-FRAME-DEOPT-001".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_error_deopt_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-error-deopt-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "ERROR-CLEANUP-DEOPT-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::ErrorRouting,
-                DescriptorFamily::DeoptSnapshot,
-                DescriptorFamily::Lifecycle,
-            ]),
-            vec![
-                "test-shortcoming:broader-error-resume-maps".to_string(),
-                "oracle-required:active-handler-caller-unwind".to_string(),
-                "metadata-missing:explicit-cleanup-stack-execution".to_string(),
-            ],
-            observations,
-        ));
-    }
-
-    if selected_native_boundary_consumption_present(sources.interop) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR09-NATIVE-DESCRIPTOR-INVOKE-001",
-            "supported-selected",
-            descriptor_family_keys(&[DescriptorFamily::Interop, DescriptorFamily::HostPolicy]),
-            vec!["interop-limitation:broader-native-abi-result-cleanup".to_string()],
-            vec![
-                "selection=VMR09-NATIVE-DESCRIPTOR-INVOKE-001".to_string(),
-                "package-execution=descriptor-visible-native-declare-invoke".to_string(),
-                "vm-path=Vm::IntrinsicInvokeSymbolHost".to_string(),
-                "package-baseline=ExternalCallDescriptor-and-native-invoke-instruction-visible"
-                    .to_string(),
-                "supported-scope=descriptor-id-symbol-argument-slot-writeback-map".to_string(),
-                "required-before-jit=full-native-abi-result-writeback-cleanup-consumption"
-                    .to_string(),
-                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-            ],
-        ));
-    }
-
-    if selected_com_dispatch_selector_consumption_present(sources.interop) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR09-COM-DISPATCH-SELECTOR-001",
-            "supported-selected",
-            descriptor_family_keys(&[
-                DescriptorFamily::Interop,
-                DescriptorFamily::ObjectMemberBinding,
-                DescriptorFamily::HostPolicy,
-            ]),
-            vec!["interop-limitation:broader-com-boundary-abi".to_string()],
-            vec![
-                "selection=VMR09-COM-DISPATCH-SELECTOR-001".to_string(),
-                "package-execution=descriptor-visible-com-member-selector".to_string(),
-                "vm-path=Vm::IntrinsicDispatchInvokeHost".to_string(),
-                "package-baseline=ComMemberSelectorDescriptor-visible".to_string(),
-                "supported-scope=early-bound-dispatch-selector-and-arity".to_string(),
-                "required-before-jit=full-com-boundary-result-error-cleanup-consumption"
-                    .to_string(),
-                "descriptor-absence-policy=runtime-name-slot-remains-unsupported".to_string(),
-            ],
-        ));
-    }
-
-    if selected_exported_callable_consumption_present(sources.interop) {
-        evidence.push(vm_consumption_evidence_row(
-            "VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001",
-            "supported-selected",
-            descriptor_family_keys(&[
-                DescriptorFamily::Interop,
-                DescriptorFamily::ProcedureSignature,
-                DescriptorFamily::Slot,
-            ]),
-            vec!["interop-limitation:external-host-entry-boundary-adapter".to_string()],
-            vec![
-                "selection=VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001".to_string(),
-                "package-execution=descriptor-visible-exported-callable".to_string(),
-                "vm-path=Vm::invoke_package_procedure_with_variants".to_string(),
-                "package-baseline=ExportInventory-and-callable-descriptor-visible".to_string(),
-                "supported-scope=variant-positional-slots-return-slot-byref-writeback-map"
-                    .to_string(),
-                "required-before-jit=external-export-entry-abi-error-cleanup-consumption"
-                    .to_string(),
-                "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-            ],
-        ));
-    }
-
-    let unsupported_boundary_shapes = unsupported_boundary_consumption_shapes(sources.interop);
-    if !unsupported_boundary_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=BOUNDARY-CONSUMPTION-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "package-baseline=interop-descriptor-evidence-visible".to_string(),
-            "supported-selections=VMR09-NATIVE-DESCRIPTOR-INVOKE-001|VMR09-COM-DISPATCH-SELECTOR-001|VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-            "required-before-jit=boundary-result-writeback-cleanup-error-consumption".to_string(),
-        ];
-        observations.extend(
-            unsupported_boundary_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-boundary-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "BOUNDARY-CONSUMPTION-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[
-                DescriptorFamily::Interop,
-                DescriptorFamily::HostPolicy,
-                DescriptorFamily::ErrorRouting,
-                DescriptorFamily::DeoptSnapshot,
-                DescriptorFamily::Lifecycle,
-            ]),
-            vec![
-                "interop-limitation:boundary-abi-result-writeback-cleanup-execution".to_string(),
-                "metadata-missing:generalized-boundary-descriptors".to_string(),
-                "metadata-missing:boundary-error-policy-descriptors".to_string(),
-            ],
-            observations,
-        ));
-    }
-
-    let unsupported_host_policy_shapes =
-        unsupported_host_policy_consumption_shapes(sources.host_policy);
-    if !unsupported_host_policy_shapes.is_empty() {
-        let mut observations = vec![
-            "selection=HOST-POLICY-CONSUMPTION-UNSUPPORTED".to_string(),
-            "package-execution=rejected-by-support-report".to_string(),
-            "vm-path=VmPackageSupportReport".to_string(),
-            "package-baseline=host-capability-requirements-visible".to_string(),
-            "descriptor-absence-policy=reject-before-strict-vm-execution".to_string(),
-        ];
-        observations.extend(
-            unsupported_host_policy_shapes
-                .into_iter()
-                .map(|shape| format!("unsupported-host-policy-shape={shape}")),
-        );
-        evidence.push(vm_consumption_evidence_row(
-            "HOST-POLICY-CONSUMPTION-UNSUPPORTED",
-            "unsupported-rejected",
-            descriptor_family_keys(&[DescriptorFamily::HostPolicy]),
-            vec!["host-policy:behavior-driving-policy-evaluation-descriptors".to_string()],
-            observations,
-        ));
-    }
-
-    evidence.sort_by(|left, right| left.consumption_id.cmp(&right.consumption_id));
-    evidence
-}
-
-fn package_support_report(
-    package: &VmExecutionPackage<'_>,
-    consumer: VmPackageSupportConsumer,
-) -> VmPackageSupportReport {
-    let mut report = VmPackageSupportReport::new(consumer, package.package_origin);
-
-    if package.package_origin == VmPackageOrigin::InMemory {
-        report.push_reason(
-            VmPackageSupportReasonKind::IncompletePackage,
-            "PACKAGE-INMEMORY-NOT-STRICT",
-            "in-memory bytecode plus procedure metadata is not a strict executable semantic package",
-            None,
-        );
-    }
-    if package.procedure_metadata.is_empty() {
-        report.push_reason(
-            VmPackageSupportReasonKind::MissingDescriptor,
-            "PACKAGE-MISSING-PROCEDURE-METADATA",
-            "package does not contain procedure runtime metadata",
-            None,
-        );
-    }
-    if package.project_context.is_none() {
-        report.push_reason(
-            VmPackageSupportReasonKind::MissingDescriptor,
-            "PACKAGE-MISSING-PROJECT-CONTEXT",
-            "package does not contain project/import/host context facts",
-            None,
-        );
-    }
-    if package.descriptor_inventory.is_none() {
-        report.push_reason(
-            VmPackageSupportReasonKind::MissingDescriptor,
-            "PACKAGE-MISSING-DESCRIPTOR-INVENTORY",
-            "package does not contain descriptor inventory facts",
-            None,
-        );
-    }
-
-    if let Some(context) = package.project_context {
-        for diagnostic in &context.package_diagnostics {
-            report.push_reason(
-                VmPackageSupportReasonKind::PackageDiagnostic,
-                diagnostic.code.clone(),
-                format!(
-                    "{} package diagnostic for {}: {}",
-                    diagnostic.severity, diagnostic.fact_id, diagnostic.message
-                ),
-                Some(diagnostic.fact_id.clone()),
-            );
-        }
-        for gap in &context.gap_classifications {
-            let kind = support_reason_kind_from_gap(&gap.status, Some(&gap.area));
-            let code = format!("PROJECT-GAP:{}:{}", gap.area, gap.gap_id);
-            let message = format!("{}: {}", gap.status, gap.detail);
-            if consumer == VmPackageSupportConsumer::ProcLoweringIr {
-                report.push_reason(kind, code, message, Some(gap.gap_id.clone()));
-            } else {
-                report.push_warning(kind, code, message, Some(gap.gap_id.clone()));
-            }
-        }
-    }
-
-    let vm_consumption_evidence = package.vm_consumption_evidence_for_support_report();
-    for consumption in &vm_consumption_evidence {
-        add_consumption_support(&mut report, consumption);
-    }
-
-    report.sort();
-    report
-}
-
-fn add_consumption_support(
-    report: &mut VmPackageSupportReport,
-    consumption: &VmConsumptionEvidence,
-) {
-    let blocks_for_consumer = report.consumer == VmPackageSupportConsumer::ProcLoweringIr
-        || consumption.status == "unsupported-rejected";
-    if consumption.gap_classifications.is_empty() && blocks_for_consumer {
-        report.push_reason(
-            VmPackageSupportReasonKind::UnsupportedDescriptor,
-            format!("{}:{}", consumption.selection_id, consumption.status),
-            format!(
-                "VM consumption row {} is {} without a classified gap",
-                consumption.selection_id, consumption.status
-            ),
-            Some(consumption.selection_id.clone()),
-        );
-        return;
-    }
-
-    for gap in &consumption.gap_classifications {
-        let kind = support_reason_kind_from_gap(gap, Some(&consumption.selection_id));
-        let code = format!("{}:{gap}", consumption.selection_id);
-        let message = format!(
-            "VM consumption row {} is {} and carries gap {gap}",
-            consumption.selection_id, consumption.status
-        );
-        if blocks_for_consumer {
-            report.push_reason(kind, code, message, Some(consumption.selection_id.clone()));
-        } else {
-            report.push_warning(kind, code, message, Some(consumption.selection_id.clone()));
-        }
-    }
-}
-
-fn support_reason_kind_from_gap(gap: &str, context: Option<&str>) -> VmPackageSupportReasonKind {
-    let gap = gap.to_ascii_lowercase();
-    let context = context.unwrap_or_default().to_ascii_lowercase();
-    if context.contains("host-policy") || gap.contains("host-policy") {
-        VmPackageSupportReasonKind::HostPolicyUnsupported
-    } else if gap.starts_with("vm-limitation") || gap.contains("vm-limitation") {
-        VmPackageSupportReasonKind::VmLimitation
-    } else if gap.starts_with("interop-limitation") || gap.contains("interop-limitation") {
-        VmPackageSupportReasonKind::InteropLimitation
-    } else if gap.starts_with("oracle-required") || gap.contains("oracle-required") {
-        VmPackageSupportReasonKind::OracleRequired
-    } else if gap.starts_with("test-shortcoming") || gap.contains("test-shortcoming") {
-        VmPackageSupportReasonKind::TestBlocked
-    } else if gap.starts_with("metadata-missing") || gap.contains("metadata-missing") {
-        VmPackageSupportReasonKind::MissingDescriptor
-    } else {
-        VmPackageSupportReasonKind::UnsupportedDescriptor
-    }
-}
-
-struct DescriptorSelectedFastpathExecution {
-    enabled: bool,
-    evidence: VmExecutionSelectionEvidence,
-}
-
-fn descriptor_selected_fastpath_execution(
-    package: &VmExecutionPackage<'_>,
-) -> DescriptorSelectedFastpathExecution {
-    let (support_gate_allows, mut observations) = vm_execution_support_gate_observations(package);
-    let fastpath_descriptor_ids =
-        implementation_fastpath_operator_descriptor_ids(package.procedure_metadata);
-    let descriptor_count = fastpath_descriptor_ids.len();
-    let enabled = support_gate_allows && descriptor_count > 0;
-    let status = if enabled { "selected" } else { "not-selected" };
-    let selection_id = "descriptor-selected-fastpaths";
-    let descriptor_families = vec![
-        DescriptorFamily::OperatorSemantics
-            .registry_key()
-            .to_string(),
-        DescriptorFamily::VmConsumption.registry_key().to_string(),
-    ];
-
-    observations.push("selection-source=package-operator-semantics-descriptor".to_string());
-    observations.push(format!(
-        "implementation-fastpath-descriptor-count={descriptor_count}"
-    ));
-    observations.push(format!(
-        "descriptor-inventory={}",
-        if package.descriptor_inventory.is_some() {
-            "present"
-        } else {
-            "missing"
-        }
-    ));
-    observations.push(format!(
-        "optimized-paths={}",
-        if enabled { "enabled" } else { "disabled" }
-    ));
-    for descriptor_id in fastpath_descriptor_ids.iter().take(16) {
-        observations.push(format!("operator-descriptor-id={descriptor_id}"));
-    }
-
-    let descriptor_id = canonical_descriptor_id(DescriptorFamily::VmConsumption, [selection_id]);
-    let selection_descriptor_digest = descriptor_digest_from_fields(
-        DescriptorFamily::VmConsumption,
-        &descriptor_id,
-        [
-            ("selection_id", selection_id.to_string()),
-            ("status", status.to_string()),
-            ("descriptor_count", descriptor_count.to_string()),
-            ("descriptor_ids", fastpath_descriptor_ids.join("|")),
-            ("support_gate_allows", support_gate_allows.to_string()),
-        ],
-    );
-
-    DescriptorSelectedFastpathExecution {
-        enabled,
-        evidence: VmExecutionSelectionEvidence {
-            selection_id: selection_id.to_string(),
-            selection_descriptor_digest,
-            status: status.to_string(),
-            descriptor_families,
-            observations,
-        },
-    }
-}
-
-fn vm_execution_support_gate_observations(package: &VmExecutionPackage<'_>) -> (bool, Vec<String>) {
-    let report = package.support_report_for_vm_execution();
-    let allowed = report.is_supported();
-    let mut observations = vec![
-        format!("package-origin={:?}", package.package_origin),
-        format!(
-            "vm-support-report-gate={}",
-            if allowed { "accepted" } else { "blocked" }
-        ),
-    ];
-    for reason in &report.reasons {
-        observations.push(format!("support-blocker={}", reason.code));
-    }
-    (allowed, observations)
-}
-
 fn implementation_fastpath_operator_descriptor_ids(
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
 ) -> Vec<String> {
@@ -2663,548 +1822,8 @@ fn implementation_fastpath_operator_descriptor_ids(
     descriptor_ids
 }
 
-fn vm_consumption_evidence_row(
-    selection_id: &str,
-    status: &str,
-    descriptor_families: Vec<String>,
-    gap_classifications: Vec<String>,
-    mut observations: Vec<String>,
-) -> VmConsumptionEvidence {
-    observations.push(format!("status={status}"));
-    observations.push(format!(
-        "descriptor-families={}",
-        descriptor_families.join("+")
-    ));
-    for gap in &gap_classifications {
-        observations.push(format!("gap={gap}"));
-    }
-    let consumption_id =
-        canonical_descriptor_id(DescriptorFamily::VmConsumption, ["selection", selection_id]);
-    VmConsumptionEvidence {
-        consumption_id: consumption_id.clone(),
-        consumption_descriptor_digest: descriptor_digest_from_fields(
-            DescriptorFamily::VmConsumption,
-            &consumption_id,
-            [
-                ("selection_id", selection_id.to_string()),
-                ("status", status.to_string()),
-                ("descriptor_families", descriptor_families.join("|")),
-                ("gap_classifications", gap_classifications.join("|")),
-                ("observations", format!("{observations:#?}")),
-            ],
-        ),
-        selection_id: selection_id.to_string(),
-        status: status.to_string(),
-        descriptor_families,
-        gap_classifications,
-        observations,
-    }
-}
-
-fn descriptor_family_keys(families: &[DescriptorFamily]) -> Vec<String> {
-    families
-        .iter()
-        .map(|family| family.registry_key().to_string())
-        .collect()
-}
-
-fn selected_native_boundary_consumption_present(interop: &[VmInteropDescriptorEvidence]) -> bool {
-    let has_descriptor = interop.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=native-declare")
-    });
-    let has_invoke = interop.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=native-invoke")
-            && evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "abi-descriptor-source=ExternalCallDescriptor")
-    });
-    has_descriptor && has_invoke
-}
-
-fn selected_com_dispatch_selector_consumption_present(
-    interop: &[VmInteropDescriptorEvidence],
-) -> bool {
-    interop.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=com-dispatch-invoke")
-            && evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "selector-policy=descriptor-backed")
-    })
-}
-
-fn selected_exported_callable_consumption_present(interop: &[VmInteropDescriptorEvidence]) -> bool {
-    interop.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=exported-callable")
-            && evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "support=vmrunnablehosted")
-            && !evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "callable-descriptor=missing")
-    })
-}
-
-fn unsupported_boundary_consumption_shapes(interop: &[VmInteropDescriptorEvidence]) -> Vec<String> {
-    let mut shapes = Vec::new();
-    for evidence in interop {
-        let kind = observation_value(&evidence.observations, "kind=").unwrap_or("unknown");
-        if kind == "exported-callable"
-            && evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "support=vmrunnablehosted")
-            && !evidence
-                .observations
-                .iter()
-                .any(|observation| observation == "callable-descriptor=missing")
-        {
-            continue;
-        }
-        let boundary = observation_value(&evidence.observations, "boundary=").unwrap_or("unknown");
-        let unsupported = evidence
-            .observations
-            .iter()
-            .filter_map(|observation| {
-                observation
-                    .strip_prefix("unsupported=")
-                    .or_else(|| observation.strip_prefix("support=unsupported-"))
-                    .or_else(|| observation.strip_prefix("unsupported-shape-policy="))
-            })
-            .collect::<Vec<_>>();
-        let execution_policies = evidence
-            .observations
-            .iter()
-            .filter(|observation| {
-                observation.starts_with("cleanup-policy=")
-                    || observation.starts_with("error-policy=")
-                    || observation.starts_with("writeback-policy=")
-                    || observation.starts_with("hresult-")
-                    || observation.ends_with("=runtime-owned")
-            })
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        shapes.push(format!(
-            "interop={};kind={kind};boundary={boundary};unsupported={};execution-policy={}",
-            evidence.descriptor_id,
-            unsupported.join("|"),
-            execution_policies.join("|"),
-        ));
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn selected_call_frame_deopt_consumption_present(
-    error: &[VmErrorDescriptorEvidence],
-    deopt: &[VmDeoptSnapshotEvidence],
-) -> bool {
-    error.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=call-frame-error-state")
-    }) && deopt.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "operation=call-procedure")
-    })
-}
-
-fn selected_err_clear_consumption_present(error: &[VmErrorDescriptorEvidence]) -> bool {
-    error.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "kind=err-clear")
-    })
-}
-
-fn unsupported_error_deopt_consumption_shapes(
-    error: &[VmErrorDescriptorEvidence],
-    deopt: &[VmDeoptSnapshotEvidence],
-) -> Vec<String> {
-    let mut shapes = Vec::new();
-    for evidence in error {
-        if evidence.observations.iter().any(|observation| {
-            observation == "kind=call-frame-error-state" || observation == "kind=err-clear"
-        }) {
-            continue;
-        }
-        let kind = observation_value(&evidence.observations, "kind=").unwrap_or("unknown");
-        let pc = observation_value(&evidence.observations, "pc=").unwrap_or("unknown");
-        shapes.push(format!(
-            "error-scope={};pc={pc};kind={kind}",
-            evidence.error_scope_id
-        ));
-    }
-    for evidence in deopt {
-        if evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "operation=call-procedure")
-        {
-            continue;
-        }
-        let operation =
-            observation_value(&evidence.observations, "operation=").unwrap_or("unknown");
-        let pc = observation_value(&evidence.observations, "pc=").unwrap_or("unknown");
-        shapes.push(format!(
-            "deopt-safepoint={};pc={pc};operation={operation}",
-            evidence.safepoint_id
-        ));
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn unsupported_host_policy_consumption_shapes(host_policy: &[VmHostPolicyEvidence]) -> Vec<String> {
-    let mut shapes = host_policy
-        .iter()
-        .map(|evidence| {
-            let capability =
-                observation_value(&evidence.observations, "capability=").unwrap_or("unknown");
-            let source =
-                observation_value(&evidence.observations, "source-operation=").unwrap_or("unknown");
-            format!(
-                "host-policy={};capability={capability};source={source}",
-                evidence.host_policy_id
-            )
-        })
-        .collect::<Vec<_>>();
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn observation_value<'a>(observations: &'a [String], prefix: &str) -> Option<&'a str> {
-    observations
-        .iter()
-        .find_map(|observation| observation.strip_prefix(prefix))
-}
-
-fn selected_call_entry_consumption_present(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> bool {
-    procedure_metadata.values().any(|caller_metadata| {
-        caller_metadata.call_sites.iter().any(|call_site| {
-            let Some(target_pc) = call_site.target_entry_pc else {
-                return false;
-            };
-            let Some(target_metadata) = procedure_metadata
-                .values()
-                .find(|metadata| metadata.entry_pc == target_pc)
-            else {
-                return false;
-            };
-            call_site.arguments.iter().any(|argument| {
-                selected_long_to_double_byval_call_entry_slots(
-                    argument,
-                    caller_metadata,
-                    target_metadata,
-                )
-                .is_some()
-            })
-        })
-    })
-}
-
-fn unsupported_call_entry_coercion_shapes(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> Vec<String> {
-    let metadata_by_entry_pc = procedure_metadata
-        .values()
-        .map(|metadata| (metadata.entry_pc, metadata))
-        .collect::<BTreeMap<_, _>>();
-    let mut shapes = Vec::new();
-    for caller_metadata in procedure_metadata.values() {
-        for call_site in &caller_metadata.call_sites {
-            let Some(target_metadata) = call_site
-                .target_entry_pc
-                .and_then(|target_pc| metadata_by_entry_pc.get(&target_pc).copied())
-            else {
-                continue;
-            };
-            for argument in &call_site.arguments {
-                if selected_long_to_double_byval_call_entry_slots(
-                    argument,
-                    caller_metadata,
-                    target_metadata,
-                )
-                .is_some()
-                {
-                    continue;
-                }
-                let Some(shape) =
-                    call_entry_declared_coercion_shape(argument, caller_metadata, target_metadata)
-                else {
-                    continue;
-                };
-                shapes.push(format!(
-                    "caller={};target={};arg={};source-slot={};parameter-slot={};source={:?};target={:?};expr={:?};binding={:?}",
-                    caller_metadata.procedure_name.to_ascii_lowercase(),
-                    call_site.target_name.to_ascii_lowercase(),
-                    argument
-                        .parameter_name
-                        .as_deref()
-                        .unwrap_or("<unnamed>")
-                        .to_ascii_lowercase(),
-                    shape.source_slot,
-                    shape.parameter_slot,
-                    shape.source_declared_type,
-                    shape.target_declared_type,
-                    argument.expression_kind,
-                    argument.binding_kind
-                ));
-            }
-        }
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-struct CallEntryDeclaredCoercionShape {
-    source_slot: usize,
-    parameter_slot: usize,
-    source_declared_type: VbaTypeId,
-    target_declared_type: VbaTypeId,
-}
-
-fn call_entry_declared_coercion_shape(
-    argument: &ArgumentBindingDescriptor,
-    caller_metadata: &ProcedureRuntimeMetadata,
-    target_metadata: &ProcedureRuntimeMetadata,
-) -> Option<CallEntryDeclaredCoercionShape> {
-    if argument.binding_kind != ArgumentBindingKindDescriptor::ByValCopy {
-        return None;
-    }
-    let source_slot = argument.source_slot?;
-    let parameter_slot = argument.parameter_slot?;
-    let parameter = target_metadata
-        .signature
-        .parameters
-        .iter()
-        .find(|parameter| {
-            parameter.slot == Some(parameter_slot)
-                && argument
-                    .parameter_index
-                    .is_none_or(|index| parameter.index == index)
-        })?;
-    if parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal {
-        return None;
-    }
-    let caller_slot = caller_metadata
-        .slots
-        .iter()
-        .find(|slot| slot.slot == source_slot)?;
-    if caller_slot.declared_type == parameter.declared_type {
-        return None;
-    }
-    Some(CallEntryDeclaredCoercionShape {
-        source_slot,
-        parameter_slot,
-        source_declared_type: caller_slot.declared_type,
-        target_declared_type: parameter.declared_type,
-    })
-}
-
-fn optional_missing_gap_present(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> bool {
-    procedure_metadata.values().any(|metadata| {
-        metadata.call_sites.iter().any(|call_site| {
-            call_site.arguments.iter().any(|argument| {
-                matches!(
-                    argument.optional_default.as_ref(),
-                    Some(OptionalDefaultValue::VariantMissingError448)
-                )
-            })
-        })
-    })
-}
-
-fn selected_static_array_bounds_consumption_present(
-    bytecode: &Bytecode,
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> bool {
-    let has_bound_intrinsic = bytecode.instructions.iter().any(|instruction| {
-        matches!(
-            instruction,
-            Instruction::IntrinsicLBoundArray { .. } | Instruction::IntrinsicUBoundArray { .. }
-        )
-    });
-    if !has_bound_intrinsic {
-        return false;
-    }
-    procedure_metadata.values().any(|metadata| {
-        metadata.array_shapes.iter().any(|descriptor| {
-            descriptor.rank == 1
-                && descriptor.storage == ArrayStorageKind::StaticFixed
-                && descriptor.bounds.len() == 1
-                && descriptor.base_slot.is_some()
-        })
-    })
-}
-
-fn unsupported_array_descriptor_shapes(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> Vec<String> {
-    let mut shapes = Vec::new();
-    for metadata in procedure_metadata.values() {
-        for descriptor in &metadata.array_shapes {
-            let procedure_name = metadata.procedure_name.to_ascii_lowercase();
-            let array_name = descriptor.name.to_ascii_lowercase();
-            if descriptor.rank != 1 {
-                shapes.push(format!(
-                    "procedure={procedure_name};array={array_name};shape=multi-rank;rank={};storage={}",
-                    descriptor.rank,
-                    debug_token(&descriptor.storage)
-                ));
-            }
-            if descriptor.storage == ArrayStorageKind::StaticFixed
-                && descriptor.bounds.len() != descriptor.rank
-            {
-                shapes.push(format!(
-                    "procedure={procedure_name};array={array_name};shape=incomplete-static-bounds;rank={};bounds={}",
-                    descriptor.rank,
-                    descriptor.bounds.len()
-                ));
-            }
-            if array_carrier_needs_explicit_cleanup(&descriptor.element_carrier) {
-                shapes.push(format!(
-                    "procedure={procedure_name};array={array_name};shape=owning-element-cleanup;carrier={};storage={}",
-                    debug_token(&descriptor.element_carrier),
-                    debug_token(&descriptor.storage)
-                ));
-            }
-        }
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn unsupported_udt_descriptor_shapes(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> Vec<String> {
-    let mut shapes = Vec::new();
-    for metadata in procedure_metadata.values() {
-        for descriptor in &metadata.udt_types {
-            shapes.push(format!(
-                "procedure={};udt={};shape=layout-copy-drop;storage={};copy={};fields={};cleanup=bstr:{}:object:{}:safearray:{}:variant:{}",
-                metadata.procedure_name.to_ascii_lowercase(),
-                descriptor.type_name.to_ascii_lowercase(),
-                debug_token(&descriptor.storage),
-                debug_token(&descriptor.copy_semantics),
-                descriptor.fields.len(),
-                descriptor.cleanup.owns_bstr,
-                descriptor.cleanup.owns_object_ref,
-                descriptor.cleanup.owns_safearray,
-                descriptor.cleanup.owns_variant
-            ));
-            for field in &descriptor.fields {
-                if !field.array_bounds.is_empty() {
-                    shapes.push(format!(
-                        "procedure={};udt={};field={};shape=fixed-array-field;bounds={}",
-                        metadata.procedure_name.to_ascii_lowercase(),
-                        descriptor.type_name.to_ascii_lowercase(),
-                        field.name.to_ascii_lowercase(),
-                        field.array_bounds.len()
-                    ));
-                }
-                if array_carrier_needs_explicit_cleanup(&field.carrier) {
-                    shapes.push(format!(
-                        "procedure={};udt={};field={};shape=owning-field-cleanup;carrier={}",
-                        metadata.procedure_name.to_ascii_lowercase(),
-                        descriptor.type_name.to_ascii_lowercase(),
-                        field.name.to_ascii_lowercase(),
-                        debug_token(&field.carrier)
-                    ));
-                }
-            }
-        }
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn unsupported_string_cleanup_shapes(
-    procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-) -> Vec<String> {
-    let mut shapes = Vec::new();
-    for metadata in procedure_metadata.values() {
-        for slot in &metadata.slots {
-            if slot.carrier == RuntimeCarrierKind::BStr {
-                shapes.push(format!(
-                    "procedure={};slot={};shape=bstr-slot-cleanup;role={:?};declared={:?}",
-                    metadata.procedure_name.to_ascii_lowercase(),
-                    slot.name.to_ascii_lowercase(),
-                    slot.kind,
-                    slot.declared_type
-                ));
-            }
-        }
-        for descriptor in &metadata.udt_types {
-            for field in &descriptor.fields {
-                if field.carrier == RuntimeCarrierKind::BStr {
-                    let shape = if field.fixed_string_len.is_some() {
-                        "fixed-string-field-cleanup"
-                    } else {
-                        "variable-string-field-cleanup"
-                    };
-                    shapes.push(format!(
-                        "procedure={};udt={};field={};shape={shape}",
-                        metadata.procedure_name.to_ascii_lowercase(),
-                        descriptor.type_name.to_ascii_lowercase(),
-                        field.name.to_ascii_lowercase()
-                    ));
-                }
-            }
-        }
-    }
-    shapes.sort();
-    shapes.dedup();
-    shapes
-}
-
-fn array_carrier_needs_explicit_cleanup(carrier: &RuntimeCarrierKind) -> bool {
-    matches!(
-        carrier,
-        RuntimeCarrierKind::BStr
-            | RuntimeCarrierKind::ObjectRef
-            | RuntimeCarrierKind::SafeArray
-            | RuntimeCarrierKind::Variant
-            | RuntimeCarrierKind::UdtFields { .. }
-    )
-}
-
-fn selected_udt_cleanup_consumption_present(lifecycle: &[VmLifecycleEvidence]) -> bool {
-    lifecycle.iter().any(|evidence| {
-        evidence
-            .observations
-            .iter()
-            .any(|observation| observation == "source=UdtTypeDescriptor")
-    })
+fn package_descriptor_fastpaths_enabled(package: &VmExecutionPackage<'_>) -> bool {
+    !implementation_fastpath_operator_descriptor_ids(package.procedure_metadata).is_empty()
 }
 
 fn instruction_host_boundary_kind(
@@ -5011,6 +3630,10 @@ fn digest_package(
     bytecode_digest: &str,
     procedure_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
     project_context: Option<&BundleProjectContext>,
+    export_inventory: Option<&ExportInventory>,
+    descriptor_inventory: Option<&DescriptorInventory>,
+    dynamic_object_routes: Option<&[ProjectDynamicObjectRoute]>,
+    com_withevents_routes: Option<&[ProjectComWithEventsRoute]>,
 ) -> String {
     descriptor_digest_from_fields(
         DescriptorFamily::Package,
@@ -5019,6 +3642,16 @@ fn digest_package(
             ("bytecode_digest", bytecode_digest.to_string()),
             ("procedure_metadata", format!("{procedure_metadata:#?}")),
             ("project_context", format!("{project_context:#?}")),
+            ("export_inventory", format!("{export_inventory:#?}")),
+            ("descriptor_inventory", format!("{descriptor_inventory:#?}")),
+            (
+                "dynamic_object_routes",
+                format!("{dynamic_object_routes:#?}"),
+            ),
+            (
+                "com_withevents_routes",
+                format!("{com_withevents_routes:#?}"),
+            ),
         ],
     )
 }
@@ -5546,20 +4179,11 @@ impl Vm {
 
     pub fn execute_package(&mut self, package: &VmExecutionPackage<'_>) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let selection = descriptor_selected_fastpath_execution(package);
-        let result =
-            self.execute_with_descriptor_metadata(package.bytecode, selection.enabled, true);
+        let fastpaths = package_descriptor_fastpaths_enabled(package);
+        let result = self.execute_with_descriptor_metadata(package.bytecode, fastpaths, true);
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);
         result
-    }
-
-    pub fn execute_package_strict(
-        &mut self,
-        package: &VmExecutionPackage<'_>,
-    ) -> Result<(), String> {
-        package.ensure_supported_for_vm_execution()?;
-        self.execute_package(package)
     }
 
     fn execute_with_descriptor_metadata(
@@ -5620,13 +4244,13 @@ impl Vm {
         args: &[i32],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let selection = descriptor_selected_fastpath_execution(package);
+        let fastpaths = package_descriptor_fastpaths_enabled(package);
         let result = self.invoke_procedure_with_i32_args_and_descriptor_metadata(
             package.bytecode,
             entry_pc,
             arg_slots,
             args,
-            selection.enabled,
+            fastpaths,
             true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
@@ -5729,13 +4353,13 @@ impl Vm {
         args: &[Variant],
     ) -> Result<(), String> {
         self.load_execution_package_metadata(package);
-        let selection = descriptor_selected_fastpath_execution(package);
+        let fastpaths = package_descriptor_fastpaths_enabled(package);
         let result = self.invoke_procedure_with_variants_and_descriptor_metadata(
             package.bytecode,
             entry_pc,
             arg_slots,
             args,
-            selection.enabled,
+            fastpaths,
             true,
         );
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
@@ -5815,9 +4439,9 @@ impl Vm {
         package: &VmExecutionPackage<'_>,
     ) -> Result<DebugRunResult, String> {
         self.load_execution_package_metadata(package);
-        let selection = descriptor_selected_fastpath_execution(package);
+        let fastpaths = package_descriptor_fastpaths_enabled(package);
         self.descriptor_metadata_active = true;
-        let result = self.resume_debug_session(package.bytecode, selection.enabled);
+        let result = self.resume_debug_session(package.bytecode, fastpaths);
         self.descriptor_metadata_active = false;
         let identity_evidence = self.package_identity_evidence_with_runtime_context(package);
         self.last_package_identity_evidence = Some(identity_evidence);

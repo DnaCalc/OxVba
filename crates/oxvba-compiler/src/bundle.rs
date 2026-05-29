@@ -46,6 +46,22 @@ fn unsupported_bundle_version_message(version: u32) -> String {
     )
 }
 
+/// FNV-1a 64-bit offset basis (matches the dependency-free digest approach used
+/// for descriptor identity in `descriptor_identity.rs`).
+const BUNDLE_FNV1A64_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+/// FNV-1a 64-bit prime.
+const BUNDLE_FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// Deterministic FNV-1a 64-bit hash over arbitrary bytes.
+fn bundle_content_fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = BUNDLE_FNV1A64_OFFSET;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(BUNDLE_FNV1A64_PRIME);
+    }
+    hash
+}
+
 /// Snapshot of project manifest at compile time.
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 pub struct ManifestSnapshot {
@@ -1418,10 +1434,17 @@ impl OxBundle {
                 .unwrap_or_default(),
         };
 
+        // The bundle is the forward-execution package, not a source-reconstruction
+        // artifact: `CompiledProject::rewritten_source` and
+        // `CompiledProject::reference_visible_exports` are intentionally not serialized.
+        // Executable COM/export facts are NOT in that category and are populated here.
+        // Precise CLSID/instancing/description for registration are owned by the
+        // COM-server build layer; the bundle records the exposed/creatable classes and
+        // their default ProgID.
         let host_exports = compiled.host_exports.clone();
         let export_inventory = ExportInventory {
             host_exports,
-            com_class_exports: Vec::new(),
+            com_class_exports: com_class_exports_from_compiled_project(compiled, project_name),
         };
 
         Self {
@@ -1455,6 +1478,21 @@ impl OxBundle {
         }
     }
 
+    /// Stable content digest over the full serialized package payload.
+    ///
+    /// Suitable as a package/JIT cache key. Because it hashes the complete rkyv
+    /// payload, it covers every serialized section (bytecode, procedure
+    /// metadata, descriptor/export inventories, routes, project context) — two
+    /// packages that differ in any serialized fact produce different digests.
+    pub fn content_digest(&self) -> Result<String, String> {
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map_err(|e| format!("content_digest serialize: {e}"))?;
+        Ok(format!(
+            "oxb-fnv1a64:{:016x}",
+            bundle_content_fnv1a64(&payload)
+        ))
+    }
+
     /// Serialize the bundle to bytes with a header.
     ///
     /// Wire format (16-byte header, aligned for rkyv):
@@ -1462,7 +1500,7 @@ impl OxBundle {
     /// [4 bytes: magic "OXVB"]
     /// [4 bytes: format version, little-endian u32]
     /// [4 bytes: payload length, little-endian u32]
-    /// [4 bytes: reserved/padding (zeroes)]
+    /// [4 bytes: low 32 bits of the payload content digest (integrity check)]
     /// [N bytes: rkyv-serialized OxBundle payload]
     /// ```
     pub fn serialize_to_bytes(&self) -> Result<Vec<u8>, String> {
@@ -1472,12 +1510,13 @@ impl OxBundle {
 
         let payload_len =
             u32::try_from(payload.len()).map_err(|_| "bundle payload exceeds 4 GiB".to_string())?;
+        let digest_low = (bundle_content_fnv1a64(&payload) & 0xffff_ffff) as u32;
 
         let mut out = Vec::with_capacity(HEADER_SIZE + payload.len());
         out.extend_from_slice(&MAGIC);
         out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
         out.extend_from_slice(&payload_len.to_le_bytes());
-        out.extend_from_slice(&[0u8; 4]); // reserved padding
+        out.extend_from_slice(&digest_low.to_le_bytes()); // payload integrity digest
         out.extend_from_slice(&payload);
         Ok(out)
     }
@@ -1512,6 +1551,15 @@ impl OxBundle {
 
         let payload = &data[HEADER_SIZE..HEADER_SIZE + payload_len];
 
+        // Validate the payload integrity digest stored in the header.
+        let stored_digest_low = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
+        let actual_digest_low = (bundle_content_fnv1a64(payload) & 0xffff_ffff) as u32;
+        if actual_digest_low != stored_digest_low {
+            return Err(format!(
+                "bundle content digest mismatch (corrupt or tampered payload): header {stored_digest_low:#010x}, computed {actual_digest_low:#010x}"
+            ));
+        }
+
         // rkyv requires aligned data. Copy to an aligned buffer (16-byte alignment).
         let mut aligned: rkyv::util::AlignedVec<16> =
             rkyv::util::AlignedVec::with_capacity(payload.len());
@@ -1525,6 +1573,9 @@ impl OxBundle {
 
     fn validate_strict_package_sections(&self) -> Result<(), String> {
         let mut missing = Vec::new();
+        if self.bytecode.instructions.is_empty() {
+            missing.push("bytecode");
+        }
         if self.procedure_metadata.is_empty() {
             missing.push("procedure_metadata");
         }
@@ -1549,6 +1600,35 @@ impl OxBundle {
             ))
         }
     }
+}
+
+/// Record COM-exposed creatable class modules as export-inventory entries.
+///
+/// Matches `oxvba_project::validate::validate_com_class_exports`'s filter
+/// (exposed AND creatable). Precise CLSID/instancing/description are assigned by
+/// the COM-server build layer; here the default ProgID (`Project.Class`) is
+/// recorded and the rest left unset.
+fn com_class_exports_from_compiled_project(
+    compiled: &crate::project::CompiledProject,
+    project_name: &str,
+) -> Vec<ComClassExportEntry> {
+    compiled
+        .project_reflection
+        .modules
+        .iter()
+        .filter(|module| {
+            module.kind == ModuleKind::Class
+                && module.visibility.vb_exposed
+                && module.visibility.vb_creatable
+        })
+        .map(|module| ComClassExportEntry {
+            class_name: module.name.clone(),
+            prog_id: Some(format!("{project_name}.{}", module.name)),
+            instancing: None,
+            clsid: None,
+            description: None,
+        })
+        .collect()
 }
 
 fn descriptor_inventory_from_compiled_project(
@@ -2766,6 +2846,52 @@ mod tests {
         assert!(restored.export_inventory.is_some());
         assert!(restored.descriptor_inventory.is_some());
         assert!(restored.project_context.is_some());
+    }
+
+    #[test]
+    fn content_digest_is_stable_and_section_sensitive() {
+        let bundle = strict_sample_bundle();
+        let digest = bundle.content_digest().expect("digest");
+        // Deterministic: same bundle hashes identically.
+        assert_eq!(digest, bundle.content_digest().expect("digest"));
+        assert!(digest.starts_with("oxb-fnv1a64:"));
+
+        // Changing a serialized fact changes the digest.
+        let mut mutated = bundle.clone();
+        if let Some(metadata) = mutated.procedure_metadata.values_mut().next() {
+            metadata.entry_pc += 1;
+        }
+        assert_ne!(
+            digest,
+            mutated.content_digest().expect("digest"),
+            "content digest must change when a serialized section changes"
+        );
+    }
+
+    #[test]
+    fn tampered_payload_byte_is_rejected() {
+        let bundle = strict_sample_bundle();
+        let mut bytes = bundle.serialize_to_bytes().expect("serialize");
+        // Flip a byte inside the payload (past the 16-byte header).
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0xff;
+        let err = OxBundle::deserialize_from_bytes(&bytes)
+            .expect_err("tampered payload must be rejected");
+        assert!(
+            err.contains("content digest mismatch"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn bytecode_empty_bundle_rejects_strict_sections() {
+        let mut bundle = strict_sample_bundle();
+        bundle.bytecode.instructions.clear();
+        let err = bundle
+            .serialize_to_bytes()
+            .expect_err("empty bytecode must reject");
+        assert!(err.contains("BUNDLE-STRICT-MISSING-SECTIONS"), "got: {err}");
+        assert!(err.contains("bytecode"), "got: {err}");
     }
 
     #[test]
@@ -4032,5 +4158,90 @@ End Sub";
             host_add.descriptor_fingerprint
         );
         assert_eq!(restored_host_add.signature.parameters.len(), 2);
+    }
+
+    #[test]
+    fn from_compiled_project_populates_com_class_exports() {
+        let manifest = crate::project::ProjectManifest {
+            project_name: "ExportProj".to_string(),
+            project_kind: crate::project::ProjectKind::Library,
+            modules: vec![
+                crate::project::ModuleUnit {
+                    module_name: "Main".to_string(),
+                    module_kind: crate::project::ModuleKind::Procedural,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Main".to_string(),
+                        ..Default::default()
+                    },
+                    source: "Public Sub Go()\nEnd Sub".to_string(),
+                },
+                crate::project::ModuleUnit {
+                    module_name: "Widget".to_string(),
+                    module_kind: crate::project::ModuleKind::Class,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Widget".to_string(),
+                        vb_creatable: true,
+                        vb_exposed: true,
+                        ..Default::default()
+                    },
+                    source: "Public Function Add(a As Long, b As Long) As Long\nAdd = a + b\nEnd Function".to_string(),
+                },
+                crate::project::ModuleUnit {
+                    module_name: "Helper".to_string(),
+                    module_kind: crate::project::ModuleKind::Class,
+                    attributes: crate::project::ModuleAttributes {
+                        vb_name: "Helper".to_string(),
+                        vb_creatable: false,
+                        vb_exposed: true,
+                        ..Default::default()
+                    },
+                    source: "Public Sub Tick()\nEnd Sub".to_string(),
+                },
+            ],
+            references: vec![],
+            reference_projects: vec![],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = crate::compile_project(&manifest).expect("compile");
+        let bundle = OxBundle::from_compiled_project(&compiled, "ExportProj");
+        let exports = bundle
+            .export_inventory
+            .as_ref()
+            .expect("export inventory")
+            .com_class_exports
+            .clone();
+        // Only the exposed AND creatable class is exported.
+        assert_eq!(exports.len(), 1, "got: {exports:#?}");
+        assert_eq!(exports[0].class_name, "Widget");
+        assert_eq!(exports[0].prog_id.as_deref(), Some("ExportProj.Widget"));
+
+        // Round-trips through serialization.
+        let bytes = bundle.serialize_to_bytes().expect("serialize");
+        let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");
+        assert_eq!(
+            restored
+                .export_inventory
+                .as_ref()
+                .expect("restored export inventory")
+                .com_class_exports
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn compile_source_to_bundle_produces_a_strict_complete_package() {
+        let bundle = crate::compile_source_to_bundle("Sub Main()\nDim x As Long\nx = 1\nEnd Sub")
+            .expect("snippet compiles to bundle");
+        assert!(!bundle.bytecode.instructions.is_empty());
+        assert!(bundle.manifest_snapshot.is_some());
+        assert!(bundle.export_inventory.is_some());
+        assert!(bundle.descriptor_inventory.is_some());
+        assert!(bundle.project_context.is_some());
+        // Strict completeness: serialize_to_bytes runs validate_strict_package_sections.
+        bundle
+            .serialize_to_bytes()
+            .expect("complete in-memory package serializes as strict");
     }
 }

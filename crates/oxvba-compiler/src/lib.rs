@@ -94,6 +94,35 @@ pub fn compile_with_runtime_metadata(
     compile_with_runtime_metadata_object_locals(source, &std::collections::BTreeMap::new())
 }
 
+/// Compile a single source snippet into a complete, strict executable semantic
+/// package held in memory.
+///
+/// Wraps the snippet in a one-module project and runs the full project compile,
+/// so the resulting `OxBundle` carries the manifest, project context, descriptor
+/// inventory, and export inventory required by the strict package support gate —
+/// unlike the lightweight `compile_with_runtime_metadata` + `OxBundle::new` path,
+/// which produces an incomplete (non-strict) package. This is the in-memory
+/// counterpart of a serialized bundle: same strict completeness, no serialization.
+pub fn compile_source_to_bundle(source: &str) -> Result<OxBundle, ProjectCompileError> {
+    let manifest = ProjectManifest {
+        project_name: "InMemory".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module_unit_from_source(
+            "Main",
+            ModuleKind::Procedural,
+            source,
+        )?],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let compiled = compile_project(&manifest)?;
+    Ok(OxBundle::from_compiled_project(
+        &compiled,
+        &manifest.project_name,
+    ))
+}
+
 pub(crate) fn compile_with_runtime_metadata_object_locals(
     source: &str,
     forced_object_locals_by_proc: &std::collections::BTreeMap<

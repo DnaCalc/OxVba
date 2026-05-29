@@ -20,9 +20,7 @@ pub use interpreter::{
     DebugBreakpoint, DebugRunResult, DebugRuntimeSnapshot, DebugSourceLocation, DebugStop,
     DebugStopReason, Vm, VmArrayShapeEvidence, VmCallSiteDescriptorEvidence,
     VmCarrierLayoutEvidence, VmDescriptorIdentityEvidence, VmExecutionPackage,
-    VmExecutionSelectionEvidence, VmInteropDescriptorEvidence, VmLifecycleEvidence,
-    VmPackageIdentityEvidence, VmPackageOrigin, VmPackageSupportConsumer, VmPackageSupportReason,
-    VmPackageSupportReasonKind, VmPackageSupportReport, VmPackageSupportStatus,
+    VmInteropDescriptorEvidence, VmLifecycleEvidence, VmPackageIdentityEvidence, VmPackageOrigin,
     VmProcedureIdentityEvidence, VmProjectContextEvidence, VmSemanticDescriptorEvidence,
     VmSignatureCallEvidence, VmValueStateEvidence,
 };
@@ -101,12 +99,12 @@ mod tests {
     use oxvba_com::DynamicCallKind;
     use oxvba_compiler::{
         ArgumentBindingKindDescriptor, ArgumentSourceKindDescriptor, CallTargetKindDescriptor,
-        DeclareParamType, ModuleKind, OperatorFamilyDescriptor, OxBundle, ParameterPassingMode,
-        ParameterRole, ProcedureKindDescriptor, ProjectDynamicMemberKind,
-        ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectKind, ProjectManifest,
-        ProjectReference, ReferenceKind, ReferencedProjectManifest, ResolvedParameterMechanism,
-        RuntimeCarrierKind, SlotInitialState, SlotRole, SourceParameterMechanism, VbaTypeId,
-        compile_project, compile_with_runtime_metadata, module_unit_from_source,
+        DeclareParamType, ModuleKind, OxBundle, ParameterPassingMode, ParameterRole,
+        ProcedureKindDescriptor, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+        ProjectDynamicObjectRoute, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, ResolvedParameterMechanism, RuntimeCarrierKind,
+        SlotInitialState, SlotRole, SourceParameterMechanism, VbaTypeId, compile_project,
+        compile_with_runtime_metadata, module_unit_from_source,
     };
     use oxvba_runtime::{
         RuntimeInterfaceId, RuntimeMemberInvokeKind, RuntimeValueType, Variant, bstr::BStr,
@@ -115,8 +113,7 @@ mod tests {
     use oxvba_hal::model::native_host_profile;
 
     use super::{
-        Vm, VmExecutionPackage, VmPackageSupportConsumer, VmPackageSupportReasonKind,
-        default_host_services, execute_bundle_and_snapshot_variants,
+        Vm, VmExecutionPackage, default_host_services, execute_bundle_and_snapshot_variants,
         execute_package_and_snapshot_variants,
     };
 
@@ -227,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_package_support_report_accepts_current_project_bundle() {
+    fn package_digest_covers_descriptor_and_export_inventories() {
         let bundle = strict_project_bundle(
             "Attribute VB_Name = \"Main\"\n\
              Public Sub Main()\n\
@@ -235,582 +232,30 @@ mod tests {
              value = 42\n\
              End Sub",
         );
-        let package = VmExecutionPackage::from_bundle(&bundle);
+        let baseline = VmExecutionPackage::from_bundle(&bundle)
+            .identity_evidence()
+            .package_digest;
 
-        let report = package.support_report_for_vm_execution();
-        assert_eq!(report.consumer, VmPackageSupportConsumer::VmExecution);
-        assert!(
-            report.is_supported(),
-            "strict current package should be VM-supported: {report:#?}"
-        );
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|reason| reason.code.contains("VMR08-ERR-CLEAR-RESET-001")),
-            "selected Err.Clear/reset descriptor slice should remain VM-supported: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package_strict(&package)
-            .expect("strict package execution should accept complete project bundle");
-    }
-
-    #[test]
-    fn strict_package_support_report_rejects_incomplete_inmemory_package() {
-        let (bytecode, metadata) = compile_with_runtime_metadata(
-            "Public Sub Main()\nDim value As Long\nvalue = 1\nEnd Sub",
-        )
-        .expect("compile should succeed");
-        let package = VmExecutionPackage::new(&bytecode, &metadata);
-
-        let report = package.support_report_for_vm_execution();
-        let reason_codes = report
-            .reasons
-            .iter()
-            .map(|reason| reason.code.as_str())
-            .collect::<Vec<_>>();
-        assert!(!report.is_supported());
-        assert!(reason_codes.contains(&"PACKAGE-INMEMORY-NOT-STRICT"));
-        assert!(reason_codes.contains(&"PACKAGE-MISSING-PROJECT-CONTEXT"));
-        assert!(reason_codes.contains(&"PACKAGE-MISSING-DESCRIPTOR-INVENTORY"));
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject incomplete package");
-        assert!(err.contains("VM execution rejected executable semantic package"));
-    }
-
-    #[test]
-    fn strict_package_accepts_selected_call_entry_coercion() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim seed As Long\n\
-             Dim observedType As Long\n\
-             Dim byValCoerced As Double\n\
-             seed = 4\n\
-             byValCoerced = TakeDouble(seed, observedType)\n\
-             End Sub\n\
-             Public Function TakeDouble(ByVal value As Double, ByRef observedType As Long) As Double\n\
-             observedType = VarType(value)\n\
-             value = value + 0.5\n\
-             TakeDouble = value\n\
-             End Function",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(
-            report.is_supported(),
-            "selected call-entry coercion should remain VM-supported: {report:#?}"
-        );
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|reason| reason.code.contains("VMR06-CALL-BYVAL-COERCE-001")),
-            "selected call-entry residual broader-shape gap should remain a warning: {report:#?}"
-        );
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|reason| reason.code.contains("VMR08-CALL-FRAME-DEOPT-001")),
-            "selected call-frame deopt/error-frame descriptor slice should remain VM-supported: {report:#?}"
+        // Dropping the export inventory must change the package digest.
+        let mut without_exports = bundle.clone();
+        without_exports.export_inventory = None;
+        assert_ne!(
+            baseline,
+            VmExecutionPackage::from_bundle(&without_exports)
+                .identity_evidence()
+                .package_digest,
+            "package digest must cover the export inventory"
         );
 
-        let main_metadata = package
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("Main metadata should exist");
-        let slot_by_name = |name: &str| {
-            main_metadata
-                .slots
-                .iter()
-                .find(|slot| slot.name.eq_ignore_ascii_case(name))
-                .map(|slot| slot.slot)
-                .expect("slot should exist")
-        };
-        let observed_type_slot = slot_by_name("observedType");
-        let byval_coerced_slot = slot_by_name("byValCoerced");
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package_strict(&package)
-            .expect("strict package execution should accept selected call coercion");
-        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
-        assert_eq!(snapshot[observed_type_slot], Variant::from_i32(5));
-        assert_eq!(snapshot[byval_coerced_slot], Variant::from_f64(4.5));
-    }
-
-    #[test]
-    fn strict_package_rejects_optional_variant_missing_state_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim observed As Long\n\
-             observed = MaybeVariantTag()\n\
-             End Sub\n\
-             Public Function MaybeVariantTag(Optional ByVal value As Variant) As Long\n\
-             MaybeVariantTag = VarType(value)\n\
-             End Function",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report.reasons.iter().any(|reason| {
-                reason.kind == VmPackageSupportReasonKind::VmLimitation
-                    && reason.code.contains("CALL-OPTIONAL-MISSING-VARIANT")
-            }),
-            "Optional Variant missing-state gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject Optional Variant missing state");
-        assert!(err.contains("CALL-OPTIONAL-MISSING-VARIANT"));
-    }
-
-    #[test]
-    fn strict_package_rejects_unselected_call_entry_coercion_shape() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim value As Variant\n\
-             value = 5\n\
-             Call TakeLong(value)\n\
-             End Sub\n\
-             Public Sub TakeLong(ByVal value As Long)\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report.reasons.iter().any(|reason| {
-                reason.kind == VmPackageSupportReasonKind::MissingDescriptor
-                    && reason.code.contains("CALL-BYVAL-COERCION-UNSUPPORTED")
-            }),
-            "broader call-entry coercion should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject unselected call-entry coercion");
-        assert!(err.contains("CALL-BYVAL-COERCION-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_accepts_selected_static_array_bounds() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim fixed(1 To 3) As Long\n\
-             Dim fixedL As Long\n\
-             Dim fixedU As Long\n\
-             fixedL = LBound(fixed)\n\
-             fixedU = UBound(fixed)\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(
-            report.is_supported(),
-            "selected static array bounds should remain VM-supported: {report:#?}"
-        );
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|reason| reason.code.contains("VMR06-ARRAY-STATIC-BOUNDS-001")),
-            "selected static array residual bounds gap should remain a warning: {report:#?}"
-        );
-
-        let main_metadata = package
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("Main metadata should exist");
-        let slot_by_name = |name: &str| {
-            main_metadata
-                .slots
-                .iter()
-                .find(|slot| slot.name.eq_ignore_ascii_case(name))
-                .map(|slot| slot.slot)
-                .expect("slot should exist")
-        };
-        let fixed_l_slot = slot_by_name("fixedL");
-        let fixed_u_slot = slot_by_name("fixedU");
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package_strict(&package)
-            .expect("strict package execution should accept selected static array bounds");
-        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
-        assert_eq!(snapshot[fixed_l_slot], Variant::from_i32(1));
-        assert_eq!(snapshot[fixed_u_slot], Variant::from_i32(3));
-    }
-
-    #[test]
-    fn strict_package_rejects_multirank_array_descriptor_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim matrix(1 To 2, 3 To 4) As Long\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report
-                .reasons
-                .iter()
-                .any(|reason| reason.code.contains("ARRAY-DESCRIPTOR-UNSUPPORTED")),
-            "multi-rank array descriptor gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject multi-rank array descriptor gap");
-        assert!(err.contains("ARRAY-DESCRIPTOR-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_rejects_string_cleanup_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim label As String\n\
-             label = \"ok\"\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report
-                .reasons
-                .iter()
-                .any(|reason| reason.code.contains("STRING-CLEANUP-UNSUPPORTED")),
-            "string cleanup/lifetime gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject string cleanup gap");
-        assert!(err.contains("STRING-CLEANUP-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_rejects_udt_layout_cleanup_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Type Point\n\
-             X As Long\n\
-             Y As Long\n\
-             End Type\n\
-             Public Sub Main()\n\
-             Dim point As Point\n\
-             point.X = 1\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report
-                .reasons
-                .iter()
-                .any(|reason| reason.code.contains("UDT-LAYOUT-CLEANUP-UNSUPPORTED")),
-            "UDT layout/copy/drop gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject UDT layout/copy/drop gap");
-        assert!(err.contains("UDT-LAYOUT-CLEANUP-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_rejects_error_cleanup_deopt_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim beforeErr As Long\n\
-             Dim afterErr As Long\n\
-             Dim numerator As Long\n\
-             Dim denominator As Long\n\
-             Dim result As Double\n\
-             numerator = 10\n\
-             denominator = 0\n\
-             beforeErr = Err.Number\n\
-             On Error Resume Next\n\
-             result = numerator / denominator\n\
-             afterErr = Err.Number\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report
-                .reasons
-                .iter()
-                .any(|reason| reason.code.contains("ERROR-CLEANUP-DEOPT-UNSUPPORTED")),
-            "error/resume/deopt gap should reject strict VM execution: {report:#?}"
-        );
-
-        let main_metadata = package
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("Main metadata should exist");
-        let after_err_slot = main_metadata
-            .slots
-            .iter()
-            .find(|slot| slot.name.eq_ignore_ascii_case("afterErr"))
-            .map(|slot| slot.slot)
-            .expect("afterErr slot should exist");
-
-        let mut baseline_vm = Vm::new(default_host_services());
-        baseline_vm
-            .execute_package(&package)
-            .expect("non-strict package execution should retain current VM error behavior");
-        let baseline_snapshot = baseline_vm.snapshot_variants(package.bytecode.slot_count);
-        assert_eq!(baseline_snapshot[after_err_slot], Variant::from_i32(11));
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject error/resume/deopt gap");
-        assert!(err.contains("ERROR-CLEANUP-DEOPT-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_rejects_host_policy_consumption_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Debug.Print 1\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report.reasons.iter().any(|reason| {
-                reason.kind == VmPackageSupportReasonKind::HostPolicyUnsupported
-                    && reason.code.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED")
-            }),
-            "host-policy descriptor gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut baseline_vm = Vm::new(default_host_services());
-        baseline_vm
-            .execute_package(&package)
-            .expect("non-strict package execution should retain current host-policy runtime path");
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject host-policy descriptor gap");
-        assert!(err.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn strict_package_accepts_selected_exported_callable_descriptor() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim x As Variant\n\
-             Dim y As Variant\n\
-             x = 5\n\
-             y = JitExportedAdd(7, x)\n\
-             End Sub\n\
-             Public Function JitExportedAdd(ByVal lhs As Long, ByRef rhs As Variant) As Variant\n\
-             rhs = rhs + 1\n\
-             JitExportedAdd = lhs + rhs\n\
-             End Function",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(
-            report.is_supported(),
-            "selected exported callable descriptor should remain VM-supported: {report:#?}"
-        );
-        assert!(
-            report.warnings.iter().any(|reason| reason
-                .code
-                .contains("VMR09-EXPORTED-CALLABLE-DESCRIPTOR-001")),
-            "selected exported callable descriptor row should remain a VM warning: {report:#?}"
-        );
-
-        let main_metadata = package
-            .procedure_metadata
-            .values()
-            .find(|metadata| metadata.procedure_name.eq_ignore_ascii_case("Main"))
-            .expect("Main metadata should exist");
-        let y_slot = main_metadata
-            .slots
-            .iter()
-            .find(|slot| slot.name.eq_ignore_ascii_case("y"))
-            .map(|slot| slot.slot)
-            .expect("y slot should exist");
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package_strict(&package).expect(
-            "strict package execution should accept selected exported callable descriptor metadata",
-        );
-        let snapshot = vm.snapshot_variants(package.bytecode.slot_count);
-        assert_eq!(snapshot[y_slot], Variant::from_i32(13));
-    }
-
-    #[test]
-    fn strict_package_rejects_com_boundary_consumption_gap() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim obj As Object\n\
-             Set obj = CreateObject(\"Scripting.Dictionary\")\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        let report = package.support_report_for_vm_execution();
-        assert!(!report.is_supported());
-        assert!(
-            report.reasons.iter().any(|reason| {
-                reason.kind == VmPackageSupportReasonKind::InteropLimitation
-                    && reason.code.contains("BOUNDARY-CONSUMPTION-UNSUPPORTED")
-            }),
-            "COM boundary descriptor gap should reject strict VM execution: {report:#?}"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        let err = vm
-            .execute_package_strict(&package)
-            .expect_err("strict VM gate should reject COM boundary descriptor gap");
-        assert!(err.contains("BOUNDARY-CONSUMPTION-UNSUPPORTED"));
-    }
-
-    #[test]
-    fn package_execution_selects_optimized_paths_from_operator_descriptors() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Dim value As Long\n\
-             value = 1\n\
-             value = value + 2\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-        assert!(
-            package.procedure_metadata.values().any(|metadata| metadata
-                .operator_semantics
-                .iter()
-                .any(|descriptor| descriptor.family
-                    == OperatorFamilyDescriptor::ImplementationFastPath)),
-            "strict package should carry an implementation-fastpath operator descriptor"
-        );
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package(&package)
-            .expect("descriptor-selected package execution should succeed");
-        let evidence = vm
-            .package_identity_evidence()
-            .expect("package identity evidence should be recorded");
-        let selection = evidence
-            .execution_selection_evidence
-            .iter()
-            .find(|selection| selection.selection_id == "descriptor-selected-fastpaths")
-            .expect("descriptor-selected fastpath evidence should be present");
-
-        assert_eq!(selection.status, "selected");
-        assert!(
-            selection
-                .selection_descriptor_digest
-                .starts_with("fnv1a64:"),
-            "selection evidence should have a stable digest"
-        );
-        assert!(
-            selection
-                .descriptor_families
-                .contains(&"operator-semantics".to_string())
-        );
-        assert!(
-            selection
-                .observations
-                .contains(&"vm-support-report-gate=accepted".to_string())
-        );
-        assert!(
-            selection
-                .observations
-                .contains(&"optimized-paths=enabled".to_string())
-        );
-    }
-
-    #[test]
-    fn incomplete_package_does_not_select_optimized_paths_from_metadata_only() {
-        let (bytecode, metadata) = compile_with_runtime_metadata(
-            "Public Sub Main()\n\
-             Dim value As Long\n\
-             value = 1\n\
-             value = value + 2\n\
-             End Sub",
-        )
-        .expect("compile should succeed");
-        let bundle = OxBundle::new(bytecode, metadata);
-        let package = VmExecutionPackage::from_bundle(&bundle);
-
-        let mut vm = Vm::new(default_host_services());
-        vm.execute_package(&package)
-            .expect("non-strict package execution should still use baseline VM path");
-        let evidence = vm
-            .package_identity_evidence()
-            .expect("package identity evidence should be recorded");
-        let selection = evidence
-            .execution_selection_evidence
-            .iter()
-            .find(|selection| selection.selection_id == "descriptor-selected-fastpaths")
-            .expect("descriptor-selected fastpath evidence should be present");
-
-        assert_eq!(selection.status, "not-selected");
-        assert!(
-            selection
-                .observations
-                .contains(&"vm-support-report-gate=blocked".to_string())
-        );
-        assert!(
-            selection
-                .observations
-                .contains(&"optimized-paths=disabled".to_string())
-        );
-    }
-
-    #[test]
-    fn proc_lowering_support_report_blocks_unsupported_host_policy_consumption() {
-        let bundle = strict_project_bundle(
-            "Attribute VB_Name = \"Main\"\n\
-             Public Sub Main()\n\
-             Debug.Print 1\n\
-             End Sub",
-        );
-        let package = VmExecutionPackage::from_bundle(&bundle);
-
-        let report = package.support_report_for_proc_lowering_ir();
-        assert_eq!(report.consumer, VmPackageSupportConsumer::ProcLoweringIr);
-        assert!(!report.is_supported());
-        assert!(
-            report.reasons.iter().any(|reason| reason.kind
-                == VmPackageSupportReasonKind::HostPolicyUnsupported
-                && reason.code.contains("HOST-POLICY-CONSUMPTION-UNSUPPORTED")),
-            "ProcLoweringIr support report should block unsupported host-policy consumption: {report:#?}"
+        // Dropping the descriptor inventory must change the package digest.
+        let mut without_descriptors = bundle.clone();
+        without_descriptors.descriptor_inventory = None;
+        assert_ne!(
+            baseline,
+            VmExecutionPackage::from_bundle(&without_descriptors)
+                .identity_evidence()
+                .package_digest,
+            "package digest must cover the descriptor inventory"
         );
     }
 

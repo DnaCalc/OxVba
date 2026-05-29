@@ -174,6 +174,19 @@ digest, all facts needed to execute and lower a project:
   unsupported/deopt diagnostic. It must not silently choose a different
   semantic path.
 - Package digests must cover every fact that can change execution or lowering.
+  The bundle exposes a content digest (`OxBundle::content_digest`) over the full
+  serialized payload as the package/JIT cache key, and a payload integrity digest
+  embedded in the serialized header.
+
+## Forward-Execution Package: Non-Round-Tripped Fields
+
+The bundle is the forward execution/JIT input, not a source-reconstruction artifact.
+Pure source-reconstruction facts are intentionally not serialized and are not
+recoverable from a bundle: `CompiledProject::rewritten_source` and
+`CompiledProject::reference_visible_exports`. This is a deliberate fidelity boundary,
+not a loss of executable facts. Executable COM/native/export facts (descriptor and
+export inventories, COM class exports, routes) are **not** in this category and must
+be present and round-tripped.
 
 ## VBA Error Semantics Boundary
 
