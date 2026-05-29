@@ -15,7 +15,15 @@ pub struct BoundRuntimeInvokePlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnboundRuntimeInvokePlan {
     MemberSpec(ComMemberSpec),
-    DirectPropertyGet { dispid: ComMemberToken },
+    /// No static member metadata is available for this token (a late-bound call, or an
+    /// early-bound call on a runtime-bound result object whose type the registry cannot
+    /// re-resolve). The dispid is trusted from the caller; the invoke kind is unknown, so
+    /// the adapter issues a combined `DISPATCH_METHOD | DISPATCH_PROPERTYGET` per the OLE
+    /// Automation convention and lets the server pick. Strict servers (DAO/Jet) reject a
+    /// method invoked as a bare property-get, so the combined flag is required, not optional.
+    DirectGetOrCall {
+        dispid: ComMemberToken,
+    },
 }
 
 pub fn legacy_runtime_arg_values(args: &[ComInvokeArg]) -> Option<Vec<i32>> {
@@ -108,7 +116,7 @@ pub fn plan_unbound_runtime_invoke(
     }
     // Named args without metadata are allowed to pass through. The Windows adapter
     // resolves named arg DISPIDs at runtime via GetIDsOfNames on the IDispatch interface.
-    Ok(UnboundRuntimeInvokePlan::DirectPropertyGet { dispid: member })
+    Ok(UnboundRuntimeInvokePlan::DirectGetOrCall { dispid: member })
 }
 
 pub fn plan_bound_runtime_invoke(
@@ -220,10 +228,10 @@ mod tests {
         )
         .expect("named unbound dispatch should pass through for runtime resolution");
         match plan {
-            UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => {
+            UnboundRuntimeInvokePlan::DirectGetOrCall { dispid } => {
                 assert_eq!(dispid.raw(), 9);
             }
-            _ => panic!("expected DirectPropertyGet plan"),
+            _ => panic!("expected DirectGetOrCall plan"),
         }
     }
 

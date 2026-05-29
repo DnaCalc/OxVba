@@ -213,6 +213,26 @@ function Find-AdoTypelib([string]$FileName) {
     }
     return $null
 }
+function Find-AcedaoTypelib {
+    # The ACE DAO typelib (ACEDAO.DLL) ships with the Access Database Engine. Click-to-Run
+    # Office nests it under `root\OfficeNN`; MSI installs use `OfficeNN` or the shared dir.
+    $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:CommonProgramFiles, ${env:CommonProgramFiles(x86)}) | Where-Object { $_ }
+    $relatives = @()
+    foreach ($ver in @('16', '15', '14')) {
+        $relatives += "Microsoft Office/root/Office$ver/ACEDAO.DLL"
+        $relatives += "Microsoft Office/Office$ver/ACEDAO.DLL"
+    }
+    foreach ($ver in @('OFFICE16', 'OFFICE15', 'OFFICE14')) {
+        $relatives += "Microsoft Shared/$ver/ACEDAO.DLL"
+    }
+    foreach ($root in $roots) {
+        foreach ($rel in $relatives) {
+            $candidate = Join-Path $root $rel
+            if (Test-Path -LiteralPath $candidate) { return (Resolve-Path -LiteralPath $candidate).Path }
+        }
+    }
+    return $null
+}
 Write-Utf8NoBom (Join-Path $accessProj 'AccessJetMain.bas') @"
 Public Sub Main()
 Dim catalog
@@ -378,6 +398,126 @@ End Sub
     }
 }
 
+# 4b. Access/ACE/Jet database via the DAO object model (Microsoft Access Database Engine).
+# DAO objects are dispinterfaces obtained from method calls (not coclasses), and the DAO
+# DBEngine CLSID carries no TypeLib registry association, so this exercises interface-scoped
+# binding plus the get-or-call dispatch path that strict Jet requires. Mirrors the ADO trio:
+# late-bound, mixed (typed methods + DispatchInvoke field access), and strict early binding.
+$daoPreflightOk = $true
+try {
+    $null = New-Object -ComObject 'DAO.DBEngine.120'
+} catch {
+    $daoPreflightOk = $false
+    Add-Result -Name 'access_jet_dao_com_preflight' -Category 'access-jet-dao' -Status 'blocked' -ExitCode 1 -StdoutPath $null -StderrPath $null -Notes "DAO.DBEngine.120 COM preflight failed: $($_.Exception.Message)"
+}
+$acedaoTypelib = Find-AcedaoTypelib
+if ($daoPreflightOk -and -not $acedaoTypelib) {
+    Add-Result -Name 'access_jet_dao_typelib_probe' -Category 'access-jet-dao' -Status 'blocked' -ExitCode 1 -StdoutPath $null -StderrPath $null -Notes 'ACEDAO.DLL typelib was not found, so the early-bound DAO passes could not be run.'
+}
+if ($daoPreflightOk -and $acedaoTypelib) {
+    function Write-DaoProject {
+        param([string]$ProjectDir, [string]$ProjectName, [string]$Source)
+        New-Item -ItemType Directory -Force -Path $ProjectDir | Out-Null
+        Write-Utf8NoBom (Join-Path $ProjectDir 'AccessJetDaoMain.bas') $Source
+        $basproj = Join-Path $ProjectDir "$ProjectName.basproj"
+        Write-Utf8NoBom $basproj @"
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>$ProjectName</ProjectName>
+    <EntryPoint>AccessJetDaoMain.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="AccessJetDaoMain.bas" />
+    <COMReference Include="DAO">
+      <ImportLib>$acedaoTypelib</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>
+"@
+        return $basproj
+    }
+
+    # Late-bound DAO: untyped variables, CreateObject, DispatchInvoke by member name.
+    $daoLateDir = Join-Path $srcDir 'access_jet_dao_late_bound_project'
+    $daoLateDb = Join-Path $artifactDir 'ShowcaseJetDaoLate.accdb'
+    $daoLateBasproj = Write-DaoProject -ProjectDir $daoLateDir -ProjectName 'AccessJetDaoLateBound' -Source @"
+Public Sub Main()
+Dim engine
+Dim db
+Dim rs
+Dim nameValue
+Dim scoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = DispatchInvoke(engine, "CreateDatabase", "$daoLateDb", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call DispatchInvoke(db, "Execute", "CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)")
+Call DispatchInvoke(db, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)")
+Call DispatchInvoke(db, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)")
+Set rs = DispatchInvoke(db, "OpenRecordset", "SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2")
+nameValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Name"), "Value")
+scoreValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Score"), "Value")
+End Sub
+"@
+    if (Test-Path $daoLateDb) { Remove-Item -Force $daoLateDb }
+    Invoke-Captured -Name 'access_jet_dao_late_bound_create_insert_query' -Category 'access-jet-dao' -Exe $cli -ArgList @('run-project', $daoLateBasproj, '--dump-values', '--runtime-class', 'windows-stdio', '--allow-com-activation', 'true', '--allow-filesystem-mutation', 'true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $daoLateDb); databaseBytes = if (Test-Path $daoLateDb) { (Get-Item $daoLateDb).Length } else { 0 } } } -Notes 'Late-bound DAO: CreateObject("DAO.DBEngine.120") plus DispatchInvoke create the Access/ACE .accdb via the DAO object model, insert two rows, open a recordset, and read Grace / 99 back through dynamic name dispatch.'
+
+    # Mixed DAO: typed declarations early-bind the DBEngine/Database methods; recordset field
+    # access stays on DispatchInvoke.
+    $daoMixedDir = Join-Path $srcDir 'access_jet_dao_mixed_project'
+    $daoMixedDb = Join-Path $artifactDir 'ShowcaseJetDaoMixed.accdb'
+    $daoMixedBasproj = Write-DaoProject -ProjectDir $daoMixedDir -ProjectName 'AccessJetDaoMixed' -Source @"
+Public Sub Main()
+Dim engine As DAO.DBEngine
+Dim db As DAO.Database
+Dim rs As DAO.Recordset
+Dim nameValue
+Dim scoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = engine.CreateDatabase("$daoMixedDb", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call db.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 128)
+Set rs = db.OpenRecordset("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 4, 0, 4)
+nameValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Name"), "Value")
+scoreValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Score"), "Value")
+End Sub
+"@
+    if (Test-Path $daoMixedDb) { Remove-Item -Force $daoMixedDb }
+    Invoke-Captured -Name 'access_jet_dao_mixed_create_insert_query' -Category 'access-jet-dao' -Exe $cli -ArgList @('run-project', $daoMixedBasproj, '--dump-values', '--runtime-class', 'windows-stdio', '--allow-com-activation', 'true', '--allow-filesystem-mutation', 'true') -ExpectStdoutContains 'string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $daoMixedDb); databaseBytes = if (Test-Path $daoMixedDb) { (Get-Item $daoMixedDb).Length } else { 0 } } } -Notes 'Mixed DAO: typed Dim ... As DAO.DBEngine/Database/Recordset early-bind CreateDatabase/Execute/OpenRecordset against the scoped DAO interfaces, while the recordset Fields("...").Value chain stays on DispatchInvoke.'
+
+    # Strict early-bound DAO: no DispatchInvoke in the source. DAO.DBEngine/Database/Recordset/Field
+    # are imported types; rs.Fields("Name").Value and rs!Name/rs!Score are exercised.
+    $daoStrictDir = Join-Path $srcDir 'access_jet_dao_strict_early_bound_project'
+    $daoStrictDb = Join-Path $artifactDir 'ShowcaseJetDaoStrictEarlyBound.accdb'
+    $daoStrictBasproj = Write-DaoProject -ProjectDir $daoStrictDir -ProjectName 'AccessJetDaoStrictEarlyBound' -Source @"
+Public Sub Main()
+Dim engine As DAO.DBEngine
+Dim db As DAO.Database
+Dim rs As DAO.Recordset
+Dim fieldName As DAO.Field
+Dim fieldScore As DAO.Field
+Dim nameValue
+Dim scoreValue
+Dim bangNameValue
+Dim bangScoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = engine.CreateDatabase("$daoStrictDb", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call db.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 128)
+Set rs = db.OpenRecordset("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 4, 0, 4)
+Set fieldName = rs.Fields("Name")
+Set fieldScore = rs.Fields("Score")
+nameValue = fieldName.Value
+scoreValue = fieldScore.Value
+bangNameValue = rs!Name
+bangScoreValue = rs!Score
+End Sub
+"@
+    if (Test-Path $daoStrictDb) { Remove-Item -Force $daoStrictDb }
+    Invoke-Captured -Name 'access_jet_dao_strict_early_bound_create_insert_query' -Category 'access-jet-dao' -Exe $cli -ArgList @('run-project', $daoStrictBasproj, '--dump-values', '--runtime-class', 'windows-stdio', '--allow-com-activation', 'true', '--allow-filesystem-mutation', 'true') -ExpectStdoutContains 'string:"Grace"|i32:99|string:"Grace"|i32:99' -After { @{ databaseExistsOk = (Test-Path $daoStrictDb); databaseBytes = if (Test-Path $daoStrictDb) { (Get-Item $daoStrictDb).Length } else { 0 } } } -Notes 'Strict natural-source DAO pass: no DispatchInvoke in the VBA source; DAO.DBEngine, DAO.Database, DAO.Recordset, and DAO.Field are imported types, Fields("Name").Value and rs!Name/rs!Score are exercised, and the compiler lowers the natural source into the COM bridge internally.'
+}
+
 # 5. Immediate window / REPL transcript.
 $immInput = Join-Path $artifactDir 'immediate_input.txt'
 Write-Utf8NoBom $immInput @'
@@ -455,6 +595,7 @@ body{font-family:Segoe UI,Arial,sans-serif;margin:28px;line-height:1.35;color:#1
 <li><b>Access/Jet COM:</b> where ADOX/ADODB are installed, OxVba activated real COM objects, created an Access/ACE <code>.accdb</code>, created a table, inserted records, selected a row, traversed recordset fields through <code>DispatchInvoke</code>, and surfaced <code>Grace / 99</code> in the runtime snapshot. This is a live environment-dependent integration, not a mock.</li>
 <li><b>Access/Jet mixed imported COM:</b> a second database pass imports real ADO/ADOX type libraries, declares <code>Dim catalog As New ADOX.Catalog</code> and <code>Dim cn As New ADODB.Connection</code>, drives <code>ADODB.Connection.Open/Execute</code> through metadata-backed calls, and explicitly remains mixed because unsupported pieces still use <code>DispatchInvoke</code>.</li>
 <li><b>Access/Jet strict natural early binding:</b> a third pass uses no <code>DispatchInvoke</code> in the VBA source: it declares <code>ADOX.Catalog</code>, <code>ADODB.Connection</code>, <code>ADODB.Recordset</code>, and <code>ADODB.Field</code>, then exercises <code>rs.Fields("Name").Value</code> plus <code>rs!Name</code>/<code>rs!Score</code>.</li>
+<li><b>Access/Jet DAO object model:</b> a late-bound / mixed / strict early-bound trio drives the <code>DAO.DBEngine</code> object model (<code>CreateDatabase</code> &rarr; <code>Execute</code> DDL/inserts &rarr; <code>OpenRecordset</code> &rarr; <code>Fields</code>) against a real Access/ACE <code>.accdb</code>. DAO objects are dispinterfaces obtained from method calls (not coclasses) and the DBEngine CLSID has no TypeLib registry association, so this proves interface-scoped binding and combined method/property-get dispatch beyond the ADO coclass shape; the strict pass uses natural <code>DAO.DBEngine</code>/<code>Database</code>/<code>Recordset</code>/<code>Field</code> types with no <code>DispatchInvoke</code>.</li>
 <li><b>Immediate interface:</b> the bounded REPL evaluated project procedures, switched default modules, reset the live runtime session, and emitted a transcript suitable for IDE embedding discussions.</li>
 </ul>
 <h2>Truth boundaries for Q&amp;A</h2>

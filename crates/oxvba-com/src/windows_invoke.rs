@@ -1497,14 +1497,18 @@ where
             }
             .map_err(|failure| render_invoke_fault_message(&failure))
         }
-        crate::UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => unsafe {
+        crate::UnboundRuntimeInvokePlan::DirectGetOrCall { dispid } => unsafe {
+            // Invoke kind is unknown for this trusted dispid, so let the server choose
+            // between a method call and a property read. DAO/Jet strictly reject a method
+            // dispatched as a bare property-get; the combined flag is what real Automation
+            // clients (incl. VBA) issue when the call could be either.
             invoke_dispatch_variant_with_shared_state(
                 dispatch.cast(),
                 dispid.raw(),
-                windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                DISPATCH_METHOD | DISPATCH_PROPERTYGET,
                 args,
                 &[],
-                "property-get",
+                "get-or-call",
                 prog_id,
                 com_state,
             )

@@ -457,14 +457,26 @@ fn split_prog_id_name(prog_id_name: &str) -> Result<(String, Option<String>), St
     if trimmed.is_empty() {
         return Err("empty ProgID name".to_string());
     }
-    if let Some((reference_name, coclass_name)) = trimmed.rsplit_once('.') {
+    // ProgIDs come in version-independent (`Program.Component`) and versioned
+    // (`Program.Component.Version`, e.g. `DAO.DBEngine.120`) forms. Strip a purely
+    // numeric trailing version component first, otherwise the coclass would resolve to
+    // the version digits (`120`) instead of the class (`DBEngine`), defeating member scoping.
+    let core = match trimmed.rsplit_once('.') {
+        Some((head, tail))
+            if !head.is_empty() && !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            head.trim()
+        }
+        _ => trimmed,
+    };
+    if let Some((reference_name, coclass_name)) = core.rsplit_once('.') {
         let reference_name = reference_name.trim();
         let coclass_name = coclass_name.trim();
         if !reference_name.is_empty() && !coclass_name.is_empty() {
             return Ok((reference_name.to_string(), Some(coclass_name.to_string())));
         }
     }
-    Ok((trimmed.to_string(), None))
+    Ok((core.to_string(), None))
 }
 
 #[cfg(target_os = "windows")]
@@ -1285,6 +1297,52 @@ pub fn enumerate_typelib_members_for_coclass(
     Ok(Vec::new())
 }
 
+/// Scopes member enumeration to a named dispinterface/interface (e.g. DAO `Database`,
+/// `Recordset`), rather than a coclass. Many libraries (DAO, ADO `Field`, WMI) expose
+/// objects you never `CoCreate` — they are obtained from method calls — so they appear
+/// only as `TKIND_DISPATCH`/`TKIND_INTERFACE`, not as coclasses. Binding such a type must
+/// stay scoped to that one interface; flattening the whole library would make every shared
+/// member name (DAO `Execute`/`OpenRecordset`/`Fields`) collide across unrelated objects.
+#[cfg(target_os = "windows")]
+pub fn enumerate_typelib_members_for_interface(
+    ptlib: *mut c_void,
+    interface_name: &str,
+) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+
+    for i in 0..count {
+        let mut typekind: u32 = 0;
+        let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
+        if hr != COM_S_OK || (typekind != TKIND_DISPATCH && typekind != TKIND_INTERFACE) {
+            continue;
+        }
+
+        let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
+        if hr != COM_S_OK || ptinfo.is_null() {
+            continue;
+        }
+
+        let is_match = unsafe { typeinfo_name(ptinfo) }
+            .is_some_and(|name| name.eq_ignore_ascii_case(interface_name));
+        let result = if is_match {
+            unsafe { extract_members_from_typeinfo(ptinfo) }
+        } else {
+            Ok(Vec::new())
+        };
+        unsafe {
+            let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+            ((*ti_vtbl).release)(ptinfo);
+        }
+        if is_match {
+            return result;
+        }
+    }
+
+    Ok(Vec::new())
+}
+
 /// Extracts member metadata from a single ITypeInfo.
 #[cfg(target_os = "windows")]
 unsafe fn extract_members_from_typeinfo(
@@ -1745,10 +1803,18 @@ pub fn build_metadata_blob_from_typelib(
 ) -> Result<TypeLibMetadataBlob, String> {
     let members = if let Some(coclass_name) = requested_coclass_name(&identity) {
         let scoped = enumerate_typelib_members_for_coclass(ptlib, coclass_name)?;
-        if scoped.is_empty() {
-            enumerate_typelib_members(ptlib)?
-        } else {
+        if !scoped.is_empty() {
             scoped
+        } else {
+            // The requested type is not a coclass. Before giving up to a whole-library
+            // flatten (which collides shared member names across unrelated objects),
+            // scope to the dispinterface/interface of the same name (DAO Database/Recordset).
+            let interface_scoped = enumerate_typelib_members_for_interface(ptlib, coclass_name)?;
+            if !interface_scoped.is_empty() {
+                interface_scoped
+            } else {
+                enumerate_typelib_members(ptlib)?
+            }
         }
     } else {
         enumerate_typelib_members(ptlib)?

@@ -1238,6 +1238,283 @@ End Sub
 }
 
 #[cfg(target_os = "windows")]
+fn dao_acedao_typelib_path() -> Option<String> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(base) = std::env::var_os(var).map(std::path::PathBuf::from) {
+            for ver in ["16", "15", "14"] {
+                let office = format!("Office{ver}");
+                // Click-to-Run installs nest the binaries under `root`; MSI installs do not.
+                candidates.push(base.join("Microsoft Office").join("root").join(&office));
+                candidates.push(base.join("Microsoft Office").join(&office));
+            }
+        }
+    }
+    for var in ["CommonProgramFiles", "CommonProgramFiles(x86)"] {
+        if let Some(base) = std::env::var_os(var).map(std::path::PathBuf::from) {
+            for ver in ["OFFICE16", "OFFICE15", "OFFICE14"] {
+                candidates.push(base.join("Microsoft Shared").join(ver));
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .map(|dir| dir.join("ACEDAO.DLL"))
+        .find(|path| path.exists())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// Returns the ACE DAO (`ACEDAO.DLL`) typelib path when both the DAO `DBEngine` COM class
+/// activates and the typelib binary is locatable, else `None` so DAO tests skip cleanly on
+/// machines without the Access Database Engine. DAO is exercised in addition to ADO because
+/// its objects are dispinterfaces obtained from method calls (not coclasses), which stresses
+/// interface-scoped binding and the get-or-call dispatch path differently than ADO does.
+#[cfg(target_os = "windows")]
+fn registered_access_jet_dao_available() -> Option<String> {
+    let acedao = dao_acedao_typelib_path()?;
+    let main_module = module_unit_from_source(
+        "Main",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim engine
+Set engine = CreateObject("DAO.DBEngine.120")
+End Sub
+"#,
+    )
+    .ok()?;
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let available = std::panic::catch_unwind(|| run_project_windows_hosted(&manifest, false))
+        .ok()
+        .and_then(|snapshot| snapshot.first().cloned())
+        .map(|value| expect_object_handle(&value).raw() >= 20_001)
+        .unwrap_or(false);
+    available.then_some(acedao)
+}
+
+#[cfg(target_os = "windows")]
+fn access_jet_dao_temp_db(leaf: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let unique = format!(
+        "{leaf}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    );
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join(unique);
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+    let db_path = temp_root.join("ShowcaseJetDao.accdb");
+    (temp_root, db_path)
+}
+
+#[cfg(target_os = "windows")]
+fn dao_com_ref(dao_importlib: &str) -> [BasprojComRefSpec<'_>; 1] {
+    [BasprojComRefSpec {
+        include: "DAO",
+        guid: None,
+        major: None,
+        minor: None,
+        lcid: None,
+        importlib: Some(dao_importlib),
+    }]
+}
+
+// Late-bound DAO: untyped variables, `CreateObject`, and `DispatchInvoke` by member name.
+// The DAO DBEngine CLSID carries no `TypeLib` registry association, so member dispids are
+// resolved dynamically via GetIDsOfNames; the get-or-call dispatch must still pick method
+// vs property-get correctly for the strict Jet engine.
+#[cfg(target_os = "windows")]
+#[test]
+fn late_bound_project_executes_registered_access_jet_dao_database_subset() {
+    let Some(_dao_importlib) = registered_access_jet_dao_available() else {
+        return;
+    };
+    let (temp_root, db_path) = access_jet_dao_temp_db("access-jet-dao-late-bound");
+    let db = db_path.to_string_lossy();
+    let main_source = format!(
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim engine
+Dim db
+Dim rs
+Dim nameValue
+Dim scoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = DispatchInvoke(engine, "CreateDatabase", "{db}", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call DispatchInvoke(db, "Execute", "CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)")
+Call DispatchInvoke(db, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)")
+Call DispatchInvoke(db, "Execute", "INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)")
+Set rs = DispatchInvoke(db, "OpenRecordset", "SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2")
+nameValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Name"), "Value")
+scoreValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Score"), "Value")
+End Sub
+"#,
+        db = db
+    );
+
+    let main_module = module_unit_from_source("Main", ModuleKind::Procedural, &main_source)
+        .expect("late-bound DAO main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[3],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[4], Variant::from_i32(99));
+    assert!(db_path.exists(), "late-bound DAO database should be created");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+// Mixed DAO: typed `As DAO.*` declarations early-bind `CreateDatabase`/`Execute`/`OpenRecordset`
+// (resolved against the scoped DAO `DBEngine`/`Database` interfaces), while the recordset
+// `Fields("...").Value` chain stays on the late-bound `DispatchInvoke` escape hatch.
+#[cfg(target_os = "windows")]
+#[test]
+fn mixed_bound_project_executes_registered_access_jet_dao_database_subset() {
+    let Some(dao_importlib) = registered_access_jet_dao_available() else {
+        return;
+    };
+    let (temp_root, db_path) = access_jet_dao_temp_db("access-jet-dao-mixed-bound");
+    let db = db_path.to_string_lossy();
+    let main_source = format!(
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim engine As DAO.DBEngine
+Dim db As DAO.Database
+Dim rs As DAO.Recordset
+Dim nameValue
+Dim scoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = engine.CreateDatabase("{db}", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call db.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 128)
+Set rs = db.OpenRecordset("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 4, 0, 4)
+nameValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Name"), "Value")
+scoreValue = DispatchInvoke(DispatchInvoke(rs, "Fields", "Score"), "Value")
+End Sub
+"#,
+        db = db
+    );
+
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-access-jet-dao-mixed-bound",
+        &main_source,
+        &dao_com_ref(&dao_importlib),
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[3],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[4], Variant::from_i32(99));
+    assert!(db_path.exists(), "mixed-bound DAO database should be created");
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+// Strict early-bound DAO: no `DispatchInvoke` in the source. `DAO.DBEngine`, `DAO.Database`,
+// `DAO.Recordset`, and `DAO.Field` are imported types; `rs.Fields("Name").Value` and the
+// `rs!Name`/`rs!Score` bang accessors all lower through the metadata-backed COM bridge.
+#[cfg(target_os = "windows")]
+#[test]
+fn strict_early_bound_project_executes_registered_access_jet_dao_database_subset() {
+    let Some(dao_importlib) = registered_access_jet_dao_available() else {
+        return;
+    };
+    let (temp_root, db_path) = access_jet_dao_temp_db("access-jet-dao-strict-early-bound");
+    let db = db_path.to_string_lossy();
+    let main_source = format!(
+        r#"
+Attribute VB_Name = "Main"
+Public Sub Main()
+Dim engine As DAO.DBEngine
+Dim db As DAO.Database
+Dim rs As DAO.Recordset
+Dim fieldName As DAO.Field
+Dim fieldScore As DAO.Field
+Dim nameValue
+Dim scoreValue
+Dim bangNameValue
+Dim bangScoreValue
+Set engine = CreateObject("DAO.DBEngine.120")
+Set db = engine.CreateDatabase("{db}", ";LANGID=0x0409;CP=1252;COUNTRY=0", 128)
+Call db.Execute("CREATE TABLE ShowcaseRecords (Id INTEGER, Name TEXT(50), Score INTEGER)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (1, 'Ada', 98)", 128)
+Call db.Execute("INSERT INTO ShowcaseRecords (Id, Name, Score) VALUES (2, 'Grace', 99)", 128)
+Set rs = db.OpenRecordset("SELECT Name, Score FROM ShowcaseRecords WHERE Id = 2", 4, 0, 4)
+Set fieldName = rs.Fields("Name")
+Set fieldScore = rs.Fields("Score")
+nameValue = fieldName.Value
+scoreValue = fieldScore.Value
+bangNameValue = rs!Name
+bangScoreValue = rs!Score
+End Sub
+"#,
+        db = db
+    );
+
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-access-jet-dao-strict-early-bound",
+        &main_source,
+        &dao_com_ref(&dao_importlib),
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[3]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[4]).raw() >= 20_001);
+    assert_eq!(
+        out[5],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[6], Variant::from_i32(99));
+    assert_eq!(
+        out[7],
+        Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
+    );
+    assert_eq!(out[8], Variant::from_i32(99));
+    assert!(
+        db_path.exists(),
+        "strict early-bound DAO database should be created"
+    );
+
+    let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+#[cfg(target_os = "windows")]
 #[test]
 fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch()
  {

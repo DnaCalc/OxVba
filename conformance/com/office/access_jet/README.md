@@ -15,6 +15,11 @@ Current fixtures:
   interaction through late-bound dispatch.
 - `jet_adodb_provider_activation_smoke.bas`: provider activation shape for
   ADODB plus ACE/JET OLE DB connection string flow.
+- `dao_dbengine_create_query_smoke.bas`: late-bound DAO `DBEngine` create-database,
+  create-table, insert, and recordset query shape through the Access Database Engine
+  (ACE) DAO object model. Early-bound DAO variants (typed `DAO.Database`/`Recordset`/
+  `Field`) are covered live by the Office-enabled showcase and the
+  `*_access_jet_dao_database_subset` integration tests.
 - `access_jet_provider_boundary.bas`: explicit V0.2 environment/provider
   boundary row for absent Access, ACE, DAO, or JET installations.
 

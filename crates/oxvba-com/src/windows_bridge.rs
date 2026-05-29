@@ -542,55 +542,25 @@ impl WindowsComBridge {
             } else {
                 Vec::new()
             };
-            let attempt_order = if args.is_empty() {
-                [
-                    (
-                        windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
-                        "property-get",
-                    ),
-                    (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
-                ]
-            } else {
-                [
-                    (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
-                    (
-                        windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
-                        "property-get",
-                    ),
-                ]
-            };
-            let mut invoke_result = None;
-            for (index, (flags, label)) in attempt_order.into_iter().enumerate() {
-                match unsafe {
-                    invoke_dispatch_variant_with_shared_state(
-                        dispatch.cast(),
-                        dispid,
-                        flags,
-                        args.as_slice(),
-                        named_arg_dispids.as_slice(),
-                        label,
-                        &binding.prog_id_name,
-                        &self.state,
-                    )
-                } {
-                    Ok(value) => {
-                        invoke_result = Some(Ok(value));
-                        break;
-                    }
-                    Err(failure)
-                        if index + 1 < attempt_order.len()
-                            && failure.hr == Some(crate::COM_DISP_E_BADPARAMCOUNT) =>
-                    {
-                        continue;
-                    }
-                    Err(failure) => {
-                        invoke_result = Some(Err(failure));
-                        break;
-                    }
-                }
+            // Late-bound name dispatch cannot know whether `member_name` is a method or a
+            // property accessor, so issue the combined DISPATCH_METHOD|DISPATCH_PROPERTYGET
+            // and let the server resolve it in a single call. Strict servers (DAO/Jet)
+            // reject a method invoked as a bare property-get (and vice-versa); a one-flag
+            // probe with retry only masks the first failure. The combined flag is the OLE
+            // Automation convention real clients — including VBA — rely on for get-or-call.
+            unsafe {
+                invoke_dispatch_variant_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    windows_sys::Win32::System::Com::DISPATCH_METHOD
+                        | windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                    args.as_slice(),
+                    named_arg_dispids.as_slice(),
+                    "get-or-call",
+                    &binding.prog_id_name,
+                    &self.state,
+                )
             }
-            invoke_result
-                .expect("dynamic-name COM invoke should attempt at least one dispatch flag")
         };
         invoke_result
             .map(Some)
