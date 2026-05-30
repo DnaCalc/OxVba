@@ -48,6 +48,7 @@ The core user model is:
 - choose the right project lane for your problem
 - run or build them through one CLI
 - keep semantics close to VBA where OxVBA claims support
+- match VBA's *diagnostics*, not only its runtime results — where the VBA compiler raises an error, OxVBA aims to raise an equivalent error at the same point. OxVBA targets compatibility with the VBA *compiler* (to back language-server/tooling use), so an error-behaviour divergence is treated as a conformance bug. See [docs/CONFORMANCE.md](docs/CONFORMANCE.md#conformance-principle-diagnostic--error-behaviour-parity).
 - make hosting and execution more explicit, deterministic, and portable than Office VBA
 
 ## Installation

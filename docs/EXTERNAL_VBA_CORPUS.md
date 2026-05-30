@@ -70,14 +70,58 @@ Each has a minimal standalone repro (kept under the gitignored `temp/` while ite
   gaps. Status: **FIXED** (regressions `resolve_optional_byref_param_is_accepted`,
   `resolve_omitted_positional_arguments_bind_sentinel`).
 - **F3 — parameterless `Function` member read without parens on a project class returns
-  `Empty`.** _(Re-scoped: the earlier "`New` doesn't instantiate" reading was a
-  misdiagnosis — `Dim w As New Widget` does instantiate; the `i32:1` slot is the
-  project-dynamic-object handle #1, not a broken value.)_ Boundary, all via `run-project`:
+  `Empty`.** _(Re-scoped twice: it is **not** a `New`-instantiation bug — `Dim w As New
+  Widget` does instantiate; the `i32:1` slot is the project-object handle. And the site is
+  **not** `emit.rs`/a VM property-get hint — the generic dynamic-dispatch path passes
+  `call_kind_hint: None`, which already get-or-calls.)_ Boundary, all via `run-project`:
   `Property Get` (default or not) → OK; `widget.GetScore()` (parens) → OK;
-  `widget.AddOne(6)` (args) → OK; **`widget.GetScore` (parameterless Function, no parens)
-  → `Empty`.** A no-paren member read on a project class dispatches as a property-get only
-  and doesn't fall back to invoking a parameterless method — the project-object analog of
-  the COM get-or-call gap. Status: **characterized; fix pending (core descriptor dispatch).**
+  `widget.AddOne(6)` (args) → OK; **`widget.GetScore` (parameterless `Function`, no parens)
+  → `Empty`.**
+
+  **Real site:** the compiler rewrite `rewrite_internal_class_property_expression_reads`
+  (and its statement-form sibling) in `project.rs` resolves a no-paren project-class member
+  read with `allowed_kinds = [ProcedureDeclKind::PropertyGet]` **only** (`project.rs:~4710`).
+  A parameterless `Function` matches nothing, the line is left unrewritten/unresolved, and
+  the bind plan silently yields `Empty`. The COM early-bound read rewrite already probes
+  `[PropertyGet, Method]` — so the internal-class path is the inconsistent one.
+
+  **Observed today by receiver-declaration form (each should return `42` per VBA):**
+  - `Dim a As New Widget` → `out = a.GetScore` → silent **`Empty`** (no error).
+  - `Dim b As Widget : Set b = New Widget` → `out = b.GetScore` → **wrong compile error**
+    `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` (a *different* resolution path; VBA would call).
+  - `Dim c As Object : Set c = New Widget` → **`Set c = New Widget` is itself rejected**
+    (`unsupported statement`): late-bound assignment of a project class into `Object`/`Variant`
+    is unsupported — a separate prerequisite defect that must be fixed for the late-bound lane.
+
+  Three forms, three different wrong outcomes for one operation, across ≥3 resolution paths
+  (property-expression read, default-member read, late-bound `Set`). The fix must unify them.
+
+  **Receiver-type matrix (the comprehensive fix spans compile-time *and* runtime — we do
+  not always have a static type):**
+  - **Statically-typed project class** (`As Widget`/`As New Widget`): fix at compile time —
+    make the rewrite a multi-step probe `[PropertyGet]` → parameterless `Function`
+    (precedence: a real property wins), mirroring the COM early-bound `[PropertyGet, Method]`.
+  - **Late-bound to a VBA/project type** (`As Object`/`Variant` receiver): kind is unknown
+    at compile time → must get-or-call at **runtime** in the VM project-dynamic dispatch.
+    The unhinted (`None`) path already name+arity-matches; verify it is the path taken and
+    that any property-get-hinted read also falls back. (Keep the `PropertyGet` matcher
+    unchanged; *add* a method probe — do not relax the property-get predicate.)
+  - **Late-bound to COM**: already covered by the combined `DISPATCH_METHOD |
+    DISPATCH_PROPERTYGET` fix (DAO commit) and the COM early-bound `[PropertyGet, Method]`.
+
+  **Diagnostic-parity obligation** (see `docs/CONFORMANCE.md#conformance-principle-diagnostic--error-behaviour-parity`):
+  the get-or-call probe matches a *parameterless* `Function` only. The edges must match
+  VBA's **error** behaviour, not silently return `Empty`:
+  - `x = obj.NeedsArg` (required-arg function/indexed property, no parens) → VBA "Argument
+    not optional"; OxVBA must raise an equivalent diagnostic at the same point.
+  - `x = obj.SomeSub` (value context) → VBA "Expected Function or variable"; so the
+    value-read probe is `[PropertyGet, Function]`, **excluding `Sub`**, and a `Sub` in value
+    context must error rather than be called.
+  These error cases are oracle-confirmable but the silent-`Empty`-on-unresolved-read
+  behaviour is itself a parity bug to fix alongside.
+
+  Status: **characterized; fix designed (compile-time probe + runtime get-or-call + edge
+  diagnostics). Implementation pending.**
 - **F4 (minor, observed) — single-file `oxvba-cli run`/`compile` can't resolve sibling
   procedures.** A bare `.bas` with `Sub Main` + `Function Foo` reports `call to unknown
   procedure: foo`; the same code in a `.basproj` (`run-project`) resolves fine. Affects only

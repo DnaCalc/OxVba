@@ -3,6 +3,28 @@
 ## Purpose
 Defines the current conformance loop and matrix gate for the active ladder profile.
 
+## Conformance principle: diagnostic & error-behaviour parity
+
+OxVBA targets compatibility with the VBA **compiler**, not only the VBA runtime. A
+divergence in *error behaviour* is a conformance bug, on equal footing with a divergence
+in computed results:
+
+- Where the VBA compiler raises a **compile-time** error (e.g. "Argument not optional",
+  "Expected Function or variable", "Sub or Function not defined"), OxVBA must raise an
+  equivalent diagnostic at the **same program point** — not silently accept the code,
+  return `Empty`, or downgrade it to a later/run-time failure.
+- Where VBA raises a **run-time** error, OxVBA must raise an equivalent run-time error at
+  the same point.
+- **Silent divergence** — no error where VBA errors, or an error where VBA accepts — is the
+  highest-severity class of conformance bug.
+
+Rationale: OxVBA is meant to be the language-service / compiler substrate for VBA tooling
+(language server, linting, refactoring, the `.basproj` toolchain). A compiler that *runs*
+VBA correctly but disagrees with VBA about **what is an error** cannot back a faithful
+language server. The error matrix (text, program point, compile-vs-run classification) is
+therefore part of the golden conformance surface; capture VBA's diagnostic via the
+Excel/VBA oracle when the target is uncertain.
+
 ## Assets
 - `conformance/tests/*.bas` — executable input corpus.
 - `conformance/golden/*.csv` — expected outcomes.
