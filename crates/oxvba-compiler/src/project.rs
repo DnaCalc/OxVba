@@ -4697,7 +4697,13 @@ fn rewrite_internal_class_property_expression_reads(
             continue;
         }
         let raw_name = &text[receiver_start..member_end];
-        if let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+        // A no-paren rvalue member read (`x = obj.Member`) is, in VBA, either a
+        // `Property Get` read or a call to a *parameterless* `Function`. Probe
+        // `PropertyGet` first (unchanged precedence); if nothing matches, fall back to a
+        // parameterless `Function` (get-or-call). A `Function` with required parameters is
+        // intentionally not matched here — reading it without arguments is a VBA error
+        // ("Argument not optional"), handled as a diagnostic separately.
+        let resolved = match resolve_internal_class_member_target_of_kinds(
             &receiver,
             &member,
             raw_name,
@@ -4709,6 +4715,26 @@ fn rewrite_internal_class_property_expression_reads(
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )? {
+            Some(found) => Some(found),
+            None => resolve_internal_class_member_target_of_kinds(
+                &receiver,
+                &member,
+                raw_name,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+                shadowed_identifiers,
+                &[ProcedureDeclKind::Function],
+            )?
+            .filter(|(target, _)| {
+                procedures
+                    .iter()
+                    .any(|decl| &decl.lowered_name == target && decl.param_count == 0)
+            }),
+        };
+        if let Some((target, instance_arg)) = resolved {
             replacements.push((
                 receiver_start,
                 member_end,

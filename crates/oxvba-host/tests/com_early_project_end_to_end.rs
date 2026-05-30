@@ -187,6 +187,54 @@ Attribute Value.VB_UserMemId = 0
 }
 
 #[test]
+fn pure_oxvba_class_no_paren_read_invokes_parameterless_function() {
+    // VBA: `x = obj.Foo` (no parentheses) calls a *parameterless* Function, it is not only
+    // a Property Get read. Regression for F3 get-or-call: the no-paren member-read rewrite
+    // must probe a parameterless Function after Property Get, not silently yield Empty.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim widget As New Widget
+Dim valueOut
+valueOut = widget.GetScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Function GetScore() As Long
+GetScore = 42
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.contains(&Variant::from_i32(42)),
+        "no-paren read of a parameterless Function should invoke it; out={out:?}"
+    );
+}
+
+#[test]
 fn pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties() {
     let main_module = module_unit_from_source(
         "MainModule",
