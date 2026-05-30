@@ -191,6 +191,15 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    /// Materialises a pure-VBA project-class instance as a reference-counted `Object`
+    /// Variant. `handle` is a slot holding the instance identity (`i32`); the VM resolves the
+    /// route's `ObjectRef` and boxes a retained clone into `dst`. Lowered from
+    /// `New <ProjectClass>` so the slot carries a real `IUnknown` reference (AddRef/Release on
+    /// Set/scope) rather than a bare integer handle.
+    LoadProjectObjectRef {
+        dst: usize,
+        handle: usize,
+    },
     IntrinsicLenDigits {
         dst: usize,
         src: usize,

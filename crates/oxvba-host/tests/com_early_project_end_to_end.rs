@@ -284,6 +284,273 @@ End Function
 }
 
 #[test]
+fn pure_oxvba_class_set_new_into_object_variable_instantiates_and_dispatches() {
+    // `Dim c As Object : Set c = New Widget` — late-bound receiver. Regression for F3c(a):
+    // the instance handle is lowered through `__oxvba_project_instance(...)` so it
+    // type-checks into an `Object`-typed slot (a bare integer literal was rejected as
+    // `cannot assign Long to Object`). At runtime the slot still holds the `i32` handle,
+    // so the late-bound project-dynamic dispatch resolves `GetScore` to 42.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim c As Object
+Dim valueOut
+Set c = New Widget
+valueOut = c.GetScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Function GetScore() As Long
+GetScore = 42
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.contains(&Variant::from_i32(42)),
+        "`Dim c As Object : Set c = New Widget` then `c.GetScore` should yield 42; out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_new_instance_is_a_reference_counted_object() {
+    // The instance handle is gone from the value model: `New <ProjectClass>` now yields a
+    // real reference-counted Object reference in the slot, not an integer. `IsObject(c)`
+    // therefore returns True (VBA-correct), and the aliasing `Set d = c` shares the same
+    // reference so a mutation through one variable is visible through the other.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim c As Widget
+Dim d As Widget
+Dim aliased
+Set c = New Widget
+Set d = c
+c.SetScore 99
+aliased = d.GetScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Private mScore As Long
+Public Sub SetScore(ByVal value As Long)
+mScore = value
+End Sub
+Public Function GetScore() As Long
+GetScore = mScore
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    // `New Widget` now lands a real Object reference in the slot (not an integer handle).
+    assert!(
+        out.iter().any(|v| v.as_object_ref().is_some()),
+        "`Set c = New Widget` should leave a real Object reference in the slot, not an integer; out={out:?}"
+    );
+    // `Set d = c` shares that reference, so c.SetScore 99 is visible through d.GetScore.
+    assert!(
+        out.contains(&Variant::from_i32(99)),
+        "`Set d = c` should alias the same instance, so d.GetScore reflects c.SetScore 99; out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_value_read_of_sub_is_expected_function_or_variable() {
+    // F3c diagnostic-parity: `x = obj.SomeSub` reads a Sub in a value context. VBA raises a
+    // compile-time error "Expected Function or variable"; OxVBA must raise an equivalent
+    // diagnostic at the same point rather than silently yielding Empty.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim w As New Widget
+Dim valueOut
+valueOut = w.DoThing
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Sub DoThing()
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let err = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect_err("reading a Sub in a value context should be a compile error");
+    assert!(
+        err.message()
+            .contains("PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE"),
+        "expected Sub-in-value-context diagnostic; got {:?}: {}",
+        err.phase(),
+        err.message()
+    );
+}
+
+#[test]
+fn pure_oxvba_class_value_read_of_required_arg_function_is_argument_not_optional() {
+    // F3c diagnostic-parity: `x = obj.NeedsArg` reads, without arguments, a Function that has
+    // a required parameter. VBA raises a compile-time error "Argument not optional"; OxVBA
+    // must raise an equivalent diagnostic rather than silently yielding Empty.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim w As New Widget
+Dim valueOut
+valueOut = w.NeedsArg
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Function NeedsArg(ByVal factor As Long) As Long
+NeedsArg = factor * 2
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let err = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect_err("reading a required-arg Function without arguments should be a compile error");
+    assert!(
+        err.message()
+            .contains("PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL"),
+        "expected argument-not-optional diagnostic; got {:?}: {}",
+        err.phase(),
+        err.message()
+    );
+}
+
+#[test]
+fn pure_oxvba_class_statement_sub_call_and_all_optional_function_read_are_not_diagnosed() {
+    // Negative guard for the F3c diagnostics: a *statement-form* Sub call (`obj.DoThing`) is a
+    // valid call and must not be diagnosed (it routes to member dispatch). And a no-paren value
+    // read of a Function whose parameters are all Optional (`x = obj.OptScore`) is get-or-called,
+    // not flagged "Argument not optional" — covered by the relaxed no-arg-callable probe.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim w As New Widget
+Dim valueOut
+w.DoThing
+valueOut = w.OptScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Sub DoThing()
+End Sub
+Public Function OptScore(Optional ByVal bonus As Long) As Long
+OptScore = 7 + bonus
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("statement-form Sub call and all-optional Function read should both be valid");
+    assert!(
+        out.contains(&Variant::from_i32(7)),
+        "all-optional Function read should get-or-call and yield 7; out={out:?}"
+    );
+}
+
+#[test]
 fn pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties() {
     let main_module = module_unit_from_source(
         "MainModule",

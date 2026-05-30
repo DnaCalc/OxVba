@@ -4684,6 +4684,19 @@ impl Vm {
                     self.write_variant_slot(*slot, Variant::from_i32(*value))?;
                     pc += 1;
                 }
+                Instruction::LoadProjectObjectRef { dst, handle } => {
+                    // Materialise the project-class instance as a reference-counted `Object`
+                    // Variant. The retained clone shares the route's identity, so dispatch
+                    // (which keys on the object's compat identity) is unchanged, while
+                    // Set/overwrite/scope-exit now refcount the instance through the COM
+                    // `Variant` Clone/Drop path.
+                    let raw = self.read_i32_slot(*handle)?;
+                    let object = self
+                        .project_dynamic_object_ref(raw)
+                        .unwrap_or_else(|| oxvba_runtime::ObjectRef::from_compat_identity(raw));
+                    self.write_variant_slot(*dst, Variant::from_object_ref(object))?;
+                    pc += 1;
+                }
                 Instruction::LoadConstBool { slot, value } => {
                     self.write_variant_slot(*slot, Variant::from_bool(*value))?;
                     pc += 1;

@@ -125,20 +125,44 @@ Each has a minimal standalone repro (kept under the gitignored `temp/` while ite
     no-paren read rewrite now probes a parameterless `Function` after `PropertyGet`, so
     `Dim w As New Widget : x = w.GetScore` → `42`. Regression test
     `pure_oxvba_class_no_paren_read_invokes_parameterless_function`; full suites green.
-  - **F3a (`Set <var> = New <ProjectClass>`): mostly FIXED (4/5 receiver forms).**
-    `expand_bound_source_line` now recognises `Set <var> = New <ProjectClass>` and lowers it
-    like `As New` (allocate an instance handle, register/refresh the dynamic-object binding,
-    emit the handle assignment + `Class_Initialize`), with a `referenced_typelib_blob`
-    guard so COM `New` still routes to the early-bound rewrites. `As Widget`, `As Variant`,
-    untyped, and `As New` now all give `42`. Regression test
-    `pure_oxvba_class_explicit_set_new_instantiates_and_dispatches`; suites green (130).
-    **Remaining: `Dim c As Object : Set c = New Widget`** still errors `cannot assign Long
-    to Object variable c` — the instance handle is an integer literal, which a Variant/
-    untyped slot accepts but an `Object`-typed slot rejects (`typecheck.rs:~1463`). Needs an
-    object-typed representation of the project-instantiation handle (so it type-checks into
-    an `Object` slot), tracked with F3c.
-  - **F3c (edge diagnostics): pending oracle.** Required-arg read / `Sub`-in-value-context
-    must raise VBA-equivalent diagnostics per the conformance parity principle.
+  - **F3a + F3c(a) (`Set <var> = New <ProjectClass>`): FIXED (5/5 receiver forms).**
+    `expand_bound_source_line` recognises `Set <var> = New <ProjectClass>` (and `As New`) and
+    lowers it to `Set <var> = __oxvba_project_instance(<handle>)`, with a
+    `referenced_typelib_blob` guard so COM `New` still routes to the early-bound rewrites.
+    `As <Class>`, `As Object`, `As Variant`, untyped, and `As New` all give `42`. Regression
+    tests `pure_oxvba_class_explicit_set_new_instantiates_and_dispatches` and
+    `pure_oxvba_class_set_new_into_object_variable_instantiates_and_dispatches`.
+  - **Object representation: integer handle removed from the value model.** The instance is
+    no longer an `i32` in the slot. `__oxvba_project_instance(<handle>)` is typed `Object` and
+    lowers to a VM instruction `LoadProjectObjectRef` that materialises the route's
+    reference-counted `ObjectRef` as a `Variant::Object`; the `Set` form assigns it as an
+    object reference. `Set`/overwrite/scope-exit therefore AddRef/Release the instance through
+    the **same COM `Variant` Clone/Drop path** COM objects use — that is the reference counting.
+    This dissolved the earlier F3c integer-seed scaffolding (the runtime-guard bypass, the
+    Variant-typing trick, the default-member seed exemption — all removed). Regression test
+    `pure_oxvba_class_new_instance_is_a_reference_counted_object` (`IsObject`/`Object`-typed
+    slot + `Set d = c` aliasing). The object's compat identity is still the route handle, so
+    project-dynamic dispatch is unchanged. **Deferred follow-ups** (beyond reference counting):
+    per-instance field-state isolation + runtime-distinct instances per `New` (same-site `New`s
+    currently share state via the route), and `Class_Terminate`-on-last-release (objects free
+    memory at refcount 0 but the VBA teardown hook — a VM-drained termination queue — is not
+    yet wired). See [[project_object_cycle_leaks_ok]].
+  - **F3c(c) (edge diagnostics): FIXED.** A no-paren *value-context* read that does not
+    resolve to a `Property Get` or a no-arg-callable `Function` now raises a VBA-equivalent
+    compile-time diagnostic instead of silently yielding `Empty`: a `Sub` →
+    `PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE` (VBA "Expected Function or variable"),
+    a required-arg `Function` → `PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL` (VBA "Argument not
+    optional"). The get-or-call probe was also widened from *parameterless* to
+    *no-arg-callable* (all-`Optional`/`ParamArray` functions are now called, not flagged).
+    Statement-form `obj.DoThing` Sub calls are excluded (they route to member dispatch).
+    Regression tests `pure_oxvba_class_value_read_of_sub_is_expected_function_or_variable`,
+    `pure_oxvba_class_value_read_of_required_arg_function_is_argument_not_optional`,
+    `pure_oxvba_class_statement_sub_call_and_all_optional_function_read_are_not_diagnosed`.
+  - **F3c(b) (oracle matrix): registered deferred gate `ODG-049` / `CCT-051`.** Excel/VBA
+    oracle must confirm the exact diagnostic text + compile-vs-runtime timing and the full
+    receiver-form × member-kind matrix (incl. statement-context required-arg and indexed
+    `Property Get` reads). Deferred per the Excel-differential policy; see
+    `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`.
 - **F4 (minor, observed) — single-file `oxvba-cli run`/`compile` can't resolve sibling
   procedures.** A bare `.bas` with `Sub Main` + `Function Foo` reports `call to unknown
   procedure: foo`; the same code in a `.basproj` (`run-project`) resolves fine. Affects only

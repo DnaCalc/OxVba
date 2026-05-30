@@ -5335,6 +5335,8 @@ fn intrinsic_result_type(
         "cbyte" => VbaTypeId::Byte,
         "ccur" => VbaTypeId::Currency,
         "varptr" | "strptr" | "objptr" => VbaTypeId::LongPtr,
+        // `New <ProjectClass>` carrier: materialises a reference-counted object.
+        "__oxvba_project_instance" => VbaTypeId::Object,
         _ => args
             .first()
             .map(|arg| expr_declared_type(arg, type_by_name))
@@ -8850,6 +8852,13 @@ fn emit_expr_into(
                 }
                 ("__null", []) => {
                     instructions.push(Instruction::LoadNull { slot: dst });
+                }
+                // Materialise a project-class instance as a reference-counted `Object`
+                // Variant from its handle. Lowered from `New <ProjectClass>`; the slot then
+                // carries a real `IUnknown` reference (refcounted on Set/scope via the COM
+                // `Variant` path) instead of a bare integer handle.
+                ("__oxvba_project_instance", [src]) => {
+                    instructions.push(Instruction::LoadProjectObjectRef { dst, handle: *src });
                 }
                 ("vbnullstring", []) => instructions.push(Instruction::LoadConstString {
                     slot: dst,

@@ -588,6 +588,14 @@ pub enum ProjectCompileError {
     )]
     DefaultMemberResolutionMissing { name: String },
     #[error(
+        "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL: member read `{name}` resolves to a procedure with a required argument; reading it without arguments is invalid (VBA: \"Argument not optional\")"
+    )]
+    MemberReadArgumentNotOptional { name: String },
+    #[error(
+        "PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE: member read `{name}` resolves to a Sub used in a value context (VBA: \"Expected Function or variable\")"
+    )]
+    MemberReadExpectedFunctionOrVariable { name: String },
+    #[error(
         "PMR-E-HOST-ROOT-NOT-EXPOSED: host-injected class module `{name}` is not exposed as an implicit root (requires VB_PredeclaredId=True or VB_GlobalNamespace=True)"
     )]
     HostRootNotExposed { name: String },
@@ -696,6 +704,12 @@ impl ProjectCompileError {
             }
             Self::DefaultMemberResolutionMissing { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"
+            }
+            Self::MemberReadArgumentNotOptional { .. } => {
+                "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL"
+            }
+            Self::MemberReadExpectedFunctionOrVariable { .. } => {
+                "PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE"
             }
             Self::HostRootNotExposed { .. } => "PMR-E-HOST-ROOT-NOT-EXPOSED",
             Self::ProjectQualificationInvalid { .. } => "PMR-E-PROJECT-QUALIFICATION-INVALID",
@@ -3322,8 +3336,8 @@ fn expand_bound_source_line(
                 module_name: target_module.clone(),
             });
             out.push(format!(
-                "{}{} = {}",
-                dim_decl.leading_ws, dim_decl.var_name, *next_internal_instance_id
+                "{}Set {} = __oxvba_project_instance({})",
+                dim_decl.leading_ws, dim_decl.var_name, object_handle
             ));
             if let Some(class_initialize) = find_decl_by_signature(
                 procedures,
@@ -3435,7 +3449,14 @@ fn expand_bound_source_line(
                 interface_module_name: None,
             },
         );
-        let mut out = vec![format!("{leading_ws}{var_name} = {object_handle}")];
+        // Lower to `Set <var> = __oxvba_project_instance(<handle>)`: the carrier materialises
+        // a reference-counted `Object` reference for the instance, and the `Set` form assigns
+        // it as an object reference (refcounted on Set/scope via the COM `Variant` path). The
+        // object's compat identity is the route handle, so project-dynamic dispatch is
+        // unchanged.
+        let mut out = vec![format!(
+            "{leading_ws}Set {var_name} = __oxvba_project_instance({object_handle})"
+        )];
         if let Some(class_initialize) = find_decl_by_signature(
             procedures,
             &target_project,
@@ -4774,11 +4795,12 @@ fn rewrite_internal_class_property_expression_reads(
         }
         let raw_name = &text[receiver_start..member_end];
         // A no-paren rvalue member read (`x = obj.Member`) is, in VBA, either a
-        // `Property Get` read or a call to a *parameterless* `Function`. Probe
-        // `PropertyGet` first (unchanged precedence); if nothing matches, fall back to a
-        // parameterless `Function` (get-or-call). A `Function` with required parameters is
-        // intentionally not matched here — reading it without arguments is a VBA error
-        // ("Argument not optional"), handled as a diagnostic separately.
+        // `Property Get` read or a call to a `Function` callable with no arguments (one with
+        // no parameters, or whose parameters are all `Optional`/`ParamArray`). Probe
+        // `PropertyGet` first (unchanged precedence); if nothing matches, fall back to such a
+        // `Function` (get-or-call). A `Function` with a *required* parameter is intentionally
+        // not matched here — reading it without arguments is a VBA error ("Argument not
+        // optional"), raised as a diagnostic below.
         let resolved = match resolve_internal_class_member_target_of_kinds(
             &receiver,
             &member,
@@ -4807,7 +4829,7 @@ fn rewrite_internal_class_property_expression_reads(
             .filter(|(target, _)| {
                 procedures
                     .iter()
-                    .any(|decl| &decl.lowered_name == target && decl.param_count == 0)
+                    .any(|decl| &decl.lowered_name == target && proc_callable_with_no_args(decl))
             }),
         };
         if let Some((target, instance_arg)) = resolved {
@@ -4816,6 +4838,27 @@ fn rewrite_internal_class_property_expression_reads(
                 member_end,
                 format!("{}({})", target, instance_arg),
             ));
+        } else if read_is_value_context(text, receiver_start)
+            && let Some(error) = internal_class_value_read_edge_diagnostic(
+                &receiver,
+                &member,
+                raw_name,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+                shadowed_identifiers,
+            )?
+        {
+            // Diagnostic-parity (docs/CONFORMANCE.md): a no-paren *value-context* read did
+            // not resolve to a Property Get or a no-arg-callable Function. When the receiver
+            // is one of our internal-class objects and the member is a Sub (→ "Expected
+            // Function or variable") or a Function with a required argument (→ "Argument not
+            // optional"), VBA raises a compile-time error here — match it rather than silently
+            // leaving the read unresolved (which would yield `Empty`). Statement-form reads
+            // (`obj.DoThing`) are excluded so valid Sub calls still route to member dispatch.
+            return Err(error);
         }
     }
     if replacements.is_empty() {
@@ -4835,8 +4878,89 @@ fn rewrite_internal_class_property_expression_reads(
     Ok(out)
 }
 
+/// A procedure is callable with no supplied arguments when every parameter is `Optional`
+/// or a `ParamArray` (a no-parameter procedure trivially qualifies). This governs whether a
+/// no-paren value read (`x = obj.F`) may get-or-call the member.
+fn proc_callable_with_no_args(decl: &ProcedureDecl) -> bool {
+    decl.params.iter().all(|p| p.optional || p.param_array)
+}
+
+/// Diagnostic-parity classification for a no-paren value read (`x = obj.Member`) that did
+/// not resolve to a `Property Get` or a no-arg-callable `Function`. Returns the VBA-equivalent
+/// compile-time error when the receiver is one of our internal-class objects and the member
+/// is a `Sub` (→ "Expected Function or variable") or a `Function` with a required argument
+/// (→ "Argument not optional"). Returns `Ok(None)` for any other receiver/member (e.g. a
+/// non-internal-class receiver, a data field, or a member handled by a later rewrite pass),
+/// so unrelated reads are left untouched.
+#[allow(clippy::too_many_arguments)]
+fn internal_class_value_read_edge_diagnostic(
+    receiver: &str,
+    member: &str,
+    raw_name: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
+) -> Result<Option<ProjectCompileError>, ProjectCompileError> {
+    // A Sub in a value context is "Expected Function or variable".
+    if resolve_internal_class_member_target_of_kinds(
+        receiver,
+        member,
+        raw_name,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        shadowed_identifiers,
+        &[ProcedureDeclKind::Sub],
+    )?
+    .is_some()
+    {
+        return Ok(Some(ProjectCompileError::MemberReadExpectedFunctionOrVariable {
+            name: raw_name.to_string(),
+        }));
+    }
+    // A Function with a required argument, read without arguments, is "Argument not optional".
+    // (A no-arg-callable Function would already have been get-or-called by the caller.)
+    if let Some((target, _)) = resolve_internal_class_member_target_of_kinds(
+        receiver,
+        member,
+        raw_name,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        shadowed_identifiers,
+        &[ProcedureDeclKind::Function],
+    )? && procedures
+        .iter()
+        .any(|decl| decl.lowered_name == target && !proc_callable_with_no_args(decl))
+    {
+        return Ok(Some(ProjectCompileError::MemberReadArgumentNotOptional {
+            name: raw_name.to_string(),
+        }));
+    }
+    Ok(None)
+}
+
 fn is_identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+/// A member read is in *value* context (rvalue) when text precedes the receiver and ends in
+/// an assignment, grouping, separator, or operator token — i.e. the read supplies a value
+/// (`x = obj.M`, `f(obj.M)`, `a + obj.M`). A read at statement start (`obj.M`, `Call obj.M`)
+/// is statement context: a bare member call, where a Sub is valid and must not be diagnosed.
+fn read_is_value_context(text: &str, receiver_start: usize) -> bool {
+    let prefix = text[..receiver_start].trim_end();
+    matches!(
+        prefix.chars().next_back(),
+        Some('=' | '(' | ',' | '+' | '-' | '*' | '/' | '\\' | '&' | '<' | '>' | '^')
+    )
 }
 
 fn property_expression_read_is_assignment_lhs(text: &str, receiver_start: usize) -> bool {

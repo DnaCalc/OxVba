@@ -5549,6 +5549,11 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "npv" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
         "__oxvba_array_append" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
+        // Internal carrier for a freshly instantiated project-class instance. Typed `Object`
+        // and lowered (via `LoadProjectObjectRef`) to materialise the instance's
+        // reference-counted `ObjectRef` as an Object Variant, so `Set <var> = New <ProjectClass>`
+        // assigns a real object reference (refcounted on Set/scope via the COM `Variant` path).
+        "__oxvba_project_instance" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
         "shell" | "environ" | "createobject" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "dir" => Some(IntrinsicSpec::range(0, 1, HostSensitive)),
         "dispatchinvoke" | "__oxvbaearlyinvoke" => {
