@@ -1201,21 +1201,25 @@ fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
     out
 }
 
+/// Predefined `#If` compilation constants for the targeted dialect: **VBA 7.1**
+/// (Office 2013+). Values follow the VBA predefined-constant rules:
+/// - `Vba7` = True (PtrSafe / LongPtr era); `Vba6` = False (the older VBA6 runtime flag).
+/// - `Win64`/`Win32` are complementary on Windows and keyed to the build's pointer width
+///   (64-bit host => `Win64` True, `Win32` False); `Win16` is always False.
+/// - `Mac` is True only on macOS.
+///
+/// Constants are case-insensitive and may be overridden by source `#Const` directives.
 pub(crate) fn builtin_pp_constants() -> HashMap<String, i32> {
+    let win64 = cfg!(all(windows, target_pointer_width = "64"));
+    let win32 = cfg!(all(windows, target_pointer_width = "32"));
+    let bool_to_cc = |flag: bool| if flag { -1 } else { 0 };
     let mut constants = HashMap::new();
     constants.insert("vba7".to_string(), -1);
-    constants.insert(
-        "win64".to_string(),
-        if cfg!(all(windows, target_pointer_width = "64")) {
-            -1
-        } else {
-            0
-        },
-    );
-    constants.insert(
-        "mac".to_string(),
-        if cfg!(target_os = "macos") { -1 } else { 0 },
-    );
+    constants.insert("vba6".to_string(), 0);
+    constants.insert("win64".to_string(), bool_to_cc(win64));
+    constants.insert("win32".to_string(), bool_to_cc(win32));
+    constants.insert("win16".to_string(), 0);
+    constants.insert("mac".to_string(), bool_to_cc(cfg!(target_os = "macos")));
     constants
 }
 
@@ -1830,9 +1834,8 @@ pub fn parse_proc_signature(
                 if param_array && (optional || default_value.is_some()) {
                     return None;
                 }
-                if optional && by_ref {
-                    return None;
-                }
+                // `Optional` parameters are ByRef by default in VBA (e.g. `Optional b As Long`);
+                // `Optional ByRef`/`Optional ByVal` are both legal. Do not reject ByRef here.
                 if optional {
                     seen_optional = true;
                 } else if seen_optional {
@@ -3890,9 +3893,18 @@ fn parse_call_invocation(
     }
 
     let mut args = Vec::new();
-    for token in split_call_args(args_raw)? {
+    for token in split_call_args_allowing_omitted(args_raw)? {
         let trimmed = token.trim();
-        if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+        if trimmed.is_empty() {
+            // Omitted positional argument via bare commas, e.g. `Foo(1, , 5)`.
+            // Bind a sentinel; call lowering resolves it to the parameter's
+            // Optional default (or Missing for an Optional Variant).
+            args.push(BoundCallArg {
+                name: None,
+                expr: omitted_argument_sentinel(),
+                force_byval: false,
+            });
+        } else if let Some((lhs, rhs)) = trimmed.split_once(":=") {
             args.push(BoundCallArg {
                 name: Some(normalize_ident(lhs)?),
                 expr: parse_expr(rhs.trim(), array_bounds)?,
@@ -3907,6 +3919,19 @@ fn parse_call_invocation(
         }
     }
     Some((name, args))
+}
+
+/// Sentinel expression for an argument omitted via bare commas (`Foo(1, , 5)`).
+/// Resolved during call lowering to the target parameter's Optional default.
+pub(crate) fn omitted_argument_sentinel() -> BoundExpr {
+    BoundExpr::IntrinsicCall {
+        name: "__omitted".to_string(),
+        args: Vec::new(),
+    }
+}
+
+pub(crate) fn is_omitted_argument_expr(expr: &BoundExpr) -> bool {
+    matches!(expr, BoundExpr::IntrinsicCall { name, args } if name == "__omitted" && args.is_empty())
 }
 
 fn parse_dispatch_invoke_call_invocation(
@@ -3971,9 +3996,15 @@ fn parse_statement_call_invocation(
     }
 
     let mut args = Vec::new();
-    for token in split_call_args(args_raw)? {
+    for token in split_call_args_allowing_omitted(args_raw)? {
         let trimmed = token.trim();
-        if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+        if trimmed.is_empty() {
+            args.push(BoundCallArg {
+                name: None,
+                expr: omitted_argument_sentinel(),
+                force_byval: false,
+            });
+        } else if let Some((lhs, rhs)) = trimmed.split_once(":=") {
             args.push(BoundCallArg {
                 name: Some(normalize_ident(lhs)?),
                 expr: parse_expr(rhs.trim(), array_bounds)?,
@@ -4920,6 +4951,133 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
     None
 }
 
+/// Resolves an always-available VBA intrinsic constant (the `vbConstants` family from the
+/// VBA runtime library) to its literal value. These are predeclared in every VBA project
+/// regardless of references, so a bare `vbCrLf`/`vbBinaryCompare`/`vbYesNo`/etc. must bind
+/// here instead of falling through to "use of undeclared variable". `vbNullString`, `Empty`,
+/// and `Null` are modeled as dedicated intrinsics elsewhere and are intentionally omitted.
+fn intrinsic_vb_constant(name: &str) -> Option<BoundExpr> {
+    let s = |text: &str| Some(BoundExpr::StringConst(text.to_string()));
+    let i = |value: i32| Some(BoundExpr::IntConst(value));
+    match name.to_ascii_lowercase().as_str() {
+        // String control characters
+        "vbcr" => s("\r"),
+        "vblf" => s("\n"),
+        "vbcrlf" | "vbnewline" => s("\r\n"),
+        "vbtab" => s("\t"),
+        "vbnullchar" => s("\0"),
+        "vbback" => s("\u{0008}"),
+        "vbformfeed" => s("\u{000C}"),
+        "vbverticaltab" => s("\u{000B}"),
+        // Comparison (VbCompareMethod)
+        "vbbinarycompare" => i(0),
+        "vbtextcompare" => i(1),
+        "vbdatabasecompare" => i(2),
+        // String conversion (VbStrConv)
+        "vbuppercase" => i(1),
+        "vblowercase" => i(2),
+        "vbpropercase" => i(3),
+        "vbwide" => i(4),
+        "vbnarrow" => i(8),
+        "vbkatakana" => i(16),
+        "vbhiragana" => i(32),
+        "vbunicode" => i(64),
+        "vbfromunicode" => i(128),
+        // VarType (VbVarType)
+        "vbempty" => i(0),
+        "vbnull" => i(1),
+        "vbinteger" => i(2),
+        "vblong" => i(3),
+        "vbsingle" => i(4),
+        "vbdouble" => i(5),
+        "vbcurrency" => i(6),
+        "vbdate" => i(7),
+        "vbstring" => i(8),
+        "vbobject" => i(9),
+        "vberror" => i(10),
+        "vbboolean" => i(11),
+        "vbvariant" => i(12),
+        "vbdataobject" => i(13),
+        "vbdecimal" => i(14),
+        "vbbyte" => i(17),
+        "vblonglong" => i(20),
+        "vbuserdefinedtype" => i(36),
+        "vbarray" => i(8192),
+        // Tristate / boolean-ish
+        "vbtrue" => i(-1),
+        "vbfalse" => i(0),
+        "vbusedefault" => i(-2),
+        // MsgBox buttons / icons / defaults / modality (VbMsgBoxStyle)
+        "vbokonly" => i(0),
+        "vbokcancel" => i(1),
+        "vbabortretryignore" => i(2),
+        "vbyesnocancel" => i(3),
+        "vbyesno" => i(4),
+        "vbretrycancel" => i(5),
+        "vbcritical" => i(16),
+        "vbquestion" => i(32),
+        "vbexclamation" => i(48),
+        "vbinformation" => i(64),
+        "vbdefaultbutton1" => i(0),
+        "vbdefaultbutton2" => i(256),
+        "vbdefaultbutton3" => i(512),
+        "vbdefaultbutton4" => i(768),
+        "vbapplicationmodal" => i(0),
+        "vbsystemmodal" => i(4096),
+        "vbmsgboxhelpbutton" => i(16384),
+        "vbmsgboxsetforeground" => i(65536),
+        "vbmsgboxright" => i(524288),
+        "vbmsgboxrtlreading" => i(1048576),
+        // MsgBox results (VbMsgBoxResult)
+        "vbok" => i(1),
+        "vbcancel" => i(2),
+        "vbabort" => i(3),
+        "vbretry" => i(4),
+        "vbignore" => i(5),
+        "vbyes" => i(6),
+        "vbno" => i(7),
+        // Colors (VbColorConstants), RGB-packed
+        "vbblack" => i(0),
+        "vbred" => i(255),
+        "vbgreen" => i(65280),
+        "vbyellow" => i(65535),
+        "vbblue" => i(16711680),
+        "vbmagenta" => i(16711935),
+        "vbcyan" => i(16776960),
+        "vbwhite" => i(16777215),
+        // Date format (VbDateTimeFormat)
+        "vbgeneraldate" => i(0),
+        "vblongdate" => i(1),
+        "vbshortdate" => i(2),
+        "vblongtime" => i(3),
+        "vbshorttime" => i(4),
+        // Day of week / first week (VbDayOfWeek / VbFirstWeekOfYear)
+        "vbusesystemdayofweek" => i(0),
+        "vbsunday" => i(1),
+        "vbmonday" => i(2),
+        "vbtuesday" => i(3),
+        "vbwednesday" => i(4),
+        "vbthursday" => i(5),
+        "vbfriday" => i(6),
+        "vbsaturday" => i(7),
+        "vbusesystem" => i(0),
+        "vbfirstjan1" => i(1),
+        "vbfirstfourdays" => i(2),
+        "vbfirstfullweek" => i(3),
+        // File attributes (VbFileAttribute)
+        "vbnormal" => i(0),
+        "vbreadonly" => i(1),
+        "vbhidden" => i(2),
+        "vbsystem" => i(4),
+        "vbvolume" => i(8),
+        "vbdirectory" => i(16),
+        "vbarchive" => i(32),
+        // Automation/object error base
+        "vbobjecterror" => i(-2147221504),
+        _ => None,
+    }
+}
+
 fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let expr = text.trim();
     if expr.eq_ignore_ascii_case("vbnullstring") {
@@ -4942,6 +5100,14 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     }
     if expr.eq_ignore_ascii_case("nothing") {
         return Some(BoundExpr::IntConst(0));
+    }
+    // Always-available VBA intrinsic constants (vbCrLf, vbBinaryCompare, vbYesNo, ...).
+    // Guarded on a `vb` prefix to keep the common path cheap.
+    if expr.len() >= 4
+        && expr.as_bytes()[..2].eq_ignore_ascii_case(b"vb")
+        && let Some(constant) = intrinsic_vb_constant(expr)
+    {
+        return Some(constant);
     }
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
@@ -5614,7 +5780,21 @@ fn parse_numeric_prefix_literal(text: &str) -> Option<i32> {
     }
 }
 
+/// Splits a comma-separated argument list at top level (respecting nested parens and
+/// string literals). Empty positions are rejected — appropriate for array indices,
+/// `ReDim` bounds, and value lists where bare commas are not valid.
 fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
+    split_call_args_inner(args_raw, false)
+}
+
+/// Like [`split_call_args`], but keeps omitted positions (bare commas) as empty `""`
+/// tokens instead of rejecting them. Used for procedure/method call arguments, where
+/// `Foo(1, , 5)` legally omits an optional parameter.
+fn split_call_args_allowing_omitted(args_raw: &str) -> Option<Vec<&str>> {
+    split_call_args_inner(args_raw, true)
+}
+
+fn split_call_args_inner(args_raw: &str, allow_omitted: bool) -> Option<Vec<&str>> {
     if args_raw.trim().is_empty() {
         return Some(Vec::new());
     }
@@ -5650,7 +5830,7 @@ fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
             }
             ',' if depth == 0 => {
                 let part = args_raw[start..idx].trim();
-                if part.is_empty() {
+                if part.is_empty() && !allow_omitted {
                     return None;
                 }
                 out.push(part);
@@ -5664,7 +5844,7 @@ fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
         return None;
     }
     let tail = args_raw[start..].trim();
-    if tail.is_empty() {
+    if tail.is_empty() && !allow_omitted {
         return None;
     }
     out.push(tail);
@@ -6818,6 +6998,26 @@ mod tests {
     }
 
     #[test]
+    fn resolve_intrinsic_vb_constants_to_literals() {
+        // Always-available vbConstants must bind to their literal values under
+        // Option Explicit rather than reporting "use of undeclared variable".
+        let source = "Option Explicit\nSub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\n\
+            a = vbBinaryCompare\nb = vbFromUnicode\nc = vbCrLf\nd = vbObjectError\ne = vbYesNo\nEnd Sub";
+        let module = resolve_symbols(source);
+        let expect = |idx: usize, want: &BoundExpr| {
+            let Some(BoundStmt::Assign { expr, .. }) = module.body.get(idx) else {
+                panic!("expected assignment at {idx}");
+            };
+            assert_eq!(expr, want, "binding mismatch at statement {idx}");
+        };
+        expect(0, &BoundExpr::IntConst(0)); // vbBinaryCompare
+        expect(1, &BoundExpr::IntConst(128)); // vbFromUnicode
+        expect(2, &BoundExpr::StringConst("\r\n".to_string())); // vbCrLf
+        expect(3, &BoundExpr::IntConst(-2147221504)); // vbObjectError
+        expect(4, &BoundExpr::IntConst(4)); // vbYesNo
+    }
+
+    #[test]
     fn resolve_conditional_compilation_skips_inactive_const_definition() {
         let source = "#Const OUTER = False\n#If OUTER Then\n#Const FLAG = True\n#End If\nSub Main()\nDim x\n#If FLAG Then\nx = 1\n#Else\nx = 5\n#End If\nEnd Sub";
         let module = resolve_symbols(source);
@@ -7160,6 +7360,45 @@ mod tests {
         assert!(!fill.params[1].by_ref);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(7));
+    }
+
+    #[test]
+    fn resolve_optional_byref_param_is_accepted() {
+        // `Optional b As Long` is ByRef by default in VBA; the signature must be accepted
+        // (regression: a prior `optional && by_ref => reject` rule made every such
+        // procedure unresolvable, so callers reported "unknown procedure").
+        let source = "Sub Main()\nFoo 1\nEnd Sub\nSub Foo(a As Long, Optional b As Long)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let foo = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "foo")
+            .expect("foo procedure should register with an Optional ByRef parameter");
+        assert_eq!(foo.params.len(), 2);
+        assert!(foo.params[1].optional);
+        assert!(
+            foo.params[1].by_ref,
+            "Optional parameters default to ByRef and must be allowed"
+        );
+    }
+
+    #[test]
+    fn resolve_omitted_positional_arguments_bind_sentinel() {
+        // `Foo 1, , 5` omits the middle optional argument via bare commas.
+        let source = "Sub Main()\nFoo 1, , 5\nEnd Sub\nSub Foo(a, Optional b, Optional c)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Call { name, args, .. }) = module.body.first() else {
+            panic!("expected call statement, got {:?}", module.body.first());
+        };
+        assert_eq!(name, "foo");
+        assert_eq!(args.len(), 3);
+        assert_eq!(args[0].expr, BoundExpr::IntConst(1));
+        assert!(
+            super::is_omitted_argument_expr(&args[1].expr),
+            "middle argument should bind the omitted sentinel, got {:?}",
+            args[1].expr
+        );
+        assert_eq!(args[2].expr, BoundExpr::IntConst(5));
     }
 
     #[test]

@@ -11,3 +11,8 @@ dist/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# External VBA watchlist corpus: web-sourced samples gathered for local
+# black-box/stress checking. Sample code and scratch .basproj files stay OUT of
+# git (clean-room); only the high-level summary + findings in docs/ are committed.
+.external/vba-corpus/

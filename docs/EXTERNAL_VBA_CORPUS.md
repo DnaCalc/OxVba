@@ -1,0 +1,95 @@
+# External VBA Corpus — Test Summary & Findings
+
+Companion to [`INTERESTING_VBA_PROJECTS.md`](INTERESTING_VBA_PROJECTS.md). That file
+is the *watchlist*; this file is the *running summary* of what we actually exercised
+against OxVBA and what we learned.
+
+## How this corpus is stored
+
+Web-sourced sample code is **deliberately not committed**. The samples and any
+adapted `.basproj` projects live in a gitignored working area
+(`.external/vba-corpus/`, see `.gitignore`); **only this summary and the findings
+below are committed.** This keeps the clean-room boundary: we observe and describe
+external projects, we don't redistribute their code in the OxVBA tree.
+
+Clean-room rule (inherited from the watchlist): use these projects only through
+public docs, high-level source review, and reproducible black-box behavior. Inclusion
+here is not a compatibility claim.
+
+## Status legend
+
+`watchlisted` → noted only · `gathered` → source pulled into the local area ·
+`building` → `.basproj` authored · `running` → executes under the VM ·
+`characterized` → behavior/limitations documented below.
+
+## Corpus
+
+| Project | Reference | What we're checking | Status |
+| --- | --- | --- | --- |
+| Riff | https://github.com/uesleibros/riff | `Declare`/Win32 interop, COM vtable dispatch, pointer-heavy VBA, conditional 32/64-bit compilation, UDTs/arrays, machine-code callback thunks, host-reset safety | gathered |
+| Wasabi | https://github.com/uesleibros/wasabi | Win32 networking `Declare`s, byte-array/string transport, async callback/event patterns, handler-class lifetimes, `DoEvents` host behavior, TLS/proxy surfaces | gathered |
+| Awesome VBA | https://github.com/sancarn/awesome-vba | Index for sourcing further candidates (JSON/CSV/XML, data structures, parsers, Win32, add-ins, …) | watchlisted |
+
+## Method note (how to read sweep failures)
+
+A first pass compiled each module **in isolation** (`oxvba-cli compile <one-file>`).
+Two failure classes from that are test-method artifacts, not engine defects, and are
+verified as such:
+
+- **Cross-module calls** (`call to unknown procedure: wasabi_tcpconnect`, etc.): OxVBA is
+  a whole-program compiler; a lone module calling a sibling module's `Public` proc has
+  nothing to resolve against. A 2-module project resolves it (`Helper.Add(2,3)` → `5`). ✓
+- **`.cls VERSION 1.0 CLASS / BEGIN…END` header**: single-file `compile` chokes on the
+  exported class header, but loading the same `.cls` as a `ClassModule` in a `.basproj`
+  does **not** error — so this is a single-file-`compile` limitation, not a class-ingest
+  bug. (Originally mis-described as expected; corrected after checking.)
+
+## Findings (compiler/runtime gaps surfaced by the corpus)
+
+Each has a minimal standalone repro (kept under the gitignored `temp/` while iterating).
+
+- **VBA7 dialect** — `VBA7` was already predefined `True`, so the corpus's `#If VBA7`
+  `PtrSafe` branch was taken; made the predefined `#If` set explicit/complete for VBA 7.1
+  (`Vba6`/`Win32`/`Win16` added, `Win64`/`Win32` keyed to pointer width). Status: **done.**
+- **F1 — intrinsic `vb*` constants unresolved.** `vbCrLf`, `vbCr`, `vbTab`, `vbObjectError`,
+  `vbBinaryCompare`, `vbFromUnicode`, … reported `use of undeclared variable` under
+  `Option Explicit`. Fixed by binding the always-available `vbConstants` family to literal
+  values in `resolve.rs`. Status: **FIXED** (regression test
+  `resolve_intrinsic_vb_constants_to_literals`).
+- **F2 — omitted / Optional arguments rejected.** Two layered defects:
+  1. **Root cause (high impact):** `parse_proc_signature` rejected any `Optional` parameter
+     that was `ByRef`. VBA parameters are ByRef by default, so the ubiquitous
+     `Optional b As Long` made the *whole procedure* fail to register — every caller then
+     hit `call to unknown procedure`. So essentially all real-world `Optional` usage was
+     broken, full-arity calls included.
+  2. Omitted positional args via bare commas (`Foo(1, , 5)`) were rejected by
+     `split_call_args` before binding.
+  Fixed by removing the bogus `optional && by_ref` rejection and adding an omitted-allowing
+  arg split that binds an `__omitted` sentinel (lowered to the parameter's Optional default).
+  Verified end-to-end via `run-project`: `Foo(1)`→default, `Foo(1, , , 5)`→defaults fill the
+  gaps. Status: **FIXED** (regressions `resolve_optional_byref_param_is_accepted`,
+  `resolve_omitted_positional_arguments_bind_sentinel`).
+- **F3 — parameterless `Function` member read without parens on a project class returns
+  `Empty`.** _(Re-scoped: the earlier "`New` doesn't instantiate" reading was a
+  misdiagnosis — `Dim w As New Widget` does instantiate; the `i32:1` slot is the
+  project-dynamic-object handle #1, not a broken value.)_ Boundary, all via `run-project`:
+  `Property Get` (default or not) → OK; `widget.GetScore()` (parens) → OK;
+  `widget.AddOne(6)` (args) → OK; **`widget.GetScore` (parameterless Function, no parens)
+  → `Empty`.** A no-paren member read on a project class dispatches as a property-get only
+  and doesn't fall back to invoking a parameterless method — the project-object analog of
+  the COM get-or-call gap. Status: **characterized; fix pending (core descriptor dispatch).**
+- **F4 (minor, observed) — single-file `oxvba-cli run`/`compile` can't resolve sibling
+  procedures.** A bare `.bas` with `Sub Main` + `Function Foo` reports `call to unknown
+  procedure: foo`; the same code in a `.basproj` (`run-project`) resolves fine. Affects only
+  the single-file CLI convenience path; noted so corpus testing uses `run-project`.
+
+### Per project
+- **Riff**: surfaces F2 (and WithEvents member-access in `If`), plus heavy
+  `Declare PtrSafe`/`As Any`/`LongPtr` and `#If VBA7` paths (pending VBA7 predefinition).
+- **Wasabi**: surfaces F1, F2, and (examples/tests) cross-module + project-class usage.
+
+## Related prior corpus work
+
+- `.external/sqliteforexcel/` — SQLite-for-Excel VBA modules, vendored earlier for
+  `Declare`/FFI integration testing (this one **is** committed; provenance under
+  `docs/evidence/SQLITEFOREXCEL_*`). Distinct from this gitignored watchlist area.
