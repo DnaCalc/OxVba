@@ -7,7 +7,7 @@
 
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicMemberSelector};
 use oxvba_compiler::bytecode::{
-    RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+    NumericCoerceTarget, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
 };
 use oxvba_runtime::value_types::validate_date_range;
 use oxvba_runtime::{BindingHandle, CurrencyValue, ObjectRef, VarType, Variant, bstr::BStr};
@@ -1100,7 +1100,11 @@ pub fn variant_add_const_value(
         ));
     }
     let value = runtime_variant_to_i32_compat(value, field)?;
-    Ok(Variant::from_i32(value + delta))
+    // VBA promotes Long overflow to Double rather than wrapping.
+    match value.checked_add(delta) {
+        Some(sum) => Ok(Variant::from_i32(sum)),
+        None => Ok(Variant::from_f64(value as f64 + delta as f64)),
+    }
 }
 
 pub fn variant_add_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
@@ -1120,7 +1124,10 @@ pub fn variant_add_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, Strin
     }
     let lhs = runtime_variant_to_i32_compat(lhs, "add lhs")?;
     let rhs = runtime_variant_to_i32_compat(rhs, "add rhs")?;
-    Ok(Variant::from_i32(lhs + rhs))
+    match lhs.checked_add(rhs) {
+        Some(sum) => Ok(Variant::from_i32(sum)),
+        None => Ok(Variant::from_f64(lhs as f64 + rhs as f64)),
+    }
 }
 
 pub fn variant_sub_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
@@ -1137,7 +1144,10 @@ pub fn variant_sub_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, Strin
     }
     let lhs = runtime_variant_to_i32_compat(lhs, "sub lhs")?;
     let rhs = runtime_variant_to_i32_compat(rhs, "sub rhs")?;
-    Ok(Variant::from_i32(lhs - rhs))
+    match lhs.checked_sub(rhs) {
+        Some(diff) => Ok(Variant::from_i32(diff)),
+        None => Ok(Variant::from_f64(lhs as f64 - rhs as f64)),
+    }
 }
 
 pub fn variant_mul_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
@@ -1155,7 +1165,12 @@ pub fn variant_mul_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, Strin
     let lhs = runtime_variant_to_i32_compat(lhs, "mul lhs")?;
     let rhs = runtime_variant_to_i32_compat(rhs, "mul rhs")?;
     let result = (lhs as i64) * (rhs as i64);
-    Ok(Variant::from_i32(result as i32))
+    if (i32::MIN as i64..=i32::MAX as i64).contains(&result) {
+        Ok(Variant::from_i32(result as i32))
+    } else {
+        // VBA promotes Long overflow to Double rather than truncating.
+        Ok(Variant::from_f64(result as f64))
+    }
 }
 
 pub fn variant_pow_values(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
@@ -1192,7 +1207,10 @@ pub fn variant_neg_value(value: &Variant) -> Result<Variant, String> {
         return Ok(Variant::from_f64(-runtime_variant_as_f64(value)?));
     }
     let value = runtime_variant_to_i32_compat(value, "neg operand")?;
-    Ok(Variant::from_i32(-value))
+    match value.checked_neg() {
+        Some(neg) => Ok(Variant::from_i32(neg)),
+        None => Ok(Variant::from_f64(-(value as f64))),
+    }
 }
 
 pub fn variant_increment_value(value: &Variant) -> Result<Variant, String> {
@@ -1200,7 +1218,50 @@ pub fn variant_increment_value(value: &Variant) -> Result<Variant, String> {
         return Ok(Variant::from_f64(runtime_variant_as_f64(value)? + 1.0));
     }
     let value = runtime_variant_to_i32_compat(value, "increment operand")?;
-    Ok(Variant::from_i32(value + 1))
+    match value.checked_add(1) {
+        Some(sum) => Ok(Variant::from_i32(sum)),
+        None => Ok(Variant::from_f64(value as f64 + 1.0)),
+    }
+}
+
+/// Rounds half-to-even ("banker's rounding"), matching VBA `CLng`/`CInt` narrowing.
+fn round_half_to_even(x: f64) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    let floor = x.floor();
+    let diff = x - floor;
+    if diff < 0.5 {
+        floor
+    } else if diff > 0.5 {
+        floor + 1.0
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
+    }
+}
+
+/// Range-checks a numeric value against a fixed-width integer type, reporting overflow
+/// (`Err(())`, surfaced as VBA run-time error 6) when it does not fit. Fractional values round
+/// half-to-even (as `CInt`/`CLng` do) before the check, so e.g. `32767.4` fits `Integer` but
+/// `32767.6` does not. In-range values are accepted unchanged — this is an overflow *guard*,
+/// not a retag: VBA arithmetic on fixed integer types and assignment into a declared fixed
+/// integer target error on overflow rather than widening. (Result subtype tagging — `Integer`
+/// vs `Long` — is a separate fidelity concern, tracked apart from this overflow gate.)
+pub fn variant_overflow_check(value: &Variant, target: NumericCoerceTarget) -> Result<(), ()> {
+    let rounded = round_half_to_even(runtime_variant_as_f64(value).map_err(|_| ())?);
+    let (lo, hi) = match target {
+        NumericCoerceTarget::Byte => (0.0, 255.0),
+        NumericCoerceTarget::Integer => (f64::from(i16::MIN), f64::from(i16::MAX)),
+        NumericCoerceTarget::Long => (f64::from(i32::MIN), f64::from(i32::MAX)),
+        NumericCoerceTarget::LongLong => (i64::MIN as f64, i64::MAX as f64),
+    };
+    if rounded < lo || rounded > hi {
+        Err(())
+    } else {
+        Ok(())
+    }
 }
 
 // ── Division (with error codes) ───────────────────────────────────────
@@ -1241,7 +1302,10 @@ pub fn variant_mod_values(lhs: &Variant, rhs: &Variant) -> Result<Result<Variant
         return Ok(Err(11));
     }
     let l = runtime_variant_to_numeric_compat(lhs, "mod lhs")?;
-    Ok(Ok(Variant::from_i32((l as i32) % r_int)))
+    // checked_rem guards the i32::MIN % -1 overflow edge (result is 0).
+    Ok(Ok(Variant::from_i32(
+        (l as i32).checked_rem(r_int).unwrap_or(0),
+    )))
 }
 
 // ── Comparison ────────────────────────────────────────────────────────
@@ -1879,9 +1943,9 @@ mod tests {
         assert_eq!(rounded.as_i32(), Some(20));
 
         let overflow = variant_mul_values(&Variant::from_i32(50_000), &Variant::from_i32(50_000))
-            .expect("Long multiplication wraps current i32 compatibility result");
-        assert_eq!(overflow.vtype(), VarType::Long);
-        assert_eq!(overflow.as_i32(), Some(-1_794_967_296));
+            .expect("Long multiplication promotes to Double on overflow");
+        assert_eq!(overflow.vtype(), VarType::Double);
+        assert_eq!(overflow.as_f64(), Some(2_500_000_000.0));
 
         let intdiv = variant_intdiv_values(&Variant::from_i32(7), &Variant::from_i32(2))
             .expect("integer division evaluates")

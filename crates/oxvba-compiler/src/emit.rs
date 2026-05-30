@@ -9,7 +9,8 @@ use crate::{
     bytecode::{
         Bytecode, ComMemberCallDescriptor, ComMemberSelectorDescriptor, DeclareParamType,
         DispatchInvokeArg, ExternalCallDescriptor, ExternalCallWriteback,
-        ExternalCallWritebackKind, Instruction, ProjectMemberCallDescriptor, ProjectMemberCallKind,
+        ExternalCallWritebackKind, Instruction, NumericCoerceTarget, ProjectMemberCallDescriptor,
+        ProjectMemberCallKind,
         RuntimeArrayElementType, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind,
         StringCompareMode,
     },
@@ -6009,12 +6010,16 @@ fn emit_stmt(
                     .copied()
                     .unwrap_or(BoundType::Variant);
                 let source_ty = expr_bound_type(expr, current_meta, proc_meta, external_decls);
+                // Wrap fixed-integer arithmetic in overflow coercions (error 6 on overflow);
+                // Variant-typed operations are left to widen.
+                let coerced_expr =
+                    insert_arithmetic_overflow_coercions(expr.clone(), &current_meta.declaration_types);
                 if let Some((intent, target_kind)) =
                     runtime_assignment_validation(*intent, target_ty, source_ty)
                 {
                     let value_slot = temps.alloc_temp();
                     emit_expr_into(
-                        expr,
+                        &coerced_expr,
                         compare_mode,
                         value_slot,
                         slot_map,
@@ -6037,7 +6042,7 @@ fn emit_stmt(
                     });
                 } else {
                     emit_expr_into(
-                        expr,
+                        &coerced_expr,
                         compare_mode,
                         target_slot,
                         slot_map,
@@ -6047,6 +6052,14 @@ fn emit_stmt(
                         proc_meta,
                         external_decls,
                     );
+                }
+                // Narrow into a declared fixed-integer target: VBA raises error 6 when the
+                // value does not fit the declared width (e.g. `ab = ab + 100` → Byte overflow).
+                if let Some(target) = fixed_integer_target(target_ty) {
+                    instructions.push(Instruction::CoerceNumeric {
+                        slot: target_slot,
+                        target,
+                    });
                 }
             }
         }
@@ -7278,6 +7291,228 @@ fn emit_stmt(
             });
         }
         BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+/// Width rank for fixed-width integer arithmetic; `Byte` promotes to `Integer` (VBA has no
+/// `Byte` arithmetic). `None` for any non-fixed-integer type — those don't take part in the
+/// integer-overflow check (Variant operands widen; `Double`/`Single`/`Currency` differ).
+fn fixed_integer_arith_rank(ty: BoundType) -> Option<u8> {
+    match ty {
+        BoundType::Byte | BoundType::Integer => Some(0),
+        BoundType::Long => Some(1),
+        BoundType::LongLong => Some(2),
+        _ => None,
+    }
+}
+
+fn coerce_target_for_rank(rank: u8) -> NumericCoerceTarget {
+    match rank {
+        0 => NumericCoerceTarget::Integer,
+        1 => NumericCoerceTarget::Long,
+        _ => NumericCoerceTarget::LongLong,
+    }
+}
+
+/// Result coercion target for a fixed-integer arithmetic op, or `None` when either operand is
+/// not a fixed integer (the op then widens as a Variant or is non-integer, so no error-6 check).
+fn fixed_integer_op_target(lhs: BoundType, rhs: BoundType) -> Option<NumericCoerceTarget> {
+    let l = fixed_integer_arith_rank(lhs)?;
+    let r = fixed_integer_arith_rank(rhs)?;
+    Some(coerce_target_for_rank(l.max(r)))
+}
+
+/// Coercion target for narrowing into a declared fixed-integer assignment target.
+fn fixed_integer_target(ty: BoundType) -> Option<NumericCoerceTarget> {
+    match ty {
+        BoundType::Byte => Some(NumericCoerceTarget::Byte),
+        BoundType::Integer => Some(NumericCoerceTarget::Integer),
+        BoundType::Long => Some(NumericCoerceTarget::Long),
+        BoundType::LongLong => Some(NumericCoerceTarget::LongLong),
+        _ => None,
+    }
+}
+
+/// VBA types integer literals by value: `Integer` if within `-32768..32767`, else `Long`.
+fn int_literal_arith_type(value: i32) -> BoundType {
+    if (i32::from(i16::MIN)..=i32::from(i16::MAX)).contains(&value) {
+        BoundType::Integer
+    } else {
+        BoundType::Long
+    }
+}
+
+fn join_fixed_integer_arith(lhs: BoundType, rhs: BoundType) -> BoundType {
+    match (fixed_integer_arith_rank(lhs), fixed_integer_arith_rank(rhs)) {
+        (Some(l), Some(r)) => match l.max(r) {
+            0 => BoundType::Integer,
+            1 => BoundType::Long,
+            _ => BoundType::LongLong,
+        },
+        _ => BoundType::Variant,
+    }
+}
+
+fn is_overflow_capable_arith(op: ArithOp) -> bool {
+    matches!(op, ArithOp::Add | ArithOp::Sub | ArithOp::Mul)
+}
+
+/// Best-effort static type of an arithmetic operand, used only to decide whether a fixed-integer
+/// overflow check applies. Unknown operands (calls, non-numeric) report `Variant` so no
+/// (potentially spurious) overflow error is forced.
+fn arith_operand_type(expr: &BoundExpr, decl_types: &HashMap<String, BoundType>) -> BoundType {
+    match expr {
+        BoundExpr::IntConst(v) => int_literal_arith_type(*v),
+        BoundExpr::Var(name) => decl_types
+            .get(name.as_str())
+            .copied()
+            .unwrap_or(BoundType::Variant),
+        BoundExpr::AddConst { var, delta } | BoundExpr::SubConst { var, delta } => {
+            let var_ty = decl_types
+                .get(var.as_str())
+                .copied()
+                .unwrap_or(BoundType::Variant);
+            join_fixed_integer_arith(var_ty, int_literal_arith_type(*delta))
+        }
+        BoundExpr::BinaryOp { op, lhs, rhs } if is_overflow_capable_arith(*op) => {
+            join_fixed_integer_arith(
+                arith_operand_type(lhs, decl_types),
+                arith_operand_type(rhs, decl_types),
+            )
+        }
+        BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand,
+        } => arith_operand_type(operand, decl_types),
+        _ => BoundType::Variant,
+    }
+}
+
+fn coerce_intrinsic_name(target: NumericCoerceTarget) -> &'static str {
+    match target {
+        NumericCoerceTarget::Byte => "__oxvba_coerce_byte",
+        NumericCoerceTarget::Integer => "__oxvba_coerce_integer",
+        NumericCoerceTarget::Long => "__oxvba_coerce_long",
+        NumericCoerceTarget::LongLong => "__oxvba_coerce_longlong",
+    }
+}
+
+fn coerce_intrinsic_target(name: &str) -> Option<NumericCoerceTarget> {
+    match name {
+        "__oxvba_coerce_byte" => Some(NumericCoerceTarget::Byte),
+        "__oxvba_coerce_integer" => Some(NumericCoerceTarget::Integer),
+        "__oxvba_coerce_long" => Some(NumericCoerceTarget::Long),
+        "__oxvba_coerce_longlong" => Some(NumericCoerceTarget::LongLong),
+        _ => None,
+    }
+}
+
+fn wrap_overflow_coerce(expr: BoundExpr, target: NumericCoerceTarget) -> BoundExpr {
+    BoundExpr::IntrinsicCall {
+        name: coerce_intrinsic_name(target).to_string(),
+        args: vec![expr],
+    }
+}
+
+/// Wraps fixed-integer arithmetic operations (`+`/`-`/`*` and unary `-`) in a `CoerceNumeric`
+/// carrier so the runtime range-checks each operation's result against its VBA result type and
+/// raises error 6 on overflow (including intermediate overflow inside a larger expression).
+/// Variant-typed operations are left to widen. Applied to assignment right-hand sides.
+fn insert_arithmetic_overflow_coercions(
+    expr: BoundExpr,
+    decl_types: &HashMap<String, BoundType>,
+) -> BoundExpr {
+    match expr {
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let target = if is_overflow_capable_arith(op) {
+                fixed_integer_op_target(
+                    arith_operand_type(&lhs, decl_types),
+                    arith_operand_type(&rhs, decl_types),
+                )
+            } else {
+                None
+            };
+            let lowered = BoundExpr::BinaryOp {
+                op,
+                lhs: Box::new(insert_arithmetic_overflow_coercions(*lhs, decl_types)),
+                rhs: Box::new(insert_arithmetic_overflow_coercions(*rhs, decl_types)),
+            };
+            match target {
+                Some(target) => wrap_overflow_coerce(lowered, target),
+                None => lowered,
+            }
+        }
+        BoundExpr::UnaryOp { op, operand } => {
+            let target = if op == ArithOp::Neg {
+                fixed_integer_arith_rank(arith_operand_type(&operand, decl_types))
+                    .map(coerce_target_for_rank)
+            } else {
+                None
+            };
+            let lowered = BoundExpr::UnaryOp {
+                op,
+                operand: Box::new(insert_arithmetic_overflow_coercions(*operand, decl_types)),
+            };
+            match target {
+                Some(target) => wrap_overflow_coerce(lowered, target),
+                None => lowered,
+            }
+        }
+        BoundExpr::AddConst { var, delta } => {
+            let var_ty = decl_types
+                .get(var.as_str())
+                .copied()
+                .unwrap_or(BoundType::Variant);
+            let target = fixed_integer_op_target(var_ty, int_literal_arith_type(delta));
+            let node = BoundExpr::AddConst { var, delta };
+            match target {
+                Some(target) => wrap_overflow_coerce(node, target),
+                None => node,
+            }
+        }
+        BoundExpr::SubConst { var, delta } => {
+            let var_ty = decl_types
+                .get(var.as_str())
+                .copied()
+                .unwrap_or(BoundType::Variant);
+            let target = fixed_integer_op_target(var_ty, int_literal_arith_type(delta));
+            let node = BoundExpr::SubConst { var, delta };
+            match target {
+                Some(target) => wrap_overflow_coerce(node, target),
+                None => node,
+            }
+        }
+        BoundExpr::CompareOp { op, lhs, rhs } => BoundExpr::CompareOp {
+            op,
+            lhs: Box::new(insert_arithmetic_overflow_coercions(*lhs, decl_types)),
+            rhs: Box::new(insert_arithmetic_overflow_coercions(*rhs, decl_types)),
+        },
+        BoundExpr::LogicalBinaryOp { op, lhs, rhs } => BoundExpr::LogicalBinaryOp {
+            op,
+            lhs: Box::new(insert_arithmetic_overflow_coercions(*lhs, decl_types)),
+            rhs: Box::new(insert_arithmetic_overflow_coercions(*rhs, decl_types)),
+        },
+        BoundExpr::LogicalNot { operand } => BoundExpr::LogicalNot {
+            operand: Box::new(insert_arithmetic_overflow_coercions(*operand, decl_types)),
+        },
+        BoundExpr::IntrinsicCall { name, args } => BoundExpr::IntrinsicCall {
+            name,
+            args: args
+                .into_iter()
+                .map(|arg| insert_arithmetic_overflow_coercions(arg, decl_types))
+                .collect(),
+        },
+        BoundExpr::ProcCall { name, args } => BoundExpr::ProcCall {
+            name,
+            args: args
+                .into_iter()
+                .map(|arg| BoundCallArg {
+                    expr: insert_arithmetic_overflow_coercions(arg.expr, decl_types),
+                    ..arg
+                })
+                .collect(),
+        },
+        leaf => leaf,
     }
 }
 
@@ -8826,6 +9061,28 @@ fn emit_expr_into(
                     object_slot,
                     type_name,
                 });
+                return;
+            }
+
+            // Fixed-integer overflow coercion carrier (`__oxvba_coerce_*`): emit the single
+            // operand directly into `dst`, then range-check it to the target width (error 6 on
+            // overflow). Emitted by `insert_arithmetic_overflow_coercions` around fixed-type
+            // integer arithmetic; mirrors the typed result semantics VBA/Excel enforce.
+            if let Some(target) = coerce_intrinsic_target(name)
+                && args.len() == 1
+            {
+                emit_expr_into(
+                    &args[0],
+                    compare_mode,
+                    dst,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                instructions.push(Instruction::CoerceNumeric { slot: dst, target });
                 return;
             }
 

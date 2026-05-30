@@ -7,6 +7,17 @@ pub enum StringCompareMode {
     Text,
 }
 
+/// Target of a fixed-width integer narrowing coercion (`CoerceNumeric`). VBA arithmetic on
+/// fixed integer types and assignment into a declared fixed integer target range-check against
+/// these widths, raising run-time error 6 ("Overflow") when the value does not fit.
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NumericCoerceTarget {
+    Byte,
+    Integer,
+    Long,
+    LongLong,
+}
+
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DeclareParamType {
     Long,
@@ -190,6 +201,15 @@ pub enum Instruction {
     CopySlot {
         dst: usize,
         src: usize,
+    },
+    /// Narrows the numeric value in `slot` to the fixed-width integer type `target`, in place.
+    /// Rounds (round-half-to-even, like `CLng`/`CInt`) if the value is fractional, then
+    /// range-checks: out of range raises run-time error 6 ("Overflow"); in range, the slot is
+    /// retagged to the target type. Emitted for fixed-type integer arithmetic results and for
+    /// assignments into declared fixed integer targets so overflow matches VBA/Excel.
+    CoerceNumeric {
+        slot: usize,
+        target: NumericCoerceTarget,
     },
     /// Materialises a pure-VBA project-class instance as a reference-counted `Object`
     /// Variant. `handle` is a slot holding the instance identity (`i32`); the VM resolves the

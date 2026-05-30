@@ -4684,6 +4684,19 @@ impl Vm {
                     self.write_variant_slot(*slot, Variant::from_i32(*value))?;
                     pc += 1;
                 }
+                Instruction::CoerceNumeric { slot, target } => {
+                    // Overflow guard for a fixed-width integer result/target: out of range is
+                    // VBA error 6; in-range values pass through unchanged.
+                    let value = self.read_variant_slot(*slot)?;
+                    match crate::semantics::variant_overflow_check(&value, *target) {
+                        Ok(()) => {
+                            pc += 1;
+                        }
+                        Err(()) => {
+                            pc = self.route_runtime_error(pc, 6, Some("Overflow"))?;
+                        }
+                    }
+                }
                 Instruction::LoadProjectObjectRef { dst, handle } => {
                     // Materialise the project-class instance as a reference-counted `Object`
                     // Variant. The retained clone shares the route's identity, so dispatch
@@ -8242,7 +8255,13 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeSlot::Variant(Variant::from_i32(current + value));
+        // Bail to the promoting slow path on i32 overflow so the result matches
+        // VBA arithmetic (Long overflow promotes to Double) instead of
+        // wrapping/panicking on the raw i32 add.
+        let Some(sum) = current.checked_add(value) else {
+            return false;
+        };
+        *dst = RuntimeSlot::Variant(Variant::from_i32(sum));
         true
     }
 
@@ -8257,7 +8276,11 @@ impl Vm {
         let Some(current) = dst.as_i32_lossy() else {
             return false;
         };
-        *dst = RuntimeSlot::Variant(Variant::from_i32(current - value));
+        // Bail to the promoting slow path on i32 overflow (see fast_add_const).
+        let Some(diff) = current.checked_sub(value) else {
+            return false;
+        };
+        *dst = RuntimeSlot::Variant(Variant::from_i32(diff));
         true
     }
 

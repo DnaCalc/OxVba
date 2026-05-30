@@ -197,6 +197,77 @@ fn type_suffix_numeric_literals() {
     );
 }
 
+/// Runs a snippet and returns the execution result (for asserting overflow errors).
+fn run_result(source: &str) -> Result<Vec<Variant>, String> {
+    let (bytecode, metadata) =
+        compile_with_runtime_metadata(source).expect("snippet should compile");
+    execute_bundle_and_snapshot_variants(&OxBundle::new(bytecode, metadata))
+}
+
+/// Asserts a snippet raises VBA run-time error 6 ("Overflow"), per the Excel oracle (bd-0d1y).
+fn expect_overflow(source: &str) {
+    let err = run_result(source).expect_err("expected VBA overflow error 6");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got: {err}"
+    );
+}
+
+#[test]
+fn overflow_fixed_integer_assignment_raises_error_6() {
+    // Overflow into a declared fixed-integer target is error 6 (Excel-oracle confirmed).
+    expect_overflow("Sub Main()\nDim x As Long\nx = 2000000000\nx = x + 2000000000\nEnd Sub");
+    expect_overflow("Sub Main()\nDim x As Integer\nx = 32767\nx = x + 1\nEnd Sub");
+    expect_overflow("Sub Main()\nDim x As Integer\nx = -32768\nx = x - 1\nEnd Sub");
+    expect_overflow("Sub Main()\nDim x As Byte\nx = 200\nx = x + 100\nEnd Sub");
+    expect_overflow("Sub Main()\nDim x As Long\nx = 50000\nx = x * 50000\nEnd Sub");
+}
+
+#[test]
+fn overflow_fixed_integer_expression_raises_error_6() {
+    // Fixed-type arithmetic overflow errors at the operation even when the result flows into a
+    // Variant (no widening), including intermediate overflow inside a larger expression.
+    expect_overflow("Sub Main()\nDim ai As Integer\nDim r\nai = 32767\nr = ai + 1\nEnd Sub");
+    expect_overflow("Sub Main()\nDim ai As Integer\nDim r\nai = -32768\nr = -ai\nEnd Sub");
+    expect_overflow("Sub Main()\nDim al As Long\nDim r\nal = 2000000000\nr = al + al\nEnd Sub");
+    expect_overflow(
+        "Sub Main()\nDim al As Long\nDim r\nal = 2000000000\nr = (al + al) Mod 7\nEnd Sub",
+    );
+}
+
+#[test]
+fn overflow_variant_operands_widen_instead_of_erroring() {
+    // Variant operands widen on overflow (Integer->Long->Double); no error.
+    let snap = run("Sub Main()\nDim v\nDim r\nv = 2000000000\nr = v + v\nEnd Sub");
+    assert!(
+        snap.iter().any(|x| x.as_f64() == Some(4_000_000_000.0)),
+        "expected widened Double 4e9 in {snap:?}"
+    );
+    let snap = run("Sub Main()\nDim v\nDim r\nv = 50000\nr = v * 50000\nEnd Sub");
+    assert!(
+        snap.iter().any(|x| x.as_f64() == Some(2_500_000_000.0)),
+        "expected widened Double 2.5e9 in {snap:?}"
+    );
+}
+
+#[test]
+fn fixed_integer_arithmetic_in_range_does_not_error() {
+    // In-range fixed-integer arithmetic is not flagged: the value is correct and no spurious
+    // overflow is raised. (The result subtype tag — Integer vs Long — is a separate fidelity
+    // concern outside the overflow gate; the value is what matters here.)
+    let snap = run("Sub Main()\nDim ai As Integer\nDim r\nai = 100\nr = ai + 1\nEnd Sub");
+    assert!(
+        snap.contains(&Variant::from_i32(101)),
+        "expected 101 in {snap:?}"
+    );
+    // Byte + Integer literal promotes to Integer (300 fits), so this does not overflow.
+    let snap = run("Sub Main()\nDim ab As Byte\nDim r\nab = 200\nr = ab + 100\nEnd Sub");
+    assert!(
+        snap.contains(&Variant::from_i32(300)),
+        "expected 300 (Byte+Integer promotes, in range) in {snap:?}"
+    );
+}
+
 #[test]
 fn logical_operator_precedence_with_comparison() {
     // Comparison binds tighter than And/Or: `x > 0 And x < 10`.
