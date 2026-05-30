@@ -120,8 +120,23 @@ Each has a minimal standalone repro (kept under the gitignored `temp/` while ite
   These error cases are oracle-confirmable but the silent-`Empty`-on-unresolved-read
   behaviour is itself a parity bug to fix alongside.
 
-  Status: **characterized; fix designed (compile-time probe + runtime get-or-call + edge
-  diagnostics). Implementation pending.**
+  Status:
+  - **F3b (no-paren read get-or-call): FIXED** (commit `a3f6ee34`). The internal-class
+    no-paren read rewrite now probes a parameterless `Function` after `PropertyGet`, so
+    `Dim w As New Widget : x = w.GetScore` → `42`. Regression test
+    `pure_oxvba_class_no_paren_read_invokes_parameterless_function`; full suites green.
+  - **F3a (`Set <var> = New <ProjectClass>`): scoped, not yet implemented.** The typed
+    `As Widget` and late-bound `As Object` forms both fail on the `Set = New` itself (the
+    read is never reached). Cause: binding registration only covers `As New`
+    auto-instantiation; `rewrite_internal_class_set_assignment` bails when the LHS isn't
+    already an internal-class binding (`project.rs:~5364`), so explicit `New <ProjectClass>`
+    in a `Set` is never lowered as a project-class instantiation, and a later
+    default-member-assignment rewrite mis-fires into `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
+    (typed) / `unsupported statement` (`Object`). This is a real feature — explicit
+    project-class instantiation + binding registration for `As <Class>`/`As Object` — not a
+    small tweak; warrants focused implementation.
+  - **F3c (edge diagnostics): pending oracle.** Required-arg read / `Sub`-in-value-context
+    must raise VBA-equivalent diagnostics per the conformance parity principle.
 - **F4 (minor, observed) — single-file `oxvba-cli run`/`compile` can't resolve sibling
   procedures.** A bare `.bas` with `Sub Main` + `Function Foo` reports `call to unknown
   procedure: foo`; the same code in a `.basproj` (`run-project`) resolves fine. Affects only
