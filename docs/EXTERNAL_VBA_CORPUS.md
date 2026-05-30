@@ -125,16 +125,18 @@ Each has a minimal standalone repro (kept under the gitignored `temp/` while ite
     no-paren read rewrite now probes a parameterless `Function` after `PropertyGet`, so
     `Dim w As New Widget : x = w.GetScore` → `42`. Regression test
     `pure_oxvba_class_no_paren_read_invokes_parameterless_function`; full suites green.
-  - **F3a (`Set <var> = New <ProjectClass>`): scoped, not yet implemented.** The typed
-    `As Widget` and late-bound `As Object` forms both fail on the `Set = New` itself (the
-    read is never reached). Cause: binding registration only covers `As New`
-    auto-instantiation; `rewrite_internal_class_set_assignment` bails when the LHS isn't
-    already an internal-class binding (`project.rs:~5364`), so explicit `New <ProjectClass>`
-    in a `Set` is never lowered as a project-class instantiation, and a later
-    default-member-assignment rewrite mis-fires into `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
-    (typed) / `unsupported statement` (`Object`). This is a real feature — explicit
-    project-class instantiation + binding registration for `As <Class>`/`As Object` — not a
-    small tweak; warrants focused implementation.
+  - **F3a (`Set <var> = New <ProjectClass>`): mostly FIXED (4/5 receiver forms).**
+    `expand_bound_source_line` now recognises `Set <var> = New <ProjectClass>` and lowers it
+    like `As New` (allocate an instance handle, register/refresh the dynamic-object binding,
+    emit the handle assignment + `Class_Initialize`), with a `referenced_typelib_blob`
+    guard so COM `New` still routes to the early-bound rewrites. `As Widget`, `As Variant`,
+    untyped, and `As New` now all give `42`. Regression test
+    `pure_oxvba_class_explicit_set_new_instantiates_and_dispatches`; suites green (130).
+    **Remaining: `Dim c As Object : Set c = New Widget`** still errors `cannot assign Long
+    to Object variable c` — the instance handle is an integer literal, which a Variant/
+    untyped slot accepts but an `Object`-typed slot rejects (`typecheck.rs:~1463`). Needs an
+    object-typed representation of the project-instantiation handle (so it type-checks into
+    an `Object` slot), tracked with F3c.
   - **F3c (edge diagnostics): pending oracle.** Required-arg read / `Sub`-in-value-context
     must raise VBA-equivalent diagnostics per the conformance parity principle.
 - **F4 (minor, observed) — single-file `oxvba-cli run`/`compile` can't resolve sibling

@@ -3408,6 +3408,50 @@ fn expand_bound_source_line(
         }
     }
 
+    // `Set <var> = New <ProjectClass>` — explicit instantiation of a project (internal)
+    // class into a typed (`As Widget`), late-bound (`As Object`/`Variant`), or untyped
+    // variable. Mirrors `As New`: allocate an instance handle, register/refresh the
+    // dynamic-object binding, and emit the handle assignment plus `Class_Initialize`. COM
+    // `New` falls through to the early-bound rewrites below (resolve_interface_module → None).
+    if let Some((var_name, type_name)) = parse_set_new_instantiation(line)
+        && referenced_typelib_blob_for_type_reference(manifest, &type_name)?.is_none()
+        && let Some((target_project, target_module)) =
+            resolve_interface_module(manifest, current_project, &type_name, reference_order)?
+    {
+        let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+        let leading_ws = line[..leading_ws_len].to_string();
+        let object_handle = *next_internal_instance_id;
+        dynamic_instance_bindings.push(ProjectDynamicInstanceBindingDraft {
+            object_handle,
+            project_name: target_project.clone(),
+            module_name: target_module.clone(),
+        });
+        internal_class_bindings.insert(
+            normalize_identifier(&var_name),
+            InternalClassBinding {
+                project_name: target_project.clone(),
+                module_name: target_module.clone(),
+                generated_instance_id: Some(object_handle),
+                interface_module_name: None,
+            },
+        );
+        let mut out = vec![format!("{leading_ws}{var_name} = {object_handle}")];
+        if let Some(class_initialize) = find_decl_by_signature(
+            procedures,
+            &target_project,
+            &target_module,
+            "class_initialize",
+            ProcedureDeclKind::Sub,
+        ) {
+            out.push(format!(
+                "{leading_ws}Call {}({})",
+                class_initialize.lowered_name, object_handle
+            ));
+        }
+        *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
+        return Ok(out);
+    }
+
     let rewritten = rewrite_early_bound_property_assignment(line, early_bound)?;
     let rewritten = rewrite_early_bound_object_assignment(manifest, &rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_property_read_assignment(&rewritten, early_bound)?;
@@ -3449,6 +3493,38 @@ fn parse_external_dim_declaration(line: &str) -> Option<ExternalDimDecl> {
         qualified_type: normalized_type,
         as_new,
     })
+}
+
+/// Parses `Set <var> = New <TypeName>` into `(var, TypeName)`. The LHS must be a bare
+/// identifier (member-target sets like `Set obj.Prop = …` are handled elsewhere). The
+/// caller decides whether `TypeName` is a project class (instantiate here) or a COM type
+/// (defer to the early-bound `New` rewrites).
+fn parse_set_new_instantiation(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if !trimmed
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("set "))
+    {
+        return None;
+    }
+    let payload = trimmed[4..].trim();
+    let (lhs, rhs) = payload.split_once('=')?;
+    let var_name = lhs.trim();
+    if var_name.is_empty() || !is_valid_vba_identifier(var_name) {
+        return None;
+    }
+    let rhs = rhs.trim();
+    if !rhs
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("new "))
+    {
+        return None;
+    }
+    let type_name = rhs[4..].trim();
+    if type_name.is_empty() {
+        return None;
+    }
+    Some((var_name.to_string(), type_name.to_string()))
 }
 
 fn parse_internal_class_dim_declaration(line: &str) -> Option<InternalClassDimDecl> {

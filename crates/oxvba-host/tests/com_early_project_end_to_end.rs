@@ -235,6 +235,55 @@ End Function
 }
 
 #[test]
+fn pure_oxvba_class_explicit_set_new_instantiates_and_dispatches() {
+    // `Dim w As Widget : Set w = New Widget` (explicit project-class instantiation into a
+    // typed receiver) must instantiate and then dispatch. Regression for F3a; combined with
+    // the no-paren read (F3b) this is the everyday `Set`-then-use pattern.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim w As Widget
+Dim valueOut
+Set w = New Widget
+valueOut = w.GetScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Function GetScore() As Long
+GetScore = 42
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.contains(&Variant::from_i32(42)),
+        "explicit `Set w = New Widget` then `w.GetScore` should yield 42; out={out:?}"
+    );
+}
+
+#[test]
 fn pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties() {
     let main_module = module_unit_from_source(
         "MainModule",
