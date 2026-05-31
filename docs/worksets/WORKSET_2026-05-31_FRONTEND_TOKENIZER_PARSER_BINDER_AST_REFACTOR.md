@@ -504,6 +504,7 @@ Candidate bead units:
   Artifact: `docs/spec/VBA_GRAMMAR_V1.md`.
 - FE-1.2 Rubberduck cross-check notes: use Rubberduck as a quirk checklist without copying its
   grammar into product code.
+  Evidence: `docs/evidence/frontend_rework/RUBBERDUCK_CROSSCHECK_2026-06-01.md`.
 - FE-1.3 Grammar coverage matrix: create production-level rows with fixture anchors, parser
   status, binder status, execution status, and residual disposition.
 - FE-1.4 Fixture taxonomy: split syntax-only fixtures, binder fixtures, execution fixtures,
