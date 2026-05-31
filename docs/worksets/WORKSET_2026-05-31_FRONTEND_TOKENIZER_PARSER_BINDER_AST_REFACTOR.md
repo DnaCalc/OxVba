@@ -486,6 +486,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_DECISION_RECORD_2026-06-01.md`.
 - FE-0.3 Corpus inventory: enumerate current compiler, host, conformance, language-service, and
   real-world fixture sources that will feed the semantic/diff harness.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_CORPUS_INVENTORY_2026-06-01.md`.
 - FE-0.4 Bead rollout: create the actual bead tree from this hierarchy once the workset is
   accepted for execution.
 
