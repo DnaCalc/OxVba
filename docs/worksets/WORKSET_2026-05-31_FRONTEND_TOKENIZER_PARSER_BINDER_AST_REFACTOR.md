@@ -501,6 +501,7 @@ Outcome: the target VBA grammar subset is explicit and measurable.
 Candidate bead units:
 - FE-1.1 MS-VBAL grammar capture: create `docs/spec/VBA_GRAMMAR_V1` with clean-room provenance
   and dialect notes.
+  Artifact: `docs/spec/VBA_GRAMMAR_V1.md`.
 - FE-1.2 Rubberduck cross-check notes: use Rubberduck as a quirk checklist without copying its
   grammar into product code.
 - FE-1.3 Grammar coverage matrix: create production-level rows with fixture anchors, parser
