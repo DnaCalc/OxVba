@@ -3708,6 +3708,11 @@ pub struct Vm {
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     project_dynamic_objects: HashMap<i32, ProjectDynamicObjectState>,
     project_dynamic_dispatch_caches: HashMap<i32, oxvba_runtime::RuntimeDispatchPlanCache>,
+    /// Monotonic allocator for per-instance project-object identities. Each `New` mints a fresh
+    /// id from a high base so it never collides with compile-time route handles (which key the
+    /// per-class route map). The id is the instance's `compat_identity` / state key, 1:1 with
+    /// its IUnknown box.
+    next_project_instance_id: i32,
     foreach_iterators: HashMap<i32, ForEachIteratorState>,
     next_foreach_iterator_id: i32,
     project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
@@ -3756,6 +3761,7 @@ impl Vm {
             procedure_runtime_metadata: BTreeMap::new(),
             project_dynamic_objects: HashMap::new(),
             project_dynamic_dispatch_caches: HashMap::new(),
+            next_project_instance_id: 0x4000_0000,
             foreach_iterators: HashMap::new(),
             next_foreach_iterator_id: 1,
             project_com_withevents_routes: HashMap::new(),
@@ -3964,6 +3970,13 @@ impl Vm {
         self.project_dynamic_objects
             .get(&raw)
             .map(|state| state.object.clone())
+    }
+
+    /// Mints a fresh per-instance project-object identity (see `next_project_instance_id`).
+    fn alloc_project_instance_id(&mut self) -> i32 {
+        let id = self.next_project_instance_id;
+        self.next_project_instance_id = self.next_project_instance_id.wrapping_add(1);
+        id
     }
 
     #[cfg(test)]
@@ -4698,15 +4711,28 @@ impl Vm {
                     }
                 }
                 Instruction::LoadProjectObjectRef { dst, handle } => {
-                    // Materialise the project-class instance as a reference-counted `Object`
-                    // Variant. The retained clone shares the route's identity, so dispatch
-                    // (which keys on the object's compat identity) is unchanged, while
-                    // Set/overwrite/scope-exit now refcount the instance through the COM
-                    // `Variant` Clone/Drop path.
-                    let raw = self.read_i32_slot(*handle)?;
-                    let object = self
-                        .project_dynamic_object_ref(raw)
-                        .unwrap_or_else(|| oxvba_runtime::ObjectRef::from_compat_identity(raw));
+                    // Allocate a FRESH per-instance project object: a distinct IUnknown box
+                    // (hence a distinct identity for `Is`) carrying the class's descriptor and
+                    // route key, refcount 1, not pinned by the route map — so its lifetime
+                    // tracks real references and same-site `New`s are distinct instances.
+                    // Dispatch resolves the route via the object's route key; per-instance
+                    // state keys on the fresh `compat_identity`.
+                    let route_handle = self.read_i32_slot(*handle)?;
+                    let descriptor = self
+                        .project_dynamic_objects
+                        .get(&route_handle)
+                        .map(|state| state.object.class_descriptor());
+                    let object = match descriptor {
+                        Some(descriptor) => {
+                            let instance_id = self.alloc_project_instance_id();
+                            oxvba_runtime::ObjectRef::from_project_instance(
+                                instance_id,
+                                route_handle,
+                                descriptor,
+                            )
+                        }
+                        None => oxvba_runtime::ObjectRef::from_compat_identity(route_handle),
+                    };
                     self.write_variant_slot(*dst, Variant::from_object_ref(object))?;
                     pc += 1;
                 }
@@ -7072,7 +7098,9 @@ impl Vm {
                     let val = self.read_variant_slot(*object_slot)?;
                     let is_match = match val.as_object_ref() {
                         Some(handle) => {
-                            if let Some(state) = self.project_dynamic_objects.get(&handle.raw()) {
+                            if let Some(state) =
+                                self.project_dynamic_objects.get(&handle.route_key())
+                            {
                                 state.route.module_name.eq_ignore_ascii_case(type_name)
                                     || state
                                         .route
@@ -7690,7 +7718,13 @@ impl Vm {
         request: &DynamicCallRequest,
     ) -> Result<Option<RuntimeSlot>, String> {
         let object = request.object.clone();
-        let Some(state) = self.project_dynamic_objects.get(&object.raw()).cloned() else {
+        // Route (class dispatch table) is resolved by the object's route key; the per-instance
+        // `raw()` identity is used only for state and the dispatch-plan cache.
+        let Some(state) = self
+            .project_dynamic_objects
+            .get(&object.route_key())
+            .cloned()
+        else {
             return Ok(None);
         };
         let route = state.route;
@@ -8299,11 +8333,14 @@ impl Vm {
     where
         F: FnOnce(i32, i32) -> bool,
     {
-        // Null comparisons yield Null (falsy) — bail to slow path which handles this.
+        // Null comparisons yield Null (falsy), and object comparisons are identity (IUnknown
+        // pointer) comparisons — both bail to the slow path. The i32 fast path must not read an
+        // object's `raw()` (it is the per-instance handle for our objects and undefined for real
+        // COM pointers); object `Is` is handled by pointer equality in `typed_compare_variants`.
         if let (Some(l), Some(r)) = (
             self.registers.registers.get(lhs),
             self.registers.registers.get(rhs),
-        ) && (l.is_null() || r.is_null())
+        ) && (l.is_null() || r.is_null() || l.is_object() || r.is_object())
         {
             return false; // bail to the general comparison handler
         }

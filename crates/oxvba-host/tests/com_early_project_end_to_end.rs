@@ -398,6 +398,76 @@ End Function
 }
 
 #[test]
+fn pure_oxvba_class_distinct_new_instances_have_separate_state() {
+    // Each `New Widget` is now a distinct IUnknown instance with its own field state, so two
+    // instances do not alias (the prior compile-time-handle model shared one). `Set c = a`
+    // still aliases a (shared reference). Proves the per-instance identity switch.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim a As Widget
+Dim b As Widget
+Dim c As Widget
+Dim aScore
+Dim bScore
+Dim cScore
+Set a = New Widget
+Set b = New Widget
+Set c = a
+a.SetScore 10
+b.SetScore 20
+c.SetScore 30
+aScore = a.GetScore
+bScore = b.GetScore
+cScore = c.GetScore
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Private mScore As Long
+Public Sub SetScore(ByVal value As Long)
+mScore = value
+End Sub
+Public Function GetScore() As Long
+GetScore = mScore
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    // b is a distinct instance, so b.GetScore = 20 (not clobbered by a/c).
+    assert!(
+        out.contains(&Variant::from_i32(20)),
+        "distinct instance b should keep its own score 20; out={out:?}"
+    );
+    // c aliases a, so c.SetScore 30 is visible through a → both read 30.
+    assert!(
+        out.iter().filter(|v| **v == Variant::from_i32(30)).count() >= 2,
+        "c aliases a, so a.GetScore and c.GetScore both = 30; out={out:?}"
+    );
+}
+
+#[test]
 fn pure_oxvba_class_value_read_of_sub_is_expected_function_or_variable() {
     // F3c diagnostic-parity: `x = obj.SomeSub` reads a Sub in a value context. VBA raises a
     // compile-time error "Expected Function or variable"; OxVBA must raise an equivalent

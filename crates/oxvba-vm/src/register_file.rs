@@ -45,6 +45,10 @@ impl RuntimeSlot {
     pub(crate) fn is_null(&self) -> bool {
         matches!(self, Self::Variant(value) if value.vtype() == VarType::Null)
     }
+
+    pub(crate) fn is_object(&self) -> bool {
+        matches!(self, Self::Variant(value) if value.vtype() == VarType::Object)
+    }
 }
 
 #[derive(Debug, Default)]

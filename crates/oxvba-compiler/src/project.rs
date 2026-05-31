@@ -3346,9 +3346,11 @@ fn expand_bound_source_line(
                 "class_initialize",
                 ProcedureDeclKind::Sub,
             ) {
+                // Pass the freshly-instantiated object (not the route handle) so
+                // Class_Initialize keys per-instance state by the same identity members use.
                 out.push(format!(
                     "{}Call {}({})",
-                    dim_decl.leading_ws, class_initialize.lowered_name, object_handle
+                    dim_decl.leading_ws, class_initialize.lowered_name, dim_decl.var_name
                 ));
             }
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
@@ -3464,9 +3466,11 @@ fn expand_bound_source_line(
             "class_initialize",
             ProcedureDeclKind::Sub,
         ) {
+            // Pass the freshly-instantiated object (not the route handle) so Class_Initialize
+            // keys per-instance state by the same identity members use.
             out.push(format!(
                 "{leading_ws}Call {}({})",
-                class_initialize.lowered_name, object_handle
+                class_initialize.lowered_name, var_name
             ));
         }
         *next_internal_instance_id = next_internal_instance_id.saturating_add(1);

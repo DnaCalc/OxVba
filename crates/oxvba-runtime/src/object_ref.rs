@@ -244,7 +244,14 @@ pub enum RuntimeApartmentModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeObjectIdentity {
     pub stable_object_id: u64,
+    /// Per-instance identity key (unique per allocated object). For a fresh project-class
+    /// instance this is a VM-allocated unique id; the object's true identity for `Is` is its
+    /// IUnknown pointer, this is the internal lookup handle 1:1 with it.
     pub compat_identity: i32,
+    /// Class/route key: which project-dynamic route (class dispatch table) this instance
+    /// belongs to. Distinct from `compat_identity` once instances are per-`New` allocations —
+    /// many instances share one `route_key` but each has its own `compat_identity`.
+    pub route_key: i32,
     pub class_descriptor: &'static RuntimeClassDescriptor,
     pub lifetime_policy: RuntimeLifetimePolicy,
     pub apartment_model: RuntimeApartmentModel,
@@ -596,6 +603,27 @@ impl ObjectRef {
         compat_identity: i32,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
+        // Legacy/template path: identity key and route key coincide.
+        Self::from_compat_object(compat_identity, compat_identity, class_descriptor)
+    }
+
+    /// Allocates a fresh project-class instance: a distinct `CompatObjectBase` (a distinct
+    /// IUnknown, hence a distinct identity for `Is`) with its own per-instance `instance_id`
+    /// and the class's `route_key` for member dispatch. Refcount starts at 1; the instance is
+    /// not pinned by any route map, so its lifetime tracks real references.
+    pub fn from_project_instance(
+        instance_id: i32,
+        route_key: i32,
+        class_descriptor: &'static RuntimeClassDescriptor,
+    ) -> Self {
+        Self::from_compat_object(instance_id, route_key, class_descriptor)
+    }
+
+    fn from_compat_object(
+        compat_identity: i32,
+        route_key: i32,
+        class_descriptor: &'static RuntimeClassDescriptor,
+    ) -> Self {
         let stable_object_id = compat_identity as u32 as u64;
         let boxed = Box::new(CompatObjectBase {
             unknown: RawRuntimeIUnknown {
@@ -605,6 +633,7 @@ impl ObjectRef {
             identity: RuntimeObjectIdentity {
                 stable_object_id,
                 compat_identity,
+                route_key,
                 class_descriptor,
                 lifetime_policy: RuntimeLifetimePolicy::RefCounted,
                 apartment_model: RuntimeApartmentModel::Unknown,
@@ -627,6 +656,13 @@ impl ObjectRef {
 
     pub fn raw(&self) -> i32 {
         self.compat_identity()
+    }
+
+    /// Class/route key for project-dynamic dispatch (which class's route this instance uses).
+    /// Only valid for compat (project-class) objects, like `compat_identity`/`class_descriptor`.
+    pub fn route_key(&self) -> i32 {
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        unsafe { (*owner).identity.route_key }
     }
 
     pub fn raw_iunknown(&self) -> *mut RawRuntimeIUnknown {
