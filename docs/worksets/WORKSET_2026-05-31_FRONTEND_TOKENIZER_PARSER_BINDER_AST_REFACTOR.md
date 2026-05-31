@@ -2,17 +2,27 @@
 
 Date: 2026-05-31
 Owner: DNA Kode
-Status: proposed
+Status: proposed / preparation-review
 
 Architecture decision, 2026-05-31:
 
 The syntactic layer will be a **Roslyn-style green/red concrete syntax tree** (lossless,
-immutable) with **typed AST facades**, as used by `rust-analyzer` via the `rowan`/`cstree`
-crates — chosen because interactive tooling (language-server diagnostics, formatting,
-refactoring, incremental recompile) is a goal, not only batch compile-to-bytecode. The
-resolve → bound-IR → lower backbone is unchanged; this decision sets the *syntax layer* and
-adds a semantic-overlay + incremental capability. (Lean-AST/rustc shape was the alternative;
-see §5.5 and the decision log §10.)
+immutable) with **typed AST facades**, chosen because interactive tooling (language-server
+diagnostics, formatting, refactoring, incremental recompile) is a goal, not only batch
+compile-to-bytecode. This shape is already partially present in `oxvba-syntax` through a custom
+green/red tree, hand-written lexer, Pratt-capable parser, and typed accessor helpers. The
+front-end rework must build on that substrate unless Phase 0 proves a library migration is worth
+the churn.
+
+`rowan` and `cstree` are helper libraries for the same general syntax-tree pattern used by
+rust-analyzer. They are not semantic requirements. The requirement is the Roslyn-style shape:
+lossless syntax tree, syntax/semantics separation, typed facades, stable node identity/spans, and
+an IDE-capable semantic query layer. Whether that is backed by the current custom tree, `rowan`,
+or `cstree` is a Phase 0 engineering decision.
+
+The resolve → bound-IR → lower backbone is unchanged; this decision sets the target *front-end
+architecture* and adds a semantic-overlay + incremental capability. (Lean-AST/rustc shape was
+the alternative; see §5.5 and the decision log §10.)
 
 ## 1. Purpose
 
@@ -42,9 +52,13 @@ binder (`resolve.rs`), and operator-precedence parsing is done by repeatedly sca
 `&str` substrings (`parse_expr`). This works and is heavily tested, but it is fragile at the
 edges, hard to extend, and splits single concepts (e.g. member access) across two paradigms.
 
-This workset is a **plan**, not a started migration. It defines the target architecture, the
-library/pattern decisions, the formal-grammar question, and a phased, behavior-preserving,
-test-gated route. No front-end behavior changes until a phase ships behind differential tests.
+This workset is a **plan for the compiler front-end migration**, not a claim that no supporting
+syntax work exists. Git history shows `oxvba-syntax` was scaffolded in the initial workspace
+bootstrap (`68965e4e`, 2026-02-26), then substantially expanded for language-service work
+(`5f4da2f3`, 2026-03-23: Pratt expression parser, typed accessors, provider trait). The workset
+therefore starts from a partial syntax/IDE substrate that is not yet wired into the production
+compiler pipeline. No production compiler front-end behavior changes until a phase ships behind
+the planned gate and evidence.
 
 ## 2. Correctness authority (unchanged repo convention)
 
@@ -55,25 +69,32 @@ test-gated route. No front-end behavior changes until a phase ships behind diffe
    source of truth). If a string rewriter encodes a divergence from Excel/MS-VBAL, the new
    pipeline must not inherit it.
 
-The new pipeline must produce **byte-identical bytecode + runtime metadata** to the current
-pipeline for every passing corpus program, *except* where the current output is a known
-divergence (tracked explicitly). That equivalence is the migration's gate.
+The new pipeline must preserve or improve observable VBA behavior against Excel/MS-VBAL evidence.
+During migration, the current compiler output is a regression baseline and a diagnostic aid, not a
+byte-for-byte contract. Bytecode, slot choices, temporary layout, helper selection, and metadata
+ordering may legitimately differ when the new front-end emits cleaner lowering, provided the
+differences are explained and the resulting execution behavior, diagnostics, and public metadata
+contracts are correct for the scoped construct. Differential comparison remains valuable, but its
+gate is semantic equivalence plus documented intentional improvements, not byte identity.
 
 ## 3. Motivation — the shortcut inventory (grounded in current code)
 
 | # | Shortcut (today) | Where | Traditional shape |
 |---|---|---|---|
-| S1 | No lexer for the main grammar; precedence by substring scanning | `parse_expr`, `split_at_lowest_precedence_op`, `split_compare_keyword_top_level`; tell-tale patch `parse_typed_suffix_literal` (disambiguates `100&` from `x & y`) | lexer → token stream → Pratt parser |
+| S1 | Production compiler path does not use the existing general syntax lexer/parser; precedence is still recovered by substring scanning | `parse_expr`, `split_at_lowest_precedence_op`, `split_compare_keyword_top_level`; tell-tale patch `parse_typed_suffix_literal` (disambiguates `100&` from `x & y`) | lexer → token stream → Pratt parser feeding the compiler front-end |
 | S2 | Names are strings; AST is **not resolved** | `BoundExpr::Var(String)`, `ProcCall { name: String }`, `Member { member: String }`; resolution recovered later via `slot_map` (emit) + `project.rs` | symbol table; AST carries `SymbolId` |
 | S3 | String-rewriting front-end (macro-by-text) | `project.rs`: member dispatch, default members, property Get/Let/Set, qualified names, `New`, WithEvents, collections, F3c diagnostics | resolve in the binder against the symbol table |
 | S4 | Stringly-typed intrinsics as an escape hatch (~25 magic names) | `IntrinsicCall { name }` (`__empty`, `__null`, `__nothing`, `__oxvba_project_instance`, `__oxvba_withevents_*`, `dispatchinvoke`, `__omitted`, `vbnullstring`, …); giant `match name.as_str()` in `emit.rs` | dedicated AST/IR nodes (or a typed `enum Intrinsic`) for structural concepts |
 | S5 | Under-modeled operators / postfix | `Is` (object identity) unsupported as a binary op (only `TypeOf x Is T`); indexing is the `__oxvba_array_get` intrinsic, not a uniform `Index`; `New`, bang `obj!field` are string-rewritten | unified postfix grammar: call / index / member / bang; `CompareOp::Is` |
 | S6 | Peephole optimization baked into AST shape | `BoundExpr::AddConst`/`SubConst` produced directly by the parser, special-cased in every consumer | uniform `BinaryOp`; recognize in an optimizer pass |
 
-Precedent already in-repo: a real tokenizer+parser exists for `#If` preprocessor expressions
-(`tokenize_pp_expr` → `PpToken`, `resolve.rs:1323`), and `BoundExpr::Member` (added 2026-05-31,
-commit `f7cb6b85`) is the first expression-level node that began collapsing S5 for call-result
-receivers. This workset generalizes that direction.
+Precedent already in-repo: `oxvba-syntax` contains a custom lossless green/red tree, lexer,
+Pratt-capable expression parser, statement parser, and typed red-tree accessors, originally
+introduced before this workset for language-service scaffolding. Separately, a real tokenizer+
+parser exists for `#If` preprocessor expressions (`tokenize_pp_expr` → `PpToken`,
+`resolve.rs:1323`), and `BoundExpr::Member` (added 2026-05-31, commit `f7cb6b85`) began
+collapsing S5 for call-result receivers in the current compiler IR. This workset reconciles those
+three strands into the production front-end.
 
 ## 4. Formal grammar
 
@@ -109,20 +130,22 @@ and a coverage checklist, and it documents the dialect we target (VBA 7.x x64 in
 
 ## 5. Rust libraries & compiler-authoring patterns (decision points)
 
-Each is a decision to lock during Phase 0 via a small spike. Defaults below are recommendations.
+Each is a decision to confirm during Phase 0 via a small spike or audit. Defaults below are
+recommendations, but the current `oxvba-syntax` implementation is the starting point.
 
 ### 5.1 Lexer
-- **Recommended: hand-written lexer.** VBA's lexical quirks (case-insensitive keywords, `_`
+- **Current/default: hand-written lexer.** VBA's lexical quirks (case-insensitive keywords, `_`
   line continuation joining physical lines, `:` statement separators, type sigils `%&!#@$`,
   `[bracketed]` identifiers, `'` and `Rem` comments, `#…#` date literals, `&H`/`&O` literals,
-  `""` string escaping) are easier to get exactly right by hand, and we already have the
-  `tokenize_pp_expr` precedent.
+  `""` string escaping) are easier to get exactly right by hand. The current lexer already covers
+  a useful subset and must be audited against the grammar matrix before its coverage is broadened.
 - Alternative: **`logos`** (derive-based, very fast) with callbacks. Viable; revisit if lexer
   perf matters or the quirks fit cleanly.
 
 ### 5.2 Parser
-- **Recommended: hand-written recursive descent + Pratt (precedence climbing)** for
-  expressions. Maximum control, best diagnostics, easiest to integrate.
+- **Current/default: hand-written recursive descent + Pratt (precedence climbing)** for
+  expressions. Maximum control, best diagnostics, easiest to integrate. The current
+  `oxvba-syntax` parser validates the approach but is not yet the production compiler parser.
 - Alternatives evaluated: **`chumsky`** (combinators; excellent error recovery/reporting, has
   Pratt helpers — strongest alternative if we want batteries-included diagnostics);
   **`winnow`/`nom`** (fast combinators, lower level); **`lalrpop`** (LR(1) from grammar — rigid
@@ -141,16 +164,18 @@ Each is a decision to lock during Phase 0 via a small spike. Defaults below are 
   and gives cheap symbol comparison in the resolver.
 
 ### 5.5 Syntactic layer & IR storage — **green/red CST (decided)**
-- **Syntax = green/red CST via `rowan`** (the `rust-analyzer` library) — untyped `SyntaxKind`
-  nodes with widths/offsets (green), lazy parent/position-aware facades (red), lossless (all
-  trivia retained), immutable with structural sharing. **Typed AST = thin accessor wrappers**
-  over `SyntaxNode` (e.g. `ast::BinExpr`, `ast::CallExpr`, `ast::MemberExpr`), generated or
-  hand-written — *not* a separate owned `enum` tree. The hand-written parser (§5.2) stays
-  hand-written; it drives a `GreenNodeBuilder` (`start_node`/`token`/`finish_node`) emitting the
-  green tree, exactly as rust-analyzer's hand-written parser does.
-  - Alternative library: **`cstree`** (a rowan-compatible fork with built-in token interning and
-    `Send`/threading support) — evaluate in Phase 0; pick `cstree` if cross-thread CSTs or memory
-    from large projects matter, else `rowan`.
+- **Syntax = green/red CST.** The semantic decision is the tree shape, not a specific helper
+  crate. Untyped `SyntaxKind` nodes carry widths/offsets in the green tree; red wrappers provide
+  lazy parent/position-aware traversal; the tree is lossless and immutable; typed AST facades are
+  thin accessors over syntax nodes, not a separate owned enum tree. The existing custom
+  `oxvba-syntax` green/red implementation already follows this direction and should be treated as
+  the default unless Phase 0 finds concrete reasons to migrate.
+  - **`rowan`** is the rust-analyzer syntax-tree library for this pattern.
+  - **`cstree`** is a rowan-compatible alternative with built-in token interning and stronger
+    multi-threading/memory options.
+  - Migration to either helper library is optional. It requires evidence that the library removes
+    real maintenance risk, enables required IDE/incremental behavior, or materially improves memory
+    and threading behavior for large projects.
 - **Bound HIR + symbol tables = index-based arenas** (newtype `ExprId`/`StmtId`/`SymbolId` into
   `Vec`s; the rustc / rust-analyzer pattern). The HIR is the resolved tree lowering consumes; it
   references CST nodes by id for spans and for the SemanticModel mapping.
@@ -176,24 +201,28 @@ Each is a decision to lock during Phase 0 via a small spike. Defaults below are 
 
 ```
 SourceFile ──lex──▶ [Token{kind, span, trivia}]
-            ──parse──▶ green/red CST (rowan): untyped SyntaxKind nodes, lossless, immutable
+            ──parse──▶ green/red CST: untyped SyntaxKind nodes, lossless, immutable
                        └─ typed AST facades (ast::CallExpr, ast::MemberExpr, …) over SyntaxNode
             ──resolve──▶ bound HIR (Var→SymbolId; Member→{early-bound proc | late dispatch};
                           default members, property forms, New, WithEvents resolved) — arena IR
                        └─ SemanticModel overlay: lazy/cached symbol+type queries keyed by CST node
             ──typecheck──▶ diagnostics over the HIR / SemanticModel
-            ──lower──▶ Bytecode + ProcedureRuntimeMetadata   (UNCHANGED output contract)
+            ──lower──▶ Bytecode + ProcedureRuntimeMetadata
+                         (execution semantics and public metadata contract stable;
+                          concrete bytecode shape may improve)
             ──(later) salsa──▶ memoized parse/resolve/typecheck queries → incremental recompute
 ```
 
-Key invariant: the **lowering output** (bytecode + metadata + descriptors) is the stable
-contract. The refactor changes everything *upstream* of lowering while keeping the bytecode
-identical, so the VM, JIT, host, and the 861 + conformance suites are unaffected by construction
-until we deliberately change semantics. The CST/HIR/SemanticModel/salsa are all upstream of that
-boundary; batch lowering needs the CST + HIR only, so the IDE-oriented layers (full SemanticModel
-surface, salsa) can land after the batch pipeline reaches parity.
+Key invariant: the **execution semantics and public metadata contracts** are stable unless a
+phase explicitly fixes a documented legacy divergence. The refactor changes everything upstream
+of lowering and may produce different bytecode where that is a cleaner or more correct lowering.
+The VM, JIT, host, and conformance suites are protected by semantic regression tests, metadata
+contract checks, and targeted differential analysis rather than a byte-identical output rule. The
+CST/HIR/SemanticModel/salsa are all upstream of the execution boundary; batch lowering needs the
+CST + HIR only, so the IDE-oriented layers (full SemanticModel surface, salsa) can land after the
+batch pipeline reaches parity.
 
-### 6.1 Lowering-target maturity (bytecode audit, 2026-05-31) & the activation-frame dependency
+### 6.1 Lowering-target maturity and current VM contract
 
 A maturity audit of the VM bytecode *as a lowering target* (ahead of this rework) concluded:
 
@@ -205,56 +234,60 @@ A maturity audit of the VM bytecode *as a lowering target* (ahead of this rework
   The stringly intrinsics are a *front-end* artifact (`BoundExpr::IntrinsicCall { name }`, S4) that
   is resolved away during lowering into typed opcodes. Value model = refcounted IUnknown `Variant`;
   serialization = versioned `rkyv` (`OXVB`, `FORMAT_VERSION`). So the front-end can lower cleanly.
-- **One genuine immaturity: the slot / activation model.** The register file is a single **flat,
-  global** `Vec<RuntimeSlot>`; `call_stack` saves only `(return_pc, error_frame)` — there are **no
-  per-call activation frames / slot windows**. Verified consequence: **recursion is broken** —
-  `Fact(5)` returns `16`, not `120`, because a recursive callee reuses the caller's slots
-  (regression probe: `recursion_preserves_caller_locals`, `#[ignore]`d). This is the **same root
-  cause** as the object-slot-lifetime gaps (cascade through object fields, the `gMT` trailing-`T`,
-  Me-param / return-slot retention): nothing pops a frame, so object references linger.
 
-**Dependency on the activation-frame model (the full "A").** This front-end rework lowers to the
-bytecode; the instruction **format** is stable, but the slot **semantics** are slated to change
-from absolute-global to **frame-relative** when per-call activation frames land. When that happens,
-emit must produce frame-relative slot indices and the VM maintains a frame base. The activation-
-frame + object-lifetime work is tracked as a **separate back-end workstream/bead ("A")**, not in
-this front-end workset. Coordination point: prefer landing (or co-designing) the activation-frame
-model **before or alongside** the resolver/lowering phases (Phase 4+), since it changes the slot
-contract emit produces; Phases 0–3 (grammar, lexer, CST parser) are independent of it.
+Post-review update, 2026-06-01: the activation-frame/object-lifetime dependency described in the
+original audit has since landed through `bd-1ufc` and `bd-xkwq`. The VM now has activation-frame
+slot overlays and explicit call/return transfer, and project-object ordinary fields live on the
+runtime object. This front-end workset no longer needs to wait for the old "full A" model.
 
-## 7. Phased plan (each phase: behind a flag, differential-tested, independently shippable)
+The remaining coordination point is contract fidelity: the new front-end/HIR lowering must target
+the current descriptor-backed call convention, activation-frame slot overlay behavior, object
+field storage, and return/writeback transfer rules. It should not resurrect assumptions from the
+older flat-register lowering model.
 
-A `frontend_v2` build/config flag selects the new pipeline. A **differential harness** compiles
-the full corpus (compiler unit fixtures + `conformance/` + host integration projects) through
-both pipelines and asserts identical bytecode/metadata; divergences are triaged (bug vs known).
+## 7. Phased plan (each phase: gated, evidence-backed, independently shippable)
+
+Planned, not yet created: a `frontend_v2` build/config gate will select the new pipeline. A
+**differential and semantic harness** compiles and runs the full corpus (compiler unit fixtures +
+`conformance/` + host integration projects) through both pipelines where both can handle the
+construct. It records bytecode/metadata differences for review, but closes phases on correct
+observable behavior, correct diagnostics, and stable public metadata contracts rather than
+byte-identical bytecode.
 
 - **Phase 0 — Foundations & decisions.**
-  Capture the EBNF grammar (`docs/spec/VBA_GRAMMAR_V1`) + coverage matrix. Choose `rowan` vs
-  `cstree` and lock the other library choices (lexer, interner, diagnostics, salsa) via small
-  spikes — including a spike that hand-writes a `GreenNodeBuilder`-driven parser for a tiny slice
-  to validate the typed-facade ergonomics. Build the differential harness + a CST→`BoundExpr`
-  bridge (so the new CST can feed the *existing* lowering during transition).
-  *Exit:* grammar + matrix committed; rowan/cstree chosen; harness compiles the corpus both ways
-  (old==old baseline); decisions recorded in §10.
+  Capture the EBNF grammar (`docs/spec/VBA_GRAMMAR_V1`) + coverage matrix. Audit the existing
+  `oxvba-syntax` lexer/parser/green/red/accessor surface against the target Roslyn-style shape
+  and grammar matrix. Decide whether to keep the custom green/red tree or migrate to `rowan` /
+  `cstree`; do not migrate merely for fashion. Lock the other library choices (interner,
+  diagnostics, salsa shape) via small spikes. Build the planned frontend gate, semantic/diff
+  harness, and a CST→legacy IR bridge so the existing lowering can be reused during transition.
+  *Exit:* grammar + matrix committed; existing syntax substrate audited with gaps recorded; CST
+  storage decision recorded; harness has an old-pipeline baseline and at least one v2 smoke route.
 
 - **Phase 1 — Lexer.**
-  Hand-written tokenizer producing tokens with spans **and retained trivia** (whitespace,
-  comments, line continuation) for the lossless CST; handle `:`, sigils, bracketed idents,
-  date/hex/octal literals, case folding. Round-trip the corpus (CST text == source byte-for-byte).
-  *Exit:* lexer tokenizes the entire corpus losslessly; token snapshot + round-trip tests.
+  Harden the existing hand-written tokenizer so it produces tokens with spans **and retained
+  trivia** (whitespace, comments, line continuation) for the lossless CST; handle `:`, sigils,
+  bracketed idents, `Rem`, date/hex/octal literals, case folding, and error tokens deliberately.
+  Round-trip the corpus (CST text == source byte-for-byte).
+  *Exit:* lexer tokenizes the accepted corpus losslessly; token snapshots, grammar-row fixtures,
+  and known residual lexical gaps are recorded.
 
 - **Phase 2 — Expression parser (Pratt) → green CST.**
-  Hand-written RD+Pratt parser drives a `GreenNodeBuilder` to emit the expression CST + typed
-  facades; a CST→`BoundExpr` bridge feeds existing lowering. Differential-test against `parse_expr`
-  over a large expression corpus. Add the missing forms: `Is`, unified `Index`, `New`, and one
-  postfix grammar covering call/index/member/bang (incl. `name.member`).
-  *Exit:* expression differential parity on the corpus; S1/S5/S6 addressed at the syntax level.
+  Harden the existing RD+Pratt parser and typed facades; a CST→legacy-expression bridge feeds
+  existing lowering during transition. Compare against `parse_expr` over a large expression corpus,
+  but allow cleaner bytecode when semantic behavior is proven. Add or verify the missing forms:
+  `Is`, unified `Index`, `New`, bang/member access, and one postfix grammar covering call/index/
+  member/bang (incl. `name.member`).
+  *Exit:* expression semantic parity/improvement on the corpus; S1/S5/S6 addressed at the syntax
+  level with gaps tracked explicitly.
 
 - **Phase 3 — Statement parser → green CST.**
   Full statement grammar (Dim/Const, `Set`/`Let`/`Call`, `If`/`For`/`Do`/`While`/`Select`,
   `With`, `On Error`/`Resume`, `RaiseEvent`, `Property`, declarations, attributes) into the CST,
-  with error-node recovery. Differential against current bound statements via the bridge.
-  *Exit:* statement differential parity; the CST fully represents the corpus (still behind the flag).
+  with error-node recovery. Compare against current bound statements via the bridge, with semantic
+  parity/improvement rather than bytecode identity as the gate.
+  *Exit:* statement semantic parity/improvement; the CST fully represents the accepted corpus
+  subset, with residual grammar gaps tracked explicitly.
 
 - **Phase 4 — Resolver / binder + SemanticModel (the deep one).**
   Symbol table + scopes; produce the **bound HIR** from the typed CST, and the **SemanticModel
@@ -263,8 +296,8 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
   **out of `project.rs` string rewriting** into the resolver. Lowering now consumes the HIR
   directly (retire the CST→`BoundExpr` bridge). This is where the member-access dual-path
   collapses and S2/S3 are resolved.
-  *Exit:* resolver/HIR produces equivalent lowering for the corpus; `project.rs` rewriters begin
-  retirement.
+  *Exit:* resolver/HIR produces semantically equivalent or deliberately improved lowering for the
+  corpus; `project.rs` rewriters begin retirement.
 
 - **Phase 5 — Typed intrinsics & optimizer split.**
   Replace structural stringly-intrinsics (S4) with typed HIR nodes (null/`Nothing`, `New`,
@@ -276,8 +309,9 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
 
 - **Phase 6 — Flip & retire.**
   Make `frontend_v2` the default; remove the legacy `parse_expr` string-splitting and the
-  retired `project.rs` rewriters; delete the member-access dual-path. Keep the differential
-  harness as a regression guard for one release, then archive.
+  retired `project.rs` rewriters; delete the member-access dual-path. Keep the semantic/diff
+  harness as a regression guard for one release, then archive the old-pipeline comparison lane
+  after the new pipeline is the only production route.
   *Exit:* single pipeline; legacy paths deleted; full suite + conformance green.
 
 - **Phase 7 — Incrementality & tooling surface (`salsa`).**
@@ -290,10 +324,12 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
 ## 8. Coexistence & migration strategy
 
 - **Feature flag** (`frontend_v2`) gates the new pipeline end-to-end; the old pipeline stays the
-  default until a phase proves parity.
-- **Differential testing is the gate.** The same corpus compiled both ways must yield identical
-  `Bytecode` + `ProcedureRuntimeMetadata` (+ descriptors). Any diff is triaged as (a) a bug in
-  the new path → fix, or (b) a known legacy divergence from Excel/MS-VBAL → record and allow.
+  default until a phase proves parity. This flag/gate is planned work, not current repo state.
+- **Semantic differential testing is the gate.** The same corpus compiled both ways should be
+  compared at multiple levels: diagnostics, normalized metadata, bytecode summaries, execution
+  traces, and observable outputs. Bytecode differences are triaged as (a) a bug in the new path,
+  (b) harmless lowering/layout drift, or (c) an intentional improvement over a legacy divergence
+  from Excel/MS-VBAL.
 - **Per-construct flip.** Within a phase, route only the constructs at parity through v2 and fall
   back to v1 for the rest, so the flag can advance incrementally rather than big-bang.
 - **Grammar-coverage matrix** is the running checklist of what v2 covers.
@@ -302,12 +338,14 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
 
 | Risk | Mitigation |
 |---|---|
-| Huge test surface (861 compiler + conformance + host integration) | Differential harness as the gate; identical-bytecode invariant; per-construct flag flips |
+| Huge test surface (compiler + conformance + host integration) | Semantic/differential harness as the gate; per-construct flag flips; corpus rows for every migrated construct |
 | `project.rs` rewriters encode subtle, hard-won semantics (default members, F3c diagnostics, COM early/late, WithEvents) | Treat each as a spec item with a fixture before moving it; never delete a rewriter until its resolver replacement passes its fixtures |
-| VBA lexical quirks (case, line continuation, `:`, sigils) | Hand-written lexer + corpus round-trip tests in Phase 1 before any parsing |
+| VBA lexical quirks (case, line continuation, `:`, sigils) | Audit and harden the existing hand-written lexer; corpus round-trip tests and grammar-row fixtures before production routing |
+| Existing `oxvba-syntax` and `oxvba-languageservice` semantics drift from compiler truth | Treat current syntax/language-service code as useful substrate, not authority; reconcile it through shared HIR/SemanticModel APIs before broad IDE claims |
+| Custom green/red tree misses behavior helper libraries would have provided | Phase 0 explicitly audits node identity, span stability, sharing, memory behavior, traversal cost, and thread-safety needs before deciding to keep or replace it |
 | Scope creep / long-lived branch | Phases ship independently behind the flag; each is mergeable; avoid a multi-month dark branch |
 | Performance regression | Bench the new pipeline vs old on the corpus; interning + arenas should be ≥ parity |
-| Output-contract drift breaking VM/JIT | Bytecode/metadata is the fixed contract; differential harness asserts it |
+| Output-contract drift breaking VM/JIT | Public metadata and execution semantics are the fixed contracts; bytecode/metadata diffs are normalized, explained, and backed by execution tests |
 
 ## 10. Decision log
 
@@ -315,44 +353,308 @@ Resolved:
 - **D0 (2026-05-31): Syntactic layer = Roslyn-style green/red CST with typed facades** (not a
   lean AST), because interactive tooling/incremental is a goal. Backbone (resolve → bound HIR →
   lower) unchanged.
-- **D4: Syntax storage = `rowan` (or `cstree`) green/red CST**; bound HIR + symbol tables = index
-  arenas. `rowan` (deferred) is no longer deferred — it is the chosen syntax layer.
+- **D4: Syntax storage shape = green/red CST**; bound HIR + symbol tables = index arenas. The
+  current custom `oxvba-syntax` green/red tree is the default substrate. `rowan`/`cstree` remain
+  optional helper-library migration candidates, not goals by themselves.
 - **D6: Two layers, not a reshaped `BoundExpr`** — typed CST facades for syntax; a *new* bound
   HIR for the resolved IR. `BoundExpr` is retired in favor of the HIR (with a temporary
   CST→`BoundExpr` bridge during Phases 2–3 to keep existing lowering).
 
 Open (settle in Phase 0):
-- D1: Lexer — hand-written (default) vs `logos`.
-- D2: Parser — hand-written RD+Pratt driving a `GreenNodeBuilder` (default) vs `chumsky`.
+- D1: Lexer — keep and harden the current hand-written lexer (default) vs migrate to `logos`.
+- D2: Parser — keep and harden the current hand-written RD+Pratt parser (default) vs migrate
+  selected parsing/diagnostic pieces to `chumsky`.
 - D3: Interner — `lasso` vs `string-interner` (or `cstree`'s built-in interning).
 - D5: Diagnostics renderer — `ariadne` vs `codespan-reporting`.
 - D7: Grammar source of truth — EBNF-from-MS-VBAL (default) with Rubberduck ANTLR cross-check.
-- D8: CST crate — `rowan` vs `cstree` (interning + `Send`/threading); decide on a Phase-0 spike.
+- D8: CST storage implementation — keep custom `oxvba-syntax` tree (default) vs migrate to
+  `rowan` or `cstree` if a Phase-0 spike proves concrete benefit.
 - D9: Incremental engine — `salsa` version/shape (Phase 7); confirm it wraps the same queries.
 
 ## 11. Test & evidence strategy
 
 - Grammar-coverage matrix (Phase 0) — one fixture per production.
-- Lexer round-trip + token snapshots (Phase 1).
-- Expression/statement **differential** parity vs the legacy parser (Phases 2–3).
-- Resolver equivalence: identical lowering for the corpus (Phase 4).
-- Full suites green at every phase: `oxvba-compiler` (861+), `oxvba-vm`, `oxvba-host`,
+- Lexer round-trip + token snapshots (Phase 1), including explicit residual rows for unsupported
+  lexical forms.
+- Expression/statement **semantic differential** parity vs the legacy parser plus intentional
+  improvement tracking (Phases 2–3).
+- Resolver equivalence: same observable behavior and correct diagnostics/metadata for the corpus
+  (Phase 4), with bytecode differences reviewed but not automatically blocking.
+- Full suites green at every phase: current `oxvba-compiler`, `oxvba-vm`, `oxvba-host`,
   `conformance/`, plus the Excel oracle where member/lifetime semantics move.
 - Evidence docs under `docs/evidence/` per phase; final closure report.
 
 ## 12. Scope notes
 
-In scope (per D0): lossless green/red CST (`rowan`/`cstree`), the SemanticModel overlay, and
-`salsa`-based incrementality (Phase 7) — these are now goals, not deferrals.
+In scope (per D0): lossless green/red CST (currently custom `oxvba-syntax`; possible `rowan` or
+`cstree` migration only if justified), the SemanticModel overlay, and `salsa`-based incrementality
+(Phase 7) — these are now goals, not deferrals.
 
 Out of scope (unless a later workset expands):
 - A full **language server / LSP** product surface (Phase 7 builds the foundation — incremental
   queries + semantic API — but the editor integration, completion, code actions, etc. are a
   separate effort).
-- The **activation-frame model + object lifetime** ("A") — per-call activation frames / slot
-  windows that fix recursion (`recursion_preserves_caller_locals`) **and** object-slot lifetime
-  (cascade, `gMT` trailing-`T`, Me-param / return-slot retention). This is a back-end VM/emit
-  workstream tracked as its own bead; see §6.1 for the slot-contract dependency. It is *not* in
-  this front-end workset, but Phase 4+ should coordinate with it.
-- Any change to the **bytecode/metadata instruction format** beyond the frame-relative slot
-  semantics introduced by "A", or to the VM/JIT.
+- Back-end activation-frame or object-field lifetime implementation. Those prerequisites have
+  landed separately; this workset only needs to respect their current contracts.
+- VM/JIT behavior changes that are not required to execute the new front-end lowering correctly.
+
+## 13. Hierarchical work plan for bead rollout
+
+This section is the planning hierarchy used for the created bead graph.
+
+Tracker root: `bd-aprs` — "Frontend compiler rework workset: Roslyn-style syntax, binder, HIR,
+and SemanticModel".
+
+Created epic mapping:
+
+| Plan epic | Bead ID |
+|---|---|
+| FE-0 Workset preparation and truth repair | `bd-aprs.1` |
+| FE-1 Grammar and coverage foundation | `bd-aprs.2` |
+| FE-2 Syntax substrate audit and hardening | `bd-aprs.3` |
+| FE-3 Lexer completion | `bd-aprs.4` |
+| FE-4 Parser completion and CST-to-legacy bridge | `bd-aprs.5` |
+| FE-5 Semantic harness and frontend gate | `bd-aprs.6` |
+| FE-6 Binder, HIR, and SemanticModel core | `bd-aprs.7` |
+| FE-7 Project semantics migration from `project.rs` | `bd-aprs.8` |
+| FE-8 Typed intrinsics, optimizer split, and lowering cleanup | `bd-aprs.9` |
+| FE-9 Flip, retirement, and IDE query foundation | `bd-aprs.10` |
+
+Created child bead mapping:
+
+| Plan bead | Bead ID |
+|---|---|
+| FE-0.1 Workset truth audit | `bd-aprs.1.1` |
+| FE-0.2 Decision-record cleanup | `bd-aprs.1.2` |
+| FE-0.3 Corpus inventory | `bd-aprs.1.3` |
+| FE-0.4 Execution bead rollout refresh | `bd-aprs.1.4` |
+| FE-1.1 MS-VBAL grammar capture | `bd-aprs.2.1` |
+| FE-1.2 Rubberduck cross-check notes | `bd-aprs.2.2` |
+| FE-1.3 Grammar coverage matrix | `bd-aprs.2.3` |
+| FE-1.4 Fixture taxonomy | `bd-aprs.2.4` |
+| FE-2.1 Green/red tree audit | `bd-aprs.3.1` |
+| FE-2.2 Rowan/cstree library spike | `bd-aprs.3.2` |
+| FE-2.3 Typed facade audit | `bd-aprs.3.3` |
+| FE-2.4 Parser error recovery shape | `bd-aprs.3.4` |
+| FE-3.1 Trivia and continuation semantics | `bd-aprs.4.1` |
+| FE-3.2 Literal lexing completion | `bd-aprs.4.2` |
+| FE-3.3 Identifier and keyword lexing | `bd-aprs.4.3` |
+| FE-3.4 Lexer snapshot corpus | `bd-aprs.4.4` |
+| FE-4.1 Expression parser semantic parity | `bd-aprs.5.1` |
+| FE-4.2 Unified postfix grammar | `bd-aprs.5.2` |
+| FE-4.3 Statement parser coverage | `bd-aprs.5.3` |
+| FE-4.4 CST-to-legacy bridge | `bd-aprs.5.4` |
+| FE-4.5 Parser diagnostic recovery fixtures | `bd-aprs.5.5` |
+| FE-5.1 `frontend_v2` gate | `bd-aprs.6.1` |
+| FE-5.2 Semantic/diff harness | `bd-aprs.6.2` |
+| FE-5.3 Diff classifier | `bd-aprs.6.3` |
+| FE-5.4 Corpus runner integration | `bd-aprs.6.4` |
+| FE-6.1 Symbol identity model | `bd-aprs.7.1` |
+| FE-6.2 Bound HIR arenas | `bd-aprs.7.2` |
+| FE-6.3 SemanticModel query API | `bd-aprs.7.3` |
+| FE-6.4 Type and coercion hooks | `bd-aprs.7.4` |
+| FE-6.5 Diagnostic mapping | `bd-aprs.7.5` |
+| FE-7.1 Qualified names and project/module lookup | `bd-aprs.8.1` |
+| FE-7.2 Member dispatch classification | `bd-aprs.8.2` |
+| FE-7.3 Property and assignment semantics | `bd-aprs.8.3` |
+| FE-7.4 Class construction and fields | `bd-aprs.8.4` |
+| FE-7.5 Events and Implements migration | `bd-aprs.8.5` |
+| FE-7.6 External references binding | `bd-aprs.8.6` |
+| FE-8.1 Typed structural intrinsic enum | `bd-aprs.9.1` |
+| FE-8.2 Operator normalization optimizer split | `bd-aprs.9.2` |
+| FE-8.3 HIR lowering contract cleanup | `bd-aprs.9.3` |
+| FE-8.4 Metadata normalization for harness | `bd-aprs.9.4` |
+| FE-9.1 Per-construct default flip | `bd-aprs.10.1` |
+| FE-9.2 Legacy parser/rewriter retirement | `bd-aprs.10.2` |
+| FE-9.3 Salsa/query integration | `bd-aprs.10.3` |
+| FE-9.4 Language-service reconciliation | `bd-aprs.10.4` |
+| FE-9.5 Terminal evidence and closure | `bd-aprs.10.5` |
+
+### Epic FE-0 — Workset Preparation and Truth Repair
+
+Outcome: the workset becomes executable without stale assumptions or hidden prerequisites.
+
+Candidate bead units:
+- FE-0.1 Workset truth audit: reconcile this plan with `oxvba-syntax`, `oxvba-languageservice`,
+  current compiler lowering, activation-frame state, and project-object field state.
+- FE-0.2 Decision-record cleanup: lock the meaning of "Roslyn-style" as a shape, and record
+  `rowan`/`cstree` as optional helper migrations.
+- FE-0.3 Corpus inventory: enumerate current compiler, host, conformance, language-service, and
+  real-world fixture sources that will feed the semantic/diff harness.
+- FE-0.4 Bead rollout: create the actual bead tree from this hierarchy once the workset is
+  accepted for execution.
+
+Evidence gate: workset text, architecture references, and corpus inventory agree; no execution
+phase depends on an undocumented prerequisite.
+
+### Epic FE-1 — Grammar and Coverage Foundation
+
+Outcome: the target VBA grammar subset is explicit and measurable.
+
+Candidate bead units:
+- FE-1.1 MS-VBAL grammar capture: create `docs/spec/VBA_GRAMMAR_V1` with clean-room provenance
+  and dialect notes.
+- FE-1.2 Rubberduck cross-check notes: use Rubberduck as a quirk checklist without copying its
+  grammar into product code.
+- FE-1.3 Grammar coverage matrix: create production-level rows with fixture anchors, parser
+  status, binder status, execution status, and residual disposition.
+- FE-1.4 Fixture taxonomy: split syntax-only fixtures, binder fixtures, execution fixtures,
+  diagnostics fixtures, and Excel oracle fixtures.
+
+Evidence gate: every in-scope grammar production has an owned row or an explicit out-of-scope /
+deferred reason.
+
+### Epic FE-2 — Syntax Substrate Audit and Hardening
+
+Outcome: `oxvba-syntax` is either confirmed as the syntax substrate or replaced by a justified
+library-backed implementation.
+
+Candidate bead units:
+- FE-2.1 Green/red tree audit: verify losslessness, immutable sharing behavior, text ranges,
+  token/node traversal, error-node representation, and stable handles needed by IDE queries.
+- FE-2.2 Library spike: compare current custom tree against `rowan` and `cstree` for concrete
+  gaps: node identity, interning, memory, threading, typed facade ergonomics, and maintenance cost.
+- FE-2.3 Typed facade audit: define the minimal typed syntax API needed by parser tests, binder,
+  SemanticModel, and formatting/refactoring.
+- FE-2.4 Error recovery shape: standardize parser diagnostics and error nodes so incomplete
+  source remains useful for IDE interactions.
+
+Evidence gate: a written keep-or-migrate decision exists, backed by tests or a spike, and the
+chosen syntax substrate has an explicit hardening backlog.
+
+### Epic FE-3 — Lexer Completion
+
+Outcome: the lexer is lossless, span-stable, and broad enough for the accepted corpus.
+
+Candidate bead units:
+- FE-3.1 Trivia and continuation semantics: cover whitespace, comments, `Rem`, physical/logical
+  line handling, and line continuation edge cases.
+- FE-3.2 Literal lexing: cover strings, date literals, numeric suffixes, hex/octal forms,
+  currency/decimal-relevant forms, and malformed literal recovery.
+- FE-3.3 Identifier and keyword lexing: cover bracketed identifiers, type suffixes, case folding,
+  contextual keywords, and host/library names that collide with keywords.
+- FE-3.4 Lexer snapshot corpus: add token snapshots and round-trip tests across the grammar
+  matrix and existing project fixtures.
+
+Evidence gate: accepted corpus tokenizes losslessly, lexical residuals are matrixed, and lexer
+diagnostics carry stable spans.
+
+### Epic FE-4 — Parser Completion and CST-to-Legacy Bridge
+
+Outcome: the CST parser covers accepted expressions/statements and can feed existing lowering
+through a temporary bridge.
+
+Candidate bead units:
+- FE-4.1 Expression parser parity: harden precedence, associativity, unary/binary distinction,
+  `Is`, `Like`, `TypeOf ... Is`, and parenthesized expression behavior.
+- FE-4.2 Postfix grammar: unify call, index, member, bang, default-member syntax, and statement
+  call forms.
+- FE-4.3 Statement parser coverage: harden declarations, blocks, inline statements, `With`,
+  `On Error`/`Resume`, `RaiseEvent`, `Property`, `Declare`, `Type`, `Enum`, attributes, and
+  statement separators.
+- FE-4.4 CST-to-legacy bridge: lower selected CST nodes into current `BoundExpr`/`BoundStmt`
+  forms so syntax migration can proceed before HIR is complete.
+- FE-4.5 Parser diagnostic recovery: verify partial trees under common incomplete edit states.
+
+Evidence gate: parser fixtures round-trip, bridge-supported constructs compile/run through the
+old lowering path, and unsupported constructs have clear fallback or residual rows.
+
+### Epic FE-5 — Semantic Harness and Frontend Gate
+
+Outcome: the new pipeline can be enabled per construct and compared safely against the existing
+compiler.
+
+Candidate bead units:
+- FE-5.1 `frontend_v2` gate: introduce a config/feature/runtime switch with no default behavior
+  change.
+- FE-5.2 Semantic/diff harness: compare diagnostics, normalized metadata, bytecode summaries,
+  execution traces, and observable outputs.
+- FE-5.3 Diff classifier: record bytecode differences as bug, harmless drift, or intentional
+  improvement, with fixture links and close conditions.
+- FE-5.4 Corpus runner integration: run compiler unit fixtures, host projects, conformance cases,
+  and targeted Excel oracle-backed cases through the harness.
+
+Evidence gate: the harness can prove old-vs-old stability, v2 smoke behavior, and meaningful
+classification of at least one intentional non-byte-identical lowering.
+
+### Epic FE-6 — Binder, HIR, and SemanticModel Core
+
+Outcome: syntax is resolved into a compiler-owned bound HIR and an IDE-facing SemanticModel
+without putting binding data into the CST.
+
+Candidate bead units:
+- FE-6.1 Symbol identity model: define `SymbolId`, scopes, module/project/library namespaces,
+  case-insensitive interning, and source-span provenance.
+- FE-6.2 Bound HIR arenas: define expression, statement, declaration, call, member, property,
+  and type nodes with CST backpointers.
+- FE-6.3 SemanticModel query API: expose symbol/type/diagnostic queries keyed by CST nodes and
+  byte spans, reusing HIR facts rather than duplicating compiler semantics.
+- FE-6.4 Type and coercion hooks: connect HIR to the current declared type model, call-site
+  descriptors, Let/Set distinction, Optional/ParamArray, ByRef/ByVal, and default values.
+- FE-6.5 Diagnostic mapping: route parser, binder, and type diagnostics to stable source spans
+  with existing diagnostic family compatibility where applicable.
+
+Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run
+with behavior matching or improving the legacy path.
+
+### Epic FE-7 — Project Semantics Migration from `project.rs`
+
+Outcome: source-text rewriting is retired construct by construct and replaced by resolver/HIR
+semantics.
+
+Candidate bead units:
+- FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
+  public symbol resolution into binder-owned tables.
+- FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
+  members, late-bound dispatch, default members, and host-provided globals.
+- FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
+  write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
+- FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
+  ordinary fields, WithEvents fields, and runtime object-field metadata.
+- FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
+  and related diagnostics out of string rewriting.
+- FE-7.6 External references: bind typelib/project/native references through descriptor-backed
+  symbols without dependency-specific routing.
+
+Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
+and deletion or quarantine of the corresponding text rewrite.
+
+### Epic FE-8 — Typed Intrinsics, Optimizer Split, and Lowering Cleanup
+
+Outcome: structural compiler concepts are typed HIR/lowering operations, not magic string
+intrinsics or parser-shaped optimizations.
+
+Candidate bead units:
+- FE-8.1 Intrinsic enum: replace structural `IntrinsicCall { name }` paths for `Nothing`, `Null`,
+  omitted arguments, project instances, WithEvents operations, dynamic dispatch, and pointer
+  helpers where appropriate.
+- FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
+  binary ops and a separate optimizer transform.
+- FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
+  relying on legacy name strings or flat-slot assumptions.
+- FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
+  descriptors, source maps, and diagnostics.
+
+Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
+lowering remains behavior-correct across compiler/host/conformance suites.
+
+### Epic FE-9 — Flip, Retirement, and IDE Query Foundation
+
+Outcome: the new compiler front-end becomes the production path and leaves behind an IDE-capable
+semantic substrate.
+
+Candidate bead units:
+- FE-9.1 Per-construct default flip: route completed construct families through frontend v2 by
+  default while retaining fallback only for tracked residuals.
+- FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
+  splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
+- FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
+  queries for incremental recompute.
+- FE-9.4 Language-service reconciliation: replace duplicate `oxvba-languageservice` semantic
+  logic with shared SemanticModel/HIR-backed queries.
+- FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
+  selected Excel oracle checks; archive the legacy comparison harness when no longer needed.
+
+Evidence gate: frontend v2 is the single production compiler route for the scoped language
+surface, interactive semantic queries use the same facts as compilation, and residual scope is
+explicitly owned by follow-up worksets or beads.
