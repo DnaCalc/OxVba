@@ -5604,8 +5604,11 @@ fn rewrite_internal_class_set_assignment(
     }
     if indexed_args.is_empty()
         && internal_class_bindings.contains_key(&normalized_lhs)
-        && (rhs.contains('.') || rhs.contains('('))
+        && (rhs.contains('.') || rhs.contains('(') || rhs.eq_ignore_ascii_case("nothing"))
     {
+        // `Set <objvar> = Nothing` (and `Set <objvar> = <expr>.member` / `= func()`) is a plain
+        // object-reference assignment to the variable, never a default-member Property Set on it.
+        // `Set a = Nothing` releases the reference; leave it for the object-assignment backend.
         return Ok(line.to_string());
     }
     match resolve_internal_class_default_member_target_of_kinds(

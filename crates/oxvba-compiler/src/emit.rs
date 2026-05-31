@@ -9097,6 +9097,13 @@ fn emit_expr_into(
                 ("__null", []) => {
                     instructions.push(Instruction::LoadNull { slot: dst });
                 }
+                ("__nothing", []) => {
+                    // `Nothing` is the null object reference. It lowers to 0 (an empty object
+                    // slot): when assigned via `Set`, writing it drops the slot's prior object
+                    // reference (Release), and it matches the runtime's existing 0 == Nothing
+                    // checks (e.g. WithEvents clear).
+                    instructions.push(Instruction::LoadConstI32 { slot: dst, value: 0 });
+                }
                 // Materialise a project-class instance as a reference-counted `Object`
                 // Variant from its handle. Lowered from `New <ProjectClass>`; the slot then
                 // carries a real `IUnknown` reference (refcounted on Set/scope via the COM

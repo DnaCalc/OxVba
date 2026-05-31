@@ -981,6 +981,14 @@ pub fn runtime_variant_is_object(value: &oxvba_runtime::Variant) -> bool {
     matches!(value.vtype(), oxvba_runtime::VarType::Object)
 }
 
+/// True for the `Nothing` null-object reference, which lowers to integer 0 (an empty object
+/// slot). `Set obj = Nothing` clears the reference, so this is an accepted `Set` source for an
+/// object target alongside a real object. Non-zero non-object values (e.g. `Set obj = 5`) are
+/// still rejected.
+pub fn runtime_variant_is_nothing(value: &oxvba_runtime::Variant) -> bool {
+    matches!(value.vtype(), oxvba_runtime::VarType::Empty) || value.as_i32() == Some(0)
+}
+
 pub fn runtime_vartype_tag_bounded_variant(value: &oxvba_runtime::Variant) -> i32 {
     match value.vtype() {
         oxvba_runtime::VarType::Empty => 0,
@@ -1415,7 +1423,8 @@ pub fn validate_runtime_assignment_variant(
     match (intent, target_kind) {
         (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Variant)
         | (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Object) => {
-            if runtime_variant_is_object(value) {
+            if runtime_variant_is_object(value) || runtime_variant_is_nothing(value) {
+                // A real object reference, or `Nothing` (clear the reference).
                 Ok(())
             } else {
                 Err(format!(

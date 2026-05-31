@@ -5099,7 +5099,13 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         });
     }
     if expr.eq_ignore_ascii_case("nothing") {
-        return Some(BoundExpr::IntConst(0));
+        // The null object reference. Typed as Object so `Set obj = Nothing` is accepted (and a
+        // non-object `Let`/arithmetic use is rejected), while still lowering to runtime 0 so it
+        // reads as a cleared object slot.
+        return Some(BoundExpr::IntrinsicCall {
+            name: "__nothing".to_string(),
+            args: Vec::new(),
+        });
     }
     // Always-available VBA intrinsic constants (vbCrLf, vbBinaryCompare, vbYesNo, ...).
     // Guarded on a `vb` prefix to keep the common path cheap.

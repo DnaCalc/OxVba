@@ -573,11 +573,9 @@ End Sub
 #[test]
 fn pure_oxvba_class_terminate_fires_at_statement_that_drops_last_reference() {
     // VBA oracle (CLASS_TERMINATE_TIMING_ORACLE_2026-05-31, probe A → `1T2`): Class_Terminate
-    // runs during the statement that releases the last reference, before the next statement
-    // executes. OxVBA queues the termination on release and drains it at the next statement
-    // boundary, so the log must read `1T2`, not `12T`. The release is triggered here by
-    // reassigning `a` to a new instance (which drops the first instance's last reference); the
-    // canonical `Set a = Nothing` form is a separate compiler front-end gap for project classes.
+    // runs during the statement that releases the last reference (`Set a = Nothing`), before the
+    // next statement executes. OxVBA queues the termination on release and drains it at the next
+    // statement boundary, so the log must read `1T2`, not `12T`.
     // The log is a module global; Main copies it into a local so the slot snapshot can observe it.
     let main_module = module_unit_from_source(
         "MainModule",
@@ -590,7 +588,7 @@ Dim a As Foo
 Dim result As String
 Set a = New Foo
 Append "1"
-Set a = New Foo
+Set a = Nothing
 Append "2"
 result = gLog
 End Sub

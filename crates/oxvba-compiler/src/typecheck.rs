@@ -1582,6 +1582,8 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "strptr" | "varptr" | "objptr" => Some(BoundType::LongPtr),
         // `New <ProjectClass>` carrier: materialises a reference-counted object reference.
         "__oxvba_project_instance" => Some(BoundType::Object),
+        // `Nothing`: the null object reference.
+        "__nothing" => Some(BoundType::Object),
         _ => None,
     }
 }
