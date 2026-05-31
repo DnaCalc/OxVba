@@ -193,6 +193,35 @@ until we deliberately change semantics. The CST/HIR/SemanticModel/salsa are all 
 boundary; batch lowering needs the CST + HIR only, so the IDE-oriented layers (full SemanticModel
 surface, salsa) can land after the batch pipeline reaches parity.
 
+### 6.1 Lowering-target maturity (bytecode audit, 2026-05-31) & the activation-frame dependency
+
+A maturity audit of the VM bytecode *as a lowering target* (ahead of this rework) concluded:
+
+- **The instruction set is a mature, appropriate target with no stringly shortcuts.** ~229 typed
+  instructions on a register/slot machine; calls and jumps are resolved to instruction PCs at emit
+  time (`CallProc.target_pc`, `Jump.target_pc` via `call_patches`/`proc_labels`) — no name-keyed
+  runtime dispatch. Strings appear only where late binding genuinely needs them (late-bound COM /
+  IDispatch member names, named-argument names, `TypeOf … Is Name`, external `Declare` metadata).
+  The stringly intrinsics are a *front-end* artifact (`BoundExpr::IntrinsicCall { name }`, S4) that
+  is resolved away during lowering into typed opcodes. Value model = refcounted IUnknown `Variant`;
+  serialization = versioned `rkyv` (`OXVB`, `FORMAT_VERSION`). So the front-end can lower cleanly.
+- **One genuine immaturity: the slot / activation model.** The register file is a single **flat,
+  global** `Vec<RuntimeSlot>`; `call_stack` saves only `(return_pc, error_frame)` — there are **no
+  per-call activation frames / slot windows**. Verified consequence: **recursion is broken** —
+  `Fact(5)` returns `16`, not `120`, because a recursive callee reuses the caller's slots
+  (regression probe: `recursion_preserves_caller_locals`, `#[ignore]`d). This is the **same root
+  cause** as the object-slot-lifetime gaps (cascade through object fields, the `gMT` trailing-`T`,
+  Me-param / return-slot retention): nothing pops a frame, so object references linger.
+
+**Dependency on the activation-frame model (the full "A").** This front-end rework lowers to the
+bytecode; the instruction **format** is stable, but the slot **semantics** are slated to change
+from absolute-global to **frame-relative** when per-call activation frames land. When that happens,
+emit must produce frame-relative slot indices and the VM maintains a frame base. The activation-
+frame + object-lifetime work is tracked as a **separate back-end workstream/bead ("A")**, not in
+this front-end workset. Coordination point: prefer landing (or co-designing) the activation-frame
+model **before or alongside** the resolver/lowering phases (Phase 4+), since it changes the slot
+contract emit produces; Phases 0–3 (grammar, lexer, CST parser) are independent of it.
+
 ## 7. Phased plan (each phase: behind a flag, differential-tested, independently shippable)
 
 A `frontend_v2` build/config flag selects the new pipeline. A **differential harness** compiles
@@ -320,6 +349,10 @@ Out of scope (unless a later workset expands):
 - A full **language server / LSP** product surface (Phase 7 builds the foundation — incremental
   queries + semantic API — but the editor integration, completion, code actions, etc. are a
   separate effort).
-- The runtime **object-slot-lifetime** work (cascade / `gMT` trailing-`T`) — the parked "A" item,
-  a VM concern, independent of this front-end refactor.
-- Any change to the **bytecode/metadata contract** or to the VM/JIT.
+- The **activation-frame model + object lifetime** ("A") — per-call activation frames / slot
+  windows that fix recursion (`recursion_preserves_caller_locals`) **and** object-slot lifetime
+  (cascade, `gMT` trailing-`T`, Me-param / return-slot retention). This is a back-end VM/emit
+  workstream tracked as its own bead; see §6.1 for the slot-contract dependency. It is *not* in
+  this front-end workset, but Phase 4+ should coordinate with it.
+- Any change to the **bytecode/metadata instruction format** beyond the frame-relative slot
+  semantics introduced by "A", or to the VM/JIT.
