@@ -530,6 +530,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/ROWAN_CSTREE_SPIKE_2026-06-01.md`.
 - FE-2.3 Typed facade audit: define the minimal typed syntax API needed by parser tests, binder,
   SemanticModel, and formatting/refactoring.
+  Evidence: `docs/evidence/frontend_rework/TYPED_FACADE_AUDIT_2026-06-01.md`.
 - FE-2.4 Error recovery shape: standardize parser diagnostics and error nodes so incomplete
   source remains useful for IDE interactions.
 
