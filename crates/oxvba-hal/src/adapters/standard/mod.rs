@@ -1075,20 +1075,7 @@ impl StandardHostServices {
                 Ok(())
             })
             .map_err(|message| self.com_createobject_adapter_fault(message))?;
-        let object_ref = self
-            .com_bridge
-            .lock_state("activate_runtime_object_value_for_prog_id_name")
-            .map_err(|message| self.com_createobject_adapter_fault(message))?
-            .bindings
-            .get(&oxvba_com::ComObjectToken::new(handle.raw()))
-            .and_then(|binding| binding.runtime_object.clone())
-            .ok_or_else(|| {
-                self.com_createobject_adapter_fault(format!(
-                    "COM-E-OBJECT-IDENTITY-MISSING: object handle {} missing retained runtime identity",
-                    handle.raw()
-                ))
-            })?;
-        Ok(Variant::from_object_ref(object_ref))
+        Ok(Variant::from_object_ref(handle))
     }
 
     #[cfg(target_os = "windows")]
@@ -4994,13 +4981,13 @@ impl StandardHostServices {
                 .bind_native_dispatch_result(dispatch, prog_id_hint)
         }
         .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
-        let object_ref = self
+        let state = self
             .com_bridge
             .lock_state("bind_native_dispatch_result")
-            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?
+            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
+        let binding = state
             .bindings
             .get(&oxvba_com::ComObjectToken::new(handle.raw()))
-            .and_then(|binding| binding.runtime_object.clone())
             .ok_or_else(|| {
                 HalError::adapter_fault(
                     self.profile,
@@ -5012,6 +4999,23 @@ impl StandardHostServices {
                     ),
                 )
             })?;
+        let raw = binding.runtime_object.ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!(
+                    "COM-E-OBJECT-IDENTITY-MISSING: object handle {} missing retained runtime identity",
+                    handle.raw()
+                ),
+            )
+        })?;
+        let object_ref = binding.runtime_class_descriptor.map_or_else(
+            || oxvba_runtime::ObjectRef::from_compat_identity(raw),
+            |descriptor| {
+                oxvba_runtime::ObjectRef::from_compat_identity_with_descriptor(raw, descriptor)
+            },
+        );
         Ok(Variant::from_object_ref(object_ref))
     }
 

@@ -1,9 +1,6 @@
 #[cfg(target_os = "windows")]
 mod windows_com_e2e {
-    use std::{
-        collections::HashMap,
-        sync::{Mutex, OnceLock},
-    };
+    use std::{cell::RefCell, collections::HashMap};
 
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
@@ -17,20 +14,20 @@ mod windows_com_e2e {
         },
     };
 
-    fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
-        static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
-        CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
+    thread_local! {
+        static CANONICAL_SNAPSHOT_OBJECTS: RefCell<HashMap<i32, ObjectRef>> = RefCell::new(HashMap::new());
     }
 
     fn canonicalize_variant(value: Variant) -> Variant {
         if let Some(object) = value.as_object_ref() {
             let raw = object.raw();
-            let canonical = canonical_snapshot_objects()
-                .lock()
-                .expect("canonical object snapshot map should not be poisoned")
-                .entry(raw)
-                .or_insert_with(|| ObjectRef::from_compat_identity(raw))
-                .clone();
+            let canonical = CANONICAL_SNAPSHOT_OBJECTS.with(|objects| {
+                objects
+                    .borrow_mut()
+                    .entry(raw)
+                    .or_insert_with(|| ObjectRef::from_compat_identity(raw))
+                    .clone()
+            });
             return Variant::from_object_ref(canonical);
         }
         if let Some(array) = value.as_safearray() {

@@ -1,9 +1,11 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+
+use crate::Variant;
 
 pub const RUNTIME_S_OK: i32 = 0;
 pub const RUNTIME_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
@@ -533,6 +535,10 @@ struct CompatObjectBase {
     ref_count: AtomicU32,
     identity: RuntimeObjectIdentity,
     class_descriptor: &'static RuntimeClassDescriptor,
+    fields: RefCell<BTreeMap<i32, Variant>>,
+    parked_for_termination: Cell<bool>,
+    running_termination: Cell<bool>,
+    terminated: Cell<bool>,
 }
 
 static COMPAT_OBJECT_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
@@ -571,13 +577,13 @@ unsafe extern "C" fn compat_query_interface(
 }
 
 /// Pending `Class_Terminate` work, fed by `compat_release` and drained by the VM at statement
-/// boundaries. `pending` holds `(instance_id, route_key)` to terminate; `terminating` guards
-/// against re-enqueue when the VM recreates a `Me` object to run `Class_Terminate` (its release
-/// must not schedule a second terminate for the same instance).
+/// boundaries. A pending project object is parked: its refcount reached zero, but the
+/// `CompatObjectBase` is still owned by this queue so `Class_Terminate` can run against the
+/// original box and its fields can be released afterwards.
 #[derive(Default)]
 struct TerminationQueue {
     pending: Vec<(i32, i32)>,
-    terminating: HashSet<i32>,
+    parked: BTreeMap<i32, *mut CompatObjectBase>,
 }
 
 thread_local! {
@@ -590,18 +596,49 @@ pub fn has_pending_terminations() -> bool {
     TERMINATIONS.with(|q| !q.borrow().pending.is_empty())
 }
 
-/// Drains and returns the queued `(instance_id, route_key)` terminations. The `terminating`
-/// guard entries are retained until the VM calls `clear_terminating` after running each, so the
-/// recreated `Me` object's own release does not re-enqueue it.
+/// Drains and returns the queued `(instance_id, route_key)` terminations. The parked object boxes
+/// remain owned by the termination queue until `finish_pending_termination` is called.
 pub fn take_pending_terminations() -> Vec<(i32, i32)> {
     TERMINATIONS.with(|q| std::mem::take(&mut q.borrow_mut().pending))
 }
 
-/// Clears the re-entry guard for an instance after the VM has finished its `Class_Terminate`.
-pub fn clear_terminating(instance_id: i32) {
+/// Returns a retained reference to the original parked object whose `Class_Terminate` is about to
+/// run. The returned `ObjectRef` is the same boxed object, not a rematerialized identity clone.
+pub fn retained_parked_termination_object(instance_id: i32) -> Option<ObjectRef> {
     TERMINATIONS.with(|q| {
-        q.borrow_mut().terminating.remove(&instance_id);
-    });
+        let q = q.borrow();
+        let owner = *q.parked.get(&instance_id)?;
+        unsafe {
+            (*owner).running_termination.set(true);
+            compat_add_ref((&mut (*owner).unknown as *mut RawRuntimeIUnknown).cast());
+            Some(ObjectRef(NonNull::new_unchecked(
+                &mut (*owner).unknown as *mut RawRuntimeIUnknown,
+            )))
+        }
+    })
+}
+
+/// Finishes teardown for a parked project object after `Class_Terminate` has returned.
+///
+/// If `Class_Terminate` resurrected `Me`, the object remains alive and its fields/subscriptions
+/// stay intact. Otherwise the field store is dropped before the box is freed; releasing those
+/// field Variants may enqueue cascaded child terminations.
+pub fn finish_pending_termination(instance_id: i32) -> bool {
+    let owner = TERMINATIONS.with(|q| q.borrow_mut().parked.remove(&instance_id));
+    let Some(owner) = owner else {
+        return false;
+    };
+    unsafe {
+        (*owner).running_termination.set(false);
+        (*owner).terminated.set(true);
+        if (*owner).ref_count.load(Ordering::Acquire) > 0 {
+            (*owner).parked_for_termination.set(false);
+            return false;
+        }
+        (*owner).fields.borrow_mut().clear();
+        drop(Box::from_raw(owner));
+        true
+    }
 }
 
 /// Resets all pending termination state (used when a VM run starts/ends).
@@ -609,7 +646,18 @@ pub fn reset_pending_terminations() {
     TERMINATIONS.with(|q| {
         let mut q = q.borrow_mut();
         q.pending.clear();
-        q.terminating.clear();
+        for (_, owner) in std::mem::take(&mut q.parked) {
+            unsafe {
+                (*owner).running_termination.set(false);
+                (*owner).terminated.set(true);
+                if (*owner).ref_count.load(Ordering::Acquire) > 0 {
+                    (*owner).parked_for_termination.set(false);
+                    continue;
+                }
+                (*owner).fields.borrow_mut().clear();
+                drop(Box::from_raw(owner));
+            }
+        }
     });
 }
 
@@ -624,23 +672,45 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
     let remaining = previous.saturating_sub(1);
     if remaining == 0 {
         // For a class with a `Class_Terminate`, the last release schedules per-instance
-        // teardown for the VM to run at the next statement boundary (VBA timing). The guard
-        // ensures the `Me` object the VM recreates to run terminate does not re-enqueue.
+        // teardown for the VM to run at the next statement boundary (VBA timing). The box is
+        // parked, not freed, so teardown runs against the original field-owning object.
         let identity = unsafe { (*owner).identity };
-        if identity.terminates_on_release {
+        let should_park = identity.terminates_on_release
+            && unsafe { !(*owner).terminated.get() && !(*owner).running_termination.get() };
+        if should_park {
             TERMINATIONS.with(|q| {
                 let mut q = q.borrow_mut();
-                if q.terminating.insert(identity.compat_identity) {
+                if !unsafe { (*owner).parked_for_termination.replace(true) } {
                     q.pending
                         .push((identity.compat_identity, identity.route_key));
+                    q.parked.insert(identity.compat_identity, owner);
                 }
             });
+            return remaining;
+        }
+        if unsafe { (*owner).parked_for_termination.get() } {
+            return remaining;
         }
         unsafe {
+            (*owner).fields.borrow_mut().clear();
             drop(Box::from_raw(owner));
         }
     }
     remaining
+}
+
+fn compat_field_get(owner: *mut CompatObjectBase, token: i32) -> Option<Variant> {
+    unsafe { (*owner).fields.borrow().get(&token).cloned() }
+}
+
+fn compat_field_set(owner: *mut CompatObjectBase, token: i32, value: Variant) {
+    unsafe {
+        if matches!(value.vtype(), crate::VarType::Empty) {
+            (*owner).fields.borrow_mut().remove(&token);
+        } else {
+            (*owner).fields.borrow_mut().insert(token, value);
+        }
+    }
 }
 
 fn compat_owner_from_unknown(unknown: *mut RawRuntimeIUnknown) -> *mut CompatObjectBase {
@@ -703,6 +773,10 @@ impl ObjectRef {
                 apartment_model: RuntimeApartmentModel::Unknown,
             },
             class_descriptor,
+            fields: RefCell::new(BTreeMap::new()),
+            parked_for_termination: Cell::new(false),
+            running_termination: Cell::new(false),
+            terminated: Cell::new(false),
         });
         let raw = Box::into_raw(boxed);
         let unknown = unsafe { &mut (*raw).unknown as *mut RawRuntimeIUnknown };
@@ -727,6 +801,10 @@ impl ObjectRef {
     pub fn route_key(&self) -> i32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).identity.route_key }
+    }
+
+    pub fn is_project_instance(&self) -> bool {
+        self.is_compat_object() && self.compat_identity() != self.route_key()
     }
 
     pub fn raw_iunknown(&self) -> *mut RawRuntimeIUnknown {
@@ -762,6 +840,21 @@ impl ObjectRef {
     pub fn object_identity(&self) -> RuntimeObjectIdentity {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         unsafe { (*owner).identity }
+    }
+
+    pub fn project_field_get(&self, token: i32) -> Option<Variant> {
+        if !self.is_project_instance() {
+            return None;
+        }
+        compat_field_get(compat_owner_from_unknown(self.0.as_ptr()), token)
+    }
+
+    pub fn project_field_set(&self, token: i32, value: Variant) -> bool {
+        if !self.is_project_instance() {
+            return false;
+        }
+        compat_field_set(compat_owner_from_unknown(self.0.as_ptr()), token, value);
+        true
     }
 
     pub fn query_interface_descriptor(
@@ -887,9 +980,6 @@ impl Hash for ObjectRef {
         self.0.hash(state);
     }
 }
-
-unsafe impl Send for ObjectRef {}
-unsafe impl Sync for ObjectRef {}
 
 #[cfg(test)]
 mod tests {

@@ -226,6 +226,7 @@ pub struct ProjectDynamicObjectRoute {
     pub object_handle: i32,
     pub project_name: String,
     pub module_name: String,
+    pub field_tokens: Vec<i32>,
     pub members: Vec<ProjectDynamicMemberRoute>,
     pub implements_interfaces: Vec<String>,
     /// The class's `Class_Terminate` member route, if it defines one. Unlike `members` (public
@@ -710,9 +711,7 @@ impl ProjectCompileError {
             Self::DefaultMemberResolutionMissing { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"
             }
-            Self::MemberReadArgumentNotOptional { .. } => {
-                "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL"
-            }
+            Self::MemberReadArgumentNotOptional { .. } => "PMR-E-MEMBER-READ-ARGUMENT-NOT-OPTIONAL",
             Self::MemberReadExpectedFunctionOrVariable { .. } => {
                 "PMR-E-MEMBER-READ-EXPECTED-FUNCTION-OR-VARIABLE"
             }
@@ -3207,6 +3206,7 @@ fn lower_module_source_module_aware(
             }
             out.push(plan.lowered_line.clone());
             if let Some(proc_name) = next_active_procedure_name {
+                out.extend(emit_module_state_discard_decl_lines(&module_state_bindings));
                 out.extend(emit_module_state_string_initializer_lines(
                     &module_state_bindings,
                     &module_scope_string_fields,
@@ -4928,9 +4928,11 @@ fn internal_class_value_read_edge_diagnostic(
     )?
     .is_some()
     {
-        return Ok(Some(ProjectCompileError::MemberReadExpectedFunctionOrVariable {
-            name: raw_name.to_string(),
-        }));
+        return Ok(Some(
+            ProjectCompileError::MemberReadExpectedFunctionOrVariable {
+                name: raw_name.to_string(),
+            },
+        ));
     }
     // A Function with a required argument, read without arguments, is "Argument not optional".
     // (A no-arg-callable Function would already have been get-or-called by the caller.)
@@ -6281,9 +6283,10 @@ fn rewrite_internal_class_state_assignment(
     }
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
-    // An object-typed field is assigned with `Set` (`Set mChild = New Child`); a scalar field
-    // without. Both are per-instance state slots, so route either through __oxvba_withevents_set;
-    // the `Set ` keyword is preserved so an object target's assignment stays object-typed.
+    // Class fields are per-instance state slots. Route writes through the runtime setter as a
+    // statement call rather than assigning the setter result back to the field name; otherwise the
+    // compiler creates a procedure/module slot that holds a second reference and pins object
+    // fields beyond the owning instance.
     let set_prefix = if trimmed.len() >= 4 && trimmed[..4].eq_ignore_ascii_case("set ") {
         "Set "
     } else {
@@ -6307,11 +6310,10 @@ fn rewrite_internal_class_state_assignment(
         return line.to_string();
     };
     let rewritten_rhs = rewrite_internal_class_state_expression_reads(rhs, module_state_bindings);
+    let _ = set_prefix;
     format!(
-        "{}{}{} = __oxvba_withevents_set({}, {}, {})",
+        "{}__oxvba_field_set_discard = __oxvba_withevents_set({}, {}, {})",
         &line[..leading],
-        set_prefix,
-        lhs,
         module_state_bindings.owner_expr,
         binding_token,
         rewritten_rhs
@@ -6642,6 +6644,16 @@ fn emit_module_state_string_initializer_lines(
         ));
     }
     out
+}
+
+fn emit_module_state_discard_decl_lines(
+    module_state_bindings: &ModuleStateBindings,
+) -> Vec<String> {
+    if module_state_bindings.field_tokens.is_empty() {
+        Vec::new()
+    } else {
+        vec!["Dim __oxvba_field_set_discard".to_string()]
+    }
 }
 
 fn collect_same_module_byref_param_masks(
@@ -7521,6 +7533,11 @@ fn build_project_dynamic_object_routes(
             object_handle: binding.object_handle,
             project_name: binding.project_name.clone(),
             module_name: binding.module_name.clone(),
+            field_tokens: project_class_field_tokens(
+                manifest,
+                &binding.project_name,
+                &binding.module_name,
+            ),
             members,
             implements_interfaces,
             class_terminate,
@@ -7528,6 +7545,54 @@ fn build_project_dynamic_object_routes(
     }
     out.sort_by_key(|route| route.object_handle);
     out
+}
+
+fn project_class_field_tokens(
+    manifest: &ProjectManifest,
+    project_name: &str,
+    module_name: &str,
+) -> Vec<i32> {
+    let mut tokens = Vec::new();
+    if let Some(module) = find_project_module(manifest, project_name, module_name)
+        && module.module_kind == ModuleKind::Class
+    {
+        for field_name in collect_module_state_bindings(module, project_name, module_name)
+            .field_tokens
+            .keys()
+        {
+            tokens.push(class_state_binding_token(
+                project_name,
+                module_name,
+                field_name,
+            ));
+        }
+    }
+    tokens.sort_unstable();
+    tokens.dedup();
+    tokens
+}
+
+fn find_project_module<'a>(
+    manifest: &'a ProjectManifest,
+    project_name: &str,
+    module_name: &str,
+) -> Option<&'a ModuleUnit> {
+    if manifest.project_name.eq_ignore_ascii_case(project_name) {
+        return manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name.eq_ignore_ascii_case(module_name));
+    }
+    manifest
+        .reference_projects
+        .iter()
+        .find(|project| project.project_name.eq_ignore_ascii_case(project_name))
+        .and_then(|project| {
+            project
+                .modules
+                .iter()
+                .find(|module| module.module_name.eq_ignore_ascii_case(module_name))
+        })
 }
 
 fn resolve_event_source_module(
@@ -8334,6 +8399,7 @@ fn rewrite_module_source(
                 }
                 active_procedure_name = Some(decl.lowered_name.clone());
                 out.push(rewritten);
+                out.extend(emit_module_state_discard_decl_lines(&module_state_bindings));
                 out.extend(emit_module_state_string_initializer_lines(
                     &module_state_bindings,
                     &module_scope_string_fields,

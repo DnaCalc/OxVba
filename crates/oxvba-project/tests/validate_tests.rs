@@ -360,6 +360,7 @@ fn com_class_exported_when_exposed_and_creatable() {
             param_slots: vec![1, 2],
             return_slot: Some(3),
         }],
+        field_tokens: Vec::new(),
         implements_interfaces: Vec::new(),
         class_terminate: None,
     }];
@@ -519,6 +520,7 @@ fn com_class_with_multiple_members() {
                 return_slot: None,
             },
         ],
+        field_tokens: Vec::new(),
         implements_interfaces: Vec::new(),
         class_terminate: None,
     }];
@@ -815,6 +817,7 @@ fn com_class_export_preserves_dispatch_metadata() {
                 return_slot: Some(0),
             },
         ],
+        field_tokens: Vec::new(),
         implements_interfaces: Vec::new(),
         class_terminate: None,
     }];

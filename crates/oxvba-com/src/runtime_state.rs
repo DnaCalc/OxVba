@@ -15,7 +15,7 @@ pub struct ComBinding {
     pub prog_id_name: String,
     pub native_dispatch: usize,
     pub native_unknown: usize,
-    pub runtime_object: Option<ObjectRef>,
+    pub runtime_object: Option<i32>,
     pub runtime_class_descriptor: Option<&'static RuntimeClassDescriptor>,
     pub runtime_dispatch_plan_cache: RuntimeDispatchPlanCache,
     pub member_dispids: BTreeMap<ComMemberToken, i32>,
@@ -224,7 +224,7 @@ fn default_member_token_from_typelib_metadata(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventSubscription<TTransport> {
-    pub object: ObjectRef,
+    pub object: i32,
     pub event: ComMemberToken,
     pub transport: TTransport,
 }
@@ -261,7 +261,7 @@ unsafe impl Sync for ComEventCallbackValue {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventCallback {
     pub subscription: ComSubscriptionToken,
-    pub object: ObjectRef,
+    pub object: i32,
     pub event: ComMemberToken,
     pub args: Vec<ComEventCallbackValue>,
 }
@@ -358,7 +358,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             callback,
             ComEventCallback {
                 subscription,
-                object: entry.object.clone(),
+                object: entry.object,
                 event: entry.event,
                 args: args
                     .iter()
@@ -381,7 +381,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
-                if entry.object.raw() == object.raw()
+                if entry.object == object.raw()
                     && entry.event == event
                     && is_projection_transport(&entry.transport)
                 {
@@ -415,7 +415,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
         Some(ComCallbackPayload {
             callback,
             subscription: payload.subscription,
-            object: payload.object,
+            object: ObjectRef::from_compat_identity(payload.object),
             event: payload.event,
             args: payload
                 .args
@@ -435,7 +435,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
-                if entry.object.raw() == object.raw() {
+                if entry.object == object.raw() {
                     Some((*subscription, entry.clone()))
                 } else {
                     None
@@ -449,7 +449,7 @@ impl<TTransport: Clone> ComRuntimeState<TTransport> {
             .callbacks
             .iter()
             .filter_map(|(callback, payload)| {
-                if payload.object.raw() == object.raw() {
+                if payload.object == object.raw() {
                     Some(*callback)
                 } else {
                     None
@@ -571,7 +571,7 @@ mod tests {
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object: object_ref.clone(),
+                object: object_ref.raw(),
                 event: ComMemberToken::new(11),
                 transport: true,
             },
@@ -589,7 +589,7 @@ mod tests {
             .take_polled_callback()
             .expect("queued callback should be available");
         assert_eq!(payload.subscription.raw(), subscription.raw());
-        assert_eq!(payload.object, object_ref);
+        assert_eq!(payload.object.raw(), object_ref.raw());
         assert_eq!(payload.args[0].to_com_value(), ComValue::I32(7));
     }
 
@@ -602,7 +602,7 @@ mod tests {
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object: object_ref,
+                object: object_ref.raw(),
                 event: ComMemberToken::new(12),
                 transport: true,
             },
@@ -636,7 +636,7 @@ mod tests {
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object: ObjectRef::from_compat_identity(object.raw()),
+                object: object.raw(),
                 event: ComMemberToken::new(12),
                 transport: true,
             },

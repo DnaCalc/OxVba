@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use std::{cell::RefCell, collections::HashMap};
 
 use oxvba_compiler::{
     ModuleKind, OxBundle, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
@@ -17,20 +14,20 @@ use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, Variant};
 use oxvba_vm::{Vm, VmExecutionPackage};
 
-fn canonical_snapshot_objects() -> &'static Mutex<HashMap<i32, ObjectRef>> {
-    static CANONICAL: OnceLock<Mutex<HashMap<i32, ObjectRef>>> = OnceLock::new();
-    CANONICAL.get_or_init(|| Mutex::new(HashMap::new()))
+thread_local! {
+    static CANONICAL_SNAPSHOT_OBJECTS: RefCell<HashMap<i32, ObjectRef>> = RefCell::new(HashMap::new());
 }
 
 fn canonicalize_variant(value: Variant) -> Variant {
     if let Some(object) = value.as_object_ref() {
         let raw = object.raw();
-        let canonical = canonical_snapshot_objects()
-            .lock()
-            .expect("canonical object snapshot map should not be poisoned")
-            .entry(raw)
-            .or_insert_with(|| object.clone())
-            .clone();
+        let canonical = CANONICAL_SNAPSHOT_OBJECTS.with(|objects| {
+            objects
+                .borrow_mut()
+                .entry(raw)
+                .or_insert_with(|| object.clone())
+                .clone()
+        });
         return Variant::from_object_ref(canonical);
     }
     if let Some(array) = value.as_safearray() {
@@ -921,11 +918,6 @@ End Sub
 }
 
 #[test]
-#[ignore = "Parent terminates correctly (`1P2`), but the cascade to the child is blocked: a child \
-            object stored in a regular (non-WithEvents) field is retained by an extra reference \
-            beyond the per-instance state binding, so clearing the owner's state on terminate does \
-            not bring the child to refcount 0. Needs dedicated per-instance object-field storage \
-            (the field currently rides the WithEvents binding map). Un-ignore once that lands."]
 fn pure_oxvba_class_terminate_cascades_through_object_field() {
     // When a terminating instance holds another terminating object in a (regular, non-WithEvents)
     // field, releasing the owner's last reference terminates it AND, as its per-instance field
@@ -996,6 +988,69 @@ End Sub
     assert!(
         strings.iter().any(|s| s == "1PC2"),
         "Class_Terminate must cascade through an object field (expected log `1PC2`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_fields_are_per_instance_storage() {
+    // Ordinary class fields must live on the receiver instance, not in route/global state.
+    // Two Counter instances write different values through the same field token; reads must
+    // observe each object's own field storage.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim a As Counter
+Dim b As Counter
+Dim observedA As Long
+Dim observedB As Long
+Set a = New Counter
+Set b = New Counter
+Call a.PutValue(7)
+Call b.PutValue(11)
+observedA = a.Value()
+observedB = b.Value()
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let counter_module = module_unit_from_source(
+        "Counter",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Counter"
+Private mValue As Long
+Public Sub PutValue(ByVal value As Long)
+mValue = value
+End Sub
+Public Function Value() As Long
+Value = mValue
+End Function
+"#,
+    )
+    .expect("counter class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, counter_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.iter().any(|v| v.as_i32() == Some(7)),
+        "first instance field read must return its own value 7; out={out:?}"
+    );
+    assert!(
+        out.iter().any(|v| v.as_i32() == Some(11)),
+        "second instance field read must return its own value 11; out={out:?}"
     );
 }
 
@@ -2406,7 +2461,10 @@ End Sub
         Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
     );
     assert_eq!(out[4], Variant::from_i32(99));
-    assert!(db_path.exists(), "late-bound DAO database should be created");
+    assert!(
+        db_path.exists(),
+        "late-bound DAO database should be created"
+    );
 
     let _ = std::fs::remove_dir_all(&temp_root);
 }
@@ -2459,7 +2517,10 @@ End Sub
         Variant::from_string(oxvba_runtime::bstr::BStr::from("Grace"))
     );
     assert_eq!(out[4], Variant::from_i32(99));
-    assert!(db_path.exists(), "mixed-bound DAO database should be created");
+    assert!(
+        db_path.exists(),
+        "mixed-bound DAO database should be created"
+    );
 
     let _ = std::fs::remove_dir_all(&temp_root);
 }

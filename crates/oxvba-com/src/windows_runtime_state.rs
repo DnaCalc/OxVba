@@ -230,13 +230,13 @@ pub fn event_callback_args_from_invoke_args(
 pub fn collect_stale_callbacks_for_subscription(
     state: &WindowsComClientState,
     subscription: ComSubscriptionToken,
-    object: &ObjectRef,
+    object: i32,
 ) -> BTreeSet<ComCallbackToken> {
     state
         .callbacks
         .iter()
         .filter_map(|(callback, payload)| {
-            if payload.subscription == subscription && payload.object.raw() == object.raw() {
+            if payload.subscription == subscription && payload.object == object {
                 Some(*callback)
             } else {
                 None
@@ -274,26 +274,34 @@ pub fn resolve_bound_runtime_object(
             object.raw()
         ));
     };
-    binding
-        .runtime_object
-        .clone()
-        .ok_or_else(|| {
-            format!(
+    binding.runtime_object.map_or_else(
+        || {
+            Err(format!(
                 "COM-E-OBJECT-IDENTITY-MISSING: object handle {} is not backed by retained runtime identity",
                 object.raw()
-            )
-        })
+            ))
+        },
+        |raw| {
+            Ok(binding.runtime_class_descriptor.map_or_else(
+                || ObjectRef::from_compat_identity(raw),
+                |descriptor| ObjectRef::from_compat_identity_with_descriptor(raw, descriptor),
+            ))
+        },
+    )
 }
 
 fn retained_runtime_object(binding: &mut ComBinding, handle: ComObjectToken) -> ObjectRef {
-    if let Some(object) = binding.runtime_object.clone() {
-        return object;
+    if let Some(raw) = binding.runtime_object {
+        return binding.runtime_class_descriptor.map_or_else(
+            || ObjectRef::from_compat_identity(raw),
+            |descriptor| ObjectRef::from_compat_identity_with_descriptor(raw, descriptor),
+        );
     }
     let object = binding.runtime_class_descriptor.map_or_else(
         || ObjectRef::from_compat_identity(handle.raw()),
         |descriptor| ObjectRef::from_compat_identity_with_descriptor(handle.raw(), descriptor),
     );
-    binding.runtime_object = Some(object.clone());
+    binding.runtime_object = Some(object.raw());
     object
 }
 
@@ -465,7 +473,7 @@ pub fn remove_subscription_callbacks(
         ));
     };
     let stale_callbacks =
-        collect_stale_callbacks_for_subscription(state, subscription, &entry.object);
+        collect_stale_callbacks_for_subscription(state, subscription, entry.object);
     for callback in &stale_callbacks {
         state.callbacks.remove(callback);
     }
@@ -537,12 +545,15 @@ pub fn insert_bound_object_binding_at_handle(
         object
     } else {
         if binding.runtime_object.is_none() {
-            binding.runtime_object = Some(object.clone());
+            binding.runtime_object = Some(object.raw());
         }
-        binding
+        let raw = binding
             .runtime_object
-            .clone()
-            .expect("non-zero object binding must retain a runtime object")
+            .expect("non-zero object binding must retain a runtime object");
+        binding.runtime_class_descriptor.map_or_else(
+            || ObjectRef::from_compat_identity(raw),
+            |descriptor| ObjectRef::from_compat_identity_with_descriptor(raw, descriptor),
+        )
     };
     state
         .bindings
@@ -793,7 +804,7 @@ pub unsafe fn subscribe_event_shared(
     state.subscriptions.insert(
         subscription,
         crate::ComEventSubscription {
-            object: object.clone(),
+            object: object.raw(),
             event,
             transport,
         },
@@ -909,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn projection_callback_queue_preserves_retained_object_identity() {
+    fn projection_callback_queue_preserves_runtime_object_identity_token() {
         let object = ObjectRef::from_compat_identity(20_111);
         let subscription = crate::ComSubscriptionToken::new(40_111);
         let state = Arc::new(Mutex::new(WindowsComClientState::default()));
@@ -918,7 +929,7 @@ mod tests {
             locked.subscriptions.insert(
                 subscription,
                 ComEventSubscription {
-                    object: object.clone(),
+                    object: object.raw(),
                     event: ComMemberToken::new(11),
                     transport: WindowsComSubscriptionTransport::Projection,
                 },
@@ -962,7 +973,7 @@ mod tests {
             .take_polled_callback()
             .expect("queued payload");
         assert_eq!(payload.subscription, subscription);
-        assert_eq!(payload.object, object);
+        assert_eq!(payload.object.raw(), object.raw());
         assert_eq!(payload.event.raw(), 11);
         assert_eq!(
             payload

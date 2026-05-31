@@ -4786,12 +4786,15 @@ impl Vm {
                     // Dispatch resolves the route via the object's route key; per-instance
                     // state keys on the fresh `compat_identity`.
                     let route_handle = self.read_i32_slot(*handle)?;
-                    let route_info = self.project_dynamic_objects.get(&route_handle).map(|state| {
-                        (
-                            state.object.class_descriptor(),
-                            state.route.class_terminate.is_some(),
-                        )
-                    });
+                    let route_info = self
+                        .project_dynamic_objects
+                        .get(&route_handle)
+                        .map(|state| {
+                            (
+                                state.object.class_descriptor(),
+                                state.route.class_terminate.is_some(),
+                            )
+                        });
                     let object = match route_info {
                         Some((descriptor, has_terminate)) => {
                             let instance_id = self.alloc_project_instance_id();
@@ -6922,12 +6925,19 @@ impl Vm {
                     let binding = crate::semantics::variant_to_withevents_binding_handle(
                         &binding, "binding",
                     )?;
-                    let key = Self::withevents_binding_key(&owner, binding);
-                    let value = self
-                        .withevents_bindings
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or_else(|| RuntimeSlot::Variant(Variant::from_i32(0)));
+                    let value = if self.is_project_instance_field_token(&owner, binding) {
+                        RuntimeSlot::Variant(
+                            owner
+                                .project_field_get(binding.raw())
+                                .unwrap_or_else(|| Variant::from_i32(0)),
+                        )
+                    } else {
+                        let key = Self::withevents_binding_key(&owner, binding);
+                        self.withevents_bindings
+                            .get(&key)
+                            .cloned()
+                            .unwrap_or_else(|| RuntimeSlot::Variant(Variant::from_i32(0)))
+                    };
                     self.write_runtime_slot(*dst, value)?;
                     pc += 1;
                 }
@@ -6945,14 +6955,18 @@ impl Vm {
                     let binding = crate::semantics::variant_to_withevents_binding_handle(
                         &binding, "binding",
                     )?;
-                    let key = Self::withevents_binding_key(&owner, binding);
-                    self.clear_com_withevents_binding_subscriptions(key)?;
-                    if value.as_i32() == Some(0) {
-                        self.withevents_bindings.remove(&key);
+                    if self.is_project_instance_field_token(&owner, binding) {
+                        owner.project_field_set(binding.raw(), value.clone());
                     } else {
-                        self.withevents_bindings
-                            .insert(key, RuntimeSlot::Variant(value.clone()));
-                        self.sync_project_com_withevents_binding(owner, binding, &value)?;
+                        let key = Self::withevents_binding_key(&owner, binding);
+                        self.clear_com_withevents_binding_subscriptions(key)?;
+                        if value.as_i32() == Some(0) {
+                            self.withevents_bindings.remove(&key);
+                        } else {
+                            self.withevents_bindings
+                                .insert(key, RuntimeSlot::Variant(value.clone()));
+                            self.sync_project_com_withevents_binding(owner, binding, &value)?;
+                        }
                     }
                     self.write_variant_slot(*dst, value)?;
                     pc += 1;
@@ -7568,6 +7582,14 @@ impl Vm {
         crate::semantics::withevents_binding_key(owner, binding)
     }
 
+    fn is_project_instance_field_token(&self, owner: &ObjectRef, binding: BindingHandle) -> bool {
+        owner.is_project_instance()
+            && self
+                .project_dynamic_objects
+                .get(&owner.route_key())
+                .is_some_and(|state| state.route.field_tokens.contains(&binding.raw()))
+    }
+
     fn withevents_binding_from_key(key: i64) -> BindingHandle {
         crate::semantics::withevents_binding_from_key(key)
     }
@@ -8151,11 +8173,9 @@ impl Vm {
 
     /// Runs queued `Class_Terminate` teardown for project instances whose last reference was
     /// released. Called at statement boundaries and procedure epilogues so termination is
-    /// statement-granular (VBA timing). Each instance is rematerialized as a fresh `Me` carrying
-    /// its original per-instance identity (`instance_id` == `compat_identity`, so field state
-    /// keyed on it is still reachable) but marked non-terminating, so running terminate — and
-    /// dropping `Me` afterwards — cannot re-queue the same instance. Cascades (references the
-    /// body releases) accumulate on the queue and are drained by the surrounding loop.
+    /// statement-granular (VBA timing). Termination runs with `Me` bound to the original parked
+    /// object box, so instance fields remain readable during `Class_Terminate` and are released
+    /// afterwards only if `Me` was not resurrected.
     fn drain_pending_terminations(
         &mut self,
         bytecode: &Bytecode,
@@ -8163,34 +8183,50 @@ impl Vm {
     ) -> Result<(), String> {
         while oxvba_runtime::has_pending_terminations() {
             for (instance_id, route_key) in oxvba_runtime::take_pending_terminations() {
-                let resolved = self.project_dynamic_objects.get(&route_key).and_then(|state| {
-                    state
-                        .route
-                        .class_terminate
-                        .clone()
-                        .map(|member| (member, state.object.class_descriptor()))
-                });
+                let resolved = self
+                    .project_dynamic_objects
+                    .get(&route_key)
+                    .and_then(|state| {
+                        state
+                            .route
+                            .class_terminate
+                            .clone()
+                            .map(|member| (member, state.object.class_descriptor()))
+                    });
                 if let Some((member, descriptor)) = resolved {
-                    // Rematerialize `Me`: same identity (so the body sees this instance's state),
-                    // but non-terminating so its own release does not re-queue this instance.
-                    let me = oxvba_runtime::ObjectRef::from_project_instance(
-                        instance_id,
-                        route_key,
-                        false,
-                        descriptor,
-                    );
-                    let values = vec![RuntimeSlot::Variant(Variant::from_object_ref(me))];
-                    if member.param_slots.len() == values.len() {
-                        self.invoke_procedure_inline_with_slots(
-                            bytecode,
-                            member.entry_pc,
-                            &member.param_slots,
-                            &values,
-                            descriptor_selected_fastpaths,
-                        )?;
+                    let mut terminate_result = Ok(());
+                    if let Some(me) = oxvba_runtime::retained_parked_termination_object(instance_id)
+                    {
+                        debug_assert_eq!(me.class_descriptor().name, descriptor.name);
+                        let values = vec![RuntimeSlot::Variant(Variant::from_object_ref(me))];
+                        if member.param_slots.len() == values.len() {
+                            terminate_result = self.invoke_procedure_inline_with_slots(
+                                bytecode,
+                                member.entry_pc,
+                                &member.param_slots,
+                                &values,
+                                descriptor_selected_fastpaths,
+                            );
+                        }
                     }
+                    let freed = oxvba_runtime::finish_pending_termination(instance_id);
+                    if freed {
+                        let owner = ObjectRef::from_compat_identity(instance_id);
+                        self.clear_com_withevents_owner_subscriptions(owner.clone())?;
+                        self.withevents_bindings.retain(|key, _| {
+                            Self::withevents_owner_from_key(*key).raw() != owner.raw()
+                        });
+                    }
+                    terminate_result?;
+                    continue;
                 }
-                oxvba_runtime::clear_terminating(instance_id);
+                if oxvba_runtime::finish_pending_termination(instance_id) {
+                    let owner = ObjectRef::from_compat_identity(instance_id);
+                    self.clear_com_withevents_owner_subscriptions(owner.clone())?;
+                    self.withevents_bindings.retain(|key, _| {
+                        Self::withevents_owner_from_key(*key).raw() != owner.raw()
+                    });
+                }
             }
         }
         Ok(())

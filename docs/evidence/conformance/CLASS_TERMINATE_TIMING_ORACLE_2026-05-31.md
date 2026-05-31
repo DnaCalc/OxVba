@@ -42,18 +42,19 @@ Per-instance `Class_Terminate` is implemented end-to-end:
 
 - **Runtime queue** (`oxvba-runtime/object_ref.rs`): `RuntimeObjectIdentity.terminates_on_release`
   marks instances of classes that define `Class_Terminate`. At refcount 0, `compat_release`
-  enqueues `(instance_id, route_key)` on a thread-local pending-termination queue, guarded so the
-  recreated `Me` cannot re-enqueue. APIs: `has_pending_terminations`, `take_pending_terminations`,
-  `clear_terminating`, `reset_pending_terminations`.
+  parks the original object box and enqueues `(instance_id, route_key)` on a thread-local
+  pending-termination queue, so teardown runs with `Me` bound to the same field-owning object.
+  APIs: `has_pending_terminations`, `take_pending_terminations`,
+  `retained_parked_termination_object`, `finish_pending_termination`, `reset_pending_terminations`.
 - **Route** (`oxvba-compiler` `ProjectDynamicObjectRoute.class_terminate`): each class route carries
   its `Class_Terminate` member (captured regardless of `Private` visibility) with its `entry_pc` and
   hidden-`Me` `param_slots`.
 - **VM drain** (`oxvba-vm/interpreter.rs`): at every statement boundary (a pc in any procedure's
   `statement_entry_pcs`) and at each procedure epilogue (`Return` / entry `Halt`), the VM (1) releases
   that scope's terminating-object **temporaries** (statement boundary) and **locals + temporaries**
-  (epilogue), then (2) drains the queue, running each `Class_Terminate` with a rematerialized,
-  non-terminating `Me` carrying the original `instance_id` (so per-instance state keyed on it is
-  reachable). Cascades accumulate and are drained by the surrounding loop.
+  (epilogue), then (2) drains the queue, running each `Class_Terminate` against the original parked
+  object. If `Me` is not resurrected, the runtime clears the object's field store after terminate;
+  cascades accumulate and are drained by the surrounding loop.
 - **Legacy retired**: the module-entry-exit `Class_Terminate` hook (which predated the hidden `Me`
   param and never ran for `New`-ed instances) was removed from `emit.rs`.
 
@@ -73,22 +74,21 @@ Follow-ups landed since:
   at the procedure epilogue, so the constructor no longer pins the instance (test `i1T2`).
 - **Object-typed instance fields** can be assigned with `Set field = New X` (per-instance state
   write).
+- **Regular project class fields** now live on the project instance object, not in the VM's
+  WithEvents binding map. Field route metadata records ordinary field tokens; the VM routes
+  `__oxvba_withevents_get/set` for those tokens to same-box per-instance storage. Dropping an owner
+  now releases its object fields after `Class_Terminate`, so regular field cascades terminate
+  children (test `pure_oxvba_class_terminate_cascades_through_object_field`).
+- **Single-thread runtime shape**: live `ObjectRef` no longer carries broad `Send`/`Sync`; COM/shared
+  callback state stores raw identity tokens and reconstructs projected handles at the edge.
 
 - **Expression-level member access** now exists: `BoundExpr::Member { receiver, member, args }`,
   bound for non-bare-variable receivers (call results / chains), lowered to the late-bound
   dispatch (`IntrinsicDispatchInvokeHost`). `MakeFoo().Tag` and `MakeBox().Add(2,3)` dispatch and
   return correctly (tests `member_access_on_function_call_result_dispatches` and the args variant).
 
-Still deferred — one shared root cause (object references retained in flat-register-file slots
-beyond their logical lifetime), which is the object-slot-lifetime work parked under "A":
+Still deferred — activation/return-slot lifetime work parked under `bd-xkwq`:
 - The `gMT` probe's trailing `T`: the temporary `Foo` from `MakeFoo()` is retained by the
   **function's return slot** (the returned object lingers there until the next call), so it does not
   terminate at end of statement. Member access (the feature) works; only this terminate timing is
   pending. Correct by construction once return-slot retention is resolved.
-- Cascade through a **regular (non-`WithEvents`) object field**: the owner terminates (`1P2`), but
-  the child stored on the WithEvents binding map is retained by an extra reference beyond that
-  binding. Needs dedicated per-instance object-field storage. `WithEvents` fields still cascade via
-  the injected owner-cleanup.
-
-Both remaining items are the same class of fix: object slots in the flat register file (return
-slots, field-state slots) need disciplined release so a dropped reference reaches refcount 0.
