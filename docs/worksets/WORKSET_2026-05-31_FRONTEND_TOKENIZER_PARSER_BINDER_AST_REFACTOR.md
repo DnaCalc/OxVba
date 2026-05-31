@@ -4,18 +4,37 @@ Date: 2026-05-31
 Owner: DNA Kode
 Status: proposed
 
+Architecture decision, 2026-05-31:
+
+The syntactic layer will be a **Roslyn-style green/red concrete syntax tree** (lossless,
+immutable) with **typed AST facades**, as used by `rust-analyzer` via the `rowan`/`cstree`
+crates — chosen because interactive tooling (language-server diagnostics, formatting,
+refactoring, incremental recompile) is a goal, not only batch compile-to-bytecode. The
+resolve → bound-IR → lower backbone is unchanged; this decision sets the *syntax layer* and
+adds a semantic-overlay + incremental capability. (Lean-AST/rustc shape was the alternative;
+see §5.5 and the decision log §10.)
+
 ## 1. Purpose
 
 Move OxVba's compiler front-end from its current **string-rewriting + string-splitting**
-shape toward a conventional compiler pipeline:
+shape toward a conventional, Roslyn/rust-analyzer-shaped pipeline:
 
 ```
 source text
-  → lexer (tokens + spans)
-  → parser (recursive-descent + Pratt) → syntax AST
-  → resolver / binder (symbol table, scopes) → resolved AST (HIR)
+  → lexer (tokens + trivia + spans)
+  → parser (recursive-descent + Pratt, drives a green-node builder)
+      → green/red CST (lossless, immutable) + typed AST facades
+  → resolver / binder (symbol table, scopes)
+      → bound HIR (resolved IR for lowering) + SemanticModel overlay (queries over the CST)
   → lowering → bytecode (+ runtime metadata)
+  → (later) incremental recompute via a query engine (salsa)
 ```
+
+Note the two semantic layers, mirroring Roslyn/rust-analyzer: a **bound HIR** (the resolved
+tree that lowering and typecheck consume — Roslyn's "bound tree", rust-analyzer's HIR) *and* a
+**SemanticModel overlay** (lazy, cached symbol/type queries keyed by CST nodes, for the
+tooling/IDE API). Compilation lowers the bound HIR; tools query the overlay. The CST itself
+carries no binding/type information.
 
 Today, name resolution and a large amount of VBA member/statement semantics are implemented
 as **source-text surgery** (`crates/oxvba-compiler/src/project.rs`) that runs *before* a thin
@@ -121,38 +140,58 @@ Each is a decision to lock during Phase 0 via a small spike. Defaults below are 
   time (VBA is case-insensitive). Replaces the pervasive `String`/`to_ascii_lowercase()` churn
   and gives cheap symbol comparison in the resolver.
 
-### 5.5 AST / IR storage
-- **Index-based arenas** (newtype `ExprId`/`StmtId`/`SymbolId` into `Vec`s; the rustc /
-  rust-analyzer pattern), or `la-arena`/`id-arena`. Avoids `Box` graphs and makes the resolved
-  AST + symbol tables ergonomic.
-- **`rowan`** (lossless red-green CST) is noted but **deferred** — it is the right tool if/when
-  we want full-fidelity round-trip + IDE tooling; start with a plain AST.
+### 5.5 Syntactic layer & IR storage — **green/red CST (decided)**
+- **Syntax = green/red CST via `rowan`** (the `rust-analyzer` library) — untyped `SyntaxKind`
+  nodes with widths/offsets (green), lazy parent/position-aware facades (red), lossless (all
+  trivia retained), immutable with structural sharing. **Typed AST = thin accessor wrappers**
+  over `SyntaxNode` (e.g. `ast::BinExpr`, `ast::CallExpr`, `ast::MemberExpr`), generated or
+  hand-written — *not* a separate owned `enum` tree. The hand-written parser (§5.2) stays
+  hand-written; it drives a `GreenNodeBuilder` (`start_node`/`token`/`finish_node`) emitting the
+  green tree, exactly as rust-analyzer's hand-written parser does.
+  - Alternative library: **`cstree`** (a rowan-compatible fork with built-in token interning and
+    `Send`/threading support) — evaluate in Phase 0; pick `cstree` if cross-thread CSTs or memory
+    from large projects matter, else `rowan`.
+- **Bound HIR + symbol tables = index-based arenas** (newtype `ExprId`/`StmtId`/`SymbolId` into
+  `Vec`s; the rustc / rust-analyzer pattern). The HIR is the resolved tree lowering consumes; it
+  references CST nodes by id for spans and for the SemanticModel mapping.
+- **Incremental engine = `salsa`** (rust-analyzer's query framework) — memoizes/invalidates
+  parse → resolve → typecheck queries for incremental recompute and tooling. Adopt **after** the
+  CST + HIR exist (a later phase); the batch pipeline works without it first.
 
 ### 5.6 Patterns to adopt
-- **Distinct passes & IRs**: syntactic AST (names unresolved) → resolved AST / HIR (names →
-  symbols; member/default-member/property/`New` resolved) → bytecode lowering. The `project.rs`
-  rewriting dissolves into the resolver + lowering.
-- **Error recovery**: the parser produces a partial tree + a diagnostic list rather than bailing
-  on first error (matters for a developer-facing tool).
+- **Syntax ≠ semantics (the core Roslyn idea)**: the green/red CST carries *no* binding/type
+  info. Two semantic layers sit above it: a **bound HIR** (resolved tree → lowering + typecheck)
+  and a **SemanticModel overlay** (lazy, cached symbol/type queries keyed by CST nodes → the
+  tooling API). `project.rs` text rewriting dissolves into the resolver that produces these.
+- **Distinct passes**: lossless CST (names unresolved) → typed AST facades → resolve → bound HIR
+  (names → symbols; member / default-member / property / `New` resolved) → lowering.
+- **Error recovery**: the parser emits a partial CST with error nodes + a diagnostic list rather
+  than bailing — required for both batch diagnostics and the IDE story.
 - **Symbol table / scopes** modelling VBA scoping: procedure locals, parameters, module-level,
   project-level/`Public`, predeclared singletons, `With`-block targets, `Const`.
-- **Salsa / query incrementalism**: noted for a future IDE/incremental story; **out of scope**.
+- **Incrementalism via `salsa`**: now **in scope** (interactive tooling is a goal), but sequenced
+  as a later phase — the CST + HIR are built first, then wrapped in salsa queries.
 
-## 6. Target architecture
+## 6. Target architecture (green/red)
 
 ```
-SourceFile ──lex──▶ [Token{kind, span}]
-            ──parse──▶ SyntaxTree (Stmt/Expr arena; identifiers = interned, UNRESOLVED)
-            ──resolve──▶ ResolvedAst/HIR (Var→SymbolId; Member→{early-bound proc | late dispatch};
-                                          default members, property forms, New, WithEvents resolved)
-            ──typecheck──▶ (annotations / diagnostics on HIR)
-            ──lower──▶ Bytecode + ProcedureRuntimeMetadata  (unchanged output contract)
+SourceFile ──lex──▶ [Token{kind, span, trivia}]
+            ──parse──▶ green/red CST (rowan): untyped SyntaxKind nodes, lossless, immutable
+                       └─ typed AST facades (ast::CallExpr, ast::MemberExpr, …) over SyntaxNode
+            ──resolve──▶ bound HIR (Var→SymbolId; Member→{early-bound proc | late dispatch};
+                          default members, property forms, New, WithEvents resolved) — arena IR
+                       └─ SemanticModel overlay: lazy/cached symbol+type queries keyed by CST node
+            ──typecheck──▶ diagnostics over the HIR / SemanticModel
+            ──lower──▶ Bytecode + ProcedureRuntimeMetadata   (UNCHANGED output contract)
+            ──(later) salsa──▶ memoized parse/resolve/typecheck queries → incremental recompute
 ```
 
 Key invariant: the **lowering output** (bytecode + metadata + descriptors) is the stable
 contract. The refactor changes everything *upstream* of lowering while keeping the bytecode
 identical, so the VM, JIT, host, and the 861 + conformance suites are unaffected by construction
-until we deliberately change semantics.
+until we deliberately change semantics. The CST/HIR/SemanticModel/salsa are all upstream of that
+boundary; batch lowering needs the CST + HIR only, so the IDE-oriented layers (full SemanticModel
+surface, salsa) can land after the batch pipeline reaches parity.
 
 ## 7. Phased plan (each phase: behind a flag, differential-tested, independently shippable)
 
@@ -161,44 +200,48 @@ the full corpus (compiler unit fixtures + `conformance/` + host integration proj
 both pipelines and asserts identical bytecode/metadata; divergences are triaged (bug vs known).
 
 - **Phase 0 — Foundations & decisions.**
-  Capture the EBNF grammar (`docs/spec/VBA_GRAMMAR_V1`) + coverage matrix. Lock library choices
-  via spikes (lexer, parser, interner, arena, diagnostics). Build the differential harness.
-  *Exit:* grammar + matrix committed; harness compiles the corpus both ways (old==old as a
-  sanity baseline); decisions recorded in §10.
+  Capture the EBNF grammar (`docs/spec/VBA_GRAMMAR_V1`) + coverage matrix. Choose `rowan` vs
+  `cstree` and lock the other library choices (lexer, interner, diagnostics, salsa) via small
+  spikes — including a spike that hand-writes a `GreenNodeBuilder`-driven parser for a tiny slice
+  to validate the typed-facade ergonomics. Build the differential harness + a CST→`BoundExpr`
+  bridge (so the new CST can feed the *existing* lowering during transition).
+  *Exit:* grammar + matrix committed; rowan/cstree chosen; harness compiles the corpus both ways
+  (old==old baseline); decisions recorded in §10.
 
 - **Phase 1 — Lexer.**
-  Hand-written tokenizer with spans for the whole language; handle line continuation, `:`,
-  comments, sigils, bracketed idents, date/hex/octal literals, case folding. Fuzz/round-trip
-  against the corpus (every source file tokenizes without loss).
-  *Exit:* lexer tokenizes the entire corpus; token snapshot tests.
+  Hand-written tokenizer producing tokens with spans **and retained trivia** (whitespace,
+  comments, line continuation) for the lossless CST; handle `:`, sigils, bracketed idents,
+  date/hex/octal literals, case folding. Round-trip the corpus (CST text == source byte-for-byte).
+  *Exit:* lexer tokenizes the entire corpus losslessly; token snapshot + round-trip tests.
 
-- **Phase 2 — Expression parser (Pratt).**
-  Parse expressions into the AST behind the flag; initially target the existing `BoundExpr`
-  (or a new `Expr` lowered to `BoundExpr`) so downstream is unchanged. Differential-test against
-  `parse_expr` over a large expression corpus. Add the missing nodes: `Is`, unified `Index`,
-  `New`, and route all member access (incl. `name.member`) through one postfix grammar.
-  *Exit:* expression differential parity on the corpus; S1/S5/S6 addressed at the syntactic level.
+- **Phase 2 — Expression parser (Pratt) → green CST.**
+  Hand-written RD+Pratt parser drives a `GreenNodeBuilder` to emit the expression CST + typed
+  facades; a CST→`BoundExpr` bridge feeds existing lowering. Differential-test against `parse_expr`
+  over a large expression corpus. Add the missing forms: `Is`, unified `Index`, `New`, and one
+  postfix grammar covering call/index/member/bang (incl. `name.member`).
+  *Exit:* expression differential parity on the corpus; S1/S5/S6 addressed at the syntax level.
 
-- **Phase 3 — Statement parser.**
+- **Phase 3 — Statement parser → green CST.**
   Full statement grammar (Dim/Const, `Set`/`Let`/`Call`, `If`/`For`/`Do`/`While`/`Select`,
-  `With`, `On Error`/`Resume`, `RaiseEvent`, `Property`, declarations, attributes). Differential
-  against current bound statements.
-  *Exit:* statement differential parity; the new parser fully replaces ad-hoc statement parsing
-  (still behind the flag).
+  `With`, `On Error`/`Resume`, `RaiseEvent`, `Property`, declarations, attributes) into the CST,
+  with error-node recovery. Differential against current bound statements via the bridge.
+  *Exit:* statement differential parity; the CST fully represents the corpus (still behind the flag).
 
-- **Phase 4 — Resolver / binder (the deep one).**
-  Symbol table + scopes; produce a resolved AST. Move member dispatch, default-member
-  resolution, property Get/Let/Set selection, qualified-name resolution, `New`, WithEvents, and
-  the F3c diagnostics **out of `project.rs` string rewriting** into the resolver. This is where
-  the member-access dual-path collapses into one and where S2/S3 are resolved.
-  *Exit:* resolver produces equivalent lowering for the corpus; `project.rs` rewriters begin
+- **Phase 4 — Resolver / binder + SemanticModel (the deep one).**
+  Symbol table + scopes; produce the **bound HIR** from the typed CST, and the **SemanticModel
+  overlay** (CST-node → symbol/type). Move member dispatch, default-member resolution, property
+  Get/Let/Set selection, qualified-name resolution, `New`, WithEvents, and the F3c diagnostics
+  **out of `project.rs` string rewriting** into the resolver. Lowering now consumes the HIR
+  directly (retire the CST→`BoundExpr` bridge). This is where the member-access dual-path
+  collapses and S2/S3 are resolved.
+  *Exit:* resolver/HIR produces equivalent lowering for the corpus; `project.rs` rewriters begin
   retirement.
 
 - **Phase 5 — Typed intrinsics & optimizer split.**
-  Replace structural stringly-intrinsics (S4) with typed nodes (null/`Nothing`, `New`,
+  Replace structural stringly-intrinsics (S4) with typed HIR nodes (null/`Nothing`, `New`,
   dynamic-dispatch, WithEvents ops, omitted-arg) — exhaustive enum matches instead of
   `match name.as_str()`. Move `AddConst`/`SubConst` (S6) into an optimizer pass over uniform
-  `BinaryOp`.
+  binary ops.
   *Exit:* emit's magic-string dispatch shrinks to genuine library intrinsics; consumers match
   exhaustively.
 
@@ -207,6 +250,13 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
   retired `project.rs` rewriters; delete the member-access dual-path. Keep the differential
   harness as a regression guard for one release, then archive.
   *Exit:* single pipeline; legacy paths deleted; full suite + conformance green.
+
+- **Phase 7 — Incrementality & tooling surface (`salsa`).**
+  Wrap parse → resolve → typecheck in salsa queries for incremental recompute; expose the
+  SemanticModel as a query API. Foundation for a language server / editor diagnostics / formatter
+  (the lossless CST already enables exact-span refactors and round-trip formatting).
+  *Exit:* incremental recompile on edits; a minimal semantic-query API; (full LSP is a separate
+  workset).
 
 ## 8. Coexistence & migration strategy
 
@@ -230,15 +280,26 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
 | Performance regression | Bench the new pipeline vs old on the corpus; interning + arenas should be ≥ parity |
 | Output-contract drift breaking VM/JIT | Bytecode/metadata is the fixed contract; differential harness asserts it |
 
-## 10. Open decisions / decision log (to fill in Phase 0)
+## 10. Decision log
 
+Resolved:
+- **D0 (2026-05-31): Syntactic layer = Roslyn-style green/red CST with typed facades** (not a
+  lean AST), because interactive tooling/incremental is a goal. Backbone (resolve → bound HIR →
+  lower) unchanged.
+- **D4: Syntax storage = `rowan` (or `cstree`) green/red CST**; bound HIR + symbol tables = index
+  arenas. `rowan` (deferred) is no longer deferred — it is the chosen syntax layer.
+- **D6: Two layers, not a reshaped `BoundExpr`** — typed CST facades for syntax; a *new* bound
+  HIR for the resolved IR. `BoundExpr` is retired in favor of the HIR (with a temporary
+  CST→`BoundExpr` bridge during Phases 2–3 to keep existing lowering).
+
+Open (settle in Phase 0):
 - D1: Lexer — hand-written (default) vs `logos`.
-- D2: Parser — hand-written RD+Pratt (default) vs `chumsky`.
-- D3: Interner — `lasso` vs `string-interner`.
-- D4: AST storage — newtype-index arenas (default) vs `la-arena`/`id-arena`; CST via `rowan` (deferred?).
+- D2: Parser — hand-written RD+Pratt driving a `GreenNodeBuilder` (default) vs `chumsky`.
+- D3: Interner — `lasso` vs `string-interner` (or `cstree`'s built-in interning).
 - D5: Diagnostics renderer — `ariadne` vs `codespan-reporting`.
-- D6: New `Expr`/`Stmt` AST vs incrementally reshaping `BoundExpr` in place.
-- D7: Grammar source of truth — EBNF-from-MS-VBAL (default) with Rubberduck cross-check.
+- D7: Grammar source of truth — EBNF-from-MS-VBAL (default) with Rubberduck ANTLR cross-check.
+- D8: CST crate — `rowan` vs `cstree` (interning + `Send`/threading); decide on a Phase-0 spike.
+- D9: Incremental engine — `salsa` version/shape (Phase 7); confirm it wraps the same queries.
 
 ## 11. Test & evidence strategy
 
@@ -250,9 +311,15 @@ both pipelines and asserts identical bytecode/metadata; divergences are triaged 
   `conformance/`, plus the Excel oracle where member/lifetime semantics move.
 - Evidence docs under `docs/evidence/` per phase; final closure report.
 
-## 12. Out of scope (unless a later workset expands)
+## 12. Scope notes
 
-- IDE/incremental (salsa), lossless CST (`rowan`), language-server features.
-- The runtime object-slot-lifetime work (cascade / `gMT` trailing-`T`) — that is the parked "A"
-  item, a VM concern, independent of this front-end refactor.
-- Any change to the bytecode/metadata contract or to the VM/JIT.
+In scope (per D0): lossless green/red CST (`rowan`/`cstree`), the SemanticModel overlay, and
+`salsa`-based incrementality (Phase 7) — these are now goals, not deferrals.
+
+Out of scope (unless a later workset expands):
+- A full **language server / LSP** product surface (Phase 7 builds the foundation — incremental
+  queries + semantic API — but the editor integration, completion, code actions, etc. are a
+  separate effort).
+- The runtime **object-slot-lifetime** work (cascade / `gMT` trailing-`T`) — the parked "A" item,
+  a VM concern, independent of this front-end refactor.
+- Any change to the **bytecode/metadata contract** or to the VM/JIT.
