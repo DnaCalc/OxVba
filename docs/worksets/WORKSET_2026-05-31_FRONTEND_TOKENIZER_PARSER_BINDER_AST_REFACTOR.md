@@ -489,6 +489,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_CORPUS_INVENTORY_2026-06-01.md`.
 - FE-0.4 Bead rollout: create the actual bead tree from this hierarchy once the workset is
   accepted for execution.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_BEAD_ROLLOUT_2026-06-01.md`.
 
 Evidence gate: workset text, architecture references, and corpus inventory agree; no execution
 phase depends on an undocumented prerequisite.
