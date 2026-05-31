@@ -228,6 +228,11 @@ pub struct ProjectDynamicObjectRoute {
     pub module_name: String,
     pub members: Vec<ProjectDynamicMemberRoute>,
     pub implements_interfaces: Vec<String>,
+    /// The class's `Class_Terminate` member route, if it defines one. Unlike `members` (public
+    /// only), this is captured regardless of visibility (`Class_Terminate` is conventionally
+    /// `Private`). The VM uses its `entry_pc`/`param_slots` to run teardown when the last
+    /// reference to a per-instance object is released (see the per-instance object lifetime).
+    pub class_terminate: Option<ProjectDynamicMemberRoute>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7467,12 +7472,45 @@ fn build_project_dynamic_object_routes(
                 .cmp(&rhs.member_name)
                 .then(lhs.lowered_name.cmp(&rhs.lowered_name))
         });
+
+        // Capture the class's `Class_Terminate` route (private by convention, so it is not in
+        // `members`) for per-instance teardown driven by the VM at object release time.
+        let class_terminate = procedures
+            .iter()
+            .find(|decl| {
+                decl.project_name == binding.project_name
+                    && decl.module_name == binding.module_name
+                    && decl.module_kind == ModuleKind::Class
+                    && decl.procedure_name.eq_ignore_ascii_case("class_terminate")
+            })
+            .and_then(|decl| {
+                runtime_metadata
+                    .get(&decl.lowered_name)
+                    .map(|metadata| ProjectDynamicMemberRoute {
+                        member_name: decl.procedure_name.clone(),
+                        lowered_name: decl.lowered_name.clone(),
+                        known_dispatch_token: None,
+                        dispatch_id: decl.dispatch_id,
+                        member_flags: decl.member_flags,
+                        is_default_member: false,
+                        kind: decl.kind.dynamic_member_kind(),
+                        visible_param_count: decl.param_count,
+                        params: decl.params.clone(),
+                        param_types: procedure_declared_param_types(decl, metadata),
+                        return_type: decl.return_type.or(metadata.return_type),
+                        entry_pc: metadata.entry_pc,
+                        param_slots: metadata.param_slots.clone(),
+                        return_slot: metadata.return_slot,
+                    })
+            });
+
         out.push(ProjectDynamicObjectRoute {
             object_handle: binding.object_handle,
             project_name: binding.project_name.clone(),
             module_name: binding.module_name.clone(),
             members,
             implements_interfaces,
+            class_terminate,
         });
     }
     out.sort_by_key(|route| route.object_handle);

@@ -35,3 +35,43 @@ helpers that append ordered markers). This is the ground-truth timing target for
   clearing its field state, looping for cascades. Reference cycles never reach 0 → leak (VBA-consistent).
 - Regression target: a `1T2`-shaped test (Set Nothing terminates at that statement) and a
   `gMT`-shaped test (temp terminates at statement end), reproduced in OxVba via run-project snapshots.
+
+## Implementation status (landed 2026-05-31)
+
+Per-instance `Class_Terminate` is implemented end-to-end:
+
+- **Runtime queue** (`oxvba-runtime/object_ref.rs`): `RuntimeObjectIdentity.terminates_on_release`
+  marks instances of classes that define `Class_Terminate`. At refcount 0, `compat_release`
+  enqueues `(instance_id, route_key)` on a thread-local pending-termination queue, guarded so the
+  recreated `Me` cannot re-enqueue. APIs: `has_pending_terminations`, `take_pending_terminations`,
+  `clear_terminating`, `reset_pending_terminations`.
+- **Route** (`oxvba-compiler` `ProjectDynamicObjectRoute.class_terminate`): each class route carries
+  its `Class_Terminate` member (captured regardless of `Private` visibility) with its `entry_pc` and
+  hidden-`Me` `param_slots`.
+- **VM drain** (`oxvba-vm/interpreter.rs`): at every statement boundary (a pc in any procedure's
+  `statement_entry_pcs`) and at each procedure epilogue (`Return` / entry `Halt`), the VM (1) releases
+  that scope's terminating-object **temporaries** (statement boundary) and **locals + temporaries**
+  (epilogue), then (2) drains the queue, running each `Class_Terminate` with a rematerialized,
+  non-terminating `Me` carrying the original `instance_id` (so per-instance state keyed on it is
+  reachable). Cascades accumulate and are drained by the surrounding loop.
+- **Legacy retired**: the module-entry-exit `Class_Terminate` hook (which predated the hidden `Me`
+  param and never ran for `New`-ed instances) was removed from `emit.rs`.
+
+Releasing **expression temporaries at the statement boundary** is what makes the basic cases work:
+the `New Foo` result lives in a temporary, so without end-of-statement temp release the instance
+never reaches refcount 0 during execution.
+
+Tests (`oxvba-host/tests/com_early_project_end_to_end.rs`): `1T2` (terminate at the statement that
+drops the last reference), `inTafter` (local terminates at the procedure epilogue), the
+no-`Class_Terminate` control (`12`), and a route-carries-`Class_Terminate` compiler check — all pass.
+
+Deferred / blocked (separate front-end gaps, not the lifetime machinery):
+- The `gMT` probe (`s = MakeFoo().Tag & Mark()`) is `#[ignore]`d because member access on a
+  function-call result (`MakeFoo().Tag`) is unsupported (`PMR-E-BACKEND-COMPILE`). The `gMT` timing
+  it proves is correct by construction here (temporaries are released only at statement boundaries,
+  never after last use, so `gTM` is impossible) and is exercised indirectly by the `1T2` test.
+- `Set <projectvar> = Nothing` for a project class is not yet lowered (it misroutes into
+  default-member resolution), so tests trigger the last-reference drop via reassignment / scope exit.
+- Cascade teardown through **regular (non-`WithEvents`) object fields** depends on per-instance
+  object-field storage and is not yet covered; `WithEvents` fields cascade via the owner-cleanup the
+  compiler already injects into `Class_Terminate`.

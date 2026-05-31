@@ -1601,20 +1601,15 @@ pub fn emit_bytecode_with_runtime_metadata(
             },
         );
     }
-    // Only invoke Class_Initialize/Terminate as lifecycle methods in class
-    // modules.  In standard modules they are ordinary Subs.
+    // Only invoke Class_Initialize as a lifecycle method in class modules. In standard modules it
+    // is an ordinary Sub. (Class_Terminate is no longer invoked from the module entry: per-instance
+    // teardown is driven by the VM's pending-termination drain at object-release time — see the
+    // per-instance object lifetime. The legacy entry-exit hook also predated the hidden `Me`
+    // parameter and so could not have run a class member correctly.)
     let class_init_proc = if module.is_class_module {
         procedures
             .iter()
             .find(|p| p.name.eq_ignore_ascii_case("class_initialize"))
-            .map(|p| p.name.clone())
-    } else {
-        None
-    };
-    let class_terminate_proc = if module.is_class_module {
-        procedures
-            .iter()
-            .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
             .map(|p| p.name.clone())
     } else {
         None
@@ -1672,14 +1667,6 @@ pub fn emit_bytecode_with_runtime_metadata(
         );
     });
     let entry_temp_slots = temps.slots_allocated_since(entry_temp_start);
-    if let Some(name) = class_terminate_proc {
-        let patch_idx = instructions.len();
-        instructions.push(Instruction::CallProc {
-            target_pc: 0,
-            project_member: None,
-        });
-        call_patches.push((patch_idx, name));
-    }
     let entry_exit_target = instructions.len();
     if let Some(exit_patches) = proc_exit_stack.pop() {
         for patch in exit_patches {

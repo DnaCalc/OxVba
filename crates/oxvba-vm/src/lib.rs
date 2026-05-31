@@ -1087,6 +1087,7 @@ mod tests {
             project_name: "Project".to_string(),
             module_name: "Widget".to_string(),
             implements_interfaces: Vec::new(),
+            class_terminate: None,
             members: vec![
                 ProjectDynamicMemberRoute {
                     member_name: "Value".to_string(),

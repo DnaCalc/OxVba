@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fmt::Debug,
     sync::Arc,
 };
@@ -3706,6 +3706,19 @@ pub struct Vm {
     call_stack: Vec<(usize, ErrorFrame)>,
     activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    /// Union of every procedure's statement-entry PCs. A PC in this set is the first instruction
+    /// of a statement, i.e. a statement boundary — where pending `Class_Terminate` work is drained
+    /// (VBA terminates at statement granularity, never between a statement's sub-operations).
+    statement_boundary_pcs: HashSet<usize>,
+    /// Per-procedure (keyed by `entry_pc`) local-variable slot indices, released at the procedure
+    /// epilogue so a local object reference going out of scope drops its reference (and may
+    /// terminate). Excludes parameters, the return value, and temporaries.
+    object_local_slots_by_entry_pc: HashMap<usize, Vec<usize>>,
+    /// Per-procedure (keyed by `entry_pc`) temporary slot indices, released at each statement
+    /// boundary so an expression temporary holding the only reference to an object (e.g. the
+    /// result of `New Foo` before it is assigned, or `MakeFoo()` in a larger expression) drops
+    /// that reference at end of statement — VBA's temporary lifetime — rather than lingering.
+    object_temp_slots_by_entry_pc: HashMap<usize, Vec<usize>>,
     project_dynamic_objects: HashMap<i32, ProjectDynamicObjectState>,
     project_dynamic_dispatch_caches: HashMap<i32, oxvba_runtime::RuntimeDispatchPlanCache>,
     /// Monotonic allocator for per-instance project-object identities. Each `New` mints a fresh
@@ -3759,6 +3772,9 @@ impl Vm {
             call_stack: Vec::new(),
             activation_entry_pcs: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
+            statement_boundary_pcs: HashSet::new(),
+            object_local_slots_by_entry_pc: HashMap::new(),
+            object_temp_slots_by_entry_pc: HashMap::new(),
             project_dynamic_objects: HashMap::new(),
             project_dynamic_dispatch_caches: HashMap::new(),
             next_project_instance_id: 0x4000_0000,
@@ -4057,6 +4073,34 @@ impl Vm {
         &mut self,
         metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     ) {
+        self.statement_boundary_pcs.clear();
+        self.object_local_slots_by_entry_pc.clear();
+        self.object_temp_slots_by_entry_pc.clear();
+        for meta in metadata.values() {
+            for &boundary_pc in &meta.statement_entry_pcs {
+                self.statement_boundary_pcs.insert(boundary_pc);
+            }
+            let locals: Vec<usize> = meta
+                .slots
+                .iter()
+                .filter(|slot| slot.kind == ProcedureRuntimeSlotKind::Local)
+                .map(|slot| slot.slot)
+                .collect();
+            if !locals.is_empty() {
+                self.object_local_slots_by_entry_pc
+                    .insert(meta.entry_pc, locals);
+            }
+            let temps: Vec<usize> = meta
+                .slots
+                .iter()
+                .filter(|slot| slot.kind == ProcedureRuntimeSlotKind::Temporary)
+                .map(|slot| slot.slot)
+                .collect();
+            if !temps.is_empty() {
+                self.object_temp_slots_by_entry_pc
+                    .insert(meta.entry_pc, temps);
+            }
+        }
         self.procedure_runtime_metadata = metadata;
     }
 
@@ -4294,6 +4338,9 @@ impl Vm {
 
         self.reset_execution_state(bytecode.slot_count, true);
         self.clear_invoked_procedure_slots(entry_pc)?;
+        // Clearing stale entry-proc slots can release leftover objects from a prior host call;
+        // discard any terminations that produced so this run begins with a clean queue.
+        oxvba_runtime::reset_pending_terminations();
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_variant_slot(*slot, value.clone())?;
         }
@@ -4367,6 +4414,7 @@ impl Vm {
 
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
         self.ensure_slot_count(slot_count);
+        oxvba_runtime::reset_pending_terminations();
         self.call_stack.clear();
         self.activation_entry_pcs.clear();
         if !preserve_withevents_bindings {
@@ -4692,6 +4740,18 @@ impl Vm {
             if self.maybe_pause_before_pc(pc).is_some() {
                 return Ok(());
             }
+            // Statement boundary: the previous statement is fully evaluated and `pc` is the first
+            // instruction of the next. Release that statement's expression temporaries (their VBA
+            // lifetime ends here) and run any `Class_Terminate` thereby queued, so teardown lands
+            // between statements (VBA never interleaves it mid-statement).
+            if self.statement_boundary_pcs.contains(&pc) {
+                if let Some(entry_pc) = self.activation_entry_pcs.last().copied() {
+                    self.release_object_temps(entry_pc);
+                }
+                if oxvba_runtime::has_pending_terminations() {
+                    self.drain_pending_terminations(bytecode, descriptor_selected_fastpaths)?;
+                }
+            }
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
                     self.write_variant_slot(*slot, Variant::from_i32(*value))?;
@@ -4718,16 +4778,19 @@ impl Vm {
                     // Dispatch resolves the route via the object's route key; per-instance
                     // state keys on the fresh `compat_identity`.
                     let route_handle = self.read_i32_slot(*handle)?;
-                    let descriptor = self
-                        .project_dynamic_objects
-                        .get(&route_handle)
-                        .map(|state| state.object.class_descriptor());
-                    let object = match descriptor {
-                        Some(descriptor) => {
+                    let route_info = self.project_dynamic_objects.get(&route_handle).map(|state| {
+                        (
+                            state.object.class_descriptor(),
+                            state.route.class_terminate.is_some(),
+                        )
+                    });
+                    let object = match route_info {
+                        Some((descriptor, has_terminate)) => {
                             let instance_id = self.alloc_project_instance_id();
                             oxvba_runtime::ObjectRef::from_project_instance(
                                 instance_id,
                                 route_handle,
+                                has_terminate,
                                 descriptor,
                             )
                         }
@@ -7251,6 +7314,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::Return => {
+                    let returning_entry_pc = self.activation_entry_pcs.last().copied();
                     if let Some((return_pc, saved_frame)) = self.call_stack.pop() {
                         if !self.activation_entry_pcs.is_empty() {
                             self.activation_entry_pcs.pop();
@@ -7263,7 +7327,30 @@ impl Vm {
                         self.last_error_description = saved_frame.last_error_description;
                         self.last_error_source = saved_frame.last_error_source;
                         pc = return_pc;
+                        // Procedure epilogue: the callee's locals and temporaries go out of scope
+                        // here, so any object they held is released and its `Class_Terminate`
+                        // runs now.
+                        if let Some(entry_pc) = returning_entry_pc {
+                            self.release_object_locals(entry_pc);
+                            self.release_object_temps(entry_pc);
+                        }
+                        if oxvba_runtime::has_pending_terminations() {
+                            self.drain_pending_terminations(
+                                bytecode,
+                                descriptor_selected_fastpaths,
+                            )?;
+                        }
                     } else if return_halts_when_stack_empty {
+                        if let Some(entry_pc) = returning_entry_pc {
+                            self.release_object_locals(entry_pc);
+                            self.release_object_temps(entry_pc);
+                        }
+                        if oxvba_runtime::has_pending_terminations() {
+                            self.drain_pending_terminations(
+                                bytecode,
+                                descriptor_selected_fastpaths,
+                            )?;
+                        }
                         self.activation_entry_pcs.truncate(activation_depth);
                         break;
                     } else {
@@ -7359,7 +7446,18 @@ impl Vm {
                     self.write_variant_slot(*slot, out)?;
                     pc += 1;
                 }
-                Instruction::Halt => break,
+                Instruction::Halt => {
+                    // End of the entry procedure: release its locals and temporaries and drain
+                    // any final terminations before control returns to the host.
+                    if let Some(entry_pc) = self.activation_entry_pcs.last().copied() {
+                        self.release_object_locals(entry_pc);
+                        self.release_object_temps(entry_pc);
+                    }
+                    if oxvba_runtime::has_pending_terminations() {
+                        self.drain_pending_terminations(bytecode, descriptor_selected_fastpaths)?;
+                    }
+                    break;
+                }
             }
         }
         self.activation_entry_pcs.truncate(activation_depth);
@@ -8003,6 +8101,91 @@ impl Vm {
                 }
             }
         }
+    }
+
+    /// Sets each given slot that currently holds a terminating project object to Empty, dropping
+    /// its reference (which may bring the instance to refcount 0 and queue its `Class_Terminate`).
+    /// Scoped to objects whose class defines `Class_Terminate`: other object references (foreign
+    /// COM, no-terminate project classes) are left intact, so their post-run slot value is
+    /// observable and we avoid perturbing programs whose classes have no teardown.
+    fn release_terminating_object_slots(&mut self, slots: &[usize]) {
+        for &slot in slots {
+            if slot >= self.registers.registers.len() {
+                continue;
+            }
+            let terminates = matches!(
+                &self.registers.registers[slot],
+                RuntimeSlot::Variant(value)
+                    if value.as_object_ref().is_some_and(|object| object.terminates_on_release())
+            );
+            if terminates {
+                let _ = self.write_variant_slot(slot, Variant::empty());
+            }
+        }
+    }
+
+    /// Releases a procedure's local references to terminating project objects at its epilogue
+    /// (parameters, the return value, and temporaries are handled elsewhere or left intact).
+    fn release_object_locals(&mut self, entry_pc: usize) {
+        if let Some(slots) = self.object_local_slots_by_entry_pc.get(&entry_pc).cloned() {
+            self.release_terminating_object_slots(&slots);
+        }
+    }
+
+    /// Releases a procedure's expression temporaries that hold terminating project objects. Called
+    /// at statement boundaries (temporaries do not outlive their statement in VBA) and at the
+    /// procedure epilogue.
+    fn release_object_temps(&mut self, entry_pc: usize) {
+        if let Some(slots) = self.object_temp_slots_by_entry_pc.get(&entry_pc).cloned() {
+            self.release_terminating_object_slots(&slots);
+        }
+    }
+
+    /// Runs queued `Class_Terminate` teardown for project instances whose last reference was
+    /// released. Called at statement boundaries and procedure epilogues so termination is
+    /// statement-granular (VBA timing). Each instance is rematerialized as a fresh `Me` carrying
+    /// its original per-instance identity (`instance_id` == `compat_identity`, so field state
+    /// keyed on it is still reachable) but marked non-terminating, so running terminate — and
+    /// dropping `Me` afterwards — cannot re-queue the same instance. Cascades (references the
+    /// body releases) accumulate on the queue and are drained by the surrounding loop.
+    fn drain_pending_terminations(
+        &mut self,
+        bytecode: &Bytecode,
+        descriptor_selected_fastpaths: bool,
+    ) -> Result<(), String> {
+        while oxvba_runtime::has_pending_terminations() {
+            for (instance_id, route_key) in oxvba_runtime::take_pending_terminations() {
+                let resolved = self.project_dynamic_objects.get(&route_key).and_then(|state| {
+                    state
+                        .route
+                        .class_terminate
+                        .clone()
+                        .map(|member| (member, state.object.class_descriptor()))
+                });
+                if let Some((member, descriptor)) = resolved {
+                    // Rematerialize `Me`: same identity (so the body sees this instance's state),
+                    // but non-terminating so its own release does not re-queue this instance.
+                    let me = oxvba_runtime::ObjectRef::from_project_instance(
+                        instance_id,
+                        route_key,
+                        false,
+                        descriptor,
+                    );
+                    let values = vec![RuntimeSlot::Variant(Variant::from_object_ref(me))];
+                    if member.param_slots.len() == values.len() {
+                        self.invoke_procedure_inline_with_slots(
+                            bytecode,
+                            member.entry_pc,
+                            &member.param_slots,
+                            &values,
+                            descriptor_selected_fastpaths,
+                        )?;
+                    }
+                }
+                oxvba_runtime::clear_terminating(instance_id);
+            }
+        }
+        Ok(())
     }
 
     fn withevents_matching_owners(

@@ -1,7 +1,8 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 pub const RUNTIME_S_OK: i32 = 0;
@@ -252,6 +253,9 @@ pub struct RuntimeObjectIdentity {
     /// belongs to. Distinct from `compat_identity` once instances are per-`New` allocations —
     /// many instances share one `route_key` but each has its own `compat_identity`.
     pub route_key: i32,
+    /// True when this instance's class has a `Class_Terminate` — so the last `Release`
+    /// (`compat_release` at refcount 0) enqueues it for the VM to run `Class_Terminate`.
+    pub terminates_on_release: bool,
     pub class_descriptor: &'static RuntimeClassDescriptor,
     pub lifetime_policy: RuntimeLifetimePolicy,
     pub apartment_model: RuntimeApartmentModel,
@@ -566,6 +570,49 @@ unsafe extern "C" fn compat_query_interface(
     RUNTIME_S_OK
 }
 
+/// Pending `Class_Terminate` work, fed by `compat_release` and drained by the VM at statement
+/// boundaries. `pending` holds `(instance_id, route_key)` to terminate; `terminating` guards
+/// against re-enqueue when the VM recreates a `Me` object to run `Class_Terminate` (its release
+/// must not schedule a second terminate for the same instance).
+#[derive(Default)]
+struct TerminationQueue {
+    pending: Vec<(i32, i32)>,
+    terminating: HashSet<i32>,
+}
+
+thread_local! {
+    static TERMINATIONS: RefCell<TerminationQueue> = RefCell::new(TerminationQueue::default());
+}
+
+/// True when at least one project instance has reached refcount 0 and awaits `Class_Terminate`.
+/// Cheap gate the interpreter checks at statement boundaries.
+pub fn has_pending_terminations() -> bool {
+    TERMINATIONS.with(|q| !q.borrow().pending.is_empty())
+}
+
+/// Drains and returns the queued `(instance_id, route_key)` terminations. The `terminating`
+/// guard entries are retained until the VM calls `clear_terminating` after running each, so the
+/// recreated `Me` object's own release does not re-enqueue it.
+pub fn take_pending_terminations() -> Vec<(i32, i32)> {
+    TERMINATIONS.with(|q| std::mem::take(&mut q.borrow_mut().pending))
+}
+
+/// Clears the re-entry guard for an instance after the VM has finished its `Class_Terminate`.
+pub fn clear_terminating(instance_id: i32) {
+    TERMINATIONS.with(|q| {
+        q.borrow_mut().terminating.remove(&instance_id);
+    });
+}
+
+/// Resets all pending termination state (used when a VM run starts/ends).
+pub fn reset_pending_terminations() {
+    TERMINATIONS.with(|q| {
+        let mut q = q.borrow_mut();
+        q.pending.clear();
+        q.terminating.clear();
+    });
+}
+
 unsafe extern "C" fn compat_add_ref(this: *mut c_void) -> u32 {
     let owner = compat_owner_from_this(this);
     unsafe { (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1 }
@@ -576,6 +623,19 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
     let previous = unsafe { (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) };
     let remaining = previous.saturating_sub(1);
     if remaining == 0 {
+        // For a class with a `Class_Terminate`, the last release schedules per-instance
+        // teardown for the VM to run at the next statement boundary (VBA timing). The guard
+        // ensures the `Me` object the VM recreates to run terminate does not re-enqueue.
+        let identity = unsafe { (*owner).identity };
+        if identity.terminates_on_release {
+            TERMINATIONS.with(|q| {
+                let mut q = q.borrow_mut();
+                if q.terminating.insert(identity.compat_identity) {
+                    q.pending
+                        .push((identity.compat_identity, identity.route_key));
+                }
+            });
+        }
         unsafe {
             drop(Box::from_raw(owner));
         }
@@ -603,25 +663,28 @@ impl ObjectRef {
         compat_identity: i32,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
-        // Legacy/template path: identity key and route key coincide.
-        Self::from_compat_object(compat_identity, compat_identity, class_descriptor)
+        // Legacy/template path: identity key and route key coincide; no terminate hook.
+        Self::from_compat_object(compat_identity, compat_identity, false, class_descriptor)
     }
 
     /// Allocates a fresh project-class instance: a distinct `CompatObjectBase` (a distinct
     /// IUnknown, hence a distinct identity for `Is`) with its own per-instance `instance_id`
     /// and the class's `route_key` for member dispatch. Refcount starts at 1; the instance is
-    /// not pinned by any route map, so its lifetime tracks real references.
+    /// not pinned by any route map, so its lifetime tracks real references. `has_terminate`
+    /// marks classes with a `Class_Terminate`, so the last release enqueues it for the VM.
     pub fn from_project_instance(
         instance_id: i32,
         route_key: i32,
+        has_terminate: bool,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
-        Self::from_compat_object(instance_id, route_key, class_descriptor)
+        Self::from_compat_object(instance_id, route_key, has_terminate, class_descriptor)
     }
 
     fn from_compat_object(
         compat_identity: i32,
         route_key: i32,
+        terminates_on_release: bool,
         class_descriptor: &'static RuntimeClassDescriptor,
     ) -> Self {
         let stable_object_id = compat_identity as u32 as u64;
@@ -634,6 +697,7 @@ impl ObjectRef {
                 stable_object_id,
                 compat_identity,
                 route_key,
+                terminates_on_release,
                 class_descriptor,
                 lifetime_policy: RuntimeLifetimePolicy::RefCounted,
                 apartment_model: RuntimeApartmentModel::Unknown,
@@ -667,6 +731,27 @@ impl ObjectRef {
 
     pub fn raw_iunknown(&self) -> *mut RawRuntimeIUnknown {
         self.0.as_ptr()
+    }
+
+    /// True when this `ObjectRef` wraps one of our `CompatObjectBase` boxes (a project-class or
+    /// internal object), as opposed to a foreign COM interface obtained via
+    /// `from_raw_iunknown_addref`. Reading the vtbl pointer is safe for any IUnknown (every COM
+    /// object's first field is its vtbl); comparing it to our static vtbl tells the two apart.
+    /// `compat_identity`/`route_key`/`class_descriptor`/`terminates_on_release` are only valid
+    /// when this returns true.
+    pub fn is_compat_object(&self) -> bool {
+        let vtbl = unsafe { (*self.0.as_ptr()).vtbl };
+        std::ptr::eq(vtbl, &COMPAT_OBJECT_VTBL)
+    }
+
+    /// True when releasing this instance's last reference should run a `Class_Terminate`. Safe for
+    /// any `ObjectRef`: foreign COM objects (which carry no such flag) report `false`.
+    pub fn terminates_on_release(&self) -> bool {
+        if !self.is_compat_object() {
+            return false;
+        }
+        let owner = compat_owner_from_unknown(self.0.as_ptr());
+        unsafe { (*owner).identity.terminates_on_release }
     }
 
     pub fn class_descriptor(&self) -> &'static RuntimeClassDescriptor {

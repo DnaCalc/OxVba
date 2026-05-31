@@ -21,6 +21,10 @@ pub use call_frame::{
 pub use coerce::variant_to_vba_string;
 pub use decimal::Decimal96;
 pub use object_ref::{
+    clear_terminating, has_pending_terminations, reset_pending_terminations,
+    take_pending_terminations,
+};
+pub use object_ref::{
     ObjectRef, RUNTIME_GUID_ICONNECTIONPOINT, RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
     RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN, RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY,
     RUNTIME_ICONNECTIONPOINTCONTAINER_INTERFACE_IDENTITY, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,

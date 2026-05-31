@@ -467,6 +467,358 @@ End Function
     );
 }
 
+/// Returns every string-valued global in the snapshot. Class_Terminate timing tests record an
+/// ordered marker log into a module string, so the expected sequence appears as one of these.
+fn snapshot_strings(out: &[Variant]) -> Vec<String> {
+    out.iter()
+        .filter_map(|value| value.as_bstr().map(|bstr| bstr.as_str()))
+        .collect()
+}
+
+#[test]
+fn pure_oxvba_class_route_carries_class_terminate_member() {
+    use oxvba_compiler::compile_project;
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim a As Foo\nSet a = New Foo\nEnd Sub\n",
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        "Attribute VB_Name = \"Foo\"\nPrivate Sub Class_Terminate()\nEnd Sub\n",
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let compiled = compile_project(&manifest).expect("project should compile");
+    let foo = compiled
+        .project_dynamic_objects
+        .iter()
+        .find(|r| r.module_name.eq_ignore_ascii_case("Foo"))
+        .expect("Foo route should exist");
+    assert!(
+        foo.class_terminate.is_some(),
+        "Foo route must carry its Class_Terminate member; route={foo:?}"
+    );
+    let ct = foo.class_terminate.as_ref().unwrap();
+    assert_eq!(
+        ct.param_slots.len(),
+        1,
+        "Class_Terminate should have exactly the hidden Me param slot; ct={ct:?}"
+    );
+}
+
+#[test]
+fn execute_package_supports_cross_proc_call_and_module_global() {
+    // Guards the cross-procedure foundations the Class_Terminate timing tests rely on: in the real
+    // execute_package path, the entry (Main, which must be the module's first procedure) calls a
+    // helper (Append/Plus) that writes module-global state visible to a later Main statement.
+    // Observed by copying the module global into a Main local (the slot snapshot captures the
+    // entry proc's locals).
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim result As String
+Dim n As Long
+n = Plus(2, 3)
+Append "1"
+Append "2"
+result = gLog
+End Sub
+Public Function Plus(ByVal a As Long, ByVal b As Long) As Long
+Plus = a + b
+End Function
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    let has_n5 = out.iter().any(|v| v.as_i32() == Some(5));
+    assert!(
+        has_n5,
+        "execute_package must support a cross-proc function call (n = Plus(2,3) = 5); out={out:?}"
+    );
+    assert!(
+        strings.iter().any(|s| s == "12"),
+        "execute_package must support cross-proc module-global accumulation; strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_terminate_fires_at_statement_that_drops_last_reference() {
+    // VBA oracle (CLASS_TERMINATE_TIMING_ORACLE_2026-05-31, probe A → `1T2`): Class_Terminate
+    // runs during the statement that releases the last reference, before the next statement
+    // executes. OxVBA queues the termination on release and drains it at the next statement
+    // boundary, so the log must read `1T2`, not `12T`. The release is triggered here by
+    // reassigning `a` to a new instance (which drops the first instance's last reference); the
+    // canonical `Set a = Nothing` form is a separate compiler front-end gap for project classes.
+    // The log is a module global; Main copies it into a local so the slot snapshot can observe it.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim a As Foo
+Dim result As String
+Set a = New Foo
+Append "1"
+Set a = New Foo
+Append "2"
+result = gLog
+End Sub
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Foo"
+Private Sub Class_Terminate()
+Append "T"
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "1T2"),
+        "Class_Terminate must fire at the statement that drops the last reference (expected log `1T2`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_terminate_fires_at_procedure_epilogue_for_locals() {
+    // VBA oracle rule 3: a local object reference is released — and its Class_Terminate runs — at
+    // the procedure epilogue, before control returns to the caller's next statement. Here the
+    // inner Sub's local `a` terminates when the Sub returns, so the log reads `inTafter`.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim result As String
+MakeAndDrop
+Append "after"
+result = gLog
+End Sub
+Public Sub MakeAndDrop()
+Dim a As Foo
+Set a = New Foo
+Append "in"
+End Sub
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Foo"
+Private Sub Class_Terminate()
+Append "T"
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "inTafter"),
+        "a local object must terminate at the procedure epilogue (expected log `inTafter`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+#[ignore = "blocked by a separate front-end gap: member access on a function-call result \
+            (`MakeFoo().Tag`) is unsupported (PMR-E-BACKEND-COMPILE). The gMT timing it would \
+            prove is already covered: temporaries are released only at statement boundaries \
+            (never after last use), so `gTM` is impossible by construction, and \
+            pure_oxvba_class_terminate_fires_at_statement_that_drops_last_reference only passes \
+            because the New-result temporary is released at the statement boundary. Un-ignore \
+            once `obj_call().member` chaining is supported."]
+fn pure_oxvba_class_terminate_holds_expression_temporary_until_statement_end() {
+    // VBA oracle probe B (`gMT`): an expression temporary (the `New Foo` returned by MakeFoo) is
+    // held until the END of the statement, then terminated — not released right after its last
+    // sub-use (`.Tag`). So `.Tag` (g) and `Mark` (M) both run before the temporary's terminate
+    // (T): the log is `gMT`, never `gTM`. This exercises termination triggered solely by an
+    // expression temporary's end-of-statement release (no named variable ever holds the object).
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim s As String
+Dim observed As String
+s = MakeFoo().Tag & Mark()
+observed = gLog
+End Sub
+Public Function MakeFoo() As Foo
+Set MakeFoo = New Foo
+End Function
+Public Function Mark() As String
+Append "M"
+Mark = ""
+End Function
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Foo"
+Private Sub Class_Terminate()
+Append "T"
+End Sub
+Public Function Tag() As String
+Append "g"
+Tag = "x"
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "gMT"),
+        "expression temporary must terminate at end of statement (expected log `gMT`, not `gTM`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+fn pure_oxvba_class_without_terminate_runs_unchanged() {
+    // A class with no Class_Terminate must not be marked terminating and must not perturb the log;
+    // this guards the blast radius of the per-instance termination machinery.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim a As Foo
+Dim result As String
+Set a = New Foo
+Append "1"
+Set a = New Foo
+Append "2"
+result = gLog
+End Sub
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Foo"
+Public Sub Noop()
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "12"),
+        "a class without Class_Terminate must leave the log as `12` (no T ever); strings={strings:?} out={out:?}"
+    );
+}
+
 #[test]
 fn pure_oxvba_class_value_read_of_sub_is_expected_function_or_variable() {
     // F3c diagnostic-parity: `x = obj.SomeSub` reads a Sub in a value context. VBA raises a

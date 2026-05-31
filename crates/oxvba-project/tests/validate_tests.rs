@@ -361,6 +361,7 @@ fn com_class_exported_when_exposed_and_creatable() {
             return_slot: Some(3),
         }],
         implements_interfaces: Vec::new(),
+        class_terminate: None,
     }];
 
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
@@ -519,6 +520,7 @@ fn com_class_with_multiple_members() {
             },
         ],
         implements_interfaces: Vec::new(),
+        class_terminate: None,
     }];
 
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
@@ -814,6 +816,7 @@ fn com_class_export_preserves_dispatch_metadata() {
             },
         ],
         implements_interfaces: Vec::new(),
+        class_terminate: None,
     }];
 
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
