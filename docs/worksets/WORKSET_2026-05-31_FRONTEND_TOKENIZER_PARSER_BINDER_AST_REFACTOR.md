@@ -477,6 +477,7 @@ Outcome: the workset becomes executable without stale assumptions or hidden prer
 Candidate bead units:
 - FE-0.1 Workset truth audit: reconcile this plan with `oxvba-syntax`, `oxvba-languageservice`,
   current compiler lowering, activation-frame state, and project-object field state.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_TRUTH_AUDIT_2026-06-01.md`.
 - FE-0.2 Decision-record cleanup: lock the meaning of "Roslyn-style" as a shape, and record
   `rowan`/`cstree` as optional helper migrations.
 - FE-0.3 Corpus inventory: enumerate current compiler, host, conformance, language-service, and
