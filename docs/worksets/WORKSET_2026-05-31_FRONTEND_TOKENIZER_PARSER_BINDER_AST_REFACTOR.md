@@ -351,11 +351,14 @@ byte-identical bytecode.
 
 Resolved:
 - **D0 (2026-05-31): Syntactic layer = Roslyn-style green/red CST with typed facades** (not a
-  lean AST), because interactive tooling/incremental is a goal. Backbone (resolve → bound HIR →
-  lower) unchanged.
+  lean AST), because interactive tooling/incremental is a goal. "Roslyn-style" names the
+  architectural shape: lossless syntax, typed facades, syntax/semantics separation, bound HIR for
+  lowering, and SemanticModel-style queries. It does not require Roslyn, rust-analyzer, `rowan`, or
+  `cstree` as dependencies. Backbone (resolve → bound HIR → lower) unchanged.
 - **D4: Syntax storage shape = green/red CST**; bound HIR + symbol tables = index arenas. The
   current custom `oxvba-syntax` green/red tree is the default substrate. `rowan`/`cstree` remain
-  optional helper-library migration candidates, not goals by themselves.
+  optional helper-library migration candidates, not goals by themselves; any migration must be
+  justified by the Phase-0 substrate audit/spike.
 - **D6: Two layers, not a reshaped `BoundExpr`** — typed CST facades for syntax; a *new* bound
   HIR for the resolved IR. `BoundExpr` is retired in favor of the HIR (with a temporary
   CST→`BoundExpr` bridge during Phases 2–3 to keep existing lowering).
@@ -480,6 +483,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_TRUTH_AUDIT_2026-06-01.md`.
 - FE-0.2 Decision-record cleanup: lock the meaning of "Roslyn-style" as a shape, and record
   `rowan`/`cstree` as optional helper migrations.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_DECISION_RECORD_2026-06-01.md`.
 - FE-0.3 Corpus inventory: enumerate current compiler, host, conformance, language-service, and
   real-world fixture sources that will feed the semantic/diff harness.
 - FE-0.4 Bead rollout: create the actual bead tree from this hierarchy once the workset is
