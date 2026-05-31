@@ -545,6 +545,7 @@ Outcome: the lexer is lossless, span-stable, and broad enough for the accepted c
 Candidate bead units:
 - FE-3.1 Trivia and continuation semantics: cover whitespace, comments, `Rem`, physical/logical
   line handling, and line continuation edge cases.
+  Evidence: `docs/evidence/frontend_rework/LEXER_TRIVIA_CONTINUATION_2026-06-01.md`.
 - FE-3.2 Literal lexing: cover strings, date literals, numeric suffixes, hex/octal forms,
   currency/decimal-relevant forms, and malformed literal recovery.
 - FE-3.3 Identifier and keyword lexing: cover bracketed identifiers, type suffixes, case folding,

@@ -38,9 +38,17 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
             continue;
         }
 
-        // ── Comment (' or Rem at line start) ────────────────
+        // ── Comment (' or Rem at line/logical-statement start) ─────────────
         if b == b'\'' {
             i += 1;
+            while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
+                i += 1;
+            }
+            tokens.push((SyntaxKind::Comment, &source[start..i]));
+            continue;
+        }
+        if is_rem_comment_start(bytes, i) {
+            i += 3; // Rem
             while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
                 i += 1;
             }
@@ -225,8 +233,25 @@ fn is_line_continuation(bytes: &[u8], i: usize) -> bool {
     while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
         j += 1;
     }
-    // Must be at newline or end of file for it to be a continuation
-    j >= bytes.len() || bytes[j] == b'\n' || bytes[j] == b'\r'
+    j < bytes.len() && (bytes[j] == b'\n' || bytes[j] == b'\r')
+}
+
+fn is_rem_comment_start(bytes: &[u8], i: usize) -> bool {
+    if i + 3 > bytes.len() || !bytes[i..i + 3].eq_ignore_ascii_case(b"rem") {
+        return false;
+    }
+    if i + 3 < bytes.len() {
+        let next = bytes[i + 3];
+        if next != b' ' && next != b'\t' && next != b'\r' && next != b'\n' {
+            return false;
+        }
+    }
+
+    let mut j = i;
+    while j > 0 && (bytes[j - 1] == b' ' || bytes[j - 1] == b'\t') {
+        j -= 1;
+    }
+    j == 0 || matches!(bytes[j - 1], b'\r' | b'\n' | b':')
 }
 
 /// Heuristic: does `#` at position `i` look like the start of a date literal?
@@ -405,6 +430,52 @@ mod tests {
     fn comment_trivia() {
         let toks = tokenize("x ' comment\ny");
         assert!(toks.iter().any(|(k, _)| *k == SyntaxKind::Comment));
+    }
+
+    #[test]
+    fn rem_comment_trivia_at_logical_statement_start() {
+        let toks = tokenize("Rem module comment\nx: Rem inline logical comment\nRemember = 1\n");
+        assert_eq!(toks[0], (SyntaxKind::Comment, "Rem module comment"));
+        assert!(
+            toks.iter().any(|(kind, text)| *kind == SyntaxKind::Comment
+                && *text == "Rem inline logical comment")
+        );
+        assert!(
+            toks.iter()
+                .any(|(kind, text)| *kind == SyntaxKind::Ident && *text == "Remember"),
+            "Remember must remain an identifier, not a Rem comment"
+        );
+    }
+
+    #[test]
+    fn line_continuation_requires_physical_newline() {
+        assert_eq!(kinds("_"), vec![SyntaxKind::Ident, SyntaxKind::Eof]);
+        assert_eq!(
+            tokenize("_ \r\n")[0],
+            (SyntaxKind::LineContinuation, "_ \r\n")
+        );
+        assert_eq!(tokenize("_ \n")[0], (SyntaxKind::LineContinuation, "_ \n"));
+    }
+
+    #[test]
+    fn trivia_snapshot_preserves_physical_and_logical_lines() {
+        let src = "Sub T()\r\n    x = 1 _\r\n        + 2: Rem after separator\r\n    ' apostrophe\r\nEnd Sub\r\n";
+        let tokens = tokenize(src);
+        let reconstructed: String = tokens.iter().map(|(_, text)| *text).collect();
+        assert_eq!(reconstructed, src);
+        assert!(
+            tokens
+                .iter()
+                .any(|(kind, text)| { *kind == SyntaxKind::LineContinuation && *text == "_\r\n" })
+        );
+        assert!(tokens.iter().any(|(kind, text)| {
+            *kind == SyntaxKind::Comment && *text == "Rem after separator"
+        }));
+        assert!(
+            tokens
+                .iter()
+                .any(|(kind, text)| { *kind == SyntaxKind::Comment && *text == "' apostrophe" })
+        );
     }
 
     #[test]
