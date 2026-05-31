@@ -6281,11 +6281,20 @@ fn rewrite_internal_class_state_assignment(
     }
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
-    let Some(eq_idx) = trimmed.find('=') else {
+    // An object-typed field is assigned with `Set` (`Set mChild = New Child`); a scalar field
+    // without. Both are per-instance state slots, so route either through __oxvba_withevents_set;
+    // the `Set ` keyword is preserved so an object target's assignment stays object-typed.
+    let set_prefix = if trimmed.len() >= 4 && trimmed[..4].eq_ignore_ascii_case("set ") {
+        "Set "
+    } else {
+        ""
+    };
+    let payload = trimmed[set_prefix.len()..].trim_start();
+    let Some(eq_idx) = payload.find('=') else {
         return line.to_string();
     };
-    let lhs = trimmed[..eq_idx].trim();
-    let rhs = trimmed[eq_idx + 1..].trim();
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() {
         return line.to_string();
     }
@@ -6299,8 +6308,9 @@ fn rewrite_internal_class_state_assignment(
     };
     let rewritten_rhs = rewrite_internal_class_state_expression_reads(rhs, module_state_bindings);
     format!(
-        "{}{} = __oxvba_withevents_set({}, {}, {})",
+        "{}{}{} = __oxvba_withevents_set({}, {}, {})",
         &line[..leading],
+        set_prefix,
         lhs,
         module_state_bindings.owner_expr,
         binding_token,

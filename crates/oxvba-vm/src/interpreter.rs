@@ -4083,7 +4083,15 @@ impl Vm {
             let locals: Vec<usize> = meta
                 .slots
                 .iter()
-                .filter(|slot| slot.kind == ProcedureRuntimeSlotKind::Local)
+                .filter(|slot| {
+                    // Locals go out of scope at the epilogue. So does the hidden ByVal `Me`
+                    // parameter of a class member (`__oxvba_this_instance`): the callee holds its
+                    // own AddRef'd copy of the receiver, so releasing it on return is required for
+                    // the receiver to reach refcount 0 promptly (e.g. after its Class_Initialize).
+                    slot.kind == ProcedureRuntimeSlotKind::Local
+                        || (slot.kind == ProcedureRuntimeSlotKind::Parameter
+                            && slot.name.eq_ignore_ascii_case("__oxvba_this_instance"))
+                })
                 .map(|slot| slot.slot)
                 .collect();
             if !locals.is_empty() {

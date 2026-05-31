@@ -763,6 +763,146 @@ End Function
 }
 
 #[test]
+fn pure_oxvba_class_with_initialize_still_terminates() {
+    // A class that defines BOTH Class_Initialize and Class_Terminate must still terminate when its
+    // last reference is released. Class_Initialize is invoked with the instance as its hidden
+    // ByVal `Me`; that callee-owned reference is released at the constructor's epilogue, so the
+    // instance is not pinned and `Set a = Nothing` drops its last reference. Log: `i1T2`.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim a As Foo
+Dim result As String
+Set a = New Foo
+Append "1"
+Set a = Nothing
+Append "2"
+result = gLog
+End Sub
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Foo",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Foo"
+Private Sub Class_Initialize()
+Append "i"
+End Sub
+Private Sub Class_Terminate()
+Append "T"
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "i1T2"),
+        "a class with Class_Initialize must still terminate on last-reference release (expected `i1T2`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+#[ignore = "Parent terminates correctly (`1P2`), but the cascade to the child is blocked: a child \
+            object stored in a regular (non-WithEvents) field is retained by an extra reference \
+            beyond the per-instance state binding, so clearing the owner's state on terminate does \
+            not bring the child to refcount 0. Needs dedicated per-instance object-field storage \
+            (the field currently rides the WithEvents binding map). Un-ignore once that lands."]
+fn pure_oxvba_class_terminate_cascades_through_object_field() {
+    // When a terminating instance holds another terminating object in a (regular, non-WithEvents)
+    // field, releasing the owner's last reference terminates it AND, as its per-instance field
+    // state is cleared, releases the child — which terminates in turn. `Set p = Nothing` drops the
+    // last Parent reference: Parent terminates ("P"), its mChild field is cleared, Child
+    // terminates ("C"). Expected log `1PC2`.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public gLog As String
+Public Sub Main()
+Dim p As Parent
+Dim result As String
+Set p = New Parent
+Append "1"
+Set p = Nothing
+Append "2"
+result = gLog
+End Sub
+Public Sub Append(ByVal s As String)
+gLog = gLog & s
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let parent_module = module_unit_from_source(
+        "Parent",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Parent"
+Private mChild As Child
+Private Sub Class_Initialize()
+Set mChild = New Child
+End Sub
+Private Sub Class_Terminate()
+Append "P"
+End Sub
+"#,
+    )
+    .expect("parent class module should parse");
+    let child_module = module_unit_from_source(
+        "Child",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Child"
+Private Sub Class_Terminate()
+Append "C"
+End Sub
+"#,
+    )
+    .expect("child class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, child_module, parent_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    let strings = snapshot_strings(&out);
+    assert!(
+        strings.iter().any(|s| s == "1PC2"),
+        "Class_Terminate must cascade through an object field (expected log `1PC2`); strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
 fn pure_oxvba_class_without_terminate_runs_unchanged() {
     // A class with no Class_Terminate must not be marked terminating and must not perturb the log;
     // this guards the blast radius of the per-instance termination machinery.
