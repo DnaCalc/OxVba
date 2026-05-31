@@ -527,6 +527,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/GREEN_RED_TREE_AUDIT_2026-06-01.md`.
 - FE-2.2 Library spike: compare current custom tree against `rowan` and `cstree` for concrete
   gaps: node identity, interning, memory, threading, typed facade ergonomics, and maintenance cost.
+  Evidence: `docs/evidence/frontend_rework/ROWAN_CSTREE_SPIKE_2026-06-01.md`.
 - FE-2.3 Typed facade audit: define the minimal typed syntax API needed by parser tests, binder,
   SemanticModel, and formatting/refactoring.
 - FE-2.4 Error recovery shape: standardize parser diagnostics and error nodes so incomplete
