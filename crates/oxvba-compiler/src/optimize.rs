@@ -190,6 +190,9 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         | BoundExpr::StringConst(_) => false,
         BoundExpr::IntrinsicCall { args, .. } => args.iter().any(|arg| expr_uses_var(arg, var)),
         BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
+        BoundExpr::Member { receiver, args, .. } => {
+            expr_uses_var(receiver, var) || args.iter().any(|arg| expr_uses_var(&arg.expr, var))
+        }
         BoundExpr::CompareOp { lhs, rhs, .. } => expr_uses_var(lhs, var) || expr_uses_var(rhs, var),
         BoundExpr::BinaryOp { lhs, rhs, .. } => expr_uses_var(lhs, var) || expr_uses_var(rhs, var),
         BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
@@ -215,6 +218,8 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
             call_has_effect || args.iter().any(expr_has_observable_effect)
         }
         BoundExpr::ProcCall { .. } => true,
+        // A late-bound member dispatch invokes a method/property — assume observable effects.
+        BoundExpr::Member { .. } => true,
         BoundExpr::Var(_)
         | BoundExpr::VarPtrArrayBuffer(_)
         | BoundExpr::AddConst { .. }

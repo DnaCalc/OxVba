@@ -1220,6 +1220,33 @@ fn check_expr(
             declaration_types,
             proc_context,
         ),
+        BoundExpr::Member { receiver, args, .. } => {
+            // Late-bound: only the receiver and arguments are statically checkable; the member is
+            // resolved dynamically at runtime.
+            check_expr(
+                receiver,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+            for arg in args {
+                check_expr(
+                    &arg.expr,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1315,6 +1342,8 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::CompareOp { .. } => BoundType::Boolean,
         BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
+        // Late-bound member access: the member's return type is not known statically.
+        BoundExpr::Member { .. } => BoundType::Variant,
     }
 }
 

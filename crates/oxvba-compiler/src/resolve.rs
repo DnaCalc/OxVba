@@ -97,6 +97,14 @@ pub enum BoundExpr {
         name: String,
         args: Vec<BoundCallArg>,
     },
+    /// Late-bound member access on an arbitrary receiver expression, e.g. `MakeFoo().Tag` or
+    /// `obj.Method(args)` where the receiver is a call result (not a bare variable — those are
+    /// rewritten to direct calls upstream). Lowers to a dynamic dispatch on the receiver value.
+    Member {
+        receiver: Box<BoundExpr>,
+        member: String,
+        args: Vec<BoundCallArg>,
+    },
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoundType {
@@ -1949,6 +1957,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         | BoundExpr::LogicalNot { .. }
         | BoundExpr::IntrinsicCall { .. }
         | BoundExpr::ProcCall { .. }
+        | BoundExpr::Member { .. }
         | BoundExpr::VarPtrArrayBuffer(_) => BoundType::Variant,
     }
 }
@@ -5272,7 +5281,67 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         }
     }
 
+    if let Some(member) = parse_member_access_expr(expr, array_bounds) {
+        return Some(member);
+    }
+
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
+}
+
+/// Parse a postfix member access `<receiver>.member` / `<receiver>.member(args)` where the
+/// receiver is itself an expression — chiefly a function-call result (`MakeFoo().Tag`) or a chain
+/// (`MakeFoo().Tag.Bar`). Splits at the last top-level `.` and binds the receiver recursively, so
+/// chains nest into `Member` nodes. Bare `var.member` is intentionally NOT handled here (the
+/// receiver is a plain reference) — those are rewritten to direct calls upstream; this only
+/// catches the residual call/parenthesized/chained receivers, which lower to a late-bound dynamic
+/// dispatch on the receiver's value (works for project and COM objects).
+fn parse_member_access_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    let dot = last_top_level_member_dot(expr)?;
+    let receiver_raw = expr[..dot].trim();
+    let rest = expr[dot + 1..].trim();
+    if receiver_raw.is_empty() || rest.is_empty() {
+        return None;
+    }
+    // Only call/parenthesized/chained receivers; a bare variable reference is handled upstream.
+    if parse_reference_name(receiver_raw, array_bounds).is_some() {
+        return None;
+    }
+    let (member, args) = if rest.contains('(') {
+        parse_call_invocation(rest, array_bounds)?
+    } else {
+        (normalize_ident(rest)?, Vec::new())
+    };
+    let receiver = parse_expr(receiver_raw, array_bounds)?;
+    Some(BoundExpr::Member {
+        receiver: Box::new(receiver),
+        member,
+        args,
+    })
+}
+
+/// Index of the last `.` at paren/bracket depth 0 and outside a string literal — the split point
+/// between a member-access receiver and the accessed member. Returns None when there is none.
+fn last_top_level_member_dot(expr: &str) -> Option<usize> {
+    let bytes = expr.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut last = None;
+    for (idx, &c) in bytes.iter().enumerate() {
+        if in_string {
+            if c == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_string = true,
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b'.' if depth == 0 => last = Some(idx),
+            _ => {}
+        }
+    }
+    last
 }
 
 /// Parse a VBA type-suffix numeric literal (e.g. `2#`, `2.5!`, `100&`). Only

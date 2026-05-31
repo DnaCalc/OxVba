@@ -74,13 +74,21 @@ Follow-ups landed since:
 - **Object-typed instance fields** can be assigned with `Set field = New X` (per-instance state
   write).
 
-Still deferred (each a sizable separate feature, not the lifetime machinery):
-- The `gMT` probe (`s = MakeFoo().Tag & Mark()`) is `#[ignore]`d: member access on a function-call
-  result (`MakeFoo().Tag`) is unsupported — `BoundExpr` has no member-access node, so member access
-  is flattened by string rewriters that only handle `name.member`, not `call().member`. Needs
-  expression-level member access. The `gMT` timing it proves is correct by construction here
-  (temporaries release only at statement boundaries, never after last use) and is exercised by `1T2`.
-- Cascade through a **regular (non-`WithEvents`) object field** is `#[ignore]`d: the owner terminates
-  (`1P2`), but the child — stored on the WithEvents binding map — is retained by an extra reference
-  beyond that binding, so clearing the owner on terminate does not release it. Needs dedicated
-  per-instance object-field storage. `WithEvents` fields still cascade via the injected owner-cleanup.
+- **Expression-level member access** now exists: `BoundExpr::Member { receiver, member, args }`,
+  bound for non-bare-variable receivers (call results / chains), lowered to the late-bound
+  dispatch (`IntrinsicDispatchInvokeHost`). `MakeFoo().Tag` and `MakeBox().Add(2,3)` dispatch and
+  return correctly (tests `member_access_on_function_call_result_dispatches` and the args variant).
+
+Still deferred — one shared root cause (object references retained in flat-register-file slots
+beyond their logical lifetime), which is the object-slot-lifetime work parked under "A":
+- The `gMT` probe's trailing `T`: the temporary `Foo` from `MakeFoo()` is retained by the
+  **function's return slot** (the returned object lingers there until the next call), so it does not
+  terminate at end of statement. Member access (the feature) works; only this terminate timing is
+  pending. Correct by construction once return-slot retention is resolved.
+- Cascade through a **regular (non-`WithEvents`) object field**: the owner terminates (`1P2`), but
+  the child stored on the WithEvents binding map is retained by an extra reference beyond that
+  binding. Needs dedicated per-instance object-field storage. `WithEvents` fields still cascade via
+  the injected owner-cleanup.
+
+Both remaining items are the same class of fix: object slots in the flat register file (return
+slots, field-state slots) need disciplined release so a dropped reference reaches refcount 0.

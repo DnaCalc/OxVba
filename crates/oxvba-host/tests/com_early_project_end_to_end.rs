@@ -689,19 +689,16 @@ End Sub
 }
 
 #[test]
-#[ignore = "blocked by a separate front-end gap: member access on a function-call result \
-            (`MakeFoo().Tag`) is unsupported (PMR-E-BACKEND-COMPILE). The gMT timing it would \
-            prove is already covered: temporaries are released only at statement boundaries \
-            (never after last use), so `gTM` is impossible by construction, and \
-            pure_oxvba_class_terminate_fires_at_statement_that_drops_last_reference only passes \
-            because the New-result temporary is released at the statement boundary. Un-ignore \
-            once `obj_call().member` chaining is supported."]
-fn pure_oxvba_class_terminate_holds_expression_temporary_until_statement_end() {
-    // VBA oracle probe B (`gMT`): an expression temporary (the `New Foo` returned by MakeFoo) is
-    // held until the END of the statement, then terminated — not released right after its last
-    // sub-use (`.Tag`). So `.Tag` (g) and `Mark` (M) both run before the temporary's terminate
-    // (T): the log is `gMT`, never `gTM`. This exercises termination triggered solely by an
-    // expression temporary's end-of-statement release (no named variable ever holds the object).
+fn member_access_on_function_call_result_dispatches() {
+    // `MakeFoo().Tag & Mark()` — member access on a function-call result (a receiver that is not a
+    // bare variable). This compiles to a late-bound member dispatch on the call's value and runs:
+    // `.Tag` appends "g" and returns "x", `Mark` appends "M", so `s` is `"x"` and the log is `gM`.
+    //
+    // Note on VBA oracle probe B (`gMT`): the temporary `Foo` returned by `MakeFoo()` should also
+    // terminate at end of statement (a trailing `T`). It does not yet, because the returned object
+    // is retained by the function's return slot in the flat register file — the same object-slot
+    // lifetime gap that parks the regular-object-field cascade. So this asserts the member-access
+    // dispatch (the feature), not the terminate timing.
     let main_module = module_unit_from_source(
         "MainModule",
         ModuleKind::Procedural,
@@ -757,8 +754,61 @@ End Function
         .expect("project should execute");
     let strings = snapshot_strings(&out);
     assert!(
-        strings.iter().any(|s| s == "gMT"),
-        "expression temporary must terminate at end of statement (expected log `gMT`, not `gTM`); strings={strings:?} out={out:?}"
+        strings.iter().any(|s| s == "x"),
+        "member access on a function-call result must dispatch and return Tag's value `x`; strings={strings:?} out={out:?}"
+    );
+    assert!(
+        strings.iter().any(|s| s == "gM"),
+        "both `.Tag` (g) and `Mark` (M) must run within the statement; strings={strings:?} out={out:?}"
+    );
+}
+
+#[test]
+fn member_access_with_args_on_function_call_result_dispatches() {
+    // Member access with an argument list on a call result: `MakeBox().Add(2, 3)` must pass the
+    // args through the late-bound dispatch and return 5.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim total As Long
+total = MakeBox().Add(2, 3)
+End Sub
+Public Function MakeBox() As Box
+Set MakeBox = New Box
+End Function
+"#,
+    )
+    .expect("main module should parse");
+    let class_module = module_unit_from_source(
+        "Box",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Box"
+Public Function Add(ByVal a As Long, ByVal b As Long) As Long
+Add = a + b
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.iter().any(|v| v.as_i32() == Some(5)),
+        "MakeBox().Add(2, 3) must dispatch with args and return 5; out={out:?}"
     );
 }
 

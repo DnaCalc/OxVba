@@ -1338,7 +1338,9 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => ArgumentExpressionKindDescriptor::Literal,
         BoundExpr::IntrinsicCall { .. } => ArgumentExpressionKindDescriptor::IntrinsicCall,
-        BoundExpr::ProcCall { .. } => ArgumentExpressionKindDescriptor::ProcedureCall,
+        BoundExpr::ProcCall { .. } | BoundExpr::Member { .. } => {
+            ArgumentExpressionKindDescriptor::ProcedureCall
+        }
         BoundExpr::VarPtrArrayBuffer(_) => ArgumentExpressionKindDescriptor::ArrayBuffer,
         BoundExpr::AddConst { .. }
         | BoundExpr::SubConst { .. }
@@ -2623,6 +2625,12 @@ fn collect_expr_value_states(
                 collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
             }
         }
+        BoundExpr::Member { receiver, args, .. } => {
+            collect_expr_value_states(receiver, None, procedure_id, ordinal, descriptors);
+            for arg in args {
+                collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
+            }
+        }
         BoundExpr::BinaryOp { lhs, rhs, .. }
         | BoundExpr::CompareOp { lhs, rhs, .. }
         | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
@@ -3268,6 +3276,26 @@ fn collect_expr_semantics(
                 );
             }
         }
+        BoundExpr::Member { receiver, args, .. } => {
+            collect_expr_semantics(
+                receiver,
+                context,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+            for arg in args {
+                collect_expr_semantics(
+                    &arg.expr,
+                    ExpressionSourceContextDescriptor::CallArgument,
+                    type_by_name,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
         BoundExpr::IntConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
@@ -3327,7 +3355,9 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
             ExpressionClassificationDescriptor::ArrayElement
         }
         BoundExpr::IntrinsicCall { .. } => ExpressionClassificationDescriptor::IntrinsicResult,
-        BoundExpr::ProcCall { .. } => ExpressionClassificationDescriptor::FunctionResult,
+        BoundExpr::ProcCall { .. } | BoundExpr::Member { .. } => {
+            ExpressionClassificationDescriptor::FunctionResult
+        }
     }
 }
 
@@ -3368,6 +3398,7 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         BoundExpr::LogicalNot { .. } => "logical=not".to_string(),
         BoundExpr::IntrinsicCall { name, .. } => format!("intrinsic={}", name.to_ascii_lowercase()),
         BoundExpr::ProcCall { name, .. } => format!("proc-call={}", name.to_ascii_lowercase()),
+        BoundExpr::Member { member, .. } => format!("member-access={}", member.to_ascii_lowercase()),
         BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
         BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
         BoundExpr::FloatConst(_) => "literal=f64".to_string(),
@@ -4003,6 +4034,26 @@ fn collect_expr_operator_semantics(
             }
         }
         BoundExpr::ProcCall { args, .. } => {
+            for arg in args {
+                collect_expr_operator_semantics(
+                    &arg.expr,
+                    type_by_name,
+                    compare_mode,
+                    procedure_id,
+                    ordinal,
+                    descriptors,
+                );
+            }
+        }
+        BoundExpr::Member { receiver, args, .. } => {
+            collect_expr_operator_semantics(
+                receiver,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
             for arg in args {
                 collect_expr_operator_semantics(
                     &arg.expr,
@@ -4748,6 +4799,12 @@ fn collect_expr_coercions(
                 collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
             }
         }
+        BoundExpr::Member { receiver, args, .. } => {
+            collect_expr_coercions(receiver, type_by_name, procedure_id, ordinal, descriptors);
+            for arg in args {
+                collect_expr_coercions(&arg.expr, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
         BoundExpr::IntConst(_)
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
@@ -5293,6 +5350,7 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
         BoundExpr::UnaryOp { .. } => VbaTypeId::Variant,
         BoundExpr::IntrinsicCall { name, args } => intrinsic_result_type(name, args, type_by_name),
         BoundExpr::ProcCall { .. } => VbaTypeId::Variant,
+        BoundExpr::Member { .. } => VbaTypeId::Variant,
     }
 }
 
@@ -7561,6 +7619,8 @@ fn expr_bound_type(
         BoundExpr::IntrinsicCall { name, .. } | BoundExpr::ProcCall { name, .. } => {
             call_bound_type(name, proc_meta, external_decls)
         }
+        // Late-bound member access: the member's return type is not known statically.
+        BoundExpr::Member { .. } => BoundType::Variant,
     }
 }
 
@@ -9858,6 +9918,59 @@ fn emit_expr_into(
                     None,
                 );
             }
+        }
+        BoundExpr::Member {
+            receiver,
+            member,
+            args,
+        } => {
+            // Late-bound member access on a receiver expression (e.g. `MakeFoo().Tag`): evaluate
+            // the receiver into an object slot, then dynamically dispatch the named member. Reuses
+            // the dispatch-invoke path (project-dynamic dispatch with a COM fallback).
+            let object_slot = temps.alloc_temp();
+            emit_expr_into(
+                receiver,
+                compare_mode,
+                object_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let member_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstString {
+                slot: member_slot,
+                value: member.clone(),
+            });
+            let mut invoke_args = Vec::with_capacity(args.len());
+            for arg in args {
+                let arg_slot = temps.alloc_temp();
+                emit_expr_into(
+                    &arg.expr,
+                    compare_mode,
+                    arg_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                invoke_args.push(DispatchInvokeArg {
+                    slot: Some(arg_slot),
+                    name: arg.name.clone(),
+                });
+            }
+            instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                dst,
+                object: object_slot,
+                member: member_slot,
+                args: invoke_args,
+                early_bound: false,
+                com_member: None,
+            });
         }
     }
 }
