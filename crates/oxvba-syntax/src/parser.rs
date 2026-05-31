@@ -1676,6 +1676,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn parse_empty_source() {
@@ -1751,10 +1752,15 @@ mod tests {
 
     #[test]
     fn error_recovery_produces_tree() {
-        let src = "Sub (\nEnd Sub\n";
+        let src = ")\n";
         let p = parse(src);
         // Tree is still lossless even with errors
         assert_eq!(p.syntax().text(), src);
+        assert!(!p.errors().is_empty(), "expected parse errors");
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
+            "expected explicit ErrorNode in recovered tree"
+        );
     }
 
     #[test]
@@ -1788,6 +1794,37 @@ mod tests {
             .iter()
             .any(|n| n.kind() == SyntaxKind::ParamList);
         assert!(has_params, "expected ParamList in FunctionDecl");
+    }
+
+    #[test]
+    fn green_root_clone_preserves_shared_identity() {
+        let src = "Sub T()\n    x = 1\nEnd Sub\n";
+        let p = parse(src);
+        let cloned = Arc::clone(p.green());
+        assert!(Arc::ptr_eq(p.green(), &cloned));
+        assert_eq!(cloned.width(), src.len() as u32);
+    }
+
+    #[test]
+    fn red_tree_nested_token_offsets_cover_source_ranges() {
+        let src = "Sub T()\n    x = a + b\nEnd Sub\n";
+        let p = parse(src);
+        let mut tokens = Vec::new();
+        collect_tokens_recursive(&p.syntax(), &mut tokens);
+
+        assert_eq!(p.syntax().text_range(), (0, src.len() as u32));
+        assert_eq!(p.syntax().width(), src.len() as u32);
+        assert!(
+            tokens
+                .iter()
+                .any(|t| t.text == "a" && t.offset == src.find('a').unwrap() as u32),
+            "expected token `a` at its source byte offset: {:?}",
+            tokens
+        );
+        assert!(
+            tokens.iter().any(|t| t.kind == SyntaxKind::Newline),
+            "expected newline trivia token to be traversable"
+        );
     }
 
     #[test]
@@ -1841,6 +1878,16 @@ mod tests {
         }
         for child in node.child_nodes() {
             collect_nodes_recursive(&child, kind, result);
+        }
+    }
+
+    fn collect_tokens_recursive<'a>(
+        node: &crate::red::SyntaxNode<'a>,
+        result: &mut Vec<crate::red::SyntaxToken<'a>>,
+    ) {
+        result.extend(node.child_tokens());
+        for child in node.child_nodes() {
+            collect_tokens_recursive(&child, result);
         }
     }
 

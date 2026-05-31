@@ -524,6 +524,7 @@ library-backed implementation.
 Candidate bead units:
 - FE-2.1 Green/red tree audit: verify losslessness, immutable sharing behavior, text ranges,
   token/node traversal, error-node representation, and stable handles needed by IDE queries.
+  Evidence: `docs/evidence/frontend_rework/GREEN_RED_TREE_AUDIT_2026-06-01.md`.
 - FE-2.2 Library spike: compare current custom tree against `rowan` and `cstree` for concrete
   gaps: node identity, interning, memory, threading, typed facade ergonomics, and maintenance cost.
 - FE-2.3 Typed facade audit: define the minimal typed syntax API needed by parser tests, binder,
