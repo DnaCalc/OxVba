@@ -65,13 +65,22 @@ Tests (`oxvba-host/tests/com_early_project_end_to_end.rs`): `1T2` (terminate at 
 drops the last reference), `inTafter` (local terminates at the procedure epilogue), the
 no-`Class_Terminate` control (`12`), and a route-carries-`Class_Terminate` compiler check — all pass.
 
-Deferred / blocked (separate front-end gaps, not the lifetime machinery):
-- The `gMT` probe (`s = MakeFoo().Tag & Mark()`) is `#[ignore]`d because member access on a
-  function-call result (`MakeFoo().Tag`) is unsupported (`PMR-E-BACKEND-COMPILE`). The `gMT` timing
-  it proves is correct by construction here (temporaries are released only at statement boundaries,
-  never after last use, so `gTM` is impossible) and is exercised indirectly by the `1T2` test.
-- `Set <projectvar> = Nothing` for a project class is not yet lowered (it misroutes into
-  default-member resolution), so tests trigger the last-reference drop via reassignment / scope exit.
-- Cascade teardown through **regular (non-`WithEvents`) object fields** depends on per-instance
-  object-field storage and is not yet covered; `WithEvents` fields cascade via the owner-cleanup the
-  compiler already injects into `Class_Terminate`.
+Follow-ups landed since:
+- **`Set <objvar> = Nothing`** now compiles and clears the reference (the canonical idiom); the
+  `1T2` test uses it. (`Nothing` → `__nothing` intrinsic typed Object, emits runtime 0; the runtime
+  Set guard accepts the null-object value.)
+- **Class with `Class_Initialize`** now terminates: a class member's hidden ByVal `Me` is released
+  at the procedure epilogue, so the constructor no longer pins the instance (test `i1T2`).
+- **Object-typed instance fields** can be assigned with `Set field = New X` (per-instance state
+  write).
+
+Still deferred (each a sizable separate feature, not the lifetime machinery):
+- The `gMT` probe (`s = MakeFoo().Tag & Mark()`) is `#[ignore]`d: member access on a function-call
+  result (`MakeFoo().Tag`) is unsupported — `BoundExpr` has no member-access node, so member access
+  is flattened by string rewriters that only handle `name.member`, not `call().member`. Needs
+  expression-level member access. The `gMT` timing it proves is correct by construction here
+  (temporaries release only at statement boundaries, never after last use) and is exercised by `1T2`.
+- Cascade through a **regular (non-`WithEvents`) object field** is `#[ignore]`d: the owner terminates
+  (`1P2`), but the child — stored on the WithEvents binding map — is retained by an extra reference
+  beyond that binding, so clearing the owner on terminate does not release it. Needs dedicated
+  per-instance object-field storage. `WithEvents` fields still cascade via the injected owner-cleanup.
