@@ -511,6 +511,7 @@ Candidate bead units:
   Summary: `docs/evidence/frontend_rework/VBA_GRAMMAR_COVERAGE_MATRIX_2026-06-01.md`.
 - FE-1.4 Fixture taxonomy: split syntax-only fixtures, binder fixtures, execution fixtures,
   diagnostics fixtures, and Excel oracle fixtures.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_FIXTURE_TAXONOMY_2026-06-01.md`.
 
 Evidence gate: every in-scope grammar production has an owned row or an explicit out-of-scope /
 deferred reason.
