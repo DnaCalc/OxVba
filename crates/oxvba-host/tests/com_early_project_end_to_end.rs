@@ -764,6 +764,53 @@ End Function
 }
 
 #[test]
+#[ignore = "KNOWN GAP (slot/activation model): recursion clobbers caller locals. The VM uses a \
+            flat global register file with no per-call activation frames, so a recursive callee \
+            reuses the caller's slots. Fact(5) returns 16, not 120. Same root cause as the parked \
+            object-slot-lifetime work (cascade / gMT return-slot retention). Un-ignore when \
+            per-call frames (a slot window / frame base) land."]
+fn recursion_preserves_caller_locals() {
+    // Probe whether the slot/activation model supports recursion: `n * Fact(n-1)` reads `n`
+    // AFTER the recursive call returns, so a flat global slot space (callee clobbering the
+    // caller's `n`) yields the wrong product. Fact(5) must be 120.
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim r As Long
+r = Fact(5)
+End Sub
+Public Function Fact(ByVal n As Long) As Long
+If n <= 1 Then
+Fact = 1
+Else
+Fact = n * Fact(n - 1)
+End If
+End Function
+"#,
+    )
+    .expect("main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let out = engine
+        .execute_project_with_variant_snapshot_phased(&manifest)
+        .expect("project should execute");
+    assert!(
+        out.iter().any(|v| v.as_i32() == Some(120)),
+        "recursive Fact(5) must be 120 (caller locals preserved across recursion); out={out:?}"
+    );
+}
+
+#[test]
 fn member_access_with_args_on_function_call_result_dispatches() {
     // Member access with an argument list on a call result: `MakeBox().Add(2, 3)` must pass the
     // args through the late-bound dispatch and return 5.
