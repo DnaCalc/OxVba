@@ -507,6 +507,8 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/RUBBERDUCK_CROSSCHECK_2026-06-01.md`.
 - FE-1.3 Grammar coverage matrix: create production-level rows with fixture anchors, parser
   status, binder status, execution status, and residual disposition.
+  Evidence: `docs/evidence/frontend_rework/VBA_GRAMMAR_COVERAGE_MATRIX_2026-06-01.csv`.
+  Summary: `docs/evidence/frontend_rework/VBA_GRAMMAR_COVERAGE_MATRIX_2026-06-01.md`.
 - FE-1.4 Fixture taxonomy: split syntax-only fixtures, binder fixtures, execution fixtures,
   diagnostics fixtures, and Excel oracle fixtures.
 
