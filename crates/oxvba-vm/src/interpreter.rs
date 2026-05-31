@@ -11,17 +11,17 @@ use oxvba_com::{
 };
 use oxvba_compiler::{
     ArgumentBindingDescriptor, ArgumentBindingKindDescriptor, ArgumentExpressionKindDescriptor,
-    ArrayShapeDescriptor, ArrayStorageKind, BundleCallableDescriptor, BundleProjectContext,
-    Bytecode, CallSiteDescriptor, CallTargetKindDescriptor, CarrierLayoutDescriptor,
-    CoercionDescriptor, DescriptorFamily, DescriptorIdentity, DescriptorInventory,
-    ExpressionSemanticsDescriptor, HostProcedureExport, Instruction, NameBindingDescriptor,
-    ObjectMemberBindingDescriptor, ObjectTypeDescriptor, OperatorFamilyDescriptor,
-    OperatorSemanticsDescriptor, OptionalDefaultValue, OptionalParameterDescriptor, OxBundle,
-    ParameterDescriptor, ProcedureRuntimeMetadata, ProcedureRuntimeSlotKind,
-    ProcedureSignatureDescriptor, ProjectComWithEventsRoute, ProjectDynamicMemberKind,
-    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
-    ResolvedParameterMechanism, RuntimeCarrierKind, SlotRole, SlotTypeDescriptor,
-    UdtFieldDescriptor, UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId,
+    ArgumentWritebackDescriptor, ArrayShapeDescriptor, ArrayStorageKind, BundleCallableDescriptor,
+    BundleProjectContext, Bytecode, CallReturnDescriptor, CallSiteDescriptor,
+    CallTargetKindDescriptor, CarrierLayoutDescriptor, CoercionDescriptor, DescriptorFamily,
+    DescriptorIdentity, DescriptorInventory, ExpressionSemanticsDescriptor, HostProcedureExport,
+    Instruction, NameBindingDescriptor, ObjectMemberBindingDescriptor, ObjectTypeDescriptor,
+    OperatorFamilyDescriptor, OperatorSemanticsDescriptor, OptionalDefaultValue,
+    OptionalParameterDescriptor, OxBundle, ParameterDescriptor, ProcedureRuntimeMetadata,
+    ProcedureRuntimeSlotKind, ProcedureSignatureDescriptor, ProjectComWithEventsRoute,
+    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+    ProjectDynamicParamRoute, ResolvedParameterMechanism, RuntimeCarrierKind, SlotRole,
+    SlotTypeDescriptor, UdtFieldDescriptor, UdtTypeDescriptor, ValueStateDescriptor, VbaTypeId,
     bundle::ExportInventory,
     bytecode::{
         ComMemberSelectorDescriptor, ExternalCallDescriptor, ExternalCallWriteback,
@@ -3700,10 +3700,21 @@ fn leak_runtime_descriptor_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
 
+fn optional_default_runtime_value(default: &OptionalDefaultValue) -> Variant {
+    match default {
+        OptionalDefaultValue::ExplicitI32(value) => Variant::from_i32(*value),
+        OptionalDefaultValue::Unknown
+        | OptionalDefaultValue::DeclaredTypeDefault
+        | OptionalDefaultValue::VariantMissingError448
+        | OptionalDefaultValue::ImplementationDefined => Variant::empty(),
+    }
+}
+
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
-    call_stack: Vec<(usize, ErrorFrame)>,
+    call_stack: Vec<CallFrame>,
+    activation_frames: Vec<ActivationFrame>,
     activation_entry_pcs: Vec<usize>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     /// Union of every procedure's statement-entry PCs. A PC in this set is the first instruction
@@ -3745,6 +3756,20 @@ pub struct Vm {
     last_package_identity_evidence: Option<VmPackageIdentityEvidence>,
 }
 
+#[derive(Clone)]
+struct ActivationFrame {
+    slots: HashMap<usize, RuntimeSlot>,
+}
+
+#[derive(Clone)]
+struct CallFrame {
+    return_pc: usize,
+    error_frame: ErrorFrame,
+    return_value: Option<CallReturnDescriptor>,
+    return_value_fallback_slot: Option<usize>,
+    writebacks: Vec<ArgumentWritebackDescriptor>,
+}
+
 const FIN_MAX_ITERS: usize = 60;
 const FIN_EPS: f64 = 1e-10;
 const FIN_DERIVATIVE_STEP: f64 = 1e-7;
@@ -3770,6 +3795,7 @@ impl Vm {
             registers: RegisterFile::with_capacity(256),
             host_services,
             call_stack: Vec::new(),
+            activation_frames: Vec::new(),
             activation_entry_pcs: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
             statement_boundary_pcs: HashSet::new(),
@@ -3874,17 +3900,18 @@ impl Vm {
     /// Retained value-model snapshot API.
     pub fn snapshot_variants(&self, slot_count: usize) -> Vec<Variant> {
         let end = slot_count.min(self.registers.registers.len());
-        self.registers.registers[..end]
-            .iter()
-            .map(|slot| match slot {
-                RuntimeSlot::Variant(value) => value.clone(),
-                RuntimeSlot::BindingHandle(handle) => {
-                    panic!(
-                        "VM register slot contains non-VBA BindingHandle {}",
-                        handle.raw()
-                    )
-                }
-            })
+        (0..end)
+            .map(
+                |slot| match self.read_runtime_slot(slot).unwrap_or_default() {
+                    RuntimeSlot::Variant(value) => value,
+                    RuntimeSlot::BindingHandle(handle) => {
+                        panic!(
+                            "VM register slot contains non-VBA BindingHandle {}",
+                            handle.raw()
+                        )
+                    }
+                },
+            )
             .collect()
     }
 
@@ -4349,6 +4376,7 @@ impl Vm {
         // Clearing stale entry-proc slots can release leftover objects from a prior host call;
         // discard any terminations that produced so this run begins with a clean queue.
         oxvba_runtime::reset_pending_terminations();
+        self.push_activation_frame(entry_pc);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_variant_slot(*slot, value.clone())?;
         }
@@ -4360,6 +4388,9 @@ impl Vm {
             descriptor_selected_fastpaths,
             true,
         );
+        self.flush_current_frame_to_registers();
+        self.activation_entry_pcs.clear();
+        self.activation_frames.clear();
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -4424,6 +4455,7 @@ impl Vm {
         self.ensure_slot_count(slot_count);
         oxvba_runtime::reset_pending_terminations();
         self.call_stack.clear();
+        self.activation_frames.clear();
         self.activation_entry_pcs.clear();
         if !preserve_withevents_bindings {
             self.clear_all_com_withevents_state_best_effort();
@@ -4435,6 +4467,44 @@ impl Vm {
         self.on_error_resume_next = false;
         self.on_error_goto_label_target = None;
         self.clear_error_state();
+    }
+
+    fn frame_slot_set(&self, entry_pc: usize) -> HashSet<usize> {
+        self.procedure_metadata_by_entry_pc(entry_pc)
+            .map(|metadata| metadata.slots.iter().map(|slot| slot.slot).collect())
+            .unwrap_or_default()
+    }
+
+    fn push_activation_frame(&mut self, entry_pc: usize) {
+        let slot_set = self.frame_slot_set(entry_pc);
+        let slots = slot_set
+            .into_iter()
+            .map(|slot| (slot, RuntimeSlot::default()))
+            .collect();
+        self.activation_entry_pcs.push(entry_pc);
+        self.activation_frames.push(ActivationFrame { slots });
+    }
+
+    fn pop_activation_frame(&mut self) {
+        self.activation_entry_pcs.pop();
+        self.activation_frames.pop();
+    }
+
+    fn current_frame_contains_slot(&self, slot: usize) -> bool {
+        self.activation_frames
+            .last()
+            .is_some_and(|frame| frame.slots.contains_key(&slot))
+    }
+
+    fn flush_current_frame_to_registers(&mut self) {
+        let Some(frame) = self.activation_frames.last() else {
+            return;
+        };
+        for (slot, value) in &frame.slots {
+            if *slot < self.registers.registers.len() {
+                self.registers.registers[*slot] = value.clone();
+            }
+        }
     }
 
     fn clear_invoked_procedure_slots(&mut self, entry_pc: usize) -> Result<(), String> {
@@ -4624,7 +4694,7 @@ impl Vm {
             if source_slot == parameter_slot {
                 continue;
             }
-            let source_value = self.read_variant_slot(source_slot)?;
+            let source_value = self.read_variant_slot(parameter_slot)?;
             if source_value.vtype() != VarType::Long {
                 continue;
             }
@@ -4739,8 +4809,9 @@ impl Vm {
         return_halts_when_stack_empty: bool,
     ) -> Result<(), String> {
         let activation_depth = self.activation_entry_pcs.len();
+        let frame_depth = self.activation_frames.len();
         if self.activation_entry_pcs.last().copied() != Some(activation_entry_pc) {
-            self.activation_entry_pcs.push(activation_entry_pc);
+            self.push_activation_frame(activation_entry_pc);
         }
         let mut pc = start_pc;
         let len = bytecode.instructions.len();
@@ -7261,7 +7332,9 @@ impl Vm {
                     if *target_pc >= bytecode.instructions.len() {
                         return Err(format!("call target out of range: {target_pc}"));
                     }
-                    self.apply_descriptor_driven_call_entry_bindings(pc, *target_pc)?;
+                    let call_site = self.call_site_for_call_cloned(pc, *target_pc);
+                    let argument_values =
+                        self.call_argument_values(call_site.as_ref(), *target_pc)?;
                     // Save caller's error frame and clear for new procedure.
                     let saved = ErrorFrame {
                         on_error_resume_next: self.on_error_resume_next,
@@ -7271,11 +7344,26 @@ impl Vm {
                         last_error_description: self.last_error_description.take(),
                         last_error_source: self.last_error_source.take(),
                     };
-                    self.call_stack.push((pc + 1, saved));
+                    self.call_stack.push(CallFrame {
+                        return_pc: pc + 1,
+                        error_frame: saved,
+                        return_value: call_site
+                            .as_ref()
+                            .and_then(|call_site| call_site.return_value.clone()),
+                        return_value_fallback_slot: if call_site.is_none() {
+                            self.procedure_metadata_by_entry_pc(*target_pc)
+                                .and_then(|metadata| metadata.return_slot)
+                        } else {
+                            None
+                        },
+                        writebacks: Self::call_writebacks(call_site.as_ref()),
+                    });
                     self.on_error_resume_next = false;
                     self.on_error_goto_label_target = None;
                     self.clear_error_state();
-                    self.activation_entry_pcs.push(*target_pc);
+                    self.push_activation_frame(*target_pc);
+                    self.bind_call_argument_values(argument_values)?;
+                    self.apply_descriptor_driven_call_entry_bindings(pc, *target_pc)?;
                     pc = *target_pc;
                 }
                 Instruction::SetOnErrorResumeNext => {
@@ -7337,21 +7425,30 @@ impl Vm {
                 }
                 Instruction::Return => {
                     let returning_entry_pc = self.activation_entry_pcs.last().copied();
-                    if let Some((return_pc, saved_frame)) = self.call_stack.pop() {
-                        if !self.activation_entry_pcs.is_empty() {
-                            self.activation_entry_pcs.pop();
+                    if let Some(call_frame) = self.call_stack.pop() {
+                        let return_value = call_frame
+                            .return_value
+                            .as_ref()
+                            .and_then(|descriptor| {
+                                descriptor
+                                    .return_slot
+                                    .map(|slot| self.read_runtime_slot(slot))
+                            })
+                            .transpose()?;
+                        let fallback_return_value = call_frame
+                            .return_value_fallback_slot
+                            .map(|slot| self.read_runtime_slot(slot))
+                            .transpose()?;
+                        let mut writeback_values = Vec::new();
+                        for writeback in &call_frame.writebacks {
+                            let value = writeback
+                                .parameter_slot
+                                .map(|slot| self.read_runtime_slot(slot))
+                                .transpose()?;
+                            writeback_values.push((writeback.clone(), value));
                         }
-                        // Restore caller's error-handling state.
-                        self.on_error_resume_next = saved_frame.on_error_resume_next;
-                        self.on_error_goto_label_target = saved_frame.on_error_goto_label_target;
-                        self.last_error = saved_frame.last_error;
-                        self.last_error_pc = saved_frame.last_error_pc;
-                        self.last_error_description = saved_frame.last_error_description;
-                        self.last_error_source = saved_frame.last_error_source;
-                        pc = return_pc;
                         // Procedure epilogue: the callee's locals and temporaries go out of scope
-                        // here, so any object they held is released and its `Class_Terminate`
-                        // runs now.
+                        // while the callee frame is still current.
                         if let Some(entry_pc) = returning_entry_pc {
                             self.release_object_locals(entry_pc);
                             self.release_object_temps(entry_pc);
@@ -7362,6 +7459,35 @@ impl Vm {
                                 descriptor_selected_fastpaths,
                             )?;
                         }
+                        self.pop_activation_frame();
+                        // Restore caller's error-handling state.
+                        self.on_error_resume_next = call_frame.error_frame.on_error_resume_next;
+                        self.on_error_goto_label_target =
+                            call_frame.error_frame.on_error_goto_label_target;
+                        self.last_error = call_frame.error_frame.last_error;
+                        self.last_error_pc = call_frame.error_frame.last_error_pc;
+                        self.last_error_description = call_frame.error_frame.last_error_description;
+                        self.last_error_source = call_frame.error_frame.last_error_source;
+                        for (writeback, value) in writeback_values {
+                            if writeback.required
+                                && let (Some(caller_slot), Some(value)) =
+                                    (writeback.caller_slot, value)
+                            {
+                                self.write_runtime_slot(caller_slot, value)?;
+                            }
+                        }
+                        if let Some(descriptor) = &call_frame.return_value
+                            && let (Some(assign_target), Some(value)) =
+                                (descriptor.assign_target_slot, return_value)
+                        {
+                            self.write_runtime_slot(assign_target, value)?;
+                        }
+                        if let (Some(slot), Some(value)) =
+                            (call_frame.return_value_fallback_slot, fallback_return_value)
+                        {
+                            self.write_runtime_slot(slot, value)?;
+                        }
+                        pc = call_frame.return_pc;
                     } else if return_halts_when_stack_empty {
                         if let Some(entry_pc) = returning_entry_pc {
                             self.release_object_locals(entry_pc);
@@ -7373,7 +7499,9 @@ impl Vm {
                                 descriptor_selected_fastpaths,
                             )?;
                         }
+                        self.flush_current_frame_to_registers();
                         self.activation_entry_pcs.truncate(activation_depth);
+                        self.activation_frames.truncate(frame_depth);
                         break;
                     } else {
                         return Err("return with empty call stack".to_string());
@@ -7478,12 +7606,79 @@ impl Vm {
                     if oxvba_runtime::has_pending_terminations() {
                         self.drain_pending_terminations(bytecode, descriptor_selected_fastpaths)?;
                     }
+                    self.flush_current_frame_to_registers();
                     break;
                 }
             }
         }
         self.activation_entry_pcs.truncate(activation_depth);
+        self.activation_frames.truncate(frame_depth);
         Ok(())
+    }
+
+    fn call_site_for_call_cloned(
+        &self,
+        call_pc: usize,
+        target_pc: usize,
+    ) -> Option<CallSiteDescriptor> {
+        self.call_site_descriptor_for_call(call_pc, target_pc)
+            .map(|(_, call_site)| call_site.clone())
+    }
+
+    fn call_argument_values(
+        &self,
+        call_site: Option<&CallSiteDescriptor>,
+        target_pc: usize,
+    ) -> Result<Vec<(usize, RuntimeSlot)>, String> {
+        let Some(call_site) = call_site else {
+            return self
+                .procedure_metadata_by_entry_pc(target_pc)
+                .map(|metadata| {
+                    metadata
+                        .param_slots
+                        .iter()
+                        .map(|slot| Ok((*slot, self.read_runtime_slot(*slot)?)))
+                        .collect()
+                })
+                .unwrap_or_else(|| Ok(Vec::new()));
+        };
+        let mut values = Vec::new();
+        for argument in &call_site.arguments {
+            let Some(parameter_slot) = argument.parameter_slot else {
+                continue;
+            };
+            let value = if let Some(source_slot) = argument.source_slot {
+                self.read_runtime_slot(source_slot)?
+            } else if let Some(default) = &argument.optional_default {
+                RuntimeSlot::Variant(optional_default_runtime_value(default))
+            } else {
+                RuntimeSlot::Variant(Variant::empty())
+            };
+            values.push((parameter_slot, value));
+        }
+        Ok(values)
+    }
+
+    fn bind_call_argument_values(
+        &mut self,
+        values: Vec<(usize, RuntimeSlot)>,
+    ) -> Result<(), String> {
+        for (slot, value) in values {
+            self.write_runtime_slot(slot, value)?;
+        }
+        Ok(())
+    }
+
+    fn call_writebacks(call_site: Option<&CallSiteDescriptor>) -> Vec<ArgumentWritebackDescriptor> {
+        call_site
+            .map(|call_site| {
+                call_site
+                    .arguments
+                    .iter()
+                    .filter_map(|argument| argument.writeback.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn read_i32_slot(&self, slot: usize) -> Result<i32, String> {
@@ -7499,6 +7694,17 @@ impl Vm {
     }
 
     fn read_variant_slot(&self, slot: usize) -> Result<Variant, String> {
+        if let Some(frame) = self.activation_frames.last()
+            && let Some(value) = frame.slots.get(&slot)
+        {
+            return match value {
+                RuntimeSlot::Variant(value) => Ok(value.clone()),
+                RuntimeSlot::BindingHandle(handle) => Err(format!(
+                    "slot {slot} contains internal BindingHandle {} and cannot be passed as a Variant",
+                    handle.raw()
+                )),
+            };
+        }
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
@@ -7512,6 +7718,11 @@ impl Vm {
     }
 
     fn variant_cell_pointer(&self, slot: usize) -> Result<i64, String> {
+        if let Some(frame) = self.activation_frames.last()
+            && let Some(value) = frame.slots.get(&slot)
+        {
+            return value.variant_cell_pointer();
+        }
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
@@ -7519,6 +7730,14 @@ impl Vm {
     }
 
     fn write_variant_slot(&mut self, slot: usize, value: Variant) -> Result<(), String> {
+        if self.current_frame_contains_slot(slot) {
+            let frame = self
+                .activation_frames
+                .last_mut()
+                .expect("current frame checked above");
+            frame.slots.insert(slot, RuntimeSlot::Variant(value));
+            return Ok(());
+        }
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
@@ -7526,7 +7745,27 @@ impl Vm {
         Ok(())
     }
 
+    fn read_runtime_slot(&self, slot: usize) -> Result<RuntimeSlot, String> {
+        if let Some(frame) = self.activation_frames.last()
+            && let Some(value) = frame.slots.get(&slot)
+        {
+            return Ok(value.clone());
+        }
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        Ok(self.registers.registers[slot].clone())
+    }
+
     fn write_runtime_slot(&mut self, slot: usize, value: RuntimeSlot) -> Result<(), String> {
+        if self.current_frame_contains_slot(slot) {
+            let frame = self
+                .activation_frames
+                .last_mut()
+                .expect("current frame checked above");
+            frame.slots.insert(slot, value);
+            return Ok(());
+        }
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
@@ -8033,7 +8272,8 @@ impl Vm {
         Ok(Some(
             member
                 .return_slot
-                .map(|slot| self.registers.registers[slot].clone())
+                .map(|slot| self.read_runtime_slot(slot))
+                .transpose()?
                 .unwrap_or_default(),
         ))
     }
@@ -8067,14 +8307,24 @@ impl Vm {
             last_error_source: self.last_error_source.take(),
         };
         let call_stack_depth = self.call_stack.len();
-        self.call_stack
-            .push((bytecode.instructions.len(), saved.clone()));
+        let activation_depth = self.activation_entry_pcs.len();
+        let frame_depth = self.activation_frames.len();
+        self.call_stack.push(CallFrame {
+            return_pc: bytecode.instructions.len(),
+            error_frame: saved.clone(),
+            return_value: None,
+            return_value_fallback_slot: self
+                .procedure_metadata_by_entry_pc(entry_pc)
+                .and_then(|metadata| metadata.return_slot),
+            writebacks: Vec::new(),
+        });
 
         // Callee starts with no error handler (VBA semantics).
         self.on_error_resume_next = false;
         self.on_error_goto_label_target = None;
         self.clear_error_state();
 
+        self.push_activation_frame(entry_pc);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_runtime_slot(*slot, value.clone())?;
         }
@@ -8087,6 +8337,8 @@ impl Vm {
             true,
         );
         self.call_stack.truncate(call_stack_depth);
+        self.activation_entry_pcs.truncate(activation_depth);
+        self.activation_frames.truncate(frame_depth);
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -8140,12 +8392,9 @@ impl Vm {
     /// observable and we avoid perturbing programs whose classes have no teardown.
     fn release_terminating_object_slots(&mut self, slots: &[usize]) {
         for &slot in slots {
-            if slot >= self.registers.registers.len() {
-                continue;
-            }
             let terminates = matches!(
-                &self.registers.registers[slot],
-                RuntimeSlot::Variant(value)
+                self.read_runtime_slot(slot).ok(),
+                Some(RuntimeSlot::Variant(value))
                     if value.as_object_ref().is_some_and(|object| object.terminates_on_release())
             );
             if terminates {
@@ -8502,10 +8751,16 @@ impl Vm {
     }
 
     fn fast_read_slot(&self, slot: usize) -> Option<i32> {
+        if self.current_frame_contains_slot(slot) {
+            return None;
+        }
         self.registers.registers.get(slot)?.as_i32_lossy()
     }
 
     fn fast_add_const(&mut self, slot: usize, value: i32) -> bool {
+        if self.current_frame_contains_slot(slot) {
+            return false;
+        }
         let Some(dst) = self.registers.registers.get_mut(slot) else {
             return false;
         };
@@ -8527,6 +8782,9 @@ impl Vm {
     }
 
     fn fast_sub_const(&mut self, slot: usize, value: i32) -> bool {
+        if self.current_frame_contains_slot(slot) {
+            return false;
+        }
         let Some(dst) = self.registers.registers.get_mut(slot) else {
             return false;
         };
@@ -8546,6 +8804,9 @@ impl Vm {
     }
 
     fn fast_copy_slot(&mut self, dst: usize, src: usize) -> bool {
+        if self.current_frame_contains_slot(dst) || self.current_frame_contains_slot(src) {
+            return false;
+        }
         let Some(value) = self.registers.registers.get(src).cloned() else {
             return false;
         };
@@ -8560,6 +8821,12 @@ impl Vm {
     where
         F: FnOnce(i32, i32) -> bool,
     {
+        if self.current_frame_contains_slot(dst)
+            || self.current_frame_contains_slot(lhs)
+            || self.current_frame_contains_slot(rhs)
+        {
+            return false;
+        }
         // Null comparisons yield Null (falsy), and object comparisons are identity (IUnknown
         // pointer) comparisons — both bail to the slow path. The i32 fast path must not read an
         // object's `raw()` (it is the per-instance handle for our objects and undefined for real

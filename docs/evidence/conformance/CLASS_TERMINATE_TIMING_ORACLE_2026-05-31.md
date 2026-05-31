@@ -86,9 +86,8 @@ Follow-ups landed since:
   bound for non-bare-variable receivers (call results / chains), lowered to the late-bound
   dispatch (`IntrinsicDispatchInvokeHost`). `MakeFoo().Tag` and `MakeBox().Add(2,3)` dispatch and
   return correctly (tests `member_access_on_function_call_result_dispatches` and the args variant).
-
-Still deferred — activation/return-slot lifetime work parked under `bd-xkwq`:
-- The `gMT` probe's trailing `T`: the temporary `Foo` from `MakeFoo()` is retained by the
-  **function's return slot** (the returned object lingers there until the next call), so it does not
-  terminate at end of statement. Member access (the feature) works; only this terminate timing is
-  pending. Correct by construction once return-slot retention is resolved.
+- **Activation-frame slot overlays** now isolate procedure slots per call. Recursive calls no longer
+  clobber caller locals (`Fact(5) == 120`), and descriptor-less expression-call returns clear their
+  fallback return source after copying to the receiver temp. The oracle probe B now matches `gMT`:
+  `.Tag` appends `g`, `Mark` appends `M`, then the returned `Foo` temporary releases at the
+  statement boundary and appends `T`.

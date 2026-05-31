@@ -689,13 +689,8 @@ End Sub
 fn member_access_on_function_call_result_dispatches() {
     // `MakeFoo().Tag & Mark()` — member access on a function-call result (a receiver that is not a
     // bare variable). This compiles to a late-bound member dispatch on the call's value and runs:
-    // `.Tag` appends "g" and returns "x", `Mark` appends "M", so `s` is `"x"` and the log is `gM`.
-    //
-    // Note on VBA oracle probe B (`gMT`): the temporary `Foo` returned by `MakeFoo()` should also
-    // terminate at end of statement (a trailing `T`). It does not yet, because the returned object
-    // is retained by the function's return slot in the flat register file — the same object-slot
-    // lifetime gap that parks the regular-object-field cascade. So this asserts the member-access
-    // dispatch (the feature), not the terminate timing.
+    // `.Tag` appends "g" and returns "x", `Mark` appends "M", and the temporary `Foo` returned by
+    // `MakeFoo()` terminates at the statement boundary, yielding the VBA oracle order `gMT`.
     let main_module = module_unit_from_source(
         "MainModule",
         ModuleKind::Procedural,
@@ -755,17 +750,12 @@ End Function
         "member access on a function-call result must dispatch and return Tag's value `x`; strings={strings:?} out={out:?}"
     );
     assert!(
-        strings.iter().any(|s| s == "gM"),
-        "both `.Tag` (g) and `Mark` (M) must run within the statement; strings={strings:?} out={out:?}"
+        strings.iter().any(|s| s == "gMT"),
+        "member receiver temporary must terminate at statement end after `.Tag` (g) and `Mark` (M); strings={strings:?} out={out:?}"
     );
 }
 
 #[test]
-#[ignore = "KNOWN GAP (slot/activation model): recursion clobbers caller locals. The VM uses a \
-            flat global register file with no per-call activation frames, so a recursive callee \
-            reuses the caller's slots. Fact(5) returns 16, not 120. Same root cause as the parked \
-            object-slot-lifetime work (cascade / gMT return-slot retention). Un-ignore when \
-            per-call frames (a slot window / frame base) land."]
 fn recursion_preserves_caller_locals() {
     // Probe whether the slot/activation model supports recursion: `n * Fact(n-1)` reads `n`
     // AFTER the recursive call returns, so a flat global slot space (callee clobbering the

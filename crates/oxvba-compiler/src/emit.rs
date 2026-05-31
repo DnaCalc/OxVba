@@ -10,9 +10,8 @@ use crate::{
         Bytecode, ComMemberCallDescriptor, ComMemberSelectorDescriptor, DeclareParamType,
         DispatchInvokeArg, ExternalCallDescriptor, ExternalCallWriteback,
         ExternalCallWritebackKind, Instruction, NumericCoerceTarget, ProjectMemberCallDescriptor,
-        ProjectMemberCallKind,
-        RuntimeArrayElementType, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind,
-        StringCompareMode,
+        ProjectMemberCallKind, RuntimeArrayElementType, RuntimeAssignmentIntent,
+        RuntimeAssignmentTargetKind, StringCompareMode,
     },
     descriptor_identity::{DescriptorFamily, canonical_descriptor_id},
     resolve::{
@@ -3398,7 +3397,9 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         BoundExpr::LogicalNot { .. } => "logical=not".to_string(),
         BoundExpr::IntrinsicCall { name, .. } => format!("intrinsic={}", name.to_ascii_lowercase()),
         BoundExpr::ProcCall { name, .. } => format!("proc-call={}", name.to_ascii_lowercase()),
-        BoundExpr::Member { member, .. } => format!("member-access={}", member.to_ascii_lowercase()),
+        BoundExpr::Member { member, .. } => {
+            format!("member-access={}", member.to_ascii_lowercase())
+        }
         BoundExpr::IntConst(value) => format!("literal=i32:{value}"),
         BoundExpr::BoolConst(value) => format!("literal=bool:{value}"),
         BoundExpr::FloatConst(_) => "literal=f64".to_string(),
@@ -6057,8 +6058,10 @@ fn emit_stmt(
                 let source_ty = expr_bound_type(expr, current_meta, proc_meta, external_decls);
                 // Wrap fixed-integer arithmetic in overflow coercions (error 6 on overflow);
                 // Variant-typed operations are left to widen.
-                let coerced_expr =
-                    insert_arithmetic_overflow_coercions(expr.clone(), &current_meta.declaration_types);
+                let coerced_expr = insert_arithmetic_overflow_coercions(
+                    expr.clone(),
+                    &current_meta.declaration_types,
+                );
                 if let Some((intent, target_kind)) =
                     runtime_assignment_validation(*intent, target_ty, source_ty)
                 {
@@ -7749,9 +7752,11 @@ fn emit_early_call(
         return false;
     };
 
+    let descriptor_transfer = call_site_descriptors.is_some();
     let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
     let mut param_array_element_slots: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut fixed_array_materializations: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut parameter_source_slots: HashMap<usize, usize> = HashMap::new();
     let arg_mapping = map_call_args_for_emit(args, &meta.params);
     for (idx, param) in meta.params.iter().enumerate() {
         let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
@@ -7775,14 +7780,22 @@ fn emit_early_call(
                 values.push(value_slot);
             }
             param_array_element_slots.insert(idx, values.clone());
+            let array_slot = if descriptor_transfer {
+                temps.alloc_temp()
+            } else {
+                param_slot
+            };
             instructions.push(Instruction::IntrinsicArrayLiteral {
-                dst: param_slot,
+                dst: array_slot,
                 values,
             });
+            if descriptor_transfer {
+                parameter_source_slots.insert(idx, array_slot);
+            }
             continue;
         }
         let Some(mapped_arg) = arg_mapping.fixed.get(idx).and_then(|arg| *arg) else {
-            if param.optional {
+            if param.optional && !descriptor_transfer {
                 emit_optional_default(param, param_slot, instructions);
             }
             continue;
@@ -7797,10 +7810,18 @@ fn emit_early_call(
                 // Fixed-array callers still lower through alias element slots; materialize
                 // the current payload into the callee's regular-array slot.
                 fixed_array_materializations.insert(idx, element_slots.clone());
+                let array_slot = if descriptor_transfer {
+                    temps.alloc_temp()
+                } else {
+                    param_slot
+                };
                 instructions.push(Instruction::IntrinsicArrayLiteral {
-                    dst: param_slot,
+                    dst: array_slot,
                     values: element_slots,
                 });
+                if descriptor_transfer {
+                    parameter_source_slots.insert(idx, array_slot);
+                }
                 continue;
             }
         }
@@ -7810,7 +7831,9 @@ fn emit_early_call(
             && let BoundExpr::Var(var_name) = &arg.expr
             && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
         {
-            if src_slot != param_slot {
+            if descriptor_transfer {
+                parameter_source_slots.insert(idx, src_slot);
+            } else if src_slot != param_slot {
                 instructions.push(Instruction::CopySlot {
                     dst: param_slot,
                     src: src_slot,
@@ -7820,10 +7843,15 @@ fn emit_early_call(
             continue;
         }
 
+        let value_slot = if descriptor_transfer {
+            temps.alloc_temp()
+        } else {
+            param_slot
+        };
         emit_expr_into(
             &arg.expr,
             compare_mode,
-            param_slot,
+            value_slot,
             slot_map,
             temps,
             instructions,
@@ -7831,6 +7859,9 @@ fn emit_early_call(
             proc_meta,
             external_decls,
         );
+        if descriptor_transfer {
+            parameter_source_slots.insert(idx, value_slot);
+        }
     }
 
     let patch_idx = instructions.len();
@@ -7853,25 +7884,29 @@ fn emit_early_call(
             &byref_copyback,
             &param_array_element_slots,
             &fixed_array_materializations,
+            &parameter_source_slots,
             assign_target,
             slot_map,
         ));
     }
 
-    for (dst_slot, src_slot) in byref_copyback {
-        if dst_slot != src_slot {
-            instructions.push(Instruction::CopySlot {
-                dst: dst_slot,
-                src: src_slot,
-            });
+    if !descriptor_transfer {
+        for (dst_slot, src_slot) in byref_copyback {
+            if dst_slot != src_slot {
+                instructions.push(Instruction::CopySlot {
+                    dst: dst_slot,
+                    src: src_slot,
+                });
+            }
         }
-    }
 
-    if let Some(dst) = assign_target
-        && let Some(src) = meta.return_slot
-        && dst != src
-    {
-        instructions.push(Instruction::CopySlot { dst, src });
+        if let Some(dst) = assign_target
+            && let Some(src) = meta.return_slot
+            && dst != src
+        {
+            instructions.push(Instruction::CopySlot { dst, src });
+            instructions.push(Instruction::LoadEmpty { slot: src });
+        }
     }
 
     true
@@ -7889,6 +7924,7 @@ fn build_early_call_site_descriptor(
     byref_copyback: &[(usize, usize)],
     param_array_element_slots: &HashMap<usize, Vec<usize>>,
     fixed_array_materializations: &HashMap<usize, Vec<usize>>,
+    parameter_source_slots: &HashMap<usize, usize>,
     assign_target: Option<usize>,
     slot_map: &HashMap<String, usize>,
 ) -> CallSiteDescriptor {
@@ -7975,6 +8011,7 @@ fn build_early_call_site_descriptor(
         let source_slot = byref_writeback
             .as_ref()
             .and_then(|writeback| writeback.caller_slot)
+            .or_else(|| parameter_source_slots.get(&idx).copied())
             .or_else(|| match &mapped_arg.arg.expr {
                 BoundExpr::Var(var_name) => slot_map.get(var_name.as_str()).copied(),
                 _ => None,
@@ -9162,7 +9199,10 @@ fn emit_expr_into(
                     // slot): when assigned via `Set`, writing it drops the slot's prior object
                     // reference (Release), and it matches the runtime's existing 0 == Nothing
                     // checks (e.g. WithEvents clear).
-                    instructions.push(Instruction::LoadConstI32 { slot: dst, value: 0 });
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: dst,
+                        value: 0,
+                    });
                 }
                 // Materialise a project-class instance as a reference-counted `Object`
                 // Variant from its handle. Lowered from `New <ProjectClass>`; the slot then
