@@ -533,6 +533,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/TYPED_FACADE_AUDIT_2026-06-01.md`.
 - FE-2.4 Error recovery shape: standardize parser diagnostics and error nodes so incomplete
   source remains useful for IDE interactions.
+  Evidence: `docs/evidence/frontend_rework/PARSER_ERROR_RECOVERY_SHAPE_2026-06-01.md`.
 
 Evidence gate: a written keep-or-migrate decision exists, backed by tests or a spike, and the
 chosen syntax substrate has an explicit hardening backlog.

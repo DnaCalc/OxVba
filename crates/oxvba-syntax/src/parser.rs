@@ -290,6 +290,18 @@ impl<'a> Parser<'a> {
         self.parse_expr_bp(0);
     }
 
+    fn parse_required_expr(&mut self, message: &str) -> bool {
+        if self.is_expr_start() {
+            self.parse_expr();
+            true
+        } else {
+            self.start_node(SyntaxKind::ErrorNode);
+            self.error(message.to_string());
+            self.finish_node();
+            false
+        }
+    }
+
     /// Parse an lvalue expression (only postfix ops — member, index).
     fn parse_lvalue_expr(&mut self) {
         self.eat_expr_whitespace();
@@ -1483,9 +1495,7 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::Eq) {
             self.bump(); // =
             self.eat_whitespace();
-            if self.is_expr_start() {
-                self.parse_expr(); // value
-            }
+            self.parse_required_expr("expected expression after `=`");
         }
         self.eat_to_eol();
         self.finish_node();
@@ -1503,9 +1513,7 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::Eq) {
             self.bump(); // =
             self.eat_whitespace();
-            if self.is_expr_start() {
-                self.parse_expr(); // value
-            }
+            self.parse_required_expr("expected expression after `=`");
         }
         self.eat_to_eol();
         self.finish_node();
@@ -1626,9 +1634,7 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::Eq) {
                 self.bump(); // =
                 self.eat_whitespace();
-                if self.is_expr_start() {
-                    self.parse_expr(); // value
-                }
+                self.parse_required_expr("expected expression after `=`");
             }
             self.eat_to_eol();
         } else {
@@ -1760,6 +1766,32 @@ mod tests {
         assert!(
             has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
             "expected explicit ErrorNode in recovered tree"
+        );
+    }
+
+    #[test]
+    fn incomplete_assignment_reports_error_node_without_losing_text() {
+        let src = "Sub T()\n    x = \nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert_eq!(p.errors().len(), 1);
+        assert_eq!(p.errors()[0].message, "expected expression after `=`");
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
+            "expected zero-width ErrorNode for missing RHS"
+        );
+    }
+
+    #[test]
+    fn incomplete_set_assignment_reports_error_node_without_losing_text() {
+        let src = "Sub T()\n    Set x = \nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert_eq!(p.errors().len(), 1);
+        assert_eq!(p.errors()[0].message, "expected expression after `=`");
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
+            "expected zero-width ErrorNode for missing Set RHS"
         );
     }
 
