@@ -79,8 +79,24 @@ pub enum CompileError {
     TypeError(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CompileOptions {
+    pub frontend_v2: bool,
+}
+
 pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
     compile_with_runtime_metadata(source).map(|(bytecode, _)| bytecode)
+}
+
+pub fn compile_with_options(
+    source: &str,
+    options: CompileOptions,
+) -> Result<Bytecode, CompileError> {
+    if options.frontend_v2 {
+        return syntax_bridge::compile_source_via_syntax_bridge(source)
+            .map_err(|err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")));
+    }
+    compile(source)
 }
 
 pub fn compile_with_runtime_metadata(
@@ -293,6 +309,40 @@ mod tests {
                 Instruction::ClearErr,
                 Instruction::Halt
             ]
+        );
+    }
+
+    #[test]
+    fn compile_options_default_keeps_legacy_path() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let legacy = compile(source).expect("legacy compile should succeed");
+        let defaulted = super::compile_with_options(source, super::CompileOptions::default())
+            .expect("default compile");
+        assert_eq!(
+            format!("{:?}", legacy.instructions),
+            format!("{:?}", defaulted.instructions),
+            "default compile options must not change bytecode route"
+        );
+    }
+
+    #[test]
+    fn compile_options_frontend_v2_is_opt_in_bridge_route() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
+            .expect("frontend_v2 bridge compile should succeed");
+        assert!(!out.instructions.is_empty());
+    }
+
+    #[test]
+    fn compile_options_frontend_v2_rejects_syntax_before_legacy_lowering() {
+        let err = super::compile_with_options(
+            "Sub Main()\n    x = (1 + 2\nEnd Sub\n",
+            super::CompileOptions { frontend_v2: true },
+        )
+        .expect_err("frontend_v2 bridge should reject syntax parse errors first");
+        assert!(
+            err.to_string().contains("frontend_v2 bridge error"),
+            "unexpected error: {err}"
         );
     }
 

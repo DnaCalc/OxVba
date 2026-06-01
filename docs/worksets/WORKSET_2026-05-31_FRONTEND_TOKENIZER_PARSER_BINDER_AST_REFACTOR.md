@@ -593,6 +593,7 @@ compiler.
 Candidate bead units:
 - FE-5.1 `frontend_v2` gate: introduce a config/feature/runtime switch with no default behavior
   change.
+  Evidence: `docs/evidence/frontend_rework/FRONTEND_V2_GATE_2026-06-01.md`.
 - FE-5.2 Semantic/diff harness: compare diagnostics, normalized metadata, bytecode summaries,
   execution traces, and observable outputs.
 - FE-5.3 Diff classifier: record bytecode differences as bug, harmless drift, or intentional
