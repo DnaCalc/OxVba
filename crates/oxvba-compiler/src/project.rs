@@ -14,6 +14,10 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+    frontend_project_symbols::{
+        ProjectSymbolIndex, ProjectSymbolKind, ProjectSymbolRoute, QualifiedName,
+        build_project_symbol_index_from_manifest,
+    },
     resolve::normalize_source_lines,
 };
 
@@ -1010,12 +1014,19 @@ fn compile_project_with_strategy(
     validate_imported_event_declarations(manifest, &reference_order)?;
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order)?;
+    let project_symbol_index =
+        build_project_symbol_index_from_manifest(manifest).map_err(|error| {
+            ProjectCompileError::BackendCompile {
+                message: format!("FE7-E-PROJECT-SYMBOL-INDEX: {error}"),
+            }
+        })?;
 
     let (rewritten_source, dynamic_instance_bindings, forced_object_locals_by_proc) =
         lower_project_source(
             strategy,
             manifest,
             &active_project,
+            &project_symbol_index,
             &procedure_index,
             &reference_order,
             &event_dispatch_plan,
@@ -1451,6 +1462,7 @@ fn lower_project_source(
     strategy: ProjectLoweringStrategy,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
@@ -1478,6 +1490,7 @@ fn lower_project_source(
             strategy,
             manifest,
             active_project,
+            project_symbol_index,
             module,
             active_project,
             procedures,
@@ -1499,6 +1512,7 @@ fn lower_project_source(
                 strategy,
                 manifest,
                 active_project,
+                project_symbol_index,
                 module,
                 &project_name,
                 procedures,
@@ -1523,6 +1537,7 @@ fn lower_module_source(
     strategy: ProjectLoweringStrategy,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
     module: &ModuleUnit,
     current_project: &str,
     procedures: &[ProcedureDecl],
@@ -1535,6 +1550,7 @@ fn lower_module_source(
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
             manifest,
             active_project,
+            project_symbol_index,
             module,
             current_project,
             procedures,
@@ -3038,6 +3054,7 @@ struct InternalClassDimDecl {
 fn lower_module_source_module_aware(
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
     module: &ModuleUnit,
     current_project: &str,
     procedures: &[ProcedureDecl],
@@ -3190,6 +3207,7 @@ fn lower_module_source_module_aware(
             let (plan, next_function_result) = build_line_bind_plan(
                 manifest,
                 active_project,
+                project_symbol_index,
                 module,
                 current_project,
                 &current_module,
@@ -7852,6 +7870,7 @@ fn emit_event_guard_wrappers_for_module(
 fn build_line_bind_plan(
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
     module: &ModuleUnit,
     current_project: &str,
     current_module: &str,
@@ -7940,6 +7959,7 @@ fn build_line_bind_plan(
         &normalized,
         manifest,
         active_project,
+        Some(project_symbol_index),
         current_project,
         current_module,
         procedures,
@@ -7950,6 +7970,7 @@ fn build_line_bind_plan(
         &lowered_line,
         manifest,
         active_project,
+        Some(project_symbol_index),
         current_project,
         current_module,
         procedures,
@@ -7959,6 +7980,7 @@ fn build_line_bind_plan(
         &lowered_line,
         manifest,
         active_project,
+        Some(project_symbol_index),
         current_project,
         current_module,
         procedures,
@@ -8017,6 +8039,7 @@ fn bind_invocation_targets(
     line: &str,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     current_module: &str,
     procedures: &[ProcedureDecl],
@@ -8035,6 +8058,7 @@ fn bind_invocation_targets(
             raw_name,
             manifest,
             active_project,
+            project_symbol_index,
             current_project,
             current_module,
             procedures,
@@ -8059,6 +8083,7 @@ fn rewrite_call_statement_target_if_present(
     line: &str,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     current_module: &str,
     procedures: &[ProcedureDecl],
@@ -8072,6 +8097,7 @@ fn rewrite_call_statement_target_if_present(
         raw_name,
         manifest,
         active_project,
+        project_symbol_index,
         current_project,
         current_module,
         procedures,
@@ -8092,6 +8118,7 @@ fn rewrite_statement_call_target_if_present(
     line: &str,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     current_module: &str,
     procedures: &[ProcedureDecl],
@@ -8105,6 +8132,7 @@ fn rewrite_statement_call_target_if_present(
         raw_name,
         manifest,
         active_project,
+        project_symbol_index,
         current_project,
         current_module,
         procedures,
@@ -8641,6 +8669,7 @@ fn rewrite_invocation_targets(
         line,
         manifest,
         active_project,
+        None,
         current_project,
         current_module,
         procedures,
@@ -8651,6 +8680,7 @@ fn rewrite_invocation_targets(
         &rewritten,
         manifest,
         active_project,
+        None,
         current_project,
         current_module,
         procedures,
@@ -8660,6 +8690,7 @@ fn rewrite_invocation_targets(
         &rewritten,
         manifest,
         active_project,
+        None,
         current_project,
         current_module,
         procedures,
@@ -8692,10 +8723,92 @@ fn invocation_name_span(text: &str, open_paren_idx: usize) -> Option<(usize, usi
 }
 
 #[allow(clippy::too_many_arguments)]
+fn resolve_invocation_name_from_project_symbols(
+    name: &str,
+    manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+) -> Result<Option<String>, ProjectCompileError> {
+    if current_project != active_project {
+        return Ok(None);
+    }
+    let parts = name
+        .split('.')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() < 2 || parts.len() > 3 {
+        return Ok(None);
+    }
+    let qualified = QualifiedName::new(parts.iter().copied());
+    let Some(route) = project_symbol_index.tables.resolve_qualified(&qualified) else {
+        return Ok(None);
+    };
+    if route.kind != ProjectSymbolKind::Procedure {
+        return Ok(None);
+    }
+    let Some(decl) = procedure_decl_for_project_symbol_route(
+        manifest,
+        active_project,
+        project_symbol_index,
+        route,
+        procedures,
+    ) else {
+        return Err(ProjectCompileError::NameResolutionNotFound {
+            name: name.to_string(),
+        });
+    };
+    if !is_visible_from_active_project(decl, active_project, current_project, current_module) {
+        return Err(ProjectCompileError::NameResolutionNotFound {
+            name: name.to_string(),
+        });
+    }
+    Ok(Some(decl.lowered_name.clone()))
+}
+
+fn procedure_decl_for_project_symbol_route<'a>(
+    manifest: &ProjectManifest,
+    active_project: &str,
+    project_symbol_index: &ProjectSymbolIndex,
+    route: ProjectSymbolRoute,
+    procedures: &'a [ProcedureDecl],
+) -> Option<&'a ProcedureDecl> {
+    let symbol = project_symbol_index.symbols.symbol(route.symbol)?;
+    let proc_name = project_symbol_index
+        .symbols
+        .name(symbol.name)
+        .map(|name| normalize_identifier(&name.first_spelling))?;
+    let module_name = symbol
+        .provenance
+        .module_name
+        .as_deref()
+        .map(normalize_identifier)?;
+    let storage_module_name = manifest
+        .modules
+        .iter()
+        .find(|module| normalize_identifier(&effective_module_name(module)) == module_name)
+        .map(|module| normalize_identifier(&module.module_name))
+        .unwrap_or(module_name);
+    find_decl_by_name(procedures, active_project, &storage_module_name, &proc_name)
+}
+
+fn effective_module_name(module: &ModuleUnit) -> String {
+    if module.attributes.vb_name.trim().is_empty() {
+        module.module_name.clone()
+    } else {
+        module.attributes.vb_name.clone()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn resolve_invocation_name(
     name: &str,
     manifest: &ProjectManifest,
     active_project: &str,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     current_project: &str,
     current_module: &str,
     procedures: &[ProcedureDecl],
@@ -8703,6 +8816,19 @@ fn resolve_invocation_name(
 ) -> Result<Option<String>, ProjectCompileError> {
     if name.eq_ignore_ascii_case("Debug.Print") {
         return Ok(None);
+    }
+    if let Some(project_symbol_index) = project_symbol_index
+        && let Some(lowered) = resolve_invocation_name_from_project_symbols(
+            name,
+            manifest,
+            active_project,
+            project_symbol_index,
+            current_project,
+            current_module,
+            procedures,
+        )?
+    {
+        return Ok(Some(lowered));
     }
     let parts = name
         .split('.')
@@ -19627,6 +19753,47 @@ mod tests {
     }
 
     #[test]
+    fn project_symbol_index_resolves_module_qualified_invocation_route() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall MathApi.Add(1, 2)\nEnd Sub",
+        )
+        .expect("module parses");
+        let math_module = module_unit_from_source(
+            "MathApi",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MathApi\"\nPublic Sub Add(ByVal x, ByVal y)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, math_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let procedure_index = super::collect_project_procedures(&manifest);
+        let active_project = super::normalize_identifier(&manifest.project_name);
+        let project_symbol_index =
+            crate::frontend_project_symbols::build_project_symbol_index_from_manifest(&manifest)
+                .expect("project symbol index");
+
+        let lowered = super::resolve_invocation_name_from_project_symbols(
+            "MathApi.Add",
+            &manifest,
+            &active_project,
+            &project_symbol_index,
+            &active_project,
+            "mainmodule",
+            &procedure_index,
+        )
+        .expect("route should resolve");
+        assert_eq!(lowered, Some("pmr_projecta_mathapi_add".to_string()));
+    }
+
+    #[test]
     fn compile_project_preserves_same_module_no_paren_helper_call_inside_module_qualified_entry() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -27074,6 +27241,9 @@ mod tests {
         let procedure_index = super::collect_project_procedures(&manifest);
         let reference_order = super::build_reference_order_map(&manifest);
         let active_project = super::normalize_identifier(&manifest.project_name);
+        let project_symbol_index =
+            crate::frontend_project_symbols::build_project_symbol_index_from_manifest(&manifest)
+                .expect("project symbol index");
         let event_dispatch_plan =
             super::collect_event_dispatch_plan(&manifest, &procedure_index, &reference_order)
                 .expect("event plan");
@@ -27086,6 +27256,7 @@ mod tests {
                 strategy,
                 &manifest,
                 &active_project,
+                &project_symbol_index,
                 &procedure_index,
                 &reference_order,
                 &event_dispatch_plan,

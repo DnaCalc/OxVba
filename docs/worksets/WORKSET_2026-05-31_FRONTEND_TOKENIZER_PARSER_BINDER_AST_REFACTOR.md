@@ -747,8 +747,9 @@ Candidate bead units:
   manifest-backed `ProjectSymbolIndex` exists and covers module/class/procedure/field/public
   routes, including `VB_Name` and `Option Private Module` handling. This bead remains open until
   the production module-aware project lowering path consumes those `SymbolId`/`ProjectSymbolRoute`
-  facts instead of keeping `project.rs` procedure metadata and line rewriting as the effective
-  source of truth.
+  facts for the full scoped surface. Current continuation progress wires the index into production
+  qualified procedure invocation lookup; unqualified public lookup and field/class member uses
+  still need migration without losing ambiguity/reference-precedence behavior.
   Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
   members, late-bound dispatch, default members, and host-provided globals.

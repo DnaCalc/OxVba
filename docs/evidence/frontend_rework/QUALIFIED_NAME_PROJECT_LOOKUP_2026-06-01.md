@@ -30,6 +30,11 @@ The manifest index now records:
 - class/document/form type routes;
 - class field and property routes from CST-collected module-scope declarations.
 
+The production module-aware project lowering route now builds this index during
+`compile_project_with_strategy` and passes it into line binding. Module-qualified and
+project-qualified procedure invocations can resolve through `ProjectSymbolRoute`/`SymbolId` before
+falling back to the older `project.rs` name-resolution logic.
+
 ## Focused Fixtures
 
 The tests verify:
@@ -41,12 +46,17 @@ The tests verify:
 - manifest-backed procedural module lookup, including `Option Private Module` behavior;
 - manifest-backed class lookup using attribute names and keyword-like field identifiers such as
   `Name`.
+- production resolver route proof for a module-qualified invocation resolved via
+  `resolve_invocation_name_from_project_symbols`;
+- compile-path coverage that the module-aware strategy still rewrites module-qualified calls.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
 - `cargo test -p oxvba-compiler frontend_symbols --quiet`
 - `cargo test -p oxvba-compiler frontend_route_policy --quiet`
+- `cargo test -p oxvba-compiler project_symbol_index_resolves_module_qualified_invocation_route --quiet`
+- `cargo test -p oxvba-compiler compile_project_module_aware_rewrites_module_qualified_call_without_parentheses --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 
 ## Fresh-Eyes Review
@@ -64,12 +74,20 @@ The tests verify:
 
 `bd-aprs.8.1` should remain open after this evidence update.
 
-The improved symbol index is real binder infrastructure, but fresh-eyes review confirmed that the
-production project lowering path still uses `project.rs` procedure metadata and line lowering as
-the source of truth for qualified invocation rewriting. The route policy was corrected so
-`FrontendConstruct::ProjectSemantics` is now a tracked residual rather than claimed as `V2Default`.
+The improved symbol index is now wired into the production module-aware project lowering path for
+qualified procedure invocation lookup. However, fresh-eyes review still found remaining FE-7.1
+scope not fully consumed by production lowering:
 
-Next concrete implementation step: wire `build_project_symbol_index_from_manifest` into the
-module-aware project lowering/binding path, and make qualified procedure/module/class/field
-resolution consume `ProjectSymbolRoute`/`SymbolId` facts. Only then can this bead close under the
-reopened production-migration criterion.
+- unqualified public procedure lookup still relies on the older procedure list so that existing
+  ambiguity/reference-precedence behavior is preserved;
+- module/class field routes are indexed but are not yet the authoritative production path for
+  member reads/writes;
+- `project.rs` line lowering remains the compatibility lowering surface even where individual name
+  routes now come from the front-end table.
+
+The route policy remains correct: `FrontendConstruct::ProjectSemantics` is a tracked residual, not
+`V2Default`.
+
+Next concrete implementation step: extend `ProjectSymbolTables` so public lookup can represent
+ambiguity/reference precedence safely, then migrate unqualified public calls and field/class member
+uses to consume `ProjectSymbolRoute`/`SymbolId` facts.
