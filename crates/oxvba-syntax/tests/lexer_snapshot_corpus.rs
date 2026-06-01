@@ -122,16 +122,19 @@ fn checked_in_vba_fixture_corpus_tokenizes_losslessly() {
         repo_root.join("conformance/integration/projects"),
         repo_root.join("conformance/jit_v2/tracer_bullets"),
         repo_root.join("crates/oxvba-debug/tests/fixtures"),
+        repo_root.join("examples/basic"),
+        repo_root.join("examples/reflection_wrapper"),
+        repo_root.join("examples/xll"),
     ];
 
     let mut files = Vec::new();
     for root in roots {
-        collect_bas_files(&root, &mut files);
+        collect_vba_source_files(&root, &mut files);
     }
     files.sort();
     assert!(
-        files.len() >= 200,
-        "expected broad checked-in .bas corpus, got {} files",
+        files.len() >= 300,
+        "expected broad checked-in VBA source corpus, got {} files",
         files.len()
     );
 
@@ -142,7 +145,7 @@ fn checked_in_vba_fixture_corpus_tokenizes_losslessly() {
     }
 }
 
-fn collect_bas_files(root: &Path, out: &mut Vec<PathBuf>) {
+fn collect_vba_source_files(root: &Path, out: &mut Vec<PathBuf>) {
     if !root.exists() {
         return;
     }
@@ -151,12 +154,17 @@ fn collect_bas_files(root: &Path, out: &mut Vec<PathBuf>) {
     {
         let path = entry.expect("directory entry").path();
         if path.is_dir() {
-            collect_bas_files(&path, out);
-        } else if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("bas"))
-        {
+            collect_vba_source_files(&path, out);
+        } else if is_vba_source_file(&path) {
             out.push(path);
         }
     }
+}
+
+fn is_vba_source_file(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("bas")
+            || ext.eq_ignore_ascii_case("cls")
+            || ext.eq_ignore_ascii_case("frm")
+    })
 }

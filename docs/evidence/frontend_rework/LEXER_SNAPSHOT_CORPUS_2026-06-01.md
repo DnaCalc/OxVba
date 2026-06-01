@@ -10,9 +10,12 @@ Added `crates/oxvba-syntax/tests/lexer_snapshot_corpus.rs` with two coverage lay
 
 - exact token snapshots for grammar-row lexical forms: options, bracketed identifiers, typed
   literals, escaped strings, `Rem` trivia, line continuation, and keyword-colliding suffixed names;
-- recursive lossless tokenization over checked-in `.bas` fixture roots.
+- recursive lossless tokenization over checked-in VBA source fixture roots (`.bas`, `.cls`, and
+  `.frm`).
 
-The broad corpus currently covers 294 `.bas` files:
+After reopening, the corpus was widened to include the production migration fixture roots used by
+the FE-5/FE-9 gates, not only the original focused syntax and conformance roots. The broad corpus
+currently covers 309 checked-in VBA source files:
 
 - `conformance/tests`: 214
 - `conformance/vm_package/identity_seed`: 17
@@ -20,6 +23,9 @@ The broad corpus currently covers 294 `.bas` files:
 - `conformance/integration/projects`: 26
 - `conformance/jit_v2/tracer_bullets`: 9
 - `crates/oxvba-debug/tests/fixtures`: 7
+- `examples/basic`: 9
+- `examples/reflection_wrapper`: 2
+- `examples/xll`: 4
 
 The corpus test asserts that token text reconstructs each source exactly. This is intentionally a
 lexer guarantee, not a claim that the current parser accepts every fixture.
@@ -29,11 +35,14 @@ lexer guarantee, not a claim that the current parser accepts every fixture.
 Commands run from repository root:
 
 - `cargo test -p oxvba-syntax --quiet`
-  - Result: passed, 70 unit tests plus 2 integration tests.
+  - First-run result: passed, 70 unit tests plus 2 integration tests.
+- `cargo test -p oxvba-syntax checked_in_vba_fixture_corpus_tokenizes_losslessly --quiet`
+  - Reopen result: passed after widening the production migration corpus roots and source
+    extensions.
 - `cargo fmt --check -p oxvba-syntax`
-  - Result: passed after formatting.
+  - First-run result: passed after formatting.
 - `git diff --check`
-  - Result: passed.
+  - First-run result: passed.
 
 ## Fresh-Eyes Review
 
@@ -41,10 +50,15 @@ The main risk was overclaiming parser or semantic parity from a lexer-only bead.
 therefore checks lossless tokenization only. Exact token-kind snapshots are limited to grammar-row
 lexical surfaces where FE-3 has made concrete claims.
 
+Fresh-eyes review after reopening found one omission in the first-run corpus: it collected `.bas`
+files only, so class modules in example/project roots were not covered. The test now collects
+`.bas`, `.cls`, and `.frm` files and includes the checked-in example roots that serve as later
+metadata/API and host-callable production migration fixtures.
+
 The corpus roots are checked-in repository fixtures rather than optional external corpora, so the
-test is deterministic in normal workspace checkouts. The test uses a lower-bound count rather than
-an exact file count so adding future fixtures does not require mechanical test updates while still
-guarding against accidentally testing an empty or tiny corpus.
+test is deterministic in normal workspace checkouts. The test uses a 300-file lower-bound count
+rather than an exact file count so adding future fixtures does not require mechanical test updates
+while still guarding against accidentally dropping a production migration root.
 
 Residuals left for later beads:
 
