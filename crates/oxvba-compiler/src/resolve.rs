@@ -3947,6 +3947,7 @@ pub(crate) fn omitted_argument_sentinel() -> BoundExpr {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn is_omitted_argument_expr(expr: &BoundExpr) -> bool {
     matches!(
         expr,
