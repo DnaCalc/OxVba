@@ -239,7 +239,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
-    let raise_event_statement = "Sub Main()\nRaiseEvent Tick\nEnd Sub\n";
+    let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
         raise_event_statement,

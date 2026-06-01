@@ -1816,6 +1816,19 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::RaiseEventStmt);
         self.eat_trivia();
         self.bump(); // RaiseEvent
+        self.eat_whitespace();
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::LParen) {
+            self.parse_arg_list();
+        } else if self.is_expr_start() || self.at(SyntaxKind::Comma) {
+            self.parse_bare_arg_list();
+        }
         self.eat_to_statement_end();
         self.finish_node();
     }
@@ -2189,6 +2202,16 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LabelStmt).len(), 2);
         assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::GoToStmt).len(), 2);
+    }
+
+    #[test]
+    fn parses_raise_event_arguments() {
+        let src = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::RaiseEventStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
     }
 
     #[test]

@@ -786,10 +786,18 @@ impl HirBuilder {
             }
             SyntaxKind::RaiseEventStmt => {
                 let name = name_after_keyword(node, SyntaxKind::KwRaiseEvent, "RaiseEvent")?;
-                let args = expression_children(node)
+                let args = node
+                    .child_nodes()
                     .into_iter()
-                    .map(|expr| self.lower_expr(scope, expr))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .find(|child| child.kind() == SyntaxKind::ArgList)
+                    .map(|arg_list| {
+                        expression_children(arg_list)
+                            .into_iter()
+                            .map(|expr| self.lower_expr(scope, expr))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::RaiseEvent { name, args },

@@ -874,8 +874,8 @@ Candidate bead units:
   Twenty-second reopened continuation adds declared function return-type projection into HIR,
   function return-slot metadata, function type-suffix parsing, and basic object assignment
   diagnostics on the HIR production route, allowing simple functions to leave the residual path.
-  Twenty-third reopened continuation adds no-argument `RaiseEvent` statement lowering to the
-  existing backend event statement form.
+  Twenty-third reopened continuation adds basic positional-argument `RaiseEvent` statement
+  lowering to the existing backend event statement form.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
@@ -926,7 +926,7 @@ Candidate bead units:
   expands the audit with multiline `If/ElseIf`, single-line If, basic `Exit`, and non-label
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and
-  no-argument `RaiseEvent`. The workset remains open for broader terminal evidence and expanded
+  basic `RaiseEvent`. The workset remains open for broader terminal evidence and expanded
   route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 

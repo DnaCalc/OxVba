@@ -87,7 +87,7 @@ The audit result records completed reopened delivery work and remaining broader 
 - Procedure-call syntax, multiline and single-line If/ElseIf syntax, front-checked Do While syntax,
   basic Exit and error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`,
   `Erase`, simple function declarations with declared return slots, and simple single-value Select
-  Case syntax, plus no-argument `RaiseEvent`, are no longer themselves route blockers. The
+  Case syntax, plus basic `RaiseEvent`, are no longer themselves route blockers. The
   call/coercion fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR
   lowering coverage for language surfaces outside this route-audited subset, but the audited
   fixtures in this file now classify as `HirProduction`.

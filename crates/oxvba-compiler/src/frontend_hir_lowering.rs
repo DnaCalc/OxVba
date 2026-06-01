@@ -1318,10 +1318,16 @@ mod tests {
 
     #[test]
     fn hir_production_lowering_accepts_raise_event_statement() {
-        let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub\n";
+        let source = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
-        assert!(!bytecode.instructions.is_empty());
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::LoadConstI32 { .. })),
+            "{bytecode:#?}"
+        );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
