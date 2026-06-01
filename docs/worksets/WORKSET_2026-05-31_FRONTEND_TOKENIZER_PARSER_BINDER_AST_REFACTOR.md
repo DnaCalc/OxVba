@@ -905,7 +905,9 @@ Candidate bead units:
   class Implements validation and interface member matching remain broader FE-7/FE-8 work.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR
   production lowering without allocating runtime slots for those constants. Follow-up continuation
-  widens that subset to comma-separated literal `Const` declarators.
+  widens that subset to comma-separated literal `Const` declarators. Follow-up continuation accepts
+  simple constant expressions such as `Const CBase = 1 + 2` by lowering them to bound expression
+  trees and still keeping constants out of runtime local slots.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata.

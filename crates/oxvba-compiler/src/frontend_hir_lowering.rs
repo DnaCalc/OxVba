@@ -198,7 +198,7 @@ fn const_stmt_is_supported(text: &str) -> bool {
             let Some((_, rhs)) = declarator.split_once('=') else {
                 return false;
             };
-            parse_const_literal(rhs.trim()).is_some()
+            parse_const_value(rhs.trim()).is_some()
         })
 }
 
@@ -1723,7 +1723,7 @@ fn const_literal_after_span(
     let suffix = source.get(span.end..line_end)?;
     let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
-    parse_const_literal(rhs.trim())
+    parse_const_value(rhs.trim())
 }
 
 fn first_const_declarator_tail(text: &str) -> &str {
@@ -1776,6 +1776,45 @@ fn split_const_declarators(text: &str) -> Vec<&str> {
     declarators
 }
 
+fn parse_const_value(text: &str) -> Option<BoundExpr> {
+    let text = strip_balanced_outer_parens(text.trim());
+    if let Some(value) = parse_const_literal(text) {
+        return Some(value);
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['+', '-', '&']) {
+        let op = match op {
+            '+' => ArithOp::Add,
+            '-' => ArithOp::Sub,
+            '&' => ArithOp::Concat,
+            _ => return None,
+        };
+        return Some(BoundExpr::BinaryOp {
+            op,
+            lhs: Box::new(parse_const_value(lhs.trim())?),
+            rhs: Box::new(parse_const_value(rhs.trim())?),
+        });
+    }
+    if let Some((lhs, op, rhs)) = split_const_binary_expr(text, &['*', '/']) {
+        let op = match op {
+            '*' => ArithOp::Mul,
+            '/' => ArithOp::Div,
+            _ => return None,
+        };
+        return Some(BoundExpr::BinaryOp {
+            op,
+            lhs: Box::new(parse_const_value(lhs.trim())?),
+            rhs: Box::new(parse_const_value(rhs.trim())?),
+        });
+    }
+    if let Some(rest) = text.strip_prefix('-') {
+        return Some(BoundExpr::UnaryOp {
+            op: ArithOp::Neg,
+            operand: Box::new(parse_const_value(rest.trim())?),
+        });
+    }
+    None
+}
+
 fn parse_const_literal(text: &str) -> Option<BoundExpr> {
     if let Ok(value) = text.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
@@ -1793,6 +1832,87 @@ fn parse_const_literal(text: &str) -> Option<BoundExpr> {
         ));
     }
     None
+}
+
+fn strip_balanced_outer_parens(mut text: &str) -> &str {
+    loop {
+        let trimmed = text.trim();
+        if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
+            return trimmed;
+        }
+        if !outer_parens_wrap_expression(trimmed) {
+            return trimmed;
+        }
+        text = &trimmed[1..trimmed.len() - 1];
+    }
+}
+
+fn outer_parens_wrap_expression(text: &str) -> bool {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => {
+                depth -= 1;
+                if depth == 0 && idx != text.len() - 1 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0 && !in_string
+}
+
+fn split_const_binary_expr<'a>(
+    text: &'a str,
+    operators: &[char],
+) -> Option<(&'a str, char, &'a str)> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut split = None;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => depth -= 1,
+            _ if !in_string && depth == 0 && operators.contains(&ch) => {
+                if ch == '-' && is_unary_const_minus(text, idx) {
+                    continue;
+                }
+                split = Some((idx, ch));
+            }
+            _ => {}
+        }
+    }
+    let (idx, op) = split?;
+    let lhs = text[..idx].trim();
+    let rhs = text[idx + op.len_utf8()..].trim();
+    (!lhs.is_empty() && !rhs.is_empty()).then_some((lhs, op, rhs))
+}
+
+fn is_unary_const_minus(text: &str, idx: usize) -> bool {
+    if idx == 0 {
+        return true;
+    }
+    let prior = text[..idx].trim_end().chars().next_back();
+    prior.is_none_or(|ch| matches!(ch, '(' | '+' | '-' | '*' | '/' | '&'))
 }
 
 fn declared_bound_type(typed_hir: &TypedHirModule, symbol: SymbolId) -> Option<BoundType> {
@@ -2714,11 +2834,26 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_expression_const_statement() {
-        let source = "Const CBase = 1 + 2\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("expression constants remain a tracked residual");
-        assert!(matches!(err, HirProductionLoweringError::Unsupported(_)));
+    fn hir_production_lowering_accepts_expression_const_statement() {
+        let source = "Const CBase = 1 + 2, COffset = -1 + 2\nSub Main()\nDim x\nDim y\nx = CBase\ny = COffset\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::AddSlots { .. })),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            !main
+                .slots
+                .iter()
+                .any(|slot| slot.name.eq_ignore_ascii_case("cbase")
+                    || slot.name.eq_ignore_ascii_case("coffset")),
+            "{main:#?}"
+        );
     }
 
     #[test]
