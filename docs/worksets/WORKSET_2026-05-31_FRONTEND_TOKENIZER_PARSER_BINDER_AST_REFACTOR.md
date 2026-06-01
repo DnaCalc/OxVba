@@ -675,6 +675,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/OPERATOR_NORMALIZATION_2026-06-01.md`.
 - FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
   relying on legacy name strings or flat-slot assumptions.
+  Evidence: `docs/evidence/frontend_rework/HIR_LOWERING_CONTRACT_2026-06-01.md`.
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
   descriptors, source maps, and diagnostics.
 
