@@ -50,6 +50,10 @@ The 2026-06-01 continuation added:
   through the front-end accessor route before lowering.
 - active-project default-member invocation/call-form targets now use the same front-end route
   rebound after the legacy selector chooses a property accessor.
+- `ProjectSymbolIndex` now captures `VB_UserMemId = 0` default-member attributes for property
+  groups and exposes default-member accessor lookup by owner/kind.
+- active-project default-member candidate selection now consults the front-end default-member route
+  before falling back to the legacy `ProcedureDecl` scan.
 
 ## Checks
 
@@ -59,6 +63,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler procedure_runtime_metadata_projects_first_signature_descriptor_view --quiet`
 - `cargo test -p oxvba-compiler compile_property --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
+- `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -100,13 +105,15 @@ The 2026-06-01 continuation added:
   missing accessor routes therefore fall back, while present routes are checked for kind/module/name
   consistency before being used.
 - Default-member read/write assignment lowering now uses the same route surface after candidate
-  selection. This is still only a partial default-member migration: default-member candidate
-  selection remains on the legacy `ProcedureDecl` scan.
+  selection.
+- Fresh-eyes review found that post-selection rebinding still left the actual default-member
+  decision on the legacy scan. The project symbol index now records default-member attributes and
+  active-project default-member candidate selection uses that front-end route first. The legacy scan
+  remains as fallback for rewrite-bridge, referenced projects, non-property members, and route gaps.
 - The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
   rejecting modules that the current parser cannot fully parse, but it only records signature-level
   procedures/properties/fields.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
-  assignment diagnostics for compiled projects. Next step: migrate default-member candidate
-  selection and assignment diagnostics onto the same front-end decision surface, then quarantine or
-  delete the replaced legacy scans.
+  assignment diagnostics for compiled projects. Next step: migrate assignment diagnostics onto the
+  same front-end decision surface and narrow or quarantine the remaining legacy fallback scans.

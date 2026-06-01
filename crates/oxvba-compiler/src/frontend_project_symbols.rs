@@ -50,6 +50,7 @@ pub struct ProjectSymbolTables {
     public_symbols: BTreeMap<String, Vec<ProjectSymbolRoute>>,
     module_members: BTreeMap<(String, String), Vec<ProjectSymbolRoute>>,
     class_members: BTreeMap<(String, String), Vec<ProjectSymbolRoute>>,
+    default_members: BTreeMap<String, Vec<ProjectSymbolRoute>>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +131,18 @@ impl ProjectSymbolTables {
             .push(ProjectSymbolRoute { symbol, kind });
     }
 
+    pub fn record_default_member(
+        &mut self,
+        owner: &str,
+        symbol: SymbolId,
+        kind: ProjectSymbolKind,
+    ) {
+        self.default_members
+            .entry(fold_identifier(owner))
+            .or_default()
+            .push(ProjectSymbolRoute { symbol, kind });
+    }
+
     pub fn resolve_unqualified(&self, name: &str) -> Option<ProjectSymbolRoute> {
         let name = fold_identifier(name);
         self.public_symbols
@@ -184,6 +197,32 @@ impl ProjectSymbolTables {
         self.resolve_owner_member_candidates(owner, member)
             .into_iter()
             .find(|route| route.kind == kind)
+    }
+
+    pub fn resolve_default_member_accessor(
+        &self,
+        owner: &str,
+        kind: ProjectSymbolKind,
+    ) -> Option<ProjectSymbolRoute> {
+        if !matches!(
+            kind,
+            ProjectSymbolKind::PropertyGet
+                | ProjectSymbolKind::PropertyLet
+                | ProjectSymbolKind::PropertySet
+        ) {
+            return None;
+        }
+        let mut routes = self
+            .default_members
+            .get(&fold_identifier(owner))
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|route| route.kind == kind)
+            .collect::<Vec<_>>();
+        routes.sort_by_key(|route| (route.symbol.0, route_kind_order(route.kind)));
+        routes.dedup();
+        unique_route(&routes)
     }
 
     fn resolve_owner_member_candidates(
@@ -310,6 +349,7 @@ fn index_module(
     } else {
         None
     };
+    let default_member_names = collect_default_member_attribute_names(&module.source);
 
     match collect_symbols_from_source_into_model(
         symbols,
@@ -344,11 +384,17 @@ fn index_module(
                 tables.record_module_member(&module_name, &name, kind, symbol_id);
                 if let Some(alias) = property_group_alias(&name) {
                     tables.record_module_member(&module_name, alias, kind, symbol_id);
+                    if default_member_names.contains_key(&fold_identifier(alias)) {
+                        tables.record_default_member(&module_name, symbol_id, kind);
+                    }
                 }
                 if class_symbol.is_some() {
                     tables.record_class_member(&module_name, &name, kind, symbol_id);
                     if let Some(alias) = property_group_alias(&name) {
                         tables.record_class_member(&module_name, alias, kind, symbol_id);
+                        if default_member_names.contains_key(&fold_identifier(alias)) {
+                            tables.record_default_member(&module_name, symbol_id, kind);
+                        }
                     }
                 }
                 if is_unqualified_public_symbol_candidate(module) {
@@ -419,6 +465,29 @@ fn property_route_kind(name: &str) -> Option<ProjectSymbolKind> {
     } else {
         None
     }
+}
+
+fn collect_default_member_attribute_names(source: &str) -> BTreeMap<String, ()> {
+    normalize_source_lines(source)
+        .into_iter()
+        .filter_map(|line| {
+            default_member_attribute_name(&line).map(|name| (fold_identifier(name), ()))
+        })
+        .collect()
+}
+
+fn default_member_attribute_name(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("attribute ") || !lower.contains(".vb_usermemid") {
+        return None;
+    }
+    let payload = trimmed[10..].trim();
+    let dot = payload.find('.')?;
+    let name = payload[..dot].trim();
+    let eq = payload.find('=')?;
+    let value = payload[eq + 1..].trim();
+    (value == "0" && !name.is_empty()).then_some(name)
 }
 
 fn collect_legacy_line_symbols_into_model(
@@ -924,6 +993,47 @@ End Property
             index
                 .tables
                 .resolve_qualified(&QualifiedName::new(["Book1", "Module1", "Value"]))
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_records_default_property_accessors_from_member_attributes() {
+        let module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            r#"
+Public Property Get Value() As Long
+    Value = 1
+End Property
+Public Property Let Value(ByVal nextValue As Long)
+End Property
+Attribute Value.VB_UserMemId = 0
+"#,
+        )
+        .expect("module");
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        assert_eq!(
+            index
+                .tables
+                .resolve_default_member_accessor("Widget", ProjectSymbolKind::PropertyGet)
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::PropertyGet)
+        );
+        assert_eq!(
+            index
+                .tables
+                .resolve_default_member_accessor("Widget", ProjectSymbolKind::PropertyLet)
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::PropertyLet)
         );
     }
 }

@@ -4766,6 +4766,8 @@ fn rewrite_internal_class_member_dispatch(
             }
             let Some((target, instance_arg)) =
                 resolve_internal_class_default_member_target_of_kinds(
+                    manifest,
+                    project_symbol_index,
                     &receiver,
                     active_project,
                     current_project,
@@ -4911,6 +4913,8 @@ fn rewrite_internal_class_default_member_statement_reads(
         return Ok(line.to_string());
     }
     let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        manifest,
+        project_symbol_index,
         &receiver,
         active_project,
         current_project,
@@ -5455,6 +5459,8 @@ fn resolve_internal_class_member_target_of_kinds(
 
 #[allow(clippy::too_many_arguments)]
 fn resolve_internal_class_default_member_target_of_kinds(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     receiver: &str,
     active_project: &str,
     current_project: &str,
@@ -5477,6 +5483,22 @@ fn resolve_internal_class_default_member_target_of_kinds(
     else {
         return Ok(None);
     };
+
+    if let Some(found) = resolve_default_member_target_via_frontend_route(
+        manifest,
+        project_symbol_index,
+        receiver,
+        &target_project,
+        &target_module,
+        &instance_arg,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        allowed_kinds,
+    )? {
+        return Ok(Some(found));
+    }
 
     let mut candidates = procedures
         .iter()
@@ -5521,6 +5543,68 @@ fn resolve_internal_class_default_member_target_of_kinds(
     }
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
     Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_default_member_target_via_frontend_route(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    receiver: &str,
+    target_project: &str,
+    target_module: &str,
+    instance_arg: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    allowed_kinds: &[ProcedureDeclKind],
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let Some(project_symbol_index) = project_symbol_index else {
+        return Ok(None);
+    };
+    let Some(expected_decl_kind) = single_property_decl_kind(allowed_kinds) else {
+        return Ok(None);
+    };
+    if target_project != active_project {
+        return Ok(None);
+    }
+    let Some(owner_name) = active_project_route_owner_name_by_module(manifest, target_module)
+    else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-DEFAULT-MEMBER-ROUTE-OWNER: missing module {target_module} for {receiver}"
+            ),
+        });
+    };
+    let expected_kind = project_symbol_kind_for_property_decl(expected_decl_kind);
+    let Some(route) = project_symbol_index
+        .tables
+        .resolve_default_member_accessor(&owner_name, expected_kind)
+    else {
+        return Ok(None);
+    };
+    let Some(decl) = procedure_decl_for_project_symbol_route(
+        manifest,
+        active_project,
+        project_symbol_index,
+        route,
+        procedures,
+    ) else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!("FE7-E-DEFAULT-MEMBER-ROUTE-UNBOUND: {owner_name} {expected_kind:?}"),
+        });
+    };
+    if decl.project_name != target_project
+        || decl.module_name != target_module
+        || decl.kind != expected_decl_kind
+        || !decl.is_default_member
+        || !is_visible_from_active_project(decl, active_project, current_project, current_module)
+    {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!("FE7-E-DEFAULT-MEMBER-ROUTE-DRIFT: {receiver} {expected_kind:?}"),
+        });
+    }
+    Ok(Some((decl.lowered_name.clone(), instance_arg.to_string())))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5614,6 +5698,8 @@ fn rewrite_internal_class_call_statement_without_parens(
             return Ok(line.to_string());
         }
         let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+            manifest,
+            project_symbol_index,
             &receiver,
             active_project,
             current_project,
@@ -5708,6 +5794,8 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
             return Ok(line.to_string());
         }
         let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+            manifest,
+            project_symbol_index,
             &receiver,
             active_project,
             current_project,
@@ -6038,6 +6126,8 @@ fn rewrite_internal_class_set_assignment(
         return Ok(line.to_string());
     }
     match resolve_internal_class_default_member_target_of_kinds(
+        manifest,
+        project_symbol_index,
         &normalized_lhs,
         active_project,
         current_project,
@@ -6267,6 +6357,8 @@ fn rewrite_internal_class_default_member_assignment(
         return Ok(line.to_string());
     }
     let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        manifest,
+        project_symbol_index,
         &receiver,
         active_project,
         current_project,
@@ -6379,6 +6471,8 @@ fn rewrite_internal_class_default_member_read_assignment(
         return Ok(line.to_string());
     }
     let resolved_target = resolve_internal_class_default_member_target_of_kinds(
+        manifest,
+        project_symbol_index,
         &rhs_name,
         active_project,
         current_project,
