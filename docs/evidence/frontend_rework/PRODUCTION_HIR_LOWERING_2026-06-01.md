@@ -23,6 +23,7 @@ The initial production scope is intentionally narrow and explicit:
 - `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
+- simple `For Each <var> In <iterable> ... Next` loops through the iterable backend path,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -71,9 +72,9 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
 - the route audit classifies the simple If fixture as `HirProduction`.
 
 This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`,
-`For Each`, richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain
-tracked FE-8.5 residuals until each has HIR shape, lowering tests, bytecode/metadata parity or
-documented improvement classification, and route-audit coverage.
+richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5
+residuals until each has HIR shape, lowering tests, bytecode/metadata parity or documented
+improvement classification, and route-audit coverage.
 
 ## Loop Continuation
 
@@ -140,6 +141,14 @@ The eleventh FE-8.5 slice adds `Case Is` clauses:
 
 This is not full `Select Case` closure. Non-integer case expressions, mixed range lists, and richer
 clause parsing remain outside this narrow route-audited subset.
+
+The twelfth FE-8.5 slice adds simple `For Each` lowering:
+
+- `For Each` statements lower into `HirStmtKind::ForEach`;
+- the loop variable resolves through the HIR symbol model;
+- the iterable expression lowers through normal HIR expression lowering; and
+- production lowering emits the existing `IntrinsicForEachInit` / `IntrinsicForEachNext` bytecode
+  path.
 
 ## Checks
 

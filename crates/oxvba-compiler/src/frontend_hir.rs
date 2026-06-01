@@ -153,6 +153,11 @@ pub enum HirStmtKind {
         step: Option<HirExprId>,
         body: Vec<HirStmtId>,
     },
+    ForEach {
+        var: SymbolId,
+        iterable: HirExprId,
+        body: Vec<HirStmtId>,
+    },
     Block(Vec<HirStmtId>),
 }
 
@@ -614,10 +619,40 @@ impl HirBuilder {
                     .iter()
                     .any(|token| token.kind == SyntaxKind::KwEach)
                 {
-                    return Err(HirBuildError::Unsupported(format!(
-                        "For Each is not yet supported by HIR lowering: `{}`",
-                        node.text().trim()
-                    )));
+                    let var_name = first_identifier_text(node).ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "For Each statement without counter variable: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                    let var = self.resolve_name(scope, &var_name)?;
+                    let exprs = expression_children(node);
+                    let iterable_node = exprs.get(1).copied().ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "For Each statement without iterable expression: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                    let iterable = self.lower_expr(scope, iterable_node)?;
+                    let block = node
+                        .child_nodes()
+                        .into_iter()
+                        .find(|child| child.kind() == SyntaxKind::Block)
+                        .ok_or_else(|| {
+                            HirBuildError::Unsupported(format!(
+                                "For Each statement without body block: `{}`",
+                                node.text().trim()
+                            ))
+                        })?;
+                    let body = self.collect_stmt_block(scope, block)?;
+                    return Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                        cst: cst(node),
+                        kind: HirStmtKind::ForEach {
+                            var,
+                            iterable,
+                            body,
+                        },
+                    })));
                 }
                 let var_name = first_identifier_text(node).ok_or_else(|| {
                     HirBuildError::Unsupported(format!(
@@ -1621,6 +1656,42 @@ mod tests {
     }
 
     #[test]
+    fn hir_builder_lowers_for_each_statement() {
+        let source =
+            "Sub Main()\nDim item As Variant\nFor Each item In item\nitem = item\nNext\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let for_each_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_for_each_stmt(&module.arenas, *stmt))
+            .expect("for each statement");
+        let Some(HirStmt {
+            kind: HirStmtKind::ForEach { iterable, body, .. },
+            ..
+        }) = module.arenas.stmt(for_each_stmt)
+        else {
+            panic!("expected for each statement");
+        };
+        assert!(matches!(
+            module.arenas.expr(*iterable).map(|expr| &expr.kind),
+            Some(HirExprKind::Name(_))
+        ));
+        assert!(
+            body.iter()
+                .any(|stmt| find_let_stmt(&module.arenas, *stmt).is_some()),
+            "expected assignment in for each body: {module:#?}"
+        );
+    }
+
+    #[test]
     fn hir_builder_lowers_simple_select_case_statement() {
         let source =
             "Sub Main()\nDim x As Long\nSelect Case x\nCase 1\nx = 2\nEnd Select\nEnd Sub\n";
@@ -1873,6 +1944,16 @@ mod tests {
             Some(HirStmtKind::Block(children)) => children
                 .iter()
                 .find_map(|child| find_for_range_stmt(hir, *child)),
+            _ => None,
+        }
+    }
+
+    fn find_for_each_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<HirStmtId> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::ForEach { .. }) => Some(stmt),
+            Some(HirStmtKind::Block(children)) => children
+                .iter()
+                .find_map(|child| find_for_each_stmt(hir, *child)),
             _ => None,
         }
     }

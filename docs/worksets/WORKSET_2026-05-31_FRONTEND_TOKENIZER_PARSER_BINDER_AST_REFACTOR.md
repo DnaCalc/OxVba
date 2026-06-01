@@ -852,8 +852,9 @@ Candidate bead units:
   Ninth reopened continuation gives `Select Case` typed value/range clauses and lowers integer
   ranges. This bead remains open for broader HIR lowering coverage outside that simple same-module
   call, simple If, conditional loop, simple For, and value/range/multi-value/`Case Is`
-  Select Case subset, with `For Each` now recorded as an explicit route-audit residual after
-  multi-value cases and `Case Is` were added in the tenth and eleventh reopened continuations.
+  Select Case subset. Twelfth reopened continuation adds simple `For Each` iterable loops, so the
+  control-flow fixtures currently in the production legacy-route audit now classify as HIR
+  production; FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and

@@ -72,7 +72,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::ConstStmt
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
-            | SyntaxKind::ForEachStmt
             | SyntaxKind::WithStmt
             | SyntaxKind::OnErrorStmt
             | SyntaxKind::ResumeStmt
@@ -356,6 +355,22 @@ fn lower_stmt(
                     Some(step) => lower_expr(typed_hir, *step)?,
                     None => BoundExpr::IntConst(1),
                 },
+                body: lowered_body,
+            });
+        }
+        HirStmtKind::ForEach {
+            var,
+            iterable,
+            body,
+        } => {
+            let mut lowered_body = Vec::new();
+            for stmt in body {
+                lower_stmt(typed_hir, *stmt, &mut lowered_body)?;
+            }
+            out.push(BoundStmt::ForEach {
+                var: symbol_name(typed_hir, *var)?,
+                items: Vec::new(),
+                iterable: Some(lower_expr(typed_hir, *iterable)?),
                 body: lowered_body,
             });
         }
@@ -960,6 +975,31 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Long
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_loop_bytecode_for_for_each() {
+        let source =
+            "Sub Main()\nDim item As Variant\nFor Each item In item\nitem = item\nNext\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicForEachInit { .. })),
+            "expected For Each init bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::IntrinsicForEachNext { .. })),
+            "expected For Each next bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

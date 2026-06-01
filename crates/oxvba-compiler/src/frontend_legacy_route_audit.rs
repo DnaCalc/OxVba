@@ -247,6 +247,9 @@ mod tests {
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("select case is")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("for each statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
         );
@@ -256,13 +259,6 @@ mod tests {
                     .area
                     .contains("language-service legacy BoundModule compatibility")
             }),
-            "{report:#?}"
-        );
-        assert!(
-            report
-                .residuals()
-                .iter()
-                .any(|finding| { finding.area.contains("for each statement") }),
             "{report:#?}"
         );
         assert!(

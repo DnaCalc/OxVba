@@ -228,6 +228,11 @@ fn collect_stmt_type_hooks(
                 collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
             }
         }
+        HirStmtKind::ForEach { body, .. } => {
+            for stmt in body {
+                collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
+            }
+        }
         HirStmtKind::Empty | HirStmtKind::Expr(_) => {}
     }
 }

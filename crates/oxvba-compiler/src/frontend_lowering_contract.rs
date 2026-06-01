@@ -265,6 +265,18 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
+        HirStmtKind::ForEach { iterable, body, .. } => {
+            collect_expr_structural_intrinsics(typed_hir, *iterable, structural_intrinsics);
+            for child in body {
+                collect_stmt_contract_facts(
+                    typed_hir,
+                    proc_symbol,
+                    *child,
+                    returns,
+                    structural_intrinsics,
+                );
+            }
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 collect_stmt_contract_facts(
