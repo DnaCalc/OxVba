@@ -4852,6 +4852,8 @@ fn rewrite_internal_class_property_reads(
         shadowed_identifiers,
     )?;
     rewrite_internal_class_default_member_statement_reads(
+        manifest,
+        project_symbol_index,
         &rewritten,
         active_project,
         current_project,
@@ -4864,6 +4866,8 @@ fn rewrite_internal_class_property_reads(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_default_member_statement_reads(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -4901,6 +4905,16 @@ fn rewrite_internal_class_default_member_statement_reads(
     else {
         return Ok(line.to_string());
     };
+    let target = selected_property_target_via_frontend_route(
+        manifest,
+        project_symbol_index,
+        &target,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+    )?
+    .unwrap_or(target);
     Ok(format!("{}{}({})", &line[..leading], target, instance_arg))
 }
 
