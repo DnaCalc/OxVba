@@ -424,6 +424,31 @@ Remaining production residuals after this slice:
 - `NewExpr`: object construction requires project class handles, imported/COM construction rules,
   `As New` lazy construction interactions, and assignment/writeback behavior.
 
+## UDT Layout Continuation
+
+The latest FE-8.5 slice removes the basic UDT declaration/layout residual without routing field
+access prematurely:
+
+- `TypeBlock` is no longer rejected by the HIR production syntax gate.
+- HIR production lowering parses simple module-level `Type ... End Type` definitions, recognizes
+  local declarations such as `Dim p As Point`, and emits flattened field slots such as `p_x` and
+  `p_y` with the declared primitive field types.
+- Lowered procedures now carry `BoundUdtDescriptor` data so emitted procedure metadata includes UDT
+  type descriptors, instances, and field aliases.
+- The production route audit includes a `Type Point ... Dim p As Point` fixture and classifies it
+  as `HirProduction`.
+- UDT member syntax remains explicitly rejected on the HIR production route while a `TypeBlock` is
+  present. This prevents `p.X` from being mislowered through the object/member dispatch path before
+  field read/write lowering owns UDT aliases.
+
+Remaining production residuals after this slice:
+
+- UDT field read/write syntax (`p.X`, nested fields, arrays/fixed strings beyond descriptor
+  projection) needs alias-aware lowering and assignment validation.
+- UDT whole-value assignment needs field-wise `BoundStmt::UdtAssign` lowering.
+- `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
+  construction interactions, and assignment/writeback behavior.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
@@ -433,6 +458,8 @@ Remaining production residuals after this slice:
 - `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
 - `cargo test -p oxvba-compiler declared_external_call --quiet`
 - `cargo test -p oxvba-compiler declare_without_ptrsafe --quiet`
+- `cargo test -p oxvba-compiler udt_layout --quiet`
+- `cargo test -p oxvba-compiler udt_member_syntax --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
