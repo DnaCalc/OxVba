@@ -74,7 +74,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::EnumBlock
             | SyntaxKind::ForStmt
             | SyntaxKind::ForEachStmt
-            | SyntaxKind::WhileStmt
             | SyntaxKind::WithStmt
             | SyntaxKind::OnErrorStmt
             | SyntaxKind::ResumeStmt
@@ -861,6 +860,30 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Long
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_loop_bytecode_for_while_wend() {
+        let source = "Sub Main()\nDim x As Long\nWhile x < 3\nx = x + 1\nWend\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected loop exit branch bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
+            "expected loop backedge bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

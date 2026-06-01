@@ -21,6 +21,7 @@ The initial production scope is intentionally narrow and explicit:
 - implicit/explicit `Let` and `Set` assignments,
 - simple multiline `If ... Then ... End If` statements without `ElseIf`,
 - `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
+- `While` / `Wend` loops,
 - simple `Select Case` statements with single integer-value `Case` clauses and optional
   `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
@@ -68,9 +69,9 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
 - the route audit classifies the simple If fixture as `HirProduction`.
 
 This is intentionally not full control-flow closure. `ElseIf`, bare `Do` loops, `Exit Do`, `For`,
-`For Each`, `While`/`Wend`, richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control
-constructs remain tracked FE-8.5 residuals until each has HIR shape, lowering tests,
-bytecode/metadata parity or documented improvement classification, and route-audit coverage.
+`For Each`, richer `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain
+tracked FE-8.5 residuals until each has HIR shape, lowering tests, bytecode/metadata parity or
+documented improvement classification, and route-audit coverage.
 
 ## Loop Continuation
 
@@ -93,6 +94,10 @@ The sixth FE-8.5 slice widens the loop coverage:
 
 Bare `Do` loops and `Exit Do` remain out of scope for this slice because the current backend shape
 requires a condition and exit-stack semantics need direct coverage.
+
+The seventh FE-8.5 slice maps `While ... Wend` into the same front-checked conditional loop HIR
+shape used by `Do While`; the route audit now classifies the `While/Wend` fixture as
+`HirProduction`.
 
 ## Select Continuation
 

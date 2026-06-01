@@ -561,6 +561,39 @@ impl HirBuilder {
                     },
                 })))
             }
+            SyntaxKind::WhileStmt => {
+                let condition_node =
+                    expression_children(node)
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            HirBuildError::Unsupported(format!(
+                                "While statement without condition: `{}`",
+                                node.text().trim()
+                            ))
+                        })?;
+                let condition = self.lower_expr(scope, condition_node)?;
+                let block = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::Block)
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "While statement without body block: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let body = self.collect_stmt_block(scope, block)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::DoWhile {
+                        condition,
+                        body,
+                        post_check: false,
+                        until: false,
+                    },
+                })))
+            }
             SyntaxKind::SelectStmt => {
                 let expr = expression_children(node)
                     .into_iter()
@@ -1398,6 +1431,33 @@ mod tests {
                 until: true,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn hir_builder_lowers_while_wend_statement_as_front_checked_loop() {
+        let source = "Sub Main()\nDim x As Long\nWhile x < 3\nx = x + 1\nWend\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let loop_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_do_while_stmt(&module.arenas, *stmt))
+            .expect("while wend loop");
+        assert!(matches!(
+            module.arenas.stmt(loop_stmt).map(|stmt| &stmt.kind),
+            Some(HirStmtKind::DoWhile {
+                post_check: false,
+                until: false,
+                ..
+            })
         ));
     }
 

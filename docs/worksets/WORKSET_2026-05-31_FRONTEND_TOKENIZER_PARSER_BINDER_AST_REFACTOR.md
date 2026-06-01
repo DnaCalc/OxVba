@@ -847,9 +847,10 @@ Candidate bead units:
   backedge bytecode. Fifth reopened continuation adds parser expression nodes, HIR shape, and
   production lowering for simple single-value `Select Case` clauses. Partial work has already been
   done. Sixth reopened continuation widens `Do` loop support to `Do Until` and post-check
-  `Loop While`/`Loop Until`. This bead remains open for broader HIR lowering coverage outside that
-  simple same-module call, simple If, conditional Do loop, and simple Select Case subset, with
-  `While`/`Wend`, `For`, and Select Case variants now recorded as explicit route-audit residuals.
+  `Loop While`/`Loop Until`. Seventh reopened continuation maps `While`/`Wend` onto the same
+  front-checked loop HIR/backend shape. This bead remains open for broader HIR lowering coverage
+  outside that simple same-module call, simple If, conditional loop, and simple Select Case subset,
+  with `For` and Select Case variants now recorded as explicit route-audit residuals.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
