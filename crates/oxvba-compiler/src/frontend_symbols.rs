@@ -282,11 +282,6 @@ pub fn build_symbol_model_from_source(
     module_name: &str,
     source: &str,
 ) -> Result<SymbolModel, SymbolModelError> {
-    let parsed = oxvba_syntax::parse(source);
-    if !parsed.errors().is_empty() {
-        return Err(SymbolModelError::Syntax(format!("{:?}", parsed.errors())));
-    }
-
     let mut model = SymbolModel::default();
     model.declare_symbol(
         model.global_scope(),
@@ -299,8 +294,22 @@ pub fn build_symbol_model_from_source(
     )?;
     let module_scope =
         model.add_scope(ScopeKind::Module, model.global_scope(), Some(module_name))?;
-    collect_symbols_from_node(&mut model, module_name, module_scope, parsed.syntax())?;
+    collect_symbols_from_source_into_model(&mut model, module_name, module_scope, source)?;
     Ok(model)
+}
+
+pub fn collect_symbols_from_source_into_model(
+    model: &mut SymbolModel,
+    module_name: &str,
+    scope: ScopeId,
+    source: &str,
+) -> Result<(), SymbolModelError> {
+    model.scope(scope)?;
+    let parsed = oxvba_syntax::parse(source);
+    if !parsed.errors().is_empty() {
+        return Err(SymbolModelError::Syntax(format!("{:?}", parsed.errors())));
+    }
+    collect_symbols_from_node(model, module_name, scope, parsed.syntax())
 }
 
 fn collect_symbols_from_node(
@@ -414,6 +423,18 @@ fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
                 expect_name = true;
                 in_type_ref = false;
             }
+            SyntaxElement::Token(token)
+                if matches!(
+                    token.kind,
+                    SyntaxKind::KwPublic
+                        | SyntaxKind::KwPrivate
+                        | SyntaxKind::KwFriend
+                        | SyntaxKind::KwStatic
+                ) =>
+            {
+                expect_name = true;
+                in_type_ref = false;
+            }
             SyntaxElement::Token(token) if token.kind == SyntaxKind::Comma => {
                 expect_name = true;
                 in_type_ref = false;
@@ -423,7 +444,9 @@ fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
                 in_type_ref = true;
             }
             SyntaxElement::Token(token)
-                if expect_name && !in_type_ref && is_identifier_like(token.kind) =>
+                if expect_name
+                    && !in_type_ref
+                    && (is_identifier_like(token.kind) || token.kind.is_keyword()) =>
             {
                 names.push(token);
                 expect_name = false;

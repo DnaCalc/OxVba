@@ -743,7 +743,12 @@ semantics.
 
 Candidate bead units:
 - FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
-  public symbol resolution into binder-owned tables.
+  public symbol resolution into binder-owned tables. Partial work has already been done: a
+  manifest-backed `ProjectSymbolIndex` exists and covers module/class/procedure/field/public
+  routes, including `VB_Name` and `Option Private Module` handling. This bead remains open until
+  the production module-aware project lowering path consumes those `SymbolId`/`ProjectSymbolRoute`
+  facts instead of keeping `project.rs` procedure metadata and line rewriting as the effective
+  source of truth.
   Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
   members, late-bound dispatch, default members, and host-provided globals.

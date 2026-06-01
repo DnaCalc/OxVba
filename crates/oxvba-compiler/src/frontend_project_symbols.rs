@@ -1,6 +1,12 @@
 use std::collections::BTreeMap;
 
-use crate::frontend_symbols::{SymbolId, SymbolModel, SymbolNamespace, fold_identifier};
+use crate::{
+    frontend_symbols::{
+        ScopeId, ScopeKind, SourceProvenance, SymbolId, SymbolModel, SymbolModelError,
+        SymbolNamespace, collect_symbols_from_source_into_model, fold_identifier,
+    },
+    project::{ModuleKind, ModuleUnit, ProjectManifest},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualifiedName {
@@ -42,6 +48,14 @@ pub struct ProjectSymbolTables {
     class_members: BTreeMap<(String, String), ProjectSymbolRoute>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ProjectSymbolIndex {
+    pub symbols: SymbolModel,
+    pub tables: ProjectSymbolTables,
+    pub project_scope: ScopeId,
+    pub module_scopes: BTreeMap<String, ScopeId>,
+}
+
 impl ProjectSymbolTables {
     pub fn record_project(&mut self, symbol: SymbolId) {
         self.project = Some(ProjectSymbolRoute {
@@ -76,13 +90,12 @@ impl ProjectSymbolTables {
     }
 
     pub fn record_public_symbol(&mut self, name: &str, symbol: SymbolId) {
-        self.public_symbols.insert(
-            fold_identifier(name),
-            ProjectSymbolRoute {
-                symbol,
-                kind: ProjectSymbolKind::Public,
-            },
-        );
+        self.record_public_route(name, symbol, ProjectSymbolKind::Public);
+    }
+
+    pub fn record_public_route(&mut self, name: &str, symbol: SymbolId, kind: ProjectSymbolKind) {
+        self.public_symbols
+            .insert(fold_identifier(name), ProjectSymbolRoute { symbol, kind });
     }
 
     pub fn record_module_member(
@@ -147,6 +160,162 @@ impl ProjectSymbolTables {
     }
 }
 
+pub fn build_project_symbol_index_from_manifest(
+    manifest: &ProjectManifest,
+) -> Result<ProjectSymbolIndex, SymbolModelError> {
+    let mut symbols = SymbolModel::default();
+    let mut tables = ProjectSymbolTables::default();
+    let project_scope = symbols.add_scope(
+        ScopeKind::Project,
+        symbols.global_scope(),
+        Some(&manifest.project_name),
+    )?;
+    let project_symbol = symbols.declare_symbol(
+        symbols.global_scope(),
+        SymbolNamespace::Project,
+        &manifest.project_name,
+        SourceProvenance {
+            module_name: None,
+            span: None,
+        },
+    )?;
+    tables.record_project_named(&manifest.project_name, project_symbol);
+    tables.record_public_symbol(&manifest.project_name, project_symbol);
+
+    let mut module_scopes = BTreeMap::new();
+    for module in &manifest.modules {
+        index_module(
+            module,
+            &mut symbols,
+            &mut tables,
+            project_scope,
+            &mut module_scopes,
+        )?;
+    }
+
+    Ok(ProjectSymbolIndex {
+        symbols,
+        tables,
+        project_scope,
+        module_scopes,
+    })
+}
+
+fn index_module(
+    module: &ModuleUnit,
+    symbols: &mut SymbolModel,
+    tables: &mut ProjectSymbolTables,
+    project_scope: ScopeId,
+    module_scopes: &mut BTreeMap<String, ScopeId>,
+) -> Result<(), SymbolModelError> {
+    let module_name = manifest_module_name(module);
+    let provenance = SourceProvenance {
+        module_name: Some(module_name.clone()),
+        span: None,
+    };
+    let module_symbol = symbols.declare_symbol(
+        project_scope,
+        SymbolNamespace::Module,
+        &module_name,
+        provenance.clone(),
+    )?;
+    let module_scope = symbols.add_scope(ScopeKind::Module, project_scope, Some(&module_name))?;
+    module_scopes.insert(fold_identifier(&module_name), module_scope);
+    tables.record_module(&module_name, module_symbol);
+
+    let class_symbol = if matches!(
+        module.module_kind,
+        ModuleKind::Class | ModuleKind::Document | ModuleKind::Form
+    ) {
+        let symbol = symbols.declare_symbol(
+            project_scope,
+            SymbolNamespace::Type,
+            &module_name,
+            provenance,
+        )?;
+        tables.record_class(&module_name, symbol);
+        tables.record_public_route(&module_name, symbol, ProjectSymbolKind::Class);
+        Some(symbol)
+    } else {
+        None
+    };
+
+    collect_symbols_from_source_into_model(symbols, &module_name, module_scope, &module.source)?;
+    for symbol_id in symbols.symbols_in_scope(module_scope)? {
+        let Some(symbol) = symbols.symbol(symbol_id) else {
+            continue;
+        };
+        let Some(name) = symbols
+            .name(symbol.name)
+            .map(|name| name.first_spelling.clone())
+        else {
+            continue;
+        };
+        match symbol.namespace {
+            SymbolNamespace::Procedure => {
+                tables.record_module_member(
+                    &module_name,
+                    &name,
+                    ProjectSymbolKind::Procedure,
+                    symbol_id,
+                );
+                if class_symbol.is_some() {
+                    tables.record_class_member(
+                        &module_name,
+                        &name,
+                        ProjectSymbolKind::Procedure,
+                        symbol_id,
+                    );
+                }
+                if is_unqualified_public_symbol_candidate(module) {
+                    tables.record_public_route(&name, symbol_id, ProjectSymbolKind::Procedure);
+                }
+            }
+            SymbolNamespace::Local | SymbolNamespace::Member => {
+                tables.record_module_member(
+                    &module_name,
+                    &name,
+                    ProjectSymbolKind::Field,
+                    symbol_id,
+                );
+                if class_symbol.is_some() {
+                    tables.record_class_member(
+                        &module_name,
+                        &name,
+                        ProjectSymbolKind::Field,
+                        symbol_id,
+                    );
+                }
+            }
+            SymbolNamespace::Type => {
+                tables.record_module_member(
+                    &module_name,
+                    &name,
+                    ProjectSymbolKind::Class,
+                    symbol_id,
+                );
+                if is_unqualified_public_symbol_candidate(module) {
+                    tables.record_public_route(&name, symbol_id, ProjectSymbolKind::Class);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn manifest_module_name(module: &ModuleUnit) -> String {
+    if module.attributes.vb_name.trim().is_empty() {
+        module.module_name.clone()
+    } else {
+        module.attributes.vb_name.clone()
+    }
+}
+
+fn is_unqualified_public_symbol_candidate(module: &ModuleUnit) -> bool {
+    module.module_kind == ModuleKind::Procedural && !module.attributes.option_private_module
+}
+
 pub fn seed_project_symbol_table_from_symbols(
     symbols: &mut SymbolModel,
     project_name: &str,
@@ -181,6 +350,7 @@ pub fn seed_project_symbol_table_from_symbols(
 mod tests {
     use super::*;
     use crate::frontend_symbols::{FrontendSourceSpan, SourceProvenance};
+    use crate::project::{ModuleAttributes, ProjectKind, module_unit_from_source};
 
     fn provenance() -> SourceProvenance {
         SourceProvenance {
@@ -319,6 +489,105 @@ mod tests {
                 symbol: member,
                 kind: ProjectSymbolKind::Field,
             })
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_records_manifest_module_procedure_and_public_routes() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            r#"
+Public Function Add(ByVal lhs As Long, ByVal rhs As Long) As Long
+    Add = lhs + rhs
+End Function
+"#,
+        )
+        .expect("module");
+        let mut private_module = module_unit_from_source(
+            "PrivateModule",
+            ModuleKind::Procedural,
+            r#"
+Public Function Hidden() As Long
+    Hidden = 1
+End Function
+"#,
+        )
+        .expect("private module");
+        private_module.attributes.option_private_module = true;
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, private_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        let add = index
+            .tables
+            .resolve_qualified(&QualifiedName::new(["book1", "mainmodule", "add"]))
+            .expect("qualified add");
+        assert_eq!(add.kind, ProjectSymbolKind::Procedure);
+        assert_eq!(
+            index
+                .tables
+                .resolve_unqualified("Add")
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::Procedure)
+        );
+        assert_eq!(index.tables.resolve_unqualified("Hidden"), None);
+        assert_eq!(index.module_scopes.len(), 2);
+    }
+
+    #[test]
+    fn project_symbol_index_records_class_fields_and_attribute_names() {
+        let mut customer = module_unit_from_source(
+            "Class1",
+            ModuleKind::Class,
+            r#"
+Public Name As String
+Public Property Get DisplayName() As String
+    DisplayName = Name
+End Property
+"#,
+        )
+        .expect("class module");
+        customer.attributes = ModuleAttributes {
+            vb_name: "Customer".to_string(),
+            ..customer.attributes
+        };
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![customer],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        assert_eq!(
+            index
+                .tables
+                .resolve_unqualified("Customer")
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::Class)
+        );
+        assert_eq!(
+            index
+                .tables
+                .resolve_qualified(&QualifiedName::new(["Customer", "Name"]))
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::Field)
+        );
+        assert_eq!(
+            index
+                .tables
+                .resolve_qualified(&QualifiedName::new(["Book1", "Customer", "DisplayName"]))
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::Procedure)
         );
     }
 }

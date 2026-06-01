@@ -35,10 +35,16 @@ impl FrontendRoutePolicy {
             FrontendConstruct::Statements,
             FrontendConstruct::Diagnostics,
             FrontendConstruct::BinderHir,
-            FrontendConstruct::ProjectSemantics,
         ] {
             policy.routes.insert(construct, FrontendRoute::V2Default);
         }
+        policy.routes.insert(
+            FrontendConstruct::ProjectSemantics,
+            FrontendRoute::LegacyResidual {
+                reason: "FE-7 project semantics has binder-owned symbol tables and a module-aware production lowering route, but project.rs line lowering/rewrite glue remains load-bearing"
+                    .to_string(),
+            },
+        );
         policy.routes.insert(
             FrontendConstruct::Lowering,
             FrontendRoute::LegacyResidual {
@@ -75,10 +81,11 @@ mod tests {
             policy.route(FrontendConstruct::Expressions),
             Some(&FrontendRoute::V2Default)
         );
-        assert_eq!(
+        assert!(matches!(
             policy.route(FrontendConstruct::ProjectSemantics),
-            Some(&FrontendRoute::V2Default)
-        );
+            Some(FrontendRoute::LegacyResidual { reason })
+                if reason.contains("project.rs line lowering")
+        ));
     }
 
     #[test]
@@ -88,6 +95,6 @@ mod tests {
             policy.route(FrontendConstruct::Lowering),
             Some(FrontendRoute::LegacyResidual { reason }) if reason.contains("legacy bridge")
         ));
-        assert_eq!(policy.residuals().len(), 1);
+        assert_eq!(policy.residuals().len(), 2);
     }
 }
