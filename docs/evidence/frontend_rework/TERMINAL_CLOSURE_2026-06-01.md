@@ -1,8 +1,18 @@
-# Terminal Closure Evidence
+# Terminal Closure Evidence - Superseded First-Run Artifact
 
 Date: 2026-06-01
 Bead: `bd-aprs.10.5`
 Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_REFACTOR.md`
+
+Superseded status, 2026-06-01:
+
+This artifact records useful first-run checks and fixes, but it is not valid closure evidence for
+the reopened workset. The first run passed compiler/syntax/VM/host checks while production
+front-end replacement remained incomplete: `frontend_v2` was still an opt-in CST-validation bridge,
+HIR/SemanticModel work was partly scaffold-level, and legacy `resolve.rs` / `project.rs`
+production routes remained load-bearing. The workset has been reopened with a stronger terminal
+gate requiring end-to-end production routing through CST -> binder -> HIR/SemanticModel -> HIR
+lowering and retirement/quarantine of legacy production routes.
 
 ## Checks
 
@@ -37,7 +47,7 @@ Passed:
   `Class_Terminate` timing. Terminating project-object references are sanitized to `Empty` in the
   evidence snapshot so the snapshot surface does not become an extra reference owner.
 
-## Fresh-Eyes Review
+## First-Run Fresh-Eyes Review
 
 - The earlier compiler metadata blocker was a real descriptor-shape bug, not a frontend workset
   documentation issue. It is fixed and covered by the full compiler crate.
@@ -46,4 +56,5 @@ Passed:
   register mirroring.
 - Byte-identical bytecode is not used as a closure criterion. The checks assert runtime behavior,
   metadata/evidence shape, descriptor observations, and host-visible snapshot behavior.
-- No terminal blocker remains for `bd-aprs.10.5`.
+- These fixes remain valuable, but they do not close `bd-aprs.10.5` under the reopened production
+  replacement criteria.

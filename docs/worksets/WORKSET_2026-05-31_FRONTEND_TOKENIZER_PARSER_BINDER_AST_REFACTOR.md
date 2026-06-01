@@ -2,7 +2,17 @@
 
 Date: 2026-05-31
 Owner: DNA Kode
-Status: completed / terminal evidence passed (2026-06-01)
+Status: reopened / production front-end replacement incomplete (2026-06-01)
+
+Reopen note, 2026-06-01:
+
+The original workset wording already pointed at the intended outcome: replace the production
+compiler's string-splitting and string-rewriting front-end end to end with a Roslyn-style
+lexer/parser/binder/HIR/SemanticModel pipeline. The first execution run produced useful syntax,
+HIR, SemanticModel, route-policy, metadata, and terminal-test evidence, but it closed the workset
+on scaffolding plus documented residuals. That was not sufficient for this workset's intended
+terminal gate. Passing terminal tests with `resolve.rs` and `project.rs` still load-bearing is not
+closure; it is a foundation checkpoint.
 
 Architecture decision, 2026-05-31:
 
@@ -20,9 +30,12 @@ lossless syntax tree, syntax/semantics separation, typed facades, stable node id
 an IDE-capable semantic query layer. Whether that is backed by the current custom tree, `rowan`,
 or `cstree` is a Phase 0 engineering decision.
 
-The resolve → bound-IR → lower backbone is unchanged; this decision sets the target *front-end
-architecture* and adds a semantic-overlay + incremental capability. (Lean-AST/rustc shape was
-the alternative; see §5.5 and the decision log §10.)
+During migration, the current resolve → bound-IR → lower backbone may be used as a compatibility
+bridge. At closure, it must no longer be the production front-end route for the scoped language
+surface. The target outcome is production source text flowing through the new syntax, binder, HIR,
+SemanticModel, and HIR lowering contracts by default, with retired legacy paths removed or
+quarantined outside production. (Lean-AST/rustc shape was the alternative; see §5.5 and the
+decision log §10.)
 
 ## 1. Purpose
 
@@ -52,13 +65,21 @@ binder (`resolve.rs`), and operator-precedence parsing is done by repeatedly sca
 `&str` substrings (`parse_expr`). This works and is heavily tested, but it is fragile at the
 edges, hard to extend, and splits single concepts (e.g. member access) across two paradigms.
 
-This workset is a **plan for the compiler front-end migration**, not a claim that no supporting
-syntax work exists. Git history shows `oxvba-syntax` was scaffolded in the initial workspace
-bootstrap (`68965e4e`, 2026-02-26), then substantially expanded for language-service work
-(`5f4da2f3`, 2026-03-23: Pratt expression parser, typed accessors, provider trait). The workset
-therefore starts from a partial syntax/IDE substrate that is not yet wired into the production
-compiler pipeline. No production compiler front-end behavior changes until a phase ships behind
-the planned gate and evidence.
+This workset is the **production compiler front-end migration**, not merely a plan or scaffold.
+Git history shows `oxvba-syntax` was scaffolded in the initial workspace bootstrap (`68965e4e`,
+2026-02-26), then substantially expanded for language-service work (`5f4da2f3`, 2026-03-23:
+Pratt expression parser, typed accessors, provider trait). The workset therefore starts from a
+partial syntax/IDE substrate that must be wired into the production compiler pipeline before this
+workset can close.
+
+Non-closure examples:
+
+- adding a `frontend_v2` flag that only validates CST and then calls the legacy compiler;
+- adding HIR/SemanticModel data structures without routing production binding through them;
+- documenting `project.rs` text rewrites as residuals while they remain production behavior;
+- passing terminal tests while `parse_expr` / source-rewrite paths are still the default route;
+- claiming "per-construct flip" without executable proof that the flipped construct no longer
+  uses the legacy production path.
 
 ## 2. Correctness authority (unchanged repo convention)
 
@@ -222,7 +243,33 @@ CST/HIR/SemanticModel/salsa are all upstream of the execution boundary; batch lo
 CST + HIR only, so the IDE-oriented layers (full SemanticModel surface, salsa) can land after the
 batch pipeline reaches parity.
 
-### 6.1 Lowering-target maturity and current VM contract
+### 6.2 Production replacement terminal gate
+
+This gate is binding for workset closure. The workset is not complete until all of these are true:
+
+1. The default production compile path for the scoped language surface is:
+
+   ```
+   source → oxvba-syntax CST → binder → bound HIR → type/coercion facts
+          → HIR lowering → bytecode + ProcedureRuntimeMetadata
+   ```
+
+2. `frontend_v2` is no longer merely a CST-validation bridge. If a switch remains, it selects
+   compatibility behavior; the new pipeline is the default for scoped constructs.
+3. `resolve::parse_expr_for_syntax_bridge`, legacy `parse_expr` substring splitting, and
+   `project.rs` source-text rewrite bridge paths are removed from production execution for the
+   scoped constructs, or are behind explicit compatibility/test-only gates.
+4. Every reopened bead area has executable proof that its production call path reaches the new
+   front-end implementation, not just a data structure or evidence document.
+5. The language-service query path answers symbol/type/diagnostic questions from the same
+   compiler-owned SemanticModel/HIR facts used by production compilation.
+6. Full compiler, syntax, VM, host, conformance, and selected Excel oracle lanes pass. Bytecode may
+   differ from the old compiler, but each difference must be classified as equivalent,
+   improvement, or defect.
+7. Residuals may exist only outside the claimed scoped language surface. A residual inside the
+   claimed surface keeps the relevant bead and workset open.
+
+### 6.3 Lowering-target maturity and current VM contract
 
 A maturity audit of the VM bytecode *as a lowering target* (ahead of this rework) concluded:
 
@@ -387,6 +434,34 @@ Open (settle in Phase 0):
   `conformance/`, plus the Excel oracle where member/lifetime semantics move.
 - Evidence docs under `docs/evidence/` per phase; final closure report.
 
+Closure evidence must include **route proof**. A test that passes through the old compiler path
+does not prove a front-end migration bead. Each migration bead must show the production call path
+that enters the new parser/binder/HIR/lowering surface and must show the corresponding legacy
+production path deleted, disabled, or explicitly quarantined.
+
+## 11.1 Reopen audit after first execution run
+
+The first execution run produced useful artifacts but closed too much. This audit governs the
+second run.
+
+| Area | Beads | Current disposition |
+|---|---|---|
+| Workset truth, decisions, corpus inventory | `bd-aprs.1.*` | Keep closed. These were preparation/support outcomes and remain useful. |
+| Grammar foundation | `bd-aprs.2.1`, `bd-aprs.2.2`, `bd-aprs.2.4` | Keep closed as foundation. |
+| Grammar coverage matrix | `bd-aprs.2.3` | Reopen. The matrix must become a production migration gate, not only a scaffold. |
+| Syntax substrate audit and narrow hardening | `bd-aprs.3.*` | Keep closed unless later route proof exposes syntax gaps. |
+| Lexer corpus proof | `bd-aprs.4.4` | Reopen. Token snapshots must cover the accepted production corpus, not just focused syntax fixtures. |
+| Parser and CST bridge | `bd-aprs.5.*` | Reopen. Prior work validated syntax/bridge pieces, but did not make the parser the production compiler parser. |
+| Frontend gate and diff harness | `bd-aprs.6.*` | Reopen. Prior gate was opt-in bridge/scaffold; the new gate must prove production routing and classify real v2 output. |
+| Binder, HIR, SemanticModel | `bd-aprs.7.*` | Reopen. Prior work created surfaces; production binding must now consume them. |
+| Project semantics migration | `bd-aprs.8.*` | Reopen. `project.rs` rewrite paths remain load-bearing. |
+| Typed intrinsics and lowering cleanup | `bd-aprs.9.*` | Reopen. Some typed surfaces exist, but production HIR lowering and retirement are incomplete. |
+| Flip, retirement, IDE query foundation | `bd-aprs.10.*` | Reopen. Terminal closure was premature while lowering/rewrite residuals remained production paths. |
+
+Partial work from the first run should be reused aggressively. Reopened beads should start by
+auditing what is already present, then turn scaffold/evidence into production behavior with route
+proof.
+
 ## 12. Scope notes
 
 In scope (per D0): lossless green/red CST (currently custom `oxvba-syntax`; possible `rowan` or
@@ -457,6 +532,7 @@ Created child bead mapping:
 | FE-6.3 SemanticModel query API | `bd-aprs.7.3` |
 | FE-6.4 Type and coercion hooks | `bd-aprs.7.4` |
 | FE-6.5 Diagnostic mapping | `bd-aprs.7.5` |
+| FE-6.6 Production binder integration | `bd-aprs.7.6` |
 | FE-7.1 Qualified names and project/module lookup | `bd-aprs.8.1` |
 | FE-7.2 Member dispatch classification | `bd-aprs.8.2` |
 | FE-7.3 Property and assignment semantics | `bd-aprs.8.3` |
@@ -467,11 +543,13 @@ Created child bead mapping:
 | FE-8.2 Operator normalization optimizer split | `bd-aprs.9.2` |
 | FE-8.3 HIR lowering contract cleanup | `bd-aprs.9.3` |
 | FE-8.4 Metadata normalization for harness | `bd-aprs.9.4` |
+| FE-8.5 Production HIR-to-bytecode lowering | `bd-aprs.9.5` |
 | FE-9.1 Per-construct default flip | `bd-aprs.10.1` |
 | FE-9.2 Legacy parser/rewriter retirement | `bd-aprs.10.2` |
 | FE-9.3 Salsa/query integration | `bd-aprs.10.3` |
 | FE-9.4 Language-service reconciliation | `bd-aprs.10.4` |
 | FE-9.5 Terminal evidence and closure | `bd-aprs.10.5` |
+| FE-9.6 Production legacy-route audit gate | `bd-aprs.10.6` |
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 
@@ -514,7 +592,10 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/FRONTEND_REWORK_FIXTURE_TAXONOMY_2026-06-01.md`.
 
 Evidence gate: every in-scope grammar production has an owned row or an explicit out-of-scope /
-deferred reason.
+deferred reason. Reopened gate: the matrix must additionally record whether each production is
+parsed by the production CST parser, bound through HIR/SemanticModel, lowered through the v2 route,
+and covered by execution/diagnostic evidence. A row marked complete cannot rely only on legacy
+compiler acceptance.
 
 ### Epic FE-2 — Syntax Substrate Audit and Hardening
 
@@ -558,7 +639,8 @@ Candidate bead units:
 
 Evidence gate: accepted corpus tokenizes losslessly, lexical residuals are matrixed, and any future
 lexer diagnostics API must carry stable spans. FE-3 itself does not require a separate lexer
-diagnostics surface.
+diagnostics surface. Reopened gate for FE-3.4: the snapshot corpus must include the production
+migration corpus used by FE-5/FE-9, not only focused syntax examples.
 
 ### Epic FE-4 — Parser Completion and CST-to-Legacy Bridge
 
@@ -585,6 +667,11 @@ Candidate bead units:
 Evidence gate: parser fixtures round-trip, bridge-supported constructs compile/run through the
 old lowering path, and unsupported constructs have clear fallback or residual rows.
 
+Reopened production gate: FE-4 cannot close on CST validation plus legacy lowering alone. It must
+prove that the accepted expression and statement subset used by production compilation is parsed
+from `oxvba-syntax` and handed to binder/HIR facts. The CST-to-legacy bridge may remain only as a
+temporary compatibility aid and must not be the terminal production route.
+
 ### Epic FE-5 — Semantic Harness and Frontend Gate
 
 Outcome: the new pipeline can be enabled per construct and compared safely against the existing
@@ -607,6 +694,10 @@ Candidate bead units:
 Evidence gate: the harness can prove old-vs-old stability, v2 smoke behavior, and meaningful
 classification of at least one intentional non-byte-identical lowering.
 
+Reopened production gate: FE-5 must prove that v2 execution is not just CST validation before
+legacy compilation. The harness must record the active route for each fixture and fail a "v2"
+classification if the fixture enters `compile(source)` / legacy rewrite as its production path.
+
 ### Epic FE-6 — Binder, HIR, and SemanticModel Core
 
 Outcome: syntax is resolved into a compiler-owned bound HIR and an IDE-facing SemanticModel
@@ -628,9 +719,17 @@ Candidate bead units:
 - FE-6.5 Diagnostic mapping: route parser, binder, and type diagnostics to stable source spans
   with existing diagnostic family compatibility where applicable.
   Evidence: `docs/evidence/frontend_rework/DIAGNOSTIC_MAPPING_2026-06-01.md`.
+- FE-6.6 Production binder integration: wire scoped production compile paths so declarations,
+  expressions, statements, calls, names, scopes, types, diagnostics, and coercions are bound from
+  compiler-owned `SymbolId`/HIR/SemanticModel facts instead of legacy string recovery.
+  Evidence: `docs/evidence/frontend_rework/PRODUCTION_BINDER_INTEGRATION_2026-06-01.md`.
 
 Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run
 with behavior matching or improving the legacy path.
+
+Reopened production gate: FE-6 must replace scaffold-only facts with production binder facts.
+Closure requires real compiler call paths to resolve names, scopes, types, calls, diagnostics, and
+coercions through `SymbolId`/HIR/SemanticModel rather than reconstructing them later from strings.
 
 ### Epic FE-7 — Project Semantics Migration from `project.rs`
 
@@ -660,6 +759,11 @@ Candidate bead units:
 Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
 and deletion or quarantine of the corresponding text rewrite.
 
+Reopened production gate: FE-7 remains open while any corresponding `project.rs` text rewrite is
+the production implementation for project/class/COM/default-member/host semantics in the scoped
+surface. Evidence docs are not enough; closure requires route proof plus removal or compatibility
+quarantine of each retired rewrite.
+
 ### Epic FE-8 — Typed Intrinsics, Optimizer Split, and Lowering Cleanup
 
 Outcome: structural compiler concepts are typed HIR/lowering operations, not magic string
@@ -679,9 +783,16 @@ Candidate bead units:
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
   descriptors, source maps, and diagnostics.
   Evidence: `docs/evidence/frontend_rework/METADATA_NORMALIZATION_2026-06-01.md`.
+- FE-8.5 Production HIR lowering: implement production bytecode and `ProcedureRuntimeMetadata`
+  emission from bound HIR facts for the scoped language surface.
+  Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
+
+Reopened production gate: FE-8 must implement real HIR-to-bytecode lowering for the scoped
+constructs, not only define a lowering contract. Legacy bound-expression lowering may be used for
+comparison, but closure requires production bytecode and metadata to be emitted from HIR facts.
 
 ### Epic FE-9 — Flip, Retirement, and IDE Query Foundation
 
@@ -704,7 +815,16 @@ Candidate bead units:
 - FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
   selected Excel oracle checks; archive the legacy comparison harness when no longer needed.
   Evidence: `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`.
+- FE-9.6 Production legacy-route audit gate: prove before terminal closure that no scoped
+  production compile path still depends on legacy `parse_expr`/string-splitting or `project.rs`
+  source-text rewrite behavior.
+  Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is
 explicitly owned by follow-up worksets or beads.
+
+Reopened production gate: FE-9 terminal closure must search the codebase and runtime evidence for
+remaining production use of legacy parser/rewriter routes in the scoped surface. If any remain,
+the relevant FE-4 through FE-8 bead stays open. Full test pass plus residual notes is not
+sufficient.

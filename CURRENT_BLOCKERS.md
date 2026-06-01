@@ -51,6 +51,26 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### FE-PROD-001: Frontend production replacement not complete
+- Status: open workset blocker after 2026-06-01 scope audit.
+- Impact:
+  - Reopens `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_REFACTOR.md`.
+  - Prior terminal evidence is superseded as closure evidence because it proved broad tests and
+    descriptor/runtime fixes, not end-to-end production front-end replacement.
+- Current state:
+  - Useful partial work exists: `oxvba-syntax`, HIR/SemanticModel scaffolds, route policy,
+    semantic harness pieces, descriptor metadata, and VM/host snapshot fixes.
+  - Production compilation still has load-bearing legacy front-end routes:
+    - `frontend_v2` is an opt-in CST-validation bridge before legacy compile;
+    - `resolve.rs` legacy expression/string-derived binding remains authoritative for key paths;
+    - `project.rs` source-text rewrite behavior remains production behavior for project/class/COM
+      semantics.
+- Unblocking path:
+  - execute reopened `bd-aprs` beads under the production replacement criteria;
+  - convert scaffold/evidence surfaces into default production routing;
+  - delete or compatibility-quarantine replaced legacy routes;
+  - rerun terminal compiler/syntax/VM/host/conformance/oracle gates with route proof.
+
 ### FE-TERM-001: Frontend rework terminal evidence compiler metadata failure
 - Status: resolved in current run; superseded by FE-TERM-002 for terminal closure.
 - Impact:
@@ -918,7 +938,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
