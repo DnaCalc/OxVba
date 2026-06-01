@@ -515,8 +515,32 @@ Remaining production residuals after this slice:
 - `Dim As New`, `Class_Initialize`, source maps, and imported/COM construction still need the same
   direct-HIR integration.
 
+## Project Construction Downstream Regression Continuation
+
+Two downstream object-construction regressions were narrowed while the direct HIR project compile
+route remains open:
+
+- Source-class public field reads now use the class field-token route for value-side
+  `obj.PublicField` reads. The exact `c.Total` regression is covered by
+  `source_member_call_statements`, which now proves statement-form member calls preserve
+  per-instance public field state.
+- The concrete WithEvents `New` rewrite failure is fixed for direct active-project source-class
+  construction: `Set <WithEventsField> = New <Class>` now skips the plain Set-New expansion and
+  lowers through a WithEvents-aware temporary project instance before
+  `__oxvba_withevents_set(...)`. This prevents raw `New <Class>` text from reaching the legacy
+  expression parser on that path while preserving `Class_Initialize` identity.
+
+These fixes do not close FE-8.5 object construction. They reduce downstream breakage while the
+main production residual remains: project compile must consume `HirNewExpressionBinding` directly
+instead of compiling rewritten `__oxvba_project_instance(...)` source text.
+
 ## Checks
 
+- `cargo test -p oxvba-host --test source_member_call_statements --quiet`
+- `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
+- `cargo test -p oxvba-host pure_oxvba_class_distinct_new_instances_have_separate_state --quiet`
+- `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
+- `cargo test -p oxvba-compiler withevents --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler new_expression --quiet`
