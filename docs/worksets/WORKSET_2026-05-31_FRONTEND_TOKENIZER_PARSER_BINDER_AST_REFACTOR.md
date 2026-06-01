@@ -875,7 +875,9 @@ Candidate bead units:
   function return-slot metadata, function type-suffix parsing, and basic object assignment
   diagnostics on the HIR production route, allowing simple functions to leave the residual path.
   Twenty-third reopened continuation adds basic positional-argument `RaiseEvent` statement
-  lowering to the existing backend event statement form.
+  lowering to the existing backend event statement form. Fresh-eyes correction on that continuation
+  makes event argument expressions visible to the compiler-owned SemanticModel and HIR lowering
+  contract instead of only to bytecode emission.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR
   production lowering without allocating runtime slots for those constants.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.

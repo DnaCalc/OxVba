@@ -277,6 +277,11 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
+        HirStmtKind::RaiseEvent { args, .. } => {
+            for arg in args {
+                collect_expr_structural_intrinsics(typed_hir, *arg, structural_intrinsics);
+            }
+        }
         HirStmtKind::Block(children) => {
             for child in children {
                 collect_stmt_contract_facts(
@@ -302,8 +307,7 @@ fn collect_stmt_contract_facts(
         | HirStmtKind::GoTo { .. }
         | HirStmtKind::GoSub { .. }
         | HirStmtKind::Return
-        | HirStmtKind::Erase { .. }
-        | HirStmtKind::RaiseEvent { .. } => {}
+        | HirStmtKind::Erase { .. } => {}
     }
 }
 
@@ -453,5 +457,22 @@ mod tests {
         assert!(local_names.contains(&"seed"));
         assert!(local_names.contains(&"total"));
         assert!(local_names.contains(&"main"));
+    }
+
+    #[test]
+    fn lowering_contract_collects_raise_event_argument_intrinsics() {
+        let source = "Sub Main()\nRaiseEvent Tick(Null)\nEnd Sub\n";
+        let typed_hir =
+            crate::frontend_type_hooks::collect_type_hooks_from_source("Module1", source)
+                .expect("typed HIR");
+        let contracts = collect_lowering_contracts_from_typed_hir(&typed_hir);
+
+        assert_eq!(contracts.len(), 1);
+        assert!(
+            contracts[0]
+                .structural_intrinsics
+                .contains(&StructuralIntrinsic::NullLiteral),
+            "RaiseEvent argument expressions must contribute HIR contract facts"
+        );
     }
 }

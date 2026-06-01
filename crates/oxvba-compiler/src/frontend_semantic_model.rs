@@ -230,6 +230,11 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
+            HirStmtKind::RaiseEvent { args, .. } => {
+                for arg in args {
+                    self.index_expr_tree(arg);
+                }
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);
@@ -249,8 +254,7 @@ impl SemanticModel {
             | HirStmtKind::GoTo { .. }
             | HirStmtKind::GoSub { .. }
             | HirStmtKind::Return
-            | HirStmtKind::Erase { .. }
-            | HirStmtKind::RaiseEvent { .. } => {}
+            | HirStmtKind::Erase { .. } => {}
         }
     }
 
@@ -426,5 +430,25 @@ mod tests {
             .and_then(|stmt| model.hir().stmt(stmt))
             .expect("assignment statement");
         assert_eq!(stmt.cst.syntax_kind, "AssignStmt");
+    }
+
+    #[test]
+    fn semantic_model_indexes_raise_event_argument_symbols() {
+        let source = "Sub Main(ByVal n As Long)\nRaiseEvent Tick(n)\nEnd Sub\n";
+        let hir = build_hir_from_source("Module1", source).expect("HIR module");
+        let model = SemanticModel::from_bound_hir_module(hir);
+
+        let arg_start = source.rfind("n)").expect("event argument");
+        let arg_span = FrontendSourceSpan {
+            start: arg_start,
+            end: arg_start + "n".len(),
+        };
+        let symbol = model
+            .symbol_for_span(arg_span)
+            .and_then(|symbol| model.symbols().symbol(symbol))
+            .expect("RaiseEvent argument symbol");
+        let name = model.symbols().name(symbol.name).expect("argument name");
+        assert_eq!(name.folded, "n");
+        assert_eq!(symbol.namespace, SymbolNamespace::Parameter);
     }
 }
