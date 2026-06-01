@@ -1301,7 +1301,14 @@ impl<'a> Parser<'a> {
         // Check if this is a single-line If
         self.eat_whitespace();
         if !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) && !self.at_eof() {
-            // Single-line If: consume rest of line
+            self.parse_inline_statement_block(&[SyntaxKind::KwElse]);
+            if self.current_non_trivia() == SyntaxKind::KwElse {
+                self.start_node(SyntaxKind::ElseClause);
+                self.eat_whitespace();
+                self.bump(); // Else
+                self.parse_inline_statement_block(&[]);
+                self.finish_node();
+            }
             self.eat_to_eol();
             self.finish_node();
             return;
@@ -1358,6 +1365,32 @@ impl<'a> Parser<'a> {
         }
         self.eat_to_eol();
 
+        self.finish_node();
+    }
+
+    fn parse_inline_statement_block(&mut self, terminators: &[SyntaxKind]) {
+        self.start_node(SyntaxKind::Block);
+        loop {
+            self.eat_whitespace();
+            let kind = self.current_non_trivia();
+            if self.at_eof()
+                || self.at(SyntaxKind::Newline)
+                || self.at(SyntaxKind::Comment)
+                || terminators.contains(&kind)
+            {
+                break;
+            }
+
+            let before = self.pos;
+            self.parse_statement();
+            if self.pos == before {
+                self.bump();
+            }
+            self.eat_whitespace();
+            if self.at(SyntaxKind::Colon) {
+                self.bump();
+            }
+        }
         self.finish_node();
     }
 

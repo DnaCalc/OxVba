@@ -20,7 +20,7 @@ The initial production scope is intentionally narrow and explicit:
 - explicit `ByVal` / `ByRef` parameter mechanism projection for lowered procedures,
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
-- simple multiline `If ... Then ... End If` statements, including `Else` and `ElseIf` branches,
+- simple block and single-line `If ... Then ... Else ...` statements, including `ElseIf` branches,
 - `Do While` / `Do Until` loops with front-check or post-check conditions,
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
@@ -192,6 +192,18 @@ The fifteenth FE-8.5 slice removes the basic exit-statement residual:
   statements; and
 - the production route audit now includes `Exit Do`, `Exit For`, and `Exit Sub` fixtures as
   `HirProduction`.
+
+## Single-Line If Continuation
+
+The sixteenth FE-8.5 slice closes a silent-partial-lowering hazard:
+
+- the syntax parser now builds `Block` and optional `ElseClause` children for single-line
+  `If ... Then ... Else ...` statements instead of consuming the rest of the line as unstructured
+  text;
+- HIR collection consumes those inline blocks through the same `HirStmtKind::If` shape used by
+  multiline If;
+- production HIR lowering emits conditional branch bytecode for the single-line fixture; and
+- the production route audit now includes a single-line If fixture as `HirProduction`.
 
 ## Checks
 
