@@ -547,8 +547,19 @@ constant expressions:
 - This is intentionally still a bounded subset. Constant expressions that require name-dependent
   evaluation beyond the already handled enum/literal route remain future FE-8.5 work.
 
+## Bang Member Read Continuation
+
+The latest FE-8.5 slice removes the read-side bang member residual:
+
+- HIR member-name extraction now accepts `!` as a member selector for expressions such as
+  `obj!Value`, matching the existing syntax bridge/backend representation.
+- HIR production lowering emits the same late-bound dispatch shape used for dot member reads.
+- This does not close member writes: `obj!Value = ...`, `obj.Value = ...`, `With` shorthand writes,
+  property Let/Set selection, and writeback semantics remain tracked residual work.
+
 ## Checks
 
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_bang_member_access --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-host --test source_member_call_statements --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
