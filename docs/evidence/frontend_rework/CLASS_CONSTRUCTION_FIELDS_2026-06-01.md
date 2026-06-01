@@ -29,6 +29,9 @@ front-end symbol index:
 - The same frontend class route authorises explicit `Set x = New ClassName`.
 - Runtime/procedure identity still uses the manifest module id after frontend authorisation, so
   `Attribute VB_Name` spelling and manifest module identity do not drift.
+- Active-project predeclared property read routes now require a frontend class route plus a
+  frontend Property Get accessor route before the legacy backend text rewrite may emit the
+  lowered property call.
 - Dynamic object field-token emission receives the same frontend symbol index and filters ordinary
   field tokens through frontend-confirmed class field names when available; legacy source parsing
   remains the compatibility fallback for parser-incomplete modules and for excluding non-ordinary
@@ -41,16 +44,18 @@ Production-route proof:
   is `WidgetFile`. The legacy active-project resolver only matches manifest module names; the test
   proves both `Dim widget As New Widget` and `Set other = New Widget` resolve through the frontend
   class route and then map back to the runtime module id `widgetfile`.
+- `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
+  matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
   per-instance ordinary field storage, object-reference field teardown cascades, and class
   construction/reference-counted object identity all still pass.
 
 Compatibility quarantine / residual classification:
 
-- Referenced-project class construction still falls back to `resolve_interface_module` because the
-  current `ProjectSymbolIndex` is built for the active manifest only. This is classified as an
-  out-of-scope compatibility route for FE-7.4 and should be migrated when reference-project
-  symbol-index composition lands.
+- Referenced-project class construction and referenced-project predeclared roots still fall back to
+  `resolve_interface_module` / procedure metadata because the current `ProjectSymbolIndex` is built
+  for the active manifest only. This is classified as an out-of-scope compatibility route for
+  FE-7.4 and should be migrated when reference-project symbol-index composition lands.
 - Imported COM `As New` / `New` remains on the typelib metadata route, not the active-project class
   route.
 - The legacy line parser remains as a field-token compatibility fallback when the new syntax
@@ -64,6 +69,7 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-compiler expand_bound_source_line_uses_frontend_class_route_for_active_project_new --quiet`
 - `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
+- `cargo test -p oxvba-compiler predeclared --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_terminate_cascades_through_object_field --quiet`

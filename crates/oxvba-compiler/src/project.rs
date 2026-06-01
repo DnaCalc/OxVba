@@ -1041,7 +1041,11 @@ fn compile_project_with_strategy(
         )?;
     let rewritten_source = rewrite_predeclared_property_reads_for_backend(
         &rewritten_source,
-        &collect_predeclared_property_read_rewrite_routes(manifest, &procedure_index),
+        &collect_predeclared_property_read_rewrite_routes(
+            manifest,
+            &project_symbol_index,
+            &procedure_index,
+        ),
     );
 
     let has_class_modules = manifest
@@ -1156,6 +1160,7 @@ fn build_compiler_source_map(
 
 fn collect_predeclared_property_read_rewrite_routes(
     manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
     procedure_index: &[ProcedureDecl],
 ) -> BTreeMap<String, String> {
     let mut candidates = BTreeMap::<String, BTreeSet<String>>::new();
@@ -1164,6 +1169,15 @@ fn collect_predeclared_property_read_rewrite_routes(
             continue;
         }
         if !module_is_predeclared(manifest, &decl.project_name, &decl.module_name) {
+            continue;
+        }
+        if normalize_identifier(&decl.project_name) == normalize_identifier(&manifest.project_name)
+            && !active_project_predeclared_property_route_exists(
+                manifest,
+                project_symbol_index,
+                decl,
+            )
+        {
             continue;
         }
         let key = format!("{}.{}", decl.module_name, decl.procedure_name).to_ascii_lowercase();
@@ -1181,6 +1195,35 @@ fn collect_predeclared_property_read_rewrite_routes(
             }
         })
         .collect()
+}
+
+fn active_project_predeclared_property_route_exists(
+    manifest: &ProjectManifest,
+    project_symbol_index: &ProjectSymbolIndex,
+    decl: &ProcedureDecl,
+) -> bool {
+    let Some(module) = manifest
+        .modules
+        .iter()
+        .find(|module| normalize_identifier(&module.module_name) == decl.module_name)
+    else {
+        return false;
+    };
+    let mut owner_names = vec![decl.module_name.as_str()];
+    if !module.attributes.vb_name.trim().is_empty() {
+        owner_names.push(module.attributes.vb_name.as_str());
+    }
+    owner_names.into_iter().any(|owner| {
+        project_symbol_index.resolve_class_route(owner).is_some()
+            && project_symbol_index
+                .tables
+                .resolve_property_accessor(
+                    owner,
+                    &decl.procedure_name,
+                    ProjectSymbolKind::PropertyGet,
+                )
+                .is_some()
+    })
 }
 
 fn module_is_predeclared(
@@ -28074,6 +28117,7 @@ mod tests {
                 &rewritten_source,
                 &super::collect_predeclared_property_read_rewrite_routes(
                     &manifest,
+                    &project_symbol_index,
                     &procedure_index,
                 ),
             );

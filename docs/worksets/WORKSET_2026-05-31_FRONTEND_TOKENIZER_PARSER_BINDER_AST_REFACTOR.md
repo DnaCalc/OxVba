@@ -765,9 +765,11 @@ Candidate bead units:
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
   ordinary fields, WithEvents fields, and runtime object-field metadata. Current continuation
   progress wires active-project `New`/`As New` class construction through `ProjectSymbolIndex`
-  class routes and feeds frontend-confirmed class field names into dynamic object field-token
-  metadata. Remaining fallback routes are explicitly bounded to referenced-project class
-  construction, imported COM activation metadata, and parser-incomplete field enumeration.
+  class routes, gates active-project predeclared Property Get rewrite routes through frontend
+  class/property routes, and feeds frontend-confirmed class field names into dynamic object
+  field-token metadata. Remaining fallback routes are explicitly bounded to referenced-project
+  class/predeclared roots, imported COM activation metadata, and parser-incomplete field
+  enumeration.
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
   and related diagnostics out of string rewriting.
