@@ -215,7 +215,9 @@ The twenty-fourth FE-8.5 slice removes the simple literal `Const` residual:
 - procedure and module `ConstStmt` declarations are accepted as HIR declarations without producing
   runtime frame slots;
 - HIR production lowering substitutes simple integer, Boolean, and string literal constants at use
-  sites; and
+  sites;
+- non-literal or multi-name `Const` statements are rejected before HIR production lowering so the
+  fallback route remains responsible for those residuals; and
 - the production route audit now includes a module-level literal constant fixture.
 
 Expression-valued constants, typed constants beyond the current literal subset, conditional

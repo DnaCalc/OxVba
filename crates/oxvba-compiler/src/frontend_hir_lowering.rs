@@ -137,6 +137,11 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
             "syntax kind {kind:?}"
         )));
     }
+    if let Some(text) = first_unsupported_const_stmt(parsed.syntax()) {
+        return Err(HirProductionLoweringError::Unsupported(format!(
+            "const statement {text:?}"
+        )));
+    }
     Ok(())
 }
 
@@ -158,6 +163,33 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
     node.child_nodes()
         .into_iter()
         .find_map(first_unsupported_production_syntax)
+}
+
+fn first_unsupported_const_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> Option<String> {
+    if node.kind() == SyntaxKind::ConstStmt {
+        let text = node.text();
+        if !const_stmt_is_supported(&text) {
+            return Some(text.trim().to_string());
+        }
+    }
+    node.child_nodes()
+        .into_iter()
+        .find_map(first_unsupported_const_stmt)
+}
+
+fn const_stmt_is_supported(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let Some(pos) = lower.find("const") else {
+        return false;
+    };
+    let payload = text[pos + "const".len()..].trim();
+    if payload.contains(',') {
+        return false;
+    }
+    let Some((_, rhs)) = payload.split_once('=') else {
+        return false;
+    };
+    parse_const_literal(rhs.trim()).is_some()
 }
 
 pub fn lower_typed_hir_to_bound_module(
@@ -1438,6 +1470,14 @@ mod tests {
                 .any(|slot| slot.name.eq_ignore_ascii_case("cbase")),
             "{main:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_expression_const_statement() {
+        let source = "Const CBase = 1 + 2\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("expression constants remain a tracked residual");
+        assert!(matches!(err, HirProductionLoweringError::Unsupported(_)));
     }
 
     #[test]
