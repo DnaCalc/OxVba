@@ -596,13 +596,18 @@ construction beyond the existing temporary workaround remain owned by `bd-aprs.9
 
 ## As New Construction HIR Continuation
 
-The first `bd-aprs.9.7` continuation moves active-project `Dim x As New <Class>` off the
-project-instance helper-source compile artifact for the eager declaration-time construction route:
+The `bd-aprs.9.7` continuation moves accepted active-project `Dim x As New <Class>` off the
+project-instance helper-source compile artifact on the HIR construction route:
 
 - Active-project construction bindings now include both explicit `Set x = New <Class>` and
   `Dim x As New <Class>` source kinds when deriving `HirNewExpressionBinding` facts.
-- `compile_project(...)` reconstructs generated `Set x = __oxvba_project_instance(handle)` carriers
-  back to `Set x = New <constructor-type>` for those accepted active-project construction facts.
+- The baseline rewritten source remains fallback-compatible for unsupported project shapes, while
+  the HIR construction candidate derives a separate source: eager `As New` helper carriers are
+  removed, and guarded first-use/after-`Nothing` `If x Is Nothing Then Set x = New <T>` sites are
+  inserted before accepted dereference lines.
+- `compile_project(...)` reconstructs generated explicit `Set x = __oxvba_project_instance(handle)`
+  carriers back to `Set x = New <constructor-type>` and supplies one
+  `HirNewExpressionBinding` fact for each generated/reconstructed `New` occurrence.
 - HIR symbol binding now declares the typed structural-intrinsic prelude from
   `StructuralIntrinsic`, and HIR lowering maps those call targets back to typed structural
   intrinsic calls. This lets generated field-storage helper calls in `Class_Initialize` bodies stay
@@ -611,10 +616,13 @@ project-instance helper-source compile artifact for the eager declaration-time c
   the compiled artifact no longer contains `__oxvba_project_instance(...)`, checks
   `LoadProjectObjectRef` bytecode, confirms dynamic route metadata still retains the initializer
   member, and checks the original module source line remains mapped.
+- The reset regression proves `Set x = Nothing` followed by another accepted dereference produces a
+  second guarded `New` site and a second `LoadProjectObjectRef`, so the accepted HIR route no
+  longer models `As New` as declaration-time-only construction.
 
-This is still not `bd-aprs.9.7` closure. The implementation remains eager at declaration time for
-`Dim x As New T`; true VBA lazy construction on first dereference/assignment after `Nothing` is not
-implemented yet. Broader WithEvents construction interactions, imported/COM construction, and the
+This is still not full `bd-aprs.9.7` closure. The accepted HIR route now covers lazy first-use and
+after-`Nothing` construction for simple active-project dereference lines, but broader WithEvents
+construction interactions, imported/COM construction, unsupported fallback project shapes, and the
 full object-lifetime/source-map story still need closure evidence before the bead can close.
 
 ## Const Expression Continuation
@@ -656,6 +664,7 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-compiler project_hir_construction_source_restores_new_expression_from_binding_facts --quiet`
 - `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_active_project_set_new --quiet`
 - `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_as_new_and_initializer --quiet`
+- `cargo test -p oxvba-compiler compile_project_lazily_reconstructs_as_new_after_set_nothing --quiet`
 - `cargo test -p oxvba-compiler hir_lowering_lowers_structural_intrinsic_call_targets --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
