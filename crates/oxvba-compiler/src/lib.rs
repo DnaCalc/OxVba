@@ -263,7 +263,87 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
     let (bytecode, metadata) = emit::emit_bytecode_with_runtime_metadata(&optimized);
     validate_frontend_property_accessor_metadata(source, &metadata)?;
     validate_frontend_assignment_coercion_metadata(source, &metadata)?;
+    validate_frontend_lowering_contract_metadata(source, &metadata)?;
     Ok((bytecode, metadata))
+}
+
+fn validate_frontend_lowering_contract_metadata(
+    source: &str,
+    metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Result<(), CompileError> {
+    let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
+        return Ok(());
+    };
+    let contracts =
+        frontend_lowering_contract::collect_lowering_contracts_from_typed_hir(&typed_hir);
+    for contract in contracts {
+        if contract.uses_legacy_intrinsic_names() {
+            return Err(CompileError::ResolveError(
+                "frontend_v2 lowering contract used legacy intrinsic names".to_string(),
+            ));
+        }
+        if contract.assumes_flat_slots() {
+            return Err(CompileError::ResolveError(
+                "frontend_v2 lowering contract assumed flat slots".to_string(),
+            ));
+        }
+        let Some(decl) = typed_hir.module.arenas.decl(contract.entry_decl) else {
+            continue;
+        };
+        let Some(proc_name) =
+            frontend_lowering_contract::symbol_folded_name(&typed_hir, decl.symbol)
+        else {
+            continue;
+        };
+        let Some(procedure) = metadata.get(proc_name) else {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 lowering metadata missing procedure {proc_name}"
+            )));
+        };
+        for slot in &contract.frame_overlay.locals {
+            let frontend_lowering_contract::HirFrameSlotSource::Symbol(symbol) = slot.source else {
+                continue;
+            };
+            let Some(name) = frontend_lowering_contract::symbol_folded_name(&typed_hir, symbol)
+            else {
+                continue;
+            };
+            if !procedure.slots.iter().any(|runtime_slot| {
+                runtime_slot.name.eq_ignore_ascii_case(name)
+                    && matches!(
+                        runtime_slot.kind,
+                        ProcedureRuntimeSlotKind::Local
+                            | ProcedureRuntimeSlotKind::Parameter
+                            | ProcedureRuntimeSlotKind::ReturnValue
+                    )
+            }) {
+                return Err(CompileError::ResolveError(format!(
+                    "frontend_v2 lowering metadata missing frame slot {proc_name}.{name}"
+                )));
+            }
+        }
+        if !contract.returns.is_empty() && procedure.return_slot.is_none() {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 lowering metadata missing return slot for {proc_name}"
+            )));
+        }
+        for temp in &contract.frame_overlay.temporaries {
+            let frontend_lowering_contract::HirFrameSlotSource::Coercion(coercion) = &temp.source
+            else {
+                continue;
+            };
+            if !procedure.coercions.iter().any(|metadata_coercion| {
+                metadata_coercion.kind == coercion.kind
+                    && metadata_coercion.source_declared_type == coercion.source_type
+                    && metadata_coercion.target_declared_type == coercion.target_type
+            }) {
+                return Err(CompileError::ResolveError(format!(
+                    "frontend_v2 lowering metadata missing coercion overlay for {proc_name}"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_frontend_property_accessor_metadata(

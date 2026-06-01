@@ -76,6 +76,10 @@ impl HirTypeHooks {
         self.declared_types_by_symbol.get(&symbol)
     }
 
+    pub fn declared_types(&self) -> impl Iterator<Item = &HirDeclaredTypeHook> {
+        self.declared_types_by_symbol.values()
+    }
+
     pub fn record_assignment_intent(&mut self, stmt: HirStmtId, intent: HirAssignmentIntent) {
         self.assignment_intents.insert(stmt, intent);
     }
@@ -100,6 +104,10 @@ impl HirTypeHooks {
         self.call_sites.get(&call)
     }
 
+    pub fn call_sites(&self) -> impl Iterator<Item = &HirCallSiteHook> {
+        self.call_sites.values()
+    }
+
     pub fn record_coercion(&mut self, hook: HirCoercionHook) {
         self.coercions_by_expr
             .entry(hook.expr)
@@ -112,6 +120,10 @@ impl HirTypeHooks {
             .get(&expr)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    pub fn coercions(&self) -> impl Iterator<Item = &HirCoercionHook> {
+        self.coercions_by_expr.values().flatten()
     }
 }
 

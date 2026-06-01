@@ -821,7 +821,11 @@ Candidate bead units:
   optimization.
   Evidence: `docs/evidence/frontend_rework/OPERATOR_NORMALIZATION_2026-06-01.md`.
 - FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
-  relying on legacy name strings or flat-slot assumptions.
+  relying on legacy name strings or flat-slot assumptions. Reopened continuation makes the contract
+  executable in the normal compile route: typed HIR lowering contracts are derived from source and
+  emitted `ProcedureRuntimeMetadata` is validated for procedure presence, symbol-backed frame slots,
+  return slots, and scoped coercion overlays. Known current HIR modifier-token residue is quarantined
+  rather than projected into runtime slots.
   Evidence: `docs/evidence/frontend_rework/HIR_LOWERING_CONTRACT_2026-06-01.md`.
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
   descriptors, source maps, and diagnostics.
