@@ -1086,9 +1086,11 @@ Candidate bead units:
   `WithEvents Set x = New T` also now restores its generated temporary construction to HIR `New`
   and preserves generated optional/default guard parameters. The accepted active-project reset
   regression now also checks private `Class_Terminate` retention, dynamic route termination
-  metadata, and first-use/after-`Nothing` source maps. This bead remains open because imported/COM
-  construction, unsupported fallback project shapes, and broader WithEvents event/lifetime
-  interactions are not yet proven.
+  metadata, and first-use/after-`Nothing` source maps.
+  Status: delivery complete for the scoped accepted active-project `As New`/initializer/source-map/
+  lifetime and source-class WithEvents construction lane. Imported/reference/COM activation remains
+  owned by FE-7.6.a / `bd-aprs.8.8`; unsupported fallback shapes remain compatibility fallback
+  until the broad route audit; broader event semantics remain under FE-7/FE-9 coverage.
 - FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and overload validation. Partial work has already been done: simple
