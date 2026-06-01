@@ -52,6 +52,29 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let if_statement = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nEnd If\nEnd Sub\n";
+    findings.push(route_finding(
+        "if statement fixture",
+        if_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let do_while_statement =
+        "Sub Main()\nDim x As Long\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub\n";
+    findings.push(route_finding(
+        "do while statement fixture",
+        do_while_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let select_statement =
+        "Sub Main()\nDim x As Long\nSelect Case x\nCase 1\nx = 2\nEnd Select\nEnd Sub\n";
+    findings.push(route_finding(
+        "select case statement fixture",
+        select_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -130,6 +153,20 @@ mod tests {
             report.findings.iter().any(|finding| {
                 finding.area.contains("project.rs")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }),
+            "{report:#?}"
+        );
+        assert!(
+            report.findings.iter().any(|finding| {
+                finding.area.contains("if statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }),
+            "{report:#?}"
+        );
+        assert!(
+            report.residuals().iter().any(|finding| {
+                finding.area.contains("do while statement")
+                    || finding.area.contains("select case statement")
             }),
             "{report:#?}"
         );

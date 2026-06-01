@@ -11,9 +11,9 @@ use crate::frontend_symbols::{SymbolId, SymbolNamespace};
 use crate::frontend_type_hooks::{TypedHirModule, collect_type_hooks_from_source};
 use crate::optimize::optimize_module;
 use crate::resolve::{
-    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCompareMode, BoundExpr,
-    BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
-    CompareOp, LogicalBinOp,
+    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCompareMode, BoundCond,
+    BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
+    BoundType, CompareOp, LogicalBinOp,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -72,7 +72,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::ConstStmt
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
-            | SyntaxKind::IfStmt
             | SyntaxKind::ForStmt
             | SyntaxKind::ForEachStmt
             | SyntaxKind::DoStmt
@@ -276,12 +275,26 @@ fn lower_stmt(
                 )));
             }
         },
-        HirStmtKind::Empty => {}
-        other => {
-            return Err(HirProductionLoweringError::Unsupported(format!(
-                "statement {other:?}"
-            )));
+        HirStmtKind::If {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let mut lowered_then = Vec::new();
+            for stmt in then_body {
+                lower_stmt(typed_hir, *stmt, &mut lowered_then)?;
+            }
+            let mut lowered_else = Vec::new();
+            for stmt in else_body {
+                lower_stmt(typed_hir, *stmt, &mut lowered_else)?;
+            }
+            out.push(BoundStmt::IfCond {
+                cond: lower_condition(typed_hir, *condition)?,
+                then_body: lowered_then,
+                else_body: lowered_else,
+            });
         }
+        HirStmtKind::Empty => {}
     }
     Ok(())
 }
@@ -424,6 +437,64 @@ fn lower_call_expr(
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "call target {other:?}"
         ))),
+    }
+}
+
+fn lower_condition(
+    typed_hir: &TypedHirModule,
+    expr: crate::frontend_hir::HirExprId,
+) -> Result<BoundCond, HirProductionLoweringError> {
+    let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "missing condition expression".to_string(),
+        ));
+    };
+    match &expr_data.kind {
+        HirExprKind::Unary {
+            op: HirUnaryOp::Not,
+            expr,
+        } => Ok(BoundCond::Not(Box::new(lower_condition(typed_hir, *expr)?))),
+        HirExprKind::Binary { op, lhs, rhs } => match op {
+            HirBinaryOp::Eq
+            | HirBinaryOp::Ne
+            | HirBinaryOp::Lt
+            | HirBinaryOp::Le
+            | HirBinaryOp::Gt
+            | HirBinaryOp::Ge
+            | HirBinaryOp::Is => {
+                let Some(compare_op) = compare_op_from_hir(*op) else {
+                    unreachable!("comparison operator covered by match arm");
+                };
+                Ok(BoundCond::Compare {
+                    op: compare_op,
+                    lhs: lower_expr(typed_hir, *lhs)?,
+                    rhs: lower_expr(typed_hir, *rhs)?,
+                })
+            }
+            HirBinaryOp::And => Ok(BoundCond::And(
+                Box::new(lower_condition(typed_hir, *lhs)?),
+                Box::new(lower_condition(typed_hir, *rhs)?),
+            )),
+            HirBinaryOp::Or => Ok(BoundCond::Or(
+                Box::new(lower_condition(typed_hir, *lhs)?),
+                Box::new(lower_condition(typed_hir, *rhs)?),
+            )),
+            _ => Ok(BoundCond::Truthy(lower_expr(typed_hir, expr)?)),
+        },
+        _ => Ok(BoundCond::Truthy(lower_expr(typed_hir, expr)?)),
+    }
+}
+
+fn compare_op_from_hir(op: HirBinaryOp) -> Option<CompareOp> {
+    match op {
+        HirBinaryOp::Eq => Some(CompareOp::Eq),
+        HirBinaryOp::Ne => Some(CompareOp::Ne),
+        HirBinaryOp::Lt => Some(CompareOp::Lt),
+        HirBinaryOp::Le => Some(CompareOp::Le),
+        HirBinaryOp::Gt => Some(CompareOp::Gt),
+        HirBinaryOp::Ge => Some(CompareOp::Ge),
+        HirBinaryOp::Is => Some(CompareOp::Is),
+        _ => None,
     }
 }
 
@@ -625,6 +696,48 @@ mod tests {
         assert_eq!(
             use_metadata.signature.parameters[0].passing_mode,
             ParameterPassingMode::ByVal
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_branch_bytecode_for_multiline_if() {
+        let source = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nEnd If\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected conditional branch bytecode: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Long
+        }));
+    }
+
+    #[test]
+    fn hir_production_lowering_preserves_logical_if_conditions() {
+        let source = "Sub Main()\nDim x As Long\nDim y As Long\nIf x = 0 And y = 0 Then\nx = 1\nEnd If\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected conditional branch bytecode: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            main.slots.iter().any(|slot| slot.name == "x")
+                && main.slots.iter().any(|slot| slot.name == "y"),
+            "{main:#?}"
         );
     }
 }

@@ -17,6 +17,9 @@ The audit proves the good path and exposes the remaining production residuals:
 - simple same-module procedure call statement fixtures now reach `HirProduction`; the remaining
   call/coercion seed-row delta is a documented source-map metadata improvement, not a syntax-route
   residual or bytecode/call-descriptor bug;
+- simple multiline `If ... Then ... End If` fixtures now reach `HirProduction`;
+- `Do While` and `Select Case` fixtures remain explicit `LegacyFallbackResidual` entries owned by
+  FE-8.5 rather than being hidden under a generic "control flow" note;
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
@@ -40,7 +43,8 @@ The audit result requires reopened delivery work rather than terminal closure:
   selector but still own broader replacement or quarantine of source-text lowering internals where
   those internals remain compatibility scaffolding;
 - `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding production HIR lowering beyond
-  the initial procedure/local/assignment/expression and simple same-module call subset;
+  the initial procedure/local/assignment/expression, simple same-module call, and simple multiline
+  If subset;
 - `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) for retiring the remaining internal
   language-service `BoundModule` fallback/diagnostic compatibility surface.
 
@@ -57,7 +61,8 @@ The audit result requires reopened delivery work rather than terminal closure:
   bridge as a production-selected path or signature help using `BoundModule`, but it still finds the
   fallback language-service compatibility residual.
 - The scoped HIR production path is real, but the workset goal is broader than that subset.
-- Procedure-call syntax is no longer itself the route blocker, and the call/coercion fixture now has
-  matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage.
+- Procedure-call syntax and simple multiline If syntax are no longer themselves route blockers.
+  The call/coercion fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader
+  HIR lowering coverage, starting with the now-audited `Do While` and `Select Case` residuals.
 - The right next step is reopened delivery work on the owning beads, not another evidence-only
   closure pass.

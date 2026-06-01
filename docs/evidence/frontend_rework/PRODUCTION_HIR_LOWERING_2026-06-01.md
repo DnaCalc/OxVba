@@ -19,6 +19,7 @@ The initial production scope is intentionally narrow and explicit:
 - explicit `ByVal` / `ByRef` parameter mechanism projection for lowered procedures,
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
+- simple multiline `If ... Then ... End If` statements without `ElseIf`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
@@ -26,8 +27,8 @@ The initial production scope is intentionally narrow and explicit:
 
 Unsupported constructs are rejected from the HIR production path before lowering and continue through
 the tracked fallback path. This prevents silent partial lowering for member/index/new expressions,
-control flow, error handling, `ReDim`, `With`, events, declarations, and other surfaces not yet
-implemented in HIR production lowering.
+unsupported control flow, error handling, `ReDim`, `With`, events, declarations, and other surfaces
+not yet implemented in HIR production lowering.
 
 ## Reopened Continuation
 
@@ -52,9 +53,27 @@ This is still not blanket FE-8.5 closure. Broader HIR production lowering remain
 surfaces outside this simple same-module call subset, especially optional/default arguments,
 ParamArray, member/index dispatch, control flow, and project/class paths owned jointly with FE-7.
 
+## Control-Flow Continuation
+
+The third FE-8.5 slice removes the simplest control-flow route residual:
+
+- multiline `IfStmt` nodes lower into `HirStmtKind::If` with CST-backed condition, then-body, and
+  else-body fields;
+- production HIR lowering converts that HIR statement into `BoundStmt::IfCond`;
+- HIR production bytecode emission now reaches `Instruction::JumpIfZero` for the simple
+  `If x = 0 Then ... End If` fixture; and
+- the route audit classifies the simple If fixture as `HirProduction`.
+
+This is intentionally not full control-flow closure. `ElseIf`, `Do`/`Loop`, `For`, `For Each`,
+`While`, `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5
+residuals until each has HIR shape, lowering tests, bytecode/metadata parity or documented
+improvement classification, and route-audit coverage.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
+- `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler syntax_bridge --quiet`

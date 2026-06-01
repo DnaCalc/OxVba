@@ -453,6 +453,57 @@ impl HirBuilder {
                     kind: HirStmtKind::Expr(expr),
                 })))
             }
+            SyntaxKind::IfStmt => {
+                if node
+                    .child_nodes()
+                    .into_iter()
+                    .any(|child| child.kind() == SyntaxKind::ElseIfClause)
+                {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "ElseIf clauses are not yet supported by HIR lowering: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let condition_node =
+                    expression_children(node)
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            HirBuildError::Unsupported(format!(
+                                "if statement without condition: `{}`",
+                                node.text().trim()
+                            ))
+                        })?;
+                let condition = self.lower_expr(scope, condition_node)?;
+                let then_body = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::Block)
+                    .map(|block| self.collect_stmt_block(scope, block))
+                    .transpose()?
+                    .unwrap_or_default();
+                let else_body = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::ElseClause)
+                    .and_then(|else_clause| {
+                        else_clause
+                            .child_nodes()
+                            .into_iter()
+                            .find(|child| child.kind() == SyntaxKind::Block)
+                    })
+                    .map(|block| self.collect_stmt_block(scope, block))
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::If {
+                        condition,
+                        then_body,
+                        else_body,
+                    },
+                })))
+            }
             _ => {
                 let mut stmts = Vec::new();
                 for child in node.child_nodes() {
@@ -470,6 +521,20 @@ impl HirBuilder {
                 }
             }
         }
+    }
+
+    fn collect_stmt_block(
+        &mut self,
+        scope: ScopeId,
+        node: SyntaxNode<'_>,
+    ) -> Result<Vec<HirStmtId>, HirBuildError> {
+        let mut stmts = Vec::new();
+        for child in node.child_nodes() {
+            if let Some(stmt) = self.collect_stmt(scope, child)? {
+                stmts.push(stmt);
+            }
+        }
+        Ok(stmts)
     }
 
     fn lower_expr(
@@ -1079,6 +1144,52 @@ mod tests {
     }
 
     #[test]
+    fn hir_builder_lowers_multiline_if_statement() {
+        let source = "Sub Main()\nDim x As Long\nIf x = 0 Then\nx = 1\nEnd If\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let if_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_if_stmt(&module.arenas, *stmt))
+            .expect("if statement");
+        let Some(HirStmt {
+            kind:
+                HirStmtKind::If {
+                    condition,
+                    then_body,
+                    else_body,
+                },
+            ..
+        }) = module.arenas.stmt(if_stmt)
+        else {
+            panic!("expected if statement");
+        };
+
+        assert!(matches!(
+            module.arenas.expr(*condition).map(|expr| &expr.kind),
+            Some(HirExprKind::Binary {
+                op: HirBinaryOp::Eq,
+                ..
+            })
+        ));
+        assert!(
+            then_body
+                .iter()
+                .any(|stmt| find_let_stmt(&module.arenas, *stmt).is_some()),
+            "expected assignment in then body: {module:#?}"
+        );
+        assert!(else_body.is_empty());
+    }
+
+    #[test]
     fn hir_builder_preserves_cst_backpointer_spans_from_parser() {
         let source = "Sub Main()\n    Dim total As Long\n    total = 1\nEnd Sub\n";
         let module = build_hir_from_source("Module1", source).expect("HIR module");
@@ -1134,6 +1245,16 @@ mod tests {
             Some(HirStmtKind::Block(children)) => children
                 .iter()
                 .find_map(|child| find_let_stmt_id(hir, *child)),
+            _ => None,
+        }
+    }
+
+    fn find_if_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<HirStmtId> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::If { .. }) => Some(stmt),
+            Some(HirStmtKind::Block(children)) => {
+                children.iter().find_map(|child| find_if_stmt(hir, *child))
+            }
             _ => None,
         }
     }
