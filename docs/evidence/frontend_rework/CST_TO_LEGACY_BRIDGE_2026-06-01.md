@@ -21,13 +21,18 @@ workset reopen, the FE-4.1 expression bridge no longer calls the special legacy
 `parse_expr_for_syntax_bridge` hook; unsupported expression shapes fail explicitly instead of
 falling back silently.
 
+FE-4.2 then extended the same CST lowerer for scoped postfix proof: simple calls become
+`BoundExpr::ProcCall`, member/bang chains become `BoundExpr::Member`, and member calls attach
+arguments from the CST `ArgList`.
+
 ## Verification
 
 Commands run from repository root:
 
 - `cargo test -p oxvba-compiler syntax_bridge --quiet`
   - First-run result: passed, 2 tests.
-  - Reopen result: passed, 3 tests after adding CST expression lowering coverage.
+  - FE-4.1 reopen result: passed, 3 tests after adding CST expression lowering coverage.
+  - FE-4.2 reopen result: passed, 4 tests after adding CST postfix lowering coverage.
 - `cargo test -p oxvba-syntax --quiet`
   - First-run result: passed, 78 unit tests plus 2 integration tests.
   - Reopen result: passed, 79 unit tests plus 2 integration tests.
@@ -41,8 +46,9 @@ Commands run from repository root:
 The bridge deliberately does not pretend to be a full CST lowerer. Its value is a concrete,
 checked handoff point: the new CST parser must accept the source first, and FE-4.1 expression
 forms are now lowered from the CST rather than reparsed from source text by the legacy expression
-parser. Full statement/source compilation still uses the legacy compiler after CST validation until
-later HIR/binder/lowering beads replace that path.
+parser. FE-4.2 postfix forms are also lowered from CST for the scoped bridge tests. Full
+statement/source compilation still uses the legacy compiler after CST validation until later
+HIR/binder/lowering beads replace that path.
 
 The test assertion initially referenced a nonexistent `StoreSlot` bytecode instruction. The final
 test checks the actual instruction family emitted by this compiler for the assignment/arithmetic

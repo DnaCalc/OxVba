@@ -41,6 +41,21 @@ all reserved words valid expression names.
 This bead verifies CST shape and syntax recovery only. Default-member semantics, call binding,
 late-bound dispatch, and compiler execution parity remain binder/bridge work.
 
+After the workset reopen, the bead was extended from parser-shape proof to bridge route proof for
+the scoped postfix surface:
+
+- `syntax_bridge::lower_expression_to_legacy_bound_expr` now lowers simple call/index expressions
+  from CST `IndexExpr` nodes into `BoundExpr::ProcCall`;
+- member and bang chains lower from CST `MemberExpr` nodes into `BoundExpr::Member`;
+- member calls attach CST `ArgList` arguments to the lowered member route;
+- the bridge test covers a keyword-colliding suffixed call, `obj.Method(1)`, and
+  `obj!Field(0).Value`.
+
+This still does not claim final dispatch/default-member semantics. The proof is that the production
+bridge no longer has to reparse these scoped postfix expression forms from source text; binder/HIR
+beads remain responsible for deciding whether a member is early-bound, late-bound, default-member,
+or host-provided.
+
 Residuals left for later beads:
 
 - complete statement coverage belongs to FE-4.3;

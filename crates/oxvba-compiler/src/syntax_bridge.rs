@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::bytecode::Bytecode;
-use crate::resolve::{ArithOp, BoundExpr, CompareOp, LogicalBinOp, normalize_ident};
+use crate::resolve::{ArithOp, BoundCallArg, BoundExpr, CompareOp, LogicalBinOp, normalize_ident};
 use crate::{CompileError, compile};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
@@ -113,6 +113,8 @@ fn lower_cst_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> 
                 .ok_or_else(|| unsupported_expr(node, "empty parenthesized expression"))?;
             lower_cst_expr(inner)
         }
+        SyntaxKind::MemberExpr => lower_member_expr(node),
+        SyntaxKind::IndexExpr => lower_index_expr(node),
         SyntaxKind::UnaryExpr => lower_unary_expr(node),
         SyntaxKind::BinaryExpr => lower_binary_expr(node),
         other => Err(unsupported_expr(
@@ -160,6 +162,44 @@ fn lower_ident_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError
     normalize_ident(&text)
         .map(BoundExpr::Var)
         .ok_or_else(|| unsupported_expr(node, &format!("unsupported identifier `{text}`")))
+}
+
+fn lower_member_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
+    let receiver_node = expression_children(node)
+        .into_iter()
+        .next()
+        .ok_or_else(|| unsupported_expr(node, "member expression without receiver"))?;
+    let receiver = Box::new(lower_cst_expr(receiver_node)?);
+    let member = direct_member_name(node)
+        .and_then(|token| normalize_member_token(token.text))
+        .ok_or_else(|| unsupported_expr(node, "member expression without supported member name"))?;
+    Ok(BoundExpr::Member {
+        receiver,
+        member,
+        args: Vec::new(),
+    })
+}
+
+fn lower_index_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
+    let target_node = expression_children(node)
+        .into_iter()
+        .next()
+        .ok_or_else(|| unsupported_expr(node, "index/call expression without target"))?;
+    let args = lower_arg_list(node)?;
+    match lower_cst_expr(target_node)? {
+        BoundExpr::Var(name) => Ok(BoundExpr::ProcCall { name, args }),
+        BoundExpr::Member {
+            receiver, member, ..
+        } => Ok(BoundExpr::Member {
+            receiver,
+            member,
+            args,
+        }),
+        other => Err(SyntaxBridgeError::Unsupported(format!(
+            "unsupported indexed target `{}` lowered as {other:?}",
+            target_node.text().trim()
+        ))),
+    }
 }
 
 fn lower_unary_expr(node: SyntaxNode<'_>) -> Result<BoundExpr, SyntaxBridgeError> {
@@ -294,11 +334,66 @@ fn logical_expr(
     })
 }
 
+fn lower_arg_list(node: SyntaxNode<'_>) -> Result<Vec<BoundCallArg>, SyntaxBridgeError> {
+    let arg_list = node
+        .child_nodes()
+        .into_iter()
+        .find(|child| child.kind() == SyntaxKind::ArgList)
+        .ok_or_else(|| unsupported_expr(node, "index/call expression without argument list"))?;
+    expression_children(arg_list)
+        .into_iter()
+        .map(|arg| {
+            lower_cst_expr(arg).map(|expr| BoundCallArg {
+                name: None,
+                expr,
+                force_byval: false,
+            })
+        })
+        .collect()
+}
+
 fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
     node.child_nodes()
         .into_iter()
         .filter(|child| is_expression_node(child.kind()))
         .collect()
+}
+
+fn direct_member_name(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    let mut after_member_operator = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if token.kind == SyntaxKind::Dot || token.kind == SyntaxKind::Bang =>
+            {
+                after_member_operator = true;
+            }
+            SyntaxElement::Token(token)
+                if after_member_operator
+                    && !token.kind.is_trivia()
+                    && (token.kind == SyntaxKind::Ident
+                        || token.kind == SyntaxKind::BracketedIdent
+                        || token.kind.is_keyword()) =>
+            {
+                return Some(token);
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                after_member_operator = false;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn normalize_member_token(text: &str) -> Option<String> {
+    if let Some(unbracketed) = text
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return normalize_ident(unbracketed);
+    }
+    normalize_ident(text)
 }
 
 fn first_nontrivia_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
@@ -465,6 +560,30 @@ mod tests {
         assert!(
             bare_is.to_string().contains("bare object `Is` comparison"),
             "unexpected error: {bare_is}"
+        );
+    }
+
+    #[test]
+    fn bridge_lowers_postfix_scope_from_cst() {
+        let call = lower_expression_to_legacy_bound_expr("Name$(1, 2)")
+            .expect("keyword-colliding suffixed call should lower");
+        assert!(
+            matches!(call, BoundExpr::ProcCall { ref name, ref args } if name == "name" && args.len() == 2),
+            "expected ProcCall, got {call:?}"
+        );
+
+        let member_call = lower_expression_to_legacy_bound_expr("obj.Method(1)")
+            .expect("member call should lower");
+        assert!(
+            matches!(member_call, BoundExpr::Member { ref member, ref args, .. } if member == "method" && args.len() == 1),
+            "expected member call, got {member_call:?}"
+        );
+
+        let chain = lower_expression_to_legacy_bound_expr("obj!Field(0).Value")
+            .expect("bang/index/member chain should lower");
+        assert!(
+            matches!(chain, BoundExpr::Member { ref member, .. } if member == "value"),
+            "expected outer Value member, got {chain:?}"
         );
     }
 
