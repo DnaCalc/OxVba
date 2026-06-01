@@ -1,4 +1,5 @@
 use crate::document::DocumentId;
+use crate::semantic::CallableSignatureInfo;
 use crate::span::{
     SemanticProvenance, SpannedDiagnostic, SymbolIdentity, SymbolInfo, SymbolKind,
     SymbolProvenanceKind, TextSpan,
@@ -7,7 +8,6 @@ use crate::workspace::Workspace;
 
 use oxvba_compiler::ProjectManifest;
 use oxvba_compiler::lsp_support::intrinsic_spec;
-use oxvba_compiler::resolve::BoundProcedure;
 use oxvba_syntax::SyntaxKind;
 
 /// A position in a document (byte offset).
@@ -748,10 +748,10 @@ impl LanguageService {
 
         let name = call_name?;
         let name_lower = name.to_ascii_lowercase();
-        let (document_id, display_name, proc, provenance) =
+        let (document_id, callable, provenance) =
             self.resolve_callable_signature(module, &name_lower)?;
 
-        let parameters = proc
+        let parameters = callable
             .params
             .iter()
             .map(|p| ParameterInfo {
@@ -761,9 +761,9 @@ impl LanguageService {
             .collect();
 
         Some(SignatureHelp {
-            name: display_name,
+            name: callable.name,
             parameters,
-            return_type: format!("{:?}", proc.return_type),
+            return_type: format!("{:?}", callable.return_type),
             active_parameter: comma_count,
             source_document: Some(document_id),
             provenance: Some(provenance),
@@ -1251,29 +1251,18 @@ impl LanguageService {
         &self,
         module: &DocumentId,
         name_lower: &str,
-    ) -> Option<(DocumentId, String, BoundProcedure, SemanticProvenance)> {
+    ) -> Option<(DocumentId, CallableSignatureInfo, SemanticProvenance)> {
         let current = self.workspace.snapshot(module)?;
-        if let Some(proc) = current
-            .bound
-            .procedures
+        if let Some(callable) = current
+            .callables
             .iter()
-            .find(|proc| proc.name.to_ascii_lowercase() == name_lower)
+            .find(|callable| callable.name.to_ascii_lowercase() == name_lower)
         {
-            let display_name = current
-                .symbols
-                .symbols
-                .iter()
-                .find(|sym| {
-                    matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
-                        && sym.name.eq_ignore_ascii_case(name_lower)
-                })
-                .map(|sym| sym.name.clone())
-                .unwrap_or_else(|| proc.name.clone());
             let provenance = self
                 .workspace
                 .document(module)
                 .map(|document| document.semantic_provenance())?;
-            return Some((module.clone(), display_name, proc.clone(), provenance));
+            return Some((module.clone(), callable.clone(), provenance));
         }
 
         for document in self.workspace.document_ids() {
@@ -1284,27 +1273,16 @@ impl LanguageService {
                 Some(snapshot) => snapshot,
                 None => continue,
             };
-            if let Some(proc) = snap
-                .bound
-                .procedures
+            if let Some(callable) = snap
+                .callables
                 .iter()
-                .find(|proc| proc.name.to_ascii_lowercase() == name_lower)
+                .find(|callable| callable.name.to_ascii_lowercase() == name_lower)
             {
-                let display_name = snap
-                    .symbols
-                    .symbols
-                    .iter()
-                    .find(|sym| {
-                        matches!(sym.kind, SymbolKind::Procedure | SymbolKind::Property)
-                            && sym.name.eq_ignore_ascii_case(name_lower)
-                    })
-                    .map(|sym| sym.name.clone())
-                    .unwrap_or_else(|| proc.name.clone());
                 let provenance = self
                     .workspace
                     .document(document)
                     .map(|doc| doc.semantic_provenance())?;
-                return Some((document.clone(), display_name, proc.clone(), provenance));
+                return Some((document.clone(), callable.clone(), provenance));
             }
         }
 

@@ -20,9 +20,9 @@ The audit proves the good path and exposes the remaining production residuals:
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
-- `oxvba-languageservice` now prefers compiler query/HIR facts for symbols and diagnostics, but
-  `SemanticSnapshot` still retains legacy `BoundModule` compatibility for signature help and
-  older workspace features.
+- `oxvba-languageservice` now prefers compiler query/HIR facts for symbols, callable signatures,
+  and diagnostics, and signature help no longer reads `BoundModule`; `semantic.rs` still builds a
+  transient legacy `BoundModule` for fallback symbol correlation and resolution diagnostics.
 
 This audit intentionally does not close FE-9.6. The workset terminal gate requires no scoped
 production compile path to depend on legacy `parse_expr`/string-splitting, `project.rs`
@@ -41,8 +41,8 @@ The audit result requires reopened delivery work rather than terminal closure:
   those internals remain compatibility scaffolding;
 - `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding production HIR lowering beyond
   the initial procedure/local/assignment/expression and simple same-module call subset;
-- `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) for retiring the remaining
-  language-service `BoundModule` compatibility surface.
+- `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) for retiring the remaining internal
+  language-service `BoundModule` fallback/diagnostic compatibility surface.
 
 ## Checks
 
@@ -54,8 +54,8 @@ The audit result requires reopened delivery work rather than terminal closure:
 ## Fresh-Eyes Review
 
 - Closing FE-9.6 would still be incorrect. The route audit no longer finds the project rewrite
-  bridge as a production-selected path, but it still finds the language-service compatibility
-  residual.
+  bridge as a production-selected path or signature help using `BoundModule`, but it still finds the
+  transient language-service compatibility residual.
 - The scoped HIR production path is real, but the workset goal is broader than that subset.
 - Procedure-call syntax is no longer itself the route blocker, and the call/coercion fixture now has
   matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage.

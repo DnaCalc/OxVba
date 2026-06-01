@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use oxvba_compiler::VbaTypeId;
 use oxvba_compiler::frontend_diagnostics::{FrontendDiagnostic, FrontendDiagnosticSeverity};
+use oxvba_compiler::frontend_hir::HirDeclKind;
 use oxvba_compiler::frontend_query::FrontendQueryDatabase;
 use oxvba_compiler::frontend_symbols::{FrontendSourceSpan, SymbolNamespace};
 use oxvba_compiler::frontend_type_hooks::TypedHirModule;
@@ -43,13 +44,26 @@ impl SymbolTable {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallableSignatureInfo {
+    pub name: String,
+    pub params: Vec<CallableParameterInfo>,
+    pub return_type: BoundType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallableParameterInfo {
+    pub name: String,
+    pub ty: BoundType,
+}
+
 /// The core analysis unit: an immutable snapshot of a single module's
 /// parse tree, bound module, symbol table, and diagnostics.
 pub struct SemanticSnapshot {
     pub source: Arc<str>,
     pub parse: Arc<Parse>,
-    pub bound: Arc<BoundModule>,
     pub symbols: SymbolTable,
+    pub callables: Vec<CallableSignatureInfo>,
     pub diagnostics: Vec<SpannedDiagnostic>,
     pub provenance: SemanticProvenance,
 }
@@ -110,12 +124,17 @@ pub fn build_semantic_snapshot_with_provenance(
     // Step 4: Prefer the compiler front-end HIR/SemanticModel facts for document symbols.
     // The legacy CST/BoundModule correlation remains as a compatibility fallback for
     // syntax that the new front-end cannot bind yet.
-    let symbols = frontend_queries
-        .bind()
-        .ok()
-        .map(|typed| symbol_table_from_frontend_hir(&parse_arc, &typed, &checked, &provenance))
+    let frontend_typed = frontend_queries.bind().ok();
+    let symbols = frontend_typed
+        .as_ref()
+        .map(|typed| symbol_table_from_frontend_hir(&parse_arc, typed, &checked, &provenance))
         .filter(|symbols| !symbols.symbols.is_empty())
         .unwrap_or_else(|| correlate_symbols(&parse_arc, &checked, &provenance));
+    let callables = frontend_typed
+        .as_ref()
+        .map(callables_from_frontend_hir)
+        .filter(|callables| !callables.is_empty())
+        .unwrap_or_else(|| callables_from_bound_module(&checked));
 
     // Step 5: Map resolution diagnostics to spans
     let resolution_diags = map_resolution_diagnostics(&parse_arc, &checked);
@@ -125,16 +144,83 @@ pub fn build_semantic_snapshot_with_provenance(
     diagnostics.extend(type_errors);
     diagnostics.extend(resolution_diags);
 
-    let bound_arc = Arc::new(checked);
-
     SemanticSnapshot {
         source: source_arc,
         parse: parse_arc,
-        bound: bound_arc,
         symbols,
+        callables,
         diagnostics,
         provenance,
     }
+}
+
+fn callables_from_frontend_hir(typed: &TypedHirModule) -> Vec<CallableSignatureInfo> {
+    let mut callables = Vec::new();
+    for decl_id in &typed.module.declarations {
+        let Some(decl) = typed.module.arenas.decl(*decl_id) else {
+            continue;
+        };
+        let HirDeclKind::Procedure { params, .. } = &decl.kind else {
+            continue;
+        };
+        let Some(name) = typed
+            .module
+            .symbols
+            .symbol(decl.symbol)
+            .and_then(|symbol| typed.module.symbols.name(symbol.name))
+            .map(|name| name.first_spelling.clone())
+        else {
+            continue;
+        };
+        let params = params
+            .iter()
+            .filter_map(|param| {
+                let name = typed
+                    .module
+                    .symbols
+                    .symbol(*param)
+                    .and_then(|symbol| typed.module.symbols.name(symbol.name))
+                    .map(|name| name.first_spelling.clone())?;
+                let ty = typed
+                    .hooks
+                    .declared_type(*param)
+                    .map(|hook| bound_type_from_vba_type(hook.runtime_type))
+                    .unwrap_or(BoundType::Variant);
+                Some(CallableParameterInfo { name, ty })
+            })
+            .collect();
+        let return_type = typed
+            .hooks
+            .declared_type(decl.symbol)
+            .map(|hook| bound_type_from_vba_type(hook.runtime_type))
+            .unwrap_or(BoundType::Variant);
+        callables.push(CallableSignatureInfo {
+            name,
+            params,
+            return_type,
+        });
+    }
+    callables.sort_by(|left, right| left.name.cmp(&right.name));
+    callables
+}
+
+fn callables_from_bound_module(bound: &BoundModule) -> Vec<CallableSignatureInfo> {
+    bound
+        .procedures
+        .iter()
+        .map(|procedure| CallableSignatureInfo {
+            name: procedure.name.clone(),
+            params: procedure
+                .params
+                .iter()
+                .map(|param| CallableParameterInfo {
+                    name: param.name.clone(),
+                    ty: param.ty,
+                })
+                .collect(),
+            return_type: procedure.return_type,
+        })
+        .collect()
 }
 
 fn symbol_table_from_frontend_hir(
@@ -729,9 +815,31 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_option_explicit() {
+    fn snapshot_callables_prefer_compiler_frontend_hir_facts() {
+        let src = "Sub Multi(ByVal first As Long, second As String)\nEnd Sub\n";
+        let snap = build_semantic_snapshot(src);
+
+        let callable = snap
+            .callables
+            .iter()
+            .find(|callable| callable.name == "Multi")
+            .expect("callable from compiler HIR facts");
+        assert_eq!(callable.params.len(), 2);
+        assert_eq!(callable.params[0].name, "first");
+        assert_eq!(callable.params[0].ty, BoundType::Long);
+        assert_eq!(callable.params[1].name, "second");
+        assert_eq!(callable.params[1].ty, BoundType::String);
+    }
+
+    #[test]
+    fn snapshot_accepts_option_explicit() {
         let src = "Option Explicit\nSub Foo()\nEnd Sub\n";
         let snap = build_semantic_snapshot(src);
-        assert!(snap.bound.option_explicit);
+        assert!(
+            snap.symbols
+                .symbols
+                .iter()
+                .any(|symbol| symbol.name == "Foo")
+        );
     }
 }

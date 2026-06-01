@@ -18,17 +18,22 @@ Changes:
   when building a `SemanticSnapshot`:
   - diagnostics come from `FrontendQueryDatabase::diagnostics`;
   - document symbols are projected from typed HIR `SymbolModel` + type hooks;
+  - callable signatures are projected into `SemanticSnapshot::callables` from typed HIR and type
+    hooks, and signature help resolves against that projection;
   - the previous CST/legacy `BoundModule` correlation remains only as a compatibility fallback for
     syntax the new front-end cannot bind yet.
-- The existing legacy `BoundModule` is still retained inside `SemanticSnapshot` because older
-  service features such as signature help still read procedure metadata from it. This is an
-  explicit remaining compatibility surface, not the preferred symbol/diagnostic source.
+- The existing legacy `BoundModule` is no longer retained or exposed on `SemanticSnapshot` and is no
+  longer used by signature help. It is still built transiently inside `semantic.rs` for fallback
+  symbol correlation, return-type compatibility, and resolution diagnostics. This is an explicit
+  remaining compatibility surface, not the preferred IDE query source.
 
 Executable proof:
 
 - compiler-side IDE query from source resolves a symbol via the query-backed `SemanticModel`;
 - language-service snapshots preserve parameter/local scopes and declared types from compiler HIR
   facts (`ByVal seed As Long`, `Dim label As String`);
+- language-service signature help resolves procedure parameters from `SemanticSnapshot::callables`
+  rather than `BoundModule::procedures`;
 - full `oxvba-languageservice` tests still pass, covering hover, completions, symbols,
   diagnostics, navigation, rename analysis, and host-session surfaces.
 
@@ -52,6 +57,7 @@ Executable proof:
 - The service now consumes the compiler-owned query/HIR facts for the supported snapshot surface,
   which makes the IDE and compiler front-end agree on symbols, declared types, and diagnostics for
   that surface.
-- Not all language-service internals are retired. Signature help and some workspace features still
-  use `SemanticSnapshot.bound` as compatibility data. That residual is visible and should be part
-  of FE-9.6/terminal audit rather than hidden behind this bead.
+- Not all language-service internals are retired. `semantic.rs` still builds a transient
+  `BoundModule` for fallback correlation and resolution diagnostics. That residual is narrower than
+  before, visible in the FE-9.6 audit, and should be retired when those diagnostics and fallback
+  symbol paths move fully onto shared front-end facts.
