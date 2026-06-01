@@ -625,13 +625,16 @@ project-instance helper-source compile artifact on the HIR construction route:
   member, and checks the original module source line remains mapped.
 - The reset regression proves `Set x = Nothing` followed by another accepted dereference produces a
   second guarded `New` site and a second `LoadProjectObjectRef`, so the accepted HIR route no
-  longer models `As New` as declaration-time-only construction.
+  longer models `As New` as declaration-time-only construction. It also covers the accepted
+  active-project lifetime/source-map slice: private `Class_Terminate` is retained in the HIR
+  construction source, the dynamic object route retains termination metadata, and both the
+  first-use and after-`Nothing` user dereference lines remain mapped.
 
 This is still not full `bd-aprs.9.7` closure. The accepted HIR route now covers lazy first-use and
 after-`Nothing` construction for simple active-project dereference lines plus the narrowed
 source-class `WithEvents Set x = New T` construction fixture, but imported/COM construction,
-unsupported fallback project shapes, broader WithEvents event/lifetime interactions, and the full
-object-lifetime/source-map story still need closure evidence before the bead can close.
+unsupported fallback project shapes, and broader WithEvents event/lifetime interactions still need
+closure evidence before the bead can close.
 
 ## Const Expression Continuation
 
