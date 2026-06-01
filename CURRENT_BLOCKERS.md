@@ -90,11 +90,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - single active procedural-module projects with no reference projects now enter the
       HIR-capable metadata compiler at the project boundary, while broader project shapes remain
       on the legacy project backend until their metadata/rewrite semantics are owned by HIR;
-    - project binding now materializes those HIR construction facts in source order, but the
-      project compile boundary now consumes them for the accepted direct active-project
-      `Set x = New Widget` shape by compiling a HIR `New` expression source with
-      `HirNewExpressionBinding` facts instead of using the generated
-      `__oxvba_project_instance(handle)` helper assignment as the production compile artifact.
+    - project binding now materializes those HIR construction facts in source order, and the
+      project compile boundary consumes them for the accepted direct active-project
+      `Set x = New Widget` and eager declaration-time `Dim x As New Widget` shapes by compiling a
+      HIR `New` expression source with `HirNewExpressionBinding` facts instead of using the
+      generated `__oxvba_project_instance(handle)` helper assignment as the production compile
+      artifact.
     - downstream object-state regressions narrowed during this pass:
       - `bd-7ins` is closed: source-class public field reads such as `c.Total` now observe
         object-owned per-instance field state after member calls;
@@ -116,8 +117,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated
       `__oxvba_project_instance(...)` assignment as the production artifact;
-    - `bd-aprs.9.7`: still open for `As New`, `Class_Initialize`, construction source maps, and
-      construction metadata;
+    - `bd-aprs.9.7`: partially progressed for eager declaration-time active-project `As New` plus
+      field-mutating `Class_Initialize` through HIR, but still open for true VBA lazy `As New`
+      semantics, broader WithEvents construction interactions, and full construction
+      lifetime/source-map closure;
     - `bd-aprs.9.8`: arrays, indexing, and `ReDim` parity;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
     - `bd-aprs.9.10`: broader declaration/type surface;

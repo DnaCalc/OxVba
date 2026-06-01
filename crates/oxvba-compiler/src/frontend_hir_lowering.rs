@@ -1149,6 +1149,12 @@ fn lower_call_expr(
         .collect::<Result<Vec<_>, _>>()?;
     match target {
         BoundExpr::Var(name) => {
+            if let Some(intrinsic) = StructuralIntrinsic::from_legacy_name(&name) {
+                return Ok(BoundExpr::StructuralIntrinsicCall {
+                    intrinsic,
+                    args: args.into_iter().map(|arg| arg.expr).collect(),
+                });
+            }
             let target_symbol = typed_hir
                 .module
                 .arenas
@@ -2890,6 +2896,35 @@ mod tests {
             "{bytecode:#?}"
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_lowering_lowers_structural_intrinsic_call_targets() {
+        let source = "Sub Main()\nDim discard\nDim instance\ninstance = 1\ndiscard = __oxvba_withevents_set(instance, 313695537, 1)\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should build");
+        let bound = lower_typed_hir_to_bound_module(source, &typed_hir)
+            .expect("structural intrinsic call should lower");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name.eq_ignore_ascii_case("main"))
+            .expect("main procedure");
+
+        assert!(main.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                BoundStmt::Assign {
+                    target,
+                    expr:
+                        BoundExpr::StructuralIntrinsicCall {
+                            intrinsic: StructuralIntrinsic::WithEventsSet,
+                            args,
+                        },
+                    ..
+                } if target == "discard" && args.len() == 3
+            )
+        }));
     }
 
     #[test]

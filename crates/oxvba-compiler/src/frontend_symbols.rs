@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
+use crate::frontend_structural_intrinsics::ALL_STRUCTURAL_INTRINSICS;
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -294,8 +295,27 @@ pub fn build_symbol_model_from_source(
     )?;
     let module_scope =
         model.add_scope(ScopeKind::Module, model.global_scope(), Some(module_name))?;
+    declare_structural_intrinsic_symbols(&mut model, module_scope)?;
     collect_symbols_from_source_into_model(&mut model, module_name, module_scope, source)?;
     Ok(model)
+}
+
+fn declare_structural_intrinsic_symbols(
+    model: &mut SymbolModel,
+    scope: ScopeId,
+) -> Result<(), SymbolModelError> {
+    for intrinsic in ALL_STRUCTURAL_INTRINSICS {
+        model.declare_symbol(
+            scope,
+            SymbolNamespace::Procedure,
+            intrinsic.legacy_name(),
+            SourceProvenance {
+                module_name: None,
+                span: None,
+            },
+        )?;
+    }
+    Ok(())
 }
 
 pub fn collect_symbols_from_source_into_model(

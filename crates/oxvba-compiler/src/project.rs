@@ -836,15 +836,21 @@ fn hir_new_expression_bindings_from_dynamic_instances(
         .collect()
 }
 
-fn hir_new_expression_bindings_from_explicit_set_new_instances(
+fn hir_new_expression_bindings_from_active_project_construction_instances(
     bindings: &[ProjectDynamicInstanceBindingDraft],
 ) -> Vec<HirNewExpressionBinding> {
-    let direct_bindings = bindings
+    let construction_bindings = bindings
         .iter()
-        .filter(|binding| binding.source_kind == ProjectDynamicInstanceSourceKind::SetNewExpression)
+        .filter(|binding| {
+            matches!(
+                binding.source_kind,
+                ProjectDynamicInstanceSourceKind::AsNewDeclaration
+                    | ProjectDynamicInstanceSourceKind::SetNewExpression
+            )
+        })
         .cloned()
         .collect::<Vec<_>>();
-    hir_new_expression_bindings_from_dynamic_instances(&direct_bindings)
+    hir_new_expression_bindings_from_dynamic_instances(&construction_bindings)
 }
 
 fn source_with_hir_new_expressions(
@@ -1152,14 +1158,18 @@ fn compile_project_with_strategy(
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let use_hir_capable_project_boundary =
         project_source_is_single_procedural_module_without_references(manifest);
-    let direct_set_new_hir_bindings =
-        hir_new_expression_bindings_from_explicit_set_new_instances(&dynamic_instance_bindings);
-    let hir_construction_source =
-        source_with_hir_new_expressions(&rewritten_source, &direct_set_new_hir_bindings);
+    let direct_project_construction_hir_bindings =
+        hir_new_expression_bindings_from_active_project_construction_instances(
+            &dynamic_instance_bindings,
+        );
+    let hir_construction_source = source_with_hir_new_expressions(
+        &rewritten_source,
+        &direct_project_construction_hir_bindings,
+    );
     let hir_construction_compile = hir_construction_source.as_ref().and_then(|source| {
         match compile_source_with_runtime_metadata_via_hir_with_new_bindings(
             source,
-            &direct_set_new_hir_bindings,
+            &direct_project_construction_hir_bindings,
         ) {
             Ok(compiled) => Some((source.clone(), Ok(compiled))),
             Err(HirProductionLoweringError::Unsupported(_)) => None,
@@ -11173,7 +11183,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_keeps_as_new_on_construction_residual_path() {
+    fn compile_project_consumes_hir_new_bindings_for_as_new_and_initializer() {
         let main = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -11183,7 +11193,7 @@ mod tests {
         let widget = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
-            "Attribute VB_Name = \"Widget\"\nPublic Sub Ping()\nEnd Sub",
+            "Attribute VB_Name = \"Widget\"\nPrivate initialized\nPublic Sub Class_Initialize()\ninitialized = 1\nEnd Sub\nPublic Function IsInitialized()\nIsInitialized = initialized\nEnd Function",
         )
         .expect("class module parses");
         let manifest = ProjectManifest {
@@ -11199,8 +11209,44 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
 
         assert!(
-            lowered.contains("__oxvba_project_instance("),
-            "As New remains owned by bd-aprs.9.7, not the direct Set-New route: {lowered}"
+            lowered.contains("set obj = new widget"),
+            "expected As New construction to compile from HIR New source: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_project_instance("),
+            "As New should not leave helper-source construction as the compiled artifact: {lowered}"
+        );
+        assert!(
+            lowered.contains("class_initialize(obj)"),
+            "expected Class_Initialize call to stay paired with the constructed instance: {lowered}"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::LoadProjectObjectRef { .. })),
+            "{:#?}",
+            compiled.bytecode.instructions
+        );
+        assert!(
+            compiled.project_dynamic_objects.iter().any(|route| route
+                .module_name
+                .eq_ignore_ascii_case("Widget")
+                && route
+                    .members
+                    .iter()
+                    .any(|member| member.member_name.eq_ignore_ascii_case("Class_Initialize"))),
+            "expected Widget dynamic route to retain Class_Initialize metadata: {:#?}",
+            compiled.project_dynamic_objects
+        );
+        assert_eq!(
+            compiled
+                .source_maps
+                .module("MainModule")
+                .and_then(|map| map.file_to_runtime(3)),
+            Some(2),
+            "expected As New source line to remain mapped to the user module"
         );
     }
 
