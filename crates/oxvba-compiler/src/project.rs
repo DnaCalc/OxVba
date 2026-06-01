@@ -3299,6 +3299,8 @@ fn lower_module_source_module_aware(
                 &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_member_dispatch(
+                manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -4710,6 +4712,8 @@ fn rewrite_early_bound_object_assignment(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_member_dispatch(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -4775,6 +4779,16 @@ fn rewrite_internal_class_member_dispatch(
                 cursor = close + 1;
                 continue;
             };
+            let target = selected_property_target_via_frontend_route(
+                manifest,
+                project_symbol_index,
+                &target,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+            )?
+            .unwrap_or(target);
             (target, instance_arg)
         };
         let args_raw = line[open + 1..close].trim();
@@ -4803,6 +4817,8 @@ fn rewrite_internal_class_member_dispatch(
     };
 
     let rewritten = rewrite_internal_class_call_statement_without_parens(
+        manifest,
+        project_symbol_index,
         &rewritten,
         active_project,
         current_project,
@@ -4813,6 +4829,8 @@ fn rewrite_internal_class_member_dispatch(
     )?;
 
     rewrite_internal_class_statement_invoke_without_parentheses(
+        manifest,
+        project_symbol_index,
         &rewritten,
         active_project,
         current_project,
@@ -5531,6 +5549,8 @@ fn resolve_internal_class_member_target(
     )
 }
 fn rewrite_internal_class_call_statement_without_parens(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -5606,6 +5626,16 @@ fn rewrite_internal_class_call_statement_without_parens(
         else {
             return Ok(line.to_string());
         };
+        let target = selected_property_target_via_frontend_route(
+            manifest,
+            project_symbol_index,
+            &target,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+        )?
+        .unwrap_or(target);
         (target, instance_arg)
     };
     let joined_args = if args_tail.is_empty() {
@@ -5621,6 +5651,8 @@ fn rewrite_internal_class_call_statement_without_parens(
     ))
 }
 fn rewrite_internal_class_statement_invoke_without_parentheses(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -5688,6 +5720,16 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
         else {
             return Ok(line.to_string());
         };
+        let target = selected_property_target_via_frontend_route(
+            manifest,
+            project_symbol_index,
+            &target,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+        )?
+        .unwrap_or(target);
         (target, instance_arg)
     };
     Ok(format!(
@@ -8822,6 +8864,8 @@ fn rewrite_module_source(
                 continue;
             }
             let expanded_line = rewrite_internal_class_member_dispatch(
+                manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,

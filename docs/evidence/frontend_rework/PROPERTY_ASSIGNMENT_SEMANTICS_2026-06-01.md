@@ -48,6 +48,8 @@ The 2026-06-01 continuation added:
   chooses the default member candidate, but the emitted target is checked against the accessor route.
 - active-project statement-form default-member reads now also re-bind the selected property target
   through the front-end accessor route before lowering.
+- active-project default-member invocation/call-form targets now use the same front-end route
+  rebound after the legacy selector chooses a property accessor.
 
 ## Checks
 
@@ -99,12 +101,12 @@ The 2026-06-01 continuation added:
   consistency before being used.
 - Default-member read/write assignment lowering now uses the same route surface after candidate
   selection. This is still only a partial default-member migration: default-member candidate
-  selection and invocation forms remain on the legacy `ProcedureDecl` scan.
+  selection remains on the legacy `ProcedureDecl` scan.
 - The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
   rejecting modules that the current parser cannot fully parse, but it only records signature-level
   procedures/properties/fields.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
   assignment diagnostics for compiled projects. Next step: migrate default-member candidate
-  selection, invocation default-member forms, and assignment diagnostics onto the same front-end
-  decision surface, then quarantine or delete the replaced legacy scans.
+  selection and assignment diagnostics onto the same front-end decision surface, then quarantine or
+  delete the replaced legacy scans.
