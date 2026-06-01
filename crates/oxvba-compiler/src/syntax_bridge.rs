@@ -46,11 +46,16 @@ pub fn lower_expression_to_legacy_bound_expr(
 /// transition hook for fixtures that are known to be supported by both the CST
 /// parser and the existing lowering.
 pub fn compile_source_via_syntax_bridge(source: &str) -> Result<Bytecode, SyntaxBridgeError> {
+    validate_source_with_cst(source)?;
+    compile(source).map_err(SyntaxBridgeError::Compile)
+}
+
+pub fn validate_source_with_cst(source: &str) -> Result<(), SyntaxBridgeError> {
     let parsed = oxvba_syntax::parse(source);
     if !parsed.errors().is_empty() {
         return Err(SyntaxBridgeError::Syntax(format!("{:?}", parsed.errors())));
     }
-    compile(source).map_err(SyntaxBridgeError::Compile)
+    Ok(())
 }
 
 fn has_node_kind(node: &oxvba_syntax::SyntaxNode<'_>, kind: oxvba_syntax::SyntaxKind) -> bool {

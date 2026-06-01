@@ -596,6 +596,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/FRONTEND_V2_GATE_2026-06-01.md`.
 - FE-5.2 Semantic/diff harness: compare diagnostics, normalized metadata, bytecode summaries,
   execution traces, and observable outputs.
+  Evidence: `docs/evidence/frontend_rework/SEMANTIC_DIFF_HARNESS_2026-06-01.md`.
 - FE-5.3 Diff classifier: record bytecode differences as bug, harmless drift, or intentional
   improvement, with fixture links and close conditions.
 - FE-5.4 Corpus runner integration: run compiler unit fixtures, host projects, conformance cases,
