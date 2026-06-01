@@ -339,15 +339,28 @@ fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
     if !parsed.errors().is_empty() {
         return false;
     }
+    if source_has_unsupported_option_stmt(parsed.syntax()) {
+        return false;
+    }
     !syntax_tree_has_any_kind(
         parsed.syntax(),
         &[
             oxvba_syntax::SyntaxKind::PropertyDecl,
-            oxvba_syntax::SyntaxKind::OptionStmt,
             oxvba_syntax::SyntaxKind::KwOptional,
             oxvba_syntax::SyntaxKind::KwParamArray,
         ],
     )
+}
+
+fn source_has_unsupported_option_stmt(node: oxvba_syntax::SyntaxNode<'_>) -> bool {
+    if node.kind() == oxvba_syntax::SyntaxKind::OptionStmt {
+        let normalized = node.text().to_ascii_lowercase();
+        let parts: Vec<_> = normalized.split_whitespace().collect();
+        return !matches!(parts.as_slice(), ["option", "base", "0" | "1"]);
+    }
+    node.child_nodes()
+        .into_iter()
+        .any(source_has_unsupported_option_stmt)
 }
 
 fn syntax_tree_has_any_kind(
@@ -757,6 +770,45 @@ mod tests {
             hir.1, defaulted.1,
             "runtime metadata should come from the HIR production route for completed constructs"
         );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_default_allows_option_base_hir_route() {
+        let source =
+            "Option Base 1\nSub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept inline sequence");
+        assert!(
+            legacy_err.to_string().contains("unsupported statement"),
+            "unexpected legacy error: {legacy_err}"
+        );
+
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(source),
+            "Option Base should not disqualify otherwise-completed HIR constructs"
+        );
+        assert!(
+            super::source_is_eligible_for_lightweight_hir_default(
+                "OPTION   BASE   1\nSub Main()\nEnd Sub\n"
+            ),
+            "Option Base routing should not depend on exact whitespace or casing"
+        );
+        super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should route Option Base source through HIR");
+    }
+
+    #[test]
+    fn lightweight_hir_default_rejects_unsupported_option_statements() {
+        for source in [
+            "Option Explicit\nSub Main()\nEnd Sub\n",
+            "Option Compare Text\nSub Main()\nEnd Sub\n",
+            "Option Private Module\nSub Main()\nEnd Sub\n",
+        ] {
+            assert!(
+                !super::source_is_eligible_for_lightweight_hir_default(source),
+                "unsupported Option statement should remain outside default HIR route: {source}"
+            );
+        }
     }
 
     #[test]
