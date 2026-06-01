@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
 use crate::frontend_hir::{
-    HirBinaryOp, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral, HirStmtId,
-    HirStmtKind, HirUnaryOp,
+    HirBinaryOp, HirCaseClause, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral,
+    HirStmtId, HirStmtKind, HirUnaryOp,
 };
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::{SymbolId, SymbolNamespace};
@@ -319,7 +319,7 @@ fn lower_stmt(
             for (clauses, body) in arms {
                 let clauses = clauses
                     .iter()
-                    .map(|clause| lower_case_clause(typed_hir, *clause))
+                    .map(|clause| lower_case_clause(typed_hir, clause))
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut lowered_body = Vec::new();
                 for stmt in body {
@@ -507,8 +507,23 @@ fn lower_call_expr(
 
 fn lower_case_clause(
     typed_hir: &TypedHirModule,
-    expr: HirExprId,
+    clause: &HirCaseClause,
 ) -> Result<BoundCaseClause, HirProductionLoweringError> {
+    match clause {
+        HirCaseClause::Value(expr) => {
+            lower_case_value(typed_hir, *expr).map(BoundCaseClause::Value)
+        }
+        HirCaseClause::Range { start, end } => Ok(BoundCaseClause::Range {
+            start: lower_case_value(typed_hir, *start)?,
+            end: lower_case_value(typed_hir, *end)?,
+        }),
+    }
+}
+
+fn lower_case_value(
+    typed_hir: &TypedHirModule,
+    expr: HirExprId,
+) -> Result<i32, HirProductionLoweringError> {
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
         return Err(HirProductionLoweringError::Unsupported(
             "missing Select Case clause expression".to_string(),
@@ -521,7 +536,7 @@ fn lower_case_clause(
                     "Select Case integer literal {value}"
                 ))
             })?;
-            Ok(BoundCaseClause::Value(value))
+            Ok(value)
         }
         _ => Err(HirProductionLoweringError::Unsupported(format!(
             "Select Case clause {:?}",
@@ -956,5 +971,22 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Long
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_branch_bytecode_for_select_case_range() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase 1 To 3\nx = 2\nEnd Select\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected case branch bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 }

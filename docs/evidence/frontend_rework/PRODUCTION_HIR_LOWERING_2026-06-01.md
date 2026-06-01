@@ -23,8 +23,8 @@ The initial production scope is intentionally narrow and explicit:
 - `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
-- simple `Select Case` statements with single integer-value `Case` clauses and optional
-  `Case Else`,
+- simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
+  ranges, and optional `Case Else`,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
@@ -119,8 +119,14 @@ The fifth FE-8.5 slice removes the simplest `Select Case` route residual:
 - HIR production bytecode emission now reaches branch bytecode for the
   `Select Case x / Case 1` fixture.
 
-This is not full `Select Case` closure. Multiple case values, `Case Is`, `Case A To B`, non-integer
-case expressions, and richer clause parsing remain explicit route-audit residuals.
+The ninth FE-8.5 slice widens `Select Case` clause support:
+
+- `Case A To B` headers now parse both range endpoints as expression nodes;
+- HIR represents case clauses as typed value/range variants instead of plain expression lists; and
+- production lowering emits `BoundCaseClause::Range` for integer ranges.
+
+This is not full `Select Case` closure. Multiple case values, `Case Is`, non-integer case
+expressions, and richer clause parsing remain explicit route-audit residuals.
 
 ## Checks
 

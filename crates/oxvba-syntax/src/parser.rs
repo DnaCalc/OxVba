@@ -1529,6 +1529,14 @@ impl<'a> Parser<'a> {
                     self.bump();
                 } else if self.is_expr_start() {
                     self.parse_expr();
+                    self.eat_whitespace();
+                    if self.at(SyntaxKind::KwTo) {
+                        self.bump();
+                        self.eat_whitespace();
+                        if self.is_expr_start() {
+                            self.parse_expr();
+                        }
+                    }
                 }
                 self.eat_to_eol();
                 self.parse_block(&[SyntaxKind::KwCase, SyntaxKind::KwEnd]);

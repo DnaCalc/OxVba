@@ -143,7 +143,7 @@ pub enum HirStmtKind {
     },
     SelectCase {
         expr: HirExprId,
-        arms: Vec<(Vec<HirExprId>, Vec<HirStmtId>)>,
+        arms: Vec<(Vec<HirCaseClause>, Vec<HirStmtId>)>,
         else_body: Vec<HirStmtId>,
     },
     ForRange {
@@ -154,6 +154,12 @@ pub enum HirStmtKind {
         body: Vec<HirStmtId>,
     },
     Block(Vec<HirStmtId>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HirCaseClause {
+    Value(HirExprId),
+    Range { start: HirExprId, end: HirExprId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -695,7 +701,6 @@ impl HirBuilder {
                         .unwrap_or("")
                         .to_ascii_lowercase();
                     if clause_header.contains(',')
-                        || clause_header.contains(" to ")
                         || clause_header.trim_start().starts_with("case is ")
                     {
                         return Err(HirBuildError::Unsupported(format!(
@@ -707,13 +712,26 @@ impl HirBuilder {
                         .into_iter()
                         .map(|expr| self.lower_expr(scope, expr))
                         .collect::<Result<_, _>>()?;
-                    if values.is_empty() {
+                    let clauses = if clause_header.contains(" to ") {
+                        if values.len() != 2 {
+                            return Err(HirBuildError::Unsupported(format!(
+                                "Case range without start/end values: `{}`",
+                                clause.text().trim()
+                            )));
+                        }
+                        vec![HirCaseClause::Range {
+                            start: values[0],
+                            end: values[1],
+                        }]
+                    } else if values.len() == 1 {
+                        vec![HirCaseClause::Value(values[0])]
+                    } else {
                         return Err(HirBuildError::Unsupported(format!(
-                            "Case clause without value: `{}`",
+                            "Case clause without a single value: `{}`",
                             clause.text().trim()
                         )));
-                    }
-                    arms.push((values, body));
+                    };
+                    arms.push((clauses, body));
                 }
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
@@ -1606,8 +1624,11 @@ mod tests {
         ));
         assert_eq!(arms.len(), 1);
         assert_eq!(arms[0].0.len(), 1);
+        let HirCaseClause::Value(value) = &arms[0].0[0] else {
+            panic!("expected value case clause");
+        };
         assert!(matches!(
-            module.arenas.expr(arms[0].0[0]).map(|expr| &expr.kind),
+            module.arenas.expr(*value).map(|expr| &expr.kind),
             Some(HirExprKind::Literal(HirLiteral::Int(1)))
         ));
         assert!(
@@ -1618,6 +1639,44 @@ mod tests {
             "expected assignment in case body: {module:#?}"
         );
         assert!(else_body.is_empty());
+    }
+
+    #[test]
+    fn hir_builder_lowers_select_case_range_clause() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase 1 To 3\nx = 2\nEnd Select\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let select_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_select_case_stmt(&module.arenas, *stmt))
+            .expect("select case statement");
+        let Some(HirStmt {
+            kind: HirStmtKind::SelectCase { arms, .. },
+            ..
+        }) = module.arenas.stmt(select_stmt)
+        else {
+            panic!("expected select case statement");
+        };
+        let HirCaseClause::Range { start, end } = &arms[0].0[0] else {
+            panic!("expected range case clause");
+        };
+        assert!(matches!(
+            module.arenas.expr(*start).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Int(1)))
+        ));
+        assert!(matches!(
+            module.arenas.expr(*end).map(|expr| &expr.kind),
+            Some(HirExprKind::Literal(HirLiteral::Int(3)))
+        ));
     }
 
     #[test]

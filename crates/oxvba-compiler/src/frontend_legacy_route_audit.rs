@@ -113,6 +113,30 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let select_case_is_statement =
+        "Sub Main()\nDim x As Long\nSelect Case x\nCase Is < 0\nx = 2\nEnd Select\nEnd Sub\n";
+    findings.push(route_finding(
+        "select case is fixture",
+        select_case_is_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let select_multi_statement =
+        "Sub Main()\nDim x As Long\nSelect Case x\nCase 1, 2\nx = 2\nEnd Select\nEnd Sub\n";
+    findings.push(route_finding(
+        "select case multi-value fixture",
+        select_multi_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let for_each_statement =
+        "Sub Main()\nDim item As Variant\nFor Each item In item\nitem = item\nNext\nEnd Sub\n";
+    findings.push(route_finding(
+        "for each statement fixture",
+        for_each_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -214,6 +238,9 @@ mod tests {
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("for statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("select case range")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
         );
@@ -226,10 +253,11 @@ mod tests {
             "{report:#?}"
         );
         assert!(
-            report
-                .residuals()
-                .iter()
-                .any(|finding| { finding.area.contains("select case range") }),
+            report.residuals().iter().any(|finding| {
+                finding.area.contains("select case is")
+                    || finding.area.contains("select case multi-value")
+                    || finding.area.contains("for each statement")
+            }),
             "{report:#?}"
         );
         assert!(

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::frontend_hir::{
-    BoundHirModule, CstBackpointer, HirArenas, HirExprId, HirExprKind, HirStmtId, HirStmtKind,
-    HirTypeId,
+    BoundHirModule, CstBackpointer, HirArenas, HirCaseClause, HirExprId, HirExprKind, HirStmtId,
+    HirStmtKind, HirTypeId,
 };
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolModel};
 
@@ -198,7 +198,7 @@ impl SemanticModel {
                 self.index_expr_tree(expr);
                 for (clauses, body) in arms {
                     for clause in clauses {
-                        self.index_expr_tree(clause);
+                        self.index_case_clause(clause);
                     }
                     for stmt in body {
                         self.index_stmt_tree(stmt);
@@ -230,6 +230,16 @@ impl SemanticModel {
                 }
             }
             HirStmtKind::Empty => {}
+        }
+    }
+
+    fn index_case_clause(&mut self, clause: HirCaseClause) {
+        match clause {
+            HirCaseClause::Value(expr) => self.index_expr_tree(expr),
+            HirCaseClause::Range { start, end } => {
+                self.index_expr_tree(start);
+                self.index_expr_tree(end);
+            }
         }
     }
 

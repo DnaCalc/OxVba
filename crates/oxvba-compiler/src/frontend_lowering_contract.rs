@@ -1,5 +1,6 @@
 use crate::frontend_hir::{
-    HirCallId, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral, HirStmtId, HirStmtKind,
+    HirCallId, HirCaseClause, HirDeclId, HirDeclKind, HirExprId, HirExprKind, HirLiteral,
+    HirStmtId, HirStmtKind,
 };
 use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::frontend_symbols::SymbolId;
@@ -216,7 +217,11 @@ fn collect_stmt_contract_facts(
             collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics);
             for (clauses, body) in arms {
                 for clause in clauses {
-                    collect_expr_structural_intrinsics(typed_hir, *clause, structural_intrinsics);
+                    collect_case_clause_structural_intrinsics(
+                        typed_hir,
+                        clause,
+                        structural_intrinsics,
+                    );
                 }
                 for child in body {
                     collect_stmt_contract_facts(
@@ -272,6 +277,22 @@ fn collect_stmt_contract_facts(
             }
         }
         HirStmtKind::Empty => {}
+    }
+}
+
+fn collect_case_clause_structural_intrinsics(
+    typed_hir: &TypedHirModule,
+    clause: &HirCaseClause,
+    structural_intrinsics: &mut Vec<StructuralIntrinsic>,
+) {
+    match clause {
+        HirCaseClause::Value(expr) => {
+            collect_expr_structural_intrinsics(typed_hir, *expr, structural_intrinsics)
+        }
+        HirCaseClause::Range { start, end } => {
+            collect_expr_structural_intrinsics(typed_hir, *start, structural_intrinsics);
+            collect_expr_structural_intrinsics(typed_hir, *end, structural_intrinsics);
+        }
     }
 }
 

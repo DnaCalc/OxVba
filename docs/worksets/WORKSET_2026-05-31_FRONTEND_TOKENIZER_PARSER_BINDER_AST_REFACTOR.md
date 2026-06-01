@@ -849,9 +849,10 @@ Candidate bead units:
   done. Sixth reopened continuation widens `Do` loop support to `Do Until` and post-check
   `Loop While`/`Loop Until`. Seventh reopened continuation maps `While`/`Wend` onto the same
   front-checked loop HIR/backend shape. Eighth reopened continuation adds simple range `For` loops.
-  This bead remains open for broader HIR lowering coverage outside that simple same-module call,
-  simple If, conditional loop, simple For, and simple Select Case subset, with richer Select Case
-  variants now recorded as explicit route-audit residuals.
+  Ninth reopened continuation gives `Select Case` typed value/range clauses and lowers integer
+  ranges. This bead remains open for broader HIR lowering coverage outside that simple same-module
+  call, simple If, conditional loop, simple For, and value/range Select Case subset, with `Case Is`,
+  multi-value cases, and `For Each` now recorded as explicit route-audit residuals.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
