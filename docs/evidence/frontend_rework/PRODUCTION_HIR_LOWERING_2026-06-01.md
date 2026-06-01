@@ -222,9 +222,9 @@ The twenty-fourth FE-8.5 slice removes the simple literal `Const` residual:
   runtime frame slots;
 - HIR production lowering substitutes simple integer, Boolean, and string literal constants at use
   sites;
-- non-literal or multi-name `Const` statements are rejected before HIR production lowering so the
-  fallback route remains responsible for those residuals; and
-- the production route audit now includes a module-level literal constant fixture.
+- comma-separated literal declarators in the same `Const` statement are accepted, including string
+  literals containing commas; and
+- the production route audit now includes a module-level multi-literal constant fixture.
 
 Expression-valued constants, typed constants beyond the current literal subset, conditional
 compilation constants, and enum constants remain broader constant/compile-time evaluation work.

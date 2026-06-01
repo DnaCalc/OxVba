@@ -88,9 +88,9 @@ The audit result records completed reopened delivery work and remaining broader 
   basic Exit and error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`,
   `Erase`, one-dimensional dynamic-array runtime `ReDim`, simple function declarations with
   declared return slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and
-  literal `Const`, are no longer themselves route blockers. The call/coercion fixture now has
-  matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage for language
-  surfaces outside this route-audited subset, but the audited fixtures in this file now classify as
-  `HirProduction`.
+  single- or multi-declarator literal `Const`, are no longer themselves route blockers. The
+  call/coercion fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR
+  lowering coverage for language surfaces outside this route-audited subset, but the audited
+  fixtures in this file now classify as `HirProduction`.
 - The next step is broader terminal evidence and expansion of the route-audit fixture set, not
   claiming complete compiler front-end replacement from this audit alone.
