@@ -426,8 +426,7 @@ Remaining production residuals after this slice:
 
 ## UDT Layout Continuation
 
-The latest FE-8.5 slice removes the basic UDT declaration/layout residual without routing field
-access prematurely:
+The FE-8.5 UDT slices remove the basic UDT declaration/layout and simple field-alias residuals:
 
 - `TypeBlock` is no longer rejected by the HIR production syntax gate.
 - HIR production lowering parses simple module-level `Type ... End Type` definitions, recognizes
@@ -435,17 +434,17 @@ access prematurely:
   `p_y` with the declared primitive field types.
 - Lowered procedures now carry `BoundUdtDescriptor` data so emitted procedure metadata includes UDT
   type descriptors, instances, and field aliases.
-- The production route audit includes a `Type Point ... Dim p As Point` fixture and classifies it
-  as `HirProduction`.
-- UDT member syntax remains explicitly rejected on the HIR production route while a `TypeBlock` is
-  present. This prevents `p.X` from being mislowered through the object/member dispatch path before
-  field read/write lowering owns UDT aliases.
+- Simple UDT field reads/writes now lower to flattened aliases, so `p.X = 1` and `y = p.X + 2`
+  avoid the object/member dispatch path.
+- Same-shape whole-value UDT assignment lowers to the existing field-wise `BoundStmt::UdtAssign`
+  copy path.
+- The production route audit includes a `Type Point ... p.X = 1 ... y = p.X + 2` fixture and
+  classifies it as `HirProduction`.
 
 Remaining production residuals after this slice:
 
-- UDT field read/write syntax (`p.X`, nested fields, arrays/fixed strings beyond descriptor
-  projection) needs alias-aware lowering and assignment validation.
-- UDT whole-value assignment needs field-wise `BoundStmt::UdtAssign` lowering.
+- Nested UDT fields, UDT array fields, fixed-string field storage, richer cross-type assignment
+  diagnostics, and broader UDT lifetime/default initialization parity remain open.
 - `NewExpr` still requires project class handles, imported/COM construction rules, `As New` lazy
   construction interactions, and assignment/writeback behavior.
 
@@ -459,7 +458,8 @@ Remaining production residuals after this slice:
 - `cargo test -p oxvba-compiler declared_external_call --quiet`
 - `cargo test -p oxvba-compiler declare_without_ptrsafe --quiet`
 - `cargo test -p oxvba-compiler udt_layout --quiet`
-- `cargo test -p oxvba-compiler udt_member_syntax --quiet`
+- `cargo test -p oxvba-compiler udt_field_read_write --quiet`
+- `cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
