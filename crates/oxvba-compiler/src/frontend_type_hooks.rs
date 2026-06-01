@@ -84,6 +84,14 @@ impl HirTypeHooks {
         self.assignment_intents.get(&stmt).copied()
     }
 
+    pub fn assignment_intents(
+        &self,
+    ) -> impl Iterator<Item = (HirStmtId, HirAssignmentIntent)> + '_ {
+        self.assignment_intents
+            .iter()
+            .map(|(stmt, intent)| (*stmt, *intent))
+    }
+
     pub fn record_call_site(&mut self, hook: HirCallSiteHook) {
         self.call_sites.insert(hook.call, hook);
     }

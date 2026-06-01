@@ -1,6 +1,8 @@
-use crate::frontend_hir::{HirExprId, HirPropertyKind, HirStmtId};
+use crate::frontend_hir::{
+    HirExprId, HirExprKind, HirLiteral, HirPropertyKind, HirStmtId, HirStmtKind,
+};
 use crate::frontend_symbols::SymbolId;
-use crate::frontend_type_hooks::HirAssignmentIntent;
+use crate::frontend_type_hooks::{HirAssignmentIntent, TypedHirModule};
 use crate::{CoercionKindDescriptor, VbaTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +84,54 @@ pub fn assignment_semantics(
     }
 }
 
+pub fn collect_assignment_semantics_from_typed_hir(
+    typed: &TypedHirModule,
+) -> Vec<AssignmentSemantics> {
+    let mut out = Vec::new();
+    for (stmt, intent) in typed.hooks.assignment_intents() {
+        let Some(stmt_data) = typed.module.arenas.stmt(stmt) else {
+            continue;
+        };
+        let (target, value) = match stmt_data.kind {
+            HirStmtKind::Let { target, value } | HirStmtKind::Set { target, value } => {
+                (target, value)
+            }
+            _ => continue,
+        };
+        let Some(target_type) = infer_expr_type(typed, target) else {
+            continue;
+        };
+        let Some(value_type) = infer_expr_type(typed, value) else {
+            continue;
+        };
+        out.push(assignment_semantics(
+            stmt,
+            target,
+            value,
+            intent,
+            target_type,
+            value_type,
+        ));
+    }
+    out
+}
+
+fn infer_expr_type(typed: &TypedHirModule, expr: HirExprId) -> Option<VbaTypeId> {
+    match typed.module.arenas.expr(expr).map(|expr| &expr.kind)? {
+        HirExprKind::Name(symbol) => typed
+            .hooks
+            .declared_type(*symbol)
+            .map(|hook| hook.runtime_type),
+        HirExprKind::Literal(HirLiteral::Bool(_)) => Some(VbaTypeId::Boolean),
+        HirExprKind::Literal(HirLiteral::Int(_)) => Some(VbaTypeId::Long),
+        HirExprKind::Literal(HirLiteral::String(_)) => Some(VbaTypeId::String),
+        HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(VbaTypeId::Variant),
+        HirExprKind::Literal(HirLiteral::Nothing) => Some(VbaTypeId::Object),
+        HirExprKind::Binary { lhs, .. } => infer_expr_type(typed, *lhs),
+        _ => None,
+    }
+}
+
 fn assignment_diagnostic(
     intent: HirAssignmentIntent,
     target_type: VbaTypeId,
@@ -104,6 +154,7 @@ fn assignment_diagnostic(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend_type_hooks::collect_type_hooks_from_source;
 
     #[test]
     fn assignment_semantics_distinguishes_property_get_let_set() {
@@ -165,6 +216,37 @@ mod tests {
                 .as_ref()
                 .map(|diagnostic| diagnostic.code.as_str()),
             Some("BIND-E-SET-REQUIRES-OBJECT")
+        );
+    }
+
+    #[test]
+    fn assignment_semantics_collects_from_typed_hir_route() {
+        let typed = collect_type_hooks_from_source(
+            "Module1",
+            "Sub Main()\nDim obj As Object\nDim value As Long\nSet obj = Nothing\nvalue = obj\nEnd Sub",
+        )
+        .expect("typed hir");
+
+        let semantics = collect_assignment_semantics_from_typed_hir(&typed);
+        assert_eq!(semantics.len(), 2);
+        assert!(
+            semantics.iter().any(|item| {
+                item.intent == HirAssignmentIntent::Set
+                    && item.coercion == CoercionKindDescriptor::Set
+                    && item.target_type == VbaTypeId::Object
+                    && item.value_type == VbaTypeId::Object
+                    && item.diagnostic.is_none()
+            }),
+            "Set object assignment should be represented without diagnostic: {semantics:?}"
+        );
+        assert!(
+            semantics.iter().any(|item| {
+                item.intent == HirAssignmentIntent::Let
+                    && item.coercion == CoercionKindDescriptor::Let
+                    && item.target_type == VbaTypeId::Long
+                    && item.value_type == VbaTypeId::Object
+            }),
+            "Let assignment should carry typed HIR source/target facts: {semantics:?}"
         );
     }
 }
