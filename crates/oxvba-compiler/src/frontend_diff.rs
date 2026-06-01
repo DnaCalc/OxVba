@@ -278,9 +278,11 @@ pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendC
 pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation {
     let compiled = match path {
         FrontendPath::Legacy => compile_with_runtime_metadata(source),
-        FrontendPath::FrontendV2 => syntax_bridge::validate_source_with_cst(source)
-            .map_err(|err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")))
-            .and_then(|()| compile_with_runtime_metadata(source)),
+        FrontendPath::FrontendV2 => {
+            syntax_bridge::compile_source_with_runtime_metadata_via_syntax_bridge(source).map_err(
+                |err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")),
+            )
+        }
     };
 
     match compiled {
@@ -496,6 +498,32 @@ mod tests {
         assert!(report.diagnostics_match, "{report:#?}");
         assert!(report.bytecode_matches, "{report:#?}");
         assert!(report.metadata_matches, "{report:#?}");
+        assert!(matches!(
+            report.right.bytecode,
+            BytecodeSummaryStatus::Available(_)
+        ));
+        assert!(matches!(
+            report.right.metadata,
+            MetadataSummaryStatus::Available(_)
+        ));
+    }
+
+    #[test]
+    fn frontend_diff_v2_uses_bridge_compile_route_for_inline_statements() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
+        let report = compare_legacy_to_frontend_v2(source);
+        assert!(
+            !report.left.diagnostics.is_empty(),
+            "legacy path should still reject this inline sequence: {report:#?}"
+        );
+        assert!(
+            report.right.diagnostics.is_empty(),
+            "v2 bridge path should compile the CST-accepted inline sequence: {report:#?}"
+        );
+        assert!(matches!(
+            report.left.bytecode,
+            BytecodeSummaryStatus::NotAvailable
+        ));
         assert!(matches!(
             report.right.bytecode,
             BytecodeSummaryStatus::Available(_)

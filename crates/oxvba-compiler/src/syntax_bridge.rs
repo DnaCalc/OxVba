@@ -1,8 +1,10 @@
 use thiserror::Error;
 
+use std::collections::BTreeMap;
+
 use crate::bytecode::Bytecode;
 use crate::resolve::{ArithOp, BoundCallArg, BoundExpr, CompareOp, LogicalBinOp, normalize_ident};
-use crate::{CompileError, compile};
+use crate::{CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 /// Errors produced by the temporary CST-to-legacy bridge.
@@ -57,15 +59,21 @@ pub fn lower_expression_to_legacy_bound_expr(
 /// transition hook for fixtures that are known to be supported by both the CST
 /// parser and the existing lowering.
 pub fn compile_source_via_syntax_bridge(source: &str) -> Result<Bytecode, SyntaxBridgeError> {
+    compile_source_with_runtime_metadata_via_syntax_bridge(source).map(|(bytecode, _)| bytecode)
+}
+
+pub fn compile_source_with_runtime_metadata_via_syntax_bridge(
+    source: &str,
+) -> Result<(Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>), SyntaxBridgeError> {
     validate_source_with_cst(source)?;
-    match compile(source) {
-        Ok(bytecode) => Ok(bytecode),
+    match compile_with_runtime_metadata(source) {
+        Ok(compiled) => Ok(compiled),
         Err(first_error) => {
             let lowered = lower_statement_separators_for_legacy(source);
             if lowered == source {
                 return Err(SyntaxBridgeError::Compile(first_error));
             }
-            compile(&lowered).map_err(SyntaxBridgeError::Compile)
+            compile_with_runtime_metadata(&lowered).map_err(SyntaxBridgeError::Compile)
         }
     }
 }
