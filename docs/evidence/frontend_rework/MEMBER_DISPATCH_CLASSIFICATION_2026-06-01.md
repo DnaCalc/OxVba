@@ -36,9 +36,22 @@ The classifier distinguishes:
 - Imported COM member dispatch now consumes resolved typelib member specs in production early-bound
   member rewriting. The classifier gates each resolved member as `ImportedCom` with the concrete
   dispatch id before rendering `__OxVbaEarlyInvoke`.
-- This bead is not complete yet. Late-bound dispatch, project/default-member dispatch, and
-  host-provided globals still need production route proof through this classifier or explicit
-  handoff to narrower FE-7 beads before closure.
+- The remaining dispatch categories are explicitly handed to narrower beads that own their
+  executable semantics:
+  - project/default-member reads and writes: FE-7.3;
+  - source-class field/member state: FE-7.4;
+  - host-provided globals and external reference roots: FE-7.6;
+  - typed dynamic-dispatch intrinsics: FE-8.1.
+
+## Closure Status
+
+`bd-aprs.8.2` can close for dispatch classification after the production route proof above. The
+classifier is no longer scaffold-only for the two dispatch classes this bead can safely migrate
+without taking over later property/class/external-reference beads: early-bound project procedure
+dispatch and imported COM member dispatch.
+
+The narrower downstream beads must use this classification vocabulary and avoid reintroducing
+string-only dispatch decisions.
 
 ## Continuation Checks
 

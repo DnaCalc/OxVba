@@ -753,7 +753,11 @@ Candidate bead units:
   handed to FE-7.2, FE-7.3, and FE-7.4, which must consume this index rather than re-parsing text.
   Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
-  members, late-bound dispatch, default members, and host-provided globals.
+  members, late-bound dispatch, default members, and host-provided globals. Current continuation
+  progress wires production classifier use for early-bound project procedure dispatch and imported
+  COM member dispatch. Remaining executable categories are explicitly handed to FE-7.3, FE-7.4,
+  FE-7.6, and FE-8.1, which must consume the same dispatch vocabulary rather than string-only
+  decisions.
   Evidence: `docs/evidence/frontend_rework/MEMBER_DISPATCH_CLASSIFICATION_2026-06-01.md`.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
   write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
