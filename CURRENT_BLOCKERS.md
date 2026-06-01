@@ -65,11 +65,25 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `resolve.rs` legacy expression/string-derived binding remains authoritative for key paths;
     - `project.rs` source-text rewrite behavior remains production behavior for project/class/COM
       semantics.
+  - 2026-06-01 narrowing:
+    - scoped single-source HIR lowering now covers the broad completed subset recorded in
+      `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`;
+    - `New <Class>` is represented as first-class HIR and can lower through typed
+      `StructuralIntrinsic::ProjectInstance(handle)` when supplied with
+      `HirNewExpressionBinding` facts;
+    - project binding now materializes those HIR construction facts in source order, but the
+      project compile boundary still compiles the rewritten backend source, so
+      `Set x = New Widget` still becomes `Set x = __oxvba_project_instance(handle)` before
+      backend compilation.
 - Unblocking path:
   - execute reopened `bd-aprs` beads under the production replacement criteria;
   - convert scaffold/evidence surfaces into default production routing;
   - delete or compatibility-quarantine replaced legacy routes;
   - rerun terminal compiler/syntax/VM/host/conformance/oracle gates with route proof.
+  - next narrow FE-8.5 step: add a project-aware compile path that consumes the generated
+    `HirNewExpressionBinding` facts and lowers project construction through HIR without emitting
+    `__oxvba_project_instance(...)` source text; then extend that path to `Dim As New`,
+    `Class_Initialize`, source maps, and imported/COM activation.
 
 ### FE-TERM-001: Frontend rework terminal evidence compiler metadata failure
 - Status: resolved in current run; superseded by FE-TERM-002 for terminal closure.
@@ -938,7 +952,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
