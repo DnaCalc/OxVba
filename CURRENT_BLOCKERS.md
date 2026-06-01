@@ -51,35 +51,48 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
-### FE-TERM-001: Frontend rework terminal evidence blocked by compiler metadata failure
-- Status: open blocking issue for `bd-aprs.10.5` terminal closure.
+### FE-TERM-001: Frontend rework terminal evidence compiler metadata failure
+- Status: resolved in current run; superseded by FE-TERM-002 for terminal closure.
 - Impact:
   - Blocks truthful closure of
     `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_REFACTOR.md`.
   - Prevents claiming full compiler parity for the frontend rework workset.
   - Does not invalidate the focused frontend module checks or syntax checks, which pass.
-- Current state:
-  - Passing checks:
-    - `cargo test -p oxvba-compiler frontend_ --quiet` (60 passed)
-    - `cargo test -p oxvba-syntax --quiet` (79 unit tests plus 2 integration/doc-style tests passed)
-    - `cargo fmt --check -p oxvba-compiler`
-    - `git diff --check`
-  - Failing check:
-    - `cargo test -p oxvba-compiler --quiet` (923 passed, 1 failed)
-    - failing test:
-      `tests::procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors`
-    - failing assertion expects `COERCE-CALL-BYVAL-DECLARED-TARGET` with `CallLet`, `Long` source,
-      and `Double` target.
-    - filtered rerun of the test fails deterministically.
-  - Broad VM, host, conformance, and Excel oracle checks were not run after the compiler failure.
-- Exact unblocking steps:
-  - debug call-site metadata/coercion descriptor collection for `Call TakeDouble(x)` where
-    `x As Long` and `TakeDouble(ByVal value As Double)`;
-  - restore or intentionally reclassify the missing `COERCE-CALL-BYVAL-DECLARED-TARGET`
-    descriptor;
-  - rerun `cargo test -p oxvba-compiler --quiet`;
-  - then run or explicitly scope the VM/host/conformance/oracle terminal checks before closing
-    `bd-aprs.10.5`.
+- Resolution summary:
+  - Preserved the runtime-facing argument `source_slot` as the descriptor-transfer temporary.
+  - Added metadata-only `ArgumentBindingDescriptor::source_declared_type` so call-entry coercion
+    descriptors can report the caller variable's declared type without corrupting VM argument
+    transfer.
+  - Fixed `ParamArrayPack` call-site descriptors to carry the packed array source slot.
+  - Updated VM descriptor evidence to recognize descriptor-native return copyout, ByRef
+    writeback, optional default, ParamArray pack, and selected call-entry coercion evidence.
+  - Passing checks after this fix:
+    - `cargo test -p oxvba-compiler procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors -- --nocapture`
+    - `cargo test -p oxvba-compiler --quiet`
+    - `cargo test -p oxvba-vm --quiet`
+    - `cargo test -p oxvba-syntax --quiet`
+- Evidence:
+  - `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`
+
+### FE-TERM-002: Frontend terminal gate host snapshot regressions
+- Status: resolved in current run.
+- Resolution summary:
+  - Added a VM-owned completed activation-frame snapshot surface keyed by procedure entry PC.
+  - Host project-visible snapshots now project from the completed entry-procedure frame instead of
+    relying on the retained global register window after the startup shim returns.
+  - Captures occur after local/temp release and termination drain, while the frame is still
+    current, so `Class_Terminate` timing is not perturbed.
+  - Completed-frame snapshots sanitize terminating project-object references to `Empty`; host/COM
+    object references remain observable.
+  - Updated snapshot tests whose old expectations encoded the pre-activation-frame empty shape or
+    compared raw per-run project-object pointers instead of canonical object identity.
+- Passing checks after this fix:
+  - `cargo test -p oxvba-host --quiet`
+  - `cargo test -p oxvba-vm --quiet`
+  - `cargo test -p oxvba-compiler --quiet`
+  - `cargo test -p oxvba-syntax --quiet`
+  - `cargo fmt --check -p oxvba-compiler -p oxvba-vm -p oxvba-host`
+  - `git diff --check`
 - Evidence:
   - `docs/evidence/frontend_rework/TERMINAL_CLOSURE_2026-06-01.md`
 
@@ -905,8 +918,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
-
 
 
 

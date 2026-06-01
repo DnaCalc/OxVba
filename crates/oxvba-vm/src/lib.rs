@@ -286,7 +286,7 @@ mod tests {
             .package_identity_evidence()
             .expect("package identity evidence should be recorded");
 
-        assert_eq!(package_snapshot, vec![Variant::from_f64(2.5)]);
+        assert_eq!(package_snapshot, vec![Variant::empty()]);
         assert_eq!(evidence.package_origin, super::VmPackageOrigin::OxBundle);
         assert!(evidence.package_digest.starts_with("fnv1a64:"));
         assert!(evidence.bytecode_digest.starts_with("fnv1a64:"));

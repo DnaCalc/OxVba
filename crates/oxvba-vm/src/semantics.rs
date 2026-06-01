@@ -1347,7 +1347,10 @@ pub fn typed_compare_variants(
     // Object comparison is VBA `Is` — identity by IUnknown pointer, uniform for internal,
     // referenced-project, and COM objects. `Variant`'s object equality compares the raw
     // IUnknown pointers (safe; no deref), so this works for real COM pointers too.
-    if matches!((lhs.vtype(), rhs.vtype()), (VarType::Object, VarType::Object)) {
+    if matches!(
+        (lhs.vtype(), rhs.vtype()),
+        (VarType::Object, VarType::Object)
+    ) {
         let ordering = if lhs == rhs {
             std::cmp::Ordering::Equal
         } else {

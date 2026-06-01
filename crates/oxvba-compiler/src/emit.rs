@@ -681,6 +681,7 @@ pub struct ArgumentBindingDescriptor {
     pub binding_kind: ArgumentBindingKindDescriptor,
     pub force_byval: bool,
     pub source_slot: Option<usize>,
+    pub source_declared_type: Option<VbaTypeId>,
     pub writeback: Option<ArgumentWritebackDescriptor>,
     pub optional_default: Option<OptionalDefaultValue>,
     pub param_array: Option<ParamArrayBindingDescriptor>,
@@ -4469,14 +4470,17 @@ fn call_entry_byval_coercion_descriptor(
     if target_parameter.resolved_mechanism != ResolvedParameterMechanism::ByVal {
         return None;
     }
-    if source_slot.declared_type == target_parameter.declared_type {
+    let source_declared_type = argument
+        .source_declared_type
+        .unwrap_or(source_slot.declared_type);
+    if source_declared_type == target_parameter.declared_type {
         return None;
     }
     Some(coercion_descriptor(
         &metadata_descriptor_owner_id(caller_metadata),
         "COERCE-CALL-BYVAL-DECLARED-TARGET",
         CoercionKindDescriptor::CallLet,
-        source_slot.declared_type,
+        source_declared_type,
         Vec::new(),
         target_parameter.declared_type,
         CoercionStaticStatusDescriptor::DescriptorRequired,
@@ -7878,6 +7882,7 @@ fn emit_early_call(
             patch_idx,
             name,
             meta,
+            current_proc_meta(proc_meta),
             invocation_syntax,
             args.len(),
             &arg_mapping,
@@ -7918,6 +7923,7 @@ fn build_early_call_site_descriptor(
     call_pc: usize,
     target_name: &str,
     meta: &EmitProcMeta,
+    caller_meta: Option<&EmitProcMeta>,
     invocation_syntax: CallInvocationSyntaxDescriptor,
     source_argument_count: usize,
     arg_mapping: &EmitCallArgMapping<'_>,
@@ -7952,7 +7958,8 @@ fn build_early_call_site_descriptor(
                 expression_kind: ArgumentExpressionKindDescriptor::Expression,
                 binding_kind: ArgumentBindingKindDescriptor::ParamArrayPack,
                 force_byval: false,
-                source_slot: None,
+                source_slot: parameter_source_slots.get(&idx).copied(),
+                source_declared_type: None,
                 writeback: None,
                 optional_default: None,
                 param_array: Some(ParamArrayBindingDescriptor {
@@ -7978,6 +7985,7 @@ fn build_early_call_site_descriptor(
                 binding_kind: ArgumentBindingKindDescriptor::OptionalDefault,
                 force_byval: false,
                 source_slot: None,
+                source_declared_type: None,
                 writeback: None,
                 optional_default: Some(optional_default_value_for_param(param)),
                 param_array: None,
@@ -8016,6 +8024,7 @@ fn build_early_call_site_descriptor(
                 BoundExpr::Var(var_name) => slot_map.get(var_name.as_str()).copied(),
                 _ => None,
             });
+        let source_declared_type = argument_source_declared_type(&mapped_arg.arg.expr, caller_meta);
         arguments.push(ArgumentBindingDescriptor {
             argument_index: idx,
             source_index: Some(mapped_arg.source_index),
@@ -8028,6 +8037,7 @@ fn build_early_call_site_descriptor(
             binding_kind,
             force_byval: mapped_arg.arg.force_byval,
             source_slot,
+            source_declared_type,
             writeback: byref_writeback,
             optional_default: None,
             param_array: fixed_array_materializations.get(&idx).map(|element_slots| {
@@ -8065,6 +8075,18 @@ fn build_early_call_site_descriptor(
         return_value,
         diagnostic_policies,
     }
+}
+
+fn argument_source_declared_type(
+    expr: &BoundExpr,
+    caller_meta: Option<&EmitProcMeta>,
+) -> Option<VbaTypeId> {
+    let BoundExpr::Var(var_name) = expr else {
+        return None;
+    };
+    caller_meta
+        .and_then(|meta| meta.declaration_types.get(var_name.as_str()).copied())
+        .map(vba_type_id_from_bound_type)
 }
 
 fn call_diagnostic_policies(
@@ -8488,6 +8510,7 @@ fn build_late_bound_default_member_call_site_descriptor(
             binding_kind: ArgumentBindingKindDescriptor::ByValCopy,
             force_byval: arg.force_byval,
             source_slot: arg_slots.get(idx).copied(),
+            source_declared_type: None,
             writeback: None,
             optional_default: None,
             param_array: None,

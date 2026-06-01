@@ -134,8 +134,8 @@ fn example_vbp_sub_main_executes() {
         .execute_project_with_variant_snapshot_phased(&loaded.manifest)
         .expect("vbp example should execute");
     assert!(
-        values.is_empty(),
-        "VBP Sub Main example should execute with the current empty snapshot slot shape: {values:?}"
+        values.iter().any(|value| value.as_i32() == Some(42)),
+        "VBP Sub Main example should expose the project-visible valueOut slot: {values:?}"
     );
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");

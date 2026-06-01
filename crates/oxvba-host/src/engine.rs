@@ -173,26 +173,26 @@ fn entry_procedure_runtime_metadata(
         .or_else(|| metadata.values().find(|metadata| metadata.entry_pc == 0))
 }
 
-fn project_visible_snapshot<T: Clone>(
-    all_slots: &[T],
+fn project_visible_variant_snapshot_from_vm(
+    vm: &Vm,
     metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
     fallback_count: usize,
-) -> Vec<T> {
+    all_slots: &[Variant],
+) -> Vec<Variant> {
     if let Some(entry) = entry_procedure_runtime_metadata(metadata) {
-        let mut visible = Vec::with_capacity(entry.slots.len());
-        for slot in &entry.slots {
-            if matches!(
-                slot.kind,
-                oxvba_compiler::ProcedureRuntimeSlotKind::ReturnValue
-                    | oxvba_compiler::ProcedureRuntimeSlotKind::Temporary
-            ) {
-                continue;
-            }
-            if let Some(value) = all_slots.get(slot.slot).cloned() {
-                visible.push(value);
-            }
-        }
-        return visible;
+        let visible_slots: Vec<usize> = entry
+            .slots
+            .iter()
+            .filter(|slot| {
+                !matches!(
+                    slot.kind,
+                    oxvba_compiler::ProcedureRuntimeSlotKind::ReturnValue
+                        | oxvba_compiler::ProcedureRuntimeSlotKind::Temporary
+                )
+            })
+            .map(|slot| slot.slot)
+            .collect();
+        return vm.snapshot_procedure_variants(entry.entry_pc, &visible_slots);
     }
     all_slots[..fallback_count.min(all_slots.len())].to_vec()
 }
@@ -207,10 +207,11 @@ impl ProjectRuntimeSession {
     /// Retained value-model snapshot for project-visible slots.
     pub fn snapshot_variants(&self) -> Vec<Variant> {
         let all_slots = self.vm.snapshot_variants(self.compiled.bytecode.slot_count);
-        project_visible_snapshot(
-            &all_slots,
+        project_visible_variant_snapshot_from_vm(
+            &self.vm,
             &self.compiled.procedure_runtime_metadata,
             self.compiled.bytecode.user_slot_count,
+            &all_slots,
         )
     }
 
@@ -1127,10 +1128,11 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)?;
         let package_identity = recorded_package_identity(&vm)?;
         let all_slots = vm.snapshot_variants(bytecode.slot_count);
-        let values = project_visible_snapshot(
-            &all_slots,
+        let values = project_visible_variant_snapshot_from_vm(
+            &vm,
             &procedure_runtime_metadata,
             bytecode.user_slot_count,
+            &all_slots,
         );
         Ok(HostVariantSnapshotWithPackageIdentity {
             values,
@@ -1189,10 +1191,11 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)?;
         let package_identity = recorded_package_identity(&vm)?;
         let all_slots = vm.snapshot_variants(compiled.bytecode.slot_count);
-        let values = project_visible_snapshot(
-            &all_slots,
+        let values = project_visible_variant_snapshot_from_vm(
+            &vm,
             &compiled.procedure_runtime_metadata,
             compiled.bytecode.user_slot_count,
+            &all_slots,
         );
         Ok(HostVariantSnapshotWithPackageIdentity {
             values,

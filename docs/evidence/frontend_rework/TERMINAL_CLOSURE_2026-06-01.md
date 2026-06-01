@@ -8,48 +8,42 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 
 Passed:
 
-- `cargo test -p oxvba-compiler frontend_ --quiet`
-  - 60 passed.
+- `cargo test -p oxvba-compiler procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors -- --nocapture`
+- `cargo test -p oxvba-compiler --quiet`
+  - 924 passed.
 - `cargo test -p oxvba-syntax --quiet`
   - 79 unit tests passed, 2 integration/doc-style tests passed.
-- `cargo fmt --check -p oxvba-compiler`
+- `cargo test -p oxvba-vm --quiet`
+  - 20 unit tests passed, 3 package identity tests passed, 21 feature coverage tests passed.
+- `cargo test -p oxvba-host --quiet`
+  - full host crate passed, including the Access DAO/ADO, wrapped COM server, class lifetime, and
+    project-hosting snapshot lanes that previously exposed terminal regressions.
+- `cargo fmt --check -p oxvba-compiler -p oxvba-vm -p oxvba-host`
 - `git diff --check`
 
-Not clean:
+## Terminal Fixes
 
-- `cargo test -p oxvba-compiler --quiet`
-  - 923 passed, 1 failed.
-  - Failing test:
-    `tests::procedure_runtime_metadata_carries_expression_operator_and_coercion_descriptors`
-  - Failing assertion expects a `COERCE-CALL-BYVAL-DECLARED-TARGET` coercion descriptor with
-    `CallLet`, `Long` source type, and `Double` target type.
-  - Direct filtered rerun of that test also fails deterministically.
-
-Not run in this terminal bead:
-
-- full VM crate;
-- host crate;
-- conformance suite;
-- selected Excel oracle checks.
-
-## Residual Ownership
-
-- Full compiler metadata failure: residual owner is the metadata/coercion descriptor lane. The
-  failure predates this terminal closure evidence for the frontend workset and is not caused by the
-  new frontend modules, which are isolated support surfaces and pass their focused checks.
-- VM/host/conformance/oracle broad runs: residual owner is the next execution-harness expansion
-  lane. FE-5.4 already records host/oracle rows as explicit residual classes rather than silently
-  claiming execution coverage.
-- Legacy comparison harness: retained. It should not be archived while lowering remains an explicit
-  residual in `frontend_route_policy`.
+- Compiler call-site metadata now keeps the runtime-facing argument `source_slot` as the
+  descriptor-transfer temporary while carrying the caller variable type separately through
+  `ArgumentBindingDescriptor::source_declared_type`.
+- ParamArray call-site descriptors carry the packed array source slot, so descriptor-backed host
+  ParamArray forwarding remains intact.
+- VM descriptor evidence recognizes descriptor-native return copyout, ByRef writeback, optional
+  default, ParamArray pack, and selected call-entry coercion observations.
+- Host project-visible snapshots now use a VM-owned completed activation-frame snapshot keyed by
+  procedure entry PC, rather than depending on the retained global register window after the
+  startup shim returns.
+- Completed-frame snapshots are captured after local/temp release and termination drain, preserving
+  `Class_Terminate` timing. Terminating project-object references are sanitized to `Empty` in the
+  evidence snapshot so the snapshot surface does not become an extra reference owner.
 
 ## Fresh-Eyes Review
 
-- This workset created the planned bead graph and staged implementation surfaces for lexer/parser,
-  diffing, HIR, SemanticModel, project semantics, typed lowering contracts, route policy, query
-  invalidation, and IDE query sharing.
-- The production compiler is not wholly flipped to frontend v2. The clean shape is
-  per-construct v2 routing plus explicit residual lowering fallback.
-- Because one full compiler test fails and broad VM/host/oracle checks were not run, this terminal
-  evidence does not claim whole-repo parity closure. It closes the prepared frontend rework bead set
-  with residual ownership documented.
+- The earlier compiler metadata blocker was a real descriptor-shape bug, not a frontend workset
+  documentation issue. It is fixed and covered by the full compiler crate.
+- The host failures were a snapshot projection bug caused by descriptor-backed activation frames
+  being popped before host projection. The fix is a narrow VM observation surface, not broad
+  register mirroring.
+- Byte-identical bytecode is not used as a closure criterion. The checks assert runtime behavior,
+  metadata/evidence shape, descriptor observations, and host-visible snapshot behavior.
+- No terminal blocker remains for `bd-aprs.10.5`.

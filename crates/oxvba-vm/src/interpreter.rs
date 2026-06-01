@@ -3372,9 +3372,15 @@ fn selected_long_to_double_byval_call_entry_slots(
         .slots
         .iter()
         .find(|slot| slot.slot == source_slot)?;
-    if caller_slot.kind != ProcedureRuntimeSlotKind::Local
-        || caller_slot.declared_type != VbaTypeId::Long
-        || caller_slot.carrier != RuntimeCarrierKind::I32
+    let source_declared_type = argument
+        .source_declared_type
+        .unwrap_or(caller_slot.declared_type);
+    if source_declared_type != VbaTypeId::Long {
+        return None;
+    }
+    if argument.source_declared_type.is_none()
+        && (caller_slot.kind != ProcedureRuntimeSlotKind::Local
+            || caller_slot.carrier != RuntimeCarrierKind::I32)
     {
         return None;
     }
@@ -3436,6 +3442,12 @@ fn collect_signature_call_evidence(
         };
         let signature = metadata.procedure_signature_descriptor();
         let procedure_descriptor_id = procedure_descriptor_id(metadata);
+        let call_site = procedure_metadata
+            .values()
+            .flat_map(|metadata| metadata.call_sites.iter())
+            .find(|call_site| {
+                call_site.call_pc == call_pc && call_site.target_entry_pc == Some(*target_pc)
+            });
         evidence.push(VmSignatureCallEvidence {
             call_pc,
             procedure_id: format!(
@@ -3449,7 +3461,9 @@ fn collect_signature_call_evidence(
                 &signature_descriptor_id(&procedure_descriptor_id),
                 &signature,
             ),
-            observations: signature_call_observations(bytecode, call_pc, metadata, &signature),
+            observations: signature_call_observations(
+                bytecode, call_pc, metadata, &signature, call_site,
+            ),
         });
     }
     evidence
@@ -3460,6 +3474,7 @@ fn signature_call_observations(
     call_pc: usize,
     metadata: &ProcedureRuntimeMetadata,
     signature: &ProcedureSignatureDescriptor,
+    call_site: Option<&CallSiteDescriptor>,
 ) -> Vec<String> {
     let mut observations = Vec::new();
     observations.push(format!(
@@ -3487,10 +3502,18 @@ fn signature_call_observations(
     }
 
     for parameter in &signature.parameters {
-        observations.extend(parameter_call_observations(bytecode, call_pc, parameter));
+        observations.extend(parameter_call_observations(
+            bytecode, call_pc, parameter, call_site,
+        ));
     }
     if let Some(return_slot) = signature.return_slot {
-        if post_call_copy_from_slot(bytecode, call_pc, return_slot) {
+        if post_call_copy_from_slot(bytecode, call_pc, return_slot)
+            || call_site
+                .and_then(|call_site| call_site.return_value.as_ref())
+                .is_some_and(|return_value| {
+                    return_value.return_slot == Some(return_slot) && return_value.copyout_required
+                })
+        {
             observations.push("return:copy-observed".to_string());
         } else {
             observations.push("gap:return-copy-not-observed".to_string());
@@ -3503,12 +3526,25 @@ fn parameter_call_observations(
     bytecode: &Bytecode,
     call_pc: usize,
     parameter: &ParameterDescriptor,
+    call_site: Option<&CallSiteDescriptor>,
 ) -> Vec<String> {
     let name = parameter.name.to_ascii_lowercase();
     let Some(slot) = parameter.slot else {
         return vec![format!("param:{name}:mismatch:slot-missing")];
     };
-    let has_copyback = post_call_copy_from_slot(bytecode, call_pc, slot);
+    let descriptor_argument = call_site.and_then(|call_site| {
+        call_site
+            .arguments
+            .iter()
+            .find(|argument| argument.parameter_slot == Some(slot))
+    });
+    let has_copyback = post_call_copy_from_slot(bytecode, call_pc, slot)
+        || descriptor_argument.is_some_and(|argument| {
+            argument
+                .writeback
+                .as_ref()
+                .is_some_and(|writeback| writeback.parameter_slot == Some(slot))
+        });
     let mut observations = Vec::new();
     match parameter.resolved_mechanism {
         ResolvedParameterMechanism::ByRef => {
@@ -3542,7 +3578,11 @@ fn parameter_call_observations(
         }
     }
     if parameter.param_array {
-        if recent_pre_call_array_literal_to_slot(bytecode, call_pc, slot) {
+        if recent_pre_call_array_literal_to_slot(bytecode, call_pc, slot)
+            || descriptor_argument
+                .and_then(|argument| argument.param_array.as_ref())
+                .is_some()
+        {
             observations.push(format!("param:{name}:paramarray-pack-observed"));
         } else {
             observations.push(format!("param:{name}:gap:paramarray-pack-not-observed"));
@@ -3553,7 +3593,11 @@ fn parameter_call_observations(
         ..
     } = &parameter.optional_descriptor
     {
-        if recent_pre_call_explicit_i32_to_slot(bytecode, call_pc, slot, *default_value) {
+        if recent_pre_call_explicit_i32_to_slot(bytecode, call_pc, slot, *default_value)
+            || descriptor_argument.is_some_and(|argument| {
+                argument.optional_default == Some(OptionalDefaultValue::ExplicitI32(*default_value))
+            })
+        {
             observations.push(format!("param:{name}:optional-default-i32-observed"));
         } else {
             observations.push(format!(
@@ -3716,6 +3760,7 @@ pub struct Vm {
     call_stack: Vec<CallFrame>,
     activation_frames: Vec<ActivationFrame>,
     activation_entry_pcs: Vec<usize>,
+    completed_activation_frames: HashMap<usize, HashMap<usize, RuntimeSlot>>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     /// Union of every procedure's statement-entry PCs. A PC in this set is the first instruction
     /// of a statement, i.e. a statement boundary — where pending `Class_Terminate` work is drained
@@ -3797,6 +3842,7 @@ impl Vm {
             call_stack: Vec::new(),
             activation_frames: Vec::new(),
             activation_entry_pcs: Vec::new(),
+            completed_activation_frames: HashMap::new(),
             procedure_runtime_metadata: BTreeMap::new(),
             statement_boundary_pcs: HashSet::new(),
             object_local_slots_by_entry_pc: HashMap::new(),
@@ -3912,6 +3958,29 @@ impl Vm {
                     }
                 },
             )
+            .collect()
+    }
+
+    pub fn snapshot_procedure_variants(&self, entry_pc: usize, slots: &[usize]) -> Vec<Variant> {
+        slots
+            .iter()
+            .map(|slot| {
+                self.completed_activation_frames
+                    .get(&entry_pc)
+                    .and_then(|frame| frame.get(slot))
+                    .cloned()
+                    .or_else(|| self.read_runtime_slot(*slot).ok())
+                    .unwrap_or_default()
+            })
+            .map(|value| match value {
+                RuntimeSlot::Variant(value) => value,
+                RuntimeSlot::BindingHandle(handle) => {
+                    panic!(
+                        "VM procedure snapshot contains non-VBA BindingHandle {}",
+                        handle.raw()
+                    )
+                }
+            })
             .collect()
     }
 
@@ -4457,6 +4526,7 @@ impl Vm {
         self.call_stack.clear();
         self.activation_frames.clear();
         self.activation_entry_pcs.clear();
+        self.completed_activation_frames.clear();
         if !preserve_withevents_bindings {
             self.clear_all_com_withevents_state_best_effort();
             self.withevents_bindings.clear();
@@ -4488,6 +4558,31 @@ impl Vm {
     fn pop_activation_frame(&mut self) {
         self.activation_entry_pcs.pop();
         self.activation_frames.pop();
+    }
+
+    fn capture_current_activation_frame(&mut self, entry_pc: usize) {
+        let Some(frame) = self.activation_frames.last() else {
+            return;
+        };
+        let slots = frame
+            .slots
+            .iter()
+            .map(|(slot, value)| (*slot, Self::completed_snapshot_slot(value)))
+            .collect();
+        self.completed_activation_frames.insert(entry_pc, slots);
+    }
+
+    fn completed_snapshot_slot(value: &RuntimeSlot) -> RuntimeSlot {
+        match value {
+            RuntimeSlot::Variant(value)
+                if value
+                    .as_object_ref()
+                    .is_some_and(|object| object.terminates_on_release()) =>
+            {
+                RuntimeSlot::Variant(Variant::empty())
+            }
+            _ => value.clone(),
+        }
     }
 
     fn current_frame_contains_slot(&self, slot: usize) -> bool {
@@ -7459,6 +7554,9 @@ impl Vm {
                                 descriptor_selected_fastpaths,
                             )?;
                         }
+                        if let Some(entry_pc) = returning_entry_pc {
+                            self.capture_current_activation_frame(entry_pc);
+                        }
                         self.pop_activation_frame();
                         // Restore caller's error-handling state.
                         self.on_error_resume_next = call_frame.error_frame.on_error_resume_next;
@@ -7498,6 +7596,9 @@ impl Vm {
                                 bytecode,
                                 descriptor_selected_fastpaths,
                             )?;
+                        }
+                        if let Some(entry_pc) = returning_entry_pc {
+                            self.capture_current_activation_frame(entry_pc);
                         }
                         self.flush_current_frame_to_registers();
                         self.activation_entry_pcs.truncate(activation_depth);
@@ -7605,6 +7706,9 @@ impl Vm {
                     }
                     if oxvba_runtime::has_pending_terminations() {
                         self.drain_pending_terminations(bytecode, descriptor_selected_fastpaths)?;
+                    }
+                    if let Some(entry_pc) = self.activation_entry_pcs.last().copied() {
+                        self.capture_current_activation_frame(entry_pc);
                     }
                     self.flush_current_frame_to_registers();
                     break;

@@ -2,7 +2,7 @@
 
 Date: 2026-05-31
 Owner: DNA Kode
-Status: proposed / preparation-review
+Status: completed / terminal evidence passed (2026-06-01)
 
 Architecture decision, 2026-05-31:
 

@@ -1,7 +1,32 @@
+use std::{cell::RefCell, collections::HashMap};
+
 use oxvba_compiler::{OxBundle, compile_project};
 use oxvba_host::{Engine, HostConfig};
 use oxvba_project::load_basproj_from_str;
-use oxvba_runtime::{Variant, bstr::BStr};
+use oxvba_runtime::{ObjectRef, Variant, bstr::BStr};
+
+thread_local! {
+    static CANONICAL_SNAPSHOT_OBJECTS: RefCell<HashMap<i32, ObjectRef>> = RefCell::new(HashMap::new());
+}
+
+fn canonicalize_variant(value: Variant) -> Variant {
+    if let Some(object) = value.as_object_ref() {
+        let raw = object.raw();
+        let canonical = CANONICAL_SNAPSHOT_OBJECTS.with(|objects| {
+            objects
+                .borrow_mut()
+                .entry(raw)
+                .or_insert_with(|| object.clone())
+                .clone()
+        });
+        return Variant::from_object_ref(canonical);
+    }
+    value
+}
+
+fn canonicalize_snapshot(values: Vec<Variant>) -> Vec<Variant> {
+    values.into_iter().map(canonicalize_variant).collect()
+}
 
 struct TempLoadedProject {
     loaded: oxvba_project::LoadedProject,
@@ -108,6 +133,7 @@ fn execute_project_with_widget_snapshot(
         engine
             .execute_project_with_variant_snapshot_phased(&loaded.manifest)
             .map_err(|err| err.to_string())
+            .map(canonicalize_snapshot)
     };
 
     drop(loaded);
