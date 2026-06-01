@@ -230,6 +230,11 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
+            HirStmtKind::ReDim { bounds, .. } => {
+                for bound in bounds {
+                    self.index_expr_tree(bound);
+                }
+            }
             HirStmtKind::RaiseEvent { args, .. } => {
                 for arg in args {
                     self.index_expr_tree(arg);

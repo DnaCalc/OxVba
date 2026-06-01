@@ -880,6 +880,9 @@ Candidate bead units:
   contract instead of only to bytecode emission.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR
   production lowering without allocating runtime slots for those constants.
+  Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
+  `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
+  metadata.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
@@ -931,7 +934,8 @@ Candidate bead units:
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and
   basic `RaiseEvent` and literal `Const`. The workset remains open for broader terminal evidence
-  and expanded route-audit coverage.
+  and expanded route-audit coverage. Follow-up continuation also covers a one-dimensional
+  dynamic-array runtime `ReDim` fixture.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

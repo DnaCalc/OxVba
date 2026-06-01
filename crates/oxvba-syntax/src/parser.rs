@@ -1759,6 +1759,21 @@ impl<'a> Parser<'a> {
         self.start_node(SyntaxKind::ReDimStmt);
         self.eat_trivia();
         self.bump(); // ReDim
+        self.eat_whitespace();
+        if self.at(SyntaxKind::KwPreserve) {
+            self.bump();
+            self.eat_whitespace();
+        }
+        if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+            self.bump();
+            if self.at(SyntaxKind::TypeSuffix) {
+                self.bump();
+            }
+        }
+        self.eat_whitespace();
+        if self.at(SyntaxKind::LParen) {
+            self.parse_arg_list();
+        }
         self.eat_to_statement_end();
         self.finish_node();
     }
@@ -2212,6 +2227,17 @@ mod tests {
         assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
         assert!(has_node_kind(&p.syntax(), SyntaxKind::RaiseEventStmt));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+    }
+
+    #[test]
+    fn parses_redim_runtime_bound_expression() {
+        let src = "Sub Main()\nReDim Preserve buf(length - 1)\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ReDimStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr));
     }
 
     #[test]

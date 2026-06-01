@@ -349,6 +349,7 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::GoTo { .. }
         | HirStmtKind::GoSub { .. }
         | HirStmtKind::Return
+        | HirStmtKind::ReDim { .. }
         | HirStmtKind::Erase { .. }
         | HirStmtKind::RaiseEvent { .. } => {}
     }

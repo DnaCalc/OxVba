@@ -172,6 +172,11 @@ pub enum HirStmtKind {
     ResumeLabel {
         label: String,
     },
+    ReDim {
+        name: String,
+        bounds: Vec<HirExprId>,
+        preserve: bool,
+    },
     Erase {
         name: String,
     },
@@ -782,6 +787,39 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::Erase { name },
+                })))
+            }
+            SyntaxKind::ReDimStmt => {
+                let name = redim_name(node)?;
+                let preserve = node
+                    .child_tokens()
+                    .into_iter()
+                    .any(|token| token.kind == SyntaxKind::KwPreserve);
+                let bounds = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::ArgList)
+                    .map(|arg_list| {
+                        expression_children(arg_list)
+                            .into_iter()
+                            .map(|expr| self.lower_expr(scope, expr))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                if bounds.is_empty() {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "ReDim statement without supported bounds: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::ReDim {
+                        name,
+                        bounds,
+                        preserve,
+                    },
                 })))
             }
             SyntaxKind::RaiseEventStmt => {
@@ -1463,6 +1501,27 @@ fn name_after_keyword(
     }
     Err(HirBuildError::Unsupported(format!(
         "{label} statement without supported name: `{}`",
+        node.text().trim()
+    )))
+}
+
+fn redim_name(node: SyntaxNode<'_>) -> Result<String, HirBuildError> {
+    let mut after_redim = false;
+    for token in node.child_tokens() {
+        if token.kind == SyntaxKind::KwReDim {
+            after_redim = true;
+            continue;
+        }
+        if !after_redim || token.kind.is_trivia() || token.kind == SyntaxKind::KwPreserve {
+            continue;
+        }
+        if let Some(name) = normalize_ident(token.text) {
+            return Ok(name);
+        }
+        break;
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "ReDim statement without supported name: `{}`",
         node.text().trim()
     )))
 }

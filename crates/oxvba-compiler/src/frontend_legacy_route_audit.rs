@@ -239,6 +239,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let redim_statement =
+        "Sub Main()\nDim length As Long\nDim buf() As Byte\nReDim buf(length - 1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "redim runtime statement fixture",
+        redim_statement,
+        "bd-aprs.9.5",
+    ));
+
     let raise_event_statement = "Sub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
     findings.push(route_finding(
         "raise event statement fixture",
@@ -411,6 +419,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("erase statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("redim runtime statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

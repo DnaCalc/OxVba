@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
@@ -13,9 +13,10 @@ use crate::frontend_type_hooks::{
 };
 use crate::optimize::optimize_module;
 use crate::resolve::{
-    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause, BoundCompareMode,
-    BoundCond, BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure,
-    BoundStmt, BoundType, CompareOp, LogicalBinOp,
+    ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
+    BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundModule, BoundParam,
+    BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType, CompareOp, LogicalBinOp,
+    RuntimeArrayDimExpr, collect_option_base,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -152,7 +153,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
             | SyntaxKind::WithStmt
-            | SyntaxKind::ReDimStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
             | SyntaxKind::MemberExpr
@@ -197,9 +197,10 @@ pub fn lower_typed_hir_to_bound_module(
     typed_hir: &TypedHirModule,
 ) -> Result<BoundModule, HirProductionLoweringError> {
     let const_values = collect_const_values(source, typed_hir);
+    let option_base = collect_option_base(&source.lines().map(str::to_string).collect::<Vec<_>>());
     let mut procedures = Vec::new();
     for decl in &typed_hir.module.declarations {
-        if let Some(proc) = lower_procedure(source, typed_hir, &const_values, *decl)? {
+        if let Some(proc) = lower_procedure(source, typed_hir, &const_values, option_base, *decl)? {
             procedures.push(proc);
         }
     }
@@ -229,6 +230,7 @@ fn lower_procedure(
     source: &str,
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    option_base: i32,
     decl_id: HirDeclId,
 ) -> Result<Option<BoundProcedure>, HirProductionLoweringError> {
     let Some(decl) = typed_hir.module.arenas.decl(decl_id) else {
@@ -241,6 +243,8 @@ fn lower_procedure(
     let is_function = decl.cst.syntax_kind == "FunctionDecl";
     let mut declarations = Vec::new();
     let mut declaration_types = HashMap::new();
+    let mut array_descriptors = HashMap::new();
+    let mut dynamic_array_names = HashSet::new();
     let mut bound_params = Vec::new();
 
     for param in params {
@@ -276,10 +280,26 @@ fn lower_procedure(
         {
             declarations.push(local_name.clone());
         }
-        declaration_types.insert(
-            local_name,
-            declared_bound_type(typed_hir, symbol.id).unwrap_or(BoundType::Variant),
-        );
+        if let Some(element_type) = dynamic_array_element_type(source, symbol.id, typed_hir) {
+            dynamic_array_names.insert(local_name.to_ascii_lowercase());
+            declaration_types.insert(local_name.clone(), BoundType::Array);
+            declaration_types.insert(format!("{local_name}_0"), element_type);
+            array_descriptors.insert(
+                local_name,
+                BoundArrayDescriptor {
+                    element_type,
+                    rank: 1,
+                    bounds: Vec::new(),
+                    dynamic: true,
+                    option_base,
+                },
+            );
+        } else {
+            declaration_types.insert(
+                local_name,
+                declared_bound_type(typed_hir, symbol.id).unwrap_or(BoundType::Variant),
+            );
+        }
     }
 
     if is_function {
@@ -290,7 +310,14 @@ fn lower_procedure(
 
     let mut stmts = Vec::new();
     for stmt in body {
-        lower_stmt(typed_hir, const_values, *stmt, &mut stmts)?;
+        lower_stmt(
+            typed_hir,
+            const_values,
+            option_base,
+            &dynamic_array_names,
+            *stmt,
+            &mut stmts,
+        )?;
     }
     let (source_line_start, source_line_end) =
         span_lines(source, decl.cst.span.start, decl.cst.span.end);
@@ -330,7 +357,7 @@ fn lower_procedure(
         module_scope_names: Vec::new(),
         declarations,
         declaration_types,
-        array_descriptors: HashMap::new(),
+        array_descriptors,
         udt_descriptors: Vec::new(),
         duplicate_declarations: Vec::new(),
         body: stmts,
@@ -340,6 +367,8 @@ fn lower_procedure(
 fn lower_stmt(
     typed_hir: &TypedHirModule,
     const_values: &HashMap<SymbolId, BoundExpr>,
+    option_base: i32,
+    dynamic_array_names: &HashSet<String>,
     stmt: HirStmtId,
     out: &mut Vec<BoundStmt>,
 ) -> Result<(), HirProductionLoweringError> {
@@ -363,7 +392,14 @@ fn lower_stmt(
         }),
         HirStmtKind::Block(children) => {
             for child in children {
-                lower_stmt(typed_hir, const_values, *child, out)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *child,
+                    out,
+                )?;
             }
         }
         HirStmtKind::Expr(expr) => match lower_expr(typed_hir, const_values, *expr)? {
@@ -385,11 +421,25 @@ fn lower_stmt(
         } => {
             let mut lowered_then = Vec::new();
             for stmt in then_body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_then)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_then,
+                )?;
             }
             let mut lowered_else = Vec::new();
             for stmt in else_body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_else)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_else,
+                )?;
             }
             out.push(BoundStmt::IfCond {
                 cond: lower_condition(typed_hir, const_values, *condition)?,
@@ -405,7 +455,14 @@ fn lower_stmt(
         } => {
             let mut lowered_body = Vec::new();
             for stmt in body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_body)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_body,
+                )?;
             }
             let mut cond = lower_condition(typed_hir, const_values, *condition)?;
             if *until {
@@ -430,13 +487,27 @@ fn lower_stmt(
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut lowered_body = Vec::new();
                 for stmt in body {
-                    lower_stmt(typed_hir, const_values, *stmt, &mut lowered_body)?;
+                    lower_stmt(
+                        typed_hir,
+                        const_values,
+                        option_base,
+                        dynamic_array_names,
+                        *stmt,
+                        &mut lowered_body,
+                    )?;
                 }
                 lowered_arms.push((clauses, lowered_body));
             }
             let mut lowered_else = Vec::new();
             for stmt in else_body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_else)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_else,
+                )?;
             }
             out.push(BoundStmt::SelectCase {
                 expr: lower_expr(typed_hir, const_values, *expr)?,
@@ -453,7 +524,14 @@ fn lower_stmt(
         } => {
             let mut lowered_body = Vec::new();
             for stmt in body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_body)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_body,
+                )?;
             }
             out.push(BoundStmt::ForRange {
                 var: symbol_name(typed_hir, *var)?,
@@ -473,7 +551,14 @@ fn lower_stmt(
         } => {
             let mut lowered_body = Vec::new();
             for stmt in body {
-                lower_stmt(typed_hir, const_values, *stmt, &mut lowered_body)?;
+                lower_stmt(
+                    typed_hir,
+                    const_values,
+                    option_base,
+                    dynamic_array_names,
+                    *stmt,
+                    &mut lowered_body,
+                )?;
             }
             out.push(BoundStmt::ForEach {
                 var: symbol_name(typed_hir, *var)?,
@@ -503,6 +588,37 @@ fn lower_stmt(
             label: label.clone(),
         }),
         HirStmtKind::Return => out.push(BoundStmt::Return),
+        HirStmtKind::ReDim {
+            name,
+            bounds,
+            preserve,
+        } => {
+            if !dynamic_array_names.contains(&name.to_ascii_lowercase()) {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "ReDim production lowering requires a dynamic array declaration for {name}"
+                )));
+            }
+            if bounds.len() != 1 {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "ReDim production lowering currently supports one runtime bound, got {} for {name}",
+                    bounds.len()
+                )));
+            }
+            let bounds = bounds
+                .iter()
+                .map(|bound| {
+                    Ok(RuntimeArrayDimExpr {
+                        lower_bound: option_base,
+                        upper_bound: lower_expr(typed_hir, const_values, *bound)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, HirProductionLoweringError>>()?;
+            out.push(BoundStmt::ReDimRuntime {
+                name: name.clone(),
+                bounds,
+                preserve: *preserve,
+            });
+        }
         HirStmtKind::Erase { name } => out.push(BoundStmt::Erase { name: name.clone() }),
         HirStmtKind::RaiseEvent { name, args } => out.push(BoundStmt::RaiseEvent {
             name: name.clone(),
@@ -520,6 +636,50 @@ fn lower_stmt(
         HirStmtKind::Empty => {}
     }
     Ok(())
+}
+
+fn dynamic_array_element_type(
+    source: &str,
+    symbol: SymbolId,
+    typed_hir: &TypedHirModule,
+) -> Option<BoundType> {
+    let span = typed_hir
+        .module
+        .symbols
+        .symbol(symbol)
+        .and_then(|symbol| symbol.provenance.span)?;
+    let suffix = source.get(span.end..)?;
+    let line_end = suffix.find('\n').unwrap_or(suffix.len());
+    let segment = source.get(span.end..span.end + line_end)?.trim_start();
+    if !segment.starts_with("()") {
+        return None;
+    }
+    let lower = segment.to_ascii_lowercase();
+    let as_pos = lower.find(" as ")?;
+    let ty_text = segment[as_pos + " as ".len()..]
+        .trim_start()
+        .split(|ch: char| ch == ',' || ch.is_whitespace())
+        .next()?;
+    bound_type_name(ty_text)
+}
+
+fn bound_type_name(text: &str) -> Option<BoundType> {
+    match text.to_ascii_lowercase().as_str() {
+        "boolean" => Some(BoundType::Boolean),
+        "byte" => Some(BoundType::Byte),
+        "integer" => Some(BoundType::Integer),
+        "long" => Some(BoundType::Long),
+        "longlong" => Some(BoundType::LongLong),
+        "longptr" => Some(BoundType::LongPtr),
+        "single" => Some(BoundType::Single),
+        "double" => Some(BoundType::Double),
+        "currency" => Some(BoundType::Currency),
+        "date" => Some(BoundType::Date),
+        "string" => Some(BoundType::String),
+        "object" => Some(BoundType::Object),
+        "variant" => Some(BoundType::Variant),
+        _ => None,
+    }
 }
 
 fn lower_assignment_target(
@@ -1433,6 +1593,45 @@ mod tests {
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(!bytecode.instructions.is_empty());
         assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_runtime_redim_for_dynamic_array() {
+        let source = "Sub Main()\nDim length As Long\nDim buf() As Byte\nlength = 3\nReDim Preserve buf(length - 1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicArrayResizePreserve {
+                    lower_bounds,
+                    element_type: crate::bytecode::RuntimeArrayElementType::Byte,
+                    ..
+                } if lower_bounds == &vec![0]
+            )),
+            "expected runtime ReDim Preserve bytecode: {:?}",
+            bytecode.instructions
+        );
+        let proc = metadata.get("main").expect("main metadata");
+        let shape = proc
+            .array_shapes
+            .iter()
+            .find(|shape| shape.name == "buf")
+            .expect("dynamic array shape");
+        assert_eq!(shape.element_type, VbaTypeId::Byte);
+        assert_eq!(shape.rank, 1);
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_fixed_array_redim_for_fallback() {
+        let source = "Sub Main()\nDim a(1)\nReDim a(3)\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("fixed-array ReDim remains a residual");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "fixed-array ReDim must remain fallback-eligible, got {err:?}"
+        );
     }
 
     #[test]

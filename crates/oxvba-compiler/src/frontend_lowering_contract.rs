@@ -277,6 +277,11 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
+        HirStmtKind::ReDim { bounds, .. } => {
+            for bound in bounds {
+                collect_expr_structural_intrinsics(typed_hir, *bound, structural_intrinsics);
+            }
+        }
         HirStmtKind::RaiseEvent { args, .. } => {
             for arg in args {
                 collect_expr_structural_intrinsics(typed_hir, *arg, structural_intrinsics);
