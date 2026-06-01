@@ -691,6 +691,7 @@ semantic substrate.
 Candidate bead units:
 - FE-9.1 Per-construct default flip: route completed construct families through frontend v2 by
   default while retaining fallback only for tracked residuals.
+  Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
 - FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
