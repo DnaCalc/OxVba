@@ -544,8 +544,12 @@ constant expressions:
 - `collect_const_values(...)` records those values as bound expression trees, so uses such as
   `x = CBase` for `Const CBase = 1 + 2` lower through HIR and produce expression bytecode without
   allocating a runtime local slot for `CBase`.
-- This is intentionally still a bounded subset. Constant expressions that require name-dependent
-  evaluation beyond the already handled enum/literal route remain future FE-8.5 work.
+- Later declarators in the same `Const` statement can reference earlier declarators, for example
+  `Const CBase = 1 + 2, CTotal = CBase + 1`; those references are substituted as expression trees,
+  not runtime variable reads.
+- This is intentionally still a bounded subset. Constant expressions that require broader
+  module/procedure-scoped name evaluation beyond same-statement declarators and the already handled
+  enum/literal route remain future FE-8.5 work.
 
 ## Bang Member Read Continuation
 
