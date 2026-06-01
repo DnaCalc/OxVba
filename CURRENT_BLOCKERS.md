@@ -115,6 +115,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - 2026-06-02 bead-graph repair keeps the existing workset/root bead and makes the remaining
     production replacement work explicit:
     - `bd-aprs.8.7`: property/default-member production semantics;
+      - continuation progress: imported-COM dispatch classification now records typelib invoke
+        kind and early-bound COM property read/put/putref rewrite paths validate dispatch id and
+        invoke kind before retaining the compatibility `DispatchInvoke` carrier;
+      - still open: host/project default-member writeback breadth, indexed/named writeback through
+        HIR facts, overload validation, and replacement/quarantine of the remaining rewrite bodies;
     - `bd-aprs.8.8`: reference/COM activation and member binding;
     - `bd-aprs.9.6`: completed for direct active-project `Set obj = New Class` construction on
       HIR using generated `HirNewExpressionBinding` facts, without compiling the generated

@@ -4781,18 +4781,20 @@ fn validate_imported_com_dispatch_classification(
         &binding.qualified_type,
         &member_spec.name,
         Some(member_token),
+        member_spec.invoke_kind,
     );
     if !matches!(
         decision.class,
         MemberDispatchClass::ImportedCom {
             dispatch_id: Some(dispatch_id),
+            invoke_kind,
             ..
-        } if dispatch_id == member_token
+        } if dispatch_id == member_token && invoke_kind == member_spec.invoke_kind
     ) {
         return Err(ProjectCompileError::BackendCompile {
             message: format!(
-                "FE7-E-MEMBER-DISPATCH-CLASSIFICATION: imported COM member {}.{} did not classify with dispatch id {}",
-                binding.qualified_type, member_spec.name, member_token
+                "FE7-E-MEMBER-DISPATCH-CLASSIFICATION: imported COM member {}.{} did not classify with dispatch id {} and invoke kind {:?}",
+                binding.qualified_type, member_spec.name, member_token, member_spec.invoke_kind
             ),
         });
     }
@@ -5028,6 +5030,7 @@ fn rewrite_early_bound_property_assignment(
             shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
         });
     }
+    validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
     let has_named_args = args.iter().any(|arg| arg.contains(":="));
     if has_named_args {
         let value_name = member_spec
@@ -5135,6 +5138,7 @@ fn rewrite_early_bound_property_read_assignment(
     {
         return Ok(line.to_string());
     }
+    validate_imported_com_dispatch_classification(binding, &member_spec, member_token)?;
     Ok(format!(
         "{}{}{} = __OxVbaEarlyInvoke({}, {})",
         &line[..leading],

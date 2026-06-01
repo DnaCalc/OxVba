@@ -1095,7 +1095,10 @@ Candidate bead units:
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and overload validation. Partial work has already been done: simple
   late-bound member reads/calls and simple dot/bang/With member assignment targets lower through
-  HIR with Let/Set hints.
+  HIR with Let/Set hints. Continuation progress now makes imported-COM dispatch classification
+  carry typelib invocation kind and validates early-bound COM property read plus put/putref rewrite
+  paths against that front-end dispatch fact before emitting the compatibility `DispatchInvoke`
+  carrier.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
   `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
   project/class array fields through HIR. Partial work has already been done: one-dimensional

@@ -59,6 +59,10 @@ The 2026-06-01 continuation added:
 - parseable sources now run front-end assignment diagnostics before legacy symbol resolution and
   type checking. The diagnostic messages are mapped to the established compiler wording so the
   production API shape remains stable while the decision comes from typed HIR facts.
+- `bd-aprs.8.7` continuation: imported COM member classification now carries the typelib
+  invocation kind, and early-bound COM property read plus property put/putref rewrite paths validate
+  that the front-end dispatch classification matches both dispatch id and `PropertyGet`/`Method`/
+  `PropertyPut`/`PropertyPutRef` kind before emitting the existing `DispatchInvoke` carrier.
 
 ## Checks
 
@@ -71,6 +75,9 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
 - `cargo test -p oxvba-compiler frontend_assignment_semantics --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
+- `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
+- `cargo test -p oxvba-compiler property_put_external --quiet`
+- `cargo test -p oxvba-compiler imported_property --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -133,3 +140,10 @@ The 2026-06-01 continuation added:
   Residual fallback scans are classified as compatibility fallback for rewrite-bridge mode,
   referenced projects, non-property function/sub/member probes, and parser-incomplete route gaps;
   those are outside FE-7.3 and are covered by later FE-7/FE-8 migration beads.
+- `bd-aprs.8.7` continuation fresh-eyes review found a weak imported-COM lane: property
+  put/putref rewrites resolved typelib metadata directly, while earlier read/invoke paths at least
+  checked the imported-COM dispatch classifier. The classifier now records invocation kind and the
+  early-bound property read/setter rewrite paths validate the classifier before keeping the
+  compatibility `DispatchInvoke` source rewrite. This is still not full closure for the bead:
+  host/project default-member writeback breadth, indexed/named writeback through HIR facts, and
+  replacement/quarantine of the remaining project rewrite bodies remain open.
