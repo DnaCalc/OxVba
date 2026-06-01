@@ -287,15 +287,22 @@ The twenty-sixth FE-8.5 slice removes the first explicit-receiver dot-member exp
   `obj.Method(1)` reaches the existing late-bound member-call bytecode path; and
 - the route audit now includes a fixture for `x = obj.Value` and `y = obj.Method(1)`.
 
-This is intentionally not full member/property/object parity. Bang access, member assignment
-targets, `With` dot-shorthand, `New`/object construction, default-member resolution, property
-Get/Let/Set selection, project/class binding, early-bound COM binding, ByRef/writeback behavior,
-and host-provided member semantics remain FE-7/FE-8 residuals.
+This is intentionally not full member/property/object parity. Bang access, member-write targets,
+`With` dot-shorthand, `New`/object construction, default-member resolution, property Get/Let/Set
+selection, project/class binding, early-bound COM binding, ByRef/writeback behavior, and
+host-provided member semantics remain FE-7/FE-8 residuals at this point in the history below.
 
 Follow-up continuation adds the first `With` route slice: read-side dot-prefixed member expressions
 inside `With obj ... End With` are bound to the active With receiver and lower through the existing
 late-bound member read path. With member assignment targets remain fallback-eligible because member
 write/property Let/Set semantics are still broader FE-7/FE-8 work.
+
+Follow-up continuation adds the first production HIR member-write route: explicit receiver member
+targets and `With` dot-prefixed member targets now lower to late-bound dispatch with an explicit
+property Let or property Set hint. This removes the raw fallback for simple `obj.Value = ...`,
+`Set obj.Ref = ...`, and `.Value = ...` target shapes. It does not close default-member selection,
+indexed/named writeback breadth, project/class property resolution, early-bound COM property put,
+or full property Let/Set overload validation.
 
 ## ElseIf Continuation
 
@@ -589,8 +596,9 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - HIR member-name extraction now accepts `!` as a member selector for expressions such as
   `obj!Value`, matching the existing syntax bridge/backend representation.
 - HIR production lowering emits the same late-bound dispatch shape used for dot member reads.
-- This does not close member writes: `obj!Value = ...`, `obj.Value = ...`, `With` shorthand writes,
-  property Let/Set selection, and writeback semantics remain tracked residual work.
+- This does not close full member writes: `obj!Value = ...`, default-member/property selection,
+  project/class and early-bound COM property-put resolution, indexed/named writeback breadth, and
+  property Let/Set overload validation remain tracked residual work.
 
 ## Checks
 
