@@ -45,7 +45,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
-    let call_statement = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nEnd Sub\n";
+    let call_statement = "Sub Main()\nCall Worker()\nEnd Sub\nSub Worker()\nEnd Sub\n";
     findings.push(route_finding(
         "procedure call statement fixture",
         call_statement,
@@ -116,13 +116,14 @@ mod tests {
     }
 
     #[test]
-    fn audit_records_legacy_residuals_before_terminal_gate() {
+    fn audit_records_static_residuals_before_terminal_gate() {
         let report = run_production_legacy_route_audit();
         assert!(
             report
-                .residuals()
+                .findings
                 .iter()
-                .any(|finding| finding.area.contains("call statement")),
+                .any(|finding| finding.area.contains("call statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction),
             "{report:#?}"
         );
         assert!(
