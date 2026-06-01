@@ -250,6 +250,34 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn is_contextual_name_keyword(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::KwDebug
+                | SyntaxKind::KwStop
+                | SyntaxKind::KwPrint
+                | SyntaxKind::KwOpen
+                | SyntaxKind::KwClose
+                | SyntaxKind::KwInput
+                | SyntaxKind::KwOutput
+                | SyntaxKind::KwAppend
+                | SyntaxKind::KwBinary
+                | SyntaxKind::KwRandom
+                | SyntaxKind::KwAccess
+                | SyntaxKind::KwRead
+                | SyntaxKind::KwWrite
+                | SyntaxKind::KwLock
+                | SyntaxKind::KwShared
+                | SyntaxKind::KwLine
+                | SyntaxKind::KwName
+        )
+    }
+
+    fn is_expr_name_token(kind: SyntaxKind) -> bool {
+        matches!(kind, SyntaxKind::Ident | SyntaxKind::BracketedIdent)
+            || Self::is_contextual_name_keyword(kind)
+    }
+
     /// True if this token stops expression parsing (at zero paren depth).
     fn is_expr_stop(&self, kind: SyntaxKind) -> bool {
         match kind {
@@ -269,8 +297,6 @@ impl<'a> Parser<'a> {
             | SyntaxKind::OctLiteral
             | SyntaxKind::StringLiteral
             | SyntaxKind::DateLiteral
-            | SyntaxKind::Ident
-            | SyntaxKind::BracketedIdent
             | SyntaxKind::KwTrue
             | SyntaxKind::KwFalse
             | SyntaxKind::KwEmpty
@@ -282,6 +308,7 @@ impl<'a> Parser<'a> {
             | SyntaxKind::LParen
             | SyntaxKind::Dot
             | SyntaxKind::Hash => true,
+            k if Self::is_expr_name_token(k) => true,
             k if Self::prefix_binding_power(k).is_some() => true,
             _ => false,
         }
@@ -455,7 +482,7 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             // Identifier
-            SyntaxKind::Ident | SyntaxKind::BracketedIdent => {
+            k if Self::is_expr_name_token(k) => {
                 self.start_node(SyntaxKind::IdentExpr);
                 self.bump();
                 // Type suffix
@@ -1220,6 +1247,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe | SyntaxKind::Dot => {
                 self.parse_assign_or_call()
             }
+            k if Self::is_contextual_name_keyword(k) => self.parse_assign_or_call(),
             _ => {
                 // Unrecognized — wrap in error node
                 self.error_recover("unexpected statement");
@@ -2050,6 +2078,48 @@ mod tests {
         assert_eq!(p.syntax().text(), src);
         assert!(has_node_kind(&p.syntax(), SyntaxKind::MemberExpr));
         assert!(has_node_kind(&p.syntax(), SyntaxKind::IndexExpr));
+    }
+
+    #[test]
+    fn expr_bang_index_and_member_postfix_chain() {
+        let src = "Sub T()\n    x = obj!Field(0).Value\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let members = collect_nodes(&p.syntax(), SyntaxKind::MemberExpr);
+        assert!(
+            members.iter().any(|s| s.contains("obj!Field")),
+            "expected bang member, got {:?}",
+            members
+        );
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IndexExpr));
+    }
+
+    #[test]
+    fn expr_keyword_colliding_callee_with_type_suffix() {
+        let src = "Sub T()\n    Name$ 1\n    x = Name$(1).Value\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::CallStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::IndexExpr));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::MemberExpr));
+    }
+
+    #[test]
+    fn expr_explicit_and_implicit_statement_call_forms() {
+        let src = "Sub T()\n    Call obj.Method(1, 2)\n    obj.Method 1, 2\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let calls = collect_nodes(&p.syntax(), SyntaxKind::CallStmt);
+        assert!(
+            calls.len() >= 2,
+            "expected both call forms, got {:?}",
+            calls
+        );
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::MemberExpr));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList));
     }
 
     #[test]

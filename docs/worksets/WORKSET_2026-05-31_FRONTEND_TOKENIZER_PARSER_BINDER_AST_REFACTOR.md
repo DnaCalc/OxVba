@@ -571,6 +571,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/PARSER_EXPRESSION_SEMANTIC_PARITY_2026-06-01.md`.
 - FE-4.2 Postfix grammar: unify call, index, member, bang, default-member syntax, and statement
   call forms.
+  Evidence: `docs/evidence/frontend_rework/PARSER_POSTFIX_GRAMMAR_2026-06-01.md`.
 - FE-4.3 Statement parser coverage: harden declarations, blocks, inline statements, `With`,
   `On Error`/`Resume`, `RaiseEvent`, `Property`, `Declare`, `Type`, `Enum`, attributes, and
   statement separators.

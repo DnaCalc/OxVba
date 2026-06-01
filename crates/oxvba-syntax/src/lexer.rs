@@ -170,7 +170,11 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
             tokens.push((kind, text));
 
             // Type suffix after identifier-like word: %, &, !, #, @, $
-            if can_have_type_suffix(kind) && i < bytes.len() && is_type_suffix(bytes[i]) {
+            if can_have_type_suffix(kind)
+                && i < bytes.len()
+                && is_type_suffix(bytes[i])
+                && !is_bang_member_operator(bytes, i)
+            {
                 let ts = i;
                 i += 1;
                 tokens.push((SyntaxKind::TypeSuffix, &source[ts..i]));
@@ -274,6 +278,16 @@ fn is_type_suffix(b: u8) -> bool {
 
 fn can_have_type_suffix(kind: SyntaxKind) -> bool {
     kind == SyntaxKind::Ident || kind.is_keyword()
+}
+
+fn is_bang_member_operator(bytes: &[u8], i: usize) -> bool {
+    bytes[i] == b'!'
+        && i + 1 < bytes.len()
+        && (is_identifier_start(bytes[i + 1]) || bytes[i + 1] == b'[')
+}
+
+fn is_identifier_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
 }
 
 fn is_integer_type_suffix(b: u8) -> bool {
@@ -476,6 +490,19 @@ mod tests {
         let toks = tokenize("x%");
         assert_eq!(toks[0], (SyntaxKind::Ident, "x"));
         assert_eq!(toks[1], (SyntaxKind::TypeSuffix, "%"));
+    }
+
+    #[test]
+    fn bang_member_is_not_identifier_type_suffix() {
+        assert_eq!(
+            tokenize("obj!Field")[0..3],
+            [
+                (SyntaxKind::Ident, "obj"),
+                (SyntaxKind::Bang, "!"),
+                (SyntaxKind::Ident, "Field")
+            ]
+        );
+        assert_eq!(tokenize("x!")[1], (SyntaxKind::TypeSuffix, "!"));
     }
 
     #[test]
