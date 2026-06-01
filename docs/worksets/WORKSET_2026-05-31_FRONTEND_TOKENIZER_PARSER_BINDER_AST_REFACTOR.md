@@ -694,6 +694,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
+  Evidence: `docs/evidence/frontend_rework/LEGACY_RETIREMENT_INVENTORY_2026-06-01.md`.
 - FE-9.3 Salsa/query integration: wrap parse, bind, typecheck, diagnostics, and SemanticModel
   queries for incremental recompute.
 - FE-9.4 Language-service reconciliation: replace duplicate `oxvba-languageservice` semantic

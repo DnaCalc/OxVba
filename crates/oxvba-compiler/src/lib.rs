@@ -15,6 +15,7 @@ pub mod frontend_lowering_contract;
 pub mod frontend_member_dispatch;
 pub mod frontend_operator_normalization;
 pub mod frontend_project_symbols;
+pub mod frontend_retirement_inventory;
 pub mod frontend_route_policy;
 pub mod frontend_semantic_model;
 pub mod frontend_structural_intrinsics;
