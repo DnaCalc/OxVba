@@ -288,7 +288,10 @@ fn collect_stmt_contract_facts(
                 );
             }
         }
-        HirStmtKind::Empty => {}
+        HirStmtKind::Empty
+        | HirStmtKind::ExitDo
+        | HirStmtKind::ExitFor
+        | HirStmtKind::ExitProcedure => {}
     }
 }
 

@@ -235,7 +235,10 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
-            HirStmtKind::Empty => {}
+            HirStmtKind::Empty
+            | HirStmtKind::ExitDo
+            | HirStmtKind::ExitFor
+            | HirStmtKind::ExitProcedure => {}
         }
     }
 

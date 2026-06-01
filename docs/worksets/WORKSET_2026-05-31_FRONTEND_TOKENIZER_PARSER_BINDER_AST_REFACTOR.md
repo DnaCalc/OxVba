@@ -861,8 +861,9 @@ Candidate bead units:
   eligibility so DefType, functions/properties, optional/default/ParamArray parameters, project
   rewrites, and class/object-local compatibility contexts stay on the residual path until HIR owns
   their semantics. Fourteenth reopened continuation adds multiline `ElseIf` lowering as nested HIR
-  branch trees and records `If/Else` plus `If/ElseIf/Else` route-audit coverage. FE-8.5 remains open
-  for unaudited broader language surfaces outside that subset.
+  branch trees and records `If/Else` plus `If/ElseIf/Else` route-audit coverage. Fifteenth reopened
+  continuation adds typed HIR and production lowering for `Exit Do`, `Exit For`, and procedure exit
+  statements. FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
@@ -908,8 +909,8 @@ Candidate bead units:
   source-text rewrite behavior, or duplicate language-service semantic fallbacks. Reopened
   continuation now passes the recorded audit fixtures/static checks and includes a direct check that
   completed lightweight compile fixtures use the HIR runtime-metadata route. Follow-up continuation
-  expands the audit with multiline `If/ElseIf` fixtures. The workset remains open for broader
-  terminal evidence and expanded route-audit coverage.
+  expands the audit with multiline `If/ElseIf` and basic `Exit` fixtures. The workset remains open
+  for broader terminal evidence and expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

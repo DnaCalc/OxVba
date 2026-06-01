@@ -21,10 +21,11 @@ The initial production scope is intentionally narrow and explicit:
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
 - simple multiline `If ... Then ... End If` statements, including `Else` and `ElseIf` branches,
-- `Do While` / `Do Until` loops with front-check or post-check conditions, without `Exit Do`,
+- `Do While` / `Do Until` loops with front-check or post-check conditions,
 - `While` / `Wend` loops,
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
 - simple `For Each <var> In <iterable> ... Next` loops through the iterable backend path,
+- `Exit Do`, `Exit For`, and `Exit Sub` statements through HIR statement nodes,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -177,6 +178,19 @@ The fourteenth FE-8.5 slice widens block-If coverage:
 - `Else` blocks remain the terminal nested else body;
 - production HIR lowering emits multiple conditional branch sites for the nested branch tree; and
 - the production route audit now includes `If/Else` and `If/ElseIf/Else` fixtures as
+  `HirProduction`.
+
+## Exit Continuation
+
+The fifteenth FE-8.5 slice removes the basic exit-statement residual:
+
+- `ExitStmt` nodes lower into typed HIR statement variants for `Exit Do`, `Exit For`, and
+  `Exit Sub`/`Exit Function`/`Exit Property`;
+- production HIR lowering maps those variants to the existing `BoundStmt::ExitDo`,
+  `BoundStmt::ExitFor`, and `BoundStmt::ExitProcedure` backend forms;
+- HIR SemanticModel, type-hook, and lowering-contract walks treat exit statements as leaf
+  statements; and
+- the production route audit now includes `Exit Do`, `Exit For`, and `Exit Sub` fixtures as
   `HirProduction`.
 
 ## Checks

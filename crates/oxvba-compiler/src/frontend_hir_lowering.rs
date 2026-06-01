@@ -77,7 +77,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::ResumeStmt
             | SyntaxKind::ReDimStmt
             | SyntaxKind::EraseStmt
-            | SyntaxKind::ExitStmt
             | SyntaxKind::GoToStmt
             | SyntaxKind::GoSubStmt
             | SyntaxKind::ReturnStmt
@@ -374,6 +373,9 @@ fn lower_stmt(
                 body: lowered_body,
             });
         }
+        HirStmtKind::ExitDo => out.push(BoundStmt::ExitDo),
+        HirStmtKind::ExitFor => out.push(BoundStmt::ExitFor),
+        HirStmtKind::ExitProcedure => out.push(BoundStmt::ExitProcedure),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1015,6 +1017,24 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::IntrinsicForEachNext { .. })),
             "expected For Each next bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_exit_statements() {
+        let source = "Sub Main()\nDim i As Long\nDo While i < 3\nExit Do\nLoop\nFor i = 1 To 3\nExit For\nNext\nExit Sub\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        let jump_count = bytecode
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, Instruction::Jump { .. }))
+            .count();
+        assert!(
+            jump_count >= 3,
+            "expected loop/procedure exit jumps: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

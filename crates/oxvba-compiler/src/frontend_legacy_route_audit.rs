@@ -152,6 +152,27 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let exit_do_statement = "Sub Main()\nDim x As Long\nDo While x < 3\nExit Do\nLoop\nEnd Sub\n";
+    findings.push(route_finding(
+        "exit do statement fixture",
+        exit_do_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let exit_for_statement = "Sub Main()\nDim i As Long\nFor i = 1 To 3\nExit For\nNext\nEnd Sub\n";
+    findings.push(route_finding(
+        "exit for statement fixture",
+        exit_for_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let exit_sub_statement = "Sub Main()\nExit Sub\nEnd Sub\n";
+    findings.push(route_finding(
+        "exit sub statement fixture",
+        exit_sub_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -270,6 +291,15 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("for each statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("exit do statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("exit for statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("exit sub statement")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

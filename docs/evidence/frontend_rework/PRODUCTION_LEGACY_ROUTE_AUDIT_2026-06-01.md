@@ -29,6 +29,7 @@ The audit proves the good path and exposes the remaining production residuals:
 - multi-value `Select Case` fixtures now reach `HirProduction`;
 - `Select Case Is` fixtures now reach `HirProduction`;
 - `For Each` fixtures now reach `HirProduction`;
+- `Exit Do`, `Exit For`, and `Exit Sub` fixtures now reach `HirProduction`;
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
@@ -77,8 +78,9 @@ The audit result records completed reopened delivery work and remaining broader 
 - The audit previously proved HIR reachability but not the plain `compile()` entry point. The
   lightweight compile path now has an executable route check for completed constructs, while project
   compile and broader unsupported surfaces remain separate workset scope.
-- Procedure-call syntax, multiline If/ElseIf syntax, front-checked Do While syntax, and simple
-  single-value Select Case syntax are no longer themselves route blockers. The call/coercion
+- Procedure-call syntax, multiline If/ElseIf syntax, front-checked Do While syntax, basic
+  Exit statements, and simple single-value Select Case syntax are no longer themselves route
+  blockers. The call/coercion
   fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering
   coverage for language surfaces outside this route-audited subset, but the audited control-flow
   fixtures in this file now classify as `HirProduction`.

@@ -158,6 +158,9 @@ pub enum HirStmtKind {
         iterable: HirExprId,
         body: Vec<HirStmtId>,
     },
+    ExitDo,
+    ExitFor,
+    ExitProcedure,
     Block(Vec<HirStmtId>),
 }
 
@@ -696,6 +699,13 @@ impl HirBuilder {
                     },
                 })))
             }
+            SyntaxKind::ExitStmt => {
+                let kind = exit_stmt_kind(node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind,
+                })))
+            }
             SyntaxKind::SelectStmt => {
                 let expr = expression_children(node)
                     .into_iter()
@@ -1209,6 +1219,23 @@ fn case_is_operator(node: SyntaxNode<'_>) -> Result<HirBinaryOp, HirBuildError> 
     }
     Err(HirBuildError::Unsupported(format!(
         "Case Is clause without comparison operator: `{}`",
+        node.text().trim()
+    )))
+}
+
+fn exit_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> {
+    for token in node.child_tokens() {
+        match token.kind {
+            SyntaxKind::KwDo => return Ok(HirStmtKind::ExitDo),
+            SyntaxKind::KwFor => return Ok(HirStmtKind::ExitFor),
+            SyntaxKind::KwSub | SyntaxKind::KwFunction | SyntaxKind::KwProperty => {
+                return Ok(HirStmtKind::ExitProcedure);
+            }
+            _ => {}
+        }
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "Exit statement without supported target: `{}`",
         node.text().trim()
     )))
 }
