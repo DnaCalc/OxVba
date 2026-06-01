@@ -402,6 +402,28 @@ Remaining production residuals are still real semantic work, not marker-only gap
 - `NewExpr`: object construction requires project class handles, imported/COM construction rules,
   `As New` lazy construction interactions, and assignment/writeback behavior.
 
+## Declare Continuation
+
+The latest FE-8.5 slice removes the basic declared external call residual:
+
+- `DeclareStmt` is no longer rejected by the HIR production syntax gate.
+- The front-end symbol model now extracts the declared procedure name after `Function` / `Sub`
+  instead of incorrectly treating `PtrSafe` as the procedure symbol in flat declare syntax.
+- HIR production lowering reuses the existing external declaration parser/descriptors, seeds the
+  lowered `BoundModule.external_declarations`, and includes external procedure signatures for
+  typechecking.
+- Calls such as `y = HostPing(3)` lower as ordinary HIR `ProcCall` expressions and emit the
+  existing `IntrinsicInvokeSymbolHost` bytecode plus `ExternalCallDescriptor` metadata.
+- Unsupported declaration shapes, including missing `PtrSafe`, return HIR `Unsupported` so the
+  default compiler path can keep them on the tracked fallback/diagnostic surface.
+
+Remaining production residuals after this slice:
+
+- `TypeBlock`: UDT declarations require descriptor/layout/field alias/lifetime projection, and UDT
+  member syntax must not be confused with late-bound object member dispatch.
+- `NewExpr`: object construction requires project class handles, imported/COM construction rules,
+  `As New` lazy construction interactions, and assignment/writeback behavior.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
@@ -409,6 +431,8 @@ Remaining production residuals are still real semantic work, not marker-only gap
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_enum_member_constants --quiet`
 - `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
+- `cargo test -p oxvba-compiler declared_external_call --quiet`
+- `cargo test -p oxvba-compiler declare_without_ptrsafe --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
