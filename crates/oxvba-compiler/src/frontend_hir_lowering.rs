@@ -149,7 +149,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::EnumBlock
             | SyntaxKind::WithStmt
             | SyntaxKind::ReDimStmt
-            | SyntaxKind::RaiseEventStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
             | SyntaxKind::MemberExpr
@@ -469,6 +468,19 @@ fn lower_stmt(
         }),
         HirStmtKind::Return => out.push(BoundStmt::Return),
         HirStmtKind::Erase { name } => out.push(BoundStmt::Erase { name: name.clone() }),
+        HirStmtKind::RaiseEvent { name, args } => out.push(BoundStmt::RaiseEvent {
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| {
+                    Ok(BoundCallArg {
+                        name: None,
+                        expr: lower_expr(typed_hir, *arg)?,
+                        force_byval: false,
+                    })
+                })
+                .collect::<Result<Vec<_>, HirProductionLoweringError>>()?,
+        }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1298,6 +1310,15 @@ mod tests {
     #[test]
     fn hir_production_lowering_accepts_erase_statement() {
         let source = "Sub Main()\nDim a\nErase a\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(!bytecode.instructions.is_empty());
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_raise_event_statement() {
+        let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub\n";
         let (bytecode, metadata) =
             compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
         assert!(!bytecode.instructions.is_empty());

@@ -175,6 +175,10 @@ pub enum HirStmtKind {
     Erase {
         name: String,
     },
+    RaiseEvent {
+        name: String,
+        args: Vec<HirExprId>,
+    },
     Label {
         name: String,
     },
@@ -778,6 +782,17 @@ impl HirBuilder {
                 Ok(Some(self.arenas.alloc_stmt(HirStmt {
                     cst: cst(node),
                     kind: HirStmtKind::Erase { name },
+                })))
+            }
+            SyntaxKind::RaiseEventStmt => {
+                let name = name_after_keyword(node, SyntaxKind::KwRaiseEvent, "RaiseEvent")?;
+                let args = expression_children(node)
+                    .into_iter()
+                    .map(|expr| self.lower_expr(scope, expr))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::RaiseEvent { name, args },
                 })))
             }
             SyntaxKind::SelectStmt => {

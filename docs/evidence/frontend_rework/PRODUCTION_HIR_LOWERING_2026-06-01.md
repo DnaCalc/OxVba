@@ -196,6 +196,17 @@ DefType defaults, optional/default/ParamArray parameters, properties, project re
 class/object-local compatibility contexts remain tracked residuals until their HIR facts and route
 proofs are complete.
 
+## RaiseEvent Continuation
+
+The twenty-third FE-8.5 slice removes the no-argument `RaiseEvent` statement residual:
+
+- `RaiseEventStmt` nodes lower into typed HIR with a normalized event name;
+- production HIR lowering maps the node to the existing backend `BoundStmt::RaiseEvent` form; and
+- the production route audit now includes a no-argument `RaiseEvent Tick` fixture.
+
+Argument-bearing event raises and full project event binding remain broader event/COM work outside
+this narrow route slice.
+
 ## ElseIf Continuation
 
 The fourteenth FE-8.5 slice widens block-If coverage:

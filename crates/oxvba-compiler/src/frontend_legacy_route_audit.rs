@@ -239,6 +239,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let raise_event_statement = "Sub Main()\nRaiseEvent Tick\nEnd Sub\n";
+    findings.push(route_finding(
+        "raise event statement fixture",
+        raise_event_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
