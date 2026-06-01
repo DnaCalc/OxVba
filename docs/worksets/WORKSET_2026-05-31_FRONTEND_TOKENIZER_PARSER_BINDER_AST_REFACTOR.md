@@ -669,6 +669,7 @@ Candidate bead units:
 - FE-8.1 Intrinsic enum: replace structural `IntrinsicCall { name }` paths for `Nothing`, `Null`,
   omitted arguments, project instances, WithEvents operations, dynamic dispatch, and pointer
   helpers where appropriate.
+  Evidence: `docs/evidence/frontend_rework/TYPED_STRUCTURAL_INTRINSICS_2026-06-01.md`.
 - FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
   binary ops and a separate optimizer transform.
 - FE-8.3 Lowering contract cleanup: lower HIR into current bytecode/call-site metadata without
