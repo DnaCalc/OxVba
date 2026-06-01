@@ -515,6 +515,19 @@ Remaining production residuals after this slice:
 - `Dim As New`, `Class_Initialize`, source maps, and imported/COM construction still need the same
   direct-HIR integration.
 
+## Project Construction Compile-Entry Continuation
+
+The latest FE-8.5 construction slice adds the missing compile entry point for those binding facts:
+
+- `compile_source_with_runtime_metadata_via_hir_with_new_bindings(...)` accepts
+  `HirNewExpressionBinding` facts, lowers `New <Class>` through typed HIR, then runs the normal
+  typecheck, optimizer, and bytecode/metadata emission path.
+- The focused test proves the emitted bytecode includes the existing project-object reference load
+  path when the constructed object remains live.
+- This is preparatory, not project route closure: `compile_project(...)` still compiles rewritten
+  helper source until the project compile boundary calls this HIR entry point with the facts it
+  already materializes.
+
 ## Project Construction Downstream Regression Continuation
 
 Two downstream object-construction regressions were narrowed while the direct HIR project compile
@@ -570,6 +583,7 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-host pure_oxvba_class_distinct_new_instances_have_separate_state --quiet`
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
 - `cargo test -p oxvba-compiler withevents --quiet`
+- `cargo test -p oxvba-compiler hir_compile_binds_new_expression_to_project_instance_bytecode --quiet`
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler new_expression --quiet`
