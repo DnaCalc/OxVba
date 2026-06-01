@@ -249,6 +249,23 @@ array element read/write migration remain broader HIR and project-semantics work
 lightweight default route still excludes `OptionStmt`, so `Option Base` sources remain outside this
 default-routed ReDim subset.
 
+## Member Expression Continuation
+
+The twenty-sixth FE-8.5 slice removes the first explicit-receiver dot-member expression residual:
+
+- `MemberExpr` nodes with a normal receiver and dot member name lower into HIR member expressions
+  and allocate member symbols that are visible to compiler-owned semantic queries;
+- production HIR lowering maps value-side member reads to the existing `BoundExpr::Member` backend
+  shape;
+- `CallExpr` targets that lower to member expressions preserve positional arguments, so
+  `obj.Method(1)` reaches the existing late-bound member-call bytecode path; and
+- the route audit now includes a fixture for `x = obj.Value` and `y = obj.Method(1)`.
+
+This is intentionally not full member/property/object parity. Bang access, member assignment
+targets, `With` dot-shorthand, `New`/object construction, default-member resolution, property
+Get/Let/Set selection, project/class binding, early-bound COM binding, ByRef/writeback behavior,
+and host-provided member semantics remain FE-7/FE-8 residuals.
+
 ## ElseIf Continuation
 
 The fourteenth FE-8.5 slice widens block-If coverage:
