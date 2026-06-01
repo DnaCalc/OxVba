@@ -16,7 +16,10 @@ use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
     compile_with_runtime_metadata_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
-    frontend_hir_lowering::HirNewExpressionBinding,
+    frontend_hir_lowering::{
+        HirNewExpressionBinding, HirProductionLoweringError,
+        compile_source_with_runtime_metadata_via_hir_with_new_bindings,
+    },
     frontend_member_dispatch::{
         MemberDispatchClass, classify_imported_com_member, classify_project_member,
     },
@@ -797,11 +800,20 @@ struct MemberAttributes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum ProjectDynamicInstanceSourceKind {
+    AsNewDeclaration,
+    SetNewExpression,
+    WithEventsSetNewTemporary,
+    ExportOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ProjectDynamicInstanceBindingDraft {
     object_handle: i32,
     project_name: String,
     module_name: String,
     constructor_type_name: String,
+    source_kind: ProjectDynamicInstanceSourceKind,
 }
 
 type ForcedObjectLocalsByProc = BTreeMap<String, BTreeSet<String>>;
@@ -822,6 +834,64 @@ fn hir_new_expression_bindings_from_dynamic_instances(
             object_handle: binding.object_handle,
         })
         .collect()
+}
+
+fn hir_new_expression_bindings_from_explicit_set_new_instances(
+    bindings: &[ProjectDynamicInstanceBindingDraft],
+) -> Vec<HirNewExpressionBinding> {
+    let direct_bindings = bindings
+        .iter()
+        .filter(|binding| binding.source_kind == ProjectDynamicInstanceSourceKind::SetNewExpression)
+        .cloned()
+        .collect::<Vec<_>>();
+    hir_new_expression_bindings_from_dynamic_instances(&direct_bindings)
+}
+
+fn source_with_hir_new_expressions(
+    source: &str,
+    bindings: &[HirNewExpressionBinding],
+) -> Option<String> {
+    if bindings.is_empty() {
+        return None;
+    }
+    let bindings_by_handle = bindings
+        .iter()
+        .map(|binding| (binding.object_handle, binding.type_name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut changed = false;
+    let lines = source
+        .lines()
+        .map(|line| {
+            let Some((prefix, handle, suffix)) = split_project_instance_assignment(line) else {
+                return line.to_string();
+            };
+            let Some(type_name) = bindings_by_handle.get(&handle) else {
+                return line.to_string();
+            };
+            changed = true;
+            format!("{prefix}New {type_name}{suffix}")
+        })
+        .collect::<Vec<_>>();
+    changed.then(|| lines.join("\n"))
+}
+
+fn split_project_instance_assignment(line: &str) -> Option<(&str, i32, &str)> {
+    let marker = "__oxvba_project_instance(";
+    let start = line.find(marker)?;
+    let prefix = &line[..start];
+    if !prefix.trim_start().to_ascii_lowercase().starts_with("set ") {
+        return None;
+    }
+    let equals = prefix.rfind('=')?;
+    if !prefix[equals + 1..].trim().is_empty() {
+        return None;
+    }
+    let handle_start = start + marker.len();
+    let rest = &line[handle_start..];
+    let close_offset = rest.find(')')?;
+    let handle = rest[..close_offset].trim().parse::<i32>().ok()?;
+    let suffix = &rest[close_offset + 1..];
+    Some((prefix, handle, suffix))
 }
 
 pub fn module_unit_from_source(
@@ -1067,8 +1137,6 @@ fn compile_project_with_strategy(
             &reference_order,
             &event_dispatch_plan,
         )?;
-    let _hir_new_expression_bindings =
-        hir_new_expression_bindings_from_dynamic_instances(&dynamic_instance_bindings);
     let rewritten_source = rewrite_predeclared_property_reads_for_backend(
         &rewritten_source,
         &collect_predeclared_property_read_rewrite_routes(
@@ -1084,22 +1152,46 @@ fn compile_project_with_strategy(
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let use_hir_capable_project_boundary =
         project_source_is_single_procedural_module_without_references(manifest);
-    let (bytecode, mut procedure_runtime_metadata) = if use_hir_capable_project_boundary {
-        compile_with_runtime_metadata_object_locals_class(
-            &rewritten_source,
-            &forced_object_locals_by_proc,
-            has_class_modules,
-        )
-    } else {
-        compile_with_runtime_metadata_legacy_object_locals_class(
-            &rewritten_source,
-            &forced_object_locals_by_proc,
-            has_class_modules,
-        )
-    }
-    .map_err(|e| ProjectCompileError::BackendCompile {
-        message: e.to_string(),
-    })?;
+    let direct_set_new_hir_bindings =
+        hir_new_expression_bindings_from_explicit_set_new_instances(&dynamic_instance_bindings);
+    let hir_construction_source =
+        source_with_hir_new_expressions(&rewritten_source, &direct_set_new_hir_bindings);
+    let hir_construction_compile = hir_construction_source.as_ref().and_then(|source| {
+        match compile_source_with_runtime_metadata_via_hir_with_new_bindings(
+            source,
+            &direct_set_new_hir_bindings,
+        ) {
+            Ok(compiled) => Some((source.clone(), Ok(compiled))),
+            Err(HirProductionLoweringError::Unsupported(_)) => None,
+            Err(HirProductionLoweringError::Compile(err)) => Some((source.clone(), Err(err))),
+        }
+    });
+    let (compiled_source, compile_result) =
+        if let Some((compiled_source, compiled)) = hir_construction_compile {
+            (compiled_source, compiled)
+        } else if use_hir_capable_project_boundary {
+            (
+                rewritten_source.clone(),
+                compile_with_runtime_metadata_object_locals_class(
+                    &rewritten_source,
+                    &forced_object_locals_by_proc,
+                    has_class_modules,
+                ),
+            )
+        } else {
+            (
+                rewritten_source.clone(),
+                compile_with_runtime_metadata_legacy_object_locals_class(
+                    &rewritten_source,
+                    &forced_object_locals_by_proc,
+                    has_class_modules,
+                ),
+            )
+        };
+    let (bytecode, mut procedure_runtime_metadata) =
+        compile_result.map_err(|e| ProjectCompileError::BackendCompile {
+            message: e.to_string(),
+        })?;
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
@@ -1125,7 +1217,7 @@ fn compile_project_with_strategy(
         .map_err(|message| ProjectCompileError::BackendCompile {
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
         })?;
-    let public_rewritten_source = rewritten_source
+    let public_rewritten_source = compiled_source
         .replace("__OxVbaEarlyInvoke", "DispatchInvoke")
         .replace("__oxvbaearlyinvoke", "dispatchinvoke");
     let source_maps = build_compiler_source_map(manifest, &procedure_runtime_metadata);
@@ -3670,6 +3762,7 @@ fn expand_bound_source_line(
                 project_name: target_project.clone(),
                 module_name: target_module.clone(),
                 constructor_type_name: normalize_identifier(&dim_decl.type_name),
+                source_kind: ProjectDynamicInstanceSourceKind::AsNewDeclaration,
             });
             out.push(format!(
                 "{}Set {} = __oxvba_project_instance({})",
@@ -3790,6 +3883,7 @@ fn expand_bound_source_line(
             project_name: target_project.clone(),
             module_name: target_module.clone(),
             constructor_type_name: normalize_identifier(&type_name),
+            source_kind: ProjectDynamicInstanceSourceKind::SetNewExpression,
         });
         internal_class_bindings.insert(
             normalize_identifier(&var_name),
@@ -6350,6 +6444,7 @@ fn lower_withevents_project_new_expression(
         project_name: target_project.clone(),
         module_name: target_module.clone(),
         constructor_type_name: normalize_identifier(&type_name),
+        source_kind: ProjectDynamicInstanceSourceKind::WithEventsSetNewTemporary,
     });
     let temp_name = format!("__oxvba_withevents_new_instance_{object_handle}");
     let mut prelude = vec![
@@ -8496,6 +8591,7 @@ fn build_project_dynamic_object_routes(
                 project_name: current_project.clone(),
                 module_name: module_name.clone(),
                 constructor_type_name: module_name,
+                source_kind: ProjectDynamicInstanceSourceKind::ExportOnly,
             });
             next_export_only_handle -= 1;
         }
@@ -10992,6 +11088,119 @@ mod tests {
                 }),
             "{:#?}",
             compiled.procedure_runtime_metadata
+        );
+    }
+
+    #[test]
+    fn project_hir_construction_source_restores_new_expression_from_binding_facts() {
+        let source =
+            "Public Sub Main()\nDim obj As Object\nSet obj = __oxvba_project_instance(7)\nEnd Sub";
+        let restored = super::source_with_hir_new_expressions(
+            source,
+            &[super::HirNewExpressionBinding {
+                type_name: "widget".to_string(),
+                object_handle: 7,
+            }],
+        )
+        .expect("helper source should be reconstructed for HIR");
+
+        assert!(restored.contains("Set obj = New widget"), "{restored}");
+        assert!(!restored.contains("__oxvba_project_instance"), "{restored}");
+        assert!(
+            super::source_with_hir_new_expressions(
+                "Call Initialize(__oxvba_project_instance(7))",
+                &[super::HirNewExpressionBinding {
+                    type_name: "widget".to_string(),
+                    object_handle: 7,
+                }],
+            )
+            .is_none(),
+            "only generated Set-assignment carriers should be reconstructed"
+        );
+    }
+
+    #[test]
+    fn compile_project_consumes_hir_new_bindings_for_active_project_set_new() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As Object\nSet obj = New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("class module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project construction should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+
+        assert!(
+            lowered.contains("set obj = new widget"),
+            "expected HIR construction source to preserve New expression: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_project_instance("),
+            "helper-source construction should not be the production compiled artifact: {lowered}"
+        );
+        assert!(
+            compiled
+                .bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::LoadProjectObjectRef { .. })),
+            "{:#?}",
+            compiled.bytecode.instructions
+        );
+        assert!(
+            compiled
+                .project_dynamic_objects
+                .iter()
+                .any(|route| route.module_name.eq_ignore_ascii_case("Widget")),
+            "expected dynamic route for constructed Widget: {:#?}",
+            compiled.project_dynamic_objects
+        );
+    }
+
+    #[test]
+    fn compile_project_keeps_as_new_on_construction_residual_path() {
+        let main = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("class module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("As New residual should still compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+
+        assert!(
+            lowered.contains("__oxvba_project_instance("),
+            "As New remains owned by bd-aprs.9.7, not the direct Set-New route: {lowered}"
         );
     }
 

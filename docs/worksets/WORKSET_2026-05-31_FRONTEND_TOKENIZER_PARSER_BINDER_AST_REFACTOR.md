@@ -1054,11 +1054,17 @@ Candidate bead units:
   multi-module, class/document, forced-object-local, and reference-project shapes.
   Follow-up project continuation now records normalized constructor type names in dynamic instance
   drafts and materializes `HirNewExpressionBinding` facts in source order at the project compile
-  boundary; the remaining gap is direct consumption of those facts instead of compiling rewritten
-  backend source. Downstream cleanup has also removed the exact source-class public-field read
+  boundary; the direct `Set obj = New Class` gap is now closed by `bd-aprs.9.6`, while broader
+  construction semantics remain split to the next construction/reference beads. Downstream cleanup
+  has also removed the exact source-class public-field read
   regression (`c.Total`) and the direct WithEvents `Set field = New ActiveProjectClass` parser
   failure, but those fixes are compatibility-route reductions rather than direct-HIR project
-  construction closure.
+  construction closure. `bd-aprs.9.6` continuation now consumes generated construction facts for
+  the accepted direct active-project `Set obj = New Widget` shape by reconstructing the generated
+  helper assignment as a HIR `New` expression and compiling it through
+  `compile_source_with_runtime_metadata_via_hir_with_new_bindings`; `As New`,
+  `Class_Initialize`, construction source maps, broader WithEvents construction, and imported/COM
+  construction remain open under `bd-aprs.9.7` / `bd-aprs.8.8`.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 - FE-8.5.a Direct project construction on HIR: finish the already-started `New <Class>` migration
@@ -1067,6 +1073,8 @@ Candidate bead units:
   helper source. Partial work has already been done: HIR `New` expression shape, construction
   binding facts, source-order materialization at the project boundary, and a direct HIR compile
   entry point that emits project-object reference bytecode.
+  Status: delivery complete for the accepted direct active-project `Set obj = New Class` shape.
+  Remaining construction semantics are split to FE-8.5.b and FE-7.6.a.
 - FE-8.5.b `As New`, initializer, and construction metadata: extend direct-HIR project
   construction to `Dim x As New T`, `Class_Initialize`, object lifetime/source-map metadata, and
   WithEvents construction interactions. Partial work has already been done: active-project
