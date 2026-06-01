@@ -23,11 +23,20 @@ Each node carries a `CstBackpointer` with syntax kind text and `FrontendSourceSp
 HIR independent of syntax-tree lifetimes while preserving enough source identity for the upcoming
 SemanticModel and diagnostic mapping beads.
 
+Reopened update: added `build_hir_from_source(module_name, source)`, a CST-fed HIR builder for the
+initial scoped subset. It parses with `oxvba-syntax`, reuses the FE-6.1 symbol collector, and
+allocates a `BoundHirModule` containing the symbol model, arenas, and root declaration IDs.
+
 ## Represented Constructs
 
 Focused tests prove the arenas can represent selected parser corpus shapes:
 
 - `x = 1` assignment as `HirStmtKind::Let` with name and literal expressions;
+- CST-fed procedure declarations with parameter symbols, local declaration symbols, and statement
+  body IDs;
+- CST-fed simple assignment lowering from `AssignStmt`/`LetStmt`/`SetStmt` into HIR statements;
+- CST-fed identifier, literal, parenthesized, and simple binary expressions with symbol-backed
+  name references;
 - member expression plus call and property nodes;
 - object type node linked to a type symbol;
 - procedure declaration containing a statement body.
@@ -35,18 +44,21 @@ Focused tests prove the arenas can represent selected parser corpus shapes:
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_symbols --quiet`
+- `cargo test -p oxvba-compiler frontend_semantic_model --quiet`
 - `cargo fmt -p oxvba-compiler`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
 ## Fresh-Eyes Review
 
-- The arena is structural only. It does not yet lower parser CST into HIR automatically; that is
-  later binder work. This bead establishes the typed storage and ID shape that later lowering can
-  target.
+- The arena is no longer hand-allocation-only: the reopened builder lowers an intentionally small
+  parser/symbol subset into HIR from source. This gives FE-6.3 a real compiler-owned fact surface
+  to query.
 - Backpointers are value objects rather than borrowed syntax nodes, avoiding red-tree lifetime
   coupling in compiler-owned HIR.
 - The HIR refers to `SymbolId` and `HirTypeId` rather than string names, matching the Roslyn-style
   split between syntax and semantics.
-- The node set is intentionally broad enough for FE-6.3/FE-6.4 without pretending every VBA
-  construct has a final HIR variant yet.
+- The builder remains deliberately limited: it does not yet bind full VBA statement coverage,
+  calls/postfix/member/default-member semantics, object identity, or production bytecode lowering.
+  Those are owned by later FE-6/FE-7/FE-8 beads.
