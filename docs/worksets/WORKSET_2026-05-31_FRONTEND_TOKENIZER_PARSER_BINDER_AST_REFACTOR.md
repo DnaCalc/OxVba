@@ -2,7 +2,7 @@
 
 Date: 2026-05-31
 Owner: DNA Kode
-Status: reopened / production front-end replacement incomplete (2026-06-01)
+Status: reopened / production front-end replacement incomplete (2026-06-02)
 
 Reopen note, 2026-06-01:
 
@@ -13,6 +13,18 @@ HIR, SemanticModel, route-policy, metadata, and terminal-test evidence, but it c
 on scaffolding plus documented residuals. That was not sufficient for this workset's intended
 terminal gate. Passing terminal tests with `resolve.rs` and `project.rs` still load-bearing is not
 closure; it is a foundation checkpoint.
+
+Rework note, 2026-06-02:
+
+Fresh review confirms the workset was already meant to cover the full production compiler
+front-end replacement. The desired outcome is not a second workset and not a new independent bead
+set. It is the same workset, with sharper terminal requirements and a repaired bead graph:
+completed scoped slices remain valid evidence, but every area that still relies on legacy
+front-end behavior must stay open or have a new child bead that finishes the accepted production
+replacement. Bounded fixture passes are checkpoints only. They cannot close the workset while
+accepted compiler surfaces still depend on legacy `parse_expr` string parsing, CST-to-legacy
+lowering, `project.rs` source rewriting, duplicate language-service semantics, or fallback
+eligibility for constructs that are inside the intended production surface.
 
 Architecture decision, 2026-05-31:
 
@@ -268,6 +280,20 @@ This gate is binding for workset closure. The workset is not complete until all 
    improvement, or defect.
 7. Residuals may exist only outside the claimed scoped language surface. A residual inside the
    claimed surface keeps the relevant bead and workset open.
+8. Every accepted compiler entry point has route proof, not only the explicit frontend-v2 helper:
+   lightweight single-source compile, project compile, host/session compile, language-service
+   semantic queries, and comparison harnesses must either use the new front-end facts or be
+   explicitly marked as legacy comparison/test-only paths.
+9. Fallback is treated as a migration mechanism, not a semantic owner. If a construct is inside the
+   intended production surface, "fallback-eligible" means the owning bead is still open until HIR
+   binding/lowering and route evidence land.
+10. Project/class/COM/default-member/property semantics must be bound as front-end semantics, not
+    by generating helper-source strings that are then parsed by the old resolver. A compatibility
+    helper may remain only when the replacement route is already production-owned and the helper is
+    behind an explicit comparison or out-of-scope boundary.
+11. Terminal route-audit evidence must cover the accepted grammar matrix and corpus lanes, not only
+    a hand-picked smoke set. A passing bounded audit row may close that row; it does not close the
+    production replacement workset.
 
 ### 6.3 Lowering-target maturity and current VM contract
 
@@ -540,17 +566,78 @@ Created child bead mapping:
 | FE-7.4 Class construction and fields | `bd-aprs.8.4` |
 | FE-7.5 Events and Implements migration | `bd-aprs.8.5` |
 | FE-7.6 External references binding | `bd-aprs.8.6` |
+| FE-7.3.a Property/default-member production semantics | `bd-aprs.8.7` |
+| FE-7.6.a Reference/COM activation and member binding | `bd-aprs.8.8` |
 | FE-8.1 Typed structural intrinsic enum | `bd-aprs.9.1` |
 | FE-8.2 Operator normalization optimizer split | `bd-aprs.9.2` |
 | FE-8.3 HIR lowering contract cleanup | `bd-aprs.9.3` |
 | FE-8.4 Metadata normalization for harness | `bd-aprs.9.4` |
 | FE-8.5 Production HIR-to-bytecode lowering | `bd-aprs.9.5` |
+| FE-8.5.a Direct project construction on HIR | `bd-aprs.9.6` |
+| FE-8.5.b As New initializer construction metadata | `bd-aprs.9.7` |
+| FE-8.5.d Arrays/indexing/ReDim parity | `bd-aprs.9.8` |
+| FE-8.5.e Compile-time options/declarations/constants | `bd-aprs.9.9` |
+| FE-8.5.f Broader declaration/type surface | `bd-aprs.9.10` |
 | FE-9.1 Per-construct default flip | `bd-aprs.10.1` |
 | FE-9.2 Legacy parser/rewriter retirement | `bd-aprs.10.2` |
 | FE-9.3 Salsa/query integration | `bd-aprs.10.3` |
 | FE-9.4 Language-service reconciliation | `bd-aprs.10.4` |
 | FE-9.5 Terminal evidence and closure | `bd-aprs.10.5` |
 | FE-9.6 Production legacy-route audit gate | `bd-aprs.10.6` |
+| FE-9.7 Broad matrix/corpus route audit | `bd-aprs.10.7` |
+| FE-9.8 Legacy route retirement finalization | `bd-aprs.10.8` |
+
+### 13.1 Reworked continuation graph after partial first run
+
+The first run produced substantial valid slices but left the intended end goal unfinished. The bead
+graph is therefore repaired in place:
+
+| Work area | Existing evidence state | Required bead state after rework |
+|---|---|---|
+| FE-0 through FE-3 preparation, grammar, syntax substrate, and lexer foundation | Adequately completed as support/foundation work. | Keep closed unless later execution finds a concrete defect. These beads do not by themselves imply production replacement. |
+| FE-4 parser/CST bridge | Parser and bridge evidence exists, but terminal closure cannot depend on CST validation before legacy lowering. | Keep completed parser slices closed; reopen/create only if accepted grammar rows still fail to parse into CST for HIR/binder consumption. |
+| FE-5 harness and route gate | Harness exists and can classify non-byte-identical output. | Keep closed as support/delivery foundation, but FE-9 terminal audit must expand corpus coverage and fail if "v2" means fallback. |
+| FE-6 binder/HIR/SemanticModel | Core structures and selected production facts exist. | Keep scoped closed slices, but any missing SymbolId/type/coercion facts discovered during FE-7/FE-8 delivery reopen the owning FE-6 bead or spawn a focused child. |
+| FE-7 project semantics | Active-project slices landed, but project/class/default-member/COM/property behavior is not fully retired from text rewrites. | Reopen FE-7 epic and affected child beads for direct production replacement or explicit compatibility quarantine. Partial work must be noted as already done. |
+| FE-8 production HIR lowering | Many statement/expression families are HIR-routed. `bd-aprs.9.5` remains open and is too broad to be the only executable unit. | Add child delivery beads under FE-8/FE-8.5 for remaining concrete HIR-lowering lanes: direct project construction, properties/default members, arrays/ReDim/indexing, compile-time options/constants, declarations/attributes, and final broad matrix sweep. |
+| FE-9 flip/retirement/IDE | Default route and audit scaffolding exist; bounded audit fixtures pass. | Reopen or add terminal retirement beads so no accepted route closes on bounded smoke evidence. Terminal closure waits for broad matrix/corpus route proof. |
+
+Required newly explicit delivery beads:
+
+- FE-8.5.a Direct project construction on HIR: consume already materialized
+  `HirNewExpressionBinding` facts in project compilation so `New <Class>` and generated object
+  handles no longer travel as `__oxvba_project_instance(...)` helper source. Partial work already
+  done: HIR `New` shape, construction binding payload, compile entry point, and project boundary
+  fact materialization.
+- FE-8.5.b `As New`, `Class_Initialize`, and construction source maps: extend the direct-HIR
+  project construction route to lazy `As New`, initializer invocation, object lifetime metadata,
+  and correct source-map accounting. Partial work already done: active-project construction
+  analysis and downstream WithEvents direct-source workaround.
+- FE-7.3/FE-8.5.c Property/default-member semantics: bind property Get/Let/Set/default-member
+  selection and writeback through front-end facts for project/class/COM/host members. Partial work
+  already done: simple late-bound dot/bang/With member reads and simple member assignment targets
+  lower through HIR with Let/Set hints.
+- FE-8.5.d Arrays/indexing/ReDim parity: finish array element read/write, fixed-array `ReDim`
+  alias materialization, lower-bound `To` forms, multidimensional arrays, and project/class array
+  fields through HIR. Partial work already done: one-dimensional dynamic-array `ReDim` runtime
+  route and `Option Base` default-route policy.
+- FE-8.5.e Compile-time declarations and module options: implement HIR-owned `Option Explicit`,
+  `Option Compare Text/Database`, `Option Private Module`, DefType, attributes, conditional
+  compilation/compile constants, and richer constant evaluation. Partial work already done:
+  `Option Base 0/1`, `Option Compare Binary`, simple constants, enum constants, and same-statement
+  constant expression substitution.
+- FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
+  typelib/reference-project activation, early-bound COM member/property calls, and reference
+  precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
+  indexing, imported/member dispatch classification, and basic Declare PtrSafe external call
+  lowering.
+- FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
+  accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
+  and selected Excel oracle lanes. This bead must reopen the owning delivery bead for every
+  accepted in-scope row that still reaches legacy fallback.
+- FE-9.8 Legacy route retirement finalization: after delivery beads pass, delete or hard-quarantine
+  legacy `parse_expr`, CST-to-legacy lowering, and `project.rs` helper-source rewrites from
+  production entry points. Keep only explicitly named comparison/test-only helpers.
 
 ### Epic FE-0 — Workset Preparation and Truth Repair
 
@@ -741,9 +828,11 @@ coercions through `SymbolId`/HIR/SemanticModel rather than reconstructing them l
 Outcome: source-text rewriting is retired construct by construct and replaced by resolver/HIR
 semantics.
 
-Status: scoped epic closed. FE-7.1 through FE-7.6 are closed with route proof and explicit
-compatibility classifications; remaining production-lowering and terminal legacy-route concerns
-belong to FE-8 and FE-9.
+Status: reopened for production replacement completion. FE-7.1 through FE-7.6 contain useful
+partial route proof and explicit compatibility classifications, but FE-7 cannot remain closed
+while accepted project/class/default-member/property/COM semantics are still implemented by
+source-text lowering internals or helper-source rewrites. FE-8 owns bytecode emission from HIR
+facts; FE-7 owns the front-end semantic facts that make those emissions production-owned.
 
 Candidate bead units:
 - FE-7.1 Qualified names and project/module lookup: move module, class, procedure, field, and
@@ -768,8 +857,12 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/MEMBER_DISPATCH_CLASSIFICATION_2026-06-01.md`.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
   write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
-  Status: scoped delivery bead closed after active-project property/default-member route proof,
-  typed-HIR assignment diagnostics, and compatibility classification for residual scans.
+  Status: reopened continuation required. Partial work has already been done: active-project
+  property/default-member route proof, typed-HIR assignment diagnostics, and simple dot/bang/With
+  member assignment lowering with property Let/Set hints. Closure now requires project/class/COM/
+  host property Get/Let/Set/default-member selection and writeback to be bound through front-end
+  facts, with the corresponding text rewrite path deleted, compatibility-quarantined, or outside
+  scope.
   Evidence: `docs/evidence/frontend_rework/PROPERTY_ASSIGNMENT_SEMANTICS_2026-06-01.md`.
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
   ordinary fields, WithEvents fields, and runtime object-field metadata. Current continuation
@@ -781,8 +874,13 @@ Candidate bead units:
   frontend class route. Remaining fallback routes are explicitly bounded to referenced-project
   class/predeclared roots, imported COM activation metadata, and parser-incomplete compatibility
   enumeration outside the active-project symbol-index route.
-  Status: scoped delivery bead closed for active-project class construction/field metadata, with
-  referenced-project and imported-COM activation classified to FE-7.6/reference composition.
+  Status: reopened continuation required. Partial work has already been done: active-project class
+  construction route analysis, typed class locals, predeclared Property Get roots, ordinary field
+  metadata from frontend routes, WithEvents field separation, HIR `New` shape, construction
+  binding facts, and a HIR compile entry point that accepts those facts. Closure now requires
+  project compilation to consume those facts directly for active-project construction, `As New`,
+  `Class_Initialize`, field/source-map metadata, and imported/COM activation or explicit
+  compatibility quarantine.
   Evidence: `docs/evidence/frontend_rework/CLASS_CONSTRUCTION_FIELDS_2026-06-01.md`.
 - FE-7.5 Events and Implements: migrate WithEvents, RaiseEvent, handler matching, Implements,
   and related diagnostics out of string rewriting. Current continuation progress makes
@@ -808,10 +906,11 @@ Candidate bead units:
 Evidence gate: each migrated construct has before/after fixtures, semantic diff classification,
 and deletion or quarantine of the corresponding text rewrite.
 
-Reopened production gate: FE-7 remains open while any corresponding `project.rs` text rewrite is
-the production implementation for project/class/COM/default-member/host semantics in the scoped
-surface. Evidence docs are not enough; closure requires route proof plus removal or compatibility
-quarantine of each retired rewrite.
+Reopened production gate: FE-7 remains open while any corresponding `project.rs` text rewrite or
+source-text lowering internal is the production semantic owner for project/class/COM/default-member/
+property/host behavior in the accepted surface. Evidence docs are not enough; closure requires
+route proof plus deletion, production quarantine, or explicit out-of-scope classification of each
+retired rewrite.
 
 ### Epic FE-8 — Typed Intrinsics, Optimizer Split, and Lowering Cleanup
 
@@ -962,6 +1061,36 @@ Candidate bead units:
   construction closure.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
+- FE-8.5.a Direct project construction on HIR: finish the already-started `New <Class>` migration
+  by making project compilation call the HIR compile entry point with the generated
+  `HirNewExpressionBinding` facts instead of compiling rewritten `__oxvba_project_instance(...)`
+  helper source. Partial work has already been done: HIR `New` expression shape, construction
+  binding facts, source-order materialization at the project boundary, and a direct HIR compile
+  entry point that emits project-object reference bytecode.
+- FE-8.5.b `As New`, initializer, and construction metadata: extend direct-HIR project
+  construction to `Dim x As New T`, `Class_Initialize`, object lifetime/source-map metadata, and
+  WithEvents construction interactions. Partial work has already been done: active-project
+  construction analysis and the targeted WithEvents direct-source workaround.
+- FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
+  Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
+  indexed/named writeback, and overload validation. Partial work has already been done: simple
+  late-bound member reads/calls and simple dot/bang/With member assignment targets lower through
+  HIR with Let/Set hints.
+- FE-8.5.d Arrays, indexing, and `ReDim` parity: finish array element read/write, fixed-array
+  `ReDim` alias materialization, explicit lower-bound `To` forms, multidimensional arrays, and
+  project/class array fields through HIR. Partial work has already been done: one-dimensional
+  dynamic-array `ReDim` runtime lowering, array shape metadata, and `Option Base` default-route
+  policy.
+- FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
+  non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
+  compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial
+  work has already been done: `Option Base`, `Option Compare Binary`, enum constants, and simple
+  same-statement constant expressions.
+- FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
+  optional/default/ParamArray parameters, richer `Declare` signatures, UDT nested/array/fixed-string
+  fields, and corresponding diagnostics/metadata through HIR. Partial work has already been done:
+  simple functions with return slots, `Declare PtrSafe` calls, simple UDT layout/field aliases, and
+  same-shape UDT assignment.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.
@@ -1016,12 +1145,26 @@ Candidate bead units:
   dynamic-array runtime `ReDim` fixture, an explicit-receiver value-side dot-member read/call
   fixture, and a read-side `With` member fixture.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
+- FE-9.7 Broad matrix/corpus route audit: expand FE-9.6 from selected route fixtures to the
+  accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
+  and selected Excel oracle lanes. Partial work has already been done: the bounded route audit,
+  retirement inventory, corpus inventory, and diff classifier exist. Closure requires every
+  accepted in-scope row to classify as HIR/SemanticModel production or to reopen/create the owning
+  delivery bead.
+- FE-9.8 Legacy route retirement finalization: after FE-7/FE-8 delivery beads pass, remove or
+  hard-quarantine legacy production entry points for `parse_expr`, CST-to-legacy lowering,
+  `project.rs` helper-source rewrites, and duplicate language-service semantic fallbacks. Partial
+  work has already been done: selected structural intrinsics moved to typed forms, bounded route
+  fixtures bypass legacy parsing, and the old project rewrite-bridge selector is no longer the
+  unconditional production strategy. Closure requires code search and route proof that remaining
+  legacy helpers are comparison/test-only or outside the accepted surface.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language
 surface, interactive semantic queries use the same facts as compilation, and residual scope is
 explicitly owned by follow-up worksets or beads.
 
 Reopened production gate: FE-9 terminal closure must search the codebase and runtime evidence for
-remaining production use of legacy parser/rewriter routes in the scoped surface. If any remain,
-the relevant FE-4 through FE-8 bead stays open. Full test pass plus residual notes is not
+remaining production use of legacy parser/rewriter routes in the accepted surface. If any remain,
+the relevant FE-4 through FE-8 bead stays open or a focused follow-up delivery bead is created
+before terminal closure. Full test pass, bounded route-audit pass, or residual notes are not
 sufficient.

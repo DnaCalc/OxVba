@@ -108,10 +108,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - convert scaffold/evidence surfaces into default production routing;
   - delete or compatibility-quarantine replaced legacy routes;
   - rerun terminal compiler/syntax/VM/host/conformance/oracle gates with route proof.
-  - next narrow FE-8.5 step: add a project-aware compile path that consumes the generated
-    `HirNewExpressionBinding` facts and lowers project construction through HIR without emitting
-    `__oxvba_project_instance(...)` source text; then extend that path to `Dim As New`,
-    `Class_Initialize`, source maps, and imported/COM activation.
+  - 2026-06-02 bead-graph repair keeps the existing workset/root bead and makes the remaining
+    production replacement work explicit:
+    - `bd-aprs.8.7`: property/default-member production semantics;
+    - `bd-aprs.8.8`: reference/COM activation and member binding;
+    - `bd-aprs.9.6`: direct project construction on HIR using generated
+      `HirNewExpressionBinding` facts, without emitting `__oxvba_project_instance(...)` source;
+    - `bd-aprs.9.7`: `As New`, `Class_Initialize`, construction source maps, and construction
+      metadata;
+    - `bd-aprs.9.8`: arrays, indexing, and `ReDim` parity;
+    - `bd-aprs.9.9`: compile-time options, declarations, and constants;
+    - `bd-aprs.9.10`: broader declaration/type surface;
+    - `bd-aprs.10.7`: broad matrix/corpus route audit;
+    - `bd-aprs.10.8`: final legacy route retirement/quarantine.
 
 ### FE-TERM-001: Frontend rework terminal evidence compiler metadata failure
 - Status: resolved in current run; superseded by FE-TERM-002 for terminal closure.
