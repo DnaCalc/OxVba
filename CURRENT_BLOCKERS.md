@@ -73,11 +73,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       earlier declarators in the same `Const` statement;
     - read-side bang member access such as `obj!Field` now reaches HIR production lowering through
       the existing member-expression dispatch route;
-    - simple member assignment targets such as `obj.Value = ...`, `Set obj.Ref = ...`, and
-      `With obj: .Value = ...` now lower through HIR to late-bound dispatch with explicit property
-      Let/Set hints; bang-member writes, default-member/property selection, project/class property
-      routing, early-bound COM property-put resolution, indexed/named writeback breadth, and
-      overload validation remain open;
+    - simple member assignment targets such as `obj.Value = ...`, `obj!Value = ...`,
+      `Set obj.Ref = ...`, and `With obj: .Value = ...` now lower through HIR to late-bound
+      dispatch with explicit property Let/Set hints; default-member/property selection,
+      project/class property routing, early-bound COM property-put resolution, indexed/named
+      writeback breadth, and overload validation remain open;
     - `Option Base 0`, `Option Base 1`, and default-equivalent `Option Compare Binary` no longer
       disqualify otherwise completed lightweight HIR default-route sources; other `Option` forms
       remain fallback-only until HIR owns explicit declaration enforcement, text/database compare
