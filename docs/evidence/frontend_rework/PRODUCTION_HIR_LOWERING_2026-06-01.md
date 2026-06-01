@@ -225,6 +225,12 @@ collector now includes structural facts from event arguments. Focused regression
 Named event arguments and full project event binding remain broader event/COM work outside this
 narrow route slice.
 
+Follow-up continuation accepts module-level `Event` declarations on the HIR production route when
+paired with the already-supported `RaiseEvent` statement. The event declaration is currently a
+symbol/fact declaration with no direct bytecode; declared-event signature validation, named event
+arguments, WithEvents handler matching, Implements coupling, and project event binding remain
+broader event/COM work.
+
 ## Const Continuation
 
 The twenty-fourth FE-8.5 slice removes the simple literal `Const` residual:
