@@ -5,6 +5,7 @@ pub mod bytecode;
 pub mod descriptor_identity;
 pub mod emit;
 pub mod frontend_diff;
+pub mod frontend_symbols;
 pub mod lsp_support;
 pub mod optimize;
 pub mod project;

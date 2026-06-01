@@ -615,6 +615,7 @@ without putting binding data into the CST.
 Candidate bead units:
 - FE-6.1 Symbol identity model: define `SymbolId`, scopes, module/project/library namespaces,
   case-insensitive interning, and source-span provenance.
+  Evidence: `docs/evidence/frontend_rework/SYMBOL_IDENTITY_MODEL_2026-06-01.md`.
 - FE-6.2 Bound HIR arenas: define expression, statement, declaration, call, member, property,
   and type nodes with CST backpointers.
 - FE-6.3 SemanticModel query API: expose symbol/type/diagnostic queries keyed by CST nodes and
