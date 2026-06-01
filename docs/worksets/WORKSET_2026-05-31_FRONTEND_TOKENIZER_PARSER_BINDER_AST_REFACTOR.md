@@ -548,6 +548,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/LEXER_TRIVIA_CONTINUATION_2026-06-01.md`.
 - FE-3.2 Literal lexing: cover strings, date literals, numeric suffixes, hex/octal forms,
   currency/decimal-relevant forms, and malformed literal recovery.
+  Evidence: `docs/evidence/frontend_rework/LEXER_LITERAL_COMPLETION_2026-06-01.md`.
 - FE-3.3 Identifier and keyword lexing: cover bracketed identifiers, type suffixes, case folding,
   contextual keywords, and host/library names that collide with keywords.
 - FE-3.4 Lexer snapshot corpus: add token snapshots and round-trip tests across the grammar

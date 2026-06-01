@@ -273,6 +273,8 @@ impl<'a> Parser<'a> {
             | SyntaxKind::BracketedIdent
             | SyntaxKind::KwTrue
             | SyntaxKind::KwFalse
+            | SyntaxKind::KwEmpty
+            | SyntaxKind::KwNull
             | SyntaxKind::KwNothing
             | SyntaxKind::KwMe
             | SyntaxKind::KwNew
@@ -403,7 +405,11 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             // Boolean / special values
-            SyntaxKind::KwTrue | SyntaxKind::KwFalse | SyntaxKind::KwNothing => {
+            SyntaxKind::KwTrue
+            | SyntaxKind::KwFalse
+            | SyntaxKind::KwEmpty
+            | SyntaxKind::KwNull
+            | SyntaxKind::KwNothing => {
                 self.start_node(SyntaxKind::LiteralExpr);
                 self.bump();
                 self.finish_node();
@@ -2156,9 +2162,11 @@ mod tests {
 
     #[test]
     fn expr_boolean_literals() {
-        let src = "Sub T()\n    x = True\n    y = False\n    Set z = Nothing\nEnd Sub\n";
+        let src = "Sub T()\n    x = True\n    y = False\n    z = Empty\n    w = Null\n    Set o = Nothing\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+        let lits = collect_nodes(&p.syntax(), SyntaxKind::LiteralExpr);
+        assert!(lits.len() >= 5, "expected special literals, got {:?}", lits);
     }
 }
 

@@ -138,8 +138,8 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
                 while i < bytes.len() && bytes[i].is_ascii_hexdigit() {
                     i += 1;
                 }
-                // optional & or type suffix
-                if i < bytes.len() && bytes[i] == b'&' {
+                // optional integer type suffix
+                if i < bytes.len() && is_integer_type_suffix(bytes[i]) {
                     i += 1;
                 }
                 tokens.push((SyntaxKind::HexLiteral, &source[start..i]));
@@ -150,7 +150,7 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
                 while i < bytes.len() && (bytes[i] >= b'0' && bytes[i] <= b'7') {
                     i += 1;
                 }
-                if i < bytes.len() && bytes[i] == b'&' {
+                if i < bytes.len() && is_integer_type_suffix(bytes[i]) {
                     i += 1;
                 }
                 tokens.push((SyntaxKind::OctLiteral, &source[start..i]));
@@ -272,6 +272,14 @@ fn is_type_suffix(b: u8) -> bool {
     matches!(b, b'%' | b'&' | b'!' | b'#' | b'@' | b'$')
 }
 
+fn is_integer_type_suffix(b: u8) -> bool {
+    matches!(b, b'%' | b'&' | b'^')
+}
+
+fn is_numeric_type_suffix(b: u8) -> bool {
+    matches!(b, b'%' | b'&' | b'^' | b'!' | b'#' | b'@')
+}
+
 fn lex_number(source: &str, bytes: &[u8], i: &mut usize) {
     // Integer part
     while *i < bytes.len() && bytes[*i].is_ascii_digit() {
@@ -303,11 +311,18 @@ fn lex_number(source: &str, bytes: &[u8], i: &mut usize) {
             *i = saved;
         }
     }
+    if *i < bytes.len() && is_numeric_type_suffix(bytes[*i]) {
+        *i += 1;
+    }
     let _ = source; // used for context only
 }
 
 fn classify_number(text: &str) -> SyntaxKind {
-    if text.contains('.') || text.contains('e') || text.contains('E') {
+    if matches!(text.as_bytes().last(), Some(b'!' | b'#' | b'@')) {
+        return SyntaxKind::FloatLiteral;
+    }
+    let body = text.trim_end_matches(|c| matches!(c, '%' | '&' | '^'));
+    if body.contains('.') || body.contains('e') || body.contains('E') {
         SyntaxKind::FloatLiteral
     } else {
         SyntaxKind::IntLiteral
@@ -362,6 +377,7 @@ mod tests {
             kinds("&HFF&"),
             vec![SyntaxKind::HexLiteral, SyntaxKind::Eof]
         );
+        assert_eq!(tokenize("&HFF^")[0], (SyntaxKind::HexLiteral, "&HFF^"));
     }
 
     #[test]
@@ -381,11 +397,49 @@ mod tests {
     }
 
     #[test]
+    fn numeric_type_suffix_literals_stay_atomic() {
+        assert_eq!(tokenize("100&")[0], (SyntaxKind::IntLiteral, "100&"));
+        assert_eq!(tokenize("100^")[0], (SyntaxKind::IntLiteral, "100^"));
+        assert_eq!(tokenize("2.5!")[0], (SyntaxKind::FloatLiteral, "2.5!"));
+        assert_eq!(tokenize("2#")[0], (SyntaxKind::FloatLiteral, "2#"));
+        assert_eq!(tokenize("2@")[0], (SyntaxKind::FloatLiteral, "2@"));
+        assert_eq!(
+            tokenize("x & 2")[2],
+            (SyntaxKind::Ampersand, "&"),
+            "spaced ampersand must remain concatenation/operator token"
+        );
+    }
+
+    #[test]
+    fn special_literal_keywords_are_classified() {
+        assert_eq!(kinds("True"), vec![SyntaxKind::KwTrue, SyntaxKind::Eof]);
+        assert_eq!(kinds("False"), vec![SyntaxKind::KwFalse, SyntaxKind::Eof]);
+        assert_eq!(
+            kinds("Nothing"),
+            vec![SyntaxKind::KwNothing, SyntaxKind::Eof]
+        );
+        assert_eq!(kinds("Empty"), vec![SyntaxKind::KwEmpty, SyntaxKind::Eof]);
+        assert_eq!(kinds("Null"), vec![SyntaxKind::KwNull, SyntaxKind::Eof]);
+    }
+
+    #[test]
     fn date_literal() {
         assert_eq!(
             kinds("#1/1/2000#"),
             vec![SyntaxKind::DateLiteral, SyntaxKind::Eof]
         );
+    }
+
+    #[test]
+    fn malformed_string_and_date_literals_recover_losslessly() {
+        assert_eq!(
+            tokenize("\"unterminated\n")[0],
+            (SyntaxKind::StringLiteral, "\"unterminated")
+        );
+        assert_eq!(tokenize("#1/1/2000\n")[0], (SyntaxKind::Hash, "#"));
+        let src = "\"unterminated\n#1/1/2000\n";
+        let reconstructed: String = tokenize(src).iter().map(|(_, text)| *text).collect();
+        assert_eq!(reconstructed, src);
     }
 
     #[test]
