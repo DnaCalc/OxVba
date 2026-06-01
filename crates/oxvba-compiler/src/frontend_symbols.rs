@@ -33,7 +33,7 @@ pub enum ScopeKind {
     Block,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrontendSourceSpan {
     pub start: usize,
     pub end: usize,

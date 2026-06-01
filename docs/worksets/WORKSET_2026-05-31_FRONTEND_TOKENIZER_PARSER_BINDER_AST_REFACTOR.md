@@ -621,6 +621,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/BOUND_HIR_ARENAS_2026-06-01.md`.
 - FE-6.3 SemanticModel query API: expose symbol/type/diagnostic queries keyed by CST nodes and
   byte spans, reusing HIR facts rather than duplicating compiler semantics.
+  Evidence: `docs/evidence/frontend_rework/SEMANTIC_MODEL_QUERY_API_2026-06-01.md`.
 - FE-6.4 Type and coercion hooks: connect HIR to the current declared type model, call-site
   descriptors, Let/Set distinction, Optional/ParamArray, ByRef/ByVal, and default values.
 - FE-6.5 Diagnostic mapping: route parser, binder, and type diagnostics to stable source spans
