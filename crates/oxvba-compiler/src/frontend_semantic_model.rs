@@ -248,7 +248,8 @@ impl SemanticModel {
             | HirStmtKind::Label { .. }
             | HirStmtKind::GoTo { .. }
             | HirStmtKind::GoSub { .. }
-            | HirStmtKind::Return => {}
+            | HirStmtKind::Return
+            | HirStmtKind::Erase { .. } => {}
         }
     }
 

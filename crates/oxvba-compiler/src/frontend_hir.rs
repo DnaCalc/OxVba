@@ -172,6 +172,9 @@ pub enum HirStmtKind {
     ResumeLabel {
         label: String,
     },
+    Erase {
+        name: String,
+    },
     Label {
         name: String,
     },
@@ -766,6 +769,13 @@ impl HirBuilder {
                 cst: cst(node),
                 kind: HirStmtKind::Return,
             }))),
+            SyntaxKind::EraseStmt => {
+                let name = name_after_keyword(node, SyntaxKind::KwErase, "Erase")?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::Erase { name },
+                })))
+            }
             SyntaxKind::SelectStmt => {
                 let expr = expression_children(node)
                     .into_iter()
@@ -1400,6 +1410,31 @@ fn label_name_from_token(token: oxvba_syntax::SyntaxToken<'_>) -> Option<String>
         SyntaxKind::Ident | SyntaxKind::BracketedIdent => normalize_ident(token.text),
         _ => None,
     }
+}
+
+fn name_after_keyword(
+    node: SyntaxNode<'_>,
+    keyword: SyntaxKind,
+    label: &str,
+) -> Result<String, HirBuildError> {
+    let mut after_keyword = false;
+    for token in node.child_tokens() {
+        if token.kind == keyword {
+            after_keyword = true;
+            continue;
+        }
+        if !after_keyword || token.kind.is_trivia() {
+            continue;
+        }
+        if let Some(name) = normalize_ident(token.text) {
+            return Ok(name);
+        }
+        break;
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "{label} statement without supported name: `{}`",
+        node.text().trim()
+    )))
 }
 
 #[cfg(test)]

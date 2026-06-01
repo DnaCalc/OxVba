@@ -74,7 +74,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::EnumBlock
             | SyntaxKind::WithStmt
             | SyntaxKind::ReDimStmt
-            | SyntaxKind::EraseStmt
             | SyntaxKind::RaiseEventStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
@@ -389,6 +388,7 @@ fn lower_stmt(
             label: label.clone(),
         }),
         HirStmtKind::Return => out.push(BoundStmt::Return),
+        HirStmtKind::Erase { name } => out.push(BoundStmt::Erase { name: name.clone() }),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1171,6 +1171,15 @@ mod tests {
             "expected Return bytecode: {:?}",
             bytecode.instructions
         );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_erase_statement() {
+        let source = "Sub Main()\nDim a\nErase a\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(!bytecode.instructions.is_empty());
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 

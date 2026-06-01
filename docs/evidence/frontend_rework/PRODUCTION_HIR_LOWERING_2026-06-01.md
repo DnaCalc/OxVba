@@ -30,6 +30,7 @@ The initial production scope is intentionally narrow and explicit:
   `Resume`, and `Resume label` statements,
 - identifier/numeric labels and `GoTo` statements,
 - `GoSub` and `Return` statements,
+- `Erase` statements for named variables,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -249,6 +250,14 @@ The twentieth FE-8.5 slice completes the basic label-targeted error-control rout
 - `Resume label` lowers into `HirStmtKind::ResumeLabel`;
 - both use the same identifier/numeric label normalization as `GoTo`; and
 - production HIR lowering maps them to the existing backend error-control label forms.
+
+## Erase Continuation
+
+The twenty-first FE-8.5 slice adds the simplest array/reset statement route:
+
+- `EraseStmt` nodes lower into a typed HIR leaf with a normalized target name;
+- production HIR lowering maps that leaf to the existing `BoundStmt::Erase` backend form; and
+- richer array-shape validation remains tied to the broader `ReDim`/array descriptor residual.
 
 ## Checks
 

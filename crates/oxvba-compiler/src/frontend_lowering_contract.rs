@@ -301,7 +301,8 @@ fn collect_stmt_contract_facts(
         | HirStmtKind::Label { .. }
         | HirStmtKind::GoTo { .. }
         | HirStmtKind::GoSub { .. }
-        | HirStmtKind::Return => {}
+        | HirStmtKind::Return
+        | HirStmtKind::Erase { .. } => {}
     }
 }
 
