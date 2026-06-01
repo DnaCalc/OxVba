@@ -377,11 +377,38 @@ The twenty-first FE-8.5 slice adds the simplest array/reset statement route:
 - production HIR lowering maps that leaf to the existing `BoundStmt::Erase` backend form; and
 - richer array-shape validation remains tied to the broader `ReDim`/array descriptor residual.
 
+## Enum Continuation
+
+The latest FE-8.5 slice removes the basic enum constant residual without weakening the production
+guard:
+
+- `EnumBlock` is no longer rejected by the HIR production syntax gate.
+- The front-end symbol model declares enum members as module-scope constant symbols so procedure
+  bodies can resolve `Safe` in `x = Safe + 1` through the same HIR name path used by module
+  constants.
+- HIR production lowering parses enum member values with the same simple explicit/incrementing
+  integer semantics as the legacy resolver, substitutes enum member references as `IntConst`, and
+  projects `BoundEnumDescriptor` metadata into the lowered module.
+- The production route audit includes a `Public Enum Mode ... Safe ...` fixture and classifies it
+  as `HirProduction`.
+- A legacy bytecode assertion was relaxed from a specific `AddConstI32` peephole to equivalent add
+  bytecode because the workset does not require byte-identical output from the new front-end.
+
+Remaining production residuals are still real semantic work, not marker-only gaps:
+
+- `DeclareStmt`: native declarations require external declaration descriptors, ABI policy,
+  argument/return marshalling, and call diagnostics on the HIR path.
+- `TypeBlock`: UDT declarations require descriptor/layout/field alias/lifetime projection.
+- `NewExpr`: object construction requires project class handles, imported/COM construction rules,
+  `As New` lazy construction interactions, and assignment/writeback behavior.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_enum_member_constants --quiet`
+- `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
