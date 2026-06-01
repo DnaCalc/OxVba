@@ -103,6 +103,48 @@ pub struct CompileOptions {
     pub frontend_v2: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct FrontendV2Analysis {
+    pub semantic_model: frontend_semantic_model::SemanticModel,
+    pub typed_hir: frontend_type_hooks::TypedHirModule,
+    pub diagnostics: Vec<frontend_diagnostics::FrontendDiagnostic>,
+}
+
+pub fn analyze_frontend_v2_source(source: &str) -> Result<FrontendV2Analysis, CompileError> {
+    let diagnostics = frontend_diagnostics::FrontendDiagnosticMapper::from_source_parse(source);
+    if !diagnostics.diagnostics().is_empty() {
+        let messages = diagnostics
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| {
+                format!(
+                    "{} at {}..{}: {}",
+                    diagnostic.code, diagnostic.span.start, diagnostic.span.end, diagnostic.message
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(CompileError::ResolveError(format!(
+            "frontend_v2 diagnostics: {messages}"
+        )));
+    }
+
+    let typed_hir =
+        frontend_type_hooks::collect_type_hooks_from_source("Main", source).map_err(|err| {
+            CompileError::ResolveError(format!("frontend_v2 binder/HIR error: {err}"))
+        })?;
+    let mut semantic_model =
+        frontend_semantic_model::SemanticModel::from_bound_hir_module(typed_hir.module.clone());
+    for diagnostic in diagnostics.semantic_diagnostics() {
+        semantic_model.push_diagnostic(diagnostic);
+    }
+    Ok(FrontendV2Analysis {
+        semantic_model,
+        typed_hir,
+        diagnostics: diagnostics.diagnostics().to_vec(),
+    })
+}
+
 pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
     compile_with_runtime_metadata(source).map(|(bytecode, _)| bytecode)
 }
@@ -112,6 +154,7 @@ pub fn compile_with_options(
     options: CompileOptions,
 ) -> Result<Bytecode, CompileError> {
     if options.frontend_v2 {
+        let _analysis = analyze_frontend_v2_source(source)?;
         return syntax_bridge::compile_source_via_syntax_bridge(source)
             .map_err(|err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")));
     }
@@ -353,6 +396,51 @@ mod tests {
     }
 
     #[test]
+    fn frontend_v2_analysis_exposes_shared_binder_hir_semantic_facts() {
+        let source =
+            "Sub Main(ByVal seed As Long)\n    Dim count As Long\n    count = seed\nEnd Sub\n";
+        let analysis = super::analyze_frontend_v2_source(source).expect("frontend analysis");
+        assert!(analysis.diagnostics.is_empty(), "{analysis:#?}");
+        assert!(
+            analysis
+                .typed_hir
+                .hooks
+                .declared_type(
+                    analysis
+                        .typed_hir
+                        .module
+                        .symbols
+                        .symbols()
+                        .iter()
+                        .find(|symbol| {
+                            symbol.namespace == crate::frontend_symbols::SymbolNamespace::Local
+                                && analysis
+                                    .typed_hir
+                                    .module
+                                    .symbols
+                                    .name(symbol.name)
+                                    .is_some_and(|name| name.folded == "count")
+                        })
+                        .expect("count symbol")
+                        .id
+                )
+                .is_some(),
+            "expected declared type hook for count"
+        );
+        let seed_start = source.rfind("seed").expect("seed use");
+        assert!(
+            analysis
+                .semantic_model
+                .symbol_for_span(crate::frontend_symbols::FrontendSourceSpan {
+                    start: seed_start,
+                    end: seed_start + "seed".len()
+                })
+                .is_some(),
+            "expected SemanticModel symbol query for parameter use"
+        );
+    }
+
+    #[test]
     fn compile_options_frontend_v2_enables_completed_bridge_construct_without_default_flip() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
         let legacy_err =
@@ -379,7 +467,7 @@ mod tests {
         )
         .expect_err("frontend_v2 bridge should reject syntax parse errors first");
         assert!(
-            err.to_string().contains("frontend_v2 bridge error"),
+            err.to_string().contains("frontend_v2 diagnostics"),
             "unexpected error: {err}"
         );
     }
