@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+    frontend_member_dispatch::{MemberDispatchClass, classify_project_member},
     frontend_project_symbols::{
         ProjectSymbolIndex, ProjectSymbolKind, ProjectSymbolRoute, QualifiedName,
         build_project_symbol_index_from_manifest,
@@ -8747,7 +8748,14 @@ fn resolve_invocation_name_from_project_symbols(
     let Some(route) = project_symbol_index.tables.resolve_qualified(&qualified) else {
         return Ok(None);
     };
-    if route.kind != ProjectSymbolKind::Procedure {
+    let decision = classify_project_member(route);
+    if !matches!(
+        decision.class,
+        MemberDispatchClass::EarlyBoundProject {
+            kind: ProjectSymbolKind::Procedure,
+            ..
+        }
+    ) {
         return Ok(None);
     }
     let Some(decl) = procedure_decl_for_project_symbol_route(
@@ -8855,7 +8863,15 @@ fn resolve_invocation_name(
                 .tables
                 .resolve_public_candidates(proc)
                 .into_iter()
-                .filter(|route| route.kind == ProjectSymbolKind::Procedure)
+                .filter(|route| {
+                    matches!(
+                        classify_project_member(*route).class,
+                        MemberDispatchClass::EarlyBoundProject {
+                            kind: ProjectSymbolKind::Procedure,
+                            ..
+                        }
+                    )
+                })
                 .filter_map(|route| {
                     procedure_decl_for_project_symbol_route(
                         manifest,

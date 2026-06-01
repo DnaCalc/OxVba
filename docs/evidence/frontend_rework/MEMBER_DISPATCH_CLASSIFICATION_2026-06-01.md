@@ -7,7 +7,8 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 ## Outcome
 
 Added `crates/oxvba-compiler/src/frontend_member_dispatch.rs`, a typed dispatch classification
-surface for FE-7 migration.
+surface for FE-7 migration. The 2026-06-01 continuation wired the early-bound project-member
+classification into the production FE-7.1 project-symbol route used by `ModuleAwareBindPlan`.
 
 The classifier distinguishes:
 
@@ -20,12 +21,18 @@ The classifier distinguishes:
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_member_dispatch --quiet`
+- `cargo test -p oxvba-compiler project_symbol_index_resolves_module_qualified_invocation_route --quiet`
+- `cargo test -p oxvba-compiler compile_project_rejects_ambiguous_unqualified_duplicate_procedure_name_subset --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 
 ## Fresh-Eyes Review
 
-- This bead establishes the dispatch classification vocabulary and tests. It does not yet execute
-  every route through the VM; those execution fixtures remain part of the later construct migration
-  and corpus-runner expansion.
-- The early-bound project path consumes `ProjectSymbolRoute` from FE-7.1, so member dispatch is now
-  connected to binder-owned symbol tables rather than string rewrite discovery.
+- The first run established the dispatch classification vocabulary and tests, but that was
+  scaffold-only and not enough for the reopened production gate.
+- Early-bound project procedure dispatch now consumes `ProjectSymbolRoute` from FE-7.1 in
+  production qualified/public procedure lookup. The classifier gates the route as
+  `EarlyBoundProject { kind: Procedure }` before the lowering path maps the symbol route to the
+  lowered procedure.
+- This bead is not complete yet. Imported COM members, late-bound dispatch, default-member
+  dispatch, and host-provided globals still need production route proof through this classifier or
+  explicit handoff to narrower FE-7 beads before closure.
