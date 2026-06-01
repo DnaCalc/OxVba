@@ -40,6 +40,8 @@ The audit proves the good path and exposes the remaining production residuals:
 - `Erase` fixtures now reach `HirProduction`;
 - `Event` declaration plus `RaiseEvent` fixtures now reach `HirProduction`;
 - explicit-receiver value-side dot-member read/call fixtures now reach `HirProduction`;
+- statement-form member calls with bare arguments now reach `HirProduction`;
+- read-side `With` member fixtures now reach `HirProduction`;
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
@@ -95,9 +97,9 @@ The audit result records completed reopened delivery work and remaining broader 
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
   multi-declarator literal `Const`, `Event` declarations paired with `RaiseEvent`,
   explicit-receiver value-side dot-member read/call syntax, and statement-form member calls with
-  bare arguments are no longer themselves route blockers. The call/coercion fixture now has
-  matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage for language
-  surfaces outside this route-audited subset, but the audited fixtures in this file now classify as
-  `HirProduction`.
+  bare arguments, and read-side `With` member syntax are no longer themselves route blockers. The
+  call/coercion fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR
+  lowering coverage for language surfaces outside this route-audited subset, but the audited
+  fixtures in this file now classify as `HirProduction`.
 - The next step is broader terminal evidence and expansion of the route-audit fixture set, not
   claiming complete compiler front-end replacement from this audit alone.

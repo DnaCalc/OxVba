@@ -283,6 +283,11 @@ targets, `With` dot-shorthand, `New`/object construction, default-member resolut
 Get/Let/Set selection, project/class binding, early-bound COM binding, ByRef/writeback behavior,
 and host-provided member semantics remain FE-7/FE-8 residuals.
 
+Follow-up continuation adds the first `With` route slice: read-side dot-prefixed member expressions
+inside `With obj ... End With` are bound to the active With receiver and lower through the existing
+late-bound member read path. With member assignment targets remain fallback-eligible because member
+write/property Let/Set semantics are still broader FE-7/FE-8 work.
+
 ## ElseIf Continuation
 
 The fourteenth FE-8.5 slice widens block-If coverage:
