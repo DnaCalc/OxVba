@@ -883,7 +883,9 @@ Candidate bead units:
   contract instead of only to bytecode emission. Follow-up continuation accepts module-level
   `Event` declarations as symbol/fact declarations on the HIR route when paired with `RaiseEvent`;
   event signature validation, WithEvents handler matching, Implements coupling, and project event
-  binding remain broader FE-7/FE-8 event work.
+  binding remain broader FE-7/FE-8 event work. Follow-up continuation accepts the existing
+  single-source `Implements` directive shape as a no-bytecode directive on the HIR route; project/
+  class Implements validation and interface member matching remain broader FE-7/FE-8 work.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR
   production lowering without allocating runtime slots for those constants. Follow-up continuation
   widens that subset to comma-separated literal `Const` declarators.
@@ -948,7 +950,7 @@ Candidate bead units:
   single-line If, basic `Exit`, and non-label
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and
-  basic `RaiseEvent`, `Event` declaration, and literal `Const`. The workset remains open for broader terminal evidence
+  basic `RaiseEvent`, `Event` declaration, single-source `Implements`, and literal `Const`. The workset remains open for broader terminal evidence
   and expanded route-audit coverage. Follow-up continuation also covers a one-dimensional
   dynamic-array runtime `ReDim` fixture, an explicit-receiver value-side dot-member read/call
   fixture, and a read-side `With` member fixture.

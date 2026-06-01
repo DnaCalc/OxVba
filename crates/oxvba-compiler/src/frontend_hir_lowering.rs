@@ -152,7 +152,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
         SyntaxKind::DeclareStmt
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
-            | SyntaxKind::ImplementsStmt
             | SyntaxKind::NewExpr
     ) {
         return Some(node.kind());
@@ -1781,6 +1780,15 @@ mod tests {
             !bytecode.instructions.is_empty(),
             "expected declared-event fixture to emit argument evaluation bytecode"
         );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_single_source_implements_directive() {
+        let source = "Implements IFoo\nSub Main()\nEnd Sub\n";
+        let (_bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
