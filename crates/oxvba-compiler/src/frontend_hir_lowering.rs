@@ -16,7 +16,8 @@ use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
     BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
     BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
-    BoundType, CompareOp, LogicalBinOp, RuntimeArrayDimExpr, collect_option_base,
+    BoundType, CompareOp, LogicalBinOp, RuntimeArrayDimExpr, collect_declared_external_procedures,
+    collect_option_base,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -147,10 +148,7 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
 }
 
 fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Option<SyntaxKind> {
-    if matches!(
-        node.kind(),
-        SyntaxKind::DeclareStmt | SyntaxKind::TypeBlock | SyntaxKind::NewExpr
-    ) {
+    if matches!(node.kind(), SyntaxKind::TypeBlock | SyntaxKind::NewExpr) {
         return Some(node.kind());
     }
     node.child_nodes()
@@ -192,14 +190,25 @@ pub fn lower_typed_hir_to_bound_module(
 ) -> Result<BoundModule, HirProductionLoweringError> {
     let const_values = collect_const_values(source, typed_hir);
     let enum_descriptors = collect_hir_enum_descriptors(source);
-    let option_base = collect_option_base(&source.lines().map(str::to_string).collect::<Vec<_>>());
-    let mut procedures = Vec::new();
+    let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+    let default_type_table = [BoundType::Variant; 26];
+    let (external_procedures, external_declarations, external_diagnostics) =
+        collect_declared_external_procedures(&lines, &default_type_table);
+    if !external_diagnostics.is_empty() {
+        return Err(HirProductionLoweringError::Unsupported(format!(
+            "external declaration diagnostics: {external_diagnostics:?}"
+        )));
+    }
+    let option_base = collect_option_base(&lines);
+    let mut procedures = external_procedures;
+    let mut hir_procedure_count = 0usize;
     for decl in &typed_hir.module.declarations {
         if let Some(proc) = lower_procedure(source, typed_hir, &const_values, option_base, *decl)? {
+            hir_procedure_count += 1;
             procedures.push(proc);
         }
     }
-    if procedures.is_empty() {
+    if hir_procedure_count == 0 {
         return Err(HirProductionLoweringError::Unsupported(
             "source contains no HIR procedures".to_string(),
         ));
@@ -215,7 +224,7 @@ pub fn lower_typed_hir_to_bound_module(
         declaration_types: HashMap::new(),
         array_descriptors: HashMap::new(),
         enum_descriptors,
-        external_declarations: HashMap::new(),
+        external_declarations,
         body: Vec::new(),
         procedures,
     })
@@ -2097,6 +2106,39 @@ mod tests {
                 .iter()
                 .any(|slot| slot.name.eq_ignore_ascii_case("safe")),
             "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_declared_external_call() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert_eq!(bytecode.external_call_descriptors.len(), 1);
+        let descriptor = &bytecode.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name, "hostping");
+        assert_eq!(descriptor.library, "host");
+        assert_eq!(descriptor.alias, "ping");
+        assert_eq!(descriptor.param_count, 1);
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::IntrinsicInvokeSymbolHost { args, .. } if args.len() == 1
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_declare_without_ptrsafe_for_fallback() {
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("unsupported Declare shapes remain fallback-eligible");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "Declare diagnostics must remain fallback-eligible, got {err:?}"
         );
     }
 

@@ -2105,7 +2105,7 @@ fn collect_property_read_routes(lines: &[String]) -> HashMap<String, String> {
     routes
 }
 
-fn collect_declared_external_procedures(
+pub(crate) fn collect_declared_external_procedures(
     lines: &[String],
     default_type_table: &[BoundType; 26],
 ) -> (

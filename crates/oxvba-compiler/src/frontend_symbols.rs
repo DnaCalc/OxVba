@@ -324,7 +324,7 @@ fn collect_symbols_from_node(
             return Ok(());
         }
         SyntaxKind::DeclareStmt => {
-            declare_named_node(model, module_name, scope, SymbolNamespace::Procedure, node)?;
+            declare_external_node(model, module_name, scope, node)?;
         }
         SyntaxKind::EventDecl => {
             declare_named_node(model, module_name, scope, SymbolNamespace::Member, node)?;
@@ -432,6 +432,32 @@ fn declare_named_node(
             provenance_for_token(module_name, name_token),
         )
         .map(Some)
+}
+
+fn declare_external_node(
+    model: &mut SymbolModel,
+    module_name: &str,
+    scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Result<Option<SymbolId>, SymbolModelError> {
+    let mut after_proc_kind = false;
+    for token in node.child_tokens() {
+        if matches!(token.kind, SyntaxKind::KwFunction | SyntaxKind::KwSub) {
+            after_proc_kind = true;
+            continue;
+        }
+        if after_proc_kind && is_identifier_like(token.kind) {
+            return model
+                .declare_symbol(
+                    scope,
+                    SymbolNamespace::Procedure,
+                    normalize_identifier_token(token.text),
+                    provenance_for_token(module_name, token),
+                )
+                .map(Some);
+        }
+    }
+    declare_named_node(model, module_name, scope, SymbolNamespace::Procedure, node)
 }
 
 fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
