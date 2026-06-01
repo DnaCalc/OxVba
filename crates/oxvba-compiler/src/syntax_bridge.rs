@@ -58,7 +58,16 @@ pub fn lower_expression_to_legacy_bound_expr(
 /// parser and the existing lowering.
 pub fn compile_source_via_syntax_bridge(source: &str) -> Result<Bytecode, SyntaxBridgeError> {
     validate_source_with_cst(source)?;
-    compile(source).map_err(SyntaxBridgeError::Compile)
+    match compile(source) {
+        Ok(bytecode) => Ok(bytecode),
+        Err(first_error) => {
+            let lowered = lower_statement_separators_for_legacy(source);
+            if lowered == source {
+                return Err(SyntaxBridgeError::Compile(first_error));
+            }
+            compile(&lowered).map_err(SyntaxBridgeError::Compile)
+        }
+    }
 }
 
 pub fn validate_source_with_cst(source: &str) -> Result<(), SyntaxBridgeError> {
@@ -76,6 +85,18 @@ fn has_node_kind(node: &oxvba_syntax::SyntaxNode<'_>, kind: oxvba_syntax::Syntax
     node.child_nodes()
         .iter()
         .any(|child| has_node_kind(child, kind))
+}
+
+fn lower_statement_separators_for_legacy(source: &str) -> String {
+    let mut lowered = String::with_capacity(source.len());
+    for (kind, text) in oxvba_syntax::lexer::tokenize(source) {
+        match kind {
+            SyntaxKind::Colon => lowered.push('\n'),
+            SyntaxKind::Eof => {}
+            _ => lowered.push_str(text),
+        }
+    }
+    lowered
 }
 
 fn find_node_kind<'a>(node: &SyntaxNode<'a>, kind: SyntaxKind) -> Option<SyntaxNode<'a>> {
@@ -619,14 +640,14 @@ mod tests {
     }
 
     #[test]
-    fn bridge_records_inline_statement_lowering_as_legacy_residual() {
+    fn bridge_lowers_inline_statement_separators_for_legacy_compile() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
         validate_source_with_cst(source).expect("CST parser should accept inline statements");
-        let err = compile_source_via_syntax_bridge(source)
-            .expect_err("legacy compiler still treats colon sequence as one unsupported statement");
+        let bytecode = compile_source_via_syntax_bridge(source)
+            .expect("bridge should lower colon separators before legacy compile");
         assert!(
-            err.to_string().contains("unsupported statement"),
-            "unexpected error: {err}"
+            !bytecode.instructions.is_empty(),
+            "expected bytecode for inline assignment sequence"
         );
     }
 

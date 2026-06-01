@@ -27,11 +27,11 @@ snapshots alone:
   `On Error`/`Resume`, `With`, `Property`, `Declare`, `Type`, and `Enum`;
 - `compile_source_via_syntax_bridge` still compiles a supported multiline assignment sequence after
   CST validation;
-- the bridge test explicitly records that colon-separated inline assignment sequences are accepted
-  by the CST parser but still rejected by the legacy compiler as one unsupported statement.
+- the bridge test records that colon-separated inline assignment sequences are accepted by the CST
+  parser and then compiled through the FE-4.4 statement-separator bridge.
 
-That last point is an implementation residual, not a parser residual: FE-4.4 owns splitting/lowering
-inline statement lists into the legacy or replacement statement representation.
+That last point is an implementation handoff, not a parser-only claim: FE-4.4 owns the selected
+statement-separator bridge and later HIR/lowering beads still own full statement lowering.
 
 ## Verification
 
@@ -58,15 +58,13 @@ The attribute addition is intentionally syntax-only. Exported attributes are rep
 as `AttributeStmt`; semantic interpretation of module metadata remains outside this parser bead.
 
 Reopen fresh-eyes review found a critical distinction: the CST parser now correctly splits
-colon-separated inline statements, but the legacy compiler still sees `x = 1: x = x + 1` as one
-unsupported statement. The bridge tests now preserve that fact so FE-4.4 cannot claim statement
-bridge closure from CST validation alone.
+colon-separated inline statements, while the legacy compiler saw `x = 1: x = x + 1` as one
+unsupported statement before FE-4.4 bridge normalization. The bridge tests now preserve that fact
+and prove the selected handoff route.
 
 Residuals left for later beads:
 
 - single-line `If ... Then ... Else ...` still needs richer statement-list structure;
-- colon-separated inline statement lowering is parser-proven but still a FE-4.4 bridge/lowering
-  residual;
 - detailed declaration item parsing inside `Dim`, `Const`, `Type`, and `Enum` remains a typed facade
   and parser-expansion follow-up;
 - CST-to-legacy lowering belongs to FE-4.4;
