@@ -515,16 +515,16 @@ payload:
 - Project lowering materializes `HirNewExpressionBinding` facts from generated dynamic instance
   handles in source order. The active-project `Dim As New` / `Set x = New Widget` route test now
   proves handles `1` and `2` produce corresponding `widget` HIR construction bindings.
-- The project compile boundary currently builds those HIR construction facts, but still compiles
-  the rewritten backend source. This keeps existing behavior stable while exposing the exact data
-  needed for the next rewrite-retirement slice.
+- The project compile boundary now uses those HIR construction facts for the accepted direct
+  active-project `Set x = New Widget` shape: it reconstructs the generated project-instance helper
+  assignment back to a HIR `New` expression, passes the matching `HirNewExpressionBinding` facts to
+  HIR lowering, and only falls back when the project shape remains unsupported by HIR.
 
 Remaining production residuals after this slice:
 
-- Project compilation must consume the HIR construction facts when compiling the module source, so
-  `Set x = New Widget` no longer needs to become `Set x = __oxvba_project_instance(handle)`.
-- `Dim As New`, `Class_Initialize`, source maps, and imported/COM construction still need the same
-  direct-HIR integration.
+- `Dim As New`, `Class_Initialize`, construction source maps, WithEvents construction interaction
+  beyond the existing compatibility workaround, and imported/COM construction still need direct-HIR
+  integration under `bd-aprs.9.7` and `bd-aprs.8.8`.
 
 ## Project Construction Compile-Entry Continuation
 
@@ -535,9 +535,8 @@ The latest FE-8.5 construction slice adds the missing compile entry point for th
   typecheck, optimizer, and bytecode/metadata emission path.
 - The focused test proves the emitted bytecode includes the existing project-object reference load
   path when the constructed object remains live.
-- This is preparatory, not project route closure: `compile_project(...)` still compiles rewritten
-  helper source until the project compile boundary calls this HIR entry point with the facts it
-  already materializes.
+- Follow-up `bd-aprs.9.6` work now calls this entry point from `compile_project(...)` for the
+  accepted direct active-project `Set x = New Widget` construction shape.
 
 ## Project Boundary HIR Route Continuation
 
@@ -569,8 +568,31 @@ route remains open:
   expression parser on that path while preserving `Class_Initialize` identity.
 
 These fixes do not close FE-8.5 object construction. They reduce downstream breakage while the
-main production residual remains: project compile must consume `HirNewExpressionBinding` directly
-instead of compiling rewritten `__oxvba_project_instance(...)` source text.
+remaining construction residuals are narrower: `Dim As New`, `Class_Initialize`, construction
+source maps, broader WithEvents construction, and imported/COM construction still need direct-HIR
+integration after the accepted direct `Set x = New Widget` route.
+
+## Direct Project Construction HIR Continuation
+
+The `bd-aprs.9.6` slice removes the direct active-project `Set x = New <Class>` helper-source
+compile residual:
+
+- `compile_project(...)` now derives a HIR construction source from the module-aware lowered source
+  by replacing only generated `Set <var> = __oxvba_project_instance(handle)` assignment carriers
+  with `Set <var> = New <constructor-type>` when a matching `HirNewExpressionBinding` fact exists.
+- The HIR compile entry point consumes those facts and emits the typed project-object reference
+  bytecode; unsupported project shapes still fall back without silently claiming HIR ownership.
+- The compiled project's public `rewritten_source` now shows the HIR construction source for the
+  accepted direct construction fixture, so route evidence no longer reports helper-source
+  compilation for `Set obj = New Widget`.
+- Focused regressions cover the reconstruction helper, reject non-assignment helper-call rewrites,
+  and prove `compile_project(...)` emits `LoadProjectObjectRef` while preserving dynamic object
+  route metadata for the constructed `Widget`.
+
+Remaining construction residuals after this slice are explicitly not closed: `As New`,
+`Class_Initialize`, source-map/lifetime metadata, imported/COM construction, and WithEvents
+construction beyond the existing temporary workaround remain owned by `bd-aprs.9.7` /
+`bd-aprs.8.8`.
 
 ## Const Expression Continuation
 
@@ -608,6 +630,9 @@ The latest FE-8.5 slice removes the read-side bang member residual:
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_distinct_new_instances_have_separate_state --quiet`
 - `cargo test -p oxvba-compiler compile_project_lowers_withevents_new_source_class_expression --quiet`
+- `cargo test -p oxvba-compiler project_hir_construction_source_restores_new_expression_from_binding_facts --quiet`
+- `cargo test -p oxvba-compiler compile_project_consumes_hir_new_bindings_for_active_project_set_new --quiet`
+- `cargo test -p oxvba-compiler compile_project_keeps_as_new_on_construction_residual_path --quiet`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_rewrites_module_qualified_calls_for_unique_names --quiet`
 - `cargo test -p oxvba-compiler withevents --quiet`
