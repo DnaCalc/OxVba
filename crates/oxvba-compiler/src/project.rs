@@ -3235,6 +3235,8 @@ fn lower_module_source_module_aware(
                 &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_default_member_assignment(
+                manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -3275,6 +3277,8 @@ fn lower_module_source_module_aware(
                 )
             };
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
+                manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -5252,6 +5256,80 @@ fn single_property_decl_kind(allowed_kinds: &[ProcedureDeclKind]) -> Option<Proc
     }
 }
 
+fn selected_property_target_via_frontend_route(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    target: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+) -> Result<Option<String>, ProjectCompileError> {
+    let Some(project_symbol_index) = project_symbol_index else {
+        return Ok(None);
+    };
+    let Some(decl) = procedures.iter().find(|decl| decl.lowered_name == target) else {
+        return Ok(None);
+    };
+    if decl.project_name != active_project
+        || !matches!(
+            decl.kind,
+            ProcedureDeclKind::PropertyGet
+                | ProcedureDeclKind::PropertyLet
+                | ProcedureDeclKind::PropertySet
+        )
+    {
+        return Ok(None);
+    }
+    let Some(owner_name) = active_project_route_owner_name_by_module(manifest, &decl.module_name)
+    else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROPERTY-ROUTE-OWNER: missing module {} for property {}",
+                decl.module_name, decl.procedure_name
+            ),
+        });
+    };
+    let expected_kind = project_symbol_kind_for_property_decl(decl.kind);
+    let Some(route) = project_symbol_index.tables.resolve_property_accessor(
+        &owner_name,
+        &decl.procedure_name,
+        expected_kind,
+    ) else {
+        return Ok(None);
+    };
+    let Some(route_decl) = procedure_decl_for_project_symbol_route(
+        manifest,
+        active_project,
+        project_symbol_index,
+        route,
+        procedures,
+    ) else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROPERTY-ROUTE-UNBOUND: {}.{} {:?}",
+                owner_name, decl.procedure_name, expected_kind
+            ),
+        });
+    };
+    if route_decl != decl
+        || !is_visible_from_active_project(
+            route_decl,
+            active_project,
+            current_project,
+            current_module,
+        )
+    {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROPERTY-ROUTE-DRIFT: {}.{} {:?}",
+                owner_name, decl.procedure_name, expected_kind
+            ),
+        });
+    }
+    Ok(Some(route_decl.lowered_name.clone()))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn resolve_internal_class_member_target_of_kinds(
     receiver: &str,
@@ -5914,6 +5992,16 @@ fn rewrite_internal_class_set_assignment(
         &[ProcedureDeclKind::PropertySet],
     ) {
         Ok(Some((target, instance_arg))) => {
+            let target = selected_property_target_via_frontend_route(
+                manifest,
+                project_symbol_index,
+                &target,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+            )?
+            .unwrap_or(target);
             let mut lowered_args = vec![instance_arg];
             lowered_args.append(&mut indexed_args);
             lowered_args.push(rhs.to_string());
@@ -6051,6 +6139,8 @@ fn rewrite_internal_class_property_assignment(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_default_member_assignment(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -6133,6 +6223,16 @@ fn rewrite_internal_class_default_member_assignment(
     else {
         return Ok(line.to_string());
     };
+    let target = selected_property_target_via_frontend_route(
+        manifest,
+        project_symbol_index,
+        &target,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+    )?
+    .unwrap_or(target);
     let mut lowered_args = vec![instance_arg];
     lowered_args.append(&mut indexed_args);
     lowered_args.push(rhs.to_string());
@@ -6146,6 +6246,8 @@ fn rewrite_internal_class_default_member_assignment(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_default_member_read_assignment(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -6233,6 +6335,16 @@ fn rewrite_internal_class_default_member_read_assignment(
     let Some((target, instance_arg)) = resolved_target else {
         return Ok(line.to_string());
     };
+    let target = selected_property_target_via_frontend_route(
+        manifest,
+        project_symbol_index,
+        &target,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+    )?
+    .unwrap_or(target);
     let mut lowered_args = vec![instance_arg];
     lowered_args.extend(indexed_args);
     Ok(format!(
@@ -8624,6 +8736,8 @@ fn rewrite_module_source(
                 &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_default_member_assignment(
+                manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,
@@ -8664,6 +8778,8 @@ fn rewrite_module_source(
                 )
             };
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
+                manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,
