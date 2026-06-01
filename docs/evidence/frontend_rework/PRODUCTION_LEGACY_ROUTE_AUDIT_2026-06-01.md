@@ -18,6 +18,7 @@ The audit proves the good path and exposes the remaining production residuals:
   call/coercion seed-row delta is a documented source-map metadata improvement, not a syntax-route
   residual or bytecode/call-descriptor bug;
 - same-module statement-form procedure calls with bare arguments now reach `HirProduction`;
+- statement-form member calls with bare arguments now reach `HirProduction`;
 - simple multiline `If ... Then ... End If` fixtures now reach `HirProduction`;
 - multiline `If ... Else ... End If` and `If ... ElseIf ... Else ... End If` fixtures now reach
   `HirProduction`;
@@ -91,10 +92,10 @@ The audit result records completed reopened delivery work and remaining broader 
   error-control statements, identifier/numeric-label `GoTo`, `GoSub` / `Return`, `Erase`,
   one-dimensional dynamic-array runtime `ReDim`, simple function declarations with declared return
   slots, and simple single-value Select Case syntax, plus basic `RaiseEvent` and single- or
-  multi-declarator literal `Const`, and explicit-receiver value-side dot-member read/call syntax
-  are no longer themselves route blockers. The call/coercion fixture now has matching
-  bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage for language surfaces
-  outside this route-audited subset, but the audited fixtures in this file now classify as
-  `HirProduction`.
+  multi-declarator literal `Const`, explicit-receiver value-side dot-member read/call syntax, and
+  statement-form member calls with bare arguments are no longer themselves route blockers. The
+  call/coercion fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR
+  lowering coverage for language surfaces outside this route-audited subset, but the audited
+  fixtures in this file now classify as `HirProduction`.
 - The next step is broader terminal evidence and expansion of the route-audit fixture set, not
   claiming complete compiler front-end replacement from this audit alone.

@@ -65,9 +65,14 @@ metadata improvement instead of a bug.
 
 Follow-up continuation on the call slice preserves bare argument lists for same-module statement
 calls without parentheses, so `Use 1, 2` now lowers through `HirCall` and produces a call-site
-descriptor with both arguments. Statement-form member calls such as `obj.Method 1, 2` remain
-fallback-eligible because the current backend has no expression-statement discard form for
-receiver-based `BoundExpr::Member` calls.
+descriptor with both arguments. Fresh-eyes correction in that slice also preserves the no-`Call`
+invocation-syntax descriptor, parenthesized statement-level `force_byval` arguments, and expression
+call return copyout metadata when the broader call-site descriptor fixture routes through HIR.
+
+Follow-up continuation adds a backend expression-statement discard shape for value-producing
+expressions with observable effects, so statement-form member calls such as `obj.Method 1, 2` now
+lower through HIR and emit the existing late-bound dispatch invoke bytecode while discarding the
+result.
 
 This is still not blanket FE-8.5 closure. Broader HIR production lowering remains open for language
 surfaces outside this simple same-module call subset, especially optional/default arguments,
