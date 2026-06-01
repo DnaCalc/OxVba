@@ -154,7 +154,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::EnumBlock
             | SyntaxKind::WithStmt
             | SyntaxKind::ImplementsStmt
-            | SyntaxKind::EventDecl
             | SyntaxKind::NewExpr
     ) {
         return Some(node.kind());
@@ -1770,6 +1769,18 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::LoadConstI32 { .. })),
             "{bytecode:#?}"
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_event_declaration_with_raise_event() {
+        let source = "Event Tick(ByVal value)\nSub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            !bytecode.instructions.is_empty(),
+            "expected declared-event fixture to emit argument evaluation bytecode"
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }

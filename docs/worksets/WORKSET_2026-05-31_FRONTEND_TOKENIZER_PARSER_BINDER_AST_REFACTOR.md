@@ -880,7 +880,10 @@ Candidate bead units:
   Twenty-third reopened continuation adds basic positional-argument `RaiseEvent` statement
   lowering to the existing backend event statement form. Fresh-eyes correction on that continuation
   makes event argument expressions visible to the compiler-owned SemanticModel and HIR lowering
-  contract instead of only to bytecode emission.
+  contract instead of only to bytecode emission. Follow-up continuation accepts module-level
+  `Event` declarations as symbol/fact declarations on the HIR route when paired with `RaiseEvent`;
+  event signature validation, WithEvents handler matching, Implements coupling, and project event
+  binding remain broader FE-7/FE-8 event work.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR
   production lowering without allocating runtime slots for those constants. Follow-up continuation
   widens that subset to comma-separated literal `Const` declarators.
@@ -942,7 +945,7 @@ Candidate bead units:
   single-line If, basic `Exit`, and non-label
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and
-  basic `RaiseEvent` and literal `Const`. The workset remains open for broader terminal evidence
+  basic `RaiseEvent`, `Event` declaration, and literal `Const`. The workset remains open for broader terminal evidence
   and expanded route-audit coverage. Follow-up continuation also covers a one-dimensional
   dynamic-array runtime `ReDim` fixture and an explicit-receiver value-side dot-member read/call
   fixture.

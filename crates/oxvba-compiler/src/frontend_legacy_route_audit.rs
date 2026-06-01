@@ -261,6 +261,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let event_declaration_statement =
+        "Event Tick(ByVal value)\nSub Main()\nRaiseEvent Tick(1)\nEnd Sub\n";
+    findings.push(route_finding(
+        "event declaration and raise event fixture",
+        event_declaration_statement,
+        "bd-aprs.9.5",
+    ));
+
     let const_statement = "Const CBase = 7, CName = \"a,b\"\nSub Main()\nDim x\nDim y\nx = CBase\ny = CName\nEnd Sub\n";
     findings.push(route_finding(
         "const statement fixture",
@@ -461,6 +469,9 @@ mod tests {
                 finding
                     .area
                     .contains("statement-form member call arguments")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("event declaration and raise event")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"
