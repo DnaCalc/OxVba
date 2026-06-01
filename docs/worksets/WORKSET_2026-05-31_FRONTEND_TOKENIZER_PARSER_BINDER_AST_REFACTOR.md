@@ -899,6 +899,13 @@ Candidate bead units:
   Follow-up continuation adds read-side `With obj ... .Member ... End With` lowering by binding
   dot-prefixed member reads to the active With receiver; With member assignment targets remain
   fallback-eligible until member write/property Let/Set semantics move to HIR.
+  Follow-up continuation adds module-level `Enum` blocks to the production HIR route by declaring
+  enum members as module constants, substituting their integer values during HIR-to-bound lowering,
+  and projecting enum descriptors into runtime metadata. The older enum bytecode test was adjusted
+  away from byte-identical peephole expectations because HIR production may emit a different but
+  equivalent add shape. `Declare`, `Type`, and `New` remain explicit production residuals because
+  they carry native boundary, UDT layout/lifetime, and object-construction semantics that cannot be
+  no-op routed.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 

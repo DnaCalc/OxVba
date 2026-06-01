@@ -14,9 +14,9 @@ use crate::frontend_type_hooks::{
 use crate::optimize::optimize_module;
 use crate::resolve::{
     ArithOp, AssignmentIntent, BoundArrayDescriptor, BoundCallArg, BoundCallSyntax,
-    BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundModule, BoundParam,
-    BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType, CompareOp, LogicalBinOp,
-    RuntimeArrayDimExpr, collect_option_base,
+    BoundCaseClause, BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundEnumMemberDescriptor,
+    BoundExpr, BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt,
+    BoundType, CompareOp, LogicalBinOp, RuntimeArrayDimExpr, collect_option_base,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -149,10 +149,7 @@ fn reject_unsupported_production_syntax(source: &str) -> Result<(), HirProductio
 fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Option<SyntaxKind> {
     if matches!(
         node.kind(),
-        SyntaxKind::DeclareStmt
-            | SyntaxKind::TypeBlock
-            | SyntaxKind::EnumBlock
-            | SyntaxKind::NewExpr
+        SyntaxKind::DeclareStmt | SyntaxKind::TypeBlock | SyntaxKind::NewExpr
     ) {
         return Some(node.kind());
     }
@@ -194,6 +191,7 @@ pub fn lower_typed_hir_to_bound_module(
     typed_hir: &TypedHirModule,
 ) -> Result<BoundModule, HirProductionLoweringError> {
     let const_values = collect_const_values(source, typed_hir);
+    let enum_descriptors = collect_hir_enum_descriptors(source);
     let option_base = collect_option_base(&source.lines().map(str::to_string).collect::<Vec<_>>());
     let mut procedures = Vec::new();
     for decl in &typed_hir.module.declarations {
@@ -216,7 +214,7 @@ pub fn lower_typed_hir_to_bound_module(
         declarations: Vec::new(),
         declaration_types: HashMap::new(),
         array_descriptors: HashMap::new(),
-        enum_descriptors: Vec::new(),
+        enum_descriptors,
         external_declarations: HashMap::new(),
         body: Vec::new(),
         procedures,
@@ -1087,6 +1085,7 @@ fn symbol_name(
 }
 
 fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<SymbolId, BoundExpr> {
+    let enum_values = collect_hir_enum_constants(source);
     typed_hir
         .module
         .symbols
@@ -1097,10 +1096,133 @@ fn collect_const_values(source: &str, typed_hir: &TypedHirModule) -> HashMap<Sym
                 return None;
             }
             let span = symbol.provenance.span?;
-            let value = const_literal_after_span(source, span)?;
+            let value = const_literal_after_span(source, span).or_else(|| {
+                let name = typed_hir
+                    .module
+                    .symbols
+                    .name(symbol.name)
+                    .map(|name| name.folded.as_str())?;
+                enum_values.get(name).cloned()
+            })?;
             Some((symbol.id, value))
         })
         .collect()
+}
+
+fn collect_hir_enum_constants(source: &str) -> HashMap<String, BoundExpr> {
+    let mut constants = HashMap::new();
+    for descriptor in collect_hir_enum_descriptors(source) {
+        for member in descriptor.members {
+            constants.insert(
+                member.name.to_ascii_lowercase(),
+                BoundExpr::IntConst(member.value),
+            );
+        }
+    }
+    constants
+}
+
+fn collect_hir_enum_descriptors(source: &str) -> Vec<BoundEnumDescriptor> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut descriptors = Vec::new();
+    let mut index = 0usize;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if let Some((type_name, is_public)) = parse_hir_enum_header(line) {
+            index += 1;
+            let mut members = Vec::new();
+            let mut next_value = 0i32;
+            while index < lines.len() {
+                let line = lines[index].trim();
+                if line.eq_ignore_ascii_case("end enum") {
+                    break;
+                }
+                if let Some((name, explicit)) = parse_hir_enum_member(line) {
+                    let value = explicit.unwrap_or(next_value);
+                    members.push(BoundEnumMemberDescriptor {
+                        name,
+                        value,
+                        ordinal: members.len(),
+                        explicit_value: explicit.is_some(),
+                    });
+                    next_value = value.saturating_add(1);
+                }
+                index += 1;
+            }
+            descriptors.push(BoundEnumDescriptor {
+                type_name,
+                is_public,
+                members,
+            });
+        }
+        index += 1;
+    }
+    descriptors.sort_by(|left, right| {
+        left.type_name
+            .to_ascii_lowercase()
+            .cmp(&right.type_name.to_ascii_lowercase())
+    });
+    descriptors
+}
+
+fn parse_hir_enum_header(line: &str) -> Option<(String, bool)> {
+    strip_keyword_prefix_ci(line, "public enum")
+        .and_then(|rest| normalize_hir_ident(rest).map(|name| (name, true)))
+        .or_else(|| {
+            strip_keyword_prefix_ci(line, "private enum")
+                .and_then(|rest| normalize_hir_ident(rest).map(|name| (name, false)))
+        })
+        .or_else(|| {
+            strip_keyword_prefix_ci(line, "enum")
+                .and_then(|rest| normalize_hir_ident(rest).map(|name| (name, false)))
+        })
+}
+
+fn parse_hir_enum_member(line: &str) -> Option<(String, Option<i32>)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((lhs, rhs)) = trimmed.split_once('=') {
+        let name = normalize_hir_ident(lhs.trim())?;
+        let value = rhs.trim().parse::<i32>().ok()?;
+        return Some((name, Some(value)));
+    }
+    normalize_hir_ident(trimmed).map(|name| (name, None))
+}
+
+fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let trimmed = text.trim();
+    if trimmed.len() < keyword.len() || !trimmed[..keyword.len()].eq_ignore_ascii_case(keyword) {
+        return None;
+    }
+    let rest = &trimmed[keyword.len()..];
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some(rest.trim())
+}
+
+fn normalize_hir_ident(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() >= 2 {
+        let name = &trimmed[1..trimmed.len() - 1];
+        return is_valid_hir_identifier(name).then(|| name.to_ascii_lowercase());
+    }
+    let name = trimmed.split_whitespace().next().unwrap_or_default();
+    is_valid_hir_identifier(name).then(|| name.to_ascii_lowercase())
+}
+
+fn is_valid_hir_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 fn const_literal_after_span(
@@ -1952,6 +2074,28 @@ mod tests {
             !main.slots.iter().any(|slot| {
                 slot.name.eq_ignore_ascii_case("cbase") || slot.name.eq_ignore_ascii_case("cname")
             }),
+            "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_enum_member_constants() {
+        let source = "Public Enum Mode\n' ignored enum comment\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 4, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            !main
+                .slots
+                .iter()
+                .any(|slot| slot.name.eq_ignore_ascii_case("safe")),
             "{main:#?}"
         );
     }

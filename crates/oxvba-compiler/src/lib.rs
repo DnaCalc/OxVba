@@ -2966,6 +2966,10 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::AddConstI32 { value: 1, .. }))
+                || out
+                    .instructions
+                    .iter()
+                    .any(|i| matches!(i, Instruction::AddSlots { .. }))
         );
     }
 

@@ -331,6 +331,9 @@ fn collect_symbols_from_node(
         }
         SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
             declare_named_node(model, module_name, scope, SymbolNamespace::Type, node)?;
+            if node.kind() == SyntaxKind::EnumBlock {
+                declare_enum_member_symbols(model, module_name, scope, node)?;
+            }
         }
         SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
             for token in declaration_name_tokens(node) {
@@ -489,6 +492,81 @@ fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
         }
     }
     names
+}
+
+fn declare_enum_member_symbols(
+    model: &mut SymbolModel,
+    module_name: &str,
+    scope: ScopeId,
+    node: SyntaxNode<'_>,
+) -> Result<(), SymbolModelError> {
+    let block_start = node.text_range().0 as usize;
+    let text = node.text();
+    let mut line_start = 0usize;
+    for raw_line in text.split_inclusive('\n') {
+        let trimmed = raw_line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if trimmed.is_empty()
+            || lower == "end enum"
+            || lower.starts_with("enum ")
+            || lower.starts_with("public enum ")
+            || lower.starts_with("private enum ")
+        {
+            line_start += raw_line.len();
+            continue;
+        }
+        let Some(member_name) = enum_member_name_from_line(trimmed) else {
+            line_start += raw_line.len();
+            continue;
+        };
+        let Some(member_offset) = raw_line.find(member_name) else {
+            line_start += raw_line.len();
+            continue;
+        };
+        model.declare_symbol(
+            scope,
+            SymbolNamespace::Local,
+            normalize_identifier_token(member_name),
+            SourceProvenance {
+                module_name: Some(module_name.to_string()),
+                span: Some(FrontendSourceSpan {
+                    start: block_start + line_start + member_offset,
+                    end: block_start + line_start + member_offset + member_name.len(),
+                }),
+            },
+        )?;
+        line_start += raw_line.len();
+    }
+    Ok(())
+}
+
+fn enum_member_name_from_line(line: &str) -> Option<&str> {
+    let candidate = line
+        .split('=')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if is_valid_enum_member_identifier(candidate) {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn is_valid_enum_member_identifier(text: &str) -> bool {
+    let text = text
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(text);
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 fn first_identifier_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {

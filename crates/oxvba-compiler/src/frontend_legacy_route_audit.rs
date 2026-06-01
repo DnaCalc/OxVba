@@ -283,6 +283,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let enum_member_constants =
+        "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
+    findings.push(route_finding(
+        "enum member constant fixture",
+        enum_member_constants,
+        "bd-aprs.9.5",
+    ));
+
     let member_expression =
         "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
     findings.push(route_finding(
