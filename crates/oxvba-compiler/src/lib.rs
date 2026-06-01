@@ -11,6 +11,7 @@ pub mod frontend_diff;
 pub mod frontend_event_semantics;
 pub mod frontend_external_references;
 pub mod frontend_hir;
+pub mod frontend_language_service;
 pub mod frontend_lowering_contract;
 pub mod frontend_member_dispatch;
 pub mod frontend_operator_normalization;

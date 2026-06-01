@@ -700,6 +700,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/QUERY_INTEGRATION_2026-06-01.md`.
 - FE-9.4 Language-service reconciliation: replace duplicate `oxvba-languageservice` semantic
   logic with shared SemanticModel/HIR-backed queries.
+  Evidence: `docs/evidence/frontend_rework/LANGUAGE_SERVICE_RECONCILIATION_2026-06-01.md`.
 - FE-9.5 Terminal evidence and closure: run full compiler, VM, host, conformance, syntax, and
   selected Excel oracle checks; archive the legacy comparison harness when no longer needed.
 
