@@ -470,11 +470,35 @@ Remaining production residuals after this slice:
 - Existing project rewrite behavior remains compatibility/parity scaffolding until that route is
   replaced or quarantined by the construction-lowering continuation.
 
+## New Construction Binding Continuation
+
+The latest FE-8.5 continuation adds the first project-aware construction hook to HIR lowering:
+
+- `HirNewExpressionBinding { type_name, object_handle }` is an explicit lowering input for
+  constructor facts known by project binding.
+- `lower_typed_hir_to_bound_module_with_new_bindings(...)` preserves the default residual behavior
+  when no binding is supplied, but consumes supplied constructor handles in source order by
+  normalized type name.
+- A bound `New Widget` expression now lowers to typed
+  `StructuralIntrinsic::ProjectInstance(IntConst(handle))`, reusing the existing typed project
+  instance intrinsic instead of a magic helper name.
+- The focused regression proves `Set obj = New Widget` lowers to an object `Set` assignment with a
+  `ProjectInstance` structural intrinsic when supplied with handle `7`.
+
+Remaining production residuals after this slice:
+
+- Project compilation still has to generate and pass these `New` construction bindings from the
+  active-project class/COM binding pass. Until then, `project.rs` source-text rewrite behavior is
+  still present and must remain owned by FE-8.5/FE-9.6.
+- `Class_Initialize`, imported/COM activation, `Dim As New` lazy semantics, and source-map
+  accounting still need end-to-end integration on the production project route.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler new_expression --quiet`
+- `cargo test -p oxvba-compiler hir_lowering_binds_new_expression --quiet`
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler hir_production_lowering_accepts_enum_member_constants --quiet`
 - `cargo test -p oxvba-compiler compile_enum_member_usage_is_supported --quiet`
