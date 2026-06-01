@@ -237,7 +237,11 @@ fn collect_stmt_type_hooks(
         | HirStmtKind::Expr(_)
         | HirStmtKind::ExitDo
         | HirStmtKind::ExitFor
-        | HirStmtKind::ExitProcedure => {}
+        | HirStmtKind::ExitProcedure
+        | HirStmtKind::OnErrorResumeNext
+        | HirStmtKind::OnErrorGoto0
+        | HirStmtKind::ResumeNext
+        | HirStmtKind::Resume => {}
     }
 }
 

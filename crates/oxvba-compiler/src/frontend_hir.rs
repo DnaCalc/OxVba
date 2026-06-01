@@ -161,6 +161,10 @@ pub enum HirStmtKind {
     ExitDo,
     ExitFor,
     ExitProcedure,
+    OnErrorResumeNext,
+    OnErrorGoto0,
+    ResumeNext,
+    Resume,
     Block(Vec<HirStmtId>),
 }
 
@@ -706,6 +710,20 @@ impl HirBuilder {
                     kind,
                 })))
             }
+            SyntaxKind::OnErrorStmt => {
+                let kind = on_error_stmt_kind(node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind,
+                })))
+            }
+            SyntaxKind::ResumeStmt => {
+                let kind = resume_stmt_kind(node)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind,
+                })))
+            }
             SyntaxKind::SelectStmt => {
                 let expr = expression_children(node)
                     .into_iter()
@@ -1236,6 +1254,48 @@ fn exit_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> {
     }
     Err(HirBuildError::Unsupported(format!(
         "Exit statement without supported target: `{}`",
+        node.text().trim()
+    )))
+}
+
+fn on_error_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> {
+    let tokens = node
+        .child_tokens()
+        .into_iter()
+        .filter(|token| !token.kind.is_trivia())
+        .collect::<Vec<_>>();
+    if tokens.windows(2).any(|window| {
+        window[0].kind == SyntaxKind::KwResume && window[1].kind == SyntaxKind::KwNext
+    }) {
+        return Ok(HirStmtKind::OnErrorResumeNext);
+    }
+    if tokens.windows(2).any(|window| {
+        window[0].kind == SyntaxKind::KwGoTo
+            && window[1].kind == SyntaxKind::IntLiteral
+            && window[1].text.trim() == "0"
+    }) {
+        return Ok(HirStmtKind::OnErrorGoto0);
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "On Error statement without supported target: `{}`",
+        node.text().trim()
+    )))
+}
+
+fn resume_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> {
+    let tokens = node
+        .child_tokens()
+        .into_iter()
+        .filter(|token| !token.kind.is_trivia())
+        .collect::<Vec<_>>();
+    if tokens.iter().any(|token| token.kind == SyntaxKind::KwNext) {
+        return Ok(HirStmtKind::ResumeNext);
+    }
+    if tokens.len() == 1 && tokens[0].kind == SyntaxKind::KwResume {
+        return Ok(HirStmtKind::Resume);
+    }
+    Err(HirBuildError::Unsupported(format!(
+        "Resume statement without supported target: `{}`",
         node.text().trim()
     )))
 }

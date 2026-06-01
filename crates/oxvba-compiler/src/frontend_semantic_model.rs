@@ -238,7 +238,11 @@ impl SemanticModel {
             HirStmtKind::Empty
             | HirStmtKind::ExitDo
             | HirStmtKind::ExitFor
-            | HirStmtKind::ExitProcedure => {}
+            | HirStmtKind::ExitProcedure
+            | HirStmtKind::OnErrorResumeNext
+            | HirStmtKind::OnErrorGoto0
+            | HirStmtKind::ResumeNext
+            | HirStmtKind::Resume => {}
         }
     }
 

@@ -26,6 +26,7 @@ The initial production scope is intentionally narrow and explicit:
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
 - simple `For Each <var> In <iterable> ... Next` loops through the iterable backend path,
 - `Exit Do`, `Exit For`, and `Exit Sub` statements through HIR statement nodes,
+- `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume` statements,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
   ranges, comma-separated integer value clauses, integer `Case Is` clauses, and optional
   `Case Else`,
@@ -204,6 +205,17 @@ The sixteenth FE-8.5 slice closes a silent-partial-lowering hazard:
   multiline If;
 - production HIR lowering emits conditional branch bytecode for the single-line fixture; and
 - the production route audit now includes a single-line If fixture as `HirProduction`.
+
+## Basic Error-Control Continuation
+
+The seventeenth FE-8.5 slice removes the basic non-label error-control residual:
+
+- `OnErrorStmt` nodes lower into typed HIR variants for `On Error Resume Next` and
+  `On Error GoTo 0`;
+- `ResumeStmt` nodes lower into typed HIR variants for `Resume Next` and bare `Resume`;
+- production HIR lowering maps those variants to the existing backend error-control statements; and
+- label-targeted `On Error GoTo label` / `Resume label` remains unsupported until labels are
+  represented by the syntax/HIR route.
 
 ## Checks
 

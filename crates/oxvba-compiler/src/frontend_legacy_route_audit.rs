@@ -181,6 +181,20 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let on_error_resume_next_statement = "Sub Main()\nOn Error Resume Next\nResume Next\nEnd Sub\n";
+    findings.push(route_finding(
+        "on error resume next statement fixture",
+        on_error_resume_next_statement,
+        "bd-aprs.9.5",
+    ));
+
+    let on_error_goto_zero_statement = "Sub Main()\nOn Error GoTo 0\nResume\nEnd Sub\n";
+    findings.push(route_finding(
+        "on error goto zero statement fixture",
+        on_error_goto_zero_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),
@@ -311,6 +325,12 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("exit sub statement")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("on error resume next")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("on error goto zero")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }),
             "{report:#?}"

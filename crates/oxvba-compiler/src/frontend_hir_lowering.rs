@@ -73,8 +73,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::TypeBlock
             | SyntaxKind::EnumBlock
             | SyntaxKind::WithStmt
-            | SyntaxKind::OnErrorStmt
-            | SyntaxKind::ResumeStmt
             | SyntaxKind::ReDimStmt
             | SyntaxKind::EraseStmt
             | SyntaxKind::GoToStmt
@@ -376,6 +374,10 @@ fn lower_stmt(
         HirStmtKind::ExitDo => out.push(BoundStmt::ExitDo),
         HirStmtKind::ExitFor => out.push(BoundStmt::ExitFor),
         HirStmtKind::ExitProcedure => out.push(BoundStmt::ExitProcedure),
+        HirStmtKind::OnErrorResumeNext => out.push(BoundStmt::OnErrorResumeNext),
+        HirStmtKind::OnErrorGoto0 => out.push(BoundStmt::OnErrorGoto0),
+        HirStmtKind::ResumeNext => out.push(BoundStmt::ResumeNext),
+        HirStmtKind::Resume => out.push(BoundStmt::Resume),
         HirStmtKind::Empty => {}
     }
     Ok(())
@@ -1051,6 +1053,47 @@ mod tests {
         assert!(
             jump_count >= 3,
             "expected loop/procedure exit jumps: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_basic_error_control_statements() {
+        let source =
+            "Sub Main()\nOn Error Resume Next\nResume Next\nOn Error GoTo 0\nResume\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::SetOnErrorResumeNext)),
+            "expected On Error Resume Next bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::SetOnErrorGoto0)),
+            "expected On Error GoTo 0 bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ResumeNext)),
+            "expected Resume Next bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Resume)),
+            "expected Resume bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
