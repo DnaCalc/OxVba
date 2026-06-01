@@ -208,6 +208,19 @@ The twenty-third FE-8.5 slice removes the basic `RaiseEvent` statement residual:
 Named event arguments and full project event binding remain broader event/COM work outside this
 narrow route slice.
 
+## Const Continuation
+
+The twenty-fourth FE-8.5 slice removes the simple literal `Const` residual:
+
+- procedure and module `ConstStmt` declarations are accepted as HIR declarations without producing
+  runtime frame slots;
+- HIR production lowering substitutes simple integer, Boolean, and string literal constants at use
+  sites; and
+- the production route audit now includes a module-level literal constant fixture.
+
+Expression-valued constants, typed constants beyond the current literal subset, conditional
+compilation constants, and enum constants remain broader constant/compile-time evaluation work.
+
 ## ElseIf Continuation
 
 The fourteenth FE-8.5 slice widens block-If coverage:

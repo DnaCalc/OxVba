@@ -246,6 +246,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let const_statement = "Const CBase = 7\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
+    findings.push(route_finding(
+        "const statement fixture",
+        const_statement,
+        "bd-aprs.9.5",
+    ));
+
     findings.push(LegacyRouteAuditFinding {
         area: "project.rs source-text rewrite bridge",
         evidence: "production project compilation selects ModuleAwareBindPlan unconditionally; RewriteBridge remains only as an internal parity-test strategy".to_string(),

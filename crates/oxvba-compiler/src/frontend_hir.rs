@@ -466,7 +466,7 @@ impl HirBuilder {
         node: SyntaxNode<'_>,
     ) -> Result<Option<HirStmtId>, HirBuildError> {
         match node.kind() {
-            SyntaxKind::DimStmt => {
+            SyntaxKind::DimStmt | SyntaxKind::ConstStmt => {
                 if let Some(decl) = self.local_decl(scope, node)? {
                     self.declarations.push(decl);
                 }
