@@ -55,6 +55,36 @@ impl FrontendDiagnosticMapper {
         Self::from_parse_errors(parsed.errors())
     }
 
+    pub fn declare_ptrsafe_diagnostics(source: &str) -> Vec<FrontendDiagnostic> {
+        let mut diagnostics = Vec::new();
+        let mut offset = 0usize;
+        for line in source.split_inclusive('\n') {
+            let line_without_newline = line.trim_end_matches(['\r', '\n']);
+            let trimmed = line_without_newline.trim_start();
+            let leading_ws = line_without_newline.len() - trimmed.len();
+            let lower = trimmed.to_ascii_lowercase();
+            if !trimmed.starts_with('\'')
+                && lower.starts_with("declare ")
+                && !lower.starts_with("declare ptrsafe ")
+            {
+                diagnostics.push(FrontendDiagnostic {
+                    family: FrontendDiagnosticFamily::LegacyCompat("declare".to_string()),
+                    severity: FrontendDiagnosticSeverity::Error,
+                    code: "BIND-E-DECLARE-PTRSAFE-REQUIRED".to_string(),
+                    legacy_code: Some("BIND-E-DECLARE-PTRSAFE-REQUIRED".to_string()),
+                    span: FrontendSourceSpan {
+                        start: offset + leading_ws,
+                        end: offset + leading_ws + "Declare".len(),
+                    },
+                    message: "external procedure declaration rejected: PtrSafe keyword is required"
+                        .to_string(),
+                });
+            }
+            offset += line.len();
+        }
+        diagnostics
+    }
+
     pub fn push_parser_error(&mut self, offset: u32, message: impl Into<String>) {
         let start = offset as usize;
         self.diagnostics.push(FrontendDiagnostic {
@@ -240,6 +270,24 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.code == "PARSE-E-SYNTAX"),
             "expected SemanticModel parse diagnostic"
+        );
+    }
+
+    #[test]
+    fn diagnostic_mapper_reports_declare_ptrsafe_requirement() {
+        let source = "' Declare Function Ignored Lib \"host\" ()\nDeclare Function HostPing Lib \"host\" Alias \"ping\" () As Long\n";
+        let diagnostics = FrontendDiagnosticMapper::declare_ptrsafe_diagnostics(source);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "BIND-E-DECLARE-PTRSAFE-REQUIRED");
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("PtrSafe keyword is required")
+        );
+        assert_eq!(
+            diagnostics[0].span.start,
+            source.find("Declare Function HostPing").unwrap()
         );
     }
 }

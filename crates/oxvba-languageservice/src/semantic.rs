@@ -100,15 +100,56 @@ pub fn build_semantic_snapshot_with_provenance(
         .map(spanned_diagnostic_from_frontend)
         .collect::<Vec<_>>();
 
-    // Step 2: Resolve → BoundModule
-    let bound = resolve_symbols(source);
+    // Step 2: Prefer the compiler front-end HIR/SemanticModel facts for document symbols and
+    // callable signatures. The legacy CST/BoundModule correlation is built only as a compatibility
+    // fallback for syntax that the new front-end cannot bind yet.
+    let frontend_typed = frontend_queries.bind().ok();
+    let (symbols, callables, compatibility_diagnostics) = match frontend_typed.as_ref() {
+        Some(typed) => {
+            let symbols = symbol_table_from_frontend_hir(&parse_arc, typed, &provenance);
+            let callables = callables_from_frontend_hir(typed);
+            if symbols.symbols.is_empty() || callables.is_empty() {
+                let (checked, mut diagnostics) = legacy_checked_module(source);
+                diagnostics.extend(map_resolution_diagnostics(&parse_arc, &checked));
+                (
+                    correlate_symbols(&parse_arc, &checked, &provenance),
+                    callables_from_bound_module(&checked),
+                    diagnostics,
+                )
+            } else {
+                (symbols, callables, Vec::new())
+            }
+        }
+        None => {
+            let (checked, mut diagnostics) = legacy_checked_module(source);
+            diagnostics.extend(map_resolution_diagnostics(&parse_arc, &checked));
+            (
+                correlate_symbols(&parse_arc, &checked, &provenance),
+                callables_from_bound_module(&checked),
+                diagnostics,
+            )
+        }
+    };
 
-    // Step 3: Type-check
-    let (checked, type_errors) = match check_types(bound) {
+    // Combine all diagnostics
+    let mut diagnostics = frontend_diagnostics;
+    diagnostics.extend(compatibility_diagnostics);
+
+    SemanticSnapshot {
+        source: source_arc,
+        parse: parse_arc,
+        symbols,
+        callables,
+        diagnostics,
+        provenance,
+    }
+}
+
+fn legacy_checked_module(source: &str) -> (BoundModule, Vec<SpannedDiagnostic>) {
+    let bound = resolve_symbols(source);
+    match check_types(bound) {
         Ok(m) => (m, Vec::new()),
         Err(msg) => {
-            // check_types returns the module even on error via the message;
-            // re-resolve to get a module we can use
             let fallback = resolve_symbols(source);
             (
                 fallback,
@@ -119,38 +160,6 @@ pub fn build_semantic_snapshot_with_provenance(
                 }],
             )
         }
-    };
-
-    // Step 4: Prefer the compiler front-end HIR/SemanticModel facts for document symbols.
-    // The legacy CST/BoundModule correlation remains as a compatibility fallback for
-    // syntax that the new front-end cannot bind yet.
-    let frontend_typed = frontend_queries.bind().ok();
-    let symbols = frontend_typed
-        .as_ref()
-        .map(|typed| symbol_table_from_frontend_hir(&parse_arc, typed, &checked, &provenance))
-        .filter(|symbols| !symbols.symbols.is_empty())
-        .unwrap_or_else(|| correlate_symbols(&parse_arc, &checked, &provenance));
-    let callables = frontend_typed
-        .as_ref()
-        .map(callables_from_frontend_hir)
-        .filter(|callables| !callables.is_empty())
-        .unwrap_or_else(|| callables_from_bound_module(&checked));
-
-    // Step 5: Map resolution diagnostics to spans
-    let resolution_diags = map_resolution_diagnostics(&parse_arc, &checked);
-
-    // Combine all diagnostics
-    let mut diagnostics = frontend_diagnostics;
-    diagnostics.extend(type_errors);
-    diagnostics.extend(resolution_diags);
-
-    SemanticSnapshot {
-        source: source_arc,
-        parse: parse_arc,
-        symbols,
-        callables,
-        diagnostics,
-        provenance,
     }
 }
 
@@ -226,7 +235,6 @@ fn callables_from_bound_module(bound: &BoundModule) -> Vec<CallableSignatureInfo
 fn symbol_table_from_frontend_hir(
     parse: &Parse,
     typed: &TypedHirModule,
-    bound: &BoundModule,
     provenance: &SemanticProvenance,
 ) -> SymbolTable {
     let mut symbols = Vec::new();
@@ -248,7 +256,6 @@ fn symbol_table_from_frontend_hir(
             .hooks
             .declared_type(symbol.id)
             .map(|hook| bound_type_from_vba_type(hook.runtime_type))
-            .or_else(|| procedure_return_type(bound, &name.folded))
             .unwrap_or(BoundType::Variant);
         symbols.push(make_symbol(
             name.first_spelling.clone(),
@@ -307,14 +314,6 @@ fn procedure_scope_for_span(parse: &Parse, span: FrontendSourceSpan) -> Option<S
                 None
             }
         })
-}
-
-fn procedure_return_type(bound: &BoundModule, folded_name: &str) -> Option<BoundType> {
-    bound
-        .procedures
-        .iter()
-        .find(|procedure| procedure.name.eq_ignore_ascii_case(folded_name))
-        .map(|procedure| procedure.return_type)
 }
 
 fn bound_type_from_vba_type(ty: VbaTypeId) -> BoundType {

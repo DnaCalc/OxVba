@@ -60,7 +60,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     });
     findings.push(LegacyRouteAuditFinding {
         area: "language-service legacy BoundModule compatibility",
-        evidence: "oxvba-languageservice SemanticSnapshot no longer retains/exposes BoundModule or uses it for signature help, but semantic.rs still builds a transient BoundModule for fallback correlation and resolution diagnostics".to_string(),
+        evidence: "oxvba-languageservice SemanticSnapshot no longer retains/exposes BoundModule or uses it for signature help; semantic.rs builds BoundModule only for fallback correlation and resolution diagnostics when frontend HIR binding is unavailable".to_string(),
         disposition: LegacyRouteAuditDisposition::StaticResidual,
         owner: "bd-aprs.10.4",
     });

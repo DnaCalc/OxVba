@@ -1538,11 +1538,15 @@ fn is_identifier_byte(byte: u8) -> bool {
 }
 
 fn declare_ptrsafe_insertion_span(source: &str, message: &str) -> Option<TextSpan> {
-    let declared_line = extract_backtick_payload(message)?;
+    let declared_line = extract_backtick_payload(message);
     let mut offset = 0usize;
     for line in source.split_inclusive(['\n']) {
         let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.trim_start() != declared_line {
+        let line_matches = declared_line
+            .as_deref()
+            .is_some_and(|declared_line| trimmed.trim_start() == declared_line)
+            || declared_line.is_none() && declare_without_ptrsafe_line(trimmed.trim_start());
+        if !line_matches {
             offset += line.len();
             continue;
         }
@@ -1556,6 +1560,13 @@ fn declare_ptrsafe_insertion_span(source: &str, message: &str) -> Option<TextSpa
     }
 
     None
+}
+
+fn declare_without_ptrsafe_line(trimmed_line: &str) -> bool {
+    let lower = trimmed_line.to_ascii_lowercase();
+    !trimmed_line.starts_with('\'')
+        && lower.starts_with("declare ")
+        && !lower.starts_with("declare ptrsafe ")
 }
 
 fn extract_backtick_payload(message: &str) -> Option<String> {

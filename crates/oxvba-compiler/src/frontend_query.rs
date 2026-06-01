@@ -245,6 +245,9 @@ impl FrontendQueryDatabase {
             let mut diagnostics = FrontendDiagnosticMapper::from_parse_errors(&parse.errors)
                 .diagnostics()
                 .to_vec();
+            diagnostics.extend(FrontendDiagnosticMapper::declare_ptrsafe_diagnostics(
+                &self.source,
+            ));
             match self.typecheck() {
                 Ok(typecheck) => diagnostics.extend(typecheck.diagnostics),
                 Err(err) if parse.errors.is_empty() => diagnostics.push(FrontendDiagnostic {

@@ -16,16 +16,18 @@ Changes:
   the shared `SemanticModel` rather than requiring callers to hand-assemble semantic facts.
 - `crates/oxvba-languageservice/src/semantic.rs` now prefers compiler front-end query/HIR facts
   when building a `SemanticSnapshot`:
-  - diagnostics come from `FrontendQueryDatabase::diagnostics`;
+  - diagnostics come from `FrontendQueryDatabase::diagnostics`, including the PtrSafe-required
+    Declare diagnostic that drives the language-service quick fix;
   - document symbols are projected from typed HIR `SymbolModel` + type hooks;
   - callable signatures are projected into `SemanticSnapshot::callables` from typed HIR and type
     hooks, and signature help resolves against that projection;
   - the previous CST/legacy `BoundModule` correlation remains only as a compatibility fallback for
     syntax the new front-end cannot bind yet.
-- The existing legacy `BoundModule` is no longer retained or exposed on `SemanticSnapshot` and is no
-  longer used by signature help. It is still built transiently inside `semantic.rs` for fallback
-  symbol correlation, return-type compatibility, and resolution diagnostics. This is an explicit
-  remaining compatibility surface, not the preferred IDE query source.
+- The existing legacy `BoundModule` is no longer retained or exposed on `SemanticSnapshot`, is no
+  longer used by signature help, and is no longer built for supported HIR snapshots. It is built
+  only when front-end HIR binding is unavailable, to provide fallback symbol correlation,
+  return-type compatibility, and resolution diagnostics. This is an explicit remaining
+  compatibility surface, not the preferred IDE query source.
 
 Executable proof:
 
@@ -34,6 +36,8 @@ Executable proof:
   facts (`ByVal seed As Long`, `Dim label As String`);
 - language-service signature help resolves procedure parameters from `SemanticSnapshot::callables`
   rather than `BoundModule::procedures`;
+- PtrSafe quick fixes are driven by the front-end diagnostic layer without forcing a legacy
+  `BoundModule` build for otherwise HIR-supported snapshots;
 - full `oxvba-languageservice` tests still pass, covering hover, completions, symbols,
   diagnostics, navigation, rename analysis, and host-session surfaces.
 
@@ -57,7 +61,8 @@ Executable proof:
 - The service now consumes the compiler-owned query/HIR facts for the supported snapshot surface,
   which makes the IDE and compiler front-end agree on symbols, declared types, and diagnostics for
   that surface.
-- Not all language-service internals are retired. `semantic.rs` still builds a transient
-  `BoundModule` for fallback correlation and resolution diagnostics. That residual is narrower than
-  before, visible in the FE-9.6 audit, and should be retired when those diagnostics and fallback
-  symbol paths move fully onto shared front-end facts.
+- Not all language-service internals are retired. `semantic.rs` still builds a `BoundModule` on the
+  fallback path when HIR binding is unavailable. That residual is narrower than before: supported
+  HIR snapshots now avoid legacy bound construction for symbols, callables, signature help, and the
+  PtrSafe quick-fix diagnostic. The remaining fallback is visible in the FE-9.6 audit and should be
+  retired when unsupported syntax fallback symbol paths move fully onto shared front-end facts.

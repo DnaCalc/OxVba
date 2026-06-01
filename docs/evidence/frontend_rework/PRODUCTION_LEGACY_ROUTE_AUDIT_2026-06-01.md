@@ -20,9 +20,9 @@ The audit proves the good path and exposes the remaining production residuals:
 - project compilation now selects `ModuleAwareBindPlan` unconditionally; the old
   `ProjectLoweringStrategy::RewriteBridge` path remains only as an internal parity-test strategy,
   not a production environment-selected path;
-- `oxvba-languageservice` now prefers compiler query/HIR facts for symbols, callable signatures,
-  and diagnostics, and signature help no longer reads `BoundModule`; `semantic.rs` still builds a
-  transient legacy `BoundModule` for fallback symbol correlation and resolution diagnostics.
+- `oxvba-languageservice` now uses compiler query/HIR facts for symbols, callable signatures,
+  diagnostics, signature help, and the PtrSafe quick-fix diagnostic; `semantic.rs` now builds a
+  legacy `BoundModule` only on the fallback path when HIR binding is unavailable.
 
 This audit intentionally does not close FE-9.6. The workset terminal gate requires no scoped
 production compile path to depend on legacy `parse_expr`/string-splitting, `project.rs`
@@ -55,7 +55,7 @@ The audit result requires reopened delivery work rather than terminal closure:
 
 - Closing FE-9.6 would still be incorrect. The route audit no longer finds the project rewrite
   bridge as a production-selected path or signature help using `BoundModule`, but it still finds the
-  transient language-service compatibility residual.
+  fallback language-service compatibility residual.
 - The scoped HIR production path is real, but the workset goal is broader than that subset.
 - Procedure-call syntax is no longer itself the route blocker, and the call/coercion fixture now has
   matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering coverage.
