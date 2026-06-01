@@ -1,4 +1,5 @@
 use crate::frontend_hir::HirTypeId;
+use crate::frontend_query::FrontendQueryDatabase;
 use crate::frontend_semantic_model::{SemanticDiagnostic, SemanticModel, SemanticNodeKey};
 use crate::frontend_symbols::{FrontendSourceSpan, SymbolId};
 
@@ -23,6 +24,17 @@ pub fn answer_ide_query(
             .cloned()
             .collect(),
     }
+}
+
+pub fn answer_ide_query_from_source(
+    module_name: &str,
+    source: &str,
+    key: &SemanticNodeKey,
+    span: FrontendSourceSpan,
+) -> Result<IdeSemanticAnswer, String> {
+    let mut queries = FrontendQueryDatabase::new(module_name, source);
+    let model = queries.semantic_model()?;
+    Ok(answer_ide_query(&model, key, span))
 }
 
 #[cfg(test)]
@@ -78,5 +90,27 @@ mod tests {
         assert_eq!(answer.symbol, Some(symbol));
         assert_eq!(answer.ty, Some(ty));
         assert_eq!(answer.diagnostics[0].code, "BIND-I-SHARED");
+    }
+
+    #[test]
+    fn language_service_query_from_source_uses_frontend_query_database() {
+        let source = "Sub Main()\nDim count As Long\ncount = 1\nEnd Sub\n";
+        let count_start = source.rfind("count").expect("count use");
+        let span = FrontendSourceSpan {
+            start: count_start,
+            end: count_start + "count".len(),
+        };
+        let key = SemanticNodeKey {
+            syntax_kind: "IdentExpr".to_string(),
+            span,
+        };
+
+        let answer = answer_ide_query_from_source("Module1", source, &key, span)
+            .expect("query answer from source");
+        assert!(
+            answer.symbol.is_some(),
+            "expected symbol from query-backed SemanticModel"
+        );
+        assert!(answer.diagnostics.is_empty());
     }
 }

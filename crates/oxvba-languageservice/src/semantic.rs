@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use oxvba_compiler::VbaTypeId;
+use oxvba_compiler::frontend_diagnostics::{FrontendDiagnostic, FrontendDiagnosticSeverity};
+use oxvba_compiler::frontend_query::FrontendQueryDatabase;
+use oxvba_compiler::frontend_symbols::{FrontendSourceSpan, SymbolNamespace};
+use oxvba_compiler::frontend_type_hooks::TypedHirModule;
 use oxvba_compiler::resolve::{BoundModule, BoundType, resolve_symbols};
 use oxvba_compiler::typecheck::check_types;
 use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode, parse};
@@ -72,17 +77,14 @@ pub fn build_semantic_snapshot_with_provenance(
 
     // Step 1: Parse → lossless CST
     let cst = parse(source);
-    let parse_errors: Vec<SpannedDiagnostic> = cst
-        .errors()
-        .iter()
-        .map(|e| SpannedDiagnostic {
-            span: TextSpan::new(e.offset, e.offset),
-            message: e.message.clone(),
-            severity: DiagnosticSeverity::Error,
-        })
-        .collect();
-
     let parse_arc = Arc::new(cst);
+    let mut frontend_queries =
+        FrontendQueryDatabase::new(provenance.document_id.clone(), source.to_string());
+    let frontend_diagnostics = frontend_queries
+        .diagnostics()
+        .into_iter()
+        .map(spanned_diagnostic_from_frontend)
+        .collect::<Vec<_>>();
 
     // Step 2: Resolve → BoundModule
     let bound = resolve_symbols(source);
@@ -105,14 +107,21 @@ pub fn build_semantic_snapshot_with_provenance(
         }
     };
 
-    // Step 4: Correlation pass — build symbol table from CST + BoundModule
-    let symbols = correlate_symbols(&parse_arc, &checked, &provenance);
+    // Step 4: Prefer the compiler front-end HIR/SemanticModel facts for document symbols.
+    // The legacy CST/BoundModule correlation remains as a compatibility fallback for
+    // syntax that the new front-end cannot bind yet.
+    let symbols = frontend_queries
+        .bind()
+        .ok()
+        .map(|typed| symbol_table_from_frontend_hir(&parse_arc, &typed, &checked, &provenance))
+        .filter(|symbols| !symbols.symbols.is_empty())
+        .unwrap_or_else(|| correlate_symbols(&parse_arc, &checked, &provenance));
 
     // Step 5: Map resolution diagnostics to spans
     let resolution_diags = map_resolution_diagnostics(&parse_arc, &checked);
 
     // Combine all diagnostics
-    let mut diagnostics = parse_errors;
+    let mut diagnostics = frontend_diagnostics;
     diagnostics.extend(type_errors);
     diagnostics.extend(resolution_diags);
 
@@ -125,6 +134,143 @@ pub fn build_semantic_snapshot_with_provenance(
         symbols,
         diagnostics,
         provenance,
+    }
+}
+
+fn symbol_table_from_frontend_hir(
+    parse: &Parse,
+    typed: &TypedHirModule,
+    bound: &BoundModule,
+    provenance: &SemanticProvenance,
+) -> SymbolTable {
+    let mut symbols = Vec::new();
+    for symbol in typed.module.symbols.symbols() {
+        let Some(name) = typed.module.symbols.name(symbol.name) else {
+            continue;
+        };
+        if is_frontend_modifier_residue(&name.folded) {
+            continue;
+        }
+        let Some(kind) = frontend_symbol_kind(symbol.namespace) else {
+            continue;
+        };
+        let Some(span) = symbol.provenance.span else {
+            continue;
+        };
+        let scope = frontend_language_service_scope(parse, symbol.namespace, span);
+        let bound_type = typed
+            .hooks
+            .declared_type(symbol.id)
+            .map(|hook| bound_type_from_vba_type(hook.runtime_type))
+            .or_else(|| procedure_return_type(bound, &name.folded))
+            .unwrap_or(BoundType::Variant);
+        symbols.push(make_symbol(
+            name.first_spelling.clone(),
+            kind,
+            bound_type,
+            text_span_from_frontend(span),
+            scope,
+            provenance,
+        ));
+    }
+    symbols.sort_by_key(|symbol| symbol.definition_span.start);
+    SymbolTable { symbols }
+}
+
+fn frontend_symbol_kind(namespace: SymbolNamespace) -> Option<SymbolKind> {
+    match namespace {
+        SymbolNamespace::Procedure => Some(SymbolKind::Procedure),
+        SymbolNamespace::Parameter => Some(SymbolKind::Parameter),
+        SymbolNamespace::Local => Some(SymbolKind::Variable),
+        SymbolNamespace::Type => Some(SymbolKind::TypeDef),
+        _ => None,
+    }
+}
+
+fn frontend_language_service_scope(
+    parse: &Parse,
+    namespace: SymbolNamespace,
+    span: FrontendSourceSpan,
+) -> ScopeId {
+    if matches!(
+        namespace,
+        SymbolNamespace::Procedure | SymbolNamespace::Type | SymbolNamespace::Module
+    ) {
+        return 0;
+    }
+    procedure_scope_for_span(parse, span).unwrap_or(0)
+}
+
+fn procedure_scope_for_span(parse: &Parse, span: FrontendSourceSpan) -> Option<ScopeId> {
+    let proc_kinds = [
+        SyntaxKind::SubDecl,
+        SyntaxKind::FunctionDecl,
+        SyntaxKind::PropertyDecl,
+    ];
+    parse
+        .syntax()
+        .child_nodes()
+        .into_iter()
+        .filter(|node| proc_kinds.contains(&node.kind()))
+        .enumerate()
+        .find_map(|(idx, node)| {
+            let (start, end) = node.text_range();
+            if span.start as u32 >= start && (span.end as u32) <= end {
+                Some((idx + 1) as ScopeId)
+            } else {
+                None
+            }
+        })
+}
+
+fn procedure_return_type(bound: &BoundModule, folded_name: &str) -> Option<BoundType> {
+    bound
+        .procedures
+        .iter()
+        .find(|procedure| procedure.name.eq_ignore_ascii_case(folded_name))
+        .map(|procedure| procedure.return_type)
+}
+
+fn bound_type_from_vba_type(ty: VbaTypeId) -> BoundType {
+    match ty {
+        VbaTypeId::Boolean => BoundType::Boolean,
+        VbaTypeId::Byte => BoundType::Byte,
+        VbaTypeId::Integer => BoundType::Integer,
+        VbaTypeId::Long => BoundType::Long,
+        VbaTypeId::LongLong => BoundType::LongLong,
+        VbaTypeId::LongPtr => BoundType::LongPtr,
+        VbaTypeId::Single => BoundType::Single,
+        VbaTypeId::Double => BoundType::Double,
+        VbaTypeId::Currency => BoundType::Currency,
+        VbaTypeId::Date => BoundType::Date,
+        VbaTypeId::String => BoundType::String,
+        VbaTypeId::Object => BoundType::Object,
+        VbaTypeId::Array => BoundType::Array,
+        _ => BoundType::Variant,
+    }
+}
+
+fn is_frontend_modifier_residue(name: &str) -> bool {
+    matches!(
+        name,
+        "withevents" | "optional" | "byval" | "byref" | "paramarray"
+    )
+}
+
+fn text_span_from_frontend(span: FrontendSourceSpan) -> TextSpan {
+    TextSpan::new(span.start as u32, span.end as u32)
+}
+
+fn spanned_diagnostic_from_frontend(diagnostic: FrontendDiagnostic) -> SpannedDiagnostic {
+    SpannedDiagnostic {
+        span: text_span_from_frontend(diagnostic.span),
+        message: diagnostic.message,
+        severity: match diagnostic.severity {
+            FrontendDiagnosticSeverity::Error => DiagnosticSeverity::Error,
+            FrontendDiagnosticSeverity::Warning | FrontendDiagnosticSeverity::Info => {
+                DiagnosticSeverity::Warning
+            }
+        },
     }
 }
 
@@ -553,6 +699,33 @@ mod tests {
         let sym = snap.symbols.symbol_at(counter_pos);
         assert!(sym.is_some(), "expected symbol at offset {counter_pos}");
         assert_eq!(sym.unwrap().name, "counter");
+    }
+
+    #[test]
+    fn snapshot_symbols_prefer_compiler_frontend_hir_facts() {
+        let src =
+            "Sub Test(ByVal seed As Long)\n    Dim label As String\n    label = \"ok\"\nEnd Sub\n";
+        let snap = build_semantic_snapshot(src);
+
+        let seed = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "seed")
+            .expect("parameter from compiler HIR facts");
+        assert_eq!(seed.kind, SymbolKind::Parameter);
+        assert_eq!(seed.bound_type, BoundType::Long);
+        assert_eq!(seed.scope, 1);
+
+        let label = snap
+            .symbols
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "label")
+            .expect("local from compiler HIR facts");
+        assert_eq!(label.kind, SymbolKind::Variable);
+        assert_eq!(label.bound_type, BoundType::String);
+        assert_eq!(label.scope, 1);
     }
 
     #[test]
