@@ -155,7 +155,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::WithStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
-            | SyntaxKind::MemberExpr
             | SyntaxKind::NewExpr
     ) {
         return Some(node.kind());
@@ -754,6 +753,7 @@ fn lower_expr(
             lower_binary_expr(typed_hir, const_values, *op, *lhs, *rhs)
         }
         HirExprKind::Call(call) => lower_call_expr(typed_hir, const_values, *call),
+        HirExprKind::Member(member) => lower_member_expr(typed_hir, const_values, *member),
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "expression {other:?}"
         ))),
@@ -798,23 +798,6 @@ fn lower_call_expr(
             "missing call".to_string(),
         ));
     };
-    let target_symbol = typed_hir
-        .module
-        .arenas
-        .expr(call_data.target)
-        .and_then(|expr| match expr.kind {
-            crate::frontend_hir::HirExprKind::Name(symbol) => {
-                typed_hir.module.symbols.symbol(symbol)
-            }
-            _ => None,
-        });
-    if !target_symbol.is_some_and(|symbol| {
-        symbol.namespace == crate::frontend_symbols::SymbolNamespace::Procedure
-    }) {
-        return Err(HirProductionLoweringError::Unsupported(
-            "call target is not a procedure symbol".to_string(),
-        ));
-    }
     let target = lower_expr(typed_hir, const_values, call_data.target)?;
     let args = call_data
         .args
@@ -828,11 +811,59 @@ fn lower_call_expr(
         })
         .collect::<Result<Vec<_>, _>>()?;
     match target {
-        BoundExpr::Var(name) => Ok(BoundExpr::ProcCall { name, args }),
+        BoundExpr::Var(name) => {
+            let target_symbol = typed_hir
+                .module
+                .arenas
+                .expr(call_data.target)
+                .and_then(|expr| match expr.kind {
+                    crate::frontend_hir::HirExprKind::Name(symbol) => {
+                        typed_hir.module.symbols.symbol(symbol)
+                    }
+                    _ => None,
+                });
+            if !target_symbol.is_some_and(|symbol| {
+                symbol.namespace == crate::frontend_symbols::SymbolNamespace::Procedure
+            }) {
+                return Err(HirProductionLoweringError::Unsupported(
+                    "call target is not a procedure symbol".to_string(),
+                ));
+            }
+            Ok(BoundExpr::ProcCall { name, args })
+        }
+        BoundExpr::Member {
+            receiver, member, ..
+        } => Ok(BoundExpr::Member {
+            receiver,
+            member,
+            args,
+        }),
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "call target {other:?}"
         ))),
     }
+}
+
+fn lower_member_expr(
+    typed_hir: &TypedHirModule,
+    const_values: &HashMap<SymbolId, BoundExpr>,
+    member: crate::frontend_hir::HirMemberId,
+) -> Result<BoundExpr, HirProductionLoweringError> {
+    let Some(member_data) = typed_hir.module.arenas.member(member) else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "missing member expression".to_string(),
+        ));
+    };
+    let Some(receiver) = member_data.receiver else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "member expression without receiver".to_string(),
+        ));
+    };
+    Ok(BoundExpr::Member {
+        receiver: Box::new(lower_expr(typed_hir, const_values, receiver)?),
+        member: symbol_name(typed_hir, member_data.symbol)?,
+        args: Vec::new(),
+    })
 }
 
 fn lower_case_clause(
@@ -1699,6 +1730,46 @@ mod tests {
             "{bytecode:#?}"
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_value_side_member_expressions() {
+        let source =
+            "Sub Main()\nDim obj\nDim x\nDim y\nx = obj.Value\ny = obj.Method(1)\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            !bytecode.instructions.is_empty(),
+            "expected member expression bytecode"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| slot.name == "obj"));
+        assert!(main.slots.iter().any(|slot| slot.name == "x"));
+        assert!(main.slots.iter().any(|slot| slot.name == "y"));
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_member_assignment_target_for_fallback() {
+        let source = "Sub Main()\nDim obj\nobj.Value = 1\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("member assignment target remains residual");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "member assignment target must remain fallback-eligible, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_rejects_bang_member_access_for_fallback() {
+        let source = "Sub Main()\nDim obj\nDim x\nx = obj!Value\nEnd Sub\n";
+        let err = compile_source_with_runtime_metadata_via_hir(source)
+            .expect_err("bang member access remains residual");
+
+        assert!(
+            matches!(err, HirProductionLoweringError::Unsupported(_)),
+            "bang member access must remain fallback-eligible, got {err:?}"
+        );
     }
 
     #[test]

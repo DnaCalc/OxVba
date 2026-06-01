@@ -884,6 +884,10 @@ Candidate bead units:
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata.
+  Twenty-sixth reopened continuation adds explicit-receiver value-side dot-member read/call
+  expressions through HIR member facts and the existing backend late-bound member expression shape.
+  Bang access, member assignment targets, `With` shorthand, object construction, default-member/property
+  selection, project/class binding, COM binding, and writeback behavior remain residual work.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
@@ -936,7 +940,8 @@ Candidate bead units:
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and
   basic `RaiseEvent` and literal `Const`. The workset remains open for broader terminal evidence
   and expanded route-audit coverage. Follow-up continuation also covers a one-dimensional
-  dynamic-array runtime `ReDim` fixture.
+  dynamic-array runtime `ReDim` fixture and an explicit-receiver value-side dot-member read/call
+  fixture.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

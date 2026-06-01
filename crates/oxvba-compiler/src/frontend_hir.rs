@@ -3,8 +3,8 @@ use thiserror::Error;
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
 use crate::frontend_symbols::{
-    FrontendSourceSpan, ScopeId, ScopeKind, SymbolId, SymbolModel, SymbolModelError,
-    SymbolNamespace, build_symbol_model_from_source,
+    FrontendSourceSpan, ScopeId, ScopeKind, SourceProvenance, SymbolId, SymbolModel,
+    SymbolModelError, SymbolNamespace, build_symbol_model_from_source,
 };
 use crate::resolve::normalize_ident;
 
@@ -1069,6 +1069,31 @@ impl HirBuilder {
                 });
                 HirExprKind::Call(call)
             }
+            SyntaxKind::MemberExpr => {
+                let receiver = expression_children(node)
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "member expression without receiver: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let receiver = self.lower_expr(scope, receiver)?;
+                let member_name = direct_member_name(node).ok_or_else(|| {
+                    HirBuildError::Unsupported(format!(
+                        "member expression without supported member name: `{}`",
+                        node.text().trim()
+                    ))
+                })?;
+                let member_symbol = self.member_symbol(scope, &member_name, node)?;
+                let member = self.arenas.alloc_member(HirMember {
+                    cst: cst(node),
+                    receiver: Some(receiver),
+                    symbol: member_symbol,
+                });
+                HirExprKind::Member(member)
+            }
             other => {
                 return Err(HirBuildError::Unsupported(format!(
                     "unsupported expression node {other:?}: `{}`",
@@ -1080,6 +1105,33 @@ impl HirBuilder {
             cst: cst(node),
             kind,
         }))
+    }
+
+    fn member_symbol(
+        &mut self,
+        scope: ScopeId,
+        name: &str,
+        node: SyntaxNode<'_>,
+    ) -> Result<SymbolId, HirBuildError> {
+        if let Some(symbol) =
+            self.symbols
+                .resolve_in_scope_chain(scope, SymbolNamespace::Member, name)?
+        {
+            return Ok(symbol);
+        }
+        let (start, end) = node.text_range();
+        Ok(self.symbols.declare_symbol(
+            scope,
+            SymbolNamespace::Member,
+            name,
+            SourceProvenance {
+                module_name: None,
+                span: Some(FrontendSourceSpan {
+                    start: start as usize,
+                    end: end as usize,
+                }),
+            },
+        )?)
     }
 
     fn local_decl(
@@ -1230,6 +1282,37 @@ fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
         .and_then(|value| value.strip_suffix(']'))
         .unwrap_or(trimmed);
     normalize_ident(name)
+}
+
+fn direct_member_name(node: SyntaxNode<'_>) -> Option<String> {
+    let mut after_member_operator = false;
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::Dot => {
+                after_member_operator = true;
+            }
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::Bang => return None,
+            SyntaxElement::Token(token)
+                if after_member_operator
+                    && !token.kind.is_trivia()
+                    && (token.kind == SyntaxKind::Ident
+                        || token.kind == SyntaxKind::BracketedIdent
+                        || token.kind.is_keyword()) =>
+            {
+                let text = token
+                    .text
+                    .strip_prefix('[')
+                    .and_then(|value| value.strip_suffix(']'))
+                    .unwrap_or(token.text);
+                return normalize_ident(text);
+            }
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => {
+                after_member_operator = false;
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn property_kind(node: SyntaxNode<'_>) -> HirPropertyKind {

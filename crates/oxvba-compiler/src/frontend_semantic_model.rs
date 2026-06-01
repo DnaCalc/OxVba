@@ -286,10 +286,25 @@ impl SemanticModel {
                 self.index_expr_tree(lhs);
                 self.index_expr_tree(rhs);
             }
-            HirExprKind::Call(_)
-            | HirExprKind::Member(_)
-            | HirExprKind::Missing
-            | HirExprKind::Literal(_) => {}
+            HirExprKind::Call(call) => {
+                let Some(call_data) = self.hir.call(call).cloned() else {
+                    return;
+                };
+                self.index_expr_tree(call_data.target);
+                for arg in call_data.args {
+                    self.index_expr_tree(arg);
+                }
+            }
+            HirExprKind::Member(member) => {
+                let Some(member_data) = self.hir.member(member).cloned() else {
+                    return;
+                };
+                self.record_expr_symbol(expr, member_data.symbol);
+                if let Some(receiver) = member_data.receiver {
+                    self.index_expr_tree(receiver);
+                }
+            }
+            HirExprKind::Missing | HirExprKind::Literal(_) => {}
         }
     }
 }
