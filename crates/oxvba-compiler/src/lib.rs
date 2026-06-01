@@ -8,6 +8,7 @@ pub mod frontend_assignment_semantics;
 pub mod frontend_class_semantics;
 pub mod frontend_diagnostics;
 pub mod frontend_diff;
+pub mod frontend_event_semantics;
 pub mod frontend_hir;
 pub mod frontend_member_dispatch;
 pub mod frontend_project_symbols;
