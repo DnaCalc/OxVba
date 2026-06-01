@@ -54,6 +54,8 @@ The 2026-06-01 continuation added:
   groups and exposes default-member accessor lookup by owner/kind.
 - active-project default-member candidate selection now consults the front-end default-member route
   before falling back to the legacy `ProcedureDecl` scan.
+- the front-end default-member route also implements the existing unique single-candidate property
+  rule when no `VB_UserMemId = 0` attribute exists.
 - parseable sources now run front-end assignment diagnostics before legacy symbol resolution and
   type checking. The diagnostic messages are mapped to the established compiler wording so the
   production API shape remains stable while the decision comes from typed HIR facts.
@@ -112,8 +114,10 @@ The 2026-06-01 continuation added:
   selection.
 - Fresh-eyes review found that post-selection rebinding still left the actual default-member
   decision on the legacy scan. The project symbol index now records default-member attributes and
-  active-project default-member candidate selection uses that front-end route first. The legacy scan
-  remains as fallback for rewrite-bridge, referenced projects, non-property members, and route gaps.
+  active-project default-member candidate selection uses that front-end route first. A second
+  fresh-eyes pass found that the non-authoritative single-candidate default-member rule was still
+  legacy-only; the front-end route table now owns that rule too. The legacy scan remains as fallback
+  for rewrite-bridge, referenced projects, non-property members, and route gaps.
 - Front-end assignment diagnostics now participate in the production compile path for sources the
   front-end can type. Fresh-eyes review corrected the `Set` diagnostic rules first: Object/Variant
   lanes are not compile-time diagnostics because runtime guards handle them, while scalar target or

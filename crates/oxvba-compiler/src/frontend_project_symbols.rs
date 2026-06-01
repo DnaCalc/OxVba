@@ -225,6 +225,42 @@ impl ProjectSymbolTables {
         unique_route(&routes)
     }
 
+    pub fn resolve_default_or_single_property_accessor(
+        &self,
+        owner: &str,
+        kind: ProjectSymbolKind,
+    ) -> Option<ProjectSymbolRoute> {
+        self.resolve_default_member_accessor(owner, kind)
+            .or_else(|| {
+                let mut routes = self
+                    .owner_member_routes(owner)
+                    .into_iter()
+                    .filter(|route| route.kind == kind)
+                    .collect::<Vec<_>>();
+                routes.sort_by_key(|route| (route.symbol.0, route_kind_order(route.kind)));
+                routes.dedup();
+                unique_route(&routes)
+            })
+    }
+
+    fn owner_member_routes(&self, owner: &str) -> Vec<ProjectSymbolRoute> {
+        let owner = fold_identifier(owner);
+        let mut routes = Vec::new();
+        for ((route_owner, _), owner_routes) in &self.module_members {
+            if route_owner == &owner {
+                routes.extend(owner_routes.iter().copied());
+            }
+        }
+        for ((route_owner, _), owner_routes) in &self.class_members {
+            if route_owner == &owner {
+                routes.extend(owner_routes.iter().copied());
+            }
+        }
+        routes.sort_by_key(|route| (route.symbol.0, route_kind_order(route.kind)));
+        routes.dedup();
+        routes
+    }
+
     fn resolve_owner_member_candidates(
         &self,
         owner: &str,
@@ -1034,6 +1070,47 @@ Attribute Value.VB_UserMemId = 0
                 .resolve_default_member_accessor("Widget", ProjectSymbolKind::PropertyLet)
                 .map(|route| route.kind),
             Some(ProjectSymbolKind::PropertyLet)
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_resolves_single_property_accessor_as_default_candidate() {
+        let module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            r#"
+Public Property Get Value() As Long
+    Value = 1
+End Property
+"#,
+        )
+        .expect("module");
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        assert_eq!(
+            index
+                .tables
+                .resolve_default_or_single_property_accessor(
+                    "Widget",
+                    ProjectSymbolKind::PropertyGet
+                )
+                .map(|route| route.kind),
+            Some(ProjectSymbolKind::PropertyGet)
+        );
+        assert_eq!(
+            index.tables.resolve_default_or_single_property_accessor(
+                "Widget",
+                ProjectSymbolKind::PropertyLet
+            ),
+            None
         );
     }
 }

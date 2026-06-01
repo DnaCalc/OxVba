@@ -5579,7 +5579,7 @@ fn resolve_default_member_target_via_frontend_route(
     let expected_kind = project_symbol_kind_for_property_decl(expected_decl_kind);
     let Some(route) = project_symbol_index
         .tables
-        .resolve_default_member_accessor(&owner_name, expected_kind)
+        .resolve_default_or_single_property_accessor(&owner_name, expected_kind)
     else {
         return Ok(None);
     };
@@ -5597,7 +5597,6 @@ fn resolve_default_member_target_via_frontend_route(
     if decl.project_name != target_project
         || decl.module_name != target_module
         || decl.kind != expected_decl_kind
-        || !decl.is_default_member
         || !is_visible_from_active_project(decl, active_project, current_project, current_module)
     {
         return Err(ProjectCompileError::BackendCompile {
