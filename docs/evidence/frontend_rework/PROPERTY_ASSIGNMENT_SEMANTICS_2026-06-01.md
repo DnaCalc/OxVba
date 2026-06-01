@@ -125,8 +125,11 @@ The 2026-06-01 continuation added:
 - The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
   rejecting modules that the current parser cannot fully parse, but it only records signature-level
   procedures/properties/fields.
-- This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
-  still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
-  assignment diagnostics for compiled projects. Next step: narrow or quarantine the remaining
-  legacy fallback scans and prove the property/default-member matrix is covered by the front-end
-  production route rather than legacy-only behavior.
+- Closure review: the remaining `ProcedureDecl` scans in `project.rs` are no longer authoritative
+  for active-project property/default-member property routes. Active-project property declarations
+  are indexed and validated up front, explicit property Get/Let/Set rewrites consult the front-end
+  route first, default-member attribute and single-candidate selection consult the front-end route
+  first, and parseable assignment diagnostics run from typed-HIR facts before legacy type checking.
+  Residual fallback scans are classified as compatibility fallback for rewrite-bridge mode,
+  referenced projects, non-property function/sub/member probes, and parser-incomplete route gaps;
+  those are outside FE-7.3 and are covered by later FE-7/FE-8 migration beads.
