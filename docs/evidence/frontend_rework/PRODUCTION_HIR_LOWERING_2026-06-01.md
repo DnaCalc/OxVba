@@ -231,6 +231,11 @@ symbol/fact declaration with no direct bytecode; declared-event signature valida
 arguments, WithEvents handler matching, Implements coupling, and project event binding remain
 broader event/COM work.
 
+Follow-up continuation accepts the existing single-source `Implements IFoo` directive shape on the
+HIR production route as a directive with no direct bytecode. Project/class Implements validation,
+interface member matching, imported-interface handling, and Implements/event coupling remain
+project/front-end semantic work outside this single-source route slice.
+
 ## Const Continuation
 
 The twenty-fourth FE-8.5 slice removes the simple literal `Const` residual:
