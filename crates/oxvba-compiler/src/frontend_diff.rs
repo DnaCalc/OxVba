@@ -108,11 +108,18 @@ pub enum ExpectedBytecodeDrift {
     IntentionalImprovement,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedDiagnosticDrift {
+    Bug,
+    IntentionalImprovement,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffClassificationInput {
     pub fixture_name: String,
     pub fixture_path: String,
     pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
+    pub expected_diagnostic_drift: Option<ExpectedDiagnosticDrift>,
     pub rationale: String,
     pub close_condition: String,
 }
@@ -150,6 +157,7 @@ pub struct FrontendCorpusFixture {
     pub class: FrontendCorpusClass,
     pub source: Option<String>,
     pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
+    pub expected_diagnostic_drift: Option<ExpectedDiagnosticDrift>,
     pub rationale: String,
     pub close_condition: String,
 }
@@ -220,13 +228,26 @@ pub fn classify_frontend_diff(
         input.rationale.trim().is_empty() || input.close_condition.trim().is_empty();
     let kind = if reasons.is_empty() {
         DiffClassificationKind::Equivalent
-    } else if !report.diagnostics_match
-        || !report.metadata_matches
+    } else if missing_policy {
+        DiffClassificationKind::Bug
+    } else if !report.diagnostics_match {
+        match (
+            input.expected_diagnostic_drift,
+            has_one_sided_bytecode_availability(report),
+        ) {
+            (Some(ExpectedDiagnosticDrift::IntentionalImprovement), true) => {
+                DiffClassificationKind::IntentionalImprovement
+            }
+            (Some(ExpectedDiagnosticDrift::IntentionalImprovement), false)
+            | (Some(ExpectedDiagnosticDrift::Bug), _)
+            | (None, _) => DiffClassificationKind::Bug,
+        }
+    } else if !report.metadata_matches
         || !report.execution_trace_matches
         || !report.observable_output_matches
     {
         DiffClassificationKind::Bug
-    } else if !report.bytecode_matches && !missing_policy {
+    } else if !report.bytecode_matches {
         match input.expected_bytecode_drift {
             Some(ExpectedBytecodeDrift::HarmlessDrift) => DiffClassificationKind::HarmlessDrift,
             Some(ExpectedBytecodeDrift::IntentionalImprovement) => {
@@ -326,6 +347,7 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
             fixture_name: fixture.name.clone(),
             fixture_path: fixture.fixture_path.clone(),
             expected_bytecode_drift: fixture.expected_bytecode_drift,
+            expected_diagnostic_drift: fixture.expected_diagnostic_drift,
             rationale: fixture.rationale.clone(),
             close_condition: fixture.close_condition.clone(),
         },
@@ -371,6 +393,19 @@ fn make_report(left: FrontendObservation, right: FrontendObservation) -> Fronten
         left,
         right,
     }
+}
+
+fn has_one_sided_bytecode_availability(report: &FrontendDiffReport) -> bool {
+    matches!(
+        (&report.left.bytecode, &report.right.bytecode),
+        (
+            BytecodeSummaryStatus::Available(_),
+            BytecodeSummaryStatus::NotAvailable
+        ) | (
+            BytecodeSummaryStatus::NotAvailable,
+            BytecodeSummaryStatus::Available(_)
+        )
+    )
 }
 
 fn summarize_bytecode(bytecode: &Bytecode) -> BytecodeSummary {
@@ -562,6 +597,7 @@ mod tests {
                 fixture_name: "supported_assignment".to_string(),
                 fixture_path: "inline:frontend_diff".to_string(),
                 expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -579,6 +615,7 @@ mod tests {
                 fixture_name: "synthetic_missing_policy".to_string(),
                 fixture_path: "inline:frontend_diff".to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -603,6 +640,7 @@ mod tests {
                     "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-1"
                         .to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
+                expected_diagnostic_drift: None,
                 rationale:
                     "alternate lowering reuses temporaries while preserving metadata and output"
                         .to_string(),
@@ -629,6 +667,7 @@ mod tests {
                     "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-2"
                         .to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::IntentionalImprovement),
+                expected_diagnostic_drift: None,
                 rationale: "new lowering fixes a documented legacy divergence".to_string(),
                 close_condition:
                     "requires fixture evidence linking the divergence and expected VBA behavior"
@@ -642,6 +681,89 @@ mod tests {
     }
 
     #[test]
+    fn diff_classifier_requires_policy_for_diagnostic_improvement() {
+        let report = inline_statement_improvement_report();
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "inline_statement_without_policy".to_string(),
+                fixture_path: "inline:frontend_diff::inline_statement_improvement_report"
+                    .to_string(),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: "legacy rejects a v2 accepted inline statement sequence".to_string(),
+                close_condition: "requires v2 compile success and follow-up execution evidence"
+                    .to_string(),
+            },
+        );
+        assert_eq!(classification.kind, DiffClassificationKind::Bug);
+        assert!(
+            classification
+                .reasons
+                .contains(&"diagnostics differ".to_string()),
+            "{classification:#?}"
+        );
+    }
+
+    #[test]
+    fn diff_classifier_classifies_documented_diagnostic_improvement() {
+        let report = inline_statement_improvement_report();
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "inline_statement_separator_bridge_improvement".to_string(),
+                fixture_path:
+                    "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-3"
+                        .to_string(),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                rationale:
+                    "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
+                        .to_string(),
+                close_condition:
+                    "keep as improvement only while v2 compiles and FE-5.4 adds execution evidence"
+                        .to_string(),
+            },
+        );
+        assert_eq!(
+            classification.kind,
+            DiffClassificationKind::IntentionalImprovement
+        );
+        assert!(
+            classification
+                .reasons
+                .contains(&"diagnostics differ".to_string()),
+            "{classification:#?}"
+        );
+    }
+
+    #[test]
+    fn diff_classifier_rejects_diagnostic_policy_when_both_sides_compile() {
+        let mut report =
+            compare_legacy_to_frontend_v2("Sub Main()\n    Dim x As Long\n    x = 1\nEnd Sub\n");
+        report
+            .right
+            .diagnostics
+            .push("synthetic warning drift".to_string());
+        report.diagnostics_match = false;
+
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "diagnostic_drift_without_acceptance_improvement".to_string(),
+                fixture_path: "inline:frontend_diff::synthetic_warning_drift".to_string(),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                rationale: "synthetic diagnostic drift while both sides compile".to_string(),
+                close_condition:
+                    "should not be classified as an acceptance improvement without one-sided compile availability"
+                        .to_string(),
+            },
+        );
+        assert_eq!(classification.kind, DiffClassificationKind::Bug);
+    }
+
+    #[test]
     fn frontend_corpus_runner_runs_source_backed_rows_and_skips_residuals() {
         let report = run_frontend_diff_corpus(&[
             FrontendCorpusFixture {
@@ -650,6 +772,7 @@ mod tests {
                 class: FrontendCorpusClass::CompilerUnit,
                 source: Some("Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n".to_string()),
                 expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -659,6 +782,7 @@ mod tests {
                 class: FrontendCorpusClass::ConformanceCase,
                 source: Some("Sub Main()\n    Dim y As Long\n    y = 3\nEnd Sub\n".to_string()),
                 expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -668,6 +792,7 @@ mod tests {
                 class: FrontendCorpusClass::HostProject,
                 source: Some("Sub Main()\nEnd Sub\n".to_string()),
                 expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -677,6 +802,7 @@ mod tests {
                 class: FrontendCorpusClass::ExcelOracle,
                 source: None,
                 expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -745,5 +871,11 @@ mod tests {
         }
         report.bytecode_matches = false;
         report
+    }
+
+    fn inline_statement_improvement_report() -> FrontendDiffReport {
+        compare_legacy_to_frontend_v2(
+            "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n",
+        )
     }
 }
