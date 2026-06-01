@@ -54,6 +54,9 @@ The 2026-06-01 continuation added:
   groups and exposes default-member accessor lookup by owner/kind.
 - active-project default-member candidate selection now consults the front-end default-member route
   before falling back to the legacy `ProcedureDecl` scan.
+- parseable sources now run front-end assignment diagnostics before legacy symbol resolution and
+  type checking. The diagnostic messages are mapped to the established compiler wording so the
+  production API shape remains stable while the decision comes from typed HIR facts.
 
 ## Checks
 
@@ -64,6 +67,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler compile_property --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
 - `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
+- `cargo test -p oxvba-compiler frontend_assignment_semantics --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -110,10 +114,15 @@ The 2026-06-01 continuation added:
   decision on the legacy scan. The project symbol index now records default-member attributes and
   active-project default-member candidate selection uses that front-end route first. The legacy scan
   remains as fallback for rewrite-bridge, referenced projects, non-property members, and route gaps.
+- Front-end assignment diagnostics now participate in the production compile path for sources the
+  front-end can type. Fresh-eyes review corrected the `Set` diagnostic rules first: Object/Variant
+  lanes are not compile-time diagnostics because runtime guards handle them, while scalar target or
+  scalar value lanes remain diagnostics.
 - The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
   rejecting modules that the current parser cannot fully parse, but it only records signature-level
   procedures/properties/fields.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
-  assignment diagnostics for compiled projects. Next step: migrate assignment diagnostics onto the
-  same front-end decision surface and narrow or quarantine the remaining legacy fallback scans.
+  assignment diagnostics for compiled projects. Next step: narrow or quarantine the remaining
+  legacy fallback scans and prove the property/default-member matrix is covered by the front-end
+  production route rather than legacy-only behavior.

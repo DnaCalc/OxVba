@@ -236,6 +236,7 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
         return Err(CompileError::EmptySource);
     }
 
+    validate_frontend_assignment_diagnostics(source)?;
     let mut bound = resolve::resolve_symbols(source);
     bound.is_class_module = has_class_modules;
     if !bound.resolution_diagnostics.is_empty() {
@@ -340,6 +341,75 @@ fn validate_frontend_assignment_coercion_metadata(
         }
     }
     Ok(())
+}
+
+fn validate_frontend_assignment_diagnostics(source: &str) -> Result<(), CompileError> {
+    let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
+        return Ok(());
+    };
+    let semantics =
+        frontend_assignment_semantics::collect_assignment_semantics_from_typed_hir(&typed_hir);
+    for semantic in semantics {
+        let Some(diagnostic) = semantic.diagnostic.as_ref() else {
+            continue;
+        };
+        let target_name = frontend_assignment_target_name(&typed_hir, semantic.target)
+            .unwrap_or_else(|| "target".to_string());
+        let message = match diagnostic.code.as_str() {
+            "BIND-E-SET-REQUIRES-OBJECT" => format!(
+                "type mismatch in assignment: Set requires Object or Variant target, got {:?} variable {}",
+                frontend_assignment_bound_type_name(semantic.target_type),
+                target_name
+            ),
+            "BIND-E-SET-REQUIRES-OBJECT-VALUE" => {
+                format!(
+                    "type mismatch in assignment: Set requires object value for variable {target_name}"
+                )
+            }
+            "BIND-E-LET-OBJECT-TARGET" => {
+                format!(
+                    "type mismatch in assignment: Let cannot assign to Object variable {target_name}"
+                )
+            }
+            _ => diagnostic.message.clone(),
+        };
+        return Err(CompileError::TypeError(message));
+    }
+    Ok(())
+}
+
+fn frontend_assignment_target_name(
+    typed_hir: &frontend_type_hooks::TypedHirModule,
+    target: frontend_hir::HirExprId,
+) -> Option<String> {
+    let expr = typed_hir.module.arenas.expr(target)?;
+    let frontend_hir::HirExprKind::Name(symbol_id) = expr.kind else {
+        return None;
+    };
+    let symbol = typed_hir.module.symbols.symbol(symbol_id)?;
+    let name = typed_hir.module.symbols.name(symbol.name)?;
+    Some(name.folded.clone())
+}
+
+fn frontend_assignment_bound_type_name(ty: VbaTypeId) -> &'static str {
+    match ty {
+        VbaTypeId::Boolean => "Boolean",
+        VbaTypeId::Byte => "Byte",
+        VbaTypeId::Integer => "Integer",
+        VbaTypeId::Long => "Long",
+        VbaTypeId::LongLong => "LongLong",
+        VbaTypeId::LongPtr => "LongPtr",
+        VbaTypeId::Single => "Single",
+        VbaTypeId::Double => "Double",
+        VbaTypeId::Currency => "Currency",
+        VbaTypeId::Date => "Date",
+        VbaTypeId::String => "String",
+        VbaTypeId::Variant => "Variant",
+        VbaTypeId::Object => "Object",
+        VbaTypeId::Array => "Array",
+        VbaTypeId::InteropAny => "Any",
+        VbaTypeId::Unknown => "Unknown",
+    }
 }
 
 #[cfg(test)]

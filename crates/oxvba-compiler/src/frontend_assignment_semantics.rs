@@ -150,17 +150,41 @@ fn assignment_diagnostic(
     value_type: VbaTypeId,
 ) -> Option<AssignmentDiagnostic> {
     match (intent, target_type, value_type) {
-        (HirAssignmentIntent::Set, VbaTypeId::Object, VbaTypeId::Object) => None,
-        (HirAssignmentIntent::Set, _, _) => Some(AssignmentDiagnostic {
-            code: "BIND-E-SET-REQUIRES-OBJECT".to_string(),
-            message: "Set assignment requires an object target and object value".to_string(),
-        }),
+        (HirAssignmentIntent::Set, target_type, _) if is_scalar_type(target_type) => {
+            Some(AssignmentDiagnostic {
+                code: "BIND-E-SET-REQUIRES-OBJECT".to_string(),
+                message: "Set assignment requires an object or variant target".to_string(),
+            })
+        }
+        (HirAssignmentIntent::Set, _, value_type) if is_scalar_type(value_type) => {
+            Some(AssignmentDiagnostic {
+                code: "BIND-E-SET-REQUIRES-OBJECT-VALUE".to_string(),
+                message: "Set assignment requires an object or variant value".to_string(),
+            })
+        }
         (HirAssignmentIntent::Let, VbaTypeId::Object, _) => Some(AssignmentDiagnostic {
             code: "BIND-E-LET-OBJECT-TARGET".to_string(),
             message: "Let assignment cannot assign directly to an object target".to_string(),
         }),
         _ => None,
     }
+}
+
+fn is_scalar_type(ty: VbaTypeId) -> bool {
+    matches!(
+        ty,
+        VbaTypeId::Boolean
+            | VbaTypeId::Byte
+            | VbaTypeId::Integer
+            | VbaTypeId::Long
+            | VbaTypeId::LongLong
+            | VbaTypeId::LongPtr
+            | VbaTypeId::Single
+            | VbaTypeId::Double
+            | VbaTypeId::Currency
+            | VbaTypeId::Date
+            | VbaTypeId::String
+    )
 }
 
 #[cfg(test)]
