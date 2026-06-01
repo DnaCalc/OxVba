@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::{
     Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
+    compile_with_runtime_metadata_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
     frontend_hir_lowering::HirNewExpressionBinding,
     frontend_member_dispatch::{
@@ -990,6 +991,14 @@ fn selected_project_lowering_strategy() -> ProjectLoweringStrategy {
     ProjectLoweringStrategy::ModuleAwareBindPlan
 }
 
+fn project_source_is_single_procedural_module_without_references(
+    manifest: &ProjectManifest,
+) -> bool {
+    manifest.reference_projects.is_empty()
+        && manifest.modules.len() == 1
+        && manifest.modules[0].module_kind == ModuleKind::Procedural
+}
+
 fn compile_project_with_strategy(
     manifest: &ProjectManifest,
     strategy: ProjectLoweringStrategy,
@@ -1073,15 +1082,24 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let (bytecode, mut procedure_runtime_metadata) =
+    let use_hir_capable_project_boundary =
+        project_source_is_single_procedural_module_without_references(manifest);
+    let (bytecode, mut procedure_runtime_metadata) = if use_hir_capable_project_boundary {
+        compile_with_runtime_metadata_object_locals_class(
+            &rewritten_source,
+            &forced_object_locals_by_proc,
+            has_class_modules,
+        )
+    } else {
         compile_with_runtime_metadata_legacy_object_locals_class(
             &rewritten_source,
             &forced_object_locals_by_proc,
             has_class_modules,
         )
-        .map_err(|e| ProjectCompileError::BackendCompile {
-            message: e.to_string(),
-        })?;
+    }
+    .map_err(|e| ProjectCompileError::BackendCompile {
+        message: e.to_string(),
+    })?;
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
@@ -10943,6 +10961,38 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn compile_project_uses_hir_capable_boundary_for_completed_constructs() {
+        let module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x As Long\nx = 1: x = x + 1\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile through HIR");
+
+        assert!(!compiled.bytecode.instructions.is_empty());
+        assert!(
+            compiled
+                .procedure_runtime_metadata
+                .values()
+                .any(|metadata| {
+                    metadata.module_name == "mainmodule" && metadata.procedure_name == "main"
+                }),
+            "{:#?}",
+            compiled.procedure_runtime_metadata
+        );
     }
 
     #[test]

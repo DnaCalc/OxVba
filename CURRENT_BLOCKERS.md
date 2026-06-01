@@ -78,6 +78,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       `HirNewExpressionBinding` facts;
     - a HIR compile-to-bytecode entry point now accepts those construction facts and emits the
       existing project-object reference bytecode path;
+    - single active procedural-module projects with no reference projects now enter the
+      HIR-capable metadata compiler at the project boundary, while broader project shapes remain
+      on the legacy project backend until their metadata/rewrite semantics are owned by HIR;
     - project binding now materializes those HIR construction facts in source order, but the
       project compile boundary still compiles the rewritten backend source, so
       `Set x = New Widget` still becomes `Set x = __oxvba_project_instance(handle)` before
@@ -968,7 +971,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
