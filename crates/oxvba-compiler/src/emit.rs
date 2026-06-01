@@ -14,6 +14,7 @@ use crate::{
         RuntimeAssignmentTargetKind, StringCompareMode,
     },
     descriptor_identity::{DescriptorFamily, canonical_descriptor_id},
+    frontend_structural_intrinsics::StructuralIntrinsic,
     resolve::{
         ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCaseClause,
         BoundCompareMode, BoundCond, BoundEnumDescriptor, BoundExpr, BoundExternalDecl,
@@ -1338,7 +1339,9 @@ fn argument_expression_kind(expr: &BoundExpr) -> ArgumentExpressionKindDescripto
         | BoundExpr::BoolConst(_)
         | BoundExpr::FloatConst(_)
         | BoundExpr::StringConst(_) => ArgumentExpressionKindDescriptor::Literal,
-        BoundExpr::IntrinsicCall { .. } => ArgumentExpressionKindDescriptor::IntrinsicCall,
+        BoundExpr::IntrinsicCall { .. } | BoundExpr::StructuralIntrinsicCall { .. } => {
+            ArgumentExpressionKindDescriptor::IntrinsicCall
+        }
         BoundExpr::ProcCall { .. } | BoundExpr::Member { .. } => {
             ArgumentExpressionKindDescriptor::ProcedureCall
         }
@@ -2621,6 +2624,42 @@ fn collect_expr_value_states(
                 collect_expr_value_states(arg, None, procedure_id, ordinal, descriptors);
             }
         }
+        BoundExpr::StructuralIntrinsicCall { intrinsic, args } => {
+            match (intrinsic, args.as_slice()) {
+                (StructuralIntrinsic::NullLiteral, []) => descriptors.push(value_state_descriptor(
+                    procedure_id,
+                    ValueStateKind::Null,
+                    ValueStateSource::IntrinsicConstant,
+                    (slot, None, None),
+                    "intrinsic=Null".to_string(),
+                    ordinal,
+                )),
+                (StructuralIntrinsic::NothingLiteral, []) => {
+                    descriptors.push(value_state_descriptor(
+                        procedure_id,
+                        ValueStateKind::Nothing,
+                        ValueStateSource::IntrinsicConstant,
+                        (slot, None, None),
+                        "intrinsic=Nothing".to_string(),
+                        ordinal,
+                    ))
+                }
+                (StructuralIntrinsic::OmittedArgument, []) => {
+                    descriptors.push(value_state_descriptor(
+                        procedure_id,
+                        ValueStateKind::MissingArgument,
+                        ValueStateSource::IntrinsicConstant,
+                        (slot, None, None),
+                        "intrinsic=OmittedArgument".to_string(),
+                        ordinal,
+                    ))
+                }
+                _ => {}
+            }
+            for arg in args {
+                collect_expr_value_states(arg, slot, procedure_id, ordinal, descriptors);
+            }
+        }
         BoundExpr::ProcCall { args, .. } => {
             for arg in args {
                 collect_expr_value_states(&arg.expr, None, procedure_id, ordinal, descriptors);
@@ -3253,7 +3292,7 @@ fn collect_expr_semantics(
                 descriptors,
             );
         }
-        BoundExpr::IntrinsicCall { args, .. } => {
+        BoundExpr::IntrinsicCall { args, .. } | BoundExpr::StructuralIntrinsicCall { args, .. } => {
             for arg in args {
                 collect_expr_semantics(
                     arg,
@@ -3355,7 +3394,9 @@ fn expression_classification(expr: &BoundExpr) -> ExpressionClassificationDescri
         BoundExpr::IntrinsicCall { name, .. } if name == "__oxvba_array_get" => {
             ExpressionClassificationDescriptor::ArrayElement
         }
-        BoundExpr::IntrinsicCall { .. } => ExpressionClassificationDescriptor::IntrinsicResult,
+        BoundExpr::IntrinsicCall { .. } | BoundExpr::StructuralIntrinsicCall { .. } => {
+            ExpressionClassificationDescriptor::IntrinsicResult
+        }
         BoundExpr::ProcCall { .. } | BoundExpr::Member { .. } => {
             ExpressionClassificationDescriptor::FunctionResult
         }
@@ -3398,6 +3439,9 @@ fn expr_semantics_detail(expr: &BoundExpr) -> String {
         ),
         BoundExpr::LogicalNot { .. } => "logical=not".to_string(),
         BoundExpr::IntrinsicCall { name, .. } => format!("intrinsic={}", name.to_ascii_lowercase()),
+        BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => {
+            format!("structural-intrinsic={}", intrinsic.legacy_name())
+        }
         BoundExpr::ProcCall { name, .. } => format!("proc-call={}", name.to_ascii_lowercase()),
         BoundExpr::Member { member, .. } => {
             format!("member-access={}", member.to_ascii_lowercase())
@@ -4024,7 +4068,7 @@ fn collect_expr_operator_semantics(
                 descriptors,
             );
         }
-        BoundExpr::IntrinsicCall { args, .. } => {
+        BoundExpr::IntrinsicCall { args, .. } | BoundExpr::StructuralIntrinsicCall { args, .. } => {
             for arg in args {
                 collect_expr_operator_semantics(
                     arg,
@@ -4791,6 +4835,11 @@ fn collect_expr_coercions(
                 collect_expr_coercions(arg, type_by_name, procedure_id, ordinal, descriptors);
             }
         }
+        BoundExpr::StructuralIntrinsicCall { args, .. } => {
+            for arg in args {
+                collect_expr_coercions(arg, type_by_name, procedure_id, ordinal, descriptors);
+            }
+        }
         BoundExpr::BinaryOp { lhs, rhs, .. }
         | BoundExpr::CompareOp { lhs, rhs, .. }
         | BoundExpr::LogicalBinaryOp { lhs, rhs, .. } => {
@@ -5355,6 +5404,9 @@ fn expr_declared_type(expr: &BoundExpr, type_by_name: &HashMap<String, VbaTypeId
         BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => VbaTypeId::Boolean,
         BoundExpr::UnaryOp { .. } => VbaTypeId::Variant,
         BoundExpr::IntrinsicCall { name, args } => intrinsic_result_type(name, args, type_by_name),
+        BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => {
+            structural_intrinsic_result_type(*intrinsic)
+        }
         BoundExpr::ProcCall { .. } => VbaTypeId::Variant,
         BoundExpr::Member { .. } => VbaTypeId::Variant,
     }
@@ -5396,6 +5448,46 @@ fn intrinsic_result_type(
     }
 }
 
+fn structural_intrinsic_result_type(intrinsic: StructuralIntrinsic) -> VbaTypeId {
+    match intrinsic {
+        StructuralIntrinsic::NothingLiteral
+        | StructuralIntrinsic::ProjectInstance
+        | StructuralIntrinsic::WithEventsAttach
+        | StructuralIntrinsic::WithEventsDetach
+        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::DynamicDispatchInvoke
+        | StructuralIntrinsic::DynamicDispatchLet
+        | StructuralIntrinsic::DynamicDispatchSet => VbaTypeId::Object,
+        StructuralIntrinsic::PtrOf
+        | StructuralIntrinsic::ObjPtr
+        | StructuralIntrinsic::VarPtr
+        | StructuralIntrinsic::StrPtr => VbaTypeId::LongPtr,
+        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
+            VbaTypeId::Variant
+        }
+    }
+}
+
+fn structural_intrinsic_bound_type(intrinsic: StructuralIntrinsic) -> BoundType {
+    match intrinsic {
+        StructuralIntrinsic::NothingLiteral
+        | StructuralIntrinsic::ProjectInstance
+        | StructuralIntrinsic::WithEventsAttach
+        | StructuralIntrinsic::WithEventsDetach
+        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::DynamicDispatchInvoke
+        | StructuralIntrinsic::DynamicDispatchLet
+        | StructuralIntrinsic::DynamicDispatchSet => BoundType::Object,
+        StructuralIntrinsic::PtrOf
+        | StructuralIntrinsic::ObjPtr
+        | StructuralIntrinsic::VarPtr
+        | StructuralIntrinsic::StrPtr => BoundType::LongPtr,
+        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
+            BoundType::Variant
+        }
+    }
+}
+
 fn expr_value_states(expr: &BoundExpr) -> Vec<ValueStateKind> {
     match expr {
         BoundExpr::IntrinsicCall { name, .. } => match name.as_str() {
@@ -5404,6 +5496,12 @@ fn expr_value_states(expr: &BoundExpr) -> Vec<ValueStateKind> {
             "cverr" => vec![ValueStateKind::Error],
             "cdec" => vec![ValueStateKind::DecimalVariantSubtype],
             "vbnullstring" => vec![ValueStateKind::VbNullString],
+            _ => Vec::new(),
+        },
+        BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => match intrinsic {
+            StructuralIntrinsic::NullLiteral => vec![ValueStateKind::Null],
+            StructuralIntrinsic::NothingLiteral => vec![ValueStateKind::Nothing],
+            StructuralIntrinsic::OmittedArgument => vec![ValueStateKind::MissingArgument],
             _ => Vec::new(),
         },
         BoundExpr::BinaryOp { lhs, rhs, .. } | BoundExpr::CompareOp { lhs, rhs, .. } => {
@@ -7640,6 +7738,9 @@ fn expr_bound_type(
             .copied()
             .unwrap_or(BoundType::Variant),
         BoundExpr::VarPtrArrayBuffer(_) => BoundType::LongPtr,
+        BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => {
+            structural_intrinsic_bound_type(*intrinsic)
+        }
         BoundExpr::IntrinsicCall { name, .. } | BoundExpr::ProcCall { name, .. } => {
             call_bound_type(name, proc_meta, external_decls)
         }
@@ -9173,6 +9274,43 @@ fn emit_expr_into(
                     lhs: lhs_slot,
                     rhs: rhs_slot,
                 }),
+            }
+        }
+        BoundExpr::StructuralIntrinsicCall { intrinsic, args } => {
+            let mut arg_slots = Vec::with_capacity(args.len());
+            for arg in args {
+                let slot = temps.alloc_temp();
+                emit_expr_into(
+                    arg,
+                    compare_mode,
+                    slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                arg_slots.push(slot);
+            }
+
+            match (intrinsic, arg_slots.as_slice()) {
+                (StructuralIntrinsic::NullLiteral, []) => {
+                    instructions.push(Instruction::LoadNull { slot: dst });
+                }
+                (StructuralIntrinsic::NothingLiteral, []) => {
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: dst,
+                        value: 0,
+                    });
+                }
+                (StructuralIntrinsic::OmittedArgument, []) => {
+                    instructions.push(Instruction::LoadEmpty { slot: dst });
+                }
+                (StructuralIntrinsic::ProjectInstance, [src]) => {
+                    instructions.push(Instruction::LoadProjectObjectRef { dst, handle: *src });
+                }
+                _ => {}
             }
         }
         BoundExpr::IntrinsicCall { name, args } => {

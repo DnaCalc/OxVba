@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::frontend_structural_intrinsics::StructuralIntrinsic;
+
 type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
 type ModuleConstMap = HashMap<String, BoundExpr>;
 type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
@@ -91,6 +93,10 @@ pub enum BoundExpr {
     },
     IntrinsicCall {
         name: String,
+        args: Vec<BoundExpr>,
+    },
+    StructuralIntrinsicCall {
+        intrinsic: StructuralIntrinsic,
         args: Vec<BoundExpr>,
     },
     ProcCall {
@@ -1957,6 +1963,7 @@ fn module_const_expr_type(expr: &BoundExpr) -> BoundType {
         | BoundExpr::LogicalBinaryOp { .. }
         | BoundExpr::LogicalNot { .. }
         | BoundExpr::IntrinsicCall { .. }
+        | BoundExpr::StructuralIntrinsicCall { .. }
         | BoundExpr::ProcCall { .. }
         | BoundExpr::Member { .. }
         | BoundExpr::VarPtrArrayBuffer(_) => BoundType::Variant,
@@ -3934,14 +3941,20 @@ fn parse_call_invocation(
 /// Sentinel expression for an argument omitted via bare commas (`Foo(1, , 5)`).
 /// Resolved during call lowering to the target parameter's Optional default.
 pub(crate) fn omitted_argument_sentinel() -> BoundExpr {
-    BoundExpr::IntrinsicCall {
-        name: "__omitted".to_string(),
+    BoundExpr::StructuralIntrinsicCall {
+        intrinsic: StructuralIntrinsic::OmittedArgument,
         args: Vec::new(),
     }
 }
 
 pub(crate) fn is_omitted_argument_expr(expr: &BoundExpr) -> bool {
-    matches!(expr, BoundExpr::IntrinsicCall { name, args } if name == "__omitted" && args.is_empty())
+    matches!(
+        expr,
+        BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::OmittedArgument,
+            args
+        } if args.is_empty()
+    )
 }
 
 fn parse_dispatch_invoke_call_invocation(
@@ -5103,8 +5116,8 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         });
     }
     if expr.eq_ignore_ascii_case("null") {
-        return Some(BoundExpr::IntrinsicCall {
-            name: "__null".to_string(),
+        return Some(BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::NullLiteral,
             args: Vec::new(),
         });
     }
@@ -5112,8 +5125,8 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         // The null object reference. Typed as Object so `Set obj = Nothing` is accepted (and a
         // non-object `Let`/arithmetic use is rejected), while still lowering to runtime 0 so it
         // reads as a cleared object slot.
-        return Some(BoundExpr::IntrinsicCall {
-            name: "__nothing".to_string(),
+        return Some(BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::NothingLiteral,
             args: Vec::new(),
         });
     }
@@ -7374,6 +7387,42 @@ mod tests {
         assert!(matches!(
             expr,
             BoundExpr::IntrinsicCall { name, args } if name == "vbnullstring" && args.is_empty()
+        ));
+    }
+
+    #[test]
+    fn resolve_null_and_nothing_as_typed_structural_intrinsics() {
+        let source = "Sub Main()\nDim x\nDim obj As Object\nx = Null\nSet obj = Nothing\nEnd Sub";
+        let module = resolve_symbols(source);
+
+        let BoundStmt::Assign {
+            expr: null_expr, ..
+        } = &module.body[0]
+        else {
+            panic!("expected null assignment");
+        };
+        assert!(matches!(
+            null_expr,
+            BoundExpr::StructuralIntrinsicCall {
+                intrinsic,
+                args
+            } if *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::NullLiteral
+                && args.is_empty()
+        ));
+
+        let BoundStmt::Assign {
+            expr: nothing_expr, ..
+        } = &module.body[1]
+        else {
+            panic!("expected nothing assignment");
+        };
+        assert!(matches!(
+            nothing_expr,
+            BoundExpr::StructuralIntrinsicCall {
+                intrinsic,
+                args
+            } if *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::NothingLiteral
+                && args.is_empty()
         ));
     }
 

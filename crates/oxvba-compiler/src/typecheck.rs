@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::frontend_structural_intrinsics::StructuralIntrinsic;
 use crate::resolve::{
     AssignmentIntent, BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt,
     BoundType,
@@ -1154,6 +1155,21 @@ fn check_expr(
             }
             Ok(())
         }
+        BoundExpr::StructuralIntrinsicCall { args, .. } => {
+            for arg in args {
+                check_expr(
+                    arg,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                    proc_context,
+                )?;
+            }
+            Ok(())
+        }
         BoundExpr::ProcCall { name, args } => validate_call_site(
             name,
             args,
@@ -1338,12 +1354,35 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::IntrinsicCall { name, .. } => {
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
+        BoundExpr::StructuralIntrinsicCall { intrinsic, .. } => {
+            structural_intrinsic_result_type(*intrinsic)
+        }
         BoundExpr::ProcCall { .. } => BoundType::Variant,
         BoundExpr::CompareOp { .. } => BoundType::Boolean,
         BoundExpr::LogicalBinaryOp { .. } | BoundExpr::LogicalNot { .. } => BoundType::Boolean,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
         // Late-bound member access: the member's return type is not known statically.
         BoundExpr::Member { .. } => BoundType::Variant,
+    }
+}
+
+fn structural_intrinsic_result_type(intrinsic: StructuralIntrinsic) -> BoundType {
+    match intrinsic {
+        StructuralIntrinsic::NothingLiteral
+        | StructuralIntrinsic::ProjectInstance
+        | StructuralIntrinsic::WithEventsAttach
+        | StructuralIntrinsic::WithEventsDetach
+        | StructuralIntrinsic::DynamicDispatchGet
+        | StructuralIntrinsic::DynamicDispatchInvoke
+        | StructuralIntrinsic::DynamicDispatchLet
+        | StructuralIntrinsic::DynamicDispatchSet => BoundType::Object,
+        StructuralIntrinsic::PtrOf
+        | StructuralIntrinsic::ObjPtr
+        | StructuralIntrinsic::VarPtr
+        | StructuralIntrinsic::StrPtr => BoundType::LongPtr,
+        StructuralIntrinsic::NullLiteral | StructuralIntrinsic::OmittedArgument => {
+            BoundType::Variant
+        }
     }
 }
 

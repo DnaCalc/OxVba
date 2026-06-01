@@ -367,6 +367,9 @@ fn validate_frontend_assignment_diagnostics(source: &str) -> Result<(), CompileE
                 )
             }
             "BIND-E-LET-OBJECT-TARGET" => {
+                if !source_has_explicit_let_assignment(source, &target_name) {
+                    continue;
+                }
                 format!(
                     "type mismatch in assignment: Let cannot assign to Object variable {target_name}"
                 )
@@ -376,6 +379,22 @@ fn validate_frontend_assignment_diagnostics(source: &str) -> Result<(), CompileE
         return Err(CompileError::TypeError(message));
     }
     Ok(())
+}
+
+fn source_has_explicit_let_assignment(source: &str, target_name: &str) -> bool {
+    let target = target_name.trim().to_ascii_lowercase();
+    source.lines().any(|line| {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed
+            .get(..4)
+            .filter(|prefix| prefix.eq_ignore_ascii_case("let "))
+            .map(|_| trimmed[4..].trim_start())
+        else {
+            return false;
+        };
+        let lhs = rest.split_once('=').map(|(lhs, _)| lhs.trim());
+        lhs.is_some_and(|lhs| lhs.eq_ignore_ascii_case(&target))
+    })
 }
 
 fn frontend_assignment_target_name(

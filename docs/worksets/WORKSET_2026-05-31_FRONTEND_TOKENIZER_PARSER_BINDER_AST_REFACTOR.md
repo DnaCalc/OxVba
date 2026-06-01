@@ -804,7 +804,11 @@ intrinsics or parser-shaped optimizations.
 Candidate bead units:
 - FE-8.1 Intrinsic enum: replace structural `IntrinsicCall { name }` paths for `Nothing`, `Null`,
   omitted arguments, project instances, WithEvents operations, dynamic dispatch, and pointer
-  helpers where appropriate.
+  helpers where appropriate. Current continuation progress introduces typed
+  `BoundExpr::StructuralIntrinsicCall` production nodes and migrates `Null`, `Nothing`, and
+  omitted positional arguments through resolver, typecheck, optimization walks, emit, and metadata
+  collection. The remaining structural families stay on the explicit compatibility bridge until
+  their lowering routes are migrated or quarantined in FE-8/FE-9 cleanup.
   Evidence: `docs/evidence/frontend_rework/TYPED_STRUCTURAL_INTRINSICS_2026-06-01.md`.
 - FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
   binary ops and a separate optimizer transform.
