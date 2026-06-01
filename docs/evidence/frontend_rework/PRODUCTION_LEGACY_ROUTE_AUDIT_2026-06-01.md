@@ -14,8 +14,8 @@ Current gate result: **not passed**.
 The audit proves the good path and exposes the remaining production residuals:
 
 - scoped procedure/local/assignment/arithmetic fixtures classify as `HirProduction`;
-- procedure call statement fixtures still classify as HIR-unsupported residuals; the syntax bridge
-  now returns `Unsupported`, but the outer default policy may still fall back to legacy compilation;
+- simple same-module procedure call statement fixtures now reach `HirProduction`; the remaining
+  call/coercion seed row is a FE-8.5 bytecode/metadata-drift bug, not a syntax-route residual;
 - `project.rs` still contains the `ProjectLoweringStrategy::RewriteBridge` /
   `rewrite_module_source` source-text rewrite production surface for project/class/COM/
   default-member semantics;
@@ -36,8 +36,9 @@ The audit result requires reopened delivery work rather than terminal closure:
   and outer route policy rather than the bridge itself;
 - `bd-aprs.8.1` through `bd-aprs.8.6` (`FE-7.*`) for project/class/member/property/event/external
   semantics that still rely on `project.rs` rewrite glue;
-- `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for expanding HIR production lowering beyond
-  the initial procedure/local/assignment/expression subset;
+- `bd-aprs.9.5` (`FE-8.5 Production HIR lowering`) for eliminating remaining HIR-production
+  bytecode/metadata drift after the initial procedure/local/assignment/expression and simple
+  same-module call subset;
 - `bd-aprs.10.4` (`FE-9.4 Language-service reconciliation`) for retiring the remaining
   language-service `BoundModule` compatibility surface.
 
@@ -53,5 +54,7 @@ The audit result requires reopened delivery work rather than terminal closure:
 - Closing FE-9.6 would be incorrect. The route audit finds explicit legacy fallback and static
   production residuals.
 - The scoped HIR production path is real, but the workset goal is broader than that subset.
+- Procedure-call syntax is no longer itself the route blocker; call/coercion semantics still need
+  FE-8.5 delivery proof before terminal closure.
 - The right next step is reopened delivery work on the owning beads, not another evidence-only
   closure pass.

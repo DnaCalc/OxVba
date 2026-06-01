@@ -11,8 +11,9 @@ use crate::frontend_symbols::{SymbolId, SymbolNamespace};
 use crate::frontend_type_hooks::{TypedHirModule, collect_type_hooks_from_source};
 use crate::optimize::optimize_module;
 use crate::resolve::{
-    ArithOp, AssignmentIntent, BoundCompareMode, BoundExpr, BoundModule, BoundParam,
-    BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType, CompareOp, LogicalBinOp,
+    ArithOp, AssignmentIntent, BoundCallArg, BoundCallSyntax, BoundCompareMode, BoundExpr,
+    BoundModule, BoundParam, BoundParamSourceMechanism, BoundProcedure, BoundStmt, BoundType,
+    CompareOp, LogicalBinOp,
 };
 use crate::typecheck::check_types;
 use crate::{CompileError, VbaTypeId};
@@ -78,7 +79,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::WhileStmt
             | SyntaxKind::SelectStmt
             | SyntaxKind::WithStmt
-            | SyntaxKind::CallStmt
             | SyntaxKind::OnErrorStmt
             | SyntaxKind::ResumeStmt
             | SyntaxKind::ReDimStmt
@@ -90,9 +90,7 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::RaiseEventStmt
             | SyntaxKind::ImplementsStmt
             | SyntaxKind::EventDecl
-            | SyntaxKind::CallExpr
             | SyntaxKind::MemberExpr
-            | SyntaxKind::IndexExpr
             | SyntaxKind::NewExpr
     ) {
         return Some(node.kind());
@@ -154,12 +152,14 @@ fn lower_procedure(
     for param in params {
         let param_name = symbol_name(typed_hir, *param)?;
         let ty = declared_bound_type(typed_hir, *param).unwrap_or(BoundType::Variant);
+        let source_mechanism = parameter_source_mechanism(source, typed_hir, *param);
+        let by_ref = !matches!(source_mechanism, BoundParamSourceMechanism::ExplicitByVal);
         declarations.push(param_name.clone());
         declaration_types.insert(param_name.clone(), ty);
         bound_params.push(BoundParam {
             name: param_name,
-            source_mechanism: BoundParamSourceMechanism::Omitted,
-            by_ref: true,
+            source_mechanism,
+            by_ref,
             param_array: false,
             optional: false,
             default_value: None,
@@ -264,6 +264,18 @@ fn lower_stmt(
                 lower_stmt(typed_hir, *child, out)?;
             }
         }
+        HirStmtKind::Expr(expr) => match lower_expr(typed_hir, *expr)? {
+            BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
+                name,
+                args,
+                syntax: BoundCallSyntax::StatementCallKeyword,
+            }),
+            other => {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "expression statement {other:?}"
+                )));
+            }
+        },
         HirStmtKind::Empty => {}
         other => {
             return Err(HirProductionLoweringError::Unsupported(format!(
@@ -335,6 +347,7 @@ fn lower_expr(
             }),
         },
         HirExprKind::Binary { op, lhs, rhs } => lower_binary_expr(typed_hir, *op, *lhs, *rhs),
+        HirExprKind::Call(call) => lower_call_expr(typed_hir, *call),
         other => Err(HirProductionLoweringError::Unsupported(format!(
             "expression {other:?}"
         ))),
@@ -365,6 +378,52 @@ fn lower_binary_expr(
         HirBinaryOp::Is => compare(CompareOp::Is, lhs, rhs),
         HirBinaryOp::And => logical(LogicalBinOp::And, lhs, rhs),
         HirBinaryOp::Or => logical(LogicalBinOp::Or, lhs, rhs),
+    }
+}
+
+fn lower_call_expr(
+    typed_hir: &TypedHirModule,
+    call: crate::frontend_hir::HirCallId,
+) -> Result<BoundExpr, HirProductionLoweringError> {
+    let Some(call_data) = typed_hir.module.arenas.call(call) else {
+        return Err(HirProductionLoweringError::Unsupported(
+            "missing call".to_string(),
+        ));
+    };
+    let target_symbol = typed_hir
+        .module
+        .arenas
+        .expr(call_data.target)
+        .and_then(|expr| match expr.kind {
+            crate::frontend_hir::HirExprKind::Name(symbol) => {
+                typed_hir.module.symbols.symbol(symbol)
+            }
+            _ => None,
+        });
+    if !target_symbol.is_some_and(|symbol| {
+        symbol.namespace == crate::frontend_symbols::SymbolNamespace::Procedure
+    }) {
+        return Err(HirProductionLoweringError::Unsupported(
+            "call target is not a procedure symbol".to_string(),
+        ));
+    }
+    let target = lower_expr(typed_hir, call_data.target)?;
+    let args = call_data
+        .args
+        .iter()
+        .map(|arg| {
+            lower_expr(typed_hir, *arg).map(|expr| BoundCallArg {
+                name: None,
+                expr,
+                force_byval: false,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    match target {
+        BoundExpr::Var(name) => Ok(BoundExpr::ProcCall { name, args }),
+        other => Err(HirProductionLoweringError::Unsupported(format!(
+            "call target {other:?}"
+        ))),
     }
 }
 
@@ -474,6 +533,39 @@ fn is_declaration_modifier_symbol(typed_hir: &TypedHirModule, symbol: SymbolId) 
     )
 }
 
+fn parameter_source_mechanism(
+    source: &str,
+    typed_hir: &TypedHirModule,
+    symbol: SymbolId,
+) -> BoundParamSourceMechanism {
+    let Some(span) = typed_hir
+        .module
+        .symbols
+        .symbol(symbol)
+        .and_then(|symbol| symbol.provenance.span)
+    else {
+        return BoundParamSourceMechanism::Omitted;
+    };
+    let prefix = source.get(..span.start).unwrap_or_default();
+    let start = prefix
+        .rfind(|ch| ['(', ',', '\n', '\r'].contains(&ch))
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let segment = source.get(start..span.start).unwrap_or_default();
+    if contains_ascii_word(segment, "byval") {
+        BoundParamSourceMechanism::ExplicitByVal
+    } else if contains_ascii_word(segment, "byref") {
+        BoundParamSourceMechanism::ExplicitByRef
+    } else {
+        BoundParamSourceMechanism::Omitted
+    }
+}
+
+fn contains_ascii_word(text: &str, needle: &str) -> bool {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .any(|word| word.eq_ignore_ascii_case(needle))
+}
+
 fn span_lines(source: &str, start: usize, end: usize) -> (usize, usize) {
     (line_number_at(source, start), line_number_at(source, end))
 }
@@ -490,7 +582,7 @@ fn line_number_at(source: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Instruction;
+    use crate::{Instruction, ParameterPassingMode, SourceParameterMechanism};
 
     #[test]
     fn hir_production_lowering_emits_bytecode_and_metadata_for_scoped_assignment() {
@@ -509,5 +601,30 @@ mod tests {
                 && slot.kind == crate::ProcedureRuntimeSlotKind::Local
                 && slot.declared_type == VbaTypeId::Long
         }));
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_same_module_call_statement() {
+        let source = "Sub Main()\nDim v As Variant\nv = 5\nCall Use(v)\nEnd Sub\nSub Use(ByVal x As Long)\nDim sink\nsink = x\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CallProc { .. })),
+            "expected CallProc bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+        let use_metadata = metadata.get("use").expect("use metadata");
+        assert_eq!(
+            use_metadata.signature.parameters[0].source_mechanism,
+            SourceParameterMechanism::ExplicitByVal
+        );
+        assert_eq!(
+            use_metadata.signature.parameters[0].passing_mode,
+            ParameterPassingMode::ByVal
+        );
     }
 }

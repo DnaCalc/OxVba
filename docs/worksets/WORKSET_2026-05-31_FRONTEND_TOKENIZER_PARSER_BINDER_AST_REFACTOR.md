@@ -838,7 +838,10 @@ Candidate bead units:
   a scoped HIR production route for procedure/local/parameter declarations and assignment/expression
   bodies, tried before the CST/legacy bridge in frontend-v2 compilation. Unsupported constructs are
   rejected before HIR lowering and remain on the tracked fallback path rather than being silently
-  partially lowered.
+  partially lowered. Second reopened continuation adds simple same-module procedure call statement
+  lowering and explicit `ByVal` / `ByRef` parameter mechanism projection. Partial work has already
+  been done, but this bead remains open while the call/coercion corpus row still shows bytecode and
+  metadata drift.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and

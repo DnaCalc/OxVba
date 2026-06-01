@@ -979,6 +979,20 @@ mod tests {
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
         assert_eq!(report.intentional_improvement_count, 1, "{report:#?}");
         assert_eq!(report.bug_count, 1, "{report:#?}");
+        let bug_rows: Vec<_> = report
+            .rows
+            .iter()
+            .filter(|row| {
+                row.classification.as_ref().is_some_and(|classification| {
+                    classification.kind == DiffClassificationKind::Bug
+                })
+            })
+            .collect();
+        assert_eq!(bug_rows.len(), 1, "{report:#?}");
+        assert_eq!(
+            bug_rows[0].name, "conformance_call_coercion_mixed_variant_to_long",
+            "{report:#?}"
+        );
         assert_eq!(
             report.rows[3].status,
             FrontendCorpusRowStatus::SkippedResidual
@@ -1096,13 +1110,9 @@ mod tests {
                 class: FrontendCorpusClass::CompilerUnit,
                 source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
                 expected_bytecode_drift: None,
-                expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::Bug),
-                rationale:
-                    "HIR production lowering does not yet support procedure call statements; FE-8.5 owns expanding this route"
-                        .to_string(),
-                close_condition:
-                    "reclassify when the call/coercion fixture routes through HIR production and matches semantic behavior"
-                        .to_string(),
+                expected_diagnostic_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
             },
             FrontendCorpusFixture {
                 name: "conformance_call_coercion_mixed_variant_to_long".to_string(),
@@ -1115,10 +1125,14 @@ mod tests {
                     )
                     .to_string(),
                 ),
-                expected_bytecode_drift: None,
+                expected_bytecode_drift: Some(ExpectedBytecodeDrift::Bug),
                 expected_diagnostic_drift: None,
-                rationale: String::new(),
-                close_condition: String::new(),
+                rationale:
+                    "HIR production now reaches same-module procedure call statements, but FE-8.5 still owns eliminating the remaining bytecode and metadata drift for this call/coercion fixture"
+                        .to_string(),
+                close_condition:
+                    "reclassify when the call/coercion fixture routes through HIR production with equivalent behavior, call-site metadata, and accepted bytecode drift only where deliberately improved"
+                        .to_string(),
             },
             FrontendCorpusFixture {
                 name: "inline_statement_separator_bridge_improvement".to_string(),

@@ -16,15 +16,36 @@ The initial production scope is intentionally narrow and explicit:
 
 - procedure declarations,
 - local and parameter frame slots with declared scalar/object types,
+- explicit `ByVal` / `ByRef` parameter mechanism projection for lowered procedures,
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
-- typed structural `Null`/`Nothing` literals.
+- typed structural `Null`/`Nothing` literals,
+- same-module procedure call statements whose targets bind to procedure symbols and whose arguments
+  lower through the supported expression surface.
 
 Unsupported constructs are rejected from the HIR production path before lowering and continue through
-the tracked fallback path. This prevents silent partial lowering for calls, member/index/new
-expressions, control flow, error handling, `ReDim`, `With`, events, declarations, and other surfaces
-not yet implemented in HIR production lowering.
+the tracked fallback path. This prevents silent partial lowering for member/index/new expressions,
+control flow, error handling, `ReDim`, `With`, events, declarations, and other surfaces not yet
+implemented in HIR production lowering.
+
+## Reopened Continuation
+
+The second FE-8.5 slice removes the procedure-call syntax residual that the route audit exposed
+after the hidden CST bridge fallback was removed:
+
+- `CallStmt` lowers into a HIR expression statement instead of falling through recursive statement
+  collection.
+- `CallExpr` and parser-shaped `IndexExpr` call forms lower into `HirExprKind::Call`.
+- HIR production lowering emits `BoundStmt::Call` for same-module procedure targets.
+- Lowered procedure parameters now preserve explicit `ByVal` / `ByRef` source mechanisms, so call
+  descriptors no longer report `ByVal` parameters as omitted/default `ByRef`.
+
+This is still not FE-8.5 closure. The seed corpus now pins
+`conformance/tests/call_coercion_mixed_variant_to_long.bas` as the remaining FE-8.5 bug row:
+frontend v2 reaches HIR production, but bytecode and metadata still drift from legacy for the
+call/coercion case. That residual must be removed or explicitly justified by behavior evidence
+before `bd-aprs.9.5` can close.
 
 ## Checks
 
@@ -42,11 +63,16 @@ not yet implemented in HIR production lowering.
 - This bead does not remove the fallback bridge; FE-9 default-route and audit beads must decide which
   construct families are flipped and which residuals remain tracked.
 - Call-site descriptors, object/member bindings, and writebacks remain out of the initial HIR
-  production scope. They stay on the tracked fallback route until HIR supports those syntax and
-  semantic forms; the production guard rejects those constructs before HIR lowering.
+  production scope beyond the simple same-module call route above. Broader argument binding,
+  optional/default, ParamArray, member dispatch, and writeback semantics remain open FE-8.5/FE-7
+  delivery work.
 - The first attempt let HIR production lowering silently ignore call statements. The production guard
-  now rejects unsupported syntax kinds up front so scoped HIR lowering is not allowed to compile a
-  partial program.
+  now rejects unsupported syntax kinds up front, and call statements are covered by direct HIR
+  lowering tests so scoped HIR lowering is not allowed to compile a partial program.
 - The simple assignment parity check initially exposed metadata drift in assignment intent and
   declaration line numbers; HIR lowering now preserves implicit assignment intent and projects local
   declaration source lines into procedure metadata.
+- A corpus bookkeeping error briefly attached the known FE-8.5 bug rationale to
+  `examples/basic/arithmetic.bas`. The corpus test now asserts that the single bug row is
+  `conformance_call_coercion_mixed_variant_to_long`, so equivalent arithmetic cannot mask a
+  call/coercion residual.

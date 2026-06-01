@@ -437,6 +437,22 @@ impl HirBuilder {
                     kind: HirStmtKind::Set { target, value },
                 })))
             }
+            SyntaxKind::CallStmt => {
+                let expr = expression_children(node)
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "call statement without expression: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let expr = self.lower_expr(scope, expr)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::Expr(expr),
+                })))
+            }
             _ => {
                 let mut stmts = Vec::new();
                 for child in node.child_nodes() {
@@ -496,6 +512,34 @@ impl HirBuilder {
                     lhs,
                     rhs,
                 }
+            }
+            SyntaxKind::CallExpr | SyntaxKind::IndexExpr => {
+                let exprs = expression_children(node);
+                let Some(target_node) = exprs.first().copied() else {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "call expression without target: `{}`",
+                        node.text().trim()
+                    )));
+                };
+                let target = self.lower_expr(scope, target_node)?;
+                let args = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::ArgList)
+                    .map(|arg_list| {
+                        expression_children(arg_list)
+                            .into_iter()
+                            .map(|arg| self.lower_expr(scope, arg))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                let call = self.arenas.alloc_call(HirCall {
+                    cst: cst(node),
+                    target,
+                    args,
+                });
+                HirExprKind::Call(call)
             }
             other => {
                 return Err(HirBuildError::Unsupported(format!(
@@ -984,6 +1028,53 @@ mod tests {
         assert!(matches!(
             module.arenas.expr(rhs).map(|expr| &expr.kind),
             Some(HirExprKind::Literal(HirLiteral::Nothing))
+        ));
+    }
+
+    #[test]
+    fn hir_builder_lowers_call_statement_to_call_expression() {
+        let source = "Sub Main()\nCall Use(5)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. }
+                    if module
+                        .symbols
+                        .symbol(decl.symbol)
+                        .and_then(|symbol| module.symbols.name(symbol.name))
+                        .is_some_and(|name| name.folded == "main") =>
+                {
+                    Some(body)
+                }
+                _ => None,
+            })
+            .expect("main body");
+        let call_expr = main_body
+            .iter()
+            .find_map(
+                |stmt| match module.arenas.stmt(*stmt).map(|stmt| &stmt.kind) {
+                    Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                    Some(HirStmtKind::Block(children)) => children.iter().find_map(|child| {
+                        match module.arenas.stmt(*child).map(|stmt| &stmt.kind) {
+                            Some(HirStmtKind::Expr(expr)) => Some(*expr),
+                            _ => None,
+                        }
+                    }),
+                    _ => None,
+                },
+            )
+            .expect("call expression statement");
+        let HirExprKind::Call(call) = module.arenas.expr(call_expr).expect("call expr").kind else {
+            panic!("expected call expression");
+        };
+        let call = module.arenas.call(call).expect("call data");
+        assert_eq!(call.args.len(), 1);
+        assert!(matches!(
+            module.arenas.expr(call.target).map(|expr| &expr.kind),
+            Some(HirExprKind::Name(_))
         ));
     }
 
