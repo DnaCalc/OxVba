@@ -439,6 +439,17 @@ fn lower_stmt(
                     BoundCallSyntax::StatementCallKeyword
                 },
             }),
+            BoundExpr::Member {
+                receiver,
+                member,
+                args,
+            } => out.push(BoundStmt::Expr {
+                expr: BoundExpr::Member {
+                    receiver,
+                    member,
+                    args,
+                },
+            }),
             other => {
                 return Err(HirProductionLoweringError::Unsupported(format!(
                     "expression statement {other:?}"
@@ -1802,15 +1813,23 @@ mod tests {
     }
 
     #[test]
-    fn hir_production_lowering_rejects_statement_form_member_call_for_fallback() {
+    fn hir_production_lowering_accepts_statement_form_member_call_arguments() {
         let source = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
-        let err = compile_source_with_runtime_metadata_via_hir(source)
-            .expect_err("statement-form member call remains residual");
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
 
         assert!(
-            matches!(err, HirProductionLoweringError::Unsupported(_)),
-            "statement-form member call must remain fallback-eligible, got {err:?}"
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost { args, .. }
+                    if args.len() == 2
+                )
+            }),
+            "expected statement-form member call to preserve dispatch args: {:?}",
+            bytecode.instructions
         );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
 
     #[test]

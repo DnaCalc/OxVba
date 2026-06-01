@@ -2460,6 +2460,9 @@ fn collect_stmt_value_states(
         | BoundStmt::Beep
         | BoundStmt::ExitProcedure
         | BoundStmt::Unsupported { .. } => {}
+        BoundStmt::Expr { expr } => {
+            collect_expr_value_states(expr, None, procedure_id, ordinal, descriptors);
+        }
         BoundStmt::DoWhile {
             cond,
             body,
@@ -3161,6 +3164,16 @@ fn collect_stmt_expression_semantics(
                 descriptors,
             );
         }
+        BoundStmt::Expr { expr } => {
+            collect_expr_semantics(
+                expr,
+                ExpressionSourceContextDescriptor::Unknown,
+                type_by_name,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
         BoundStmt::ReDim { .. }
         | BoundStmt::Erase { .. }
         | BoundStmt::UdtAssign { .. }
@@ -3825,6 +3838,16 @@ fn collect_stmt_operator_semantics(
         BoundStmt::ConsolePrint { data } | BoundStmt::DebugPrint { data } => {
             collect_expr_operator_semantics(
                 data,
+                type_by_name,
+                compare_mode,
+                procedure_id,
+                ordinal,
+                descriptors,
+            );
+        }
+        BoundStmt::Expr { expr } => {
+            collect_expr_operator_semantics(
+                expr,
                 type_by_name,
                 compare_mode,
                 procedure_id,
@@ -4735,6 +4758,9 @@ fn collect_stmt_coercions(
         }
         BoundStmt::ConsolePrint { data } | BoundStmt::DebugPrint { data } => {
             collect_expr_coercions(data, type_by_name, procedure_id, ordinal, descriptors);
+        }
+        BoundStmt::Expr { expr } => {
+            collect_expr_coercions(expr, type_by_name, procedure_id, ordinal, descriptors);
         }
         BoundStmt::ReDim { .. }
         | BoundStmt::Erase { .. }
@@ -6928,6 +6954,20 @@ fn emit_stmt(
         }
         BoundStmt::Return => {
             instructions.push(Instruction::Return);
+        }
+        BoundStmt::Expr { expr } => {
+            let temp = temps.alloc_temp();
+            emit_expr_into(
+                expr,
+                compare_mode,
+                temp,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
         }
         BoundStmt::SelectCase {
             expr,

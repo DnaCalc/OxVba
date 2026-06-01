@@ -677,6 +677,17 @@ fn check_stmt(
             }
         }
         BoundStmt::Return => Ok(()),
+        BoundStmt::Expr { expr } => check_expr(
+            expr,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+            proc_context,
+        )
+        .map(|_| ()),
         BoundStmt::Call { name, args, .. } => validate_call_site(
             name,
             args,

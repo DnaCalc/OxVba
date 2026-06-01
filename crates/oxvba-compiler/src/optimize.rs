@@ -172,6 +172,12 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     syntax,
                 });
             }
+            BoundStmt::Expr { expr } => {
+                let expr = optimize_expr(expr);
+                if expr_has_observable_effect(&expr) {
+                    out.push(BoundStmt::Expr { expr });
+                }
+            }
             other => out.push(other),
         }
     }

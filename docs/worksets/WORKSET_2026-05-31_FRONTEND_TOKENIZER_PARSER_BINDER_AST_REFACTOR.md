@@ -842,9 +842,9 @@ Candidate bead units:
   lowering and explicit `ByVal` / `ByRef` parameter mechanism projection. The call/coercion seed row
   now matches bytecode and call metadata; its remaining source-map metadata delta is classified as a
   deliberate HIR improvement. Follow-up call continuation preserves bare argument lists for
-  same-module statement-form procedure calls without parentheses; statement-form member calls remain
-  residual until the backend has an expression-statement discard path for receiver-based member
-  calls. Third reopened continuation adds simple multiline `If ... Then ...
+  same-module statement-form procedure calls without parentheses and adds an expression-statement
+  discard path so statement-form member calls with bare arguments can lower through the existing
+  late-bound member dispatch bytecode. Third reopened continuation adds simple multiline `If ... Then ...
   End If` HIR shape and production lowering through branch bytecode. Fourth reopened continuation
   adds front-checked `Do While ... Loop` HIR shape and production lowering through loop branch and
   backedge bytecode. Fifth reopened continuation adds parser expression nodes, HIR shape, and
@@ -938,7 +938,7 @@ Candidate bead units:
   source-text rewrite behavior, or duplicate language-service semantic fallbacks. Reopened
   continuation now passes the recorded audit fixtures/static checks and includes a direct check that
   completed lightweight compile fixtures use the HIR runtime-metadata route. Follow-up continuation
-  expands the audit with statement-form procedure calls with bare arguments, multiline `If/ElseIf`,
+  expands the audit with statement-form procedure/member calls with bare arguments, multiline `If/ElseIf`,
   single-line If, basic `Exit`, and non-label
   error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
   label-targeted error-control fixtures, plus `Erase`, simple function declaration coverage, and

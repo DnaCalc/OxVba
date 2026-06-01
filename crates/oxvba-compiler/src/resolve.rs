@@ -251,6 +251,9 @@ pub enum BoundStmt {
         label: String,
     },
     Return,
+    Expr {
+        expr: BoundExpr,
+    },
     Call {
         name: String,
         args: Vec<BoundCallArg>,
