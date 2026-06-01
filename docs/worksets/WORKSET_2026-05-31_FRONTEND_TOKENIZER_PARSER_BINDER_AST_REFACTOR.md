@@ -842,10 +842,11 @@ Candidate bead units:
   lowering and explicit `ByVal` / `ByRef` parameter mechanism projection. The call/coercion seed row
   now matches bytecode and call metadata; its remaining source-map metadata delta is classified as a
   deliberate HIR improvement. Third reopened continuation adds simple multiline `If ... Then ...
-  End If` HIR shape and production lowering through branch bytecode. Partial work has already been
-  done, but this bead remains open for broader HIR lowering coverage outside that simple
-  same-module call and simple If subset, with `Do While` and `Select Case` now recorded as explicit
-  route-audit residuals.
+  End If` HIR shape and production lowering through branch bytecode. Fourth reopened continuation
+  adds front-checked `Do While ... Loop` HIR shape and production lowering through loop branch and
+  backedge bytecode. Partial work has already been done, but this bead remains open for broader HIR
+  lowering coverage outside that simple same-module call, simple If, and front-checked Do While
+  subset, with `Select Case` now recorded as an explicit route-audit residual.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and

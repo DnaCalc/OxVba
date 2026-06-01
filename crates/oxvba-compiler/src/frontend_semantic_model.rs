@@ -182,6 +182,14 @@ impl SemanticModel {
                     self.index_stmt_tree(stmt);
                 }
             }
+            HirStmtKind::DoWhile {
+                condition, body, ..
+            } => {
+                self.index_expr_tree(condition);
+                for stmt in body {
+                    self.index_stmt_tree(stmt);
+                }
+            }
             HirStmtKind::Block(stmts) => {
                 for stmt in stmts {
                     self.index_stmt_tree(stmt);

@@ -135,6 +135,11 @@ pub enum HirStmtKind {
         then_body: Vec<HirStmtId>,
         else_body: Vec<HirStmtId>,
     },
+    DoWhile {
+        condition: HirExprId,
+        body: Vec<HirStmtId>,
+        post_check: bool,
+    },
     Block(Vec<HirStmtId>),
 }
 
@@ -501,6 +506,66 @@ impl HirBuilder {
                         condition,
                         then_body,
                         else_body,
+                    },
+                })))
+            }
+            SyntaxKind::DoStmt => {
+                if node
+                    .child_tokens()
+                    .iter()
+                    .any(|token| token.kind == SyntaxKind::KwUntil)
+                {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "Do Until / Loop Until are not yet supported by HIR lowering: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let block = node
+                    .child_nodes()
+                    .into_iter()
+                    .find(|child| child.kind() == SyntaxKind::Block)
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "do statement without body block: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let block_start = block.text_range().0;
+                let while_token = node
+                    .child_tokens()
+                    .into_iter()
+                    .find(|token| token.kind == SyntaxKind::KwWhile)
+                    .ok_or_else(|| {
+                        HirBuildError::Unsupported(format!(
+                            "Do without While is not yet supported by HIR lowering: `{}`",
+                            node.text().trim()
+                        ))
+                    })?;
+                let post_check = while_token.offset > block_start;
+                if post_check {
+                    return Err(HirBuildError::Unsupported(format!(
+                        "post-check Loop While is not yet supported by HIR lowering: `{}`",
+                        node.text().trim()
+                    )));
+                }
+                let condition_node =
+                    expression_children(node)
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            HirBuildError::Unsupported(format!(
+                                "Do While statement without condition: `{}`",
+                                node.text().trim()
+                            ))
+                        })?;
+                let condition = self.lower_expr(scope, condition_node)?;
+                let body = self.collect_stmt_block(scope, block)?;
+                Ok(Some(self.arenas.alloc_stmt(HirStmt {
+                    cst: cst(node),
+                    kind: HirStmtKind::DoWhile {
+                        condition,
+                        body,
+                        post_check,
                     },
                 })))
             }
@@ -1190,6 +1255,51 @@ mod tests {
     }
 
     #[test]
+    fn hir_builder_lowers_front_checked_do_while_statement() {
+        let source = "Sub Main()\nDim x As Long\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let do_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_do_while_stmt(&module.arenas, *stmt))
+            .expect("do while statement");
+        let Some(HirStmt {
+            kind:
+                HirStmtKind::DoWhile {
+                    condition,
+                    body,
+                    post_check,
+                },
+            ..
+        }) = module.arenas.stmt(do_stmt)
+        else {
+            panic!("expected do while statement");
+        };
+
+        assert!(!post_check);
+        assert!(matches!(
+            module.arenas.expr(*condition).map(|expr| &expr.kind),
+            Some(HirExprKind::Binary {
+                op: HirBinaryOp::Lt,
+                ..
+            })
+        ));
+        assert!(
+            body.iter()
+                .any(|stmt| find_let_stmt(&module.arenas, *stmt).is_some()),
+            "expected assignment in loop body: {module:#?}"
+        );
+    }
+
+    #[test]
     fn hir_builder_preserves_cst_backpointer_spans_from_parser() {
         let source = "Sub Main()\n    Dim total As Long\n    total = 1\nEnd Sub\n";
         let module = build_hir_from_source("Module1", source).expect("HIR module");
@@ -1255,6 +1365,16 @@ mod tests {
             Some(HirStmtKind::Block(children)) => {
                 children.iter().find_map(|child| find_if_stmt(hir, *child))
             }
+            _ => None,
+        }
+    }
+
+    fn find_do_while_stmt(hir: &HirArenas, stmt: HirStmtId) -> Option<HirStmtId> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::DoWhile { .. }) => Some(stmt),
+            Some(HirStmtKind::Block(children)) => children
+                .iter()
+                .find_map(|child| find_do_while_stmt(hir, *child)),
             _ => None,
         }
     }

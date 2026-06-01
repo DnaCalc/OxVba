@@ -20,6 +20,7 @@ The initial production scope is intentionally narrow and explicit:
 - `Dim` metadata line projection,
 - implicit/explicit `Let` and `Set` assignments,
 - simple multiline `If ... Then ... End If` statements without `ElseIf`,
+- front-checked `Do While ... Loop` statements without `Exit Do` or post-check loop conditions,
 - literals, names, unary expressions, and binary arithmetic/comparison/logical expressions, and
 - typed structural `Null`/`Nothing` literals,
 - same-module procedure call statements whose targets bind to procedure symbols and whose arguments
@@ -64,10 +65,26 @@ The third FE-8.5 slice removes the simplest control-flow route residual:
   `If x = 0 Then ... End If` fixture; and
 - the route audit classifies the simple If fixture as `HirProduction`.
 
-This is intentionally not full control-flow closure. `ElseIf`, `Do`/`Loop`, `For`, `For Each`,
-`While`, `Select Case`, labels, `GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5
-residuals until each has HIR shape, lowering tests, bytecode/metadata parity or documented
-improvement classification, and route-audit coverage.
+This is intentionally not full control-flow closure. `ElseIf`, `Do Until`, post-check
+`Loop While`/`Loop Until`, `Exit Do`, `For`, `For Each`, `While`/`Wend`, `Select Case`, labels,
+`GoTo`/`GoSub`, and error-control constructs remain tracked FE-8.5 residuals until each has HIR
+shape, lowering tests, bytecode/metadata parity or documented improvement classification, and
+route-audit coverage.
+
+## Loop Continuation
+
+The fourth FE-8.5 slice removes the simplest loop route residual:
+
+- front-checked `DoStmt` nodes with a leading `While` condition lower into `HirStmtKind::DoWhile`;
+- HIR consumers for lowering-contract facts, semantic-model indexing, and type hooks now walk loop
+  bodies instead of ignoring nested statements;
+- production HIR lowering converts front-checked `DoWhile` HIR into `BoundStmt::DoWhile`; and
+- HIR production bytecode emission now reaches loop branch and backedge bytecode for the
+  `Do While x < 3 ... Loop` fixture.
+
+This slice deliberately rejects `Do Until`, bare `Do`, and post-check `Loop While`/`Loop Until`
+forms from HIR production lowering. Those routes still fall back as tracked residuals until their
+condition polarity and exit semantics are covered directly.
 
 ## Checks
 

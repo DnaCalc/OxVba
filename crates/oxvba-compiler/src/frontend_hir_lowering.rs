@@ -74,7 +74,6 @@ fn first_unsupported_production_syntax(node: oxvba_syntax::SyntaxNode<'_>) -> Op
             | SyntaxKind::EnumBlock
             | SyntaxKind::ForStmt
             | SyntaxKind::ForEachStmt
-            | SyntaxKind::DoStmt
             | SyntaxKind::WhileStmt
             | SyntaxKind::SelectStmt
             | SyntaxKind::WithStmt
@@ -292,6 +291,21 @@ fn lower_stmt(
                 cond: lower_condition(typed_hir, *condition)?,
                 then_body: lowered_then,
                 else_body: lowered_else,
+            });
+        }
+        HirStmtKind::DoWhile {
+            condition,
+            body,
+            post_check,
+        } => {
+            let mut lowered_body = Vec::new();
+            for stmt in body {
+                lower_stmt(typed_hir, *stmt, &mut lowered_body)?;
+            }
+            out.push(BoundStmt::DoWhile {
+                cond: lower_condition(typed_hir, *condition)?,
+                body: lowered_body,
+                post_check: *post_check,
             });
         }
         HirStmtKind::Empty => {}
@@ -739,5 +753,34 @@ mod tests {
                 && main.slots.iter().any(|slot| slot.name == "y"),
             "{main:#?}"
         );
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_loop_bytecode_for_do_while() {
+        let source = "Sub Main()\nDim x As Long\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::JumpIfZero { .. })),
+            "expected loop exit branch bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Jump { .. })),
+            "expected loop backedge bytecode: {:?}",
+            bytecode.instructions
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(main.slots.iter().any(|slot| {
+            slot.name == "x"
+                && slot.kind == crate::ProcedureRuntimeSlotKind::Local
+                && slot.declared_type == VbaTypeId::Long
+        }));
     }
 }
