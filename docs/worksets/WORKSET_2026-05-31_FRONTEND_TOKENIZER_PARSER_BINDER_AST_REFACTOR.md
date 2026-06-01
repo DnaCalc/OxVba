@@ -533,6 +533,7 @@ Created child bead mapping:
 | FE-6.4 Type and coercion hooks | `bd-aprs.7.4` |
 | FE-6.5 Diagnostic mapping | `bd-aprs.7.5` |
 | FE-6.6 Production binder integration | `bd-aprs.7.6` |
+| FE-6.7 Bare object `Is` identity binding/lowering | `bd-aprs.7.7` |
 | FE-7.1 Qualified names and project/module lookup | `bd-aprs.8.1` |
 | FE-7.2 Member dispatch classification | `bd-aprs.8.2` |
 | FE-7.3 Property and assignment semantics | `bd-aprs.8.3` |
@@ -723,6 +724,10 @@ Candidate bead units:
   expressions, statements, calls, names, scopes, types, diagnostics, and coercions are bound from
   compiler-owned `SymbolId`/HIR/SemanticModel facts instead of legacy string recovery.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_BINDER_INTEGRATION_2026-06-01.md`.
+- FE-6.7 Bare object `Is` identity binding/lowering: bind and lower `a Is b` and `a Is Nothing`
+  as object identity through production front-end facts. This bead was added during the reopened
+  FE-4.1 review after rejecting the incorrect shortcut of lowering bare `Is` as equality.
+  Evidence: to be created by `bd-aprs.7.7`.
 
 Evidence gate: selected constructs bind through HIR, answer SemanticModel queries, and lower/run
 with behavior matching or improving the legacy path.

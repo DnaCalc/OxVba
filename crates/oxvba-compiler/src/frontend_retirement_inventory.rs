@@ -15,9 +15,9 @@ pub struct LegacyRetirementRow {
 pub const LEGACY_RETIREMENT_ROWS: &[LegacyRetirementRow] = &[
     LegacyRetirementRow {
         legacy_path: "resolve::parse_expr_for_syntax_bridge",
-        replacement: "frontend_hir + frontend_semantic_model",
-        disposition: RetirementDisposition::QuarantinedResidual,
-        owner: "bd-aprs.10.5",
+        replacement: "syntax_bridge::lower_cst_expr for FE-4.1 expression bridge scope",
+        disposition: RetirementDisposition::Replaced,
+        owner: "bd-aprs.5.1",
     },
     LegacyRetirementRow {
         legacy_path: "project.rs text rewrites for project/class semantics",

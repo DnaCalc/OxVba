@@ -9,24 +9,28 @@ Workset lane: FE-4.4 CST-to-legacy bridge
 Added a temporary `oxvba-compiler::syntax_bridge` module:
 
 - `lower_expression_to_legacy_bound_expr` parses a wrapped expression through `oxvba-syntax`,
-  verifies the expected CST assignment shape, then lowers the selected expression through the
-  current legacy `BoundExpr` parser;
+  verifies the expected CST assignment shape, then lowers the selected expression from the CST
+  node shape into the existing `BoundExpr` representation;
 - `compile_source_via_syntax_bridge` parses full source through `oxvba-syntax` and, when accepted,
   compiles through the existing compiler/lowering path;
 - bridge tests cover expression precedence lowering (`1 + 2 * 3`) and a real assignment family
   compiling to bytecode after CST validation.
 
-The bridge is intentionally transitional. It does not enable production routing and does not replace
-the future HIR binder.
+The bridge is intentionally transitional. It does not replace the future HIR binder. After the
+workset reopen, the FE-4.1 expression bridge no longer calls the special legacy
+`parse_expr_for_syntax_bridge` hook; unsupported expression shapes fail explicitly instead of
+falling back silently.
 
 ## Verification
 
 Commands run from repository root:
 
 - `cargo test -p oxvba-compiler syntax_bridge --quiet`
-  - Result: passed, 2 tests.
+  - First-run result: passed, 2 tests.
+  - Reopen result: passed, 3 tests after adding CST expression lowering coverage.
 - `cargo test -p oxvba-syntax --quiet`
-  - Result: passed, 78 unit tests plus 2 integration tests.
+  - First-run result: passed, 78 unit tests plus 2 integration tests.
+  - Reopen result: passed, 79 unit tests plus 2 integration tests.
 - `cargo fmt --check -p oxvba-compiler -p oxvba-syntax`
   - Result: passed after formatting.
 - `git diff --check`
@@ -35,9 +39,10 @@ Commands run from repository root:
 ## Fresh-Eyes Review
 
 The bridge deliberately does not pretend to be a full CST lowerer. Its value is a concrete,
-checked handoff point: the new CST parser must accept the source first, and only then does the
-legacy lowering parse/compile the selected supported construct. This matches the workset plan's
-transition phase without committing production behavior to an incomplete front end.
+checked handoff point: the new CST parser must accept the source first, and FE-4.1 expression
+forms are now lowered from the CST rather than reparsed from source text by the legacy expression
+parser. Full statement/source compilation still uses the legacy compiler after CST validation until
+later HIR/binder/lowering beads replace that path.
 
 The test assertion initially referenced a nonexistent `StoreSlot` bytecode instruction. The final
 test checks the actual instruction family emitted by this compiler for the assignment/arithmetic
