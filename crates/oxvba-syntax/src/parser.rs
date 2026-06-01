@@ -1350,7 +1350,11 @@ impl<'a> Parser<'a> {
             self.eat_whitespace();
             if self.at(SyntaxKind::KwIf) {
                 self.bump();
+            } else {
+                self.error("expected `End If`".into());
             }
+        } else {
+            self.error("expected `End If`".into());
         }
         self.eat_to_eol();
 
@@ -1421,6 +1425,8 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::KwNext) {
             self.bump();
             self.eat_to_eol();
+        } else {
+            self.error("expected `Next`".into());
         }
 
         self.finish_node();
@@ -1460,6 +1466,8 @@ impl<'a> Parser<'a> {
                 }
             }
             self.eat_to_eol();
+        } else {
+            self.error("expected `Loop`".into());
         }
 
         self.finish_node();
@@ -1550,7 +1558,11 @@ impl<'a> Parser<'a> {
             self.eat_whitespace();
             if self.at(SyntaxKind::KwWith) {
                 self.bump();
+            } else {
+                self.error("expected `End With`".into());
             }
+        } else {
+            self.error("expected `End With`".into());
         }
         self.eat_to_eol();
 
@@ -1884,6 +1896,46 @@ mod tests {
             has_node_kind(&p.syntax(), SyntaxKind::ErrorNode),
             "expected zero-width ErrorNode for missing Set RHS"
         );
+    }
+
+    #[test]
+    fn incomplete_block_edits_report_stable_recovery_diagnostics() {
+        let cases = [
+            (
+                "if",
+                "Sub T()\nIf x Then\n    y = 1\nEnd Sub\n",
+                "expected `End If`",
+            ),
+            (
+                "for",
+                "Sub T()\nFor i = 1 To 3\n    y = i\nEnd Sub\n",
+                "expected `Next`",
+            ),
+            (
+                "do",
+                "Sub T()\nDo While x\n    x = x - 1\nEnd Sub\n",
+                "expected `Loop`",
+            ),
+            (
+                "with",
+                "Sub T()\nWith obj\n    .Value = 1\nEnd Sub\n",
+                "expected `End With`",
+            ),
+        ];
+
+        for (label, src, expected) in cases {
+            let p = parse(src);
+            assert_eq!(
+                p.syntax().text(),
+                src,
+                "{label}: source must remain lossless"
+            );
+            assert!(
+                p.errors().iter().any(|error| error.message == expected),
+                "{label}: expected diagnostic {expected:?}, got {:?}",
+                p.errors()
+            );
+        }
     }
 
     #[test]
