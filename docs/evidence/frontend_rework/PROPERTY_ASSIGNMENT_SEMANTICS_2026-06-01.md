@@ -40,6 +40,9 @@ The 2026-06-01 continuation added:
 - project symbol indexing now falls back to a conservative signature-level legacy line scan when
   the syntax parser rejects a compatibility-heavy module body; this keeps the production route
   usable while the parser grammar is still being migrated.
+- active-project explicit class property Get/Let/Set rewrites now consult the accessor-specific
+  front-end project route first; the older `ProcedureDecl` scan remains as fallback for rewrite
+  bridge, referenced projects, non-property members, and route gaps.
 
 ## Checks
 
@@ -84,10 +87,16 @@ The 2026-06-01 continuation added:
 - The route validation is intentionally active-project only. Referenced projects and host-injected
   roots are still handled by the existing project/COM rewrite lanes and belong to later FE-7/FE-8
   migration beads.
+- Explicit active-project property member reads and writes now consume front-end route decisions in
+  the production lowering path. Fresh-eyes review found that a missing route cannot be treated as
+  drift because the old resolver also probes property routes while diagnosing non-property members;
+  missing accessor routes therefore fall back, while present routes are checked for kind/module/name
+  consistency before being used.
 - The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
   rejecting modules that the current parser cannot fully parse, but it only records signature-level
   procedures/properties/fields.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
-  assignment diagnostics for compiled projects. Next step: make property/default-member lowering
-  consume the accessor-specific front-end route decisions instead of only validating them.
+  assignment diagnostics for compiled projects. Next step: migrate default-member routing and
+  assignment diagnostics onto the same front-end decision surface, then quarantine or delete the
+  replaced legacy scans.

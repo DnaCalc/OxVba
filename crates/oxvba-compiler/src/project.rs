@@ -1359,10 +1359,17 @@ fn active_project_route_owner_name(
     manifest: &ProjectManifest,
     decl: &ProcedureDecl,
 ) -> Option<String> {
+    active_project_route_owner_name_by_module(manifest, &decl.module_name)
+}
+
+fn active_project_route_owner_name_by_module(
+    manifest: &ProjectManifest,
+    module_name: &str,
+) -> Option<String> {
     manifest
         .modules
         .iter()
-        .find(|module| normalize_identifier(&module.module_name) == decl.module_name)
+        .find(|module| normalize_identifier(&module.module_name) == module_name)
         .map(effective_module_name)
 }
 
@@ -3206,6 +3213,7 @@ fn lower_module_source_module_aware(
             );
             let expanded_line = rewrite_internal_class_set_assignment(
                 manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -3216,6 +3224,8 @@ fn lower_module_source_module_aware(
                 &withevents_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
+                manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -3274,6 +3284,8 @@ fn lower_module_source_module_aware(
                 &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_property_reads(
+                manifest,
+                Some(project_symbol_index),
                 &expanded_line,
                 active_project,
                 current_project,
@@ -4809,6 +4821,8 @@ fn rewrite_internal_class_member_dispatch(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_property_reads(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -4823,6 +4837,8 @@ fn rewrite_internal_class_property_reads(
         return Ok(line.to_string());
     }
     let rewritten = rewrite_internal_class_property_expression_reads(
+        manifest,
+        project_symbol_index,
         line,
         active_project,
         current_project,
@@ -4886,6 +4902,8 @@ fn rewrite_internal_class_default_member_statement_reads(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_property_expression_reads(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     text: &str,
     active_project: &str,
     current_project: &str,
@@ -4948,11 +4966,24 @@ fn rewrite_internal_class_property_expression_reads(
         // A no-paren rvalue member read (`x = obj.Member`) is, in VBA, either a
         // `Property Get` read or a call to a `Function` callable with no arguments (one with
         // no parameters, or whose parameters are all `Optional`/`ParamArray`). Probe
-        // `PropertyGet` first (unchanged precedence); if nothing matches, fall back to such a
-        // `Function` (get-or-call). A `Function` with a *required* parameter is intentionally
-        // not matched here — reading it without arguments is a VBA error ("Argument not
-        // optional"), raised as a diagnostic below.
-        let resolved = match resolve_internal_class_member_target_of_kinds(
+        // the front-end `PropertyGet` route first, then the legacy scan, then no-arg functions.
+        let resolved = if let Some(found) =
+            resolve_internal_class_member_target_via_frontend_property_route(
+                manifest,
+                project_symbol_index,
+                &receiver,
+                &member,
+                raw_name,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+                shadowed_identifiers,
+                &[ProcedureDeclKind::PropertyGet],
+            )? {
+            Some(found)
+        } else if let Some(found) = resolve_internal_class_member_target_of_kinds(
             &receiver,
             &member,
             raw_name,
@@ -4964,8 +4995,9 @@ fn rewrite_internal_class_property_expression_reads(
             shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )? {
-            Some(found) => Some(found),
-            None => resolve_internal_class_member_target_of_kinds(
+            Some(found)
+        } else {
+            resolve_internal_class_member_target_of_kinds(
                 &receiver,
                 &member,
                 raw_name,
@@ -4981,7 +5013,7 @@ fn rewrite_internal_class_property_expression_reads(
                 procedures
                     .iter()
                     .any(|decl| &decl.lowered_name == target && proc_callable_with_no_args(decl))
-            }),
+            })
         };
         if let Some((target, instance_arg)) = resolved {
             replacements.push((
@@ -5002,13 +5034,6 @@ fn rewrite_internal_class_property_expression_reads(
                 shadowed_identifiers,
             )?
         {
-            // Diagnostic-parity (docs/CONFORMANCE.md): a no-paren *value-context* read did
-            // not resolve to a Property Get or a no-arg-callable Function. When the receiver
-            // is one of our internal-class objects and the member is a Sub (→ "Expected
-            // Function or variable") or a Function with a required argument (→ "Argument not
-            // optional"), VBA raises a compile-time error here — match it rather than silently
-            // leaving the read unresolved (which would yield `Empty`). Statement-form reads
-            // (`obj.DoThing`) are excluded so valid Sub calls still route to member dispatch.
             return Err(error);
         }
     }
@@ -5123,6 +5148,108 @@ fn property_expression_read_is_assignment_lhs(text: &str, receiver_start: usize)
     }
 
     matches!(prefix.to_ascii_lowercase().as_str(), "let" | "set")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_member_target_via_frontend_property_route(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    receiver: &str,
+    member: &str,
+    raw_name: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
+    allowed_kinds: &[ProcedureDeclKind],
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let Some(project_symbol_index) = project_symbol_index else {
+        return Ok(None);
+    };
+    let Some(expected_decl_kind) = single_property_decl_kind(allowed_kinds) else {
+        return Ok(None);
+    };
+    let Some((target_project, target_module, instance_arg)) =
+        resolve_internal_class_receiver_target(
+            receiver,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+        )?
+    else {
+        return Ok(None);
+    };
+    if target_project != active_project {
+        return Ok(None);
+    }
+    let Some(owner_name) = active_project_route_owner_name_by_module(manifest, &target_module)
+    else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROPERTY-ROUTE-OWNER: missing module {target_module} for property {member}"
+            ),
+        });
+    };
+    let expected_kind = project_symbol_kind_for_property_decl(expected_decl_kind);
+    let Some(route) =
+        project_symbol_index
+            .tables
+            .resolve_property_accessor(&owner_name, member, expected_kind)
+    else {
+        return Ok(None);
+    };
+    let Some(decl) = procedure_decl_for_project_symbol_route(
+        manifest,
+        active_project,
+        project_symbol_index,
+        route,
+        procedures,
+    ) else {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!(
+                "FE7-E-PROPERTY-ROUTE-UNBOUND: {owner_name}.{member} {expected_kind:?}"
+            ),
+        });
+    };
+    if decl.project_name != target_project
+        || decl.module_name != target_module
+        || decl.procedure_name != member
+        || decl.kind != expected_decl_kind
+        || !is_visible_from_active_project(decl, active_project, current_project, current_module)
+    {
+        return Err(ProjectCompileError::BackendCompile {
+            message: format!("FE7-E-PROPERTY-ROUTE-DRIFT: {raw_name} {expected_kind:?}"),
+        });
+    }
+    Ok(Some((decl.lowered_name.clone(), instance_arg)))
+}
+
+fn resolve_internal_class_receiver_target(
+    receiver: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
+) -> Result<Option<(String, String, String)>, ProjectCompileError> {
+    if let Some(binding) = internal_class_bindings.get(receiver) {
+        Ok(Some((
+            binding.project_name.clone(),
+            binding.module_name.clone(),
+            receiver.to_string(),
+        )))
+    } else {
+        resolve_implicit_class_receiver_binding(receiver, procedures, shadowed_identifiers)
+    }
+}
+
+fn single_property_decl_kind(allowed_kinds: &[ProcedureDeclKind]) -> Option<ProcedureDeclKind> {
+    match allowed_kinds {
+        [ProcedureDeclKind::PropertyGet] => Some(ProcedureDeclKind::PropertyGet),
+        [ProcedureDeclKind::PropertyLet] => Some(ProcedureDeclKind::PropertyLet),
+        [ProcedureDeclKind::PropertySet] => Some(ProcedureDeclKind::PropertySet),
+        _ => None,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5596,6 +5723,7 @@ fn rewrite_internal_class_self_dispatch(
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_set_assignment(
     manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -5654,8 +5782,12 @@ fn rewrite_internal_class_set_assignment(
             }
             (member_name, Vec::new())
         };
-        if !receiver.is_empty()
-            && let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+        let resolved = if receiver.is_empty() {
+            None
+        } else if let Some(found) =
+            resolve_internal_class_member_target_via_frontend_property_route(
+                manifest,
+                project_symbol_index,
                 &receiver,
                 &member,
                 lhs,
@@ -5668,6 +5800,22 @@ fn rewrite_internal_class_set_assignment(
                 &[ProcedureDeclKind::PropertySet],
             )?
         {
+            Some(found)
+        } else {
+            resolve_internal_class_member_target_of_kinds(
+                &receiver,
+                &member,
+                lhs,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+                shadowed_identifiers,
+                &[ProcedureDeclKind::PropertySet],
+            )?
+        };
+        if let Some((target, instance_arg)) = resolved {
             let mut lowered_args = vec![instance_arg];
             lowered_args.append(&mut indexed_args);
             lowered_args.push(rhs.to_string());
@@ -5791,6 +5939,8 @@ fn rewrite_internal_class_set_assignment(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_property_assignment(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -5855,19 +6005,37 @@ fn rewrite_internal_class_property_assignment(
     if receiver.is_empty() {
         return Ok(line.to_string());
     }
-    let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
-        &receiver,
-        &member,
-        lhs,
-        active_project,
-        current_project,
-        current_module,
-        procedures,
-        internal_class_bindings,
-        shadowed_identifiers,
-        &[ProcedureDeclKind::PropertyLet],
-    )?
-    else {
+    let resolved = if let Some(found) =
+        resolve_internal_class_member_target_via_frontend_property_route(
+            manifest,
+            project_symbol_index,
+            &receiver,
+            &member,
+            lhs,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+            &[ProcedureDeclKind::PropertyLet],
+        )? {
+        Some(found)
+    } else {
+        resolve_internal_class_member_target_of_kinds(
+            &receiver,
+            &member,
+            lhs,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            shadowed_identifiers,
+            &[ProcedureDeclKind::PropertyLet],
+        )?
+    };
+    let Some((target, instance_arg)) = resolved else {
         return Ok(line.to_string());
     };
     let mut lowered_args = vec![instance_arg];
@@ -8434,6 +8602,7 @@ fn rewrite_module_source(
             );
             let expanded_line = rewrite_internal_class_set_assignment(
                 manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,
@@ -8444,6 +8613,8 @@ fn rewrite_module_source(
                 &withevents_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
+                manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,
@@ -8502,6 +8673,8 @@ fn rewrite_module_source(
                 &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_property_reads(
+                manifest,
+                None,
                 &expanded_line,
                 active_project,
                 current_project,
