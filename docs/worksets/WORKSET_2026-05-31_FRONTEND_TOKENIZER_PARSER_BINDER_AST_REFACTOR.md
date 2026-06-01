@@ -551,6 +551,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/LEXER_LITERAL_COMPLETION_2026-06-01.md`.
 - FE-3.3 Identifier and keyword lexing: cover bracketed identifiers, type suffixes, case folding,
   contextual keywords, and host/library names that collide with keywords.
+  Evidence: `docs/evidence/frontend_rework/LEXER_IDENTIFIER_KEYWORD_COMPLETION_2026-06-01.md`.
 - FE-3.4 Lexer snapshot corpus: add token snapshots and round-trip tests across the grammar
   matrix and existing project fixtures.
 

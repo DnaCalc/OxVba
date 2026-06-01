@@ -169,8 +169,8 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
             let kind = keyword_kind(&lower).unwrap_or(SyntaxKind::Ident);
             tokens.push((kind, text));
 
-            // Type suffix after identifier: %, &, !, #, @, $
-            if kind == SyntaxKind::Ident && i < bytes.len() && is_type_suffix(bytes[i]) {
+            // Type suffix after identifier-like word: %, &, !, #, @, $
+            if can_have_type_suffix(kind) && i < bytes.len() && is_type_suffix(bytes[i]) {
                 let ts = i;
                 i += 1;
                 tokens.push((SyntaxKind::TypeSuffix, &source[ts..i]));
@@ -270,6 +270,10 @@ fn looks_like_date(bytes: &[u8], i: usize) -> bool {
 
 fn is_type_suffix(b: u8) -> bool {
     matches!(b, b'%' | b'&' | b'!' | b'#' | b'@' | b'$')
+}
+
+fn can_have_type_suffix(kind: SyntaxKind) -> bool {
+    kind == SyntaxKind::Ident || kind.is_keyword()
 }
 
 fn is_integer_type_suffix(b: u8) -> bool {
@@ -472,6 +476,33 @@ mod tests {
         let toks = tokenize("x%");
         assert_eq!(toks[0], (SyntaxKind::Ident, "x"));
         assert_eq!(toks[1], (SyntaxKind::TypeSuffix, "%"));
+    }
+
+    #[test]
+    fn keyword_colliding_names_keep_attached_type_suffixes() {
+        let toks = tokenize("Function Name$()\nEnd Function");
+        assert_eq!(toks[0], (SyntaxKind::KwFunction, "Function"));
+        assert_eq!(toks[2], (SyntaxKind::KwName, "Name"));
+        assert_eq!(toks[3], (SyntaxKind::TypeSuffix, "$"));
+    }
+
+    #[test]
+    fn identifiers_keywords_and_bracketed_names_are_case_preserving() {
+        let src = "Application.[Type]\nDim [Line Input] As String\nVaRiAnT";
+        let toks = tokenize(src);
+        let reconstructed: String = toks.iter().map(|(_, text)| *text).collect();
+        assert_eq!(reconstructed, src);
+        assert!(
+            toks.iter()
+                .any(|(kind, text)| *kind == SyntaxKind::BracketedIdent && *text == "[Type]")
+        );
+        assert!(toks.iter().any(|(kind, text)| {
+            *kind == SyntaxKind::BracketedIdent && *text == "[Line Input]"
+        }));
+        assert!(
+            toks.iter()
+                .any(|(kind, text)| *kind == SyntaxKind::Ident && *text == "VaRiAnT")
+        );
     }
 
     #[test]
