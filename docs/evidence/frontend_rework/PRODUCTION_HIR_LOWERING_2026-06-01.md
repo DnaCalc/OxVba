@@ -41,11 +41,16 @@ after the hidden CST bridge fallback was removed:
 - Lowered procedure parameters now preserve explicit `ByVal` / `ByRef` source mechanisms, so call
   descriptors no longer report `ByVal` parameters as omitted/default `ByRef`.
 
-This is still not FE-8.5 closure. The seed corpus now pins
-`conformance/tests/call_coercion_mixed_variant_to_long.bas` as the remaining FE-8.5 bug row:
-frontend v2 reaches HIR production, but bytecode and metadata still drift from legacy for the
-call/coercion case. That residual must be removed or explicitly justified by behavior evidence
-before `bd-aprs.9.5` can close.
+The call/coercion seed row no longer exposes a bytecode or call-descriptor bug after this slice.
+`conformance/tests/call_coercion_mixed_variant_to_long.bas` now matches diagnostics, bytecode, call
+site metadata, and coercion descriptors. The only remaining delta is source-map metadata for the
+second procedure: HIR reports the actual `Sub Use` line after the blank line, while the legacy
+projection maps the procedure one line early. The diff classifier now records that as a documented
+metadata improvement instead of a bug.
+
+This is still not blanket FE-8.5 closure. Broader HIR production lowering remains open for language
+surfaces outside this simple same-module call subset, especially optional/default arguments,
+ParamArray, member/index dispatch, control flow, and project/class paths owned jointly with FE-7.
 
 ## Checks
 
@@ -72,7 +77,7 @@ before `bd-aprs.9.5` can close.
 - The simple assignment parity check initially exposed metadata drift in assignment intent and
   declaration line numbers; HIR lowering now preserves implicit assignment intent and projects local
   declaration source lines into procedure metadata.
-- A corpus bookkeeping error briefly attached the known FE-8.5 bug rationale to
+- A corpus bookkeeping error briefly attached the FE-8.5 call/coercion rationale to
   `examples/basic/arithmetic.bas`. The corpus test now asserts that the single bug row is
-  `conformance_call_coercion_mixed_variant_to_long`, so equivalent arithmetic cannot mask a
-  call/coercion residual.
+  gone and that `conformance_call_coercion_mixed_variant_to_long` is an intentional metadata
+  improvement, so equivalent arithmetic cannot mask a call/coercion residual.

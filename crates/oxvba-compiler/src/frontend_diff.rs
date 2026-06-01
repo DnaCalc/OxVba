@@ -115,12 +115,20 @@ pub enum ExpectedDiagnosticDrift {
     IntentionalImprovement,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedMetadataDrift {
+    Bug,
+    HarmlessDrift,
+    IntentionalImprovement,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffClassificationInput {
     pub fixture_name: String,
     pub fixture_path: String,
     pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
     pub expected_diagnostic_drift: Option<ExpectedDiagnosticDrift>,
+    pub expected_metadata_drift: Option<ExpectedMetadataDrift>,
     pub rationale: String,
     pub close_condition: String,
 }
@@ -159,6 +167,7 @@ pub struct FrontendCorpusFixture {
     pub source: Option<String>,
     pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
     pub expected_diagnostic_drift: Option<ExpectedDiagnosticDrift>,
+    pub expected_metadata_drift: Option<ExpectedMetadataDrift>,
     pub rationale: String,
     pub close_condition: String,
 }
@@ -252,10 +261,15 @@ pub fn classify_frontend_diff(
             | (Some(ExpectedDiagnosticDrift::Bug), _)
             | (None, _) => DiffClassificationKind::Bug,
         }
-    } else if !report.metadata_matches
-        || !report.execution_trace_matches
-        || !report.observable_output_matches
-    {
+    } else if !report.metadata_matches {
+        match input.expected_metadata_drift {
+            Some(ExpectedMetadataDrift::HarmlessDrift) => DiffClassificationKind::HarmlessDrift,
+            Some(ExpectedMetadataDrift::IntentionalImprovement) => {
+                DiffClassificationKind::IntentionalImprovement
+            }
+            Some(ExpectedMetadataDrift::Bug) | None => DiffClassificationKind::Bug,
+        }
+    } else if !report.execution_trace_matches || !report.observable_output_matches {
         DiffClassificationKind::Bug
     } else if !report.bytecode_matches {
         match input.expected_bytecode_drift {
@@ -358,6 +372,7 @@ fn run_frontend_corpus_fixture(fixture: &FrontendCorpusFixture) -> FrontendCorpu
             fixture_path: fixture.fixture_path.clone(),
             expected_bytecode_drift: fixture.expected_bytecode_drift,
             expected_diagnostic_drift: fixture.expected_diagnostic_drift,
+            expected_metadata_drift: fixture.expected_metadata_drift,
             rationale: fixture.rationale.clone(),
             close_condition: fixture.close_condition.clone(),
         },
@@ -804,6 +819,7 @@ mod tests {
                 fixture_path: "inline:frontend_diff".to_string(),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -822,6 +838,7 @@ mod tests {
                 fixture_path: "inline:frontend_diff".to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -847,6 +864,7 @@ mod tests {
                         .to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale:
                     "alternate lowering reuses temporaries while preserving metadata and output"
                         .to_string(),
@@ -874,6 +892,7 @@ mod tests {
                         .to_string(),
                 expected_bytecode_drift: Some(ExpectedBytecodeDrift::IntentionalImprovement),
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: "new lowering fixes a documented legacy divergence".to_string(),
                 close_condition:
                     "requires fixture evidence linking the divergence and expected VBA behavior"
@@ -897,6 +916,7 @@ mod tests {
                     .to_string(),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: "legacy rejects a v2 accepted inline statement sequence".to_string(),
                 close_condition: "requires v2 compile success and follow-up execution evidence"
                     .to_string(),
@@ -923,6 +943,7 @@ mod tests {
                         .to_string(),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                expected_metadata_drift: None,
                 rationale:
                     "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
                         .to_string(),
@@ -960,6 +981,7 @@ mod tests {
                 fixture_path: "inline:frontend_diff::synthetic_warning_drift".to_string(),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                expected_metadata_drift: None,
                 rationale: "synthetic diagnostic drift while both sides compile".to_string(),
                 close_condition:
                     "should not be classified as an acceptance improvement without one-sided compile availability"
@@ -977,20 +999,22 @@ mod tests {
         assert_eq!(report.ran_count, 3, "{report:#?}");
         assert_eq!(report.skipped_count, 2, "{report:#?}");
         assert_eq!(report.equivalent_count, 1, "{report:#?}");
-        assert_eq!(report.intentional_improvement_count, 1, "{report:#?}");
-        assert_eq!(report.bug_count, 1, "{report:#?}");
-        let bug_rows: Vec<_> = report
+        assert_eq!(report.intentional_improvement_count, 2, "{report:#?}");
+        assert_eq!(report.bug_count, 0, "{report:#?}");
+        let improvement_rows: Vec<_> = report
             .rows
             .iter()
             .filter(|row| {
                 row.classification.as_ref().is_some_and(|classification| {
-                    classification.kind == DiffClassificationKind::Bug
+                    classification.kind == DiffClassificationKind::IntentionalImprovement
                 })
             })
             .collect();
-        assert_eq!(bug_rows.len(), 1, "{report:#?}");
-        assert_eq!(
-            bug_rows[0].name, "conformance_call_coercion_mixed_variant_to_long",
+        assert_eq!(improvement_rows.len(), 2, "{report:#?}");
+        assert!(
+            improvement_rows
+                .iter()
+                .any(|row| row.name == "conformance_call_coercion_mixed_variant_to_long"),
             "{report:#?}"
         );
         assert_eq!(
@@ -1071,6 +1095,7 @@ mod tests {
                 fixture_path: "inline".to_string(),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: "metadata drift should be diagnosed semantically".to_string(),
                 close_condition: "field-level metadata diff is investigated".to_string(),
             },
@@ -1078,6 +1103,45 @@ mod tests {
         assert!(classification.reasons.iter().any(|reason| {
             reason.contains("metadata summary differs: procedures.main.return_slot")
         }));
+        assert_eq!(classification.kind, DiffClassificationKind::Bug);
+    }
+
+    #[test]
+    fn diff_classifier_classifies_documented_metadata_improvement() {
+        let report = compare_legacy_to_frontend_v2(include_str!(
+            "../../../conformance/tests/call_coercion_mixed_variant_to_long.bas"
+        ));
+        assert_eq!(
+            report.metadata_differences,
+            vec![
+                "procedures.use.source_line_start".to_string(),
+                "procedures.use.source_line_end".to_string(),
+                "procedures.use.statement_line_numbers".to_string(),
+            ],
+            "{report:#?}"
+        );
+
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "metadata_source_map_improvement".to_string(),
+                fixture_path: "conformance/tests/call_coercion_mixed_variant_to_long.bas"
+                    .to_string(),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                expected_metadata_drift: Some(ExpectedMetadataDrift::IntentionalImprovement),
+                rationale:
+                    "HIR source spans preserve the blank line before the second procedure; legacy metadata maps the second procedure one line early"
+                        .to_string(),
+                close_condition:
+                    "keep as improvement only while bytecode, diagnostics, call descriptors, and non-source-map metadata match"
+                        .to_string(),
+            },
+        );
+        assert_eq!(
+            classification.kind,
+            DiffClassificationKind::IntentionalImprovement
+        );
     }
 
     fn bytecode_drift_report() -> FrontendDiffReport {
@@ -1111,6 +1175,7 @@ mod tests {
                 source: Some(include_str!("../../../examples/basic/arithmetic.bas").to_string()),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -1125,13 +1190,14 @@ mod tests {
                     )
                     .to_string(),
                 ),
-                expected_bytecode_drift: Some(ExpectedBytecodeDrift::Bug),
+                expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: Some(ExpectedMetadataDrift::IntentionalImprovement),
                 rationale:
-                    "HIR production now reaches same-module procedure call statements, but FE-8.5 still owns eliminating the remaining bytecode and metadata drift for this call/coercion fixture"
+                    "HIR production now reaches same-module procedure call statements with matching bytecode and call metadata; its source map preserves the blank line before the second procedure where legacy metadata points one line early"
                         .to_string(),
                 close_condition:
-                    "reclassify when the call/coercion fixture routes through HIR production with equivalent behavior, call-site metadata, and accepted bytecode drift only where deliberately improved"
+                    "keep as improvement only while diagnostics, bytecode, call descriptors, and non-source-map metadata match"
                         .to_string(),
             },
             FrontendCorpusFixture {
@@ -1145,6 +1211,7 @@ mod tests {
                 ),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: Some(ExpectedDiagnosticDrift::IntentionalImprovement),
+                expected_metadata_drift: None,
                 rationale:
                     "v2 accepts a CST-valid inline statement sequence that legacy-default rejects"
                         .to_string(),
@@ -1165,6 +1232,7 @@ mod tests {
                 ),
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },
@@ -1177,6 +1245,7 @@ mod tests {
                 source: None,
                 expected_bytecode_drift: None,
                 expected_diagnostic_drift: None,
+                expected_metadata_drift: None,
                 rationale: String::new(),
                 close_condition: String::new(),
             },

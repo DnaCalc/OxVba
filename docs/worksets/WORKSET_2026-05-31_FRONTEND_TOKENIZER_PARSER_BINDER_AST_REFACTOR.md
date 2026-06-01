@@ -839,9 +839,10 @@ Candidate bead units:
   bodies, tried before the CST/legacy bridge in frontend-v2 compilation. Unsupported constructs are
   rejected before HIR lowering and remain on the tracked fallback path rather than being silently
   partially lowered. Second reopened continuation adds simple same-module procedure call statement
-  lowering and explicit `ByVal` / `ByRef` parameter mechanism projection. Partial work has already
-  been done, but this bead remains open while the call/coercion corpus row still shows bytecode and
-  metadata drift.
+  lowering and explicit `ByVal` / `ByRef` parameter mechanism projection. The call/coercion seed row
+  now matches bytecode and call metadata; its remaining source-map metadata delta is classified as a
+  deliberate HIR improvement. Partial work has already been done, but this bead remains open for
+  broader HIR lowering coverage outside that simple same-module call subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and

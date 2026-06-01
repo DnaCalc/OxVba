@@ -11,14 +11,14 @@ Added a classification policy layer to `crates/oxvba-compiler/src/frontend_diff.
 The classifier turns a `FrontendDiffReport` plus fixture policy into one of:
 
 - `Equivalent`: diagnostics, bytecode summary, metadata, execution trace, and output all match.
-- `Bug`: diagnostics, metadata, trace, or output differ; bytecode differs without an explicit
-  fixture policy; diagnostic/acceptance behavior differs without an explicit fixture policy; or a
-  policy row is missing rationale/close condition.
+- `Bug`: diagnostics, metadata, trace, or output differ without an explicit fixture policy;
+  bytecode differs without an explicit fixture policy; diagnostic/acceptance behavior differs
+  without an explicit fixture policy; or a policy row is missing rationale/close condition.
 - `HarmlessDrift`: only bytecode summary differs, and the fixture row documents why the drift is
   acceptable plus the condition that keeps it acceptable.
-- `IntentionalImprovement`: bytecode or one-sided diagnostic/acceptance behavior differs because
-  the new front-end/lowering intentionally fixes a documented legacy divergence, with evidence and
-  close condition supplied by the fixture.
+- `IntentionalImprovement`: bytecode, documented metadata fields, or one-sided diagnostic/
+  acceptance behavior differs because the new front-end/lowering intentionally fixes a documented
+  legacy divergence, with evidence and close condition supplied by the fixture.
 
 ## Fixture Rows
 
@@ -66,6 +66,20 @@ bridge bytecode and metadata through `compile_source_with_runtime_metadata_via_s
 Without `ExpectedDiagnosticDrift::IntentionalImprovement`, the same report is classified as
 `Bug`.
 
+### fixture-4: source-map metadata improvement
+
+- Fixture link: `conformance/tests/call_coercion_mixed_variant_to_long.bas`
+- Classification: `IntentionalImprovement`
+- Rationale: HIR source spans preserve the blank line before the second procedure, while legacy
+  metadata maps the second procedure one line early.
+- Close condition: keep as improvement only while bytecode, diagnostics, call descriptors, and
+  non-source-map metadata match.
+
+This row proves that metadata differences are not automatically treated as equivalent, but also are
+not forced into `Bug` when the fixture documents a field-level source-map improvement. The reported
+metadata paths are `procedures.use.source_line_start`, `procedures.use.source_line_end`, and
+`procedures.use.statement_line_numbers`.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
@@ -82,10 +96,10 @@ Without `ExpectedDiagnosticDrift::IntentionalImprovement`, the same report is cl
   availability. This matters because a production replacement must be allowed to fix legacy false
   negatives without treating legacy acceptance as the source of truth, while ordinary diagnostic
   drift between two successful compiles remains a bug.
-- Metadata, execution trace, and observable output mismatches are still bugs unless they are a
-  consequence of an explicitly documented diagnostic/acceptance improvement. FE-5.4 must add
-  higher-layer execution observations so those improvement rows can be validated beyond compiler
-  bytecode/metadata availability.
-- Bytecode non-identity evidence remains synthetic because the current v2 route still reuses
-  legacy lowering after CST bridge preparation. The diagnostic improvement fixture is real
-  route-backed evidence from the reopened FE-5.2 harness.
+- Metadata mismatches are still bugs unless the fixture explicitly marks the field-level delta as
+  harmless or an intentional improvement with a rationale and close condition.
+- Execution trace and observable output mismatches remain bugs in the compiler-layer classifier;
+  FE-5.4 must add higher-layer execution observations so improvement rows can be validated beyond
+  compiler bytecode/metadata availability.
+- Bytecode non-identity evidence remains synthetic. The diagnostic and metadata improvement
+  fixtures are real route-backed evidence from the reopened harness.

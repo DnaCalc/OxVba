@@ -29,8 +29,9 @@ reopened seed corpus with real repo fixture sources plus the route-backed v2 imp
 - `examples/basic/arithmetic.bas`: compiler unit row runs through the harness and classifies as
   equivalent;
 - `conformance/tests/call_coercion_mixed_variant_to_long.bas`: conformance row runs through the
-  harness and now reaches HIR production, but remains a known FE-8.5 `Bug` row because bytecode and
-  metadata drift still need semantic resolution;
+  harness and now reaches HIR production with matching bytecode and call descriptors; it classifies
+  as `IntentionalImprovement` because HIR source-map metadata preserves the blank line before the
+  second procedure while legacy metadata points one line early;
 - `inline_statement_separator_bridge_improvement`: compiler unit row runs through the v2 bridge
   route and classifies as `IntentionalImprovement`, because legacy-default rejects the inline
   statement sequence while frontend v2 compiles it with bytecode and metadata;
@@ -42,8 +43,8 @@ Expected report counts:
 - `ran_count = 3`
 - `skipped_count = 2`
 - `equivalent_count = 1`
-- `intentional_improvement_count = 1`
-- `bug_count = 1`
+- `intentional_improvement_count = 2`
+- `bug_count = 0`
 
 ### host-project-residual
 
@@ -74,9 +75,9 @@ Expected report counts:
 - The runner does not pretend the compiler crate can execute host projects or Excel oracle cases.
   Those classes are included in the report as explicit residual skips, not silently omitted.
 - Source-backed compiler and conformance rows already exercise the harness/classifier end to end.
-- The corpus test now asserts that the only bug row is
-  `conformance_call_coercion_mixed_variant_to_long`; this prevents a green count from hiding a
-  rationale attached to the wrong fixture.
+- The corpus test now asserts that `conformance_call_coercion_mixed_variant_to_long` is the
+  documented metadata-improvement row; this prevents a green count from hiding a rationale attached
+  to the wrong fixture.
 - The reopened seed corpus now includes real repository fixture files, not only inline examples,
   and carries the diagnostic-improvement policy from FE-5.3 through the corpus runner.
 - This keeps the dependency direction clean: compiler support code remains independent of VM and

@@ -16,7 +16,8 @@ name bindings, object member bindings, and diagnostic projections via the FE-6.5
 
 The classifier now carries these field-level paths into bug/intentional-drift reasons, so a metadata
 regression can point at stable semantic fields such as `procedures.main.return_slot` even when
-bytecode layout or instruction shape drifts.
+bytecode layout or instruction shape drifts. It also has an explicit metadata-improvement policy for
+documented cases where HIR source maps are more faithful than the legacy projection.
 
 ## Checks
 
@@ -34,3 +35,6 @@ bytecode layout or instruction shape drifts.
   `FrontendDiffReport::metadata_differences`.
 - Source maps are represented through statement line numbers and entry PCs; FE-9.4 can extend this
   when language-service source maps move onto shared SemanticModel facts.
+- Metadata improvements require fixture policy. Undocumented metadata drift still classifies as a
+  bug; the call/coercion source-map row is accepted only because bytecode, diagnostics, call
+  descriptors, and non-source-map metadata match.
