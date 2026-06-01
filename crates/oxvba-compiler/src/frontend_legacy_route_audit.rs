@@ -283,6 +283,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let const_expression_statement =
+        "Const CBase = 1 + 2, CTotal = CBase + 1\nSub Main()\nDim x\nx = CTotal\nEnd Sub\n";
+    findings.push(route_finding(
+        "const expression statement fixture",
+        const_expression_statement,
+        "bd-aprs.9.5",
+    ));
+
     let enum_member_constants =
         "Public Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub\n";
     findings.push(route_finding(
@@ -310,6 +318,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
     findings.push(route_finding(
         "value-side member expression fixture",
         member_expression,
+        "bd-aprs.9.5",
+    ));
+
+    let bang_member_expression = "Sub Main()\nDim obj\nDim x\nx = obj!Value\nEnd Sub\n";
+    findings.push(route_finding(
+        "value-side bang member expression fixture",
+        bang_member_expression,
         "bd-aprs.9.5",
     ));
 
