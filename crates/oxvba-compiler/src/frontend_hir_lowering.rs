@@ -2766,6 +2766,29 @@ mod tests {
     }
 
     #[test]
+    fn hir_production_lowering_accepts_bang_member_assignment_target() {
+        let source = "Sub Main()\nDim obj\nobj!Value = 1\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+
+        assert!(
+            bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::IntrinsicDispatchInvokeHost {
+                        args,
+                        call_kind_hint: Some(crate::bytecode::ProjectMemberCallKind::PropertyLet),
+                        ..
+                    } if args.len() == 1
+                )
+            }),
+            "expected bang member assignment to emit property-let dispatch: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
     fn hir_production_lowering_accepts_bang_member_access() {
         let source = "Sub Main()\nDim obj\nDim x\nx = obj!Value\nEnd Sub\n";
         let (bytecode, metadata) =

@@ -336,6 +336,13 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let bang_member_assignment = "Sub Main()\nDim obj\nobj!Value = 1\nEnd Sub\n";
+    findings.push(route_finding(
+        "bang member assignment target fixture",
+        bang_member_assignment,
+        "bd-aprs.9.5",
+    ));
+
     let statement_form_member_call = "Sub Main()\nDim obj\nobj.Method 1, 2\nEnd Sub\n";
     findings.push(route_finding(
         "statement-form member call arguments fixture",
@@ -526,6 +533,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("member assignment target")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("bang member assignment target")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding
