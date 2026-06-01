@@ -630,11 +630,9 @@ project-instance helper-source compile artifact on the HIR construction route:
   construction source, the dynamic object route retains termination metadata, and both the
   first-use and after-`Nothing` user dereference lines remain mapped.
 
-This is still not full `bd-aprs.9.7` closure. The accepted HIR route now covers lazy first-use and
-after-`Nothing` construction for simple active-project dereference lines plus the narrowed
-source-class `WithEvents Set x = New T` construction fixture, but imported/COM construction,
-unsupported fallback project shapes, and broader WithEvents event/lifetime interactions still need
-closure evidence before the bead can close.
+This closes the scoped `bd-aprs.9.7` active-project construction lane. Imported/reference/COM
+activation remains owned by `bd-aprs.8.8`; unsupported project shapes remain compatibility fallback
+until classified by the broad route audit; broader event semantics remain under FE-7/FE-9 coverage.
 
 ## Const Expression Continuation
 
