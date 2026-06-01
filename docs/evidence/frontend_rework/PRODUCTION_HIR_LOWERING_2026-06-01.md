@@ -9,8 +9,9 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 Added `crates/oxvba-compiler/src/frontend_hir_lowering.rs`, a scoped production HIR lowering path.
 For the currently supported HIR surface, source is parsed and bound into typed HIR, lowered from HIR
 facts into the current bound module shape, then passed through the existing typecheck, optimizer, and
-bytecode/metadata emitter. This means the frontend-v2 syntax bridge now tries real HIR production
-lowering before falling back to the older CST/legacy bridge.
+bytecode/metadata emitter. This means the frontend-v2 syntax bridge and the ordinary lightweight
+single-source compile path now try real HIR production lowering before falling back to tracked
+legacy residuals.
 
 The initial production scope is intentionally narrow and explicit:
 
@@ -150,6 +151,24 @@ The twelfth FE-8.5 slice adds simple `For Each` lowering:
 - production lowering emits the existing `IntrinsicForEachInit` / `IntrinsicForEachNext` bytecode
   path.
 
+## Production Entry-Point Continuation
+
+The thirteenth FE-8.5/FE-9.1 slice wires completed HIR lowering into the ordinary lightweight
+single-source compile path:
+
+- `compile()` / `compile_with_runtime_metadata()` now try
+  `frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir` before entering the legacy
+  resolver for eligible non-class, non-forced-object-local sources;
+- unsupported HIR shapes still fall through to the tracked legacy residual route;
+- HIR compile/type errors remain compile errors instead of being hidden by fallback; and
+- the diff harness now uses `compile_with_runtime_metadata_legacy` for the old baseline, so
+  differential evidence does not accidentally compare the new route against itself.
+
+Fresh-eyes correction in the same slice: the first default-route attempt was too broad. HIR could
+parse some sources whose semantics are not yet fully represented, including DefType defaults,
+optional/default parameters, function return types, and project-rewritten modules. The lightweight
+default gate now excludes those surfaces and leaves them on the tracked residual path.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_hir_lowering --quiet`
@@ -157,6 +176,7 @@ The twelfth FE-8.5 slice adds simple `For Each` lowering:
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler frontend_diff_v2_smoke_matches_legacy_for_supported_assignment --quiet`
 - `cargo test -p oxvba-compiler frontend_diff --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler syntax_bridge --quiet`
 - `cargo test -p oxvba-compiler --quiet`
 - `cargo check -p oxvba-compiler`

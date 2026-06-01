@@ -854,7 +854,13 @@ Candidate bead units:
   call, simple If, conditional loop, simple For, and value/range/multi-value/`Case Is`
   Select Case subset. Twelfth reopened continuation adds simple `For Each` iterable loops, so the
   control-flow fixtures currently in the production legacy-route audit now classify as HIR
-  production; FE-8.5 remains open for unaudited broader language surfaces outside that subset.
+  production. Thirteenth reopened continuation wires the ordinary lightweight
+  `compile()` / `compile_with_runtime_metadata()` path to try HIR production first for eligible
+  sources, while retaining unsupported constructs on the tracked legacy fallback path and keeping an
+  explicit legacy helper for differential comparison. Fresh-eyes correction in that slice narrowed
+  eligibility so DefType, functions/properties, optional/default/ParamArray parameters, project
+  rewrites, and class/object-local compatibility contexts stay on the residual path until HIR owns
+  their semantics. FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
@@ -872,9 +878,14 @@ semantic substrate.
 Candidate bead units:
 - FE-9.1 Per-construct default flip: route completed construct families through frontend v2 by
   default while retaining fallback only for tracked residuals. Reopened continuation flips
-  `CompileOptions::default()` to use the frontend-v2 route for completed constructs while keeping
-  `compile()` as the legacy comparison route and preserving fallback only for unsupported residual
-  constructs.
+  `CompileOptions::default()` to use the frontend-v2 route for completed constructs. Follow-up
+  continuation also flips the ordinary lightweight single-source `compile()` /
+  `compile_with_runtime_metadata()` route to try HIR production before legacy resolution for
+  eligible completed constructs. The eligibility guard deliberately excludes surfaces whose HIR
+  semantics are partial, including DefType, functions/properties, optional/default/ParamArray
+  parameters, project rewrites, and class/object-local compatibility contexts. The legacy baseline
+  remains available through an explicit comparison helper, and fallback is preserved only for
+  unsupported residual constructs.
   Evidence: `docs/evidence/frontend_rework/PER_CONSTRUCT_ROUTE_POLICY_2026-06-01.md`.
 - FE-9.2 Legacy parser/rewriter retirement: delete or quarantine legacy `parse_expr` string
   splitting and retired `project.rs` rewrite paths once their matrix rows are covered.
@@ -893,8 +904,9 @@ Candidate bead units:
 - FE-9.6 Production legacy-route audit gate: prove before terminal closure that no scoped
   production compile path still depends on legacy `parse_expr`/string-splitting, `project.rs`
   source-text rewrite behavior, or duplicate language-service semantic fallbacks. Reopened
-  continuation now passes the recorded audit fixtures/static checks; the workset remains open for
-  broader terminal evidence and expanded route-audit coverage.
+  continuation now passes the recorded audit fixtures/static checks and includes a direct check that
+  completed lightweight compile fixtures use the HIR runtime-metadata route. The workset remains
+  open for broader terminal evidence and expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

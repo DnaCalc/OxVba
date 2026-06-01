@@ -13,7 +13,7 @@ use oxvba_com::{
 use thiserror::Error;
 
 use crate::{
-    Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+    Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy_object_locals_class,
     frontend_external_references::{ExternalReferenceKind, build_external_reference_index},
     frontend_member_dispatch::{
         MemberDispatchClass, classify_imported_com_member, classify_project_member,
@@ -1057,7 +1057,7 @@ fn compile_project_with_strategy(
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
     let (bytecode, mut procedure_runtime_metadata) =
-        compile_with_runtime_metadata_object_locals_class(
+        compile_with_runtime_metadata_legacy_object_locals_class(
             &rewritten_source,
             &forced_object_locals_by_proc,
             has_class_modules,

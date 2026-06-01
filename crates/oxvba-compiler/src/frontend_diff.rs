@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata, syntax_bridge,
+    Bytecode, CompileError, ProcedureRuntimeMetadata, compile_with_runtime_metadata_legacy,
+    syntax_bridge,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -322,7 +323,7 @@ pub fn run_frontend_diff_corpus(fixtures: &[FrontendCorpusFixture]) -> FrontendC
 
 pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation {
     let compiled = match path {
-        FrontendPath::Legacy => compile_with_runtime_metadata(source),
+        FrontendPath::Legacy => compile_with_runtime_metadata_legacy(source),
         FrontendPath::FrontendV2 => {
             syntax_bridge::compile_source_with_runtime_metadata_via_syntax_bridge(source).map_err(
                 |err| CompileError::ResolveError(format!("frontend_v2 bridge error: {err}")),

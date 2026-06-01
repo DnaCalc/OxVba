@@ -181,6 +181,22 @@ pub fn compile_with_runtime_metadata(
     compile_with_runtime_metadata_object_locals(source, &std::collections::BTreeMap::new())
 }
 
+pub(crate) fn compile_with_runtime_metadata_legacy(
+    source: &str,
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    CompileError,
+> {
+    compile_with_runtime_metadata_legacy_object_locals_class(
+        source,
+        &std::collections::BTreeMap::new(),
+        false,
+    )
+}
+
 /// Compile a single source snippet into a complete, strict executable semantic
 /// package held in memory.
 ///
@@ -244,6 +260,40 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
         return Err(CompileError::EmptySource);
     }
 
+    if forced_object_locals_by_proc.is_empty()
+        && !has_class_modules
+        && source_is_eligible_for_lightweight_hir_default(source)
+    {
+        match frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source) {
+            Ok(compiled) => return Ok(compiled),
+            Err(frontend_hir_lowering::HirProductionLoweringError::Unsupported(_)) => {}
+            Err(frontend_hir_lowering::HirProductionLoweringError::Compile(err)) => {
+                return Err(err);
+            }
+        }
+    }
+
+    compile_with_runtime_metadata_legacy_object_locals_class(
+        source,
+        forced_object_locals_by_proc,
+        has_class_modules,
+    )
+}
+
+pub(crate) fn compile_with_runtime_metadata_legacy_object_locals_class(
+    source: &str,
+    forced_object_locals_by_proc: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeSet<String>,
+    >,
+    has_class_modules: bool,
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    CompileError,
+> {
     validate_frontend_assignment_diagnostics(source)?;
     let mut bound = resolve::resolve_symbols(source);
     bound.is_class_module = has_class_modules;
@@ -273,6 +323,51 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
     validate_frontend_assignment_coercion_metadata(source, &metadata)?;
     validate_frontend_lowering_contract_metadata(source, &metadata)?;
     Ok((bytecode, metadata))
+}
+
+fn source_is_eligible_for_lightweight_hir_default(source: &str) -> bool {
+    let lower = source.to_ascii_lowercase();
+    if lower
+        .lines()
+        .map(str::trim_start)
+        .any(|line| line.starts_with("def"))
+    {
+        return false;
+    }
+
+    let parsed = oxvba_syntax::parse(source);
+    if !parsed.errors().is_empty() {
+        return false;
+    }
+    !syntax_tree_has_any_kind(
+        parsed.syntax(),
+        &[
+            oxvba_syntax::SyntaxKind::FunctionDecl,
+            oxvba_syntax::SyntaxKind::PropertyDecl,
+            oxvba_syntax::SyntaxKind::OptionStmt,
+            oxvba_syntax::SyntaxKind::KwOptional,
+            oxvba_syntax::SyntaxKind::KwParamArray,
+        ],
+    )
+}
+
+fn syntax_tree_has_any_kind(
+    node: oxvba_syntax::SyntaxNode<'_>,
+    kinds: &[oxvba_syntax::SyntaxKind],
+) -> bool {
+    if kinds.contains(&node.kind()) {
+        return true;
+    }
+    if node
+        .child_tokens()
+        .iter()
+        .any(|token| kinds.contains(&token.kind))
+    {
+        return true;
+    }
+    node.child_nodes()
+        .into_iter()
+        .any(|child| syntax_tree_has_any_kind(child, kinds))
 }
 
 fn validate_frontend_lowering_contract_metadata(
@@ -647,6 +742,25 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_runtime_metadata_uses_hir_for_completed_constructs() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let hir =
+            super::frontend_hir_lowering::compile_source_with_runtime_metadata_via_hir(source)
+                .expect("HIR production lowering should support fixture");
+        let defaulted = super::compile_with_runtime_metadata(source)
+            .expect("default runtime metadata compile should succeed");
+        assert_eq!(
+            format!("{:?}", hir.0.instructions),
+            format!("{:?}", defaulted.0.instructions),
+            "default runtime metadata compile should use HIR production for completed constructs"
+        );
+        assert_eq!(
+            hir.1, defaulted.1,
+            "runtime metadata should come from the HIR production route for completed constructs"
+        );
+    }
+
+    #[test]
     fn compile_options_frontend_v2_is_opt_in_bridge_route() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
         let out = super::compile_with_options(source, super::CompileOptions { frontend_v2: true })
@@ -702,8 +816,8 @@ mod tests {
     #[test]
     fn compile_options_default_enables_completed_bridge_construct() {
         let source = "Sub Main()\n    Dim x As Long\n    x = 1: x = x + 1\nEnd Sub\n";
-        let legacy_err =
-            compile(source).expect_err("legacy path should not accept inline sequence");
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not accept inline sequence");
         assert!(
             legacy_err.to_string().contains("unsupported statement"),
             "unexpected legacy error: {legacy_err}"
@@ -721,7 +835,8 @@ mod tests {
     #[test]
     fn compile_options_frontend_v2_compiles_bare_object_is_identity() {
         let source = "Sub Main()\n    Dim obj As Object\n    Dim same As Boolean\n    same = obj Is Nothing\nEnd Sub\n";
-        let legacy_err = compile(source).expect_err("legacy path should not parse bare object Is");
+        let legacy_err = super::compile_with_runtime_metadata_legacy(source)
+            .expect_err("legacy path should not parse bare object Is");
         assert!(
             legacy_err.to_string().contains("unsupported statement")
                 || legacy_err.to_string().contains("cannot parse expression"),

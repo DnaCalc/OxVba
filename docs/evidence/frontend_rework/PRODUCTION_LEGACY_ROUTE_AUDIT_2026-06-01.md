@@ -38,6 +38,12 @@ This audit no longer finds the previously tracked scoped production route residu
 workset still remains open for unaudited language surfaces and full terminal evidence, but this
 specific FE-9.6 route audit now passes for its recorded fixtures and static checks.
 
+Continuation update: the audit's successful fixture routes are now aligned with the ordinary
+lightweight compile API as well as the explicit frontend-v2 bridge. `compile()` and
+`compile_with_runtime_metadata()` try HIR production first for eligible completed constructs; the
+legacy resolver path is now an explicit comparison helper plus unsupported-residual fallback rather
+than the first path for completed single-source fixtures.
+
 ## Reopened Owners
 
 The audit result records completed reopened delivery work and remaining broader workset scope:
@@ -58,12 +64,17 @@ The audit result records completed reopened delivery work and remaining broader 
 
 - `cargo test -p oxvba-compiler frontend_legacy_route_audit --quiet`
 - `cargo test -p oxvba-compiler frontend_retirement_inventory --quiet`
+- `cargo test -p oxvba-compiler compile_with_runtime_metadata_uses_hir_for_completed_constructs --quiet`
+- `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
 ## Fresh-Eyes Review
 
 - The FE-9.6 audit fixture set now passes, but the workset goal is broader than that subset.
+- The audit previously proved HIR reachability but not the plain `compile()` entry point. The
+  lightweight compile path now has an executable route check for completed constructs, while project
+  compile and broader unsupported surfaces remain separate workset scope.
 - Procedure-call syntax, simple multiline If syntax, front-checked Do While syntax, and simple
   single-value Select Case syntax are no longer themselves route blockers. The call/coercion
   fixture now has matching bytecode/call descriptors. FE-8.5 still owns broader HIR lowering
