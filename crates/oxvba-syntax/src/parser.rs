@@ -1528,13 +1528,25 @@ impl<'a> Parser<'a> {
                 if self.at(SyntaxKind::KwElse) {
                     self.bump();
                 } else if self.is_expr_start() {
-                    self.parse_expr();
-                    self.eat_whitespace();
-                    if self.at(SyntaxKind::KwTo) {
-                        self.bump();
+                    loop {
+                        self.parse_expr();
                         self.eat_whitespace();
-                        if self.is_expr_start() {
-                            self.parse_expr();
+                        if self.at(SyntaxKind::KwTo) {
+                            self.bump();
+                            self.eat_whitespace();
+                            if self.is_expr_start() {
+                                self.parse_expr();
+                            }
+                            self.eat_whitespace();
+                        }
+                        if self.at(SyntaxKind::Comma) {
+                            self.bump();
+                            self.eat_whitespace();
+                            if !self.is_expr_start() {
+                                break;
+                            }
+                        } else {
+                            break;
                         }
                     }
                 }

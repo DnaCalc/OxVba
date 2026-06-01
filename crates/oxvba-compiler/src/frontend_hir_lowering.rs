@@ -989,4 +989,21 @@ mod tests {
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");
     }
+
+    #[test]
+    fn hir_production_lowering_emits_branch_bytecode_for_select_case_multi_value() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase 1, 2\nx = 2\nEnd Select\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::BoolOr { .. })),
+            "expected aggregate case match bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
 }

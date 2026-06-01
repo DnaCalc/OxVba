@@ -700,9 +700,13 @@ impl HirBuilder {
                         .next()
                         .unwrap_or("")
                         .to_ascii_lowercase();
-                    if clause_header.contains(',')
-                        || clause_header.trim_start().starts_with("case is ")
-                    {
+                    if clause_header.contains(',') && clause_header.contains(" to ") {
+                        return Err(HirBuildError::Unsupported(format!(
+                            "mixed Select Case range lists are not yet supported by HIR lowering: `{}`",
+                            clause.text().trim()
+                        )));
+                    }
+                    if clause_header.trim_start().starts_with("case is ") {
                         return Err(HirBuildError::Unsupported(format!(
                             "complex Select Case clauses are not yet supported by HIR lowering: `{}`",
                             clause.text().trim()
@@ -725,6 +729,8 @@ impl HirBuilder {
                         }]
                     } else if values.len() == 1 {
                         vec![HirCaseClause::Value(values[0])]
+                    } else if clause_header.contains(',') {
+                        values.into_iter().map(HirCaseClause::Value).collect()
                     } else {
                         return Err(HirBuildError::Unsupported(format!(
                             "Case clause without a single value: `{}`",
@@ -1677,6 +1683,36 @@ mod tests {
             module.arenas.expr(*end).map(|expr| &expr.kind),
             Some(HirExprKind::Literal(HirLiteral::Int(3)))
         ));
+    }
+
+    #[test]
+    fn hir_builder_lowers_select_case_multi_value_clause() {
+        let source =
+            "Sub Main()\nDim x As Long\nSelect Case x\nCase 1, 2\nx = 2\nEnd Select\nEnd Sub\n";
+        let module = build_hir_from_source("Module1", source).expect("HIR module");
+        let main_body = module
+            .declarations
+            .iter()
+            .filter_map(|decl| module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                HirDeclKind::Procedure { body, .. } => Some(body),
+                _ => None,
+            })
+            .expect("main body");
+        let select_stmt = main_body
+            .iter()
+            .find_map(|stmt| find_select_case_stmt(&module.arenas, *stmt))
+            .expect("select case statement");
+        let Some(HirStmt {
+            kind: HirStmtKind::SelectCase { arms, .. },
+            ..
+        }) = module.arenas.stmt(select_stmt)
+        else {
+            panic!("expected select case statement");
+        };
+        assert_eq!(arms[0].0.len(), 2);
+        assert!(matches!(arms[0].0[0], HirCaseClause::Value(_)));
+        assert!(matches!(arms[0].0[1], HirCaseClause::Value(_)));
     }
 
     #[test]
