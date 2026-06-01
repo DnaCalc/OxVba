@@ -643,6 +643,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/QUALIFIED_NAME_PROJECT_LOOKUP_2026-06-01.md`.
 - FE-7.2 Member dispatch classification: resolve early-bound project members, imported COM
   members, late-bound dispatch, default members, and host-provided globals.
+  Evidence: `docs/evidence/frontend_rework/MEMBER_DISPATCH_CLASSIFICATION_2026-06-01.md`.
 - FE-7.3 Property and assignment semantics: resolve Property Get/Let/Set, default member read/
   write/invoke, Let vs Set coercion, and object/scalar assignment diagnostics.
 - FE-7.4 Class construction and fields: resolve `New`, `As New`, predeclared instances,
