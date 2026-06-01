@@ -259,7 +259,57 @@ pub(crate) fn compile_with_runtime_metadata_object_locals_class(
                 .insert(var.clone(), resolve::BoundType::Object);
         }
     }
-    Ok(emit::emit_bytecode_with_runtime_metadata(&optimized))
+    let (bytecode, metadata) = emit::emit_bytecode_with_runtime_metadata(&optimized);
+    validate_frontend_property_accessor_metadata(source, &metadata)?;
+    Ok((bytecode, metadata))
+}
+
+fn validate_frontend_property_accessor_metadata(
+    source: &str,
+    metadata: &std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Result<(), CompileError> {
+    let Ok(typed_hir) = frontend_type_hooks::collect_type_hooks_from_source("Main", source) else {
+        return Ok(());
+    };
+    for accessor in
+        frontend_assignment_semantics::collect_property_accessors_from_typed_hir(&typed_hir)
+    {
+        let Some(symbol) = typed_hir.module.symbols.symbol(accessor.property) else {
+            continue;
+        };
+        let Some(symbol_name) = typed_hir.module.symbols.name(symbol.name) else {
+            continue;
+        };
+        let key = symbol_name.folded.as_str();
+        let Some(procedure) = metadata.get(key) else {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 property metadata missing for {key}"
+            )));
+        };
+        let signature = procedure.procedure_signature_descriptor();
+        let expected_kind = match accessor.kind {
+            frontend_hir::HirPropertyKind::Get => ProcedureKindDescriptor::PropertyGet,
+            frontend_hir::HirPropertyKind::Let => ProcedureKindDescriptor::PropertyLet,
+            frontend_hir::HirPropertyKind::Set => ProcedureKindDescriptor::PropertySet,
+        };
+        if signature.kind != expected_kind {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 property metadata kind mismatch for {key}: expected {expected_kind:?}, got {:?}",
+                signature.kind
+            )));
+        }
+        let expected_group = key
+            .strip_prefix("property_get_")
+            .or_else(|| key.strip_prefix("property_let_"))
+            .or_else(|| key.strip_prefix("property_set_"));
+        if signature.property_group.as_deref() != expected_group {
+            return Err(CompileError::ResolveError(format!(
+                "frontend_v2 property metadata group mismatch for {key}: expected {expected_group:?}, got {:?}",
+                signature.property_group
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

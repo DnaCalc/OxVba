@@ -27,12 +27,16 @@ The 2026-06-01 continuation added:
 - distinct accessor symbols for `Property Get/Let/Set` declarations in the same property group, so
   valid VBA property groups such as `Property Get Value` plus `Property Let Value` no longer
   collide in the front-end symbol table.
+- a production compile-path metadata validation gate that checks runtime property metadata against
+  parsed front-end accessor facts when the front-end can parse the source.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_assignment_semantics --quiet`
 - `cargo test -p oxvba-compiler frontend_hir --quiet`
 - `cargo test -p oxvba-compiler frontend_type_hooks --quiet`
+- `cargo test -p oxvba-compiler procedure_runtime_metadata_projects_first_signature_descriptor_view --quiet`
+- `cargo test -p oxvba-compiler compile_property --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -50,6 +54,9 @@ The 2026-06-01 continuation added:
   all accessors named `Value` as the same `Procedure/Value` declaration. Accessor declarations now
   use canonical `property_get_`, `property_let_`, and `property_set_` symbol names while preserving
   `HirPropertyKind`.
+- Production metadata now has a front-end consistency check: compiled property procedure metadata
+  must agree with HIR property accessor kind and property group facts for sources the front-end can
+  parse.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
   assignment diagnostics for compiled projects. Next step: connect the property/default-member
