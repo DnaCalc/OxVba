@@ -18,6 +18,11 @@ The hook layer records:
 - parameter mechanics using existing `ParameterPassingMode`;
 - `Optional`, `ParamArray`, and `OptionalDefaultValue` policy.
 
+Reopened update: added `collect_type_hooks_from_source(module_name, source)`, which builds HIR
+from source, extracts simple declared `As <type>` facts from CST-backed symbol spans, records
+`Let`/`Set` assignment intent from HIR statements, and emits a scoped coercion fact for mismatched
+assignment types such as string literal to `Long`.
+
 ## Focused Fixtures
 
 The unit tests cover:
@@ -26,10 +31,17 @@ The unit tests cover:
 - `Let` assignment plus string-to-long coercion fact;
 - call-site parameter mechanics with ByRef required parameter, ByVal optional parameter with
   explicit default, and ParamArray parameter.
+- source-backed HIR collection of parameter/local declared types (`ByVal seed As Long`,
+  `Dim label As String`);
+- source-backed HIR collection of `Let` assignment intent and string-to-long coercion for
+  `count = "1"` where `count As Long`.
 
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_type_hooks --quiet`
+- `cargo test -p oxvba-compiler frontend_symbols --quiet`
+- `cargo test -p oxvba-compiler frontend_hir --quiet`
+- `cargo test -p oxvba-compiler frontend_semantic_model --quiet`
 - `cargo fmt -p oxvba-compiler`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -40,5 +52,9 @@ The unit tests cover:
   coercions, parameter passing, and optional defaults.
 - The hook layer is keyed by HIR IDs and symbols, so later lowering can consume facts without
   going back to parser-shaped strings.
-- This bead does not yet lower through the production emitter from HIR. It provides the typed
-  contract needed by FE-8.3 and later project semantics migration beads.
+- The reopened source-backed route is deliberately small: it covers simple built-in `As` types,
+  `Let`/`Set` intent, and a basic assignment coercion fact. It does not yet cover complete
+  call-site binding, optional/default parsing from source, ParamArray lowering from source,
+  contextual-keyword identifier edge cases, or production emitter lowering from HIR.
+- This bead provides the typed contract and first executable route needed by FE-8.3 and later
+  project semantics migration beads.

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use oxvba_syntax::{SyntaxKind, SyntaxNode};
+use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
 use crate::frontend_symbols::{
     FrontendSourceSpan, ScopeId, ScopeKind, SymbolId, SymbolModel, SymbolModelError,
@@ -339,15 +339,15 @@ impl HirBuilder {
                 };
                 let symbol = self
                     .symbols
-                    .find_in_scope(scope, SymbolNamespace::Procedure, name)?
+                    .find_in_scope(scope, SymbolNamespace::Procedure, &name)?
                     .ok_or_else(|| HirBuildError::UnresolvedName {
-                        name: name.to_string(),
+                        name: name.clone(),
                         scope,
                     })?;
                 let procedure_scope = self
-                    .scope_by_kind_and_name(ScopeKind::Procedure, name)
+                    .scope_by_kind_and_name(ScopeKind::Procedure, &name)
                     .ok_or_else(|| HirBuildError::UnresolvedName {
-                        name: name.to_string(),
+                        name: name.clone(),
                         scope,
                     })?;
                 let params = self.parameter_symbols(procedure_scope)?;
@@ -454,7 +454,7 @@ impl HirBuilder {
                         node.text().trim()
                     )));
                 };
-                HirExprKind::Name(self.resolve_name(scope, name)?)
+                HirExprKind::Name(self.resolve_name(scope, &name)?)
             }
             SyntaxKind::LiteralExpr => HirExprKind::Literal(lower_literal(node)?),
             SyntaxKind::ParenExpr => {
@@ -500,16 +500,9 @@ impl HirBuilder {
         scope: ScopeId,
         node: SyntaxNode<'_>,
     ) -> Result<Option<HirDeclId>, HirBuildError> {
-        let Some(name) = first_identifier_text(node) else {
+        let Some(symbol) = self.first_symbol_in_node(scope, SymbolNamespace::Local, node) else {
             return Ok(None);
         };
-        let symbol = self
-            .symbols
-            .find_in_scope(scope, SymbolNamespace::Local, name)?
-            .ok_or_else(|| HirBuildError::UnresolvedName {
-                name: name.to_string(),
-                scope,
-            })?;
         Ok(Some(self.arenas.alloc_decl(HirDecl {
             cst: cst(node),
             symbol,
@@ -557,6 +550,26 @@ impl HirBuilder {
             .find(|scope| scope.kind == kind && scope.name == Some(wanted))
             .map(|scope| scope.id)
     }
+
+    fn first_symbol_in_node(
+        &self,
+        scope: ScopeId,
+        namespace: SymbolNamespace,
+        node: SyntaxNode<'_>,
+    ) -> Option<SymbolId> {
+        let (start, end) = node.text_range();
+        self.symbols
+            .symbols()
+            .iter()
+            .filter(|symbol| symbol.scope == scope && symbol.namespace == namespace)
+            .find(|symbol| {
+                symbol
+                    .provenance
+                    .span
+                    .is_some_and(|span| span.start >= start as usize && span.end <= end as usize)
+            })
+            .map(|symbol| symbol.id)
+    }
 }
 
 fn cst(node: SyntaxNode<'_>) -> CstBackpointer {
@@ -590,16 +603,42 @@ fn expression_children(node: SyntaxNode<'_>) -> Vec<SyntaxNode<'_>> {
         .collect()
 }
 
-fn first_identifier_text(node: SyntaxNode<'_>) -> Option<&str> {
-    node.child_tokens()
-        .into_iter()
-        .find(|token| token.kind == SyntaxKind::Ident || token.kind == SyntaxKind::BracketedIdent)
-        .map(|token| {
-            token
-                .text
-                .strip_prefix('[')
+fn first_identifier_text(node: SyntaxNode<'_>) -> Option<String> {
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if token.kind == SyntaxKind::Ident
+                    || token.kind == SyntaxKind::BracketedIdent
+                    || (node.kind() == SyntaxKind::IdentExpr && token.kind.is_keyword()) =>
+            {
+                return Some(
+                    token
+                        .text
+                        .strip_prefix('[')
+                        .and_then(|value| value.strip_suffix(']'))
+                        .unwrap_or(token.text)
+                        .to_string(),
+                );
+            }
+            SyntaxElement::Node(child) => {
+                if let Some(text) = first_identifier_text(child) {
+                    return Some(text);
+                }
+            }
+            _ => {}
+        }
+    }
+    (node.kind() == SyntaxKind::IdentExpr)
+        .then(|| node.text())
+        .and_then(|text| {
+            let trimmed = text.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        })
+        .map(|text| {
+            text.strip_prefix('[')
                 .and_then(|value| value.strip_suffix(']'))
-                .unwrap_or(token.text)
+                .unwrap_or(&text)
+                .to_string()
         })
 }
 

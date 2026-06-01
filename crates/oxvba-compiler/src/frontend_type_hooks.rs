@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::frontend_hir::{HirCallId, HirExprId, HirStmtId, HirTypeId};
-use crate::frontend_symbols::SymbolId;
+use crate::frontend_hir::{
+    BoundHirModule, CstBackpointer, HirArenas, HirBuildError, HirBuiltinType, HirCallId,
+    HirDeclKind, HirExprId, HirExprKind, HirLiteral, HirStmtId, HirStmtKind, HirType, HirTypeId,
+    HirTypeKind, build_hir_from_source,
+};
+use crate::frontend_symbols::{FrontendSourceSpan, SymbolId, SymbolNamespace};
 use crate::{CoercionKindDescriptor, OptionalDefaultValue, ParameterPassingMode, VbaTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +61,12 @@ pub struct HirTypeHooks {
     coercions_by_expr: BTreeMap<HirExprId, Vec<HirCoercionHook>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TypedHirModule {
+    pub module: BoundHirModule,
+    pub hooks: HirTypeHooks,
+}
+
 impl HirTypeHooks {
     pub fn record_declared_type(&mut self, hook: HirDeclaredTypeHook) {
         self.declared_types_by_symbol.insert(hook.symbol, hook);
@@ -94,6 +104,192 @@ impl HirTypeHooks {
             .get(&expr)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+}
+
+pub fn collect_type_hooks_from_source(
+    module_name: &str,
+    source: &str,
+) -> Result<TypedHirModule, HirBuildError> {
+    let mut module = build_hir_from_source(module_name, source)?;
+    let mut hooks = HirTypeHooks::default();
+    let mut symbol_types = BTreeMap::<SymbolId, VbaTypeId>::new();
+
+    for symbol in module.symbols.symbols().to_vec() {
+        if !matches!(
+            symbol.namespace,
+            SymbolNamespace::Local | SymbolNamespace::Parameter
+        ) {
+            continue;
+        }
+        let Some(span) = symbol.provenance.span else {
+            continue;
+        };
+        let Some((runtime_type, type_span)) = declared_type_after_span(source, span) else {
+            continue;
+        };
+        let hir_type = module.arenas.alloc_type(HirType {
+            cst: CstBackpointer {
+                syntax_kind: "TypeRef".to_string(),
+                span: type_span,
+            },
+            kind: HirTypeKind::Builtin(hir_builtin_type(runtime_type)),
+        });
+        hooks.record_declared_type(HirDeclaredTypeHook {
+            symbol: symbol.id,
+            hir_type,
+            runtime_type,
+        });
+        symbol_types.insert(symbol.id, runtime_type);
+    }
+
+    for decl in module.declarations.clone() {
+        let Some(decl) = module.arenas.decl(decl).cloned() else {
+            continue;
+        };
+        if let HirDeclKind::Procedure { body, .. } = decl.kind {
+            for stmt in body {
+                collect_stmt_type_hooks(&module.arenas, &symbol_types, &mut hooks, stmt);
+            }
+        }
+    }
+
+    Ok(TypedHirModule { module, hooks })
+}
+
+fn collect_stmt_type_hooks(
+    hir: &HirArenas,
+    symbol_types: &BTreeMap<SymbolId, VbaTypeId>,
+    hooks: &mut HirTypeHooks,
+    stmt: HirStmtId,
+) {
+    let Some(stmt_data) = hir.stmt(stmt).cloned() else {
+        return;
+    };
+    match stmt_data.kind {
+        HirStmtKind::Let { target, value } => {
+            hooks.record_assignment_intent(stmt, HirAssignmentIntent::Let);
+            record_assignment_coercion(hir, symbol_types, hooks, value, target);
+        }
+        HirStmtKind::Set { .. } => hooks.record_assignment_intent(stmt, HirAssignmentIntent::Set),
+        HirStmtKind::Block(stmts) => {
+            for stmt in stmts {
+                collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
+            }
+        }
+        HirStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            for stmt in then_body.into_iter().chain(else_body) {
+                collect_stmt_type_hooks(hir, symbol_types, hooks, stmt);
+            }
+        }
+        HirStmtKind::Empty | HirStmtKind::Expr(_) => {}
+    }
+}
+
+fn record_assignment_coercion(
+    hir: &HirArenas,
+    symbol_types: &BTreeMap<SymbolId, VbaTypeId>,
+    hooks: &mut HirTypeHooks,
+    value: HirExprId,
+    target: HirExprId,
+) {
+    let Some(target_symbol) = name_symbol(hir, target) else {
+        return;
+    };
+    let Some(target_type) = symbol_types.get(&target_symbol).copied() else {
+        return;
+    };
+    let Some(source_type) = infer_expr_type(hir, symbol_types, value) else {
+        return;
+    };
+    if source_type != target_type {
+        hooks.record_coercion(HirCoercionHook {
+            expr: value,
+            source_type,
+            target_type,
+            kind: CoercionKindDescriptor::Let,
+        });
+    }
+}
+
+fn name_symbol(hir: &HirArenas, expr: HirExprId) -> Option<SymbolId> {
+    match hir.expr(expr).map(|expr| &expr.kind) {
+        Some(HirExprKind::Name(symbol)) => Some(*symbol),
+        _ => None,
+    }
+}
+
+fn infer_expr_type(
+    hir: &HirArenas,
+    symbol_types: &BTreeMap<SymbolId, VbaTypeId>,
+    expr: HirExprId,
+) -> Option<VbaTypeId> {
+    match hir.expr(expr).map(|expr| &expr.kind)? {
+        HirExprKind::Name(symbol) => symbol_types.get(symbol).copied(),
+        HirExprKind::Literal(HirLiteral::Bool(_)) => Some(VbaTypeId::Boolean),
+        HirExprKind::Literal(HirLiteral::Int(_)) => Some(VbaTypeId::Long),
+        HirExprKind::Literal(HirLiteral::String(_)) => Some(VbaTypeId::String),
+        HirExprKind::Literal(HirLiteral::Empty | HirLiteral::Null) => Some(VbaTypeId::Variant),
+        HirExprKind::Binary { lhs, .. } => infer_expr_type(hir, symbol_types, *lhs),
+        _ => None,
+    }
+}
+
+fn declared_type_after_span(
+    source: &str,
+    span: FrontendSourceSpan,
+) -> Option<(VbaTypeId, FrontendSourceSpan)> {
+    let suffix = source.get(span.end..)?;
+    let line_end = span.end + suffix.find('\n').unwrap_or(suffix.len());
+    let segment = source.get(span.end..line_end)?;
+    let lower = segment.to_ascii_lowercase();
+    let as_pos = lower.find(" as ")?;
+    let after_as = span.end + as_pos + " as ".len();
+    let ty_text = source
+        .get(after_as..line_end)?
+        .trim_start()
+        .split(|ch: char| ch == ',' || ch == ')' || ch.is_whitespace())
+        .next()?;
+    let ty_start = source
+        .get(after_as..line_end)?
+        .find(ty_text)
+        .map(|offset| after_as + offset)?;
+    let runtime_type = parse_runtime_type(ty_text)?;
+    Some((
+        runtime_type,
+        FrontendSourceSpan {
+            start: ty_start,
+            end: ty_start + ty_text.len(),
+        },
+    ))
+}
+
+fn parse_runtime_type(text: &str) -> Option<VbaTypeId> {
+    match text.to_ascii_lowercase().as_str() {
+        "boolean" => Some(VbaTypeId::Boolean),
+        "integer" => Some(VbaTypeId::Integer),
+        "long" => Some(VbaTypeId::Long),
+        "double" => Some(VbaTypeId::Double),
+        "string" => Some(VbaTypeId::String),
+        "variant" => Some(VbaTypeId::Variant),
+        "object" => Some(VbaTypeId::Object),
+        _ => None,
+    }
+}
+
+fn hir_builtin_type(runtime_type: VbaTypeId) -> HirBuiltinType {
+    match runtime_type {
+        VbaTypeId::Boolean => HirBuiltinType::Boolean,
+        VbaTypeId::Integer => HirBuiltinType::Integer,
+        VbaTypeId::Long => HirBuiltinType::Long,
+        VbaTypeId::Double => HirBuiltinType::Double,
+        VbaTypeId::String => HirBuiltinType::String,
+        VbaTypeId::Object => HirBuiltinType::Object,
+        _ => HirBuiltinType::Variant,
     }
 }
 
@@ -297,5 +493,96 @@ mod tests {
             Some(OptionalDefaultValue::ExplicitI32(3))
         );
         assert!(call_site.args[2].parameter.param_array);
+    }
+
+    #[test]
+    fn type_hooks_collect_declared_types_from_source_backed_hir() {
+        let source =
+            "Sub Main(ByVal seed As Long)\n    Dim label As String\n    label = \"ok\"\nEnd Sub\n";
+        let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
+        let parameter = typed
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Parameter
+                    && typed
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "seed")
+            })
+            .expect("seed parameter");
+        let local = typed
+            .module
+            .symbols
+            .symbols()
+            .iter()
+            .find(|symbol| {
+                symbol.namespace == SymbolNamespace::Local
+                    && typed
+                        .module
+                        .symbols
+                        .name(symbol.name)
+                        .is_some_and(|name| name.folded == "label")
+            })
+            .expect("label local");
+
+        assert_eq!(
+            typed
+                .hooks
+                .declared_type(parameter.id)
+                .map(|hook| hook.runtime_type),
+            Some(VbaTypeId::Long)
+        );
+        assert_eq!(
+            typed
+                .hooks
+                .declared_type(local.id)
+                .map(|hook| hook.runtime_type),
+            Some(VbaTypeId::String)
+        );
+    }
+
+    #[test]
+    fn type_hooks_collect_let_intent_and_string_to_long_coercion_from_hir() {
+        let source = "Sub Main()\n    Dim count As Long\n    count = \"1\"\nEnd Sub\n";
+        let typed = collect_type_hooks_from_source("Module1", source).expect("typed HIR");
+        let assignment = typed
+            .module
+            .declarations
+            .iter()
+            .filter_map(|decl| typed.module.arenas.decl(*decl))
+            .find_map(|decl| match &decl.kind {
+                crate::frontend_hir::HirDeclKind::Procedure { body, .. } => body
+                    .iter()
+                    .find_map(|stmt| find_let_stmt(&typed.module.arenas, *stmt)),
+                _ => None,
+            })
+            .expect("assignment");
+
+        assert_eq!(
+            typed.hooks.assignment_intent(assignment.0),
+            Some(HirAssignmentIntent::Let)
+        );
+        let coercions = typed.hooks.coercions_for_expr(assignment.2);
+        assert_eq!(coercions.len(), 1, "{coercions:#?}");
+        assert_eq!(coercions[0].source_type, VbaTypeId::String);
+        assert_eq!(coercions[0].target_type, VbaTypeId::Long);
+        assert_eq!(coercions[0].kind, CoercionKindDescriptor::Let);
+    }
+
+    fn find_let_stmt(
+        hir: &HirArenas,
+        stmt: HirStmtId,
+    ) -> Option<(HirStmtId, HirExprId, HirExprId)> {
+        match hir.stmt(stmt).map(|stmt| &stmt.kind) {
+            Some(HirStmtKind::Let { target, value }) => Some((stmt, *target, *value)),
+            Some(HirStmtKind::Block(children)) => {
+                children.iter().find_map(|child| find_let_stmt(hir, *child))
+            }
+            _ => None,
+        }
     }
 }

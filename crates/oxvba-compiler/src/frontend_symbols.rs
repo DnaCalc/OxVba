@@ -428,6 +428,12 @@ fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
                 names.push(token);
                 expect_name = false;
             }
+            SyntaxElement::Node(child) if expect_name && child.kind() == SyntaxKind::IdentExpr => {
+                if let Some(token) = first_identifier_token_deep(child) {
+                    names.push(token);
+                    expect_name = false;
+                }
+            }
             SyntaxElement::Token(token) if !token.kind.is_trivia() => {
                 if token.kind != SyntaxKind::TypeSuffix {
                     expect_name = false;
@@ -446,6 +452,27 @@ fn first_identifier_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
     node.child_tokens()
         .into_iter()
         .find(|token| is_identifier_like(token.kind))
+        .or_else(|| first_identifier_token_deep(node))
+}
+
+fn first_identifier_token_deep(node: SyntaxNode<'_>) -> Option<SyntaxToken<'_>> {
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if is_identifier_like(token.kind)
+                    || (node.kind() == SyntaxKind::IdentExpr && token.kind.is_keyword()) =>
+            {
+                return Some(token);
+            }
+            SyntaxElement::Node(child) => {
+                if let Some(token) = first_identifier_token_deep(child) {
+                    return Some(token);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_identifier_like(kind: SyntaxKind) -> bool {
