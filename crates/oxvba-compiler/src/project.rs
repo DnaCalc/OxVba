@@ -1023,6 +1023,11 @@ fn compile_project_with_strategy(
                 message: format!("FE7-E-PROJECT-SYMBOL-INDEX: {error}"),
             }
         })?;
+    validate_active_project_property_symbol_routes(
+        manifest,
+        &procedure_index,
+        &project_symbol_index,
+    )?;
 
     let (rewritten_source, dynamic_instance_bindings, forced_object_locals_by_proc) =
         lower_project_source(
@@ -1282,6 +1287,91 @@ fn decorate_project_procedure_runtime_metadata(
             metadata.module_name = decl.module_name.clone();
             metadata.procedure_name = decl.procedure_name.clone();
         }
+    }
+}
+
+fn validate_active_project_property_symbol_routes(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    project_symbol_index: &ProjectSymbolIndex,
+) -> Result<(), ProjectCompileError> {
+    let active_project = normalize_identifier(&manifest.project_name);
+    for decl in procedures
+        .iter()
+        .filter(|decl| decl.project_name == active_project)
+        .filter(|decl| {
+            matches!(
+                decl.kind,
+                ProcedureDeclKind::PropertyGet
+                    | ProcedureDeclKind::PropertyLet
+                    | ProcedureDeclKind::PropertySet
+            )
+        })
+    {
+        let Some(owner_name) = active_project_route_owner_name(manifest, decl) else {
+            return Err(ProjectCompileError::BackendCompile {
+                message: format!(
+                    "FE7-E-PROPERTY-ROUTE-OWNER: missing module {} for property {}",
+                    decl.module_name, decl.procedure_name
+                ),
+            });
+        };
+        let expected_kind = project_symbol_kind_for_property_decl(decl.kind);
+        let Some(route) = project_symbol_index.tables.resolve_property_accessor(
+            &owner_name,
+            &decl.procedure_name,
+            expected_kind,
+        ) else {
+            return Err(ProjectCompileError::BackendCompile {
+                message: format!(
+                    "FE7-E-PROPERTY-ROUTE-MISSING: {}.{} {:?}",
+                    owner_name, decl.procedure_name, expected_kind
+                ),
+            });
+        };
+        let Some(routed_decl) = procedure_decl_for_project_symbol_route(
+            manifest,
+            &active_project,
+            project_symbol_index,
+            route,
+            procedures,
+        ) else {
+            return Err(ProjectCompileError::BackendCompile {
+                message: format!(
+                    "FE7-E-PROPERTY-ROUTE-UNBOUND: {}.{} {:?}",
+                    owner_name, decl.procedure_name, expected_kind
+                ),
+            });
+        };
+        if routed_decl != decl {
+            return Err(ProjectCompileError::BackendCompile {
+                message: format!(
+                    "FE7-E-PROPERTY-ROUTE-DRIFT: {}.{} {:?}",
+                    owner_name, decl.procedure_name, expected_kind
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn active_project_route_owner_name(
+    manifest: &ProjectManifest,
+    decl: &ProcedureDecl,
+) -> Option<String> {
+    manifest
+        .modules
+        .iter()
+        .find(|module| normalize_identifier(&module.module_name) == decl.module_name)
+        .map(effective_module_name)
+}
+
+fn project_symbol_kind_for_property_decl(kind: ProcedureDeclKind) -> ProjectSymbolKind {
+    match kind {
+        ProcedureDeclKind::PropertyGet => ProjectSymbolKind::PropertyGet,
+        ProcedureDeclKind::PropertyLet => ProjectSymbolKind::PropertyLet,
+        ProcedureDeclKind::PropertySet => ProjectSymbolKind::PropertySet,
+        ProcedureDeclKind::Sub | ProcedureDeclKind::Function => ProjectSymbolKind::Procedure,
     }
 }
 
@@ -8785,7 +8875,7 @@ fn resolve_invocation_name_from_project_symbols(
     if !matches!(
         decision.class,
         MemberDispatchClass::EarlyBoundProject {
-            kind: ProjectSymbolKind::Procedure,
+            kind: ProjectSymbolKind::Procedure | ProjectSymbolKind::PropertyGet,
             ..
         }
     ) {
@@ -8818,10 +8908,12 @@ fn procedure_decl_for_project_symbol_route<'a>(
     procedures: &'a [ProcedureDecl],
 ) -> Option<&'a ProcedureDecl> {
     let symbol = project_symbol_index.symbols.symbol(route.symbol)?;
-    let proc_name = project_symbol_index
-        .symbols
-        .name(symbol.name)
-        .map(|name| normalize_identifier(&name.first_spelling))?;
+    let proc_name = project_symbol_index.symbols.name(symbol.name).map(|name| {
+        normalize_identifier(project_symbol_procedure_group_name(
+            &name.first_spelling,
+            route.kind,
+        ))
+    })?;
     let module_name = symbol
         .provenance
         .module_name
@@ -8833,7 +8925,39 @@ fn procedure_decl_for_project_symbol_route<'a>(
         .find(|module| normalize_identifier(&effective_module_name(module)) == module_name)
         .map(|module| normalize_identifier(&module.module_name))
         .unwrap_or(module_name);
-    find_decl_by_name(procedures, active_project, &storage_module_name, &proc_name)
+    match route.kind {
+        ProjectSymbolKind::PropertyGet => find_decl_by_signature(
+            procedures,
+            active_project,
+            &storage_module_name,
+            &proc_name,
+            ProcedureDeclKind::PropertyGet,
+        ),
+        ProjectSymbolKind::PropertyLet => find_decl_by_signature(
+            procedures,
+            active_project,
+            &storage_module_name,
+            &proc_name,
+            ProcedureDeclKind::PropertyLet,
+        ),
+        ProjectSymbolKind::PropertySet => find_decl_by_signature(
+            procedures,
+            active_project,
+            &storage_module_name,
+            &proc_name,
+            ProcedureDeclKind::PropertySet,
+        ),
+        _ => find_decl_by_name(procedures, active_project, &storage_module_name, &proc_name),
+    }
+}
+
+fn project_symbol_procedure_group_name(name: &str, kind: ProjectSymbolKind) -> &str {
+    match kind {
+        ProjectSymbolKind::PropertyGet => name.strip_prefix("property_get_").unwrap_or(name),
+        ProjectSymbolKind::PropertyLet => name.strip_prefix("property_let_").unwrap_or(name),
+        ProjectSymbolKind::PropertySet => name.strip_prefix("property_set_").unwrap_or(name),
+        _ => name,
+    }
 }
 
 fn effective_module_name(module: &ModuleUnit) -> String {
@@ -8900,7 +9024,7 @@ fn resolve_invocation_name(
                     matches!(
                         classify_project_member(*route).class,
                         MemberDispatchClass::EarlyBoundProject {
-                            kind: ProjectSymbolKind::Procedure,
+                            kind: ProjectSymbolKind::Procedure | ProjectSymbolKind::PropertyGet,
                             ..
                         }
                     )

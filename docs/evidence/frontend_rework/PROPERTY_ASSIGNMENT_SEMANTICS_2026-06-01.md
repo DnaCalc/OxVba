@@ -31,6 +31,15 @@ The 2026-06-01 continuation added:
   parsed front-end accessor facts when the front-end can parse the source.
 - a production compile-path metadata validation gate for non-identity assignment coercions derived
   from typed HIR assignment semantics.
+- project symbol routes now preserve `PropertyGet`/`PropertyLet`/`PropertySet` identity instead of
+  flattening every accessor to `Procedure`, and property-group aliases keep multiple accessor
+  candidates without overwriting each other.
+- `compile_project_with_strategy` now validates active-project property declarations against the
+  front-end project symbol routes before lowering, so drift between production `ProcedureDecl`
+  metadata and front-end property routes is a compile-path error.
+- project symbol indexing now falls back to a conservative signature-level legacy line scan when
+  the syntax parser rejects a compatibility-heavy module body; this keeps the production route
+  usable while the parser grammar is still being migrated.
 
 ## Checks
 
@@ -39,6 +48,7 @@ The 2026-06-01 continuation added:
 - `cargo test -p oxvba-compiler frontend_type_hooks --quiet`
 - `cargo test -p oxvba-compiler procedure_runtime_metadata_projects_first_signature_descriptor_view --quiet`
 - `cargo test -p oxvba-compiler compile_property --quiet`
+- `cargo test -p oxvba-compiler compile_project_ --quiet`
 - `cargo test -p oxvba-compiler compile_options_frontend_v2 --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
@@ -66,7 +76,18 @@ The 2026-06-01 continuation added:
 - Non-identity assignment coercion metadata is now checked against typed-HIR assignment semantics.
   Identity assignments are intentionally skipped because they do not always emit coercion
   descriptors.
+- Fresh-eyes review found that the project symbol index previously collapsed property accessors to
+  generic procedures and stored only one owner/member route. That lost the distinction between Get,
+  Let, and Set and allowed aliases to overwrite earlier accessors. The route table now stores
+  accessor-specific candidates, exposes typed property-accessor lookup, and keeps ordinary
+  qualified lookup unique-only.
+- The route validation is intentionally active-project only. Referenced projects and host-injected
+  roots are still handled by the existing project/COM rewrite lanes and belong to later FE-7/FE-8
+  migration beads.
+- The legacy line-scan fallback is a compatibility bridge, not the desired terminal shape. It avoids
+  rejecting modules that the current parser cannot fully parse, but it only records signature-level
+  procedures/properties/fields.
 - This bead is not complete yet. The large `project.rs` property/default-member rewrite matrix
   still owns project/class property Get/Let/Set, default member reads/writes/invokes, and many
-  assignment diagnostics for compiled projects. Next step: connect the property/default-member
-  project route metadata to this typed semantics surface before closing the bead.
+  assignment diagnostics for compiled projects. Next step: make property/default-member lowering
+  consume the accessor-specific front-end route decisions instead of only validating them.

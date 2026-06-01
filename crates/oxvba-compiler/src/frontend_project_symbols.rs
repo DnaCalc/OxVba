@@ -6,6 +6,7 @@ use crate::{
         SymbolNamespace, collect_symbols_from_source_into_model, fold_identifier,
     },
     project::{ModuleKind, ModuleUnit, ProjectManifest},
+    resolve::normalize_source_lines,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,9 @@ pub enum ProjectSymbolKind {
     Module,
     Class,
     Procedure,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
     Field,
     Public,
 }
@@ -44,8 +48,8 @@ pub struct ProjectSymbolTables {
     modules: BTreeMap<String, ProjectSymbolRoute>,
     classes: BTreeMap<String, ProjectSymbolRoute>,
     public_symbols: BTreeMap<String, Vec<ProjectSymbolRoute>>,
-    module_members: BTreeMap<(String, String), ProjectSymbolRoute>,
-    class_members: BTreeMap<(String, String), ProjectSymbolRoute>,
+    module_members: BTreeMap<(String, String), Vec<ProjectSymbolRoute>>,
+    class_members: BTreeMap<(String, String), Vec<ProjectSymbolRoute>>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,10 +111,10 @@ impl ProjectSymbolTables {
         kind: ProjectSymbolKind,
         symbol: SymbolId,
     ) {
-        self.module_members.insert(
-            (fold_identifier(module), fold_identifier(name)),
-            ProjectSymbolRoute { symbol, kind },
-        );
+        self.module_members
+            .entry((fold_identifier(module), fold_identifier(name)))
+            .or_default()
+            .push(ProjectSymbolRoute { symbol, kind });
     }
 
     pub fn record_class_member(
@@ -120,10 +124,10 @@ impl ProjectSymbolTables {
         kind: ProjectSymbolKind,
         symbol: SymbolId,
     ) {
-        self.class_members.insert(
-            (fold_identifier(class), fold_identifier(name)),
-            ProjectSymbolRoute { symbol, kind },
-        );
+        self.class_members
+            .entry((fold_identifier(class), fold_identifier(name)))
+            .or_default()
+            .push(ProjectSymbolRoute { symbol, kind });
     }
 
     pub fn resolve_unqualified(&self, name: &str) -> Option<ProjectSymbolRoute> {
@@ -160,12 +164,49 @@ impl ProjectSymbolTables {
     }
 
     fn resolve_owner_member(&self, owner: &str, member: &str) -> Option<ProjectSymbolRoute> {
+        unique_route(&self.resolve_owner_member_candidates(owner, member))
+    }
+
+    pub fn resolve_property_accessor(
+        &self,
+        owner: &str,
+        member: &str,
+        kind: ProjectSymbolKind,
+    ) -> Option<ProjectSymbolRoute> {
+        if !matches!(
+            kind,
+            ProjectSymbolKind::PropertyGet
+                | ProjectSymbolKind::PropertyLet
+                | ProjectSymbolKind::PropertySet
+        ) {
+            return None;
+        }
+        self.resolve_owner_member_candidates(owner, member)
+            .into_iter()
+            .find(|route| route.kind == kind)
+    }
+
+    fn resolve_owner_member_candidates(
+        &self,
+        owner: &str,
+        member: &str,
+    ) -> Vec<ProjectSymbolRoute> {
         let owner = fold_identifier(owner);
         let member = fold_identifier(member);
-        self.module_members
+        let mut routes = self
+            .module_members
             .get(&(owner.clone(), member.clone()))
-            .or_else(|| self.class_members.get(&(owner, member)))
-            .copied()
+            .cloned()
+            .unwrap_or_default();
+        routes.extend(
+            self.class_members
+                .get(&(owner, member))
+                .cloned()
+                .unwrap_or_default(),
+        );
+        routes.sort_by_key(|route| (route.symbol.0, route_kind_order(route.kind)));
+        routes.dedup();
+        routes
     }
 }
 
@@ -173,6 +214,20 @@ fn unique_route(routes: &[ProjectSymbolRoute]) -> Option<ProjectSymbolRoute> {
     match routes {
         [route] => Some(*route),
         _ => None,
+    }
+}
+
+fn route_kind_order(kind: ProjectSymbolKind) -> u8 {
+    match kind {
+        ProjectSymbolKind::Project => 0,
+        ProjectSymbolKind::Module => 1,
+        ProjectSymbolKind::Class => 2,
+        ProjectSymbolKind::Procedure => 3,
+        ProjectSymbolKind::PropertyGet => 4,
+        ProjectSymbolKind::PropertyLet => 5,
+        ProjectSymbolKind::PropertySet => 6,
+        ProjectSymbolKind::Field => 7,
+        ProjectSymbolKind::Public => 8,
     }
 }
 
@@ -256,7 +311,23 @@ fn index_module(
         None
     };
 
-    collect_symbols_from_source_into_model(symbols, &module_name, module_scope, &module.source)?;
+    match collect_symbols_from_source_into_model(
+        symbols,
+        &module_name,
+        module_scope,
+        &module.source,
+    ) {
+        Ok(()) => {}
+        Err(SymbolModelError::Syntax(_)) => {
+            collect_legacy_line_symbols_into_model(
+                symbols,
+                &module_name,
+                module_scope,
+                &module.source,
+            )?;
+        }
+        Err(error) => return Err(error),
+    }
     for symbol_id in symbols.symbols_in_scope(module_scope)? {
         let Some(symbol) = symbols.symbol(symbol_id) else {
             continue;
@@ -269,40 +340,21 @@ fn index_module(
         };
         match symbol.namespace {
             SymbolNamespace::Procedure => {
-                tables.record_module_member(
-                    &module_name,
-                    &name,
-                    ProjectSymbolKind::Procedure,
-                    symbol_id,
-                );
+                let kind = property_route_kind(&name).unwrap_or(ProjectSymbolKind::Procedure);
+                tables.record_module_member(&module_name, &name, kind, symbol_id);
                 if let Some(alias) = property_group_alias(&name) {
-                    tables.record_module_member(
-                        &module_name,
-                        alias,
-                        ProjectSymbolKind::Procedure,
-                        symbol_id,
-                    );
+                    tables.record_module_member(&module_name, alias, kind, symbol_id);
                 }
                 if class_symbol.is_some() {
-                    tables.record_class_member(
-                        &module_name,
-                        &name,
-                        ProjectSymbolKind::Procedure,
-                        symbol_id,
-                    );
+                    tables.record_class_member(&module_name, &name, kind, symbol_id);
                     if let Some(alias) = property_group_alias(&name) {
-                        tables.record_class_member(
-                            &module_name,
-                            alias,
-                            ProjectSymbolKind::Procedure,
-                            symbol_id,
-                        );
+                        tables.record_class_member(&module_name, alias, kind, symbol_id);
                     }
                 }
                 if is_unqualified_public_symbol_candidate(module) {
-                    tables.record_public_route(&name, symbol_id, ProjectSymbolKind::Procedure);
+                    tables.record_public_route(&name, symbol_id, kind);
                     if let Some(alias) = property_group_alias(&name) {
-                        tables.record_public_route(alias, symbol_id, ProjectSymbolKind::Procedure);
+                        tables.record_public_route(alias, symbol_id, kind);
                     }
                 }
             }
@@ -355,6 +407,150 @@ fn property_group_alias(name: &str) -> Option<&str> {
     name.strip_prefix("property_get_")
         .or_else(|| name.strip_prefix("property_let_"))
         .or_else(|| name.strip_prefix("property_set_"))
+}
+
+fn property_route_kind(name: &str) -> Option<ProjectSymbolKind> {
+    if name.starts_with("property_get_") {
+        Some(ProjectSymbolKind::PropertyGet)
+    } else if name.starts_with("property_let_") {
+        Some(ProjectSymbolKind::PropertyLet)
+    } else if name.starts_with("property_set_") {
+        Some(ProjectSymbolKind::PropertySet)
+    } else {
+        None
+    }
+}
+
+fn collect_legacy_line_symbols_into_model(
+    symbols: &mut SymbolModel,
+    module_name: &str,
+    module_scope: ScopeId,
+    source: &str,
+) -> Result<(), SymbolModelError> {
+    let provenance = SourceProvenance {
+        module_name: Some(module_name.to_string()),
+        span: None,
+    };
+    for line in normalize_source_lines(source) {
+        if let Some(name) = legacy_line_procedure_symbol_name(&line) {
+            declare_legacy_symbol(
+                symbols,
+                module_scope,
+                SymbolNamespace::Procedure,
+                &name,
+                provenance.clone(),
+            )?;
+        } else if let Some(name) = legacy_line_field_symbol_name(&line) {
+            declare_legacy_symbol(
+                symbols,
+                module_scope,
+                SymbolNamespace::Local,
+                name,
+                provenance.clone(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn declare_legacy_symbol(
+    symbols: &mut SymbolModel,
+    module_scope: ScopeId,
+    namespace: SymbolNamespace,
+    name: &str,
+    provenance: SourceProvenance,
+) -> Result<(), SymbolModelError> {
+    if symbols
+        .find_in_scope(module_scope, namespace, name)?
+        .is_none()
+    {
+        symbols.declare_symbol(module_scope, namespace, name, provenance)?;
+    }
+    Ok(())
+}
+
+fn legacy_line_procedure_symbol_name(line: &str) -> Option<String> {
+    let mut rest = strip_access_modifiers(line.trim());
+    let lower = rest.to_ascii_lowercase();
+    if lower.starts_with("declare ") {
+        rest = rest[8..].trim_start();
+        let lower = rest.to_ascii_lowercase();
+        if lower.starts_with("ptrsafe ") {
+            rest = rest[8..].trim_start();
+        }
+    }
+    let lower = rest.to_ascii_lowercase();
+    if lower.starts_with("sub ") {
+        return identifier_after_keyword(rest, 4).map(str::to_string);
+    }
+    if lower.starts_with("function ") {
+        return identifier_after_keyword(rest, 9).map(str::to_string);
+    }
+    if lower.starts_with("property get ") {
+        return identifier_after_keyword(rest, 13).map(|name| format!("property_get_{name}"));
+    }
+    if lower.starts_with("property let ") {
+        return identifier_after_keyword(rest, 13).map(|name| format!("property_let_{name}"));
+    }
+    if lower.starts_with("property set ") {
+        return identifier_after_keyword(rest, 13).map(|name| format!("property_set_{name}"));
+    }
+    None
+}
+
+fn legacy_line_field_symbol_name(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let rest = if lower.starts_with("dim ") {
+        &trimmed[4..]
+    } else if lower.starts_with("const ") {
+        &trimmed[6..]
+    } else if lower.starts_with("public ") || lower.starts_with("private ") {
+        strip_access_modifiers(trimmed)
+    } else {
+        return None;
+    };
+    let lower = rest.to_ascii_lowercase();
+    let rest = if lower.starts_with("dim ") {
+        &rest[4..]
+    } else if lower.starts_with("const ") {
+        &rest[6..]
+    } else {
+        rest
+    };
+    let lower = rest.to_ascii_lowercase();
+    if lower.starts_with("sub ")
+        || lower.starts_with("function ")
+        || lower.starts_with("property ")
+        || lower.starts_with("declare ")
+        || lower.starts_with("event ")
+    {
+        return None;
+    }
+    identifier_after_keyword(rest, 0)
+}
+
+fn strip_access_modifiers(mut text: &str) -> &str {
+    loop {
+        let lower = text.to_ascii_lowercase();
+        let Some(prefix_len) = ["public ", "private ", "friend ", "static "]
+            .iter()
+            .find_map(|prefix| lower.starts_with(prefix).then_some(prefix.len()))
+        else {
+            return text.trim_start();
+        };
+        text = text[prefix_len..].trim_start();
+    }
+}
+
+fn identifier_after_keyword(text: &str, start: usize) -> Option<&str> {
+    let tail = text.get(start..)?.trim_start();
+    let name = tail
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(' || ch == ',' || ch == ':')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    (!name.is_empty()).then_some(name)
 }
 
 pub fn seed_project_symbol_table_from_symbols(
@@ -534,6 +730,60 @@ mod tests {
     }
 
     #[test]
+    fn project_symbol_tables_keep_property_accessors_distinct_under_group_alias() {
+        let mut symbols = SymbolModel::default();
+        let get_symbol = symbols
+            .declare_symbol(
+                symbols.global_scope(),
+                SymbolNamespace::Procedure,
+                "property_get_Value",
+                provenance(),
+            )
+            .expect("get");
+        let let_symbol = symbols
+            .declare_symbol(
+                symbols.global_scope(),
+                SymbolNamespace::Procedure,
+                "property_let_Value",
+                provenance(),
+            )
+            .expect("let");
+
+        let mut table = ProjectSymbolTables::default();
+        table.record_class_member(
+            "Widget",
+            "Value",
+            ProjectSymbolKind::PropertyGet,
+            get_symbol,
+        );
+        table.record_class_member(
+            "Widget",
+            "Value",
+            ProjectSymbolKind::PropertyLet,
+            let_symbol,
+        );
+
+        assert_eq!(
+            table.resolve_qualified(&QualifiedName::new(["Widget", "Value"])),
+            None
+        );
+        assert_eq!(
+            table.resolve_property_accessor("Widget", "Value", ProjectSymbolKind::PropertyGet),
+            Some(ProjectSymbolRoute {
+                symbol: get_symbol,
+                kind: ProjectSymbolKind::PropertyGet,
+            })
+        );
+        assert_eq!(
+            table.resolve_property_accessor("Widget", "Value", ProjectSymbolKind::PropertyLet),
+            Some(ProjectSymbolRoute {
+                symbol: let_symbol,
+                kind: ProjectSymbolKind::PropertyLet,
+            })
+        );
+    }
+
+    #[test]
     fn project_symbol_index_records_manifest_module_procedure_and_public_routes() {
         let main = module_unit_from_source(
             "MainModule",
@@ -628,7 +878,52 @@ End Property
                 .tables
                 .resolve_qualified(&QualifiedName::new(["Book1", "Customer", "DisplayName"]))
                 .map(|route| route.kind),
+            Some(ProjectSymbolKind::PropertyGet)
+        );
+    }
+
+    #[test]
+    fn project_symbol_index_falls_back_to_legacy_lines_when_parser_rejects_body() {
+        let module = module_unit_from_source(
+            "Module1",
+            ModuleKind::Procedural,
+            r#"
+Public Function Add(ByVal lhs As Long, ByVal rhs As Long) As Long
+    Add = UnsupportedMember(Name := lhs)
+End Function
+
+Public Property Get Value() As Long
+    Value = 1
+End Property
+"#,
+        )
+        .expect("module");
+        let manifest = ProjectManifest {
+            project_name: "Book1".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let index = build_project_symbol_index_from_manifest(&manifest).expect("index");
+        assert_eq!(
+            index
+                .tables
+                .resolve_qualified(&QualifiedName::new(["Book1", "Module1", "Add"]))
+                .map(|route| route.kind),
             Some(ProjectSymbolKind::Procedure)
+        );
+        assert_eq!(
+            index.tables.resolve_property_accessor(
+                "Module1",
+                "Value",
+                ProjectSymbolKind::PropertyGet
+            ),
+            index
+                .tables
+                .resolve_qualified(&QualifiedName::new(["Book1", "Module1", "Value"]))
         );
     }
 }
