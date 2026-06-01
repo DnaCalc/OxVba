@@ -3895,6 +3895,11 @@ fn expand_bound_source_line(
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<Vec<String>, ProjectCompileError> {
+    let normalized_signature = normalize_visibility_prefixed_procedure_signature(line);
+    if parse_procedure_signature_line(&normalized_signature).is_some() {
+        return Ok(vec![line.to_string()]);
+    }
+
     if let Some(dim_decl) = parse_external_dim_declaration(line) {
         let (qualifier, _) = parse_qualified_type_reference(&dim_decl.qualified_type)
             .expect("external dim declaration must carry qualified type");
@@ -11487,7 +11492,7 @@ mod tests {
         let widget = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
-            "Attribute VB_Name = \"Widget\"\nPrivate initialized\nPublic Sub Class_Initialize()\ninitialized = 1\nEnd Sub\nPublic Function IsInitialized()\nIsInitialized = initialized\nEnd Function",
+            "Attribute VB_Name = \"Widget\"\nPrivate initialized\nPublic Sub Class_Initialize()\ninitialized = 1\nEnd Sub\nPrivate Sub Class_Terminate()\ninitialized = 0\nEnd Sub\nPublic Function IsInitialized()\nIsInitialized = initialized\nEnd Function",
         )
         .expect("class module parses");
         let manifest = ProjectManifest {
@@ -11498,6 +11503,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
+        assert!(
+            super::collect_project_procedures(&manifest)
+                .iter()
+                .any(|decl| decl.procedure_name.eq_ignore_ascii_case("class_terminate")),
+            "procedure index should retain private Class_Terminate"
+        );
 
         let compiled =
             compile_project(&manifest).expect("As New reset reconstruction should compile");
@@ -11517,10 +11528,39 @@ mod tests {
             !lowered.contains("__oxvba_project_instance("),
             "lazy As New reset path must not expose helper-source construction: {lowered}"
         );
+        assert!(
+            lowered.contains("class_terminate"),
+            "lazy As New HIR source should retain Class_Terminate: {lowered}"
+        );
         assert_eq!(
             project_load_count, 2,
             "{:#?}",
             compiled.bytecode.instructions
+        );
+        let widget_route = compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|route| route.module_name.eq_ignore_ascii_case("Widget"))
+            .expect("Widget dynamic route");
+        assert!(
+            widget_route.class_terminate.is_some(),
+            "lazy As New route should retain Class_Terminate lifetime metadata: {widget_route:#?}"
+        );
+        assert_eq!(
+            compiled
+                .source_maps
+                .module("MainModule")
+                .and_then(|map| map.file_to_runtime(6)),
+            Some(5),
+            "expected first As New dereference line to remain mapped"
+        );
+        assert_eq!(
+            compiled
+                .source_maps
+                .module("MainModule")
+                .and_then(|map| map.file_to_runtime(8)),
+            Some(7),
+            "expected after-Nothing As New dereference line to remain mapped"
         );
     }
 

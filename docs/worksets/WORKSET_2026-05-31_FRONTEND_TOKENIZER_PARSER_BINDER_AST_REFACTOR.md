@@ -1084,9 +1084,11 @@ Candidate bead units:
   helper construction and inserts guarded first-use/after-`Nothing` `New` sites, including
   field-mutating `Class_Initialize` bodies and source-map/dynamic-route checks. Source-class
   `WithEvents Set x = New T` also now restores its generated temporary construction to HIR `New`
-  and preserves generated optional/default guard parameters. This bead remains open because
-  imported/COM construction, unsupported fallback project shapes, broader WithEvents event/lifetime
-  interactions, and the full lifetime/source-map closure story are not yet proven.
+  and preserves generated optional/default guard parameters. The accepted active-project reset
+  regression now also checks private `Class_Terminate` retention, dynamic route termination
+  metadata, and first-use/after-`Nothing` source maps. This bead remains open because imported/COM
+  construction, unsupported fallback project shapes, and broader WithEvents event/lifetime
+  interactions are not yet proven.
 - FE-8.5.c Property/default-member/writeback lowering: finish the semantic and lowering route for
   Property Get/Let/Set, default member read/write/invoke, early-bound COM property put/putref,
   indexed/named writeback, and overload validation. Partial work has already been done: simple

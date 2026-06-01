@@ -121,9 +121,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       `__oxvba_project_instance(...)` assignment as the production artifact;
     - `bd-aprs.9.7`: partially progressed for active-project lazy first-use/after-`Nothing`
       `As New`, field-mutating `Class_Initialize`, and narrowed source-class
-      `WithEvents Set x = New T` construction through HIR, but still open for imported/COM
-      construction, unsupported fallback project shapes, broader WithEvents event/lifetime
-      interactions, and full construction lifetime/source-map closure;
+      `WithEvents Set x = New T` construction through HIR; accepted active-project reset coverage
+      now includes private `Class_Terminate` metadata and first-use/after-`Nothing` source maps,
+      but the bead is still open for imported/COM construction, unsupported fallback project
+      shapes, and broader WithEvents event/lifetime interactions;
     - `bd-aprs.9.8`: arrays, indexing, and `ReDim` parity;
     - `bd-aprs.9.9`: compile-time options, declarations, and constants;
     - `bd-aprs.9.10`: broader declaration/type surface;
