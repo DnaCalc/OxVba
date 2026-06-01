@@ -5703,7 +5703,21 @@ fn parse_stdlib_intrinsic_call_expr(
         return None;
     }
 
+    if let Some(intrinsic) = structural_intrinsic_for_call_name(&name) {
+        return Some(BoundExpr::StructuralIntrinsicCall { intrinsic, args });
+    }
+
     Some(BoundExpr::IntrinsicCall { name, args })
+}
+
+fn structural_intrinsic_for_call_name(name: &str) -> Option<StructuralIntrinsic> {
+    match name {
+        "__oxvba_project_instance" => Some(StructuralIntrinsic::ProjectInstance),
+        "varptr" => Some(StructuralIntrinsic::VarPtr),
+        "strptr" => Some(StructuralIntrinsic::StrPtr),
+        "objptr" => Some(StructuralIntrinsic::ObjPtr),
+        _ => None,
+    }
 }
 
 fn starts_with_call_name_ci(text: &str, name: &str) -> bool {
@@ -7933,7 +7947,8 @@ mod tests {
         assert_eq!(args.len(), 3);
         assert!(matches!(
             &args[0].expr,
-            BoundExpr::IntrinsicCall { name, .. } if name == "varptr"
+            BoundExpr::StructuralIntrinsicCall { intrinsic, .. }
+                if *intrinsic == crate::frontend_structural_intrinsics::StructuralIntrinsic::VarPtr
         ));
         assert!(matches!(&args[1].expr, BoundExpr::Var(var) if var == "ptr"));
         assert!(matches!(&args[2].expr, BoundExpr::Var(var) if var == "length"));

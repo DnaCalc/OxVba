@@ -29,10 +29,10 @@ impl StructuralIntrinsic {
             Self::DynamicDispatchGet => "__oxvba_dispatch_get",
             Self::DynamicDispatchLet => "__oxvba_dispatch_let",
             Self::DynamicDispatchSet => "__oxvba_dispatch_set",
-            Self::PtrOf => "__oxvba_ptrof",
-            Self::ObjPtr => "__oxvba_objptr",
-            Self::VarPtr => "__oxvba_varptr",
-            Self::StrPtr => "__oxvba_strptr",
+            Self::PtrOf => "ptrof",
+            Self::ObjPtr => "objptr",
+            Self::VarPtr => "varptr",
+            Self::StrPtr => "strptr",
         }
     }
 

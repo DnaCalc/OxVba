@@ -8453,6 +8453,20 @@ fn external_pointer_writeback(
                 kind: ExternalCallWritebackKind::PointerByteArrayPayload,
             })
         }
+        BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::VarPtr,
+            args,
+        } if args.len() == 1 && matches!(args.first(), Some(BoundExpr::VarPtrArrayBuffer(_))) => {
+            let BoundExpr::VarPtrArrayBuffer(name) = args.first()? else {
+                return None;
+            };
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerByteArrayPayload,
+            })
+        }
         BoundExpr::IntrinsicCall { name, args }
             if name.eq_ignore_ascii_case("strptr")
                 && args.len() == 1
@@ -8468,11 +8482,45 @@ fn external_pointer_writeback(
                 kind: ExternalCallWritebackKind::PointerStringPayload,
             })
         }
+        BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::StrPtr,
+            args,
+        } if args.len() == 1 && matches!(args.first(), Some(BoundExpr::Var(_))) => {
+            let BoundExpr::Var(name) = args.first()? else {
+                return None;
+            };
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerStringPayload,
+            })
+        }
         BoundExpr::IntrinsicCall { name, args }
             if name.eq_ignore_ascii_case("varptr")
                 && args.len() == 1
                 && matches!(args.first(), Some(BoundExpr::Var(_))) =>
         {
+            let BoundExpr::Var(name) = args.first()? else {
+                return None;
+            };
+            if current_proc_meta(proc_meta)
+                .and_then(|meta| meta.declaration_types.get(name.as_str()).copied())
+                != Some(BoundType::String)
+            {
+                return None;
+            }
+            let source_slot = *slot_map.get(&name.to_ascii_lowercase())?;
+            Some(ExternalCallWriteback {
+                arg_index,
+                source_slot,
+                kind: ExternalCallWritebackKind::PointerStringPayload,
+            })
+        }
+        BoundExpr::StructuralIntrinsicCall {
+            intrinsic: StructuralIntrinsic::VarPtr,
+            args,
+        } if args.len() == 1 && matches!(args.first(), Some(BoundExpr::Var(_))) => {
             let BoundExpr::Var(name) = args.first()? else {
                 return None;
             };
@@ -9309,6 +9357,29 @@ fn emit_expr_into(
                 }
                 (StructuralIntrinsic::ProjectInstance, [src]) => {
                     instructions.push(Instruction::LoadProjectObjectRef { dst, handle: *src });
+                }
+                (StructuralIntrinsic::StrPtr, [src]) => {
+                    instructions.push(Instruction::IntrinsicStrPtr { dst, src: *src });
+                }
+                (StructuralIntrinsic::VarPtr, [src]) => {
+                    let instruction = match args.first() {
+                        Some(BoundExpr::Var(name)) => match current_proc_meta(proc_meta)
+                            .and_then(|meta| meta.declaration_types.get(name.as_str()).copied())
+                        {
+                            Some(BoundType::String) => {
+                                Instruction::IntrinsicVarPtrStringVar { dst, src: *src }
+                            }
+                            Some(BoundType::Variant) => {
+                                Instruction::IntrinsicVarPtrVariantVar { dst, src: *src }
+                            }
+                            _ => Instruction::IntrinsicVarPtr { dst, src: *src },
+                        },
+                        _ => Instruction::IntrinsicVarPtr { dst, src: *src },
+                    };
+                    instructions.push(instruction);
+                }
+                (StructuralIntrinsic::ObjPtr, [src]) => {
+                    instructions.push(Instruction::IntrinsicObjPtr { dst, src: *src });
                 }
                 _ => {}
             }

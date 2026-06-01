@@ -17,15 +17,19 @@ Production route proof now covers:
 
 - `Null` literal binding;
 - `Nothing` literal binding; and
-- omitted positional argument sentinels.
+- omitted positional argument sentinels;
+- project-class instance materialisation (`__oxvba_project_instance`); and
+- pointer helpers (`VarPtr`, `StrPtr`, `ObjPtr`) including external-call pointer writeback
+  classification.
 
 Those constructs no longer enter the backend as `IntrinsicCall { name: "__null" | "__nothing" |
-"__omitted" }`; emit, metadata collection, optimization walks, and typechecking consume the typed
+"__omitted" | "__oxvba_project_instance" | "varptr" | "strptr" | "objptr" }`; emit, metadata
+collection, optimization walks, typechecking, and pointer writeback consume the typed
 structural-intrinsic variant directly.
 
 The remaining enum families still have a compatibility legacy-name bridge. Project instance,
-WithEvents, dynamic dispatch, and pointer helper migration remains bounded to later FE-8/FE-9
-lowering cleanup unless a follow-up slice in this bead moves them first.
+WithEvents and dynamic dispatch migration remains bounded to later FE-8/FE-9 lowering cleanup
+unless a follow-up slice in this bead moves them first.
 
 ## Checks
 
@@ -36,6 +40,9 @@ lowering cleanup unless a follow-up slice in this bead moves them first.
 - `cargo test -p oxvba-compiler nothing --quiet`
 - `cargo test -p oxvba-compiler omitted --quiet`
 - `cargo test -p oxvba-compiler structural --quiet`
+- `cargo test -p oxvba-compiler pointer --quiet`
+- `cargo test -p oxvba-compiler resolve_statement_level_call_without_parentheses_preserves_arguments --quiet`
+- `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
 - `cargo test -p oxvba-compiler object_assignment --quiet`
 - `cargo test -p oxvba-compiler emit --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
@@ -53,5 +60,6 @@ lowering cleanup unless a follow-up slice in this bead moves them first.
   assignment as explicit `Let`. The pre-pass gate now only surfaces `BIND-E-LET-OBJECT-TARGET`
   when source text actually used explicit `Let`, preserving the existing runtime-validation lane
   for implicit Variant-to-Object assignment.
-- Legacy string use remains material for the non-migrated structural families and for ordinary VBA
-  intrinsics. This evidence does not claim full retirement of every `IntrinsicCall { name }` path.
+- Legacy string use remains material for WithEvents and dynamic dispatch families and for ordinary
+  VBA intrinsics. This evidence does not claim full retirement of every `IntrinsicCall { name }`
+  path.

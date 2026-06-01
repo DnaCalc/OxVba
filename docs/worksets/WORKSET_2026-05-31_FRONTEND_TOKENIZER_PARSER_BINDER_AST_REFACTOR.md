@@ -807,8 +807,10 @@ Candidate bead units:
   helpers where appropriate. Current continuation progress introduces typed
   `BoundExpr::StructuralIntrinsicCall` production nodes and migrates `Null`, `Nothing`, and
   omitted positional arguments through resolver, typecheck, optimization walks, emit, and metadata
-  collection. The remaining structural families stay on the explicit compatibility bridge until
-  their lowering routes are migrated or quarantined in FE-8/FE-9 cleanup.
+  collection. Follow-up continuation also migrates project-instance materialisation and pointer
+  helpers (`VarPtr`/`StrPtr`/`ObjPtr`), including external pointer writeback classification. The
+  remaining WithEvents and dynamic-dispatch structural families stay on the explicit compatibility
+  bridge until their lowering routes are migrated or quarantined in FE-8/FE-9 cleanup.
   Evidence: `docs/evidence/frontend_rework/TYPED_STRUCTURAL_INTRINSICS_2026-06-01.md`.
 - FE-8.2 Operator normalization: replace parser-produced `AddConst`/`SubConst` with uniform
   binary ops and a separate optimizer transform.
