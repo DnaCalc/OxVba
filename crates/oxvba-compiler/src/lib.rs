@@ -8,6 +8,7 @@ pub mod lsp_support;
 pub mod optimize;
 pub mod project;
 pub mod resolve;
+pub mod syntax_bridge;
 pub mod typecheck;
 
 use thiserror::Error;

@@ -5087,6 +5087,10 @@ fn intrinsic_vb_constant(name: &str) -> Option<BoundExpr> {
     }
 }
 
+pub(crate) fn parse_expr_for_syntax_bridge(text: &str) -> Option<BoundExpr> {
+    parse_expr(text, &HashMap::new())
+}
+
 fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let expr = text.trim();
     if expr.eq_ignore_ascii_case("vbnullstring") {

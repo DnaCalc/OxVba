@@ -578,6 +578,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/PARSER_STATEMENT_COVERAGE_2026-06-01.md`.
 - FE-4.4 CST-to-legacy bridge: lower selected CST nodes into current `BoundExpr`/`BoundStmt`
   forms so syntax migration can proceed before HIR is complete.
+  Evidence: `docs/evidence/frontend_rework/CST_TO_LEGACY_BRIDGE_2026-06-01.md`.
 - FE-4.5 Parser diagnostic recovery: verify partial trees under common incomplete edit states.
 
 Evidence gate: parser fixtures round-trip, bridge-supported constructs compile/run through the
