@@ -33,6 +33,7 @@ pub enum ProjectSymbolKind {
     PropertySet,
     Event,
     Field,
+    WithEventsField,
     Public,
 }
 
@@ -328,6 +329,25 @@ impl ProjectSymbolIndex {
         names.dedup();
         names
     }
+
+    pub fn resolve_class_withevents_field_names(&self, owner: &str) -> Vec<String> {
+        let owner = fold_identifier(owner);
+        let mut names = self
+            .tables
+            .class_members
+            .iter()
+            .filter_map(|((route_owner, member), routes)| {
+                (route_owner == &owner
+                    && routes
+                        .iter()
+                        .any(|route| route.kind == ProjectSymbolKind::WithEventsField))
+                .then_some(member.clone())
+            })
+            .collect::<Vec<_>>();
+        names.sort();
+        names.dedup();
+        names
+    }
 }
 
 fn unique_route(routes: &[ProjectSymbolRoute]) -> Option<ProjectSymbolRoute> {
@@ -348,7 +368,8 @@ fn route_kind_order(kind: ProjectSymbolKind) -> u8 {
         ProjectSymbolKind::PropertySet => 6,
         ProjectSymbolKind::Event => 7,
         ProjectSymbolKind::Field => 8,
-        ProjectSymbolKind::Public => 9,
+        ProjectSymbolKind::WithEventsField => 9,
+        ProjectSymbolKind::Public => 10,
     }
 }
 
@@ -433,6 +454,7 @@ fn index_module(
     };
     let default_member_names = collect_default_member_attribute_names(&module.source);
     let declared_event_names = collect_declared_event_names(&module.source);
+    let withevents_field_names = collect_withevents_field_names(&module.source);
 
     match collect_symbols_from_source_into_model(
         symbols,
@@ -490,6 +512,8 @@ fn index_module(
             SymbolNamespace::Local | SymbolNamespace::Member => {
                 let kind = if declared_event_names.contains_key(&fold_identifier(&name)) {
                     ProjectSymbolKind::Event
+                } else if withevents_field_names.contains_key(&fold_identifier(&name)) {
+                    ProjectSymbolKind::WithEventsField
                 } else {
                     ProjectSymbolKind::Field
                 };
@@ -573,6 +597,26 @@ fn collect_declared_event_names(source: &str) -> BTreeMap<String, ()> {
         .into_iter()
         .filter_map(|line| declared_event_name(&line).map(|name| (fold_identifier(name), ())))
         .collect()
+}
+
+fn collect_withevents_field_names(source: &str) -> BTreeMap<String, ()> {
+    normalize_source_lines(source)
+        .into_iter()
+        .filter_map(|line| withevents_field_name(&line).map(|name| (fold_identifier(name), ())))
+        .collect()
+}
+
+fn withevents_field_name(line: &str) -> Option<&str> {
+    let rest = strip_access_modifiers(line.trim());
+    let lower = rest.to_ascii_lowercase();
+    let payload = if lower.starts_with("withevents ") {
+        rest[11..].trim_start()
+    } else if lower.starts_with("dim withevents ") {
+        rest[15..].trim_start()
+    } else {
+        return None;
+    };
+    identifier_after_keyword(payload, 0)
 }
 
 fn declared_event_name(line: &str) -> Option<&str> {
@@ -909,8 +953,9 @@ mod tests {
             module_name: "Widget".to_string(),
             module_kind: ModuleKind::Class,
             attributes: Default::default(),
-            source: "Private score As Long\nPublic Function Value() As Long\nEnd Function"
-                .to_string(),
+            source:
+                "Private score As Long\nPrivate WithEvents source As Emitter\nPublic Function Value() As Long\nEnd Function"
+                    .to_string(),
         };
         let manifest = ProjectManifest {
             project_name: "Book1".to_string(),
@@ -929,6 +974,10 @@ mod tests {
         assert_eq!(
             index.resolve_class_field_names("widget"),
             vec!["score".to_string()]
+        );
+        assert_eq!(
+            index.resolve_class_withevents_field_names("widget"),
+            vec!["source".to_string()]
         );
     }
 

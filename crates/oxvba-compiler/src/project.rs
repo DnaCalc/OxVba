@@ -8384,25 +8384,48 @@ fn project_class_field_tokens(
     if let Some(module) = find_project_module(manifest, project_name, module_name)
         && module.module_kind == ModuleKind::Class
     {
-        for field_name in collect_module_state_bindings(
-            module,
-            project_name,
-            module_name,
-            Some(project_symbol_index),
-        )
-        .field_tokens
-        .keys()
-        {
+        let frontend_field_names = if manifest.project_name.eq_ignore_ascii_case(project_name) {
+            frontend_class_field_names_for_module(project_symbol_index, module, module_name)
+        } else {
+            Vec::new()
+        };
+        let field_names = if frontend_field_names.is_empty() {
+            collect_module_state_bindings(
+                module,
+                project_name,
+                module_name,
+                Some(project_symbol_index),
+            )
+            .field_tokens
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+        } else {
+            frontend_field_names
+        };
+        for field_name in field_names {
             tokens.push(class_state_binding_token(
                 project_name,
                 module_name,
-                field_name,
+                &field_name,
             ));
         }
     }
     tokens.sort_unstable();
     tokens.dedup();
     tokens
+}
+
+fn frontend_class_field_names_for_module(
+    project_symbol_index: &ProjectSymbolIndex,
+    module: &ModuleUnit,
+    module_name: &str,
+) -> Vec<String> {
+    let mut names = project_symbol_index.resolve_class_field_names(module_name);
+    if names.is_empty() && !module.attributes.vb_name.trim().is_empty() {
+        names = project_symbol_index.resolve_class_field_names(&module.attributes.vb_name);
+    }
+    names
 }
 
 fn find_project_module<'a>(
@@ -18578,6 +18601,55 @@ mod tests {
                         && member.dispatch_id.is_none()
                 }),
             "expected native internal dynamic route to rely on member metadata instead of a transitional token table"
+        );
+    }
+
+    #[test]
+    fn compile_project_dynamic_field_tokens_use_frontend_ordinary_field_routes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Private score As Long\n",
+                "Private WithEvents source As Emitter\n"
+            ),
+        )
+        .expect("widget module parses");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Tick()\n",
+        )
+        .expect("emitter module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, emitter],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("project should compile");
+        let route = compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|route| route.module_name == "widget")
+            .expect("widget route");
+
+        assert_eq!(
+            route.field_tokens,
+            vec![super::class_state_binding_token(
+                "projecta", "widget", "score"
+            )],
+            "ordinary field tokens should come from frontend field routes and exclude WithEvents bindings"
         );
     }
 

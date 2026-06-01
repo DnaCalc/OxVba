@@ -493,6 +493,12 @@ fn declaration_name_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
                 in_type_ref = true;
             }
             SyntaxElement::Token(token)
+                if expect_name && token.kind == SyntaxKind::KwWithEvents =>
+            {
+                expect_name = true;
+                in_type_ref = false;
+            }
+            SyntaxElement::Token(token)
                 if expect_name
                     && !in_type_ref
                     && (is_identifier_like(token.kind) || token.kind.is_keyword()) =>
