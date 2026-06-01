@@ -205,6 +205,12 @@ The twenty-third FE-8.5 slice removes the basic `RaiseEvent` statement residual:
 - production HIR lowering maps the node to the existing backend `BoundStmt::RaiseEvent` form; and
 - the production route audit now includes a `RaiseEvent Tick(1)` fixture.
 
+Fresh-eyes correction after this slice: the first `RaiseEvent Tick(1)` route preserved and emitted
+arguments, but the HIR `RaiseEvent` node was still treated as a leaf by two front-end fact
+consumers. The semantic model now indexes event argument expressions, and the lowering-contract
+collector now includes structural facts from event arguments. Focused regressions cover
+`RaiseEvent Tick(n)` symbol queries and `RaiseEvent Tick(Null)` lowering-contract intrinsics.
+
 Named event arguments and full project event binding remain broader event/COM work outside this
 narrow route slice.
 
