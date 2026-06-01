@@ -534,8 +534,22 @@ These fixes do not close FE-8.5 object construction. They reduce downstream brea
 main production residual remains: project compile must consume `HirNewExpressionBinding` directly
 instead of compiling rewritten `__oxvba_project_instance(...)` source text.
 
+## Const Expression Continuation
+
+The latest FE-8.5 slice widens the HIR `Const` route from literal-only substitution to simple
+constant expressions:
+
+- `Const` production eligibility now accepts simple expression trees composed from literal values,
+  parentheses, unary minus, arithmetic operators, and string concatenation.
+- `collect_const_values(...)` records those values as bound expression trees, so uses such as
+  `x = CBase` for `Const CBase = 1 + 2` lower through HIR and produce expression bytecode without
+  allocating a runtime local slot for `CBase`.
+- This is intentionally still a bounded subset. Constant expressions that require name-dependent
+  evaluation beyond the already handled enum/literal route remain future FE-8.5 work.
+
 ## Checks
 
+- `cargo test -p oxvba-compiler hir_production_lowering_accepts_expression_const_statement --quiet`
 - `cargo test -p oxvba-host --test source_member_call_statements --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_distinct_new_instances_have_separate_state --quiet`
