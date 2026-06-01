@@ -9,7 +9,10 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 Added `crates/oxvba-compiler/src/frontend_legacy_route_audit.rs`, an executable audit report for
 the FE-9 terminal route gate.
 
-Current audited-route gate result: **passed**.
+Current bounded recorded-fixture route audit result: **passed for the fixture set in this file**.
+This is not terminal workset closure. The 2026-06-02 workset rework adds `bd-aprs.10.7` for the
+broader accepted grammar matrix, compiler fixture corpus, host project corpus, language-service
+corpus, and selected Excel oracle route audit before terminal closure.
 
 The audit proves the good path and exposes the remaining production residuals:
 
