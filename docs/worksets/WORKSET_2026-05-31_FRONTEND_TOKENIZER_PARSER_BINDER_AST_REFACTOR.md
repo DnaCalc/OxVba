@@ -599,6 +599,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/SEMANTIC_DIFF_HARNESS_2026-06-01.md`.
 - FE-5.3 Diff classifier: record bytecode differences as bug, harmless drift, or intentional
   improvement, with fixture links and close conditions.
+  Evidence: `docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md`.
 - FE-5.4 Corpus runner integration: run compiler unit fixtures, host projects, conformance cases,
   and targeted Excel oracle-backed cases through the harness.
 

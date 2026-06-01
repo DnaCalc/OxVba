@@ -101,6 +101,40 @@ pub struct FrontendDiffReport {
     pub observable_output_matches: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedBytecodeDrift {
+    Bug,
+    HarmlessDrift,
+    IntentionalImprovement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffClassificationInput {
+    pub fixture_name: String,
+    pub fixture_path: String,
+    pub expected_bytecode_drift: Option<ExpectedBytecodeDrift>,
+    pub rationale: String,
+    pub close_condition: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffClassificationKind {
+    Equivalent,
+    Bug,
+    HarmlessDrift,
+    IntentionalImprovement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffClassification {
+    pub kind: DiffClassificationKind,
+    pub fixture_name: String,
+    pub fixture_path: String,
+    pub summary: String,
+    pub close_condition: String,
+    pub reasons: Vec<String>,
+}
+
 pub fn compare_legacy_to_legacy(source: &str) -> FrontendDiffReport {
     make_report(
         observe_frontend(source, FrontendPath::Legacy),
@@ -113,6 +147,63 @@ pub fn compare_legacy_to_frontend_v2(source: &str) -> FrontendDiffReport {
         observe_frontend(source, FrontendPath::Legacy),
         observe_frontend(source, FrontendPath::FrontendV2),
     )
+}
+
+pub fn classify_frontend_diff(
+    report: &FrontendDiffReport,
+    input: DiffClassificationInput,
+) -> DiffClassification {
+    let mut reasons = Vec::new();
+    if !report.diagnostics_match {
+        reasons.push("diagnostics differ".to_string());
+    }
+    if !report.bytecode_matches {
+        reasons.push("bytecode summary differs".to_string());
+    }
+    if !report.metadata_matches {
+        reasons.push("metadata summary differs".to_string());
+    }
+    if !report.execution_trace_matches {
+        reasons.push("execution trace differs".to_string());
+    }
+    if !report.observable_output_matches {
+        reasons.push("observable output differs".to_string());
+    }
+
+    let missing_policy =
+        input.rationale.trim().is_empty() || input.close_condition.trim().is_empty();
+    let kind = if reasons.is_empty() {
+        DiffClassificationKind::Equivalent
+    } else if !report.diagnostics_match
+        || !report.metadata_matches
+        || !report.execution_trace_matches
+        || !report.observable_output_matches
+    {
+        DiffClassificationKind::Bug
+    } else if !report.bytecode_matches && !missing_policy {
+        match input.expected_bytecode_drift {
+            Some(ExpectedBytecodeDrift::HarmlessDrift) => DiffClassificationKind::HarmlessDrift,
+            Some(ExpectedBytecodeDrift::IntentionalImprovement) => {
+                DiffClassificationKind::IntentionalImprovement
+            }
+            Some(ExpectedBytecodeDrift::Bug) | None => DiffClassificationKind::Bug,
+        }
+    } else {
+        DiffClassificationKind::Bug
+    };
+
+    if missing_policy && !reasons.is_empty() {
+        reasons.push("missing rationale or close condition".to_string());
+    }
+
+    DiffClassification {
+        kind,
+        fixture_name: input.fixture_name,
+        fixture_path: input.fixture_path,
+        summary: classification_summary(kind),
+        close_condition: input.close_condition,
+        reasons,
+    }
 }
 
 pub fn observe_frontend(source: &str, path: FrontendPath) -> FrontendObservation {
@@ -232,6 +323,22 @@ fn runtime_not_run() -> RuntimeObservationStatus {
     )
 }
 
+fn classification_summary(kind: DiffClassificationKind) -> String {
+    match kind {
+        DiffClassificationKind::Equivalent => "no semantic or bytecode drift detected",
+        DiffClassificationKind::Bug => {
+            "diff must be fixed or explicitly reclassified with evidence"
+        }
+        DiffClassificationKind::HarmlessDrift => {
+            "bytecode differs but diagnostics, metadata, execution trace, and output match"
+        }
+        DiffClassificationKind::IntentionalImprovement => {
+            "bytecode differs because the new front-end intentionally improves documented behavior"
+        }
+    }
+    .to_string()
+}
+
 fn debug_vec<T: std::fmt::Debug>(items: &[T]) -> Vec<String> {
     items.iter().map(|item| format!("{item:?}")).collect()
 }
@@ -290,5 +397,110 @@ mod tests {
             report.right.metadata,
             MetadataSummaryStatus::NotAvailable
         ));
+    }
+
+    #[test]
+    fn diff_classifier_marks_identical_report_equivalent() {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let report = compare_legacy_to_frontend_v2(source);
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "supported_assignment".to_string(),
+                fixture_path: "inline:frontend_diff".to_string(),
+                expected_bytecode_drift: None,
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+        );
+        assert_eq!(classification.kind, DiffClassificationKind::Equivalent);
+        assert!(classification.reasons.is_empty(), "{classification:#?}");
+    }
+
+    #[test]
+    fn diff_classifier_requires_policy_for_bytecode_drift() {
+        let report = bytecode_drift_report();
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "synthetic_missing_policy".to_string(),
+                fixture_path: "inline:frontend_diff".to_string(),
+                expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
+                rationale: String::new(),
+                close_condition: String::new(),
+            },
+        );
+        assert_eq!(classification.kind, DiffClassificationKind::Bug);
+        assert!(
+            classification
+                .reasons
+                .contains(&"missing rationale or close condition".to_string()),
+            "{classification:#?}"
+        );
+    }
+
+    #[test]
+    fn diff_classifier_classifies_documented_harmless_bytecode_drift() {
+        let report = bytecode_drift_report();
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "synthetic_slot_reuse_drift".to_string(),
+                fixture_path:
+                    "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-1"
+                        .to_string(),
+                expected_bytecode_drift: Some(ExpectedBytecodeDrift::HarmlessDrift),
+                rationale:
+                    "alternate lowering reuses temporaries while preserving metadata and output"
+                        .to_string(),
+                close_condition:
+                    "keep as harmless only while diagnostics, metadata, execution, and output match"
+                        .to_string(),
+            },
+        );
+        assert_eq!(classification.kind, DiffClassificationKind::HarmlessDrift);
+        assert_eq!(
+            classification.reasons,
+            vec!["bytecode summary differs".to_string()]
+        );
+    }
+
+    #[test]
+    fn diff_classifier_classifies_documented_intentional_improvement() {
+        let report = bytecode_drift_report();
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "synthetic_legacy_divergence_fix".to_string(),
+                fixture_path:
+                    "docs/evidence/frontend_rework/DIFF_CLASSIFIER_2026-06-01.md#fixture-2"
+                        .to_string(),
+                expected_bytecode_drift: Some(ExpectedBytecodeDrift::IntentionalImprovement),
+                rationale: "new lowering fixes a documented legacy divergence".to_string(),
+                close_condition:
+                    "requires fixture evidence linking the divergence and expected VBA behavior"
+                        .to_string(),
+            },
+        );
+        assert_eq!(
+            classification.kind,
+            DiffClassificationKind::IntentionalImprovement
+        );
+    }
+
+    fn bytecode_drift_report() -> FrontendDiffReport {
+        let source = "Sub Main()\n    Dim x As Long\n    x = 1 + 2\nEnd Sub\n";
+        let mut report = compare_legacy_to_frontend_v2(source);
+        match &mut report.right.bytecode {
+            BytecodeSummaryStatus::Available(summary) => {
+                summary
+                    .instructions
+                    .push("SyntheticAlternateLowering".to_string());
+                summary.instruction_count += 1;
+            }
+            BytecodeSummaryStatus::NotAvailable => panic!("expected bytecode summary"),
+        }
+        report.bytecode_matches = false;
+        report
     }
 }
