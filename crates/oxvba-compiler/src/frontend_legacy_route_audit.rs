@@ -254,7 +254,7 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
-    let const_statement = "Const CBase = 7\nSub Main()\nDim x\nx = CBase\nEnd Sub\n";
+    let const_statement = "Const CBase = 7, CName = \"a,b\"\nSub Main()\nDim x\nDim y\nx = CBase\ny = CName\nEnd Sub\n";
     findings.push(route_finding(
         "const statement fixture",
         const_statement,

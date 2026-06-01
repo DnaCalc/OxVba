@@ -183,13 +183,14 @@ fn const_stmt_is_supported(text: &str) -> bool {
         return false;
     };
     let payload = text[pos + "const".len()..].trim();
-    if payload.contains(',') {
-        return false;
-    }
-    let Some((_, rhs)) = payload.split_once('=') else {
-        return false;
-    };
-    parse_const_literal(rhs.trim()).is_some()
+    let declarators = split_const_declarators(payload);
+    !declarators.is_empty()
+        && declarators.iter().all(|declarator| {
+            let Some((_, rhs)) = declarator.split_once('=') else {
+                return false;
+            };
+            parse_const_literal(rhs.trim()).is_some()
+        })
 }
 
 pub fn lower_typed_hir_to_bound_module(
@@ -1046,8 +1047,59 @@ fn const_literal_after_span(
         return None;
     }
     let suffix = source.get(span.end..line_end)?;
+    let suffix = first_const_declarator_tail(suffix);
     let (_, rhs) = suffix.split_once('=')?;
     parse_const_literal(rhs.trim())
+}
+
+fn first_const_declarator_tail(text: &str) -> &str {
+    let mut in_string = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            ',' if !in_string => return &text[..idx],
+            _ => {}
+        }
+    }
+    text
+}
+
+fn split_const_declarators(text: &str) -> Vec<&str> {
+    let mut declarators = Vec::new();
+    let mut start = 0;
+    let mut in_string = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                if in_string && matches!(chars.peek(), Some((_, '"'))) {
+                    chars.next();
+                } else {
+                    in_string = !in_string;
+                }
+            }
+            ',' if !in_string => {
+                let part = text[start..idx].trim();
+                if !part.is_empty() {
+                    declarators.push(part);
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let part = text[start..].trim();
+    if !part.is_empty() {
+        declarators.push(part);
+    }
+    declarators
 }
 
 fn parse_const_literal(text: &str) -> Option<BoundExpr> {
@@ -1667,6 +1719,34 @@ mod tests {
                 .slots
                 .iter()
                 .any(|slot| slot.name.eq_ignore_ascii_case("cbase")),
+            "{main:#?}"
+        );
+    }
+
+    #[test]
+    fn hir_production_lowering_accepts_multi_literal_const_statement() {
+        let source = "Const CBase = 7, CName = \"a,b\"\nSub Main()\nDim x\nDim y\nx = CBase\ny = CName\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstI32 { value: 7, .. }
+            )),
+            "{bytecode:#?}"
+        );
+        assert!(
+            bytecode.instructions.iter().any(|instruction| matches!(
+                instruction,
+                Instruction::LoadConstString { value, .. } if value == "a,b"
+            )),
+            "{bytecode:#?}"
+        );
+        let main = metadata.get("main").expect("main metadata");
+        assert!(
+            !main.slots.iter().any(|slot| {
+                slot.name.eq_ignore_ascii_case("cbase") || slot.name.eq_ignore_ascii_case("cname")
+            }),
             "{main:#?}"
         );
     }
