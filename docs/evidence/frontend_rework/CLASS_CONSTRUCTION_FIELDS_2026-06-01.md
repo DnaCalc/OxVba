@@ -42,6 +42,9 @@ front-end symbol index:
   active-project dynamic object routes now emit ordinary field tokens directly from frontend field
   routes before falling back to legacy line parsing for referenced-project or parser-incomplete
   cases.
+- The typed-local object classification path now uses the same frontend class-construction route
+  for active-project `Dim x As ClassName` declarations. The previous `resolve_interface_module`
+  check remains only as the fallback path when no active-project frontend class route is available.
 
 Production-route proof:
 
@@ -55,6 +58,9 @@ Production-route proof:
 - `compile_project_dynamic_field_tokens_use_frontend_ordinary_field_routes` proves active-project
   dynamic object metadata uses frontend ordinary field routes and excludes `WithEvents` bindings
   from ordinary field-token storage.
+- `record_internal_class_object_local_uses_frontend_class_route` uses a deliberately different
+  manifest module id and `VB_Name` class spelling to prove typed object-local classification is
+  accepted by the frontend class route rather than by manifest-name-only lookup.
 - `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
   matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
@@ -79,6 +85,7 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-compiler frontend_project_symbols --quiet`
 - `cargo test -p oxvba-compiler compile_project_dynamic_field_tokens_use_frontend_ordinary_field_routes --quiet`
 - `cargo test -p oxvba-compiler expand_bound_source_line_uses_frontend_class_route_for_active_project_new --quiet`
+- `cargo test -p oxvba-compiler record_internal_class_object_local_uses_frontend_class_route --quiet`
 - `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
 - `cargo test -p oxvba-compiler predeclared --quiet`
