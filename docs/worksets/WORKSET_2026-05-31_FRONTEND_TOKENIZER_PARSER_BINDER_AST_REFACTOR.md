@@ -931,10 +931,13 @@ Candidate bead units:
   assignment as field-wise `UdtAssign` copy lowering.
   Follow-up continuation gives `New` a first-class HIR expression shape carrying the normalized
   constructor type name, and moves the residual from a raw CST syntax guard to a precise
-  project-aware construction-binding error. `New` remains an explicit production residual because
-  object construction still requires active-project class handles, imported/COM activation,
-  generated instance metadata, `Class_Initialize`, and `As New` lazy-construction semantics without
-  relying on `project.rs` source-text rewrites.
+  project-aware construction-binding error. Follow-up continuation adds an explicit HIR lowering
+  construction-binding hook: supplied `HirNewExpressionBinding` facts lower `New <Class>` to typed
+  `StructuralIntrinsic::ProjectInstance(handle)` instead of a helper-name rewrite. `New` remains an
+  explicit production residual until project compilation generates and consumes those facts for
+  active-project class handles, imported/COM activation, generated instance metadata,
+  `Class_Initialize`, and `As New` lazy-construction semantics without relying on `project.rs`
+  source-text rewrites.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 

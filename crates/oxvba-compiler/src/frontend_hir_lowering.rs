@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::bytecode::Bytecode;
 use crate::emit::{ProcedureRuntimeMetadata, emit_bytecode_with_runtime_metadata};
@@ -29,6 +29,38 @@ pub enum HirProductionLoweringError {
     Unsupported(String),
     #[error(transparent)]
     Compile(#[from] CompileError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HirNewExpressionBinding {
+    pub type_name: String,
+    pub object_handle: i32,
+}
+
+#[derive(Debug, Default)]
+struct HirLoweringContext {
+    new_expression_bindings: HashMap<String, VecDeque<i32>>,
+}
+
+impl HirLoweringContext {
+    fn from_new_expression_bindings(bindings: &[HirNewExpressionBinding]) -> Self {
+        let mut new_expression_bindings = HashMap::<String, VecDeque<i32>>::new();
+        for binding in bindings {
+            new_expression_bindings
+                .entry(binding.type_name.to_ascii_lowercase())
+                .or_default()
+                .push_back(binding.object_handle);
+        }
+        Self {
+            new_expression_bindings,
+        }
+    }
+
+    fn take_new_expression_handle(&mut self, type_name: &str) -> Option<i32> {
+        self.new_expression_bindings
+            .get_mut(&type_name.to_ascii_lowercase())
+            .and_then(VecDeque::pop_front)
+    }
 }
 
 pub fn compile_source_with_runtime_metadata_via_hir(
@@ -174,6 +206,15 @@ pub fn lower_typed_hir_to_bound_module(
     source: &str,
     typed_hir: &TypedHirModule,
 ) -> Result<BoundModule, HirProductionLoweringError> {
+    lower_typed_hir_to_bound_module_with_new_bindings(source, typed_hir, &[])
+}
+
+pub fn lower_typed_hir_to_bound_module_with_new_bindings(
+    source: &str,
+    typed_hir: &TypedHirModule,
+    new_expression_bindings: &[HirNewExpressionBinding],
+) -> Result<BoundModule, HirProductionLoweringError> {
+    let mut context = HirLoweringContext::from_new_expression_bindings(new_expression_bindings);
     let const_values = collect_const_values(source, typed_hir);
     let enum_descriptors = collect_hir_enum_descriptors(source);
     let lines = source.lines().map(str::to_string).collect::<Vec<_>>();
@@ -189,7 +230,14 @@ pub fn lower_typed_hir_to_bound_module(
     let mut procedures = external_procedures;
     let mut hir_procedure_count = 0usize;
     for decl in &typed_hir.module.declarations {
-        if let Some(proc) = lower_procedure(source, typed_hir, &const_values, option_base, *decl)? {
+        if let Some(proc) = lower_procedure(
+            source,
+            typed_hir,
+            &const_values,
+            option_base,
+            *decl,
+            &mut context,
+        )? {
             hir_procedure_count += 1;
             procedures.push(proc);
         }
@@ -222,6 +270,7 @@ fn lower_procedure(
     const_values: &HashMap<SymbolId, BoundExpr>,
     option_base: i32,
     decl_id: HirDeclId,
+    context: &mut HirLoweringContext,
 ) -> Result<Option<BoundProcedure>, HirProductionLoweringError> {
     let Some(decl) = typed_hir.module.arenas.decl(decl_id) else {
         return Ok(None);
@@ -330,6 +379,7 @@ fn lower_procedure(
             &dynamic_array_names,
             *stmt,
             &mut stmts,
+            context,
         )?;
     }
     let (source_line_start, source_line_end) =
@@ -386,6 +436,7 @@ fn lower_stmt(
     dynamic_array_names: &HashSet<String>,
     stmt: HirStmtId,
     out: &mut Vec<BoundStmt>,
+    context: &mut HirLoweringContext,
 ) -> Result<(), HirProductionLoweringError> {
     let Some(stmt_data) = typed_hir.module.arenas.stmt(stmt) else {
         return Ok(());
@@ -408,7 +459,7 @@ fn lower_stmt(
                     return Ok(());
                 }
             }
-            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value)?;
+            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value, context)?;
             let intent = if stmt_data.cst.syntax_kind == "LetStmt" {
                 AssignmentIntent::Let
             } else {
@@ -446,7 +497,7 @@ fn lower_stmt(
                     return Ok(());
                 }
             }
-            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value)?;
+            let expr = lower_expr(typed_hir, const_values, udt_field_aliases, *value, context)?;
             match expr {
                 BoundExpr::ProcCall { name, args } => out.push(BoundStmt::AssignFromCall {
                     target,
@@ -473,11 +524,12 @@ fn lower_stmt(
                     dynamic_array_names,
                     *child,
                     out,
+                    context,
                 )?;
             }
         }
         HirStmtKind::Expr(expr) => {
-            match lower_expr(typed_hir, const_values, udt_field_aliases, *expr)? {
+            match lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context)? {
                 BoundExpr::ProcCall { name, args } => out.push(BoundStmt::Call {
                     name,
                     args,
@@ -521,6 +573,7 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_then,
+                    context,
                 )?;
             }
             let mut lowered_else = Vec::new();
@@ -534,10 +587,17 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_else,
+                    context,
                 )?;
             }
             out.push(BoundStmt::IfCond {
-                cond: lower_condition(typed_hir, const_values, udt_field_aliases, *condition)?,
+                cond: lower_condition(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *condition,
+                    context,
+                )?,
                 then_body: lowered_then,
                 else_body: lowered_else,
             });
@@ -559,9 +619,16 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_body,
+                    context,
                 )?;
             }
-            let mut cond = lower_condition(typed_hir, const_values, udt_field_aliases, *condition)?;
+            let mut cond = lower_condition(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                *condition,
+                context,
+            )?;
             if *until {
                 cond = BoundCond::Not(Box::new(cond));
             }
@@ -581,7 +648,13 @@ fn lower_stmt(
                 let clauses = clauses
                     .iter()
                     .map(|clause| {
-                        lower_case_clause(typed_hir, const_values, udt_field_aliases, clause)
+                        lower_case_clause(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            clause,
+                            context,
+                        )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut lowered_body = Vec::new();
@@ -595,6 +668,7 @@ fn lower_stmt(
                         dynamic_array_names,
                         *stmt,
                         &mut lowered_body,
+                        context,
                     )?;
                 }
                 lowered_arms.push((clauses, lowered_body));
@@ -610,10 +684,11 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_else,
+                    context,
                 )?;
             }
             out.push(BoundStmt::SelectCase {
-                expr: lower_expr(typed_hir, const_values, udt_field_aliases, *expr)?,
+                expr: lower_expr(typed_hir, const_values, udt_field_aliases, *expr, context)?,
                 arms: lowered_arms,
                 else_body: lowered_else,
             });
@@ -636,14 +711,17 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_body,
+                    context,
                 )?;
             }
             out.push(BoundStmt::ForRange {
                 var: symbol_name(typed_hir, *var)?,
-                start: lower_expr(typed_hir, const_values, udt_field_aliases, *start)?,
-                end: lower_expr(typed_hir, const_values, udt_field_aliases, *end)?,
+                start: lower_expr(typed_hir, const_values, udt_field_aliases, *start, context)?,
+                end: lower_expr(typed_hir, const_values, udt_field_aliases, *end, context)?,
                 step: match step {
-                    Some(step) => lower_expr(typed_hir, const_values, udt_field_aliases, *step)?,
+                    Some(step) => {
+                        lower_expr(typed_hir, const_values, udt_field_aliases, *step, context)?
+                    }
                     None => BoundExpr::IntConst(1),
                 },
                 body: lowered_body,
@@ -665,6 +743,7 @@ fn lower_stmt(
                     dynamic_array_names,
                     *stmt,
                     &mut lowered_body,
+                    context,
                 )?;
             }
             out.push(BoundStmt::ForEach {
@@ -675,6 +754,7 @@ fn lower_stmt(
                     const_values,
                     udt_field_aliases,
                     *iterable,
+                    context,
                 )?),
                 body: lowered_body,
             });
@@ -726,6 +806,7 @@ fn lower_stmt(
                             const_values,
                             udt_field_aliases,
                             *bound,
+                            context,
                         )?,
                     })
                 })
@@ -744,7 +825,13 @@ fn lower_stmt(
                 .map(|arg| {
                     Ok(BoundCallArg {
                         name: None,
-                        expr: lower_expr(typed_hir, const_values, udt_field_aliases, *arg)?,
+                        expr: lower_expr(
+                            typed_hir,
+                            const_values,
+                            udt_field_aliases,
+                            *arg,
+                            context,
+                        )?,
                         force_byval: false,
                     })
                 })
@@ -830,6 +917,7 @@ fn lower_expr(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     expr: HirExprId,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
         return Err(HirProductionLoweringError::Unsupported(
@@ -866,9 +954,17 @@ fn lower_expr(
                 symbol_name(typed_hir, *symbol).map(BoundExpr::Var)
             }
         }
-        HirExprKind::New { type_name } => Err(HirProductionLoweringError::Unsupported(format!(
-            "New expression `{type_name}` requires project-aware construction binding"
-        ))),
+        HirExprKind::New { type_name } => {
+            let Some(object_handle) = context.take_new_expression_handle(type_name) else {
+                return Err(HirProductionLoweringError::Unsupported(format!(
+                    "New expression `{type_name}` requires project-aware construction binding"
+                )));
+            };
+            Ok(BoundExpr::StructuralIntrinsicCall {
+                intrinsic: StructuralIntrinsic::ProjectInstance,
+                args: vec![BoundExpr::IntConst(object_handle)],
+            })
+        }
         HirExprKind::Unary { op, expr } => match op {
             HirUnaryOp::Negate => Ok(BoundExpr::UnaryOp {
                 op: ArithOp::Neg,
@@ -877,6 +973,7 @@ fn lower_expr(
                     const_values,
                     udt_field_aliases,
                     *expr,
+                    context,
                 )?),
             }),
             HirUnaryOp::Not => Ok(BoundExpr::LogicalNot {
@@ -885,20 +982,27 @@ fn lower_expr(
                     const_values,
                     udt_field_aliases,
                     *expr,
+                    context,
                 )?),
             }),
         },
-        HirExprKind::Binary { op, lhs, rhs } => {
-            lower_binary_expr(typed_hir, const_values, udt_field_aliases, *op, *lhs, *rhs)
-        }
+        HirExprKind::Binary { op, lhs, rhs } => lower_binary_expr(
+            typed_hir,
+            const_values,
+            udt_field_aliases,
+            *op,
+            *lhs,
+            *rhs,
+            context,
+        ),
         HirExprKind::Call(call) => {
-            lower_call_expr(typed_hir, const_values, udt_field_aliases, *call)
+            lower_call_expr(typed_hir, const_values, udt_field_aliases, *call, context)
         }
         HirExprKind::Member(member) => {
             if let Some(alias) = udt_member_alias(typed_hir, udt_field_aliases, *member) {
                 Ok(BoundExpr::Var(alias))
             } else {
-                lower_member_expr(typed_hir, const_values, udt_field_aliases, *member)
+                lower_member_expr(typed_hir, const_values, udt_field_aliases, *member, context)
             }
         }
         other => Err(HirProductionLoweringError::Unsupported(format!(
@@ -914,9 +1018,10 @@ fn lower_binary_expr(
     op: HirBinaryOp,
     lhs: HirExprId,
     rhs: HirExprId,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
-    let lhs = lower_expr(typed_hir, const_values, udt_field_aliases, lhs)?;
-    let rhs = lower_expr(typed_hir, const_values, udt_field_aliases, rhs)?;
+    let lhs = lower_expr(typed_hir, const_values, udt_field_aliases, lhs, context)?;
+    let rhs = lower_expr(typed_hir, const_values, udt_field_aliases, rhs, context)?;
     match op {
         HirBinaryOp::Add => binary(ArithOp::Add, lhs, rhs),
         HirBinaryOp::Sub => binary(ArithOp::Sub, lhs, rhs),
@@ -941,23 +1046,35 @@ fn lower_call_expr(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     call: crate::frontend_hir::HirCallId,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(call_data) = typed_hir.module.arenas.call(call) else {
         return Err(HirProductionLoweringError::Unsupported(
             "missing call".to_string(),
         ));
     };
-    let target = lower_expr(typed_hir, const_values, udt_field_aliases, call_data.target)?;
+    let target = lower_expr(
+        typed_hir,
+        const_values,
+        udt_field_aliases,
+        call_data.target,
+        context,
+    )?;
     let args = call_data
         .args
         .iter()
         .map(|arg| {
-            lower_expr(typed_hir, const_values, udt_field_aliases, arg.expr).map(|expr| {
-                BoundCallArg {
-                    name: None,
-                    expr,
-                    force_byval: arg.force_byval,
-                }
+            lower_expr(
+                typed_hir,
+                const_values,
+                udt_field_aliases,
+                arg.expr,
+                context,
+            )
+            .map(|expr| BoundCallArg {
+                name: None,
+                expr,
+                force_byval: arg.force_byval,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1000,6 +1117,7 @@ fn lower_member_expr(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     member: crate::frontend_hir::HirMemberId,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundExpr, HirProductionLoweringError> {
     let Some(member_data) = typed_hir.module.arenas.member(member) else {
         return Err(HirProductionLoweringError::Unsupported(
@@ -1017,6 +1135,7 @@ fn lower_member_expr(
             const_values,
             udt_field_aliases,
             receiver,
+            context,
         )?),
         member: symbol_name(typed_hir, member_data.symbol)?,
         args: Vec::new(),
@@ -1028,15 +1147,16 @@ fn lower_case_clause(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     clause: &HirCaseClause,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundCaseClause, HirProductionLoweringError> {
     match clause {
         HirCaseClause::Value(expr) => {
-            lower_case_value(typed_hir, const_values, udt_field_aliases, *expr)
+            lower_case_value(typed_hir, const_values, udt_field_aliases, *expr, context)
                 .map(BoundCaseClause::Value)
         }
         HirCaseClause::Range { start, end } => Ok(BoundCaseClause::Range {
-            start: lower_case_value(typed_hir, const_values, udt_field_aliases, *start)?,
-            end: lower_case_value(typed_hir, const_values, udt_field_aliases, *end)?,
+            start: lower_case_value(typed_hir, const_values, udt_field_aliases, *start, context)?,
+            end: lower_case_value(typed_hir, const_values, udt_field_aliases, *end, context)?,
         }),
         HirCaseClause::Is { op, value } => {
             let Some(op) = compare_op_from_hir(*op) else {
@@ -1046,7 +1166,13 @@ fn lower_case_clause(
             };
             Ok(BoundCaseClause::Is {
                 op,
-                value: lower_case_value(typed_hir, const_values, udt_field_aliases, *value)?,
+                value: lower_case_value(
+                    typed_hir,
+                    const_values,
+                    udt_field_aliases,
+                    *value,
+                    context,
+                )?,
             })
         }
     }
@@ -1057,9 +1183,10 @@ fn lower_case_value(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     expr: HirExprId,
+    context: &mut HirLoweringContext,
 ) -> Result<i32, HirProductionLoweringError> {
     if let BoundExpr::IntConst(value) =
-        lower_expr(typed_hir, const_values, udt_field_aliases, expr)?
+        lower_expr(typed_hir, const_values, udt_field_aliases, expr, context)?
     {
         return Ok(value);
     }
@@ -1089,6 +1216,7 @@ fn lower_condition(
     const_values: &HashMap<SymbolId, BoundExpr>,
     udt_field_aliases: &HashMap<(String, String), String>,
     expr: crate::frontend_hir::HirExprId,
+    context: &mut HirLoweringContext,
 ) -> Result<BoundCond, HirProductionLoweringError> {
     let Some(expr_data) = typed_hir.module.arenas.expr(expr) else {
         return Err(HirProductionLoweringError::Unsupported(
@@ -1104,6 +1232,7 @@ fn lower_condition(
             const_values,
             udt_field_aliases,
             *expr,
+            context,
         )?))),
         HirExprKind::Binary { op, lhs, rhs } => match op {
             HirBinaryOp::Eq
@@ -1118,8 +1247,8 @@ fn lower_condition(
                 };
                 Ok(BoundCond::Compare {
                     op: compare_op,
-                    lhs: lower_expr(typed_hir, const_values, udt_field_aliases, *lhs)?,
-                    rhs: lower_expr(typed_hir, const_values, udt_field_aliases, *rhs)?,
+                    lhs: lower_expr(typed_hir, const_values, udt_field_aliases, *lhs, context)?,
+                    rhs: lower_expr(typed_hir, const_values, udt_field_aliases, *rhs, context)?,
                 })
             }
             HirBinaryOp::And => Ok(BoundCond::And(
@@ -1128,12 +1257,14 @@ fn lower_condition(
                     const_values,
                     udt_field_aliases,
                     *lhs,
+                    context,
                 )?),
                 Box::new(lower_condition(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
                     *rhs,
+                    context,
                 )?),
             )),
             HirBinaryOp::Or => Ok(BoundCond::Or(
@@ -1142,12 +1273,14 @@ fn lower_condition(
                     const_values,
                     udt_field_aliases,
                     *lhs,
+                    context,
                 )?),
                 Box::new(lower_condition(
                     typed_hir,
                     const_values,
                     udt_field_aliases,
                     *rhs,
+                    context,
                 )?),
             )),
             _ => Ok(BoundCond::Truthy(lower_expr(
@@ -1155,6 +1288,7 @@ fn lower_condition(
                 const_values,
                 udt_field_aliases,
                 expr,
+                context,
             )?)),
         },
         _ => Ok(BoundCond::Truthy(lower_expr(
@@ -1162,6 +1296,7 @@ fn lower_condition(
             const_values,
             udt_field_aliases,
             expr,
+            context,
         )?)),
     }
 }
@@ -2393,6 +2528,42 @@ mod tests {
             }
             other => panic!("New expression must remain fallback-eligible, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn hir_lowering_binds_new_expression_to_project_instance_intrinsic() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = New Widget\nEnd Sub\n";
+        let typed_hir =
+            collect_type_hooks_from_source("Main", source).expect("typed HIR should build");
+        let bound = lower_typed_hir_to_bound_module_with_new_bindings(
+            source,
+            &typed_hir,
+            &[HirNewExpressionBinding {
+                type_name: "Widget".to_string(),
+                object_handle: 7,
+            }],
+        )
+        .expect("bound New expression should lower");
+        let main = bound
+            .procedures
+            .iter()
+            .find(|procedure| procedure.name.eq_ignore_ascii_case("main"))
+            .expect("main procedure");
+
+        assert!(main.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                BoundStmt::Assign {
+                    target,
+                    expr:
+                        BoundExpr::StructuralIntrinsicCall {
+                            intrinsic: StructuralIntrinsic::ProjectInstance,
+                            args,
+                        },
+                    intent: AssignmentIntent::Set,
+                } if target == "obj" && matches!(args.as_slice(), [BoundExpr::IntConst(7)])
+            )
+        }));
     }
 
     #[test]
