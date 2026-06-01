@@ -97,6 +97,7 @@ pub struct FrontendDiffReport {
     pub diagnostics_match: bool,
     pub bytecode_matches: bool,
     pub metadata_matches: bool,
+    pub metadata_differences: Vec<String>,
     pub execution_trace_matches: bool,
     pub observable_output_matches: bool,
 }
@@ -215,7 +216,16 @@ pub fn classify_frontend_diff(
         reasons.push("bytecode summary differs".to_string());
     }
     if !report.metadata_matches {
-        reasons.push("metadata summary differs".to_string());
+        if report.metadata_differences.is_empty() {
+            reasons.push("metadata summary differs".to_string());
+        } else {
+            reasons.extend(
+                report
+                    .metadata_differences
+                    .iter()
+                    .map(|diff| format!("metadata summary differs: {diff}")),
+            );
+        }
     }
     if !report.execution_trace_matches {
         reasons.push("execution trace differs".to_string());
@@ -384,14 +394,210 @@ fn count_classification(rows: &[FrontendCorpusRow], kind: DiffClassificationKind
 }
 
 fn make_report(left: FrontendObservation, right: FrontendObservation) -> FrontendDiffReport {
+    let metadata_differences = diff_metadata_status(&left.metadata, &right.metadata);
     FrontendDiffReport {
         diagnostics_match: left.diagnostics == right.diagnostics,
         bytecode_matches: left.bytecode == right.bytecode,
         metadata_matches: left.metadata == right.metadata,
+        metadata_differences,
         execution_trace_matches: left.execution_trace == right.execution_trace,
         observable_output_matches: left.observable_output == right.observable_output,
         left,
         right,
+    }
+}
+
+fn diff_metadata_status(
+    left: &MetadataSummaryStatus,
+    right: &MetadataSummaryStatus,
+) -> Vec<String> {
+    match (left, right) {
+        (MetadataSummaryStatus::Available(left), MetadataSummaryStatus::Available(right)) => {
+            diff_metadata_summary(left, right)
+        }
+        (MetadataSummaryStatus::NotAvailable, MetadataSummaryStatus::NotAvailable) => Vec::new(),
+        _ => vec!["availability".to_string()],
+    }
+}
+
+fn diff_metadata_summary(left: &MetadataSummary, right: &MetadataSummary) -> Vec<String> {
+    let mut diffs = Vec::new();
+    push_diff(
+        &mut diffs,
+        "procedure_count",
+        &left.procedure_count,
+        &right.procedure_count,
+    );
+    for key in left.procedures.keys() {
+        if !right.procedures.contains_key(key) {
+            diffs.push(format!("procedures.{key}: missing on right"));
+        }
+    }
+    for key in right.procedures.keys() {
+        if !left.procedures.contains_key(key) {
+            diffs.push(format!("procedures.{key}: missing on left"));
+        }
+    }
+    for (key, left_proc) in &left.procedures {
+        let Some(right_proc) = right.procedures.get(key) else {
+            continue;
+        };
+        diff_procedure_metadata(&mut diffs, key, left_proc, right_proc);
+    }
+    diffs
+}
+
+fn diff_procedure_metadata(
+    diffs: &mut Vec<String>,
+    key: &str,
+    left: &ProcedureMetadataSummary,
+    right: &ProcedureMetadataSummary,
+) {
+    let prefix = format!("procedures.{key}");
+    push_diff(
+        diffs,
+        &format!("{prefix}.module_name"),
+        &left.module_name,
+        &right.module_name,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.procedure_name"),
+        &left.procedure_name,
+        &right.procedure_name,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.entry_pc"),
+        &left.entry_pc,
+        &right.entry_pc,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.source_line_start"),
+        &left.source_line_start,
+        &right.source_line_start,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.source_line_end"),
+        &left.source_line_end,
+        &right.source_line_end,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.statement_line_numbers"),
+        &left.statement_line_numbers,
+        &right.statement_line_numbers,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.statement_entry_pcs"),
+        &left.statement_entry_pcs,
+        &right.statement_entry_pcs,
+    );
+    push_diff(diffs, &format!("{prefix}.slots"), &left.slots, &right.slots);
+    push_diff(
+        diffs,
+        &format!("{prefix}.param_slots"),
+        &left.param_slots,
+        &right.param_slots,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.return_slot"),
+        &left.return_slot,
+        &right.return_slot,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.param_types"),
+        &left.param_types,
+        &right.param_types,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.return_type"),
+        &left.return_type,
+        &right.return_type,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.signature"),
+        &left.signature,
+        &right.signature,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.call_sites"),
+        &left.call_sites,
+        &right.call_sites,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.array_shapes"),
+        &left.array_shapes,
+        &right.array_shapes,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.udt_types"),
+        &left.udt_types,
+        &right.udt_types,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.object_types"),
+        &left.object_types,
+        &right.object_types,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.carrier_layouts"),
+        &left.carrier_layouts,
+        &right.carrier_layouts,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.value_states"),
+        &left.value_states,
+        &right.value_states,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.expression_semantics"),
+        &left.expression_semantics,
+        &right.expression_semantics,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.operator_semantics"),
+        &left.operator_semantics,
+        &right.operator_semantics,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.coercions"),
+        &left.coercions,
+        &right.coercions,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.name_bindings"),
+        &left.name_bindings,
+        &right.name_bindings,
+    );
+    push_diff(
+        diffs,
+        &format!("{prefix}.object_member_bindings"),
+        &left.object_member_bindings,
+        &right.object_member_bindings,
+    );
+}
+
+fn push_diff<T: PartialEq>(diffs: &mut Vec<String>, path: &str, left: &T, right: &T) {
+    if left != right {
+        diffs.push(path.to_string());
     }
 }
 
@@ -816,6 +1022,48 @@ mod tests {
             &main.name_bindings,
             &main.object_member_bindings,
         );
+    }
+
+    #[test]
+    fn frontend_diff_metadata_projection_reports_field_level_drift() {
+        let mut report = compare_legacy_to_frontend_v2(
+            "Function Main(ByVal seed As Long) As Long\nMain = seed\nEnd Function\n",
+        );
+        let MetadataSummaryStatus::Available(metadata) = &mut report.right.metadata else {
+            panic!("expected right metadata summary: {report:#?}");
+        };
+        let main = metadata
+            .procedures
+            .get_mut("main")
+            .expect("main procedure metadata");
+        main.return_slot = None;
+        report.metadata_matches = report.left.metadata == report.right.metadata;
+        report.metadata_differences =
+            diff_metadata_status(&report.left.metadata, &report.right.metadata);
+
+        assert!(!report.metadata_matches);
+        assert!(
+            report
+                .metadata_differences
+                .iter()
+                .any(|diff| diff == "procedures.main.return_slot"),
+            "{report:#?}"
+        );
+
+        let classification = classify_frontend_diff(
+            &report,
+            DiffClassificationInput {
+                fixture_name: "metadata_drift".to_string(),
+                fixture_path: "inline".to_string(),
+                expected_bytecode_drift: None,
+                expected_diagnostic_drift: None,
+                rationale: "metadata drift should be diagnosed semantically".to_string(),
+                close_condition: "field-level metadata diff is investigated".to_string(),
+            },
+        );
+        assert!(classification.reasons.iter().any(|reason| {
+            reason.contains("metadata summary differs: procedures.main.return_slot")
+        }));
     }
 
     fn bytecode_drift_report() -> FrontendDiffReport {

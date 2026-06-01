@@ -828,7 +828,10 @@ Candidate bead units:
   rather than projected into runtime slots.
   Evidence: `docs/evidence/frontend_rework/HIR_LOWERING_CONTRACT_2026-06-01.md`.
 - FE-8.4 Metadata normalization: define stable comparison projections for procedure metadata,
-  descriptors, source maps, and diagnostics.
+  descriptors, source maps, and diagnostics. Reopened continuation promotes the projection into
+  executable harness output: frontend diff reports now include field-level semantic metadata drift
+  paths, and the classifier carries those paths into reasons instead of reporting only an opaque
+  metadata-summary mismatch.
   Evidence: `docs/evidence/frontend_rework/METADATA_NORMALIZATION_2026-06-01.md`.
 - FE-8.5 Production HIR lowering: implement production bytecode and `ProcedureRuntimeMetadata`
   emission from bound HIR facts for the scoped language surface.

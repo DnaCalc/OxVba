@@ -6,16 +6,22 @@ Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_
 
 ## Outcome
 
-The FE-5 diff harness metadata projection now has an explicit FE-8.4 coverage test:
-`frontend_diff_metadata_projection_exposes_stable_descriptor_fields`.
+Reopened production-route update: the FE-5 diff harness metadata projection is now used to produce
+field-level semantic metadata drift in `FrontendDiffReport`, not just an opaque
+`metadata summary differs` boolean.
 
 Stable projection fields include procedure identity, line/PC source maps, slot metadata, signature,
 call sites, array/type/layout facts, value states, expression/operator semantics, coercions,
 name bindings, object member bindings, and diagnostic projections via the FE-6.5 mapper.
 
+The classifier now carries these field-level paths into bug/intentional-drift reasons, so a metadata
+regression can point at stable semantic fields such as `procedures.main.return_slot` even when
+bytecode layout or instruction shape drifts.
+
 ## Checks
 
 - `cargo test -p oxvba-compiler frontend_diff_metadata_projection --quiet`
+- `cargo test -p oxvba-compiler frontend_diff --quiet`
 - `cargo fmt --check -p oxvba-compiler`
 - `git diff --check`
 
@@ -23,5 +29,8 @@ name bindings, object member bindings, and diagnostic projections via the FE-6.5
 
 - The projection is semantic, not byte-identical. It is intentionally suitable for classifying
   harmless bytecode drift while still catching metadata contract drift.
+- This pass converts the projection from isolated coverage into an executable harness surface:
+  `compare_legacy_to_frontend_v2` now returns stable metadata difference paths through
+  `FrontendDiffReport::metadata_differences`.
 - Source maps are represented through statement line numbers and entry PCs; FE-9.4 can extend this
   when language-service source maps move onto shared SemanticModel facts.
