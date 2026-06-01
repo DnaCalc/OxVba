@@ -26,7 +26,8 @@ The initial production scope is intentionally narrow and explicit:
 - simple `For <var> = <start> To <end> [Step <step>] ... Next` range loops,
 - simple `For Each <var> In <iterable> ... Next` loops through the iterable backend path,
 - `Exit Do`, `Exit For`, and `Exit Sub` statements through HIR statement nodes,
-- `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume` statements,
+- `On Error Resume Next`, `On Error GoTo 0`, `On Error GoTo label`, `Resume Next`, bare
+  `Resume`, and `Resume label` statements,
 - identifier/numeric labels and `GoTo` statements,
 - `GoSub` and `Return` statements,
 - simple `Select Case` statements with single integer-value `Case` clauses, integer `Case A To B`
@@ -216,8 +217,8 @@ The seventeenth FE-8.5 slice removes the basic non-label error-control residual:
   `On Error GoTo 0`;
 - `ResumeStmt` nodes lower into typed HIR variants for `Resume Next` and bare `Resume`;
 - production HIR lowering maps those variants to the existing backend error-control statements; and
-- label-targeted `On Error GoTo label` / `Resume label` remains unsupported until labels are
-  represented by the syntax/HIR route.
+- label-targeted `On Error GoTo label` / `Resume label` is sequenced after labels are represented
+  by the syntax/HIR route.
 
 ## Label and GoTo Continuation
 
@@ -239,6 +240,15 @@ The nineteenth FE-8.5 slice widens label-targeted control flow:
 - `ReturnStmt` nodes lower into a typed HIR leaf statement; and
 - production HIR lowering maps them to the existing `BoundStmt::GoSub` and `BoundStmt::Return`
   backend forms.
+
+## Label Error-Control Continuation
+
+The twentieth FE-8.5 slice completes the basic label-targeted error-control route:
+
+- `On Error GoTo label` lowers into `HirStmtKind::OnErrorGotoLabel`;
+- `Resume label` lowers into `HirStmtKind::ResumeLabel`;
+- both use the same identifier/numeric label normalization as `GoTo`; and
+- production HIR lowering maps them to the existing backend error-control label forms.
 
 ## Checks
 

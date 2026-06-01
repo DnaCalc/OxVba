@@ -373,8 +373,14 @@ fn lower_stmt(
         HirStmtKind::ExitProcedure => out.push(BoundStmt::ExitProcedure),
         HirStmtKind::OnErrorResumeNext => out.push(BoundStmt::OnErrorResumeNext),
         HirStmtKind::OnErrorGoto0 => out.push(BoundStmt::OnErrorGoto0),
+        HirStmtKind::OnErrorGotoLabel { label } => out.push(BoundStmt::OnErrorGotoLabel {
+            label: label.clone(),
+        }),
         HirStmtKind::ResumeNext => out.push(BoundStmt::ResumeNext),
         HirStmtKind::Resume => out.push(BoundStmt::Resume),
+        HirStmtKind::ResumeLabel { label } => out.push(BoundStmt::ResumeLabel {
+            label: label.clone(),
+        }),
         HirStmtKind::Label { name } => out.push(BoundStmt::Label { name: name.clone() }),
         HirStmtKind::GoTo { label } => out.push(BoundStmt::GoTo {
             label: label.clone(),
@@ -1099,6 +1105,30 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Resume)),
             "expected Resume bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(metadata.contains_key("main"), "{metadata:#?}");
+    }
+
+    #[test]
+    fn hir_production_lowering_emits_label_error_control_statements() {
+        let source = "Sub Main()\nOn Error GoTo handler\nhandler:\nResume done\ndone:\nEnd Sub\n";
+        let (bytecode, metadata) =
+            compile_source_with_runtime_metadata_via_hir(source).expect("HIR production lowering");
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::SetOnErrorGotoLabel { .. })),
+            "expected On Error GoTo label bytecode: {:?}",
+            bytecode.instructions
+        );
+        assert!(
+            bytecode
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::ResumeLabel { .. })),
+            "expected Resume label bytecode: {:?}",
             bytecode.instructions
         );
         assert!(metadata.contains_key("main"), "{metadata:#?}");

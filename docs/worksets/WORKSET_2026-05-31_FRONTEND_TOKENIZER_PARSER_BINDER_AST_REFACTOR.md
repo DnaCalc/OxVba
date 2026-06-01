@@ -869,6 +869,7 @@ Candidate bead units:
   `On Error Resume Next`, `On Error GoTo 0`, `Resume Next`, and bare `Resume`. Eighteenth reopened
   continuation adds syntax/HIR/lowering support for identifier and numeric labels plus `GoTo`.
   Nineteenth reopened continuation adds `GoSub` and `Return` lowering over the same label model.
+  Twentieth reopened continuation adds label-targeted `On Error GoTo` and `Resume` lowering.
   FE-8.5 remains open for unaudited broader language surfaces outside that subset.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 
@@ -916,8 +917,9 @@ Candidate bead units:
   continuation now passes the recorded audit fixtures/static checks and includes a direct check that
   completed lightweight compile fixtures use the HIR runtime-metadata route. Follow-up continuation
   expands the audit with multiline `If/ElseIf`, single-line If, basic `Exit`, and non-label
-  error-control fixtures plus identifier/numeric-label `GoTo` and `GoSub`/`Return` fixtures. The
-  workset remains open for broader terminal evidence and expanded route-audit coverage.
+  error-control fixtures plus identifier/numeric-label `GoTo`, `GoSub`/`Return`, and
+  label-targeted error-control fixtures. The workset remains open for broader terminal evidence and
+  expanded route-audit coverage.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_LEGACY_ROUTE_AUDIT_2026-06-01.md`.
 
 Evidence gate: frontend v2 is the single production compiler route for the scoped language

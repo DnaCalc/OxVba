@@ -195,6 +195,14 @@ pub fn run_production_legacy_route_audit() -> LegacyRouteAuditReport {
         "bd-aprs.9.5",
     ));
 
+    let on_error_goto_label_statement =
+        "Sub Main()\nOn Error GoTo handler\nhandler:\nResume done\ndone:\nEnd Sub\n";
+    findings.push(route_finding(
+        "on error goto label statement fixture",
+        on_error_goto_label_statement,
+        "bd-aprs.9.5",
+    ));
+
     let goto_label_statement = "Sub Main()\nGoTo done\ndone:\nEnd Sub\n";
     findings.push(route_finding(
         "goto label statement fixture",
@@ -352,6 +360,9 @@ mod tests {
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("on error goto zero")
+                    && finding.disposition == LegacyRouteAuditDisposition::HirProduction
+            }) && report.findings.iter().any(|finding| {
+                finding.area.contains("on error goto label")
                     && finding.disposition == LegacyRouteAuditDisposition::HirProduction
             }) && report.findings.iter().any(|finding| {
                 finding.area.contains("goto label statement")

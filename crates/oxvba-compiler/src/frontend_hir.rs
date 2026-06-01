@@ -164,8 +164,14 @@ pub enum HirStmtKind {
     ExitProcedure,
     OnErrorResumeNext,
     OnErrorGoto0,
+    OnErrorGotoLabel {
+        label: String,
+    },
     ResumeNext,
     Resume,
+    ResumeLabel {
+        label: String,
+    },
     Label {
         name: String,
     },
@@ -1312,6 +1318,9 @@ fn on_error_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError
     }) {
         return Ok(HirStmtKind::OnErrorGoto0);
     }
+    if let Some(label) = jump_label_from_stmt(node, SyntaxKind::KwGoTo).ok() {
+        return Ok(HirStmtKind::OnErrorGotoLabel { label });
+    }
     Err(HirBuildError::Unsupported(format!(
         "On Error statement without supported target: `{}`",
         node.text().trim()
@@ -1329,6 +1338,13 @@ fn resume_stmt_kind(node: SyntaxNode<'_>) -> Result<HirStmtKind, HirBuildError> 
     }
     if tokens.len() == 1 && tokens[0].kind == SyntaxKind::KwResume {
         return Ok(HirStmtKind::Resume);
+    }
+    if let Some(label) = tokens
+        .iter()
+        .skip(1)
+        .find_map(|token| label_name_from_token(*token))
+    {
+        return Ok(HirStmtKind::ResumeLabel { label });
     }
     Err(HirBuildError::Unsupported(format!(
         "Resume statement without supported target: `{}`",
