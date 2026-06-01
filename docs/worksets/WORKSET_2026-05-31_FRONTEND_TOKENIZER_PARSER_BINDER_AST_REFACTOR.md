@@ -624,6 +624,7 @@ Candidate bead units:
   Evidence: `docs/evidence/frontend_rework/SEMANTIC_MODEL_QUERY_API_2026-06-01.md`.
 - FE-6.4 Type and coercion hooks: connect HIR to the current declared type model, call-site
   descriptors, Let/Set distinction, Optional/ParamArray, ByRef/ByVal, and default values.
+  Evidence: `docs/evidence/frontend_rework/TYPE_COERCION_HOOKS_2026-06-01.md`.
 - FE-6.5 Diagnostic mapping: route parser, binder, and type diagnostics to stable source spans
   with existing diagnostic family compatibility where applicable.
 

@@ -8,6 +8,7 @@ pub mod frontend_diff;
 pub mod frontend_hir;
 pub mod frontend_semantic_model;
 pub mod frontend_symbols;
+pub mod frontend_type_hooks;
 pub mod lsp_support;
 pub mod optimize;
 pub mod project;
