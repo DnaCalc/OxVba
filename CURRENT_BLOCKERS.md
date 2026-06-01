@@ -75,6 +75,15 @@ Run context: active parity/compliance execution plus in-progress feature worklis
       project compile boundary still compiles the rewritten backend source, so
       `Set x = New Widget` still becomes `Set x = __oxvba_project_instance(handle)` before
       backend compilation.
+    - downstream object-state regressions narrowed during this pass:
+      - `bd-7ins` is closed: source-class public field reads such as `c.Total` now observe
+        object-owned per-instance field state after member calls;
+      - the concrete `bd-asrd` WithEvents rewrite failure is partially fixed:
+        `Set <WithEventsField> = New <ActiveProjectClass>` now lowers to a temporary
+        project instance before `__oxvba_withevents_set(...)`, so the legacy parser no longer
+        sees raw `New <Class>` text on that path.
+      - `bd-asrd` remains open for arbitrary/nested legacy `New <Class>` expression parsing;
+        the intended production replacement is still the HIR/project-aware construction route.
 - Unblocking path:
   - execute reopened `bd-aprs` beads under the production replacement criteria;
   - convert scaffold/evidence surfaces into default production routing;
@@ -952,7 +961,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for `ODG-040`
   - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
-
 
 
 
