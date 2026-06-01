@@ -245,7 +245,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::KwMod => Some((20, 21)),
             SyntaxKind::Backslash => Some((22, 23)),
             SyntaxKind::Star | SyntaxKind::Slash => Some((24, 25)),
-            SyntaxKind::Caret => Some((27, 28)), // right-assoc: right > left
+            SyntaxKind::Caret => Some((28, 27)),
             _ => None,
         }
     }
@@ -278,6 +278,7 @@ impl<'a> Parser<'a> {
             | SyntaxKind::KwNothing
             | SyntaxKind::KwMe
             | SyntaxKind::KwNew
+            | SyntaxKind::KwTypeOf
             | SyntaxKind::LParen
             | SyntaxKind::Dot
             | SyntaxKind::Hash => true,
@@ -434,6 +435,22 @@ impl<'a> Parser<'a> {
                             self.bump();
                         }
                     }
+                }
+                self.finish_node();
+            }
+            // TypeOf expr Is type-expr
+            SyntaxKind::KwTypeOf => {
+                self.start_node(SyntaxKind::BinaryExpr);
+                self.bump(); // TypeOf
+                self.eat_expr_whitespace();
+                self.parse_expr_bp(15);
+                self.eat_expr_whitespace();
+                if self.at(SyntaxKind::KwIs) {
+                    self.bump();
+                    self.eat_expr_whitespace();
+                    self.parse_expr_bp(15);
+                } else {
+                    self.error("expected `Is` after `TypeOf` expression".into());
                 }
                 self.finish_node();
             }
@@ -1976,6 +1993,11 @@ mod tests {
             "expected nested ^ exprs, got {:?}",
             binaries
         );
+        assert!(
+            binaries.iter().any(|s| s == "3 ^ 4"),
+            "expected right-associative power RHS, got {:?}",
+            binaries
+        );
     }
 
     #[test]
@@ -2080,15 +2102,28 @@ mod tests {
     #[test]
     fn expr_keyword_operators() {
         // Test And, Or, Xor, Mod, Like, Is, Imp, Eqv
-        let src =
-            "Sub T()\n    x = a And b\n    y = a Or b\n    z = a Xor b\n    w = a Mod b\nEnd Sub\n";
+        let src = "Sub T()\n    x = a And b\n    y = a Or b\n    z = a Xor b\n    w = a Mod b\n    p = a Like b\n    q = a Is b\n    r = a Imp b\n    s = a Eqv b\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
         let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
         assert!(
-            binaries.len() >= 4,
-            "expected 4 BinaryExpr nodes, got {}",
+            binaries.len() >= 8,
+            "expected 8 BinaryExpr nodes, got {}",
             binaries.len()
+        );
+    }
+
+    #[test]
+    fn expr_typeof_is() {
+        let src = "Sub T()\nIf TypeOf obj Is Class1 Then\n    x = 1\nEnd If\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
+        assert!(
+            binaries.iter().any(|s| s.contains("TypeOf obj Is Class1")),
+            "expected TypeOf ... Is binary expression, got {:?}",
+            binaries
         );
     }
 

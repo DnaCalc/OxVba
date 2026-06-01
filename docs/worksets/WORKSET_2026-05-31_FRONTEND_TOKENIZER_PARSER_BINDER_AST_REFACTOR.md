@@ -568,6 +568,7 @@ through a temporary bridge.
 Candidate bead units:
 - FE-4.1 Expression parser parity: harden precedence, associativity, unary/binary distinction,
   `Is`, `Like`, `TypeOf ... Is`, and parenthesized expression behavior.
+  Evidence: `docs/evidence/frontend_rework/PARSER_EXPRESSION_SEMANTIC_PARITY_2026-06-01.md`.
 - FE-4.2 Postfix grammar: unify call, index, member, bang, default-member syntax, and statement
   call forms.
 - FE-4.3 Statement parser coverage: harden declarations, blocks, inline statements, `With`,
