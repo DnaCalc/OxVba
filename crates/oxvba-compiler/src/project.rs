@@ -3399,6 +3399,8 @@ fn lower_module_source_module_aware(
                 &mut internal_class_bindings,
                 &shadowed_identifiers,
                 &withevents_bindings,
+                next_internal_instance_id,
+                dynamic_instance_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
                 manifest,
@@ -3751,6 +3753,7 @@ fn expand_bound_source_line(
     // dynamic-object binding, and emit the handle assignment plus `Class_Initialize`. COM
     // `New` falls through to the early-bound rewrites below (resolve_interface_module → None).
     if let Some((var_name, type_name)) = parse_set_new_instantiation(line)
+        && !withevents_bindings.contains(&normalize_identifier(&var_name))
         && referenced_typelib_blob_for_type_reference(manifest, &type_name)?.is_none()
         && let Some((target_project, target_module)) = resolve_class_construction_module(
             manifest,
@@ -3878,6 +3881,21 @@ fn parse_set_new_instantiation(line: &str) -> Option<(String, String)> {
         return None;
     }
     Some((var_name.to_string(), type_name.to_string()))
+}
+
+fn parse_new_expression_type_name(expr: &str) -> Option<String> {
+    let trimmed = expr.trim();
+    if !trimmed
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("new "))
+    {
+        return None;
+    }
+    let type_name = trimmed[4..].trim();
+    if type_name.is_empty() {
+        return None;
+    }
+    Some(type_name.to_string())
 }
 
 fn parse_internal_class_dim_declaration(line: &str) -> Option<InternalClassDimDecl> {
@@ -6280,6 +6298,63 @@ fn rewrite_internal_class_self_dispatch(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn lower_withevents_project_new_expression(
+    manifest: &ProjectManifest,
+    project_symbol_index: Option<&ProjectSymbolIndex>,
+    rhs: &str,
+    active_project: &str,
+    current_project: &str,
+    procedures: &[ProcedureDecl],
+    next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
+    indent: &str,
+) -> Result<Option<(String, Vec<String>)>, ProjectCompileError> {
+    let Some(type_name) = parse_new_expression_type_name(rhs) else {
+        return Ok(None);
+    };
+    if referenced_typelib_blob_for_type_reference(manifest, &type_name)?.is_some() {
+        return Ok(None);
+    }
+    let Some((target_project, target_module)) = resolve_class_construction_module(
+        manifest,
+        active_project,
+        project_symbol_index,
+        current_project,
+        &type_name,
+        &BTreeMap::new(),
+    )?
+    else {
+        return Ok(None);
+    };
+    let object_handle = *next_internal_instance_id;
+    dynamic_instance_bindings.push(ProjectDynamicInstanceBindingDraft {
+        object_handle,
+        project_name: target_project.clone(),
+        module_name: target_module.clone(),
+        constructor_type_name: normalize_identifier(&type_name),
+    });
+    let temp_name = format!("__oxvba_withevents_new_instance_{object_handle}");
+    let mut prelude = vec![
+        format!("{indent}Dim {temp_name}"),
+        format!("{indent}Set {temp_name} = __oxvba_project_instance({object_handle})"),
+    ];
+    if let Some(class_initialize) = find_decl_by_signature(
+        procedures,
+        &target_project,
+        &target_module,
+        "class_initialize",
+        ProcedureDeclKind::Sub,
+    ) {
+        prelude.push(format!(
+            "{indent}Call {}({})",
+            class_initialize.lowered_name, temp_name
+        ));
+    }
+    *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
+    Ok(Some((temp_name, prelude)))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_set_assignment(
     manifest: &ProjectManifest,
     project_symbol_index: Option<&ProjectSymbolIndex>,
@@ -6291,6 +6366,8 @@ fn rewrite_internal_class_set_assignment(
     internal_class_bindings: &mut BTreeMap<String, InternalClassBinding>,
     shadowed_identifiers: &BTreeSet<String>,
     withevents_bindings: &BTreeSet<String>,
+    next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
@@ -6412,14 +6489,34 @@ fn rewrite_internal_class_set_assignment(
     };
     if withevents_bindings.contains(&normalized_lhs) {
         let binding_token = withevents_binding_token(current_project, current_module, lhs);
-        let rhs = rewrite_typelib_new_expression(manifest, rhs)?;
-        return Ok(format!(
+        let (rhs, mut prelude) = if let Some((expr, prelude)) =
+            lower_withevents_project_new_expression(
+                manifest,
+                project_symbol_index,
+                rhs,
+                active_project,
+                current_project,
+                procedures,
+                next_internal_instance_id,
+                dynamic_instance_bindings,
+                &line[..leading],
+            )? {
+            (expr, prelude)
+        } else {
+            (rewrite_typelib_new_expression(manifest, rhs)?, Vec::new())
+        };
+        let set_line = format!(
             "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
             &line[..leading],
             lhs,
             binding_token,
             rhs
-        ));
+        );
+        if prelude.is_empty() {
+            return Ok(set_line);
+        }
+        prelude.push(set_line);
+        return Ok(prelude.join("\n"));
     }
     if !internal_class_bindings.contains_key(&normalized_lhs)
         && resolve_implicit_class_receiver_binding(
@@ -9346,6 +9443,8 @@ fn rewrite_module_source(
                 &mut internal_class_bindings,
                 &shadowed_identifiers,
                 &withevents_bindings,
+                next_internal_instance_id,
+                dynamic_instance_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
                 manifest,
@@ -11797,6 +11896,63 @@ mod tests {
                 "unexpected imported typelib COM WithEvents route metadata"
             );
         }
+    }
+
+    #[test]
+    fn compile_project_lowers_withevents_new_source_class_expression() {
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Tick()\nPrivate Sub Class_Initialize()\nEnd Sub\n",
+        )
+        .expect("emitter module parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPublic Sub Attach()\nSet src = New Emitter\nEnd Sub\nPrivate Sub src_Tick()\nEnd Sub\n",
+        )
+        .expect("sink module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim s As New Sink\nCall s.Attach\nEnd Sub\n",
+        )
+        .expect("main module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink, emitter],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest)
+            .expect("WithEvents Set assignment from New source class should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("set __oxvba_withevents_new_instance_"),
+            "expected WithEvents New expression to materialize a temporary project instance: {lowered}"
+        );
+        assert!(
+            lowered.contains("__oxvba_project_instance("),
+            "expected WithEvents New expression to use the project-instance carrier: {lowered}"
+        );
+        assert!(
+            lowered.contains("__oxvba_withevents_set(__oxvba_this_instance,"),
+            "expected WithEvents Set assignment to route through runtime binding setter: {lowered}"
+        );
+        assert!(
+            !lowered.contains("new emitter"),
+            "legacy New expression text must not reach parse_expr inside the WithEvents setter: {lowered}"
+        );
+        assert!(
+            compiled
+                .project_dynamic_objects
+                .iter()
+                .any(|route| route.module_name.eq_ignore_ascii_case("Emitter")),
+            "expected dynamic route for the New Emitter source class"
+        );
     }
 
     #[test]
